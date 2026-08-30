@@ -83,7 +83,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Mapping, MutableMapping, Sequence
 
 import pandas as pd
-from chromadb.utils import lru_cache
+from functools import lru_cache
 
 CURRENCIES = ("CHF", "USD", "GBP", "EUR")
 TACTICAL_TILT_CODE = "LHUT1T3"
@@ -751,23 +751,70 @@ def _variant_label_for_inputs(
         return "Full ex RE" if exclude_real_estate else "Full + RE"
     return "Ex HFs ex RE" if exclude_real_estate else "Ex HFs + RE"
 
-@lru_cache
-def get_schema(currency: str):
+@lru_cache(maxsize=None)
+def get_context(currency: str):
+    """Return the epsilonPhi analytics context for *currency*.
+
+    Expensive: builds the full schema context. Cached unbounded because there
+    are only four currencies.
+
+    Named ``context``, not ``schema``: ``ScenarioPort.get_schema()`` is a
+    different thing entirely -- the UI's field definitions, option values and
+    availability set.
+    """
 
     from epsilonPhi.core.schema.Schema import ContextCreator
     return ContextCreator(
         currency=currency,
     ).create_context()
 
-@lru_cache
-def get_portfolio(currency, weights_dict):
+
+@lru_cache(maxsize=512)
+def _build_portfolio(
+    currency: str,
+    weight_items: tuple,
+    hedging_option: object,
+):
+    """Cached portfolio construction. Arguments must be hashable."""
 
     from epsilonPhi.core.portfolio.SAAPortfolio import SAAPortfolio
-    return SAAPortfolio.from_dict(
+
+    portfolio = SAAPortfolio.from_dict(
         'Portfolio',
-        weights_dict,
-        get_schema(currency),
+        dict(weight_items),
+        get_context(currency),
     )
+    if hedging_option is not None:
+        portfolio.set_hedging_option(hedging_option)
+    return portfolio
+
+
+def get_portfolio(currency, weights_dict, hedging_option=None):
+    """Return the ``SAAPortfolio`` for one selection, cached.
+
+    This is the analytics object: every figure the Proposal Tool displays is
+    read off it.
+
+    ``weights_dict`` is the mapping returned by
+    :func:`load_portfolio_weight_map`. It is normalised to a sorted tuple
+    before caching, because a ``dict`` is unhashable and ``lru_cache`` would
+    otherwise raise ``TypeError`` on the first call.
+
+    ``hedging_option`` is **part of the cache key**, and is applied here rather
+    than by the caller. That is deliberate. ``SAAPortfolio`` is mutable and
+    memoises its own analytics (``_sigma``, ``_risk_betas``, ``_risk_premias``),
+    so calling ``set_hedging_option()`` on a shared cached instance would change
+    the numbers seen by every other holder of it. Ask for the hedging you want
+    and you get an instance built for it.
+
+    For the same reason: **treat the returned portfolio as read-only.** If you
+    need to mutate one, take a copy first via ``deepcopy()``.
+    """
+
+    weight_items = tuple(
+        sorted((str(code), float(weight)) for code, weight in weights_dict.items())
+    )
+    return _build_portfolio(currency, weight_items, hedging_option)
 
 
 def load_portfolio_weights(

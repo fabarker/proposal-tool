@@ -2013,3 +2013,75 @@ the *UI* schema — fields, options, availability. `portfolio_weights.get_schema
 else. Import the second under an alias.
 
 Numbered 15.1a and 15.1b rather than inserted as 15.2, so 15.2–15.10 keep their numbers.
+
+---
+
+## Q47 — `get_context`, portfolio-only analytics, and real caching
+
+> **You:** call the second schema context instead of schema. Also, drop the table builders and
+> reporting object, get everything from the portfolio object layer … fix the caching of the schema
+> and portfolio in portfolio_weights.py because these are expensive
+
+### The file was broken
+
+Before anything else: `portfolio_weights.py` did not import. Line 86 read
+
+```python
+from chromadb.utils import lru_cache
+```
+
+`chromadb.utils.lru_cache` is a **module**, not a decorator, so `@lru_cache` raised
+`TypeError: 'module' object is not callable` at import and nothing in the file ran. Almost
+certainly an IDE auto-import picking the wrong symbol. It was also a transplant hazard — a weight
+loader that depends on a vector database fails on any box without chromadb installed. Now
+`from functools import lru_cache`.
+
+### The rename
+
+`get_schema(currency)` → **`get_context(currency)`**. It returns an epsilonPhi analytics context;
+`ScenarioPort.get_schema()` returns the UI's fields, options and availability set. They had nothing
+in common but the name. Spec §15.1b existed only to warn about the collision and is deleted — the
+rename removed the trap rather than documenting it.
+
+### Caching, actually fixed
+
+Three separate problems, not one:
+
+1. **`@lru_cache` on a dict argument raises.** `load_portfolio_weight_map()` returns a `dict`;
+   dicts are unhashable. `get_portfolio` now normalises to `tuple(sorted(...))` and delegates to a
+   cached private builder.
+2. **Key order.** Two dicts with the same weights in different insertion order must be one cache
+   entry. Sorting the items makes that true — verified.
+3. **The mutation hazard, which is the serious one.** A cache hands the *same instance* to every
+   caller. `SAAPortfolio` is mutable and memoises `_sigma`, `_risk_betas`, `_risk_premias`, so
+   `set_hedging_option()` on a shared instance changes the numbers every other holder sees — with
+   four columns on screen, one column silently reporting another's risk.
+
+   So **hedging is now a constructor argument and part of the cache key**, applied inside the
+   cached build rather than by the caller afterwards. `get_context` is cached unbounded (four
+   currencies); portfolios are bounded at 512.
+
+Verified with a stubbed epsilonPhi: same dict twice returns the same object, different key order
+returns the same object, different hedging returns a *different* object, and hedging is applied
+inside the build.
+
+### Spec changes
+
+- **§4.5** introduces `get_context`, shows hedging as an argument rather than a later setter, and
+  corrects the VaR shape — `get_portfolio_var_pol()` returns a risk object read via
+  `.get_VaR(p)` / `.get_CVaR(p)` / `.get_PoL(p)` for `p` in `0, 11, 33`.
+- **§9** risk dashboard now sources all three sections from portfolio methods:
+  `get_total_return()` / `get_risk()` / `get_sharpe_ratio()`, `get_factor_stress_tests()` with
+  `s.total` and `s.real`, and `get_portfolio_var_pol()`.
+- **§15.1a** rewritten. The old trap (the dict/`lru_cache` raise) is fixed in source, so it is not
+  a trap any more. The live one is the shared cached instance, and that is what it now says.
+- The table builders `get_portfolio_tbl`, `get_crisis_tbl`, `get_var_pol_tbl` and
+  `add_portfolios` are gone from the document entirely.
+
+### One place `Reporting` deliberately stays
+
+**§14, the Excel export.** `Reporting.generate_report()` produces the styled workbook, and the
+portfolio object has no export of its own — dropping it there would leave §14 unimplementable. The
+instruction was about on-screen analytics, and §4.5 now says so explicitly: compose the screen from
+the portfolio; use `Reporting` only for the workbook. If the export should also move off it, that
+is a separate change.
