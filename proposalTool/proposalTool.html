@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposal Tool</title>
+<meta name="description" content="Both steps in one page. Choose an asset allocation and compare up to four portfolios, then switch to Implementation and attach a sleeve of products to each category of the base.">
+<link rel="stylesheet" href="static/css/proposalTool.css">
+</head>
+<body class="has-rail">
+<aside class="rail" aria-label="Scenario">
+  <div class="rail-brand">
+    <b>Epsilon Phi</b>
+    <span>Portfolio Analytics</span>
+  </div>
+  <div class="rail-tiers">
+    <div class="tier" id="tier-mandate"></div>
+    <div class="tier" id="tier-basis"></div>
+    <div class="tier" id="tier-base"></div>
+
+    <div class="tier" id="tier-sleeves" hidden></div>
+
+    <div class="tier" id="tier-comparisons">
+      <div class="tier-h"><h3>Comparisons</h3>
+        <span class="tier-count" id="count">0 of 3</span></div>
+      <p class="pk-note">Add a comparison from the <strong>+</strong> column at the right of
+        the allocation table.</p>
+
+      <div class="built" id="built"></div>
+    </div>
+  </div>
+</aside>
+
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Proposal Tool</span>
+      <span class="brand-sub" id="colcount"></span>
+    </div>
+    <div class="topbar-meta">Lookup matched</div>
+  </header>
+
+  <!-- Host convention: every page surfaces API errors here. -->
+  <div id="alertArea"></div>
+
+  <!-- Landing. The page is its own front door. The hero is not decoration: it is a
+       real output of the tool - three allocations compared, drawn with the same
+       category colours the allocation table uses. -->
+  <section id="view-landing">
+    <div class="lp-inner">
+      <div class="lp-rule"></div>
+      <div class="lp-copy">
+        <p class="lp-eyebrow">Goldman Sachs &middot; Private Wealth Management</p>
+        <h1 class="lp-title"><span>Portfolio Management Group</span><span class="lp-accent">Proposal Tool</span></h1>
+        <div class="lp-spec" aria-hidden="true">
+          <span style="background:var(--cat-1)"></span>
+          <span style="background:var(--cat-2)"></span>
+          <span style="background:var(--cat-3)"></span>
+          <span style="background:var(--cat-4)"></span>
+          <span style="background:var(--cat-5)"></span>
+          <span style="background:var(--cat-6)"></span>
+          <span style="background:var(--cat-7)"></span>
+        </div>
+      </div>
+      <div class="lp-grid">
+        <div>
+          <p class="lp-lede">Build a model portfolio from a client mandate. Compare it against up to
+            three alternatives, then attach sleeves of investible products to produce the
+            implementation model.</p>
+          <button type="button" class="btn btn-primary lp-cta" id="startbtn">Start Here</button>
+        </div>
+        <ul class="lp-need">
+          <li><b>Mandate</b>Top account size and mandate size</li>
+          <li><b>Adviser</b>The Primary PWA for the mandate</li>
+          <li><b>Minimum</b>A mandate of at least $5,000,000</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="steps" id="steps" role="tablist" aria-label="Scenario steps">
+    <button type="button" class="step" data-step="aa" role="tab" aria-selected="true">
+      <span class="sn">1</span>Asset allocation</button>
+    <button type="button" class="step" data-step="impl" role="tab" aria-selected="false">
+      <span class="sn">2</span>Implementation</button>
+  </div>
+
+<div id="view-aa">
+  <div class="notices">
+    <span class="bdg b-ok">Lookup matched</span>
+    <span class="bdg b-warn">Real estate excluded &mdash; AA Type is Core</span>
+    <span class="bdg b-bind">3 of 4 portfolios</span>
+  </div>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Allocation</h2>
+      <span class="sec-note">Category subtotals with assets beneath. Rows are unioned across
+        portfolios; an asset a portfolio does not hold shows as a dash.</span>
+    </div>
+    <div class="tblwrap"><table class="tbl alloc" id="alloc"></table></div>
+    <p class="legend-note"><span>Base portfolio pinned to the first column</span>
+      <span>Maximum of four portfolios</span></p>
+  </section>
+
+  <section class="sec viz">
+    <div class="sec-head">
+      <h2>At a glance</h2>
+      <span class="sec-note">Summarises the table above. Exact values stay in the tables —
+        these are for shape and position, not for reading numbers off.</span>
+    </div>
+    <div class="viz-grid">
+      <div class="viz-card">
+        <h3>Allocation by category</h3>
+        <p class="sub">Share of each portfolio, 0 to 100%.</p>
+        <div class="viz-legend" id="viz-key"></div>
+        <div id="viz-comp"></div>
+      </div>
+      <div class="viz-card">
+        <h3>Return against volatility</h3>
+        <p class="sub">Where each portfolio sits on the risk and return plane.</p>
+        <div class="viz-legend" id="viz-key2"></div>
+        <div id="viz-rr"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Risk dashboard</h2>
+      <span class="sec-note">Three sections. Factor analytics span both sub-columns; stress periods
+        and risk premia split into Nominal and Real.</span>
+    </div>
+    <div class="tblwrap"><table class="tbl risk" id="risk"></table></div>
+  </section>
+  <aside class="spec">
+    <h4>Semantic palette</h4>
+    <p>Status colour is carried by the badge system from <code>app.css</code>, never by text colour
+      alone. Figures use <span class="pos">green</span> for positive and
+      <span class="neg">red</span> for negative, always alongside the sign.</p>
+    <div class="legend">
+      <span class="lbl">States</span>
+      <span class="bdg b-ok">Matched</span>
+      <span class="bdg b-warn">Constrained</span>
+      <span class="bdg b-breach">Below minimum</span>
+      <span class="bdg b-bind">Binding</span>
+      <span class="bdg b-slack">Not applicable</span>
+    </div>
+    <p style="margin-top:11px">Below minimum is the mandate-size hard block: under $5m the
+      scenario cannot be built and the field takes the breach treatment.</p>
+  </aside>
+</div>
+
+<div id="view-impl-wrap" hidden>
+  <section class="sec" id="view-impl"></section>
+
+  <aside class="spec">
+    <h4>What to look at</h4>
+    <p>Attach a sleeve to each category in the rail. The product table builds as you go, and the
+      download unlocks only when every category is covered.</p>
+    <p>Change the <strong>base portfolio</strong> in the rail to see the category set change —
+      Core has no Private Equity or Other Private Assets, so those categories disappear rather than
+      showing an empty row. Change the <strong>mandate size</strong> to watch every notional move.</p>
+    <p>Every printed figure derives from the printed weight: weight × mandate equals the notional
+      shown, weights sum to exactly 100.00%, and every line is a round hundred.</p>
+  </aside>
+</div>
+</div>
+<!-- Page JS last so every node it touches already exists. No module system in the
+     host, so load order is load-bearing: this file defines App, then the picker and
+     implementation layers attach to it. -->
+<!-- Mandate dialog, rendered on demand. -->
+<div id="mandateDialog" hidden></div>
+
+<script src="static/js/proposalTool.js"></script>
+</body>
+</html>
