@@ -28,6 +28,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 
 | # | File | Why |
 |---|---|---|
+| — | **`PROMPT.md`** | The kickoff instruction, for whoever hands this to a developer or an agent. Not part of the build. |
 | 0 | **`BRIEF.md`** | What you are being asked to do, in what order, and what is non-negotiable. Read it before anything else. |
 | 0.5 | **`HOST_AUDIT.md`** | How `cyrus_pmg.dashboard` is built. The back end must follow its design, because this gets transplanted there. §11, §12 and §13 are the working sections. |
 | 1 | **`spec.html`** | The complete build reference. Open in a browser. 16 sections; start with §1 Purpose, §2 Domain model, §5 Front-end architecture. |
@@ -44,6 +45,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 ```
 proposal-tool/
   README.md                  you are here
+  PROMPT.md                  the kickoff instruction to hand a developer
   BRIEF.md                   the engineering brief: scope, phasing, constraints
   HOST_AUDIT.md              how the target host is built; the back end must match it
   spec.html                  the build reference, revision 3
