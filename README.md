@@ -34,6 +34,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 | 2 | **`proposalTool/proposalTool.html`** | The working prototype. Open it directly — no server, no network. Click through the whole flow before writing anything. |
 | 3 | **`PORTING.md`** | Drop-in steps for `cyrus_pmg.dashboard`: copy the folder, add one Flask route, add one nav link. |
 | 4 | **`backend/scenario_port.py`** | The eight-method adapter you implement. This is the entire backend contract. |
+| 4.5 | **`backend/portfolio_weights.py`** | The supplied model allocations — 272 portfolios — and the loader that selects one. It is what sits behind `resolve_portfolio`. Spec §4.5. |
 | 5 | **`DECISIONS.md`** | The decision log, Q1–Q45. Read when you want to know *why* — every rule in the spec traces back to a numbered exchange here. |
 
 ---
@@ -57,6 +58,8 @@ proposal-tool/
 
   backend/
     scenario_port.py         the adapter contract, extracted from spec §4.2
+    portfolio_weights.py     the supplied weight universe + loader (spec §4.5)
+    portfolio_weights.xlsx   the same data as a workbook
 
   generator/                 development tool, does NOT ship
     build_styles.py          rewrites ../proposalTool/ ; run: python3 build_styles.py

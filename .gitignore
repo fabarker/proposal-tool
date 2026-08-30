@@ -2,3 +2,6 @@
 # generator leaves bytecode behind. Nothing here ships.
 __pycache__/
 *.pyc
+
+# Excel lock files
+~$*

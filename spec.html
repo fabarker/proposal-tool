@@ -632,7 +632,7 @@ class ScenarioPort(Protocol):
       <tr><td>2</td><td>One Flask route and one nav link</td><td>&sect;3.2</td></tr>
       <tr><td>3</td><td>Endpoints on <code>dashboardRouter.py</code> under <code>/api/v1/</code></td>
         <td>Router is already mounted</td></tr>
-      <tr><td>4</td><td>A source of stored model allocations</td>
+      <tr><td>4</td><td>A source of stored model allocations &mdash; supplied, see &sect;4.5</td>
         <td>Keyed by currency, hedging, allocation, RE, TAA, risk level</td></tr>
       <tr><td>5</td><td>An analytics engine behind <code>resolve_portfolio</code></td>
         <td>Here, <code>epsilonPhi</code></td></tr>
@@ -670,6 +670,61 @@ class ScenarioPort(Protocol):
     prototype is exactly this: all data generated client-side, with
     <code>apiFetch()</code> as the seam the real adapter replaces.</p>
 </section>
+
+  <h3><span class="n">4.5</span>The weight source</h3>
+  <p>The stored allocations are <strong>supplied</strong>, not something the implementer sources.
+    <code>backend/portfolio_weights.py</code> builds the complete universe and
+    <code>backend/portfolio_weights.xlsx</code> is the same data as a workbook. This is what sits
+    behind <code>resolve_portfolio</code>.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>Fact</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Combinations per currency</td><td><strong>84</strong> &mdash; 6 allocation variants
+        &times; 2 TAA states &times; 7 risk levels, exactly as &sect;2.1</td></tr>
+      <tr><td>Of those, with a stored portfolio</td><td><strong>68</strong>. The remaining 16 are the
+        <code>UI_MISSING</code> set: 8 (variant, risk) pairs across both TAA states</td></tr>
+      <tr><td>Total across four currencies</td><td>336 portfolios, <strong>272 available</strong>,
+        6,384 long-form rows</td></tr>
+      <tr><td>Assets</td><td>19 codes, each carrying a reporting name and a category</td></tr>
+      <tr><td>Weights</td><td>Decimal. Every available portfolio sums to <strong>exactly
+        1.0</strong> &mdash; verified across all 272</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>The loader already speaks the port's vocabulary. <code>load_portfolio_weights_from_ui()</code>
+    takes the payload shape of <code>resolve_portfolio(basis, key)</code> directly:</p>
+<pre><code># wiring resolve_portfolio to the supplied weights
+from portfolio_weights import load_portfolio_weights_from_ui
+
+rows = load_portfolio_weights_from_ui({
+    "basis": {"currency": "GBP"},
+    "key": {
+        "allocation": "Full",
+        "excludeRE":  True,
+        "excludeTAA": False,
+        "riskLevel":  "Mod Agg",
+    },
+})
+# -&gt; long-form rows: code, reporting_name, category, weight, weight_pct,
+#    category_weight, category_weight_pct, is_held</code></pre>
+
+  <p>Also available: <code>load_portfolio_weight_map()</code> for a plain
+    <code>{asset_code: weight}</code> dict, <code>load_portfolio_weights()</code> for explicit
+    keyword arguments, <code>portfolio_weights_wide()</code> for one row per portfolio, and
+    <code>validate_portfolio_weights()</code>, which raises if the arithmetic or the exclusions
+    drift. Run that in a test.</p>
+
+  <div class="rule"><p><strong>The <code>ui_available</code> column is the availability set of
+    &sect;3.4.</strong> <code>get_schema</code> must derive its availability response from it rather
+    than from a second hand-maintained list, or the UI will offer combinations that
+    <code>resolve_portfolio</code> then refuses. Pass <code>require_ui_available=True</code> and let
+    the loader be the single authority.</p></div>
+
+  <div class="rule"><p><strong>Three things in the supplied weights do not match this document.</strong>
+    They are recorded as open items 12, 13 and 14 rather than reconciled here, because each is a
+    product decision and not an implementation detail. Read them before building the allocation
+    table &mdash; two of the three change it.</p></div>
 
 <section class="block" id="s5">
   <h2 class="sec"><span class="n">5</span>Front-end architecture</h2>
@@ -1882,10 +1937,15 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
         vs UI <code>#16243A</code>/<code>#E9EDF2</code> (&sect;14.5).</td>
         <td><span class="bdg b-warn">Decision needed</span></td>
         <td>Nothing. Resolve alongside item 1.</td></tr>
-      <tr><td>3</td><td><strong>TAA modelling.</strong> Excluding it is currently a small reduction in
-        both return and volatility, and is assumed not to add or remove a category.</td>
-        <td><span class="bdg b-warn">Assumption</span></td>
-        <td>If TAA is its own line item, the tables change.</td></tr>
+      <tr><td>3</td><td><strong>TAA modelling.</strong> <s>Assumed not to add or remove a
+        category.</s> <strong>Settled by the supplied weights, against the assumption.</strong> The
+        tactical tilt (<code>LHUT1T3</code>, &ldquo;Tactical Tilt Fund&rdquo;) is its own category,
+        <em>Asset Allocation Strategies</em>. Ticking Exclude TAA drops a category outright &mdash;
+        measured on USD / Core / Mod, five categories become four.</td>
+        <td><span class="bdg b-breach">Resolved &mdash; tables change</span></td>
+        <td>The allocation table gains a category that appears and disappears with a tick box, and
+          &sect;8's &ldquo;every category needs a sleeve&rdquo; rule has to say whether this one
+          does. See open item 12.</td></tr>
       <tr><td>4</td><td><strong>Equity risk beta</strong> &mdash; <code>get_risk_betas()</code> or
         <code>get_return_betas()</code>?</td><td><span class="bdg b-warn">Parked</span></td>
         <td>A fourth row in the metrics band, if wanted.</td></tr>
@@ -1912,6 +1972,26 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
         <td>Nothing, but there is no safety net.</td></tr>
       <tr><td>11</td><td><strong>Link sharing.</strong></td><td><span class="bdg b-info">Deferred</span></td>
         <td>Nothing.</td></tr>
+      <tr><td>12</td><td><strong>Does <em>Asset Allocation Strategies</em> take a sleeve?</strong>
+        The supplied weights make TAA a category (item 3). &sect;2.6 says every category must carry a
+        sleeve before submission, and the sleeve library has none for this one. Either it is exempt,
+        or a sleeve is authored for it.</td>
+        <td><span class="bdg b-warn">Decision needed</span></td>
+        <td><strong>Step 2.</strong> The submit gate cannot be written until this is answered.</td></tr>
+      <tr><td>13</td><td><strong>No cash category in the supplied weights.</strong> &sect;2.2 lists
+        <em>Cash, Deposits &amp; Money Market Funds</em> first of seven. The supplied universe has 19
+        assets and none of them is cash; its seven categories are the other six plus <em>Asset
+        Allocation Strategies</em>. Either cash is added to the weight source, or &sect;2.2 drops it.</td>
+        <td><span class="bdg b-warn">Decision needed</span></td>
+        <td><strong>The allocation table and the sleeve set.</strong> The prototype shows a cash row;
+          on the supplied weights it would render empty.</td></tr>
+      <tr><td>14</td><td><strong>Hedging policy does not vary the weights.</strong> &sect;2.1 makes
+        hedging part of the scenario basis, fixed across columns. The supplied loader keys on
+        currency alone and has no hedging parameter. Either hedging affects only the analytics and
+        not the allocation, or a hedged weight set is missing.</td>
+        <td><span class="bdg b-warn">Decision needed</span></td>
+        <td>Nothing structural &mdash; the control stays either way. But if hedging should change
+          weights, <code>resolve_portfolio</code> is currently ignoring one of its inputs.</td></tr>
 
     </tbody>
   </table></div>
@@ -1926,6 +2006,10 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
         <td>Drop-in steps: copy the folder, add one route, add one nav link.</td></tr>
       <tr><td><code>generator/*.py</code></td>
         <td>The generator. A development tool &mdash; what ships is the generated static files.</td></tr>
+      <tr><td><code>backend/portfolio_weights.py</code></td>
+        <td>The supplied weight universe and its loader (&sect;4.5). Runnable; also a CLI.</td></tr>
+      <tr><td><code>backend/portfolio_weights.xlsx</code></td>
+        <td>The same data as a workbook &mdash; long, wide, metadata and assumption sheets.</td></tr>
       <tr><td><code>backend/scenario_port.py</code></td>
         <td>The eight-method adapter the host implements, extracted from &sect;4.2 as an importable
           module.</td></tr>

@@ -43,7 +43,7 @@ is not optional. Budget real time for it.
 | 2 | **`spec.html`** §1–§5 | What you are building and the architecture it must have. §4.3 is the sharpest page in the document: it draws the line between what must be server-supplied and what may be hardcoded. |
 | 3 | **`proposalTool/proposalTool.html`** | Open it. Click every control, resize it, tab through it. It is the behavioural reference — faster than reading §7–§9 cold. |
 | 4 | **`spec.html`** §6–§14 | The detail. §10 is exhaustive on states; §13 is the accessibility standard. |
-| 5 | **`backend/scenario_port.py`** | The eight methods. The whole backend contract. |
+| 5 | **`backend/scenario_port.py`** and **`portfolio_weights.py`** | The eight methods, and the supplied weights behind `resolve_portfolio` (spec §4.5). Read §16 items 3 and 12–14 before building the allocation table — the supplied weights contradict the spec in three places, left unreconciled on purpose. |
 | 6 | **`DECISIONS.md`** | Q1–Q45. Read when you disagree with something — nearly every rule traces to a numbered exchange with the reasoning. |
 
 ---
@@ -86,7 +86,7 @@ Cyrus needs it.
 |---|---|---|
 | Kerberos allowlist | An env-var list, as local Cyrus dev already does (`PMG_ALLOWED_KERBEROS`) | The `before_request` gate, its position in the stack, the 403 card, the `/api/whoami` probe |
 | GitLab CI / `gns` distribution | Nothing. Out of scope | — |
-| Stored model allocations | A fixtures implementation of `ScenarioPort` | The port interface. The UI must not know which implementation is behind it |
+| Stored model allocations | **Nothing — these are supplied.** `backend/portfolio_weights.py`, 272 portfolios, spec §4.5 | Drive `get_schema`'s availability from its `ui_available` column, not a second list |
 | PMG sleeve library | Same | Same |
 | Advisor directory | Excel file, as the reference adapter does | `search_advisors` signature and its 2-character threshold behaviour |
 
