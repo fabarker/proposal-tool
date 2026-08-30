@@ -2085,3 +2085,59 @@ portfolio object has no export of its own — dropping it there would leave §14
 instruction was about on-screen analytics, and §4.5 now says so explicitly: compose the screen from
 the portfolio; use `Reporting` only for the workbook. If the export should also move off it, that
 is a separate change.
+
+---
+
+## Q48 — Categories are data; the tactical tilt sleeve; no codes on screen
+
+> **You:** The categories and asset classes are not fixed, they vary depending on what is in the
+> portfolio … show the category and the reporting_name as found in the weights spreadsheet. Do not
+> show the code in any table in the ui. The Asset Allocation Strategies has a single sleeve which is
+> always attached if Tactical Tilts are included and the product is Tactical Tilt Fund. This
+> resolves section 16 items 12 and 13.
+
+### What the data actually does
+
+Checked against the supplied weights before rewriting anything:
+
+- The universe has **7 categories and 19 asset classes**. A single portfolio holds **2 to 7**.
+- With tactical tilts in: Full holds 7, Ex HFs 6, Core 5, Ex Alts 4. The narrowest portfolio in the
+  whole universe is *CHF Ex Alts All Equity ex TAA* at **two** — Other Fixed Income and Public
+  Equity.
+- *Asset Allocation Strategies* is exactly one asset, **Tactical Tilt Fund**, present in 136 of the
+  272 available portfolios — precisely the tactical-tilts-included half — and in **zero** when
+  Exclude TAA is ticked. Which is your rule, confirmed by the data.
+
+### A spec error the data exposed
+
+§2.2 said *Other Private Assets* was **RE only** for Full and Ex HFs, so excluding real estate would
+drop the category. It does not: that category holds **Private Credit as well as** Core Real Estate,
+so *Full ex RE* still has it, narrowed to Private Credit. Only Core and Ex Alts drop it, because
+neither admits private assets at all. Corrected.
+
+### Spec changes
+
+- **§2.2** rewritten as *Categories and asset classes*. Neither list is fixed; both are read from
+  the resolved portfolio. Category rows take `category`, asset-class rows take `reporting_name`.
+  The observed variant counts are given as *what the data currently is*, explicitly not as a rule to
+  encode.
+- **Never show an asset code** — its own callout in §2.2, and §9.3 column 1 now names the two
+  columns and says "never the asset code". `Ticker` stays: that is a product ticker a PWA
+  recognises, not an asset code.
+- **§2.6** gains the *Asset Allocation Strategies* row and a callout: one sleeve, one product,
+  attached automatically, rendered read-only, never an unsatisfied picker, never blocks the gate.
+- **§4.3** moves the category set firmly to *must be server-supplied*, including which categories a
+  given portfolio holds.
+- **§6.6** — the palette needed care. Slot 1 carried Cash/MMF, which does not exist in these
+  weights, so it now carries *Asset Allocation Strategies*. **Every other category keeps its colour
+  and the seven hex values are unchanged, so the validation still stands.** Added the rule that a
+  slot belongs to a category by *name*, never by position: hand slots out positionally and Public
+  Equity changes colour the moment a comparison without hedge funds is added.
+- **§8 wireframe** rebuilt on real USD / Core / Mod figures — five categories, with the tactical
+  tilt shown attached and locked. The old one showed a cash row and a "Government Money Market"
+  sleeve that cannot exist.
+- **§16 items 12 and 13 resolved.** 13's answer is that the question had the wrong shape: there is
+  no fixed list for cash to be missing from.
+
+`PROMPT.md` carries all four rules in its do-not-rediscover block, and now says items 3, 12, 13 and
+14 are resolved rather than blocking.

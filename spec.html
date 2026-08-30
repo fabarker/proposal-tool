@@ -303,25 +303,48 @@ td code,th code{white-space:nowrap}
     scenario.</strong> Not every combination has a stored portfolio; &sect;3.4 specifies how the UI
     learns which exist.</p>
 
-  <h3><span class="n">2.2</span>Categories</h3>
-  <p>Seven, in this display order. They are what sleeves attach to.</p>
+  <h3><span class="n">2.2</span>Categories and asset classes</h3>
+  <div class="rule"><p><strong>Neither list is fixed. Both are whatever the selected portfolio
+    holds.</strong> The allocation table is built from the resolved portfolio's own rows &mdash; not
+    from a category list in the UI, and not from a union across portfolios. Hardcode either and the
+    table lies the first time a variant or a risk level changes what is held.</p></div>
+  <p>Every row comes from the weight source (&sect;4.5), which carries both labels:</p>
   <div class="tw"><table>
-    <thead><tr><th>Category</th><th>Full</th><th>Ex HFs</th><th>Core</th><th>Ex Alts</th></tr></thead>
+    <thead><tr><th>Level</th><th>Column in the weights</th><th>Example</th></tr></thead>
     <tbody>
-      <tr><td>Cash, Deposits &amp; Money Market Funds</td><td>&check;</td><td>&check;</td><td>&check;</td><td>&check;</td></tr>
-      <tr><td>Investment Grade Fixed Income</td><td>&check;</td><td>&check;</td><td>&check;</td><td>&check;</td></tr>
-      <tr><td>Other Fixed Income</td><td>&check;</td><td>&check;</td><td>&check;</td><td>&check;</td></tr>
-      <tr><td>Public Equity</td><td>&check;</td><td>&check;</td><td>&check;</td><td>&check;</td></tr>
-      <tr><td>Hedge Funds</td><td>&check;</td><td>&mdash;</td><td><strong>&check;</strong></td><td>&mdash;</td></tr>
-      <tr><td>Private Equity</td><td>&check;</td><td>&check;</td><td>&mdash;</td><td>&mdash;</td></tr>
-      <tr><td>Other Private Assets</td><td>RE only</td><td>RE only</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>Category row</td><td><code>category</code></td><td>Other Private Assets</td></tr>
+      <tr><td>Asset class row, indented beneath it</td><td><code>reporting_name</code></td>
+        <td>Private Credit, Core Real Estate</td></tr>
     </tbody>
   </table></div>
-  <div class="rule"><p><strong>Real Estate is not a category.</strong> It sits inside <em>Other
-    Private Assets</em>, and <em>Exclude Real Estate</em> is the rule governing that category's
-    presence. <strong>Ex HFs and Core are near-mirrors</strong> &mdash; one drops hedge funds and
-    keeps private equity, the other does the reverse &mdash; and their names do not signal that.
-    Never abbreviate them in a control or a column header.</p></div>
+  <div class="rule"><p><strong>Never show an asset code in the UI.</strong> The weights carry a
+    <code>code</code> column &mdash; <code>LHTRYIN</code>, <code>MSEMKF$</code>,
+    <code>PE_BUYOUT</code>. It is a join key, not a label. Every table, chart, tooltip and export
+    header shows <code>reporting_name</code>. The code never reaches the screen.</p></div>
+  <p>Across the whole universe there are seven categories and nineteen asset classes. <strong>A
+    single portfolio holds between two and seven categories.</strong> What the supplied weights
+    currently yield, with tactical tilts included:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Allocation</th><th>Categories held</th></tr></thead>
+    <tbody>
+      <tr><td>Full &mdash; with or without RE</td><td>7</td></tr>
+      <tr><td>Ex HFs &mdash; with or without RE</td><td>6</td></tr>
+      <tr><td>Core</td><td>5</td></tr>
+      <tr><td>Ex Alts</td><td>4</td></tr>
+      <tr><td>The narrowest in the universe &mdash; CHF Ex Alts All Equity ex TAA</td><td><strong>2</strong>
+        &mdash; Other Fixed Income and Public Equity</td></tr>
+    </tbody>
+  </table></div>
+  <p>Read that table as <em>what the data currently is</em>, not as a rule to encode. Excluding
+    tactical tilts removes a category outright; risk level can empty one. Ask the portfolio.</p>
+  <div class="rule"><p><strong><em>Exclude Real Estate</em> does not remove <em>Other Private
+    Assets</em>.</strong> That category holds Private Credit as well as Core Real Estate, so
+    excluding RE narrows it to Private Credit rather than dropping it. Only <em>Core</em> and
+    <em>Ex Alts</em> drop the category entirely, because neither admits private assets at all.</p></div>
+  <div class="rule"><p><strong>Real Estate is not a category.</strong> It is an asset class inside
+    <em>Other Private Assets</em>. <strong>Ex HFs and Core are near-mirrors</strong> &mdash; one
+    drops hedge funds and keeps private equity, the other does the reverse &mdash; and their names
+    do not signal that. Never abbreviate them in a control or a column header.</p></div>
   <p>A category a variant does not have <strong>disappears from that column</strong>. It does not
     render as a dash. A dash means &ldquo;holds none of this asset class&rdquo;; an absent category
     means the variant has no such concept.</p>
@@ -391,10 +414,20 @@ td code,th code{white-space:nowrap}
         cannot be edited, products cannot be added or dropped</td></tr>
       <tr><td><strong>Completeness</strong></td><td><strong>Every category must carry a sleeve before
         the model can be exported</strong></td></tr>
+      <tr><td><strong><em>Asset Allocation Strategies</em></strong></td>
+        <td><strong>One sleeve, attached automatically.</strong> Its single product is the
+          <strong>Tactical Tilt Fund</strong>. The category exists only when tactical tilts are
+          included, and whenever it exists this sleeve is already on it</td></tr>
     </tbody>
   </table></div>
   <p>A sleeve's product weights sum to 1. The category's weight in the asset allocation is
     distributed proportionally across them.</p>
+  <div class="rule"><p><strong><em>Asset Allocation Strategies</em> is never a choice.</strong> It
+    has exactly one sleeve, carrying the Tactical Tilt Fund, and it is attached the moment the
+    category appears. Render it attached and read-only &mdash; not as an empty picker the PWA has to
+    satisfy, and not as a <code>.b-warn</code> &ldquo;No sleeve attached&rdquo; row. Ticking
+    <em>Exclude Tactical Asset Allocation</em> removes the category and the sleeve with it. It never
+    blocks the completeness gate.</p></div>
   <div class="rule"><p><strong>The implementation screen is a picker with a completeness gate, not
     an editable grid.</strong> This is the single largest simplification in the module. Because the
     name carries all the differentiation, a plain select per category is the honest control &mdash; a
@@ -648,14 +681,15 @@ class ScenarioPort(Protocol):
   <div class="rule"><p><strong>The schema is data, not code.</strong> Option values, labels,
     validation thresholds, the sleeve library and the availability set all arrive from the port and
     are rendered from the response. The <code>$5,000,000</code> floor, the <code>$20,000,000</code>
-    private-assets threshold, the seven categories and the six allocation variants are
+    private-assets threshold, the category set and the six allocation variants are
     <em>this firm's product rules</em>. If they live in JavaScript, the transplant means editing
     screen code.</p></div>
   <div class="tw"><table>
     <thead><tr><th>Must be server-supplied</th><th>May be hardcoded in the UI</th></tr></thead>
     <tbody>
       <tr><td>Allocation, risk level, currency, hedging options</td><td>Table structure &mdash; the three risk-dashboard sections</td></tr>
-      <tr><td>The seven category names and their order</td><td>The four-portfolio cap</td></tr>
+      <tr><td>Category and asset-class names, their order, and <em>which of them a given portfolio
+        holds</em> (&sect;2.2)</td><td>The four-portfolio cap</td></tr>
       <tr><td>Mandate thresholds ($5m, $20m)</td><td>The Nominal/Real column pairing</td></tr>
       <tr><td>The availability set</td><td>Breakpoints, focus order, ARIA wiring</td></tr>
       <tr><td>The sleeve library and every product field</td><td>Chart forms and the categorical palette</td></tr>
@@ -1038,11 +1072,19 @@ async function apiFetch(path, opts) {
   </div>
 
   <h3><span class="n">6.6</span>Chart palette</h3>
-  <p>Seven categorical slots, assigned to the seven categories in <strong>fixed order, never
-    cycled</strong>.</p>
+  <p>Seven categorical slots for the seven categories in the universe, assigned in <strong>fixed
+    order, never cycled</strong>.</p>
+  <div class="rule"><p><strong>A slot belongs to a category, not to a position.</strong> Portfolios
+    hold between two and seven categories (&sect;2.2), so the set on screen changes with the
+    selection. Key the palette on the category <em>name</em>. Hand slots out by position in whatever
+    list a portfolio happens to have, and Public Equity changes colour the moment a comparison
+    without hedge funds is added &mdash; a colour that moves is worse than no colour at all.</p></div>
+  <p>Slot 1 previously carried Cash/MMF, which the supplied weights do not have (&sect;2.2). It now
+    carries <em>Asset Allocation Strategies</em>. Every other category keeps the colour it had, and
+    the seven hex values are unchanged, so the validation below still stands.</p>
   <div class="sw-grid">
     <div class="sw"><div class="chip" style="background:#2a78d6"></div>
-      <div class="meta"><b>slot 1</b><span>#2a78d6 &middot; Cash/MMF</span></div></div>
+      <div class="meta"><b>slot 1</b><span>#2a78d6 &middot; Asset Alloc Strat</span></div></div>
     <div class="sw"><div class="chip" style="background:#eb6834"></div>
       <div class="meta"><b>slot 2</b><span>#eb6834 &middot; IGFI</span></div></div>
     <div class="sw"><div class="chip" style="background:#1baf7a"></div>
@@ -1261,25 +1303,35 @@ async function apiFetch(path, opts) {
 │ (mandate, basis, base as step 1)  ││  ┌─1 Asset allocation─┬─2 Implementation─┐ │
 ├───────────────────────────────────┤│  └────────────────────┴──────────────────┘ │
 │ SLEEVES                    3 of 5 ││                                            │
-│ Cash, Deposits & MMF        3.2%  ││  Implementing Core Mod against a mandate   │
+│ Investment Grade Fixed Inc 42.5%  ││  Implementing Core Mod against a mandate   │
 │ ┌───────────────────────────────┐ ││  of $26,000,000.                           │
-│ │ Government Money Market     ▾ │ ││  ⟨2 categories still need a sleeve⟩        │
+│ │ Funds Only                  ▾ │ ││  ⟨2 categories still need a sleeve⟩        │
 │ └───────────────────────────────┘ ││                                            │
-│ Investment Grade Fixed Inc 36.3%  ││  ┌────────────┬────────┬──────┬───┬───┬──┐ │
+│ Public Equity              41.9%  ││  ┌────────────┬────────┬──────┬───┬───┬──┐ │
 │ ┌───────────────────────────────┐ ││  │Categories &│Products│Alloc │Tkr│Sty│…│ │
-│ │ Funds Only                  ▾ │ ││  ├────────────┼────────┼──────┼───┼───┼──┤ │
-│ └───────────────────────────────┘ ││  │IG Fixed Inc│Funds…  │36.30%│   │   │  │ │ category
-│ Other Fixed Income          12.8% ││  │ IG Corporate│GS US C│16.34%│GSU│Act│  │ │ product
-│ ┌───────────────────────────────┐ ││  │ IG Corporate│Ashfiel│10.89%│AGC│Act│  │ │
-│ │ Select a sleeve…            ▾ │ ││  │ Short Durat│GS Shor│ 9.07%│GSS│Act│  │ │
-│ └───────────────────────────────┘ ││  │Public Eq   │Active-…│41.70%│   │   │  │ │
-│ …                                 ││  │ …          │        │      │   │   │  │ │
-│                                   ││  │Total       │        │100.00│   │   │  │ │
-│ 3 of 5 categories have a sleeve.  ││  └────────────┴────────┴──────┴───┴───┴──┘ │
-│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░                                                             │
-└───────────────────────────────────┘│  [ Download .xlsx ]  Attach a sleeve to    │
-                                     │  every category to enable the download.    │
-                                     └────────────────────────────────────────────┘</code></pre>
+│ │ Active-Passive              ▾ │ ││  ├────────────┼────────┼──────┼───┼───┼──┤ │
+│ └───────────────────────────────┘ ││  │IG Fixed Inc│Funds…  │42.48%│   │   │  │ │ category
+│ Hedge Funds                 5.3%  ││  │ US Dollar D│GS US C │42.48%│GSU│Act│  │ │ product
+│ ┌───────────────────────────────┐ ││  │Public Eq   │Active-…│41.89%│   │   │  │ │
+│ │ Select a sleeve…            ▾ │ ││  │ US Lg Cap G│GS Grow │ 8.12%│GSG│Act│  │ │
+│ └───────────────────────────────┘ ││  │ Emerging Mk│GS EM   │ 3.44%│GEM│Act│  │ │
+│ Other Fixed Income          5.3%  ││  │ …          │        │      │   │   │  │ │
+│ ┌───────────────────────────────┐ ││  │Hedge Funds │—       │ 5.31%│   │   │  │ │ no sleeve
+│ │ Select a sleeve…            ▾ │ ││  │Other Fixed │—       │ 5.31%│   │   │  │ │ no sleeve
+│ └───────────────────────────────┘ ││  │Asset Alloc │Tactical│ 5.00%│   │   │  │ │ auto
+│ Asset Alloc Strategies      5.0%  ││  │ Tactical Ti│Tactical│ 5.00%│TTF│Act│  │ │
+│ ┌───────────────────────────────┐ ││  │Total       │        │100.00│   │   │  │ │
+│ │ Tactical Tilt Fund       🔒   │ ││  └────────────┴────────┴──────┴───┴───┴──┘ │
+│ └───────────────────────────────┘ ││                                            │
+│ Attached automatically with TAA.  ││  [ Download .xlsx ]  Attach a sleeve to    │
+│                                   ││  every category to enable the download.    │
+│ 3 of 5 categories have a sleeve.  ││                                            │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░               ││                                            │
+└───────────────────────────────────┘└────────────────────────────────────────────┘</code></pre>
+  <p>Real figures, from USD / Core / Mod with tactical tilts included. Five categories, because
+    that is what Core holds &mdash; not because five is the number. <em>Asset Allocation
+    Strategies</em> shows as already attached and locked (&sect;2.6); it counts toward the gate and
+    can never fail it.</p>
 
   <h3><span class="n">8.2</span>Rules</h3>
   <ul>
@@ -1405,7 +1457,8 @@ portfolio total fee = Σ weighted fee</code></pre>
     <thead><tr><th>#</th><th>Column</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td>1</td><td><strong>Categories &amp; Asset Classes</strong></td>
-        <td>Row header. Category on category rows, asset class indented on product rows.
+        <td>Row header. <code>category</code> on category rows, <code>reporting_name</code> indented on
+        product rows (&sect;2.2). Never the asset code.
           <strong>Pinned</strong>, 248px</td></tr>
       <tr><td>2</td><td><strong>Products</strong></td>
         <td>Product name. On category rows, the sleeve name. <strong>Also pinned</strong>, at
@@ -2061,18 +2114,18 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
       <tr><td>11</td><td><strong>Link sharing.</strong></td><td><span class="bdg b-info">Deferred</span></td>
         <td>Nothing.</td></tr>
       <tr><td>12</td><td><strong>Does <em>Asset Allocation Strategies</em> take a sleeve?</strong>
-        The supplied weights make TAA a category (item 3). &sect;2.6 says every category must carry a
-        sleeve before submission, and the sleeve library has none for this one. Either it is exempt,
-        or a sleeve is authored for it.</td>
-        <td><span class="bdg b-warn">Decision needed</span></td>
-        <td><strong>Step 2.</strong> The submit gate cannot be written until this is answered.</td></tr>
-      <tr><td>13</td><td><strong>No cash category in the supplied weights.</strong> &sect;2.2 lists
-        <em>Cash, Deposits &amp; Money Market Funds</em> first of seven. The supplied universe has 19
-        assets and none of them is cash; its seven categories are the other six plus <em>Asset
-        Allocation Strategies</em>. Either cash is added to the weight source, or &sect;2.2 drops it.</td>
-        <td><span class="bdg b-warn">Decision needed</span></td>
-        <td><strong>The allocation table and the sleeve set.</strong> The prototype shows a cash row;
-          on the supplied weights it would render empty.</td></tr>
+        <strong>Resolved: yes, and it is never chosen.</strong> One sleeve, one product &mdash; the
+        Tactical Tilt Fund &mdash; attached automatically whenever the category is present. See
+        &sect;2.6.</td>
+        <td><span class="bdg b-ok">Resolved</span></td>
+        <td>Nothing. It must not appear as an unsatisfied picker in the completeness gate.</td></tr>
+      <tr><td>13</td><td><strong>No cash category in the supplied weights.</strong>
+        <strong>Resolved, and the question was the wrong shape.</strong> There is no fixed category
+        list to be missing from: categories and asset classes are whatever the selected portfolio
+        holds, read from the weights (&sect;2.2). Cash is simply not in this universe. The palette
+        slot it held now carries <em>Asset Allocation Strategies</em> (&sect;6.6).</td>
+        <td><span class="bdg b-ok">Resolved</span></td>
+        <td>Nothing &mdash; but any hardcoded category list in the UI is now a defect.</td></tr>
       <tr><td>14</td><td><strong>Hedging policy does not vary the weights.</strong>
         <strong>Resolved.</strong> Hedging is an <em>analytics</em> input, not an allocation one:
         it is applied to the portfolio object with
