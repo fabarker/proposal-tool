@@ -1964,3 +1964,52 @@ entries in this log.
 
 Earlier entries here still name the old paths. This is an append-only record of what was true when
 written; rewriting it would destroy the history the spec's §16.1 points readers at.
+
+---
+
+## Q46 — The portfolio object is the analytics source
+
+> **You:** i have added 2 functions to portfolio_weights.py get_schema and get_portfolio. The
+> portfolio object will be the source of analytics for any portfolio selected in the ui.
+
+`get_portfolio()` returns an `SAAPortfolio`, and that closes the last gap between a UI selection and
+a number on screen. Spec §4.5 now carries the whole chain:
+
+```
+basis + key  ->  load_portfolio_weight_map()  ->  {asset_code: weight}
+             ->  get_portfolio(currency, weights)   # SAAPortfolio, built against
+             ->  portfolio.set_hedging_option(...)  #   get_schema(currency)'s context
+             ->  get_total_return() / get_risk() / get_sharpe_ratio() / ...
+```
+
+Plus a table mapping **every figure on screen to the method that produces it** — return, volatility,
+Sharpe, risk premia, crisis periods, VaR/probability of loss, risk decomposition, category weights,
+and the $20m private-assets test. The three table builders the spec already named
+(`get_portfolio_tbl`, `get_crisis_tbl`, `get_var_pol_tbl`) are on `Reporting`, one layer up:
+`add_portfolios()` then `generate_report(include_wealth_simulations=False)`. Build tables from
+`Reporting`; take single figures from the portfolio.
+
+All 21 methods cited were checked against the source before being written down.
+
+### Open item 14 is resolved by this
+
+Hedging does not vary the weights because **it is not an allocation input** — it is applied to the
+portfolio object via `SAAPortfolio.set_hedging_option()`. The loader is right not to take it. The
+consequence is now recorded: `resolve_portfolio` must call `set_hedging_option()` after building
+the portfolio, or every column silently returns default-hedged numbers.
+
+### Two defects found in the new functions
+
+Both are in spec §15, because both fail in ways that cost time:
+
+**`@lru_cache` on a dict argument raises.** `get_portfolio(currency, weights_dict)` is cached, and
+`load_portfolio_weight_map()` returns a `dict`. Dicts are unhashable — verified:
+`TypeError: unhashable type: 'dict'` on the first call. Pass `tuple(sorted(weights.items()))` or
+drop the decorator. Not silent, but it fails at first real call rather than at import.
+
+**Two different things are called `get_schema`.** `ScenarioPort.get_schema(basis, mandate)` returns
+the *UI* schema — fields, options, availability. `portfolio_weights.get_schema(currency)` returns an
+*epsilonPhi analytics context* and feeds `SAAPortfolio.from_dict()`. They share a name and nothing
+else. Import the second under an alias.
+
+Numbered 15.1a and 15.1b rather than inserted as 15.2, so 15.2–15.10 keep their numbers.

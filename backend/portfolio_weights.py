@@ -83,7 +83,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Mapping, MutableMapping, Sequence
 
 import pandas as pd
-
+from chromadb.utils import lru_cache
 
 CURRENCIES = ("CHF", "USD", "GBP", "EUR")
 TACTICAL_TILT_CODE = "LHUT1T3"
@@ -750,6 +750,24 @@ def _variant_label_for_inputs(
     if allocation == "Full":
         return "Full ex RE" if exclude_real_estate else "Full + RE"
     return "Ex HFs ex RE" if exclude_real_estate else "Ex HFs + RE"
+
+@lru_cache
+def get_schema(currency: str):
+
+    from epsilonPhi.core.schema.Schema import ContextCreator
+    return ContextCreator(
+        currency=currency,
+    ).create_context()
+
+@lru_cache
+def get_portfolio(currency, weights_dict):
+
+    from epsilonPhi.core.portfolio.SAAPortfolio import SAAPortfolio
+    return SAAPortfolio.from_dict(
+        'Portfolio',
+        weights_dict,
+        get_schema(currency),
+    )
 
 
 def load_portfolio_weights(

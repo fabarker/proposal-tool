@@ -721,10 +721,63 @@ rows = load_portfolio_weights_from_ui({
     <code>resolve_portfolio</code> then refuses. Pass <code>require_ui_available=True</code> and let
     the loader be the single authority.</p></div>
 
-  <div class="rule"><p><strong>Three things in the supplied weights do not match this document.</strong>
-    They are recorded as open items 12, 13 and 14 rather than reconciled here, because each is a
+  <h4>From a UI selection to analytics</h4>
+  <p>The loader now carries the whole chain. <code>get_portfolio()</code> returns an
+    <code>SAAPortfolio</code>, and <strong>that object is the source of every number the tool
+    displays</strong> &mdash; the metrics band, the charts and all three sections of the risk
+    dashboard read off it.</p>
+<pre><code># the entire resolve_portfolio path
+from portfolio_weights import load_portfolio_weight_map, get_portfolio
+
+weights = load_portfolio_weight_map(          # 1. weights for the selection
+    currency="USD", allocation="Core", risk_level="Mod",
+    exclude_real_estate=True, exclude_tactical_asset_allocation=False,
+)                                             #    -&gt; {asset_code: decimal weight}
+
+portfolio = get_portfolio("USD", weights)     # 2. SAAPortfolio, built against
+                                              #    get_schema(currency)'s context
+portfolio.set_hedging_option(hedging)         # 3. apply the basis hedging policy
+
+portfolio.get_total_return()                  # 4. read the analytics off it
+portfolio.get_risk()
+portfolio.get_sharpe_ratio()</code></pre>
+
+  <p>Step 3 matters and is easy to miss: hedging reaches the numbers here, not in the weights
+    (open item 14).</p>
+
+  <h4>Where each figure on screen comes from</h4>
+  <div class="tw"><table>
+    <thead><tr><th>On screen</th><th>Method on <code>SAAPortfolio</code></th></tr></thead>
+    <tbody>
+      <tr><td>Expected return</td><td><code>get_total_return()</code></td></tr>
+      <tr><td>Volatility</td><td><code>get_risk()</code></td></tr>
+      <tr><td>Sharpe ratio</td><td><code>get_sharpe_ratio()</code></td></tr>
+      <tr><td>Risk premia</td><td><code>get_risk_premia()</code>, per asset
+        <code>get_assets_risk_premias()</code></td></tr>
+      <tr><td>Crisis periods, nominal and real (&sect;9)</td><td><code>get_factor_stress_tests()</code>
+        &mdash; <code>_extended()</code> for the longer set</td></tr>
+      <tr><td>Value at risk / probability of loss</td><td><code>get_portfolio_var_pol(confidence,
+        loss)</code></td></tr>
+      <tr><td>Risk decomposition</td><td><code>get_risk_decomposition()</code>,
+        <code>get_marginal_asset_risk_contribution()</code></td></tr>
+      <tr><td>Category weights</td><td><code>get_asset_categories()</code>, with
+        <code>get_asset_reporting_names()</code> for labels</td></tr>
+      <tr><td>The $20m private-assets test (&sect;2.5)</td><td><code>get_total_private_assets_weight()</code></td></tr>
+      <tr><td>Hedging</td><td><code>set_hedging_option()</code>,
+        <code>get_default_hedging_option()</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>The three on-screen tables the spec names &mdash; <code>get_portfolio_tbl()</code>,
+    <code>get_crisis_tbl()</code>, <code>get_var_pol_tbl()</code> &mdash; are methods on
+    <code>Reporting</code>, one layer up. Attach the portfolios with
+    <code>Reporting.add_portfolios()</code>, then those builders and
+    <code>generate_report(include_wealth_simulations=False)</code> (&sect;14) work off the same
+    objects. Build the tables from <code>Reporting</code>; take single figures from the portfolio.</p>
+
+  <div class="rule"><p><strong>Two things in the supplied weights do not match this document.</strong>
+    They are recorded as open items 12 and 13 rather than reconciled here, because each is a
     product decision and not an implementation detail. Read them before building the allocation
-    table &mdash; two of the three change it.</p></div>
+    table &mdash; both change it. Item 14 is now answered: see the chain above.</p></div>
 
 <section class="block" id="s5">
   <h2 class="sec"><span class="n">5</span>Front-end architecture</h2>
@@ -1868,6 +1921,23 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
   <p>Defensively, set <code>background-size: 11px 7px</code> on the base rule. The control still works
     when this breaks, so it survives functional testing and is found by a user.</p>
 
+  <h3><span class="n">15.1a</span><code>@lru_cache</code> on a dict argument raises</h3>
+  <p><code>get_portfolio(currency, weights_dict)</code> in
+    <code>backend/portfolio_weights.py</code> is decorated <code>@lru_cache</code>, and
+    <code>load_portfolio_weight_map()</code> returns a <code>dict</code>. Dicts are unhashable, so
+    the call raises <code>TypeError: unhashable type: 'dict'</code> the first time it is made
+    &mdash; verified. Pass a hashable form and rebuild inside:</p>
+<pre><code>portfolio = get_portfolio(currency, tuple(sorted(weights.items())))</code></pre>
+  <p>Or drop the decorator. Do not leave it as it stands: this one is not silent, but it fails at
+    the first real call rather than at import, which is a bad place to discover it.</p>
+
+  <h3><span class="n">15.1b</span>Two different things are called <code>get_schema</code></h3>
+  <p><code>ScenarioPort.get_schema(basis, mandate)</code> returns the <em>UI</em> schema &mdash;
+    field definitions, option values, the availability set (&sect;3.4).
+    <code>portfolio_weights.get_schema(currency)</code> returns an <em>epsilonPhi analytics
+    context</em> and is an argument to <code>SAAPortfolio.from_dict()</code>. They share a name and
+    nothing else. Import the second one under an alias.</p>
+
   <h3><span class="n">15.2</span>Column arithmetic</h3>
   <p>The risk dashboard's mixed colspan (&sect;9.2) and the implementation table's thirteen columns
     (&sect;9.3) are both easy to get right at one portfolio count and wrong at another.
@@ -1985,13 +2055,15 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
         <td><span class="bdg b-warn">Decision needed</span></td>
         <td><strong>The allocation table and the sleeve set.</strong> The prototype shows a cash row;
           on the supplied weights it would render empty.</td></tr>
-      <tr><td>14</td><td><strong>Hedging policy does not vary the weights.</strong> &sect;2.1 makes
-        hedging part of the scenario basis, fixed across columns. The supplied loader keys on
-        currency alone and has no hedging parameter. Either hedging affects only the analytics and
-        not the allocation, or a hedged weight set is missing.</td>
-        <td><span class="bdg b-warn">Decision needed</span></td>
-        <td>Nothing structural &mdash; the control stays either way. But if hedging should change
-          weights, <code>resolve_portfolio</code> is currently ignoring one of its inputs.</td></tr>
+      <tr><td>14</td><td><strong>Hedging policy does not vary the weights.</strong>
+        <strong>Resolved.</strong> Hedging is an <em>analytics</em> input, not an allocation one:
+        it is applied to the portfolio object with
+        <code>SAAPortfolio.set_hedging_option()</code>, which is why the weight loader has no
+        hedging parameter and is correct not to. See &sect;4.5.</td>
+        <td><span class="bdg b-ok">Resolved</span></td>
+        <td>Nothing &mdash; but <code>resolve_portfolio</code> must call
+          <code>set_hedging_option()</code> after building the portfolio, or every column silently
+          returns default-hedged numbers.</td></tr>
 
     </tbody>
   </table></div>
