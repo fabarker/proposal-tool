@@ -1,0 +1,4 @@
+# build_styles.py imports pickers / implementation / themes, so running the
+# generator leaves bytecode behind. Nothing here ships.
+__pycache__/
+*.pyc
