@@ -24,6 +24,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 
 | # | File | Why |
 |---|---|---|
+| 0 | **`BRIEF.md`** | What you are being asked to do, in what order, and what is non-negotiable. Two pages. Read it before anything else. |
 | 1 | **`spec.html`** | The complete build reference. Open in a browser. 16 sections; start with §1 Purpose, §2 Domain model, §5 Front-end architecture. |
 | 2 | **`proposalTool/proposalTool.html`** | The working prototype. Open it directly — no server, no network. Click through the whole flow before writing anything. |
 | 3 | **`PORTING.md`** | Drop-in steps for `cyrus_pmg.dashboard`: copy the folder, add one Flask route, add one nav link. |
@@ -37,6 +38,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 ```
 proposal-tool/
   README.md                  you are here
+  BRIEF.md                   the engineering brief: scope, phasing, constraints
   spec.html                  the build reference, revision 3
   PORTING.md                 dropping it into the host dashboard
   DECISIONS.md               decision log, Q1-Q45
