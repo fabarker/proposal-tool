@@ -172,17 +172,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);
 [hidden]{display:none!important}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
   clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.shell{max-width:1500px;margin:0 auto;padding:0 clamp(16px,3vw,44px) 96px}
-
-.topbar{display:flex;align-items:baseline;justify-content:space-between;gap:24px;flex-wrap:wrap;
-  padding:clamp(20px,3vw,34px) 0;border-bottom:var(--topbar-rule,1px solid var(--line));
-  margin-bottom:clamp(24px,4vw,44px)}
-.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-.brand-mark{font-family:var(--f-display);font-size:var(--brand-size,21px);color:var(--ink);
-  font-weight:var(--brand-weight,600);letter-spacing:var(--brand-ls,-.01em);
-  text-transform:var(--brand-case,none)}
-.brand-sub,.topbar-meta{font-family:var(--f-num);font-size:12px;letter-spacing:.15em;
-  text-transform:uppercase;color:var(--ink-3)}
+/* No topbar: the workspace opens straight onto the step nav. The top padding
+   is what the topbar used to contribute - enough that the first control is
+   not flush against the viewport edge. */
+.shell{max-width:1500px;margin:0 auto;padding:clamp(14px,2vw,24px) clamp(16px,3vw,44px) 96px}
 
 .sec{margin-bottom:clamp(26px,4vw,50px)}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
@@ -230,7 +223,12 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
 .btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--line-strong)}
 .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
 
-.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius)}
+/* The frame follows the table. A capped table is narrower than the document,
+   and a full-width wrapper would leave its surface and border stranded out to
+   the right of the last column. fit-content shrinks to the table and still
+   stops at the document edge, where overflow-x takes over and it scrolls. */
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);
+  width:fit-content;max-width:100%}
 .tbl{width:100%;border-collapse:collapse;font-family:var(--f-num);font-size:15px;min-width:850px}
 .tbl th,.tbl td{text-align:left;padding:var(--cell-pad);white-space:nowrap}
 .tbl .num{text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
@@ -239,6 +237,40 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
   position:sticky;top:0;z-index:2}
 .tbl thead th.sub{font-size:12px;letter-spacing:.11em;opacity:.78;border-bottom-width:1px;font-weight:600}
 .rowhead{text-align:left!important;position:sticky;left:0;z-index:3;background:var(--head-bg)}
+/* The row-header column sizes to its longest label - category names and
+   indented reporting names - and the numeric columns share the rest. In an
+   auto-layout table a small percentage width resolves to the content's
+   minimum, and cells are already nowrap. The implementation table is excluded:
+   its first two columns are pinned at their specified widths (spec 9.3). */
+.tbl:not(.impl) .rowhead,.tbl:not(.impl) tbody th{width:1%}
+/* Every portfolio column exactly the same width, whatever the column count
+   and however long the derived names are - a comparison table whose columns
+   differ in width reads as though the numbers differ in kind. Auto layout
+   cannot promise that: it honours each column's own content minimum, so the
+   columns come out within a few pixels of each other but never equal. Fixed
+   layout divides the remaining space equally by definition, so the table
+   takes it, with the row header pinned to the measured content width the
+   renderer publishes as --alloc-c1 and a min-width that keeps the equal
+   columns wide enough for the longest header (see sizeAllocColumns). */
+.tbl.alloc,.tbl.risk{table-layout:fixed}
+.tbl.alloc thead th.rowhead{width:var(--fixed-c1,25%)}
+.tbl.alloc thead th.num:not(.addcol){width:var(--fixed-col,auto)}
+/* At the column cap a long derived name wraps rather than forcing the column
+   wider - the cap is the point. Data cells stay nowrap. */
+.tbl.alloc thead th.num,.tbl.risk thead th.num{white-space:normal}
+/* The risk table declares its columns: its header cells span Nominal/Real
+   pairs, and <col> widths are the only way to split a pair exactly evenly
+   under fixed layout. */
+.tbl.risk col.col-head{width:var(--fixed-c1,25%)}
+.tbl.risk col.col-data{width:var(--fixed-col,auto)}
+/* Section bands wrap instead of forcing the first column wide enough to hold
+   "Conditional Value at Risk with 99% Confidence". */
+tr.band th{white-space:normal}
+/* the Nominal/Real strip sits in the body, where the split begins */
+tr.subhead th{background:var(--head-bg);color:var(--head-ink);font-weight:600;
+  font-size:12px;letter-spacing:.11em;text-transform:uppercase;opacity:.78;
+  border-bottom:1px solid var(--line-strong)}
+tr.subhead td{background:var(--surface);position:sticky;left:0;z-index:1}
 .tbl tbody th{position:sticky;left:0;background:var(--surface);z-index:1;font-weight:400;
   color:var(--ink-2);text-align:left}
 .base-tag{display:inline-block;margin-left:7px;font-size:11.5px;letter-spacing:.11em;padding:2px 5px;
@@ -275,6 +307,147 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
 from themes import THEMES, DEFAULTS
 from pickers import SHARED_CSS, CORE_JS, OPT_JS, PICKERS
 from implementation import IMPL_CSS, IMPL_JS
+
+# ── state chrome: loading, empty, error and responsive additions ─────────────
+# The surfaces the HTTP flip introduced (spec 10): skeleton cells, the failed
+# column, the choose-a-base panel, the basis rebuild confirmation, the schema
+# failure card, the describe() footer, and the popover's bottom-sheet form.
+STATE_CSS = r"""
+main{display:block}
+.skip-link{position:absolute;left:-9999px;top:0;z-index:200;background:var(--accent);
+  color:#fff;padding:9px 16px;border-radius:0 0 6px 0;font-family:var(--f-num);font-size:13px}
+.skip-link:focus{left:0}
+
+/* skeleton cells (spec 10.1): a 60%-width shimmer bar; static tint under
+   reduced motion */
+.skel{display:inline-block;width:60%;min-width:42px;height:12px;border-radius:3px;
+  background:linear-gradient(90deg,var(--line) 25%,var(--surface-2) 42%,var(--line) 60%);
+  background-size:200% 100%;animation:skel-sweep 1.1s linear infinite}
+@keyframes skel-sweep{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none;background:var(--line)}}
+.col-ellipsis{display:inline-block;margin-left:5px;animation:skel-blink 1.2s steps(4,end) infinite}
+@keyframes skel-blink{0%{opacity:.2}50%{opacity:1}100%{opacity:.2}}
+@media (prefers-reduced-motion:reduce){.col-ellipsis{animation:none}}
+
+/* the failed column (spec 10.3): Failed chip in the header, Retry beneath it */
+.tbl thead th .bdg{margin-left:7px;vertical-align:middle}
+.col-retry{display:block;margin:4px 0 0 auto;font:inherit;font-family:var(--f-num);
+  font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--accent);background:none;border:1px solid var(--line-strong);border-radius:3px;
+  padding:2px 8px;cursor:pointer}
+.col-retry:hover{border-color:var(--accent)}
+
+/* choose-a-base / cannot-render panels (spec 10.2, 10.3) */
+.doc-empty{background:var(--surface);border:1px dashed var(--line-strong);
+  border-radius:var(--radius);padding:44px 30px;text-align:center;
+  margin:0 0 clamp(26px,4vw,50px)}
+.doc-empty h3{margin:0 0 8px;font-family:var(--f-display);font-size:19px;color:#16243A}
+.doc-empty p{margin:0 auto;max-width:46ch;color:var(--ink-2);font-size:14.5px}
+.doc-empty .btn{margin-top:16px}
+.doc-empty-detail{margin-top:8px;color:var(--ink-3);font-size:13px}
+
+/* the Base tier's ring while no base exists (spec 10.2). The spec names the
+   accent for it; on the navy rail the accessible focus blue is the same
+   adjustment section 6.2 makes for the rail button. */
+.tier-ring{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
+
+/* basis rebuild confirmation (spec 11.4) */
+.basis-confirm{margin-top:10px;background:var(--rail-input-bg,#1D2F4B);
+  border:1px solid var(--rail-input-border,#52739C);border-radius:5px;padding:10px 12px}
+.basis-confirm p{margin:0 0 9px;font-size:13.5px;color:var(--rail-ink,#fff)}
+.basis-confirm div{display:flex;gap:8px}
+.basis-confirm .btn{padding:7px 12px;font-size:12.5px;flex:1}
+
+/* built-list status notes */
+.built-status{font-size:11.5px;color:var(--rail-ink-3);margin-left:6px}
+.built-status.err{color:#F3A9A2}
+
+/* describe() footer */
+.doc-foot{margin:26px 0 0;font-family:var(--f-num);font-size:12px;letter-spacing:.04em;
+  color:var(--ink-3)}
+
+/* popover checkboxes sit on a light ground; the .chk defaults are rail-scoped */
+.pop .chk{margin:0 0 9px}
+.pop .chk label{color:var(--ink-2)}
+.pop .chk input{background:var(--surface);border:1px solid var(--line-strong)}
+.pop .chk input:checked{background:var(--accent);border-color:var(--accent)}
+.pop .chk input:focus-visible{outline-color:var(--accent)}
+.pop .chk-note{color:var(--ink-3);margin-left:25px}
+.pop-added{color:#176A33}
+
+/* below 1040px the popover becomes a bottom sheet, and the small controls
+   grow to touch size (spec 12) */
+@media (max-width:1039px){
+  .pop.sheet{left:0!important;right:0;bottom:0;top:auto!important;width:auto;
+    border-radius:12px 12px 0 0;box-shadow:0 -8px 30px rgba(16,24,40,.25)}
+  .plus{width:44px;height:44px}
+  .pop-close{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+}
+
+/* keyboard users can scroll the wide tables (spec 13.2) */
+.tblwrap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* sleeve tier: the auto-attached row and the per-select retry */
+.sl-auto{margin:0;font-size:13.5px;color:var(--rail-ink);
+  background:var(--rail-input-bg,#1D2F4B);border:1px solid var(--rail-input-border,#52739C);
+  border-radius:4px;padding:8px 11px}
+.sl-retry{font:inherit;font-size:12px;color:var(--rail-focus,#8FB4FF);background:none;
+  border:1px solid var(--rail-input-border,#52739C);border-radius:4px;padding:4px 8px;
+  cursor:pointer;justify-self:start}
+
+/* Signed figures. These need the extra class to outrank `tr.asset td`, which
+   sets the muted row colour and is more specific than a bare .neg - which is
+   why spec 9.2's "negative figures take --red" had never actually rendered.
+   Only the stress rows carry these classes: a Value at Risk block is losses
+   by definition, so painting all of it red says nothing. */
+.tbl td.neg{color:var(--neg,#B42318)}
+.tbl td.pos{color:#1A7F37}
+
+/* The measure blocks - stress periods, VaR, CVaR, probability of loss - are
+   long runs of single figures and read better tight. The factor analytics
+   rows above them keep the standard height. */
+.tbl.risk tbody tr.asset th,.tbl.risk tbody tr.asset td{padding-top:1px;padding-bottom:1px}
+.tbl.risk tbody tr.subhead th{padding-top:2px;padding-bottom:2px}
+
+/* Remove a comparison from its own column header. The base has none: it
+   cannot be removed, only changed (spec 2.7). */
+.tbl thead th.num{position:relative;padding-right:26px}
+.col-rm{position:absolute;top:2px;right:3px;width:22px;height:22px;padding:0;
+  display:flex;align-items:center;justify-content:center;border:0;border-radius:3px;
+  background:none;color:var(--ink-3);font-family:var(--f-num);font-size:15px;
+  line-height:1;cursor:pointer}
+.col-rm:hover{color:var(--neg,#B42318);background:var(--surface-2)}
+.col-rm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* Collapsing the rail. It folds to a strip that still carries the control, so
+   the way back is always in view, and the document reclaims the width. */
+.rail-brand{position:relative;padding-right:44px}
+/* --rail-input-border is the value spec 6.2 substituted for the house one
+   precisely because it clears 3:1 against the navy; the rail's own divider
+   colour would leave this control invisible. */
+.rail-toggle{position:absolute;top:14px;right:8px;width:28px;height:28px;padding:0;
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--rail-input-border,#52739C);
+  border-radius:4px;background:none;color:var(--rail-ink-2);font-size:14px;line-height:1;
+  cursor:pointer}
+.rail-toggle:hover{color:var(--rail-ink);background:var(--rail-input-bg,#1D2F4B)}
+.rail-toggle:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:2px}
+body.rail-collapsed .rail{width:var(--rail-w-collapsed,48px)}
+body.rail-collapsed .rail-tiers{display:none}
+body.rail-collapsed .rail-brand{padding:14px 0 12px;border-bottom:none}
+body.rail-collapsed .rail-brand b,body.rail-collapsed .rail-brand span{display:none}
+body.rail-collapsed .rail-toggle{position:static;margin:0 auto}
+body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max-width:none}
+@media (max-width:1039px){
+  .col-rm{width:44px;height:44px;top:0;right:0}
+  .tbl thead th.num{padding-right:46px}
+  body.rail-collapsed .rail{width:auto}
+  body.has-rail.rail-collapsed .shell{margin-left:0}
+}
+
+.alert-info{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3}
+.impl-foot .bdg{margin-left:10px}
+"""
 
 
 # ---------------------------------------------------------------- assembly --
@@ -346,12 +519,25 @@ PAGE_SHELL = """<!doctype html>
 <link rel="stylesheet" href="static/css/{slug}.css">
 </head>
 <body class="has-rail">
+<!-- Host convention: accessGate.js first so the sign-in overlay can render,
+     then globals.js which sets API_BASE. Absolute paths, served by the host's
+     Flask process; opened from file:// they 404 harmlessly and the page's own
+     typeof guard keeps API_BASE working. -->
+<script src="/static/js/accessGate.js"></script>
+<script src="/static/js/globals.js"></script>
+<a class="skip-link" href="#main">Skip to content</a>
+<!-- Live regions: present from first paint, or they are never announced. -->
+<div id="live-polite" class="sr-only" aria-live="polite"></div>
+<div id="live-assertive" class="sr-only" aria-live="assertive"></div>
 <aside class="rail" aria-label="Scenario">
   <div class="rail-brand">
-    <b>Epsilon Phi</b>
-    <span>Portfolio Analytics</span>
+    <b>Portfolio Management Group</b>
+    <span>Proposal Tool</span>
+    <button type="button" class="rail-toggle" id="railtoggle" aria-expanded="true"
+            aria-controls="rail-tiers" aria-label="Collapse the scenario panel"
+            title="Collapse the scenario panel"><span aria-hidden="true">&#171;</span></button>
   </div>
-  <div class="rail-tiers">
+  <div class="rail-tiers" id="rail-tiers">
     <div class="tier" id="tier-mandate"></div>
     <div class="tier" id="tier-basis"></div>
     <div class="tier" id="tier-base"></div>
@@ -368,17 +554,20 @@ PAGE_SHELL = """<!doctype html>
   </div>
 </aside>
 
-<div class="shell">
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">Proposal Tool</span>
-      <span class="brand-sub" id="colcount"></span>
-    </div>
-    <div class="topbar-meta">Lookup matched</div>
-  </header>
-
+<main class="shell" id="main">
   <!-- Host convention: every page surfaces API errors here. -->
   <div id="alertArea"></div>
+
+  <!-- Schema failure: the page cannot render without field options, so this
+       replaces everything until Retry succeeds (spec 10.3). -->
+  <section id="view-schema-error" hidden>
+    <div class="doc-empty">
+      <h3>The Proposal Tool could not load</h3>
+      <p>The scenario schema is unavailable, and every control depends on it.</p>
+      <p class="doc-empty-detail" id="schema-error-reason"></p>
+      <button type="button" class="btn btn-primary" id="schema-retry">Retry</button>
+    </div>
+  </section>
 
   <!-- Landing. The page is its own front door. The hero is not decoration: it is a
        real output of the tool - three allocations compared, drawn with the same
@@ -425,13 +614,19 @@ PAGE_SHELL = """<!doctype html>
 <div id="view-aa">
 {chrome}
 
+  <!-- Mandate set, no base chosen yet: the rail's Base tier carries a ring
+       and this panel says what to do (spec 10.2). -->
+  <div class="doc-empty" id="doc-empty" hidden>
+    <h3>Choose a base portfolio</h3>
+    <p>Pick an allocation and risk level in the rail to build the first column.</p>
+  </div>
+
   <section class="sec">
     <div class="sec-head">
       <h2>Allocation</h2>
-      <span class="sec-note">Category subtotals with assets beneath. Rows are unioned across
-        portfolios; an asset a portfolio does not hold shows as a dash.</span>
     </div>
-    <div class="tblwrap"><table class="tbl alloc" id="alloc"></table></div>
+    <div class="tblwrap" tabindex="0" aria-label="Allocation table, scrolls horizontally">
+      <table class="tbl alloc" id="alloc"></table></div>
     <p class="legend-note"><span>Base portfolio pinned to the first column</span>
       <span>Maximum of four portfolios</span></p>
   </section>
@@ -464,26 +659,20 @@ PAGE_SHELL = """<!doctype html>
       <span class="sec-note">Three sections. Factor analytics span both sub-columns; stress periods
         and risk premia split into Nominal and Real.</span>
     </div>
-    <div class="tblwrap"><table class="tbl risk" id="risk"></table></div>
+    <div class="tblwrap" tabindex="0" aria-label="Risk dashboard, scrolls horizontally">
+      <table class="tbl risk" id="risk"></table></div>
   </section>
 {postamble}
 </div>
 
 <div id="view-impl-wrap" hidden>
   <section class="sec" id="view-impl"></section>
+</div>
 
-  <aside class="spec">
-    <h4>What to look at</h4>
-    <p>Attach a sleeve to each category in the rail. The product table builds as you go, and the
-      download unlocks only when every category is covered.</p>
-    <p>Change the <strong>base portfolio</strong> in the rail to see the category set change \u2014
-      Core has no Private Equity or Other Private Assets, so those categories disappear rather than
-      showing an empty row. Change the <strong>mandate size</strong> to watch every notional move.</p>
-    <p>Every printed figure derives from the printed weight: weight \u00d7 mandate equals the notional
-      shown, weights sum to exactly 100.00%, and every line is a round hundred.</p>
-  </aside>
-</div>
-</div>
+  <!-- describe(): data version, source, as-of - for support and
+       reproducibility (spec 4, the port's describe method). -->
+  <p class="doc-foot" id="doc-foot" hidden></p>
+</main>
 <!-- Page JS last so every node it touches already exists. No module system in the
      host, so load order is load-bearing: this file defines App, then the picker and
      implementation layers attach to it. -->
@@ -538,12 +727,16 @@ async function apiFetch(path, opts) {
                            Object.assign({credentials: 'same-origin'}, opts || {}));
     if (!resp.ok) {
         var msg = 'Request failed (' + resp.status + ')';
+        var body = null;
         try {
-            var body = await resp.json();
+            body = await resp.json();
             if (body && body.loginUrl) { window.location = body.loginUrl; return; }
             if (body && body.error) msg = body.error;
         } catch (e) { /* non-JSON error body */ }
-        throw new Error(msg);
+        var err = new Error(msg);
+        err.status = resp.status;   // callers map 422 field errors and 404s
+        err.body = body;
+        throw err;
     }
     return resp.json();
 }
@@ -552,8 +745,10 @@ async function apiFetch(path, opts) {
 BOOT_JS = """
 // Bootstrap. The script tag sits at the end of <body>, so the DOM is parsed by
 // the time this runs; the readyState guard covers a deferred load anyway.
+// App.boot() paints the landing at once, fetches the schema, and rehydrates
+// from a ?scenario= id when one is present (spec 11.1, 11.8).
 (function () {
-    function boot() { App.refresh(); }
+    function boot() { App.boot(); }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot);
     } else {
@@ -574,7 +769,7 @@ def build_assets(th):
     """
     picker = PICKERS.get(th.get("picker", "table"), {})
     css = "\n".join([
-        vars_css(th["v"]), BASE_CSS, RAIL_CSS, SHARED_CSS,
+        vars_css(th["v"]), BASE_CSS, RAIL_CSS, SHARED_CSS, STATE_CSS,
         picker.get("css", ""),
         IMPL_CSS if th.get("implementation") else "",
         th["extra"],
@@ -594,13 +789,8 @@ def build_assets(th):
     return html, css, js
 
 
-def main():
-    th = THEMES[0]
-    html, css, js = build_assets(th)
-
-    # the generator sits in generator/; the page folder is its sibling, so that
-    # PORTING.md's "copy the folder" is literal
-    root = os.path.join(os.path.dirname(ROOT), SLUG)
+def _write_page(root, html, css, js):
+    """Write one complete page folder (html, css, js, fonts) under *root*."""
     for sub in ("static/css", "static/js", "static/fonts"):
         os.makedirs(os.path.join(root, sub), exist_ok=True)
 
@@ -619,7 +809,25 @@ def main():
                 shutil.copyfile(os.path.join(src, name),
                                 os.path.join(root, "static", "fonts", name))
 
-    print("Wrote {}/ - html {:,}  css {:,}  js {:,} bytes".format(
+
+def main():
+    th = THEMES[0]
+    html, css, js = build_assets(th)
+
+    # the generator sits in generator/; the page folder is its sibling, so that
+    # PORTING.md's "copy the folder" is literal
+    root = os.path.join(os.path.dirname(ROOT), SLUG)
+    _write_page(root, html, css, js)
+
+    # the service mirror serves the same folder from its dashboard directory,
+    # exactly where the host will; writing it too makes every build a rehearsal
+    # of PORTING.md's "copy the folder" step
+    mirror = os.path.join(os.path.dirname(ROOT), "service", "cyrus_pmg",
+                          "dashboard", SLUG)
+    if os.path.isdir(os.path.dirname(mirror)):
+        _write_page(mirror, html, css, js)
+
+    print("Wrote {}/ (+ service mirror) - html {:,}  css {:,}  js {:,} bytes".format(
         SLUG, len(html), len(css), len(js)))
 
 

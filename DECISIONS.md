@@ -2141,3 +2141,104 @@ neither admits private assets at all. Corrected.
 
 `PROMPT.md` carries all four rules in its do-not-rediscover block, and now says items 3, 12, 13 and
 14 are resolved rather than blocking.
+
+---
+
+## Q49 — The build, then the analytics profile
+
+> **You:** Build the Epsilon Phi Proposal Tool, front end and back end, working end to end
+> … later: run a profile on the code to figure out why it takes so long to generate the
+> analytics and propose a solution … implement Tier 0 and Tier 1.
+
+The tool is built and runs end to end. The back end lives in `service/`, a mirror of the
+host topology named `cyrus_pmg` so every import is already in its transplanted form:
+Flask gate and `/api/<x>` → `/api/v1/<x>` proxy, FastAPI service, the scenario endpoints as
+a block for `dashboardRouter.py`, and the `scenario` package behind them. `service/README.md`
+is the operating guide, `service/TRANSPLANT.md` the porting list, `service/DEVIATIONS.md`
+the deviation register.
+
+### The profile
+
+A cold portfolio cost **~255s**. Phase-by-phase `cProfile` put **168s of it in one
+function**, `AssetReturnEstimator.calc_return_betas`, and most of that in work that does not
+depend on the portfolio, the asset, or the currency. Full numbers in
+`service/PERFORMANCE.md`. Four causes:
+
+1. **Asset-independent work inside a per-asset loop.** The rolling 60-observation regression
+   re-orthogonalised the factor window on every step, for every asset — 6,810 sklearn fits in
+   the returns phase alone — though the window depends only on the model and its dates.
+2. **Results computed and discarded.** `orth_X`'s only consumer was its standard deviation;
+   the regression used the *un*-orthogonalised matrix. And `convert_asset_to_currency` — a
+   real FX computation — was used only to reach `.schema`, which is the same object as
+   `asset.schema`.
+3. **Cache lifetime and key.** The beta cache was process-level, so every start paid again;
+   its key carried `hedging_ratio`, which the computation never used, and omitted the schema,
+   whose currency and window the inputs do depend on.
+4. **A per-portfolio floor of ~27s** that no asset-level caching can touch: the stressed
+   returns panel, sigma and bootstrap paths are rebuilt per portfolio.
+
+### Tier 0 — fix the estimator, bit-identically
+
+Memoised the per-window statistic in a shared `_window_cache`, dropped the discarded
+conversion, and re-keyed the cache on what the computation reads. **Cold portfolio 255s →
+96.6s; switching hedging policy 66s → 27.8s.** Guarded by
+`service/tests/test_tier0_beta_equivalence.py`, which re-implements the original verbatim and
+asserts equality — live output is unchanged to the digit.
+
+### Tier 1 — stop computing at request time
+
+The tool is a lookup over a closed space (Q2): 68 combinations per currency × 4 hedging
+policies. `scenario/bake.py` computes them once per data version into one JSON slice per
+(currency, hedging); `scenario/bakedAdapter.py` serves them, behind
+`SCENARIO_ADAPTER=baked`, falling through to live analytics for anything unbaked.
+
+**All 272 USD portfolios are baked** — four workers, 2,148s, zero failures, ~1MB. A cold
+process serves any of them in **~15ms end to end** against 96,600ms live, with no database.
+The 200ms skeleton threshold is now never reached, so skeletons no longer appear; §10.1's
+design is intact, the case it was written for has stopped happening.
+
+### Two findings for the model owner
+
+- **`hedging_ratio` has never affected return betas** — verified identical at 0.0, 0.5 and
+  1.0, because the converted asset was discarded. If betas are meant to vary with the hedge,
+  that is a model change, and the cache key must regain the ratio in the same commit. Hedging
+  still reaches risk and VaR through the risk estimator.
+- **This database carries currency configs for USD and GBP only** at dataversion 1. CHF and
+  EUR raise `'odict_values' object has no attribute 'risk_free_rate'`, because
+  `configUtil.get_config` returns *all* values as its default when a key is missing. The UI
+  offers four currencies because the supplied weights carry four. Restrict the list, or load
+  the missing rows.
+
+---
+
+## Q50 — Interface refinements
+
+> **You:** a sequence of changes through the morning — ground colour, cell padding, column
+> widths, the base column header, the risk dashboard's structure, colouring, the rail, and
+> the topbar.
+
+Each is recorded in `service/DEVIATIONS.md` (D20–D28) with the specification section it
+touches. In summary:
+
+| Change | Note |
+|---|---|
+| Workspace ground now `#FBFCFE`, the landing's colour | §7.1 held them deliberately apart; the landing now reads `var(--bg)` so they cannot drift |
+| `--cell-pad` `10px 15px` → `4px 15px`; risk measure rows tighter still | No spec counterpart; density only |
+| Row-header and Products columns size to content | §9.3 pinned them at 248px; the sticky offset is now measured and published as `--impl-c1` |
+| Portfolio columns exactly equal, capped at 260px | Auto layout cannot promise equality — it honours each column's content minimum — so both comparison tables are laid out fixed from measured widths |
+| Table frames follow the table | `.tblwrap` is `fit-content`, so a capped table no longer strands its surface to the right |
+| Base column headed **Proposed Portfolio** | §9.1's `.b-bind` "Base" chip is gone; the derived name survives as tooltip and `aria-label` |
+| Nominal/Real moved into the body, under the stress band | §9.2 had it in the header, where it claimed a split the factor rows above do not have |
+| Risk premia split into three measure blocks, horizons read "Over 1 Month" | Follows `get_var_pol_tbl`'s own shape rather than one flat "Portfolio Risk Premia" band |
+| Colour only on stress rows | §9.2 says all negatives take `--red`; a Value at Risk block is losses by definition, so painting it red says nothing |
+| Rail renamed, collapsible, per-column remove control | §7.2's rail brand and §12's fixed 352px; removal now also available from the column it removes |
+| Topbar dropped | §7.2's wireframe carried it; its live status survives as the first chip in the notices strip |
+
+**One bug this surfaced.** `tr.asset td` sets the muted row colour and is more specific than
+a bare `.neg`, so §9.2's "negative figures take `--red`" had never actually rendered —
+anywhere, since the prototype. Fixed with `.tbl td.neg`.
+
+**Baked payloads were relabelled, not re-baked.** The premia grouping and the "Over …"
+horizons changed the labels but no figure, so the 272 payloads were rewritten in place by a
+script that asserted each entry matched its expected position and that every number came
+through byte-identical. A re-bake produces the same result; it just costs 36 minutes.

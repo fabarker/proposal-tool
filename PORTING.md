@@ -82,20 +82,59 @@ curl -sI http://localhost:8001/proposalTool/static/fonts/gs-sans-variable.woff2
 | **Inline SVG charts, not Chart.js from CDN.** | Self-contained, so nothing breaks on a network that blocks `cdn.jsdelivr.net`. |
 | **Local woff2 fonts** rather than the system stack. | The house faces. `@font-face` URLs are `../fonts/*`, relative to the stylesheet, which resolves identically under the Flask route and from `file://`. |
 | **Relative `href`/`src` in the HTML** rather than absolute `/proposalTool/...`. | Resolves to the same URL under the Flask route, and keeps the page openable from disk for review. |
+| **`accessGate.js` and `globals.js` are included** with absolute `/static/js/...` paths. | Host convention, and the auth gate the brief requires. These are the host's own shared modules at the host's own paths; opened from `file://` they 404 harmlessly and the page's `typeof API_BASE` guard keeps working. |
 
-## Backend, when the data is wired
+The interface moved on from the specification in a number of places while it was being built
+— the topbar is gone, the base column is headed "Proposed Portfolio", the risk dashboard's
+premia are banded by measure, and the tables size their own columns.
+**`spec.html` revision 4 describes what is there now**, and its §1.5 maps every changed
+section to the entry in **`service/DEVIATIONS.md`** (D20–D28) that explains it.
 
-The page currently generates its data client-side. `apiFetch()` in the JS is the seam.
+## Backend
 
-Endpoints go on `pmgService/dashboardRouter.py` under `/api/v1/` — the Flask proxy rewrites
-`/api/<x>` to `/api/v1/<x>`, so the page calls `/api/scenario/...` and the router serves
-`/api/v1/scenario/...`. The proxy's `timeout=300` comfortably covers the ~5s analytics call.
+**The back end is built.** It is no longer a seam to fill: the page fetches everything through
+`apiFetch()`, and the service behind it lives in `service/` as a mirror of this host's
+topology, written to be copied in. Two verbatim copies and two documented inserts —
+**`service/TRANSPLANT.md` is the file-by-file list**, and it contains configuration only.
 
-Writes need `Depends(requireEditor)`; reads inherit `requireAuth` from the router.
+| | |
+|---|---|
+| The page folder | copy as above — it needs no edits |
+| `pmgService/scenario/` | copy verbatim: the port, both adapters, the rules, the store, the bake |
+| `pmgService/dashboardRouter.py` | insert the scenario endpoint block, already written in host style |
+| `dashboardFrontend.py`, `index.html` | the route and nav link above |
+
+Endpoints sit under `/api/v1/` — the Flask proxy rewrites `/api/<x>`, so the page calls
+`/api/scenario/...`. Writes take `Depends(requireEditor)`; reads inherit `requireAuth`.
+
+Which data layer serves them is one environment variable, `SCENARIO_ADAPTER`:
+
+| | Data | Cold resolve | Database |
+|---|---|---:|---|
+| `fixtures` | supplied weights, synthetic analytics | ~0ms | no |
+| `epsilonphi` | live analytics | ~97s | yes |
+| `baked` | precomputed epsilonPhi results | **~15ms** | no |
+
+`baked` is the production setting: the analytics are computed once per data version by an
+offline job and served from disk. See `service/PERFORMANCE.md` for why, and for the profile
+that got a cold portfolio from 255s to milliseconds.
 
 ## Not addressed
 
-- **No tests.** The dashboard package has none, and this page adds none to the host. The four
-  suites used during development run under a DOM shim outside the repo.
+- **No tests reach the host.** The dashboard package has none and this adds none to it; the
+  suite lives on the epsilon-phi side, in `service/tests/`.
 - **`dataversion`.** Every `epsilonPhi` config table is keyed on `currency` + `dataversion`. Which
-  version the adapter reads is a host concern; no control is surfaced.
+  version the adapter reads is a host concern; no control is surfaced. It does decide when the
+  bake is stale — re-bake when it changes.
+- **Currency coverage.** On the development database only USD and GBP have currency configs,
+  so CHF and EUR cannot resolve at all. The UI offers four because the supplied weights carry
+  four. A host decision: restrict the list, or load the rows.
+
+## Where the rest is written down
+
+| File | What it carries |
+|---|---|
+| `service/README.md` | running it, the wire contract, the three adapters, baking |
+| `service/TRANSPLANT.md` | the porting list, file by file |
+| `service/DEVIATIONS.md` | every departure from the package, D1–D28, and the spec gaps found |
+| `service/PERFORMANCE.md` | the analytics profile, its causes, and the measurements |

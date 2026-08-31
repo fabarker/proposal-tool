@@ -1,5 +1,11 @@
 # Engineering brief — Epsilon Phi Proposal Tool
 
+> **Status: built (31 Aug 2026).** This brief is kept as issued — it records what was asked
+> and in what order, and the phasing below is what was followed. For what now exists, read
+> `service/README.md`; for how it departs from this package, `service/DEVIATIONS.md`; for the
+> analytics work the brief could only ask for ("measure it and record the number"),
+> `service/PERFORMANCE.md`.
+
 **To:** the engineer building this, working independently
 **With:** this directory. Everything you need is in it. Start at `README.md`, then read this.
 
@@ -44,7 +50,7 @@ is not optional. Budget real time for it.
 | 3 | **`proposalTool/proposalTool.html`** | Open it. Click every control, resize it, tab through it. It is the behavioural reference — faster than reading §7–§9 cold. |
 | 4 | **`spec.html`** §6–§14 | The detail. §10 is exhaustive on states; §13 is the accessibility standard. |
 | 5 | **`backend/scenario_port.py`** and **`portfolio_weights.py`** | The eight methods, and the supplied weights behind `resolve_portfolio` (spec §4.5). Read §16 items 3 and 12–14 before building the allocation table — the supplied weights contradict the spec in three places, left unreconciled on purpose. |
-| 6 | **`DECISIONS.md`** | Q1–Q45. Read when you disagree with something — nearly every rule traces to a numbered exchange with the reasoning. |
+| 6 | **`DECISIONS.md`** | Q1–Q50. Read when you disagree with something — nearly every rule traces to a numbered exchange with the reasoning. |
 
 ---
 

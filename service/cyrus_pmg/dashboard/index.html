@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PMG Dashboard</title>
+</head>
+<body style="margin:0; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f4f7fa;">
+<script src="/static/js/accessGate.js"></script>
+<script src="/static/js/globals.js"></script>
+    <div class="header" style="background:linear-gradient(135deg, #1a365d 0%, #2c5282 100%); color:white; padding:18px 28px; display:flex; align-items:center; justify-content:space-between; box-shadow:0 2px 8px rgba(0,0,0,0.12);">
+        <h1 style="font-size:22px; font-weight:600; margin:0;">📊 PMG Dashboard <span style="font-weight:400; font-size:14px; opacity:.75;">(epsilon-phi mirror)</span></h1>
+        <div style="display:flex; gap:12px; align-items:center;">
+            <a href="/proposalTool/proposalTool.html"
+               style="color:white; text-decoration:none; font-size:14px; padding:8px 16px;
+                      border:1px solid rgba(255,255,255,0.4); border-radius:8px;
+                      transition:background 0.2s;"
+               onmouseover="this.style.background='rgba(255, 255, 255, 0.15)'"
+               onmouseout="this.style.background='transparent'">📐 Proposal Tool</a>
+        </div>
+    </div>
+    <div style="max-width:900px; margin:40px auto; padding:0 24px; color:#1c2733;">
+        <p>This is the development mirror of the <code>cyrus_pmg</code> dashboard. The only page
+           it carries is the Proposal Tool, reachable from the nav button above — the same nav
+           link the host's <code>index.html</code> gains at port time.</p>
+    </div>
+</body>
+</html>

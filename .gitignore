@@ -5,3 +5,10 @@ __pycache__/
 
 # Excel lock files
 ~$*
+
+# Runtime state, written by start_dashboard.sh and the bake. Nothing here is
+# source: logs, pidfiles, and the baked analytics, which are derived from the
+# database and keyed to a dataversion. Rebuild with
+#   python3 -m cyrus_pmg.pmgService.scenario.bake --all
+# or, with no database, --adapter fixtures.
+service/var/
