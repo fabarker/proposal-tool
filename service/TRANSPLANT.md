@@ -47,8 +47,13 @@ live resolves and bakes simply cost ~2.6× more.
 What the host swaps later, behind unchanged functions, when real sources
 arrive — all internal to the package, no caller changes:
 
-* `sleeves.py` tables → the PMG-maintained sleeve library (data ownership is
-  the flagged open PMG question).
+* `sleeves.py` tables → the PMG-maintained sleeve library, **for all four
+  implementation variants** (data ownership is the flagged open PMG question).
+  `BASELINE` plus `_VARIANT_OFFERS` compose into `SLEEVE_LIBRARY`; the only
+  contract the rest of the package depends on is `VARIANTS`, `listSleeves(
+  category, variant)` and `sleeveExists(category, name, variant)`. The three
+  non-Multi-Asset libraries are invented — spec open item 18, and the one
+  thing here that must not reach a client as it stands (D29).
 * `advisors.py` workbook read → the production advisor table (open item 7).
 * `portfolio_weights.py` synthetic anchors → approved stored allocations (the
   module's own docstring: "replace the constants before production use").

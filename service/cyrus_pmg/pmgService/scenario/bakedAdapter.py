@@ -128,16 +128,17 @@ class BakedScenarioPort:
             'enable the live analytics fallback.'.format(
                 rules.portfolioName(basis, key), basis.currency, basis.hedging))
 
-    def list_sleeves(self, category: str, basis: BasisInput):
-        return sleeves.listSleeves(category)
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str):
+        return sleeves.listSleeves(category, variant)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:
         if self._delegate is not None:
             return self._delegate.build_export(basis, mandate, portfolios, implementation)
         sleevesMap = (implementation or {}).get('sleeves', {})
+        variant = (implementation or {}).get('variant')
         return writeFixturesWorkbook(basis, mandate, list(portfolios), sleevesMap,
-                                     rules.AUTO_SLEEVE_CATEGORIES)
+                                     rules.AUTO_SLEEVE_CATEGORIES, variant)
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

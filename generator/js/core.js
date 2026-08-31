@@ -21,6 +21,9 @@ var state = {
   schemaError: null,
   step: 'aa',                       /* 'aa' | 'impl' */
   columns: [],                      /* index 0 is always the base; see makeColumn */
+  basisChosen: false,               /* the PWA has answered currency + hedging */
+  implSeen: false,                  /* step 2 has been opened at least once */
+  variant: null,                    /* implementation variant; gates step 2 (D29) */
   sleeves: {},                      /* category -> sleeve name (pickable categories only) */
   sleeveLib: {},                    /* category -> {status, sleeves, error} */
   exporting: { status: 'idle', error: null },
@@ -95,12 +98,29 @@ function canEdit() { return opt('capabilities.canEdit', true); }
 function canExport() { return opt('capabilities.canExport', true); }
 function autoSleeveCategories() { return opt('rules.autoSleeveCategories', []); }
 
-/* Derived naming (the template is hardcodable; the values are not - spec 4.3). */
+/* The display name for a risk level. The value stays what the schema sent -
+   it is the fourth field of the portfolio key and keys the bake - so the UI
+   shows the label and submits the value. Falls back to the value itself, so a
+   level the map has not been told about still reads sensibly (D35). */
+function riskLabel(value) {
+  var labels = opt('options.riskLevelLabels', null);
+  return (labels && labels[value]) || value;
+}
+
+/* Derived naming (the template is hardcodable; the values are not - spec 4.3).
+   Order is risk level, then allocation, then exclusions, with the currency in
+   front of the full form: "USD Moderate-Aggressive Core ex TAA". The risk
+   level prints through riskLabel, so the name says what the rail says.
+
+   Built from the KEY, never from the payload's own name or header fields.
+   Those are frozen into the baked slices, so a naming change would show on
+   some surfaces and not others until a re-bake; deriving from the key makes
+   the screen consistent the moment the rule changes (D36). */
 function headerName(k) {
   var suffix = '';
   if (k.excludeRE && reAllowed(k.allocation)) suffix += ' ex RE';
   if (k.excludeTAA) suffix += ' ex TAA';
-  return k.allocation + ' ' + k.riskLevel + suffix;
+  return riskLabel(k.riskLevel) + ' ' + k.allocation + suffix;
 }
 function fullName(k) { return state.basis.currency + ' ' + headerName(k); }
 
@@ -242,7 +262,7 @@ function startResolve(col) {
     col.skel = false;
     settleRebuilding();
     if (col.role === 'base') { onBaseReady(); }
-    announce('polite', (col.data.header || headerName(col.key)) + ' ready.');
+    announce('polite', headerName(col.key) + ' ready.');
     refresh();
   }).catch(function (err) {
     if (err && err.name === 'AbortError') return;
@@ -331,6 +351,14 @@ function setBase(key) {
   if (old) abortColumn(old);
 
   var col = makeColumn(key, 'base');
+  /* Carry the outgoing base's figures onto the incoming one. A base edit
+     replaces the column object rather than re-resolving it in place, so
+     without this the new column has no data at all, drops out of
+     shownColumns, and the table collapses to skeletons for the ~20ms the
+     resolve takes - the whole section shrinking and springing back, which
+     reads as the page flashing. Held only until the real figures land. */
+  if (old && old.data) col.data = old.data;
+
   var rest = state.columns.slice(1).filter(function (c) {
     if (keyEq(c.key, key)) {
       abortColumn(c);
@@ -462,6 +490,7 @@ function revalidateSleeves() {
    render the freshly-set loading state themselves; the async settle calls
    refresh(). */
 function ensureSleeveLib(category, onReady) {
+  if (!state.variant) return;     /* nothing to list until a variant is chosen */
   var entry = state.sleeveLib[category];
   if (entry) {
     if (entry.status === 'ready' && onReady) onReady(entry);
@@ -469,6 +498,7 @@ function ensureSleeveLib(category, onReady) {
   }
   state.sleeveLib[category] = { status: 'loading', sleeves: [], error: null };
   apiFetch('/scenario/sleeves?category=' + encodeURIComponent(category)
+      + '&variant=' + encodeURIComponent(state.variant)
       + '&currency=' + encodeURIComponent(state.basis.currency)
       + '&hedging=' + encodeURIComponent(state.basis.hedging))
     .then(function (body) {
@@ -483,6 +513,30 @@ function ensureSleeveLib(category, onReady) {
       };
       refresh();
     });
+}
+
+/* The variant decides which sleeves exist and what they contain, so changing
+   it invalidates every cached library and every choice made from one. Both go
+   in the same turn as the PUT, which clears the server's map too (D29). */
+function setVariant(name) {
+  if (!canEdit()) return;
+  if (!name || name === state.variant) return;
+  var had = Object.keys(state.sleeves).length;
+  state.variant = name;
+  state.sleeveLib = {};
+  state.sleeves = {};
+  if (state.scenarioId) {
+    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variant: name })
+    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  }
+  announce('assertive', had
+    ? 'Implementation variant set to ' + name + '. ' + had
+      + ' sleeve choice' + (had === 1 ? '' : 's') + ' cleared - the library has changed.'
+    : 'Implementation variant set to ' + name + '.');
+  refresh();
 }
 
 function chooseSleeve(category, name) {
@@ -670,6 +724,9 @@ async function boot() {
       state.scenarioId = stored.id;
       state.mandate = stored.mandate;
       state.basis = stored.basis;
+      state.variant = stored.variant || null;
+      /* a scenario with columns has already been through the basis step */
+      state.basisChosen = !!(stored.base || (stored.comparisons || []).length);
       state.sleeves = stored.sleeves || {};
       state.phase = 'workspace';
       await fetchSchema();                /* now with the mandate size */
@@ -735,16 +792,27 @@ function renderBasis() {
   var el = document.getElementById('tier-basis'); if (!el) return;
   var showing = state.basisDraft || state.basis;
   var disabled = !schemaReady() || !canEdit() ? ' disabled' : '';
+  /* Until both are answered the tier carries the ring, and the selects show a
+     placeholder rather than a default. The scenario does hold a basis - it has
+     to, the schema is fetched against one - but presenting that as a chosen
+     answer invites the PWA to skip a decision the whole comparison rests on. */
+  var pending = !state.basisChosen;
+  el.className = 'tier' + (pending && state.phase === 'workspace' ? ' tier-ring' : '');
+  var placeholder = '<option value="" selected>Select…</option>';
   var html = '<div class="tier-h"><h3>Scenario basis</h3></div>'
     + '<div class="basis">'
     + '<div class="field"><label for="ccy">Currency</label><select id="ccy"' + disabled + '>'
+    + (pending ? placeholder : '')
     + opt('options.currencies', []).map(function (c) {
-        return '<option' + (c === showing.currency ? ' selected' : '') + '>' + esc(c) + '</option>';
+        return '<option' + (!pending && c === showing.currency ? ' selected' : '') + '>'
+          + esc(c) + '</option>';
       }).join('')
     + '</select></div>'
     + '<div class="field"><label for="hedge">Hedging</label><select id="hedge"' + disabled + '>'
+    + (pending ? placeholder : '')
     + opt('options.hedgingPolicies', []).map(function (c) {
-        return '<option' + (c === showing.hedging ? ' selected' : '') + '>' + esc(c) + '</option>';
+        return '<option' + (!pending && c === showing.hedging ? ' selected' : '') + '>'
+          + esc(c) + '</option>';
       }).join('')
     + '</select></div></div>';
   if (state.basisDraft) {
@@ -775,8 +843,12 @@ function renderBase() {
   var exRE = key ? key.excludeRE : (allocation ? (canRE ? pending.excludeRE : true) : false);
   var exTAA = key ? key.excludeTAA : pending.excludeTAA;
   var risk = key ? key.riskLevel : pending.riskLevel;
-  var disabled = !schemaReady() || !canEdit() ? ' disabled' : '';
-  var ring = (state.phase === 'workspace' && !base) ? ' tier-ring' : '';
+  /* The basis comes first. Until it is answered these controls are inert and
+     the ring stays on the tier above - two tiers competing for attention tells
+     the PWA nothing about which to answer first. */
+  var locked = !state.basisChosen;
+  var disabled = (!schemaReady() || !canEdit() || locked) ? ' disabled' : '';
+  var ring = (state.phase === 'workspace' && !base && !locked) ? ' tier-ring' : '';
 
   var allocationOptions = (allocation ? '' :
       '<option value="" selected>Select…</option>')
@@ -792,15 +864,19 @@ function renderBase() {
         var ok = probe ? available(probe) : true;
         return '<option value="' + esc(r) + '"'
           + (r === risk ? ' selected' : '') + (ok ? '' : ' disabled') + '>'
-          + esc(r) + (ok ? '' : ' — unavailable') + '</option>';
+          + esc(riskLabel(r)) + (ok ? '' : ' — unavailable') + '</option>';
       }).join('');
 
   el.className = 'tier' + ring;
-  el.innerHTML = '<div class="tier-h"><h3>Base portfolio</h3>'
-    + '<span class="tier-count">Column 1</span></div>'
+  /* Allocation, then risk level, then the two exclusions: the selects are the
+     choice, the tick boxes narrow what it produced. */
+  el.innerHTML = '<div class="tier-h"><h3>Base portfolio</h3></div>'
     + '<div class="basis" style="grid-template-columns:1fr">'
     + '<div class="field"><label for="bpa">Allocation</label><select id="bpa"' + disabled + '>'
     + allocationOptions + '</select></div>'
+    + '<div class="field"><label for="bpr">Risk level</label><select id="bpr"'
+    + (allocation && canEdit() && schemaReady() ? '' : ' disabled') + '>'
+    + riskOptions + '</select></div>'
     + '<div class="chk"><input type="checkbox" id="bpre"'
     + ((allocation && !canRE) || exRE ? ' checked' : '')
     + ((allocation && canRE && canEdit()) ? '' : ' disabled')
@@ -813,11 +889,7 @@ function renderBase() {
     + (exTAA ? ' checked' : '') + (allocation && canEdit() ? '' : ' disabled') + '>'
     + '<label for="bptaa">Exclude Tactical Asset Allocation</label></div>'
     + '<p class="chk-note">TAA is included in every allocation by default.</p>'
-    + '<div class="field"><label for="bpr">Risk level</label><select id="bpr"'
-    + (allocation && canEdit() && schemaReady() ? '' : ' disabled') + '>'
-    + riskOptions + '</select></div></div>'
-    + '<p class="field-note" style="margin-top:8px">Changing the base rebuilds column one. '
-    + 'A comparison that duplicates it is dropped.</p>';
+    + '</div>';
 }
 
 function renderBuilt() {
@@ -838,14 +910,21 @@ function renderBuilt() {
   }
 }
 
+/* The strip is exception-only: it says something when something is wrong or
+   in flight, and nothing at all when the answer is simply "fine" (D34). The
+   settled "Lookup matched" chip is gone - a table full of resolved figures
+   already says the lookup matched - as is the portfolio count, which the
+   rail's Comparisons tier carries. What remains is what has no other surface:
+   a failure aggregate, and the whole-page rebuild of spec 10.1. */
 function lookupStatus() {
   if (!state.columns.length) return null;
   var failed = state.columns.filter(function (c) { return c.status === 'error'; }).length;
   var loading = state.columns.filter(function (c) { return c.status === 'loading'; }).length;
   if (failed) return { cls: 'b-breach', text: failed + ' column' + (failed === 1 ? '' : 's') + ' failed' };
-  if (state.rebuilding) return { cls: 'b-bind', text: 'Rebuilding ' + state.columns.length + ' portfolios…' };
-  if (loading) return { cls: 'b-bind', text: 'Resolving…' };
-  return { cls: 'b-ok', text: 'Lookup matched' };
+  /* Waiting is the spinner's job now, not a pill. A pill for a transient state
+     grew the notices strip and shifted the document under the reader; a
+     failure is persistent and worth the space, so it stays. */
+  return null;
 }
 
 function renderNotices() {
@@ -861,8 +940,8 @@ function renderNotices() {
     pieces.push('<span class="bdg b-warn">Real estate excluded — Allocation is '
       + esc(base.key.allocation) + '</span>');
   }
-  pieces.push('<span class="bdg b-bind">' + state.columns.length + ' of '
-    + opt('rules.maxPortfolios', 4) + ' portfolios</span>');
+  /* Nothing to say: the strip takes no room rather than sitting there empty. */
+  if (!pieces.length) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   el.innerHTML = pieces.join('\n');
 }
@@ -872,12 +951,33 @@ function readyColumns() {
   return state.columns.filter(function (c) { return c.status === 'ready'; });
 }
 
+/* What the document may DRAW, as against what has finished resolving.
+
+   A column that is re-resolving still holds the figures from last time, and
+   showing them until the new ones land is what keeps a change like ticking
+   Exclude TAA from tearing the page down. Judging by status alone emptied the
+   union, so the table fell back to blank skeleton rows and the charts section
+   hid itself - which shunted everything below it up and back, and is what made
+   the whole page appear to flash on a change that touches two rows.
+
+   A column that has never resolved has nothing to show and is still excluded,
+   so a genuinely new column skeletons exactly as spec 10.1 says. */
+function shownColumns() {
+  return state.columns.filter(function (c) {
+    return c.status === 'ready' || (c.status === 'loading' && c.data);
+  });
+}
+
+function holdsPreviousData(col) {
+  return col.status === 'loading' && !!col.data;
+}
+
 /* Union of categories over ready columns, in the schema's universe order,
    then any stragglers in first-seen order. Assets union per category keeps
    first-seen order (spec 2.2: rows come from the weight source). */
 function unionRows() {
   var order = opt('categories', []);
-  var ready = readyColumns();
+  var ready = shownColumns();
   var categories = [];
   var index = {};
   function categoryEntry(name) {
@@ -919,7 +1019,9 @@ function categoryOf(col, name) {
    asset class; blank - the variant does not have the category at all.
    Loading columns take a shimmer cell after 200ms; error columns a dash. */
 function cellFor(col, categoryName, assetName) {
-  if (col.status === 'loading') return col.skel ? '<span class="skel"></span>' : '';
+  if (col.status === 'loading' && !holdsPreviousData(col)) {
+    return col.skel ? '<span class="skel"></span>' : '';
+  }
   if (col.status === 'error') return '—';
   var category = categoryOf(col, categoryName);
   if (!category) return '';
@@ -931,7 +1033,9 @@ function cellFor(col, categoryName, assetName) {
 }
 
 function metricCell(col, kind) {
-  if (col.status === 'loading') return col.skel ? '<span class="skel"></span>' : '';
+  if (col.status === 'loading' && !holdsPreviousData(col)) {
+    return col.skel ? '<span class="skel"></span>' : '';
+  }
   if (col.status === 'error') return '—';
   var metrics = col.data.metrics;
   if (kind === 'ret') return num(metrics.estimatedReturnPct, 2, '%');
@@ -970,7 +1074,7 @@ function columnHeadCell(col, i, scope) {
     + (col.status === 'loading' ? ' aria-busy="true"' : '')
     + ' title="' + esc(fullName(col.key)) + '"'
     + ' aria-label="' + esc(fullName(col.key)) + '">'
-    + esc(label) + extra + remove + '</th>';
+    + '<span class="col-head">' + esc(label) + extra + remove + '</span></th>';
 }
 
 function renderAlloc() {
@@ -986,7 +1090,7 @@ function renderAlloc() {
   var plus = App.plusColumn && canEdit()
     && state.columns.length < opt('rules.maxPortfolios', 4) && state.columns.length > 0;
   var html = '<caption class="sr-only">Portfolio allocation and metrics</caption><thead><tr>'
-    + '<th scope="col" class="rowhead">Asset</th>';
+    + '<th scope="col" class="rowhead">Asset Class</th>';
   state.columns.forEach(function (col, i) { html += columnHeadCell(col, i, 'col'); });
   if (plus) {
     html += '<th scope="col" class="num addcol"><button type="button" id="plusbtn" '
@@ -994,10 +1098,16 @@ function renderAlloc() {
   }
   html += '</tr></thead><tbody>';
 
-  function row(cls, label, cellFn) {
-    var r = '<tr class="' + cls + '"><th scope="row">' + esc(label) + '</th>'
+  /* Every cell's content sits in an inline-block wrapper so a row can be
+     collapsed to nothing and back (animateRowChanges). inline-block, not
+     block: sizeFixedColumns measures column widths with the table in auto
+     layout, where a block child would claim the full column and the
+     measurement would be meaningless. */
+  function row(cls, label, cellFn, key) {
+    var r = '<tr class="' + cls + '"' + (key ? ' data-rk="' + esc(key) + '"' : '')
+      + '><th scope="row"><span class="cw">' + esc(label) + '</span></th>'
       + state.columns.map(function (col) {
-          return '<td class="num">' + cellFn(col) + '</td>';
+          return '<td class="num"><span class="cw">' + cellFn(col) + '</span></td>';
         }).join('');
     if (plus) r += '<td class="num addcol"></td>';
     return r + '</tr>';
@@ -1014,23 +1124,245 @@ function renderAlloc() {
     union.forEach(function (category) {
       html += row('cat', category.name, function (col) {
         return cellFor(col, category.name, null);
-      });
+      }, 'c:' + category.name);
       category.assets.forEach(function (assetName, si) {
         html += row('asset' + (si % 2 ? ' alt' : ''), assetName, function (col) {
           return cellFor(col, category.name, assetName);
-        });
+        }, 'a:' + category.name + ':' + assetName);
       });
     });
   }
+  /* The total and metric rows are keyed as well. They never come or go, but a
+     leaving row is placed before the next KEYED row, and a category at the
+     foot of the union has none after it - so without these its ghost fell
+     through to appendChild and faded out below Volatility instead of in
+     place. */
   html += row('total', 'Total', function (col) {
     if (col.status === 'loading') return col.skel ? '<span class="skel"></span>' : '';
     if (col.status === 'error') return '—';
     return '100.0%';
-  });
+  }, 't:total');
   METRIC_ROWS.forEach(function (m) {
-    html += row('metric', m[0], function (col) { return metricCell(col, m[1]); });
+    html += row('metric', m[0], function (col) { return metricCell(col, m[1]); },
+      'm:' + m[0]);
   });
-  el.innerHTML = html + '</tbody>';
+  /* Rows that come and go are animated individually; the table's height then
+     follows its own content, which is what makes the movement read as the row
+     arriving rather than as a gap closing after it has already gone. */
+  animateRowChanges(el, function () {
+    el.innerHTML = html + '</tbody>';
+  });
+}
+
+/* Animate the rows a re-render adds or drops.
+
+   The earlier version of this animated the WRAPPER's height instead. That was
+   wrong in a way that showed: innerHTML replaced the rows instantly, so on a
+   removal the row vanished and you watched an empty gap close behind it. Here
+   the leaving row is put back into the new table and collapsed, the entering
+   row starts collapsed and opens, and the table's height changes because its
+   content does - no box animation at all.
+
+   Rows are matched by data-rk. A row cannot be transitioned itself
+   (display:table-row does not interpolate) so what animates is each cell's
+   block padding and the max-height of the .cw wrapper inside it, which
+   together account for the whole row height. */
+var rowSnapshots = {};                  /* per table, held across a render pair */
+
+function animateRowChanges(table, mutate) {
+  var slot = table.id || 'table';
+  var reduced = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* One change renders twice: optimistically while the column is loading, and
+     again when the resolve lands. The snapshot is taken on the first of those
+     and HELD, so the animation runs once, against the true before and after.
+     Animating on both instead wiped the in-flight rows halfway through and
+     restarted them, which is why the exit never finished.
+
+     Ghosts are excluded: they carry data-rk because they are clones of real
+     rows, and counting them would make the next render try to remove them
+     again. */
+  if (!reduced && !rowSnapshots[slot]) {
+    rowSnapshots[slot] = { keys: {}, order: [] };
+    var old = table.querySelectorAll('tbody tr[data-rk]:not([data-ghost])');
+    for (var i = 0; i < old.length; i++) {
+      var key = old[i].getAttribute('data-rk');
+      rowSnapshots[slot].keys[key] = { node: old[i].cloneNode(true), height: old[i].offsetHeight };
+      rowSnapshots[slot].order.push(key);
+    }
+  }
+
+  mutate();
+  if (reduced) { rowSnapshots[slot] = null; return; }
+
+  /* Still settling: keep the snapshot and animate on the render that lands. */
+  if (state.columns.some(function (c) { return c.status === 'loading'; })) return;
+
+  var snap = rowSnapshots[slot];
+  var before = snap ? snap.keys : {};
+  var order = snap ? snap.order : [];
+  rowSnapshots[slot] = null;
+
+  var body = table.querySelector('tbody');
+  if (!body) return;
+
+  /* Nothing was there before: this is the table being populated, not rows
+     coming and going within it. Opening every row from collapsed would make
+     the table grow under the sections beneath it and shove them down the page
+     - which is exactly what the first resolve looked like. The whole document
+     fades in together instead (renderStageChrome). */
+  if (!order.length) return;
+
+  var now = body.querySelectorAll('tr[data-rk]:not([data-ghost])');
+  var present = {};
+  var entering = [];
+  for (var n = 0; n < now.length; n++) {
+    var k = now[n].getAttribute('data-rk');
+    present[k] = now[n];
+    if (!(k in before)) entering.push(now[n]);
+  }
+
+  /* Leaving rows go back where they were, then collapse. Reinstated in their
+     original order so a dropped category does not reappear at the bottom. */
+  for (var o = 0; o < order.length; o++) {
+    var goneKey = order[o];
+    if (present[goneKey]) continue;
+    var ghost = before[goneKey].node;
+    ghost.setAttribute('data-ghost', '1');
+    var after = null;
+    for (var f = o + 1; f < order.length; f++) {
+      if (present[order[f]]) { after = present[order[f]]; break; }
+    }
+    if (after) body.insertBefore(ghost, after); else body.appendChild(ghost);
+    openRow(ghost, before[goneKey].height);
+    void ghost.offsetHeight;                  /* commit the open state first */
+    collapseRow(ghost, true);
+  }
+
+  /* Rows that stay put but whose figures changed: fade the new value in.
+     Every weight shifts when a category is added or dropped, and swapping
+     them under the reader is the same abruptness as swapping a whole row.
+     Only cells whose text actually differs are touched, so a re-render that
+     changes nothing stays completely still. */
+  for (var p = 0; p < order.length; p++) {
+    var stayKey = order[p];
+    var live = present[stayKey];
+    if (!live || !before[stayKey]) continue;
+    var wasCells = before[stayKey].node.querySelectorAll('.cw');
+    var nowCells = live.querySelectorAll('.cw');
+    if (wasCells.length !== nowCells.length) continue;
+    for (var q = 0; q < nowCells.length; q++) {
+      if (wasCells[q].textContent === nowCells[q].textContent) continue;
+      fadeValue(nowCells[q]);
+    }
+  }
+
+  /* Entering rows start collapsed and open on the next frame. */
+  /* A forced reflow rather than requestAnimationFrame: the start state has to
+     be committed before the end state is set or no transition begins, and rAF
+     does not fire at all in a background tab - which would leave rows stuck
+     collapsed rather than merely un-animated. */
+  entering.forEach(function (tr) {
+    var target = tr.offsetHeight;
+    collapseRow(tr, false, true);             /* start closed, no animation */
+    void tr.offsetHeight;                     /* commit that */
+    openRow(tr, target);                      /* then open, with one */
+  });
+}
+
+/* Fade a changed figure in. The new text is already in the DOM, so this
+   starts it transparent with no transition, commits that, then eases it up -
+   the same commit-the-start-state dance the row animations need. */
+function fadeValue(wrap) {
+  wrap.style.transition = 'none';
+  wrap.style.opacity = '0';
+  void wrap.offsetWidth;
+  wrap.style.transition = 'opacity var(--value-motion,var(--row-motion))';
+  wrap.style.opacity = '1';
+  window.clearTimeout(wrap._fadeTimer);
+  /* the cleanup has to outlast the fade, or it strips the transition
+     mid-flight and the value snaps to full opacity */
+  wrap._fadeTimer = window.setTimeout(function () {
+    wrap.style.transition = '';
+    wrap.style.opacity = '';
+  }, 2000);
+}
+
+function rowCells(tr) {
+  return tr.querySelectorAll(':scope > th, :scope > td');
+}
+
+/* Collapsed: no block padding, no content height. `remove` schedules the row
+   for deletion once it has finished closing. */
+var ROW_CELL_TRANSITION =
+  'padding var(--row-motion),line-height var(--row-motion),border-width var(--row-motion)';
+
+/* `instant` applies the collapsed state with no transition. An entering row
+   needs that: given a transition, the collapse itself animates and the open
+   that follows simply reverses it, so the row never leaves full height. */
+function collapseRow(tr, remove, instant) {
+  var cells = rowCells(tr);
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i];
+    cell.style.transition = instant ? 'none' : ROW_CELL_TRANSITION;
+    cell.style.paddingTop = '0px';
+    cell.style.paddingBottom = '0px';
+    /* The wrapper's max-height empties the cell's CONTENT, but a table cell
+       still reserves a line box for its strut and keeps its border - together
+       about 23 of the row's 29 pixels. Both have to collapse or the row stops
+       shrinking most of the way through. */
+    cell.style.lineHeight = '0';
+    cell.style.borderTopWidth = '0';
+    cell.style.borderBottomWidth = '0';
+    var wrap = cell.querySelector('.cw');
+    if (!wrap) continue;
+    wrap.style.transition = instant
+      ? 'none' : 'max-height var(--row-motion),opacity var(--row-motion)';
+    wrap.style.maxHeight = '0px';
+    wrap.style.opacity = '0';
+  }
+  if (!remove) return;
+  var settle = function () {
+    window.clearTimeout(tr._rowTimer);
+    if (tr.parentNode) tr.parentNode.removeChild(tr);
+  };
+  tr.addEventListener('transitionend', function (e) {
+    if (e.propertyName === 'max-height') settle();
+  });
+  tr._rowTimer = window.setTimeout(settle, 1600);
+}
+
+/* Open to a measured height, then hand the row back to the stylesheet so it
+   is not left pinned to a pixel value. */
+function openRow(tr, height) {
+  var cells = rowCells(tr);
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i];
+    cell.style.transition = ROW_CELL_TRANSITION;
+    cell.style.paddingTop = '';
+    cell.style.paddingBottom = '';
+    cell.style.lineHeight = '';
+    cell.style.borderTopWidth = '';
+    cell.style.borderBottomWidth = '';
+    var wrap = cell.querySelector('.cw');
+    if (!wrap) continue;
+    wrap.style.transition = 'max-height var(--row-motion),opacity var(--row-motion)';
+    wrap.style.maxHeight = (height || 40) + 'px';
+    wrap.style.opacity = '1';
+  }
+  window.clearTimeout(tr._openTimer);
+  tr._openTimer = window.setTimeout(function () {
+    if (tr.getAttribute('data-ghost')) return;      /* on its way out */
+    for (var j = 0; j < cells.length; j++) {
+      cells[j].style.transition = '';
+      cells[j].style.lineHeight = '';
+      cells[j].style.borderTopWidth = '';
+      cells[j].style.borderBottomWidth = '';
+      var w = cells[j].querySelector('.cw');
+      if (w) { w.style.transition = ''; w.style.maxHeight = ''; w.style.opacity = ''; }
+    }
+  }, 1000);
 }
 
 /* Both comparison tables are laid out fixed so every data column is exactly
@@ -1051,6 +1383,7 @@ function sizeFixedColumns(table, dataCells, skip) {
   var heads = table.querySelectorAll('thead tr:first-child th');
   var wrap = table.parentNode;
   if (!heads.length || !wrap) return;
+  if (sizingCanWait(table)) return;
 
   /* The wrapper shrink-wraps the table, so asking it how much room there is
      would just measure the table we are about to size. Stretch it for the
@@ -1060,6 +1393,17 @@ function sizeFixedColumns(table, dataCells, skip) {
   var available = wrap.clientWidth;
   wrap.style.width = wrapWidth;
   if (available <= 0) return;                    /* hidden: size on the next pass */
+
+  /* The measurement below runs the table through width:auto, and a transition
+     cannot interpolate out of auto - the box would jump while the columns
+     eased. So the transition is suppressed across the measurement, the old
+     pixel width is restored, layout is forced, and only then is the
+     transition put back. The final assignment is px to px, which animates. */
+  var previousWidth = table.style.width;
+  var previousC1 = table.style.getPropertyValue('--fixed-c1');
+  var previousCol = table.style.getPropertyValue('--fixed-col');
+  var previousTransition = table.style.transition;
+  table.style.transition = 'none';
 
   /* Measure with the table free to shrink, or every column reports the
      stretched width it was given rather than the width its content needs.
@@ -1082,7 +1426,11 @@ function sizeFixedColumns(table, dataCells, skip) {
   for (var i = 1; i < heads.length; i++) {
     if (heads[i] !== skipped) counted += dataCells;
   }
-  if (!counted) { table.style.tableLayout = ''; table.style.width = ''; return; }
+  if (!counted) {
+    table.style.tableLayout = ''; table.style.width = '';
+    table.style.transition = previousTransition;
+    return;
+  }
 
   var share = (available - headerWidth - skippedWidth) / counted;
   var columnWidth = Math.min(MAX_DATA_COLUMN, Math.max(MIN_DATA_COLUMN, share));
@@ -1096,9 +1444,26 @@ function sizeFixedColumns(table, dataCells, skip) {
   var each = Math.floor(columnWidth);
   var total = c1 + each * counted + Math.ceil(skippedWidth);
 
+  /* Put every measured value back where it was, with the transition still
+     off, before re-enabling it - so what the browser animates is one pixel
+     value to another.
+
+     The custom properties matter as much as the width here. They are
+     registered as <length>, so the 'auto' the measurement writes is invalid
+     for them and falls back to the 0px initial value; re-enabling the
+     transition from that state made the columns sweep up from nothing on
+     EVERY render, including renders where the widths had not changed at all.
+     Restoring the previous pixels first means an unchanged width animates
+     from itself - which is to say, it does not move. */
+  table.style.tableLayout = 'fixed';
+  if (previousWidth) table.style.width = previousWidth;
+  if (previousC1) table.style.setProperty('--fixed-c1', previousC1);
+  if (previousCol) table.style.setProperty('--fixed-col', previousCol);
+  void table.offsetWidth;
+  table.style.transition = previousTransition;
+
   table.style.setProperty('--fixed-c1', c1 + 'px');
   table.style.setProperty('--fixed-col', each + 'px');
-  table.style.tableLayout = 'fixed';
   table.style.width = total + 'px';
   table.style.minWidth = '0';
 }
@@ -1126,17 +1491,139 @@ function toggleRail() {
   try { window.localStorage.setItem(RAIL_PREF, railCollapsed ? '1' : '0'); } catch (e) {}
   renderRailToggle();
   /* the document just changed width, and the columns share what it has */
-  sizeComparisonTables();
+  trackRailMotion();
+}
+
+/* The fold is animated, so the document's width now arrives over ~280ms
+   rather than all at once, and sizeComparisonTables has to run against the
+   width the document ends up with. It runs once, when the rail says it has
+   stopped.
+
+   It does NOT run per frame. One pass costs ~18ms measured on the four-column
+   allocation and risk tables together - past the 16.7ms frame budget on its
+   own - so re-measuring during the slide would halve the frame rate to smooth
+   a change that usually is not there at all: the data columns sit at
+   MAX_DATA_COLUMN whenever the document has room, so widening the document by
+   folding the rail leaves the table exactly as it was. Where the columns are
+   share-constrained and the width does move, it moves once, as the slide
+   settles, which reads as the table coming to rest rather than as a jump. */
+function trackRailMotion() {
+  var rail = document.querySelector('.rail');
+  var reduced = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!rail || reduced) { sizeComparisonTables(); return; }
+
+  var pending = true;
+  function settle(e) {
+    if (e && e.propertyName && e.propertyName !== 'width') return;
+    if (!pending) return;
+    pending = false;
+    rail.removeEventListener('transitionend', settle);
+    sizeComparisonTables();
+  }
+  rail.addEventListener('transitionend', settle);
+  /* transitionend does not arrive if the transition never starts - a hidden
+     rail, a zero duration, a fold interrupted by another click, a background
+     tab throttling its frames - so the pass is bounded rather than left
+     waiting on an event that may not come. */
+  window.setTimeout(settle, 700);
 }
 
 /* Sizing runs after the renderers, because a table inside a step that is
    still hidden measures zero. Re-runs on resize, since the equal share
    depends on how much room the document has. */
+/* Sizing is deferred while any column is still resolving.
+
+   A change like ticking Exclude TAA renders twice: once optimistically, while
+   the column is loading and the row set is momentarily different, and again
+   when the resolve lands. Measuring both times sent column one out to one
+   width and straight back - the visible "narrows, then returns" - for a change
+   that ends where it started. Measuring only settled columns means the widths
+   move once, or not at all when nothing about them changed.
+
+   The exception is a table that has never been sized: it has no widths to
+   hold, so the first pass runs whatever the column states are. */
+function sizingCanWait(table) {
+  if (!table.style.getPropertyValue('--fixed-col')
+      && !table.style.getPropertyValue('--risk-col')) return false;
+  return state.columns.some(function (c) { return c.status === 'loading'; });
+}
+
 function sizeComparisonTables() {
   var alloc = document.getElementById('alloc');
   var risk = document.getElementById('risk');
   if (alloc && alloc.rows.length) sizeFixedColumns(alloc, 1, 'thead th.addcol');
-  if (risk && risk.rows.length) sizeFixedColumns(risk, 2, null);
+  if (risk && risk.rows.length) sizeRiskColumns(risk);
+}
+
+/* The risk dashboard sizes on its own rule, not the allocation table's.
+
+   Its first column holds the crisis names - "US Inflation / Iranian
+   Revolution" is the longest - and those must never be clipped or run under
+   the first portfolio's Nominal column. So column one is LOCKED to what its
+   widest cell needs plus a gutter, the data columns take what is left down to
+   a floor, and below that floor the table stops shrinking and the wrapper
+   scrolls. That is what lets four portfolios x two sub-columns survive a
+   narrow document.
+
+   AUTO layout, not fixed, and the widths go on the cells as min/max rather
+   than on the <col> elements. Fixed layout would not take direction here:
+   with the header row carrying colspan=2 pairs, neither a width on <col> nor
+   one on the first cell moved the column - both computed correctly and the
+   browser laid it out at the data width regardless. Auto layout honours a
+   min-width/max-width pair on a cell exactly, which is all this needs. */
+var MIN_RISK_DATA_COLUMN = 92;      /* a Nominal or Real cell: "-100.00%" */
+var RISK_HEAD_GUTTER = 20;          /* breathing room after the longest name */
+
+function sizeRiskColumns(table) {
+  var wrap = table.parentNode;
+  if (!wrap) return;
+  if (sizingCanWait(table)) return;
+
+  var wrapWidth = wrap.style.width;
+  wrap.style.width = '100%';
+  var available = wrap.clientWidth;
+  wrap.style.width = wrapWidth;
+  if (available <= 0) return;                  /* hidden: size on a later pass */
+
+  /* Measure with nothing pinned, or each cell reports the width it was last
+     given rather than the width its content needs. */
+  table.style.removeProperty('--risk-c1');
+  table.style.removeProperty('--risk-col');
+  table.style.tableLayout = 'auto';
+  table.style.width = 'auto';
+  table.style.minWidth = '0';
+
+  /* The widest thing column one has to hold. Section bands span the whole
+     table, so they are skipped - they are not what column one must fit. */
+  var widest = 0;
+  var firstCells = table.querySelectorAll('thead tr:first-child > th:first-child, '
+    + 'tbody tr > th:first-child');
+  for (var i = 0; i < firstCells.length; i++) {
+    var cell = firstCells[i];
+    if (cell.colSpan > 1) continue;            /* a band, not a row header */
+    widest = Math.max(widest, cell.getBoundingClientRect().width);
+  }
+  if (widest <= 0) { table.style.tableLayout = ''; table.style.width = ''; return; }
+  var headWidth = Math.ceil(widest) + RISK_HEAD_GUTTER;
+
+  var dataCols = 0;
+  var headRow = table.querySelector('thead tr:first-child');
+  if (headRow) {
+    for (var h = 1; h < headRow.children.length; h++) {
+      dataCols += headRow.children[h].colSpan || 1;
+    }
+  }
+  if (!dataCols) { table.style.tableLayout = ''; table.style.width = ''; return; }
+
+  var share = Math.floor((available - headWidth) / dataCols);
+  var dataWidth = Math.max(MIN_RISK_DATA_COLUMN, share);
+
+  table.style.setProperty('--risk-c1', headWidth + 'px');
+  table.style.setProperty('--risk-col', dataWidth + 'px');
+  table.style.tableLayout = 'auto';
+  table.style.width = (headWidth + dataWidth * dataCols) + 'px';
+  table.style.minWidth = '0';
 }
 
 var resizeTimer = null;
@@ -1160,7 +1647,10 @@ function renderRisk() {
     + '<colgroup><col class="col-head">'
     + new Array(n * 2 + 1).join('<col class="col-data">')
     + '</colgroup><thead><tr>'
-    + '<th scope="col" class="rowhead">Measure</th>';
+    /* The column heads the measure names, which speak for themselves; the
+       label is kept for screen readers, where an unnamed column header is a
+       real loss rather than a tidy one (spec 13). */
+    + '<th scope="col" class="rowhead"><span class="sr-only">Measure</span></th>';
   state.columns.forEach(function (col, i) { html += columnHeadCell(col, i, 'colgroup'); });
   html += '</tr></thead><tbody>';
 
@@ -1174,16 +1664,19 @@ function renderRisk() {
   function band(title) {
     return '<tr class="band"><th scope="rowgroup" colspan="' + span + '">' + title + '</th></tr>';
   }
-  function spanRow(cls, label, cellFn) {
-    return '<tr class="' + cls + '"><th scope="row">' + esc(label) + '</th>'
+  function spanRow(cls, label, cellFn, key) {
+    return '<tr class="' + cls + '"' + (key ? ' data-rk="' + esc(key) + '"' : '')
+      + '><th scope="row"><span class="cw">' + esc(label) + '</span></th>'
       + state.columns.map(function (col) {
-          return '<td class="num span2" colspan="2">' + cellFn(col) + '</td>';
+          return '<td class="num span2" colspan="2"><span class="cw">'
+            + cellFn(col) + '</span></td>';
         }).join('') + '</tr>';
   }
   function pairRow(cls, label, pairFn) {
-    return '<tr class="' + cls + '"><th scope="row">' + esc(label) + '</th>'
+    return '<tr class="' + cls + '"><th scope="row"><span class="cw">'
+      + esc(label) + '</span></th>'
       + state.columns.map(function (col) {
-          if (col.status === 'loading') {
+          if (col.status === 'loading' && !holdsPreviousData(col)) {
             var skel = col.skel ? '<span class="skel"></span>' : '';
             return '<td class="num">' + skel + '</td><td class="num">' + skel + '</td>';
           }
@@ -1198,17 +1691,18 @@ function renderRisk() {
   unionRows().forEach(function (category) {
     html += spanRow('cat', category.name, function (col) {
       return cellFor(col, category.name, null);
-    });
+    }, 'rc:' + category.name);
   });
   METRIC_ROWS.forEach(function (m) {
-    html += spanRow('metric', m[0], function (col) { return metricCell(col, m[1]); });
+    html += spanRow('metric', m[0], function (col) { return metricCell(col, m[1]); },
+      'rm:' + m[0]);
   });
 
   /* stress and premia rows are data-driven: the union of labels over ready
      columns, in first-seen order (spec 9.2) */
   function labelUnion(field) {
     var labels = [], seen = {};
-    readyColumns().forEach(function (col) {
+    shownColumns().forEach(function (col) {
       (col.data[field] || []).forEach(function (entry) {
         var label = entry.period || entry.label;
         if (!seen[label]) { seen[label] = 1; labels.push(label); }
@@ -1268,7 +1762,7 @@ function renderRisk() {
   }
 
   var groups = [], horizonsByGroup = {};
-  readyColumns().forEach(function (col) {
+  shownColumns().forEach(function (col) {
     (col.data.premia || []).forEach(function (entry) {
       var group = premiaGroupOf(entry);
       if (!horizonsByGroup[group]) {
@@ -1296,7 +1790,12 @@ function renderRisk() {
       });
     });
   });
-  el.innerHTML = html + '</tbody>';
+  /* Same treatment as the allocation table: the category rows here come and
+     go with the same exclusions, so they animate rather than being swapped
+     under the reader. */
+  animateRowChanges(el, function () {
+    el.innerHTML = html + '</tbody>';
+  });
 }
 
 /* ---- charts (spec 9.5): loading columns omitted, never drawn at zero ---- */
@@ -1326,7 +1825,7 @@ function catColor(name) { return 'var(--cat-' + slotFor(name) + ')'; }
 
 function renderCharts() {
   var section = document.querySelector('.sec.viz');
-  var ready = readyColumns();
+  var ready = shownColumns();
   if (section) section.hidden = !ready.length;   /* spec 10.2 */
   if (!ready.length) return;
 
@@ -1354,37 +1853,65 @@ function renderCharts() {
 
   var comp = document.getElementById('viz-comp');
   if (comp) {
-    var W = 720, rowH = 26, gap = 16, padL = 148, padR = 16, top = 8;
-    var n = ready.length, H = top + n * rowH + (n - 1) * gap + 26;
-    var barW = W - padL - padR;
+    /* Vertical: one column per portfolio, categories stacked bottom-up. The
+       axis moves to the left and the portfolio names run along the bottom, so
+       each name gets a full column of width instead of a fixed left-hand
+       gutter - which is what began truncating them once the risk level moved
+       into the name. */
+    /* The viewBox is CONSTANT. The svg is width:100% with height:auto, so its
+       height is the card's width times H/W - a viewBox that narrowed as
+       portfolios were removed made the card taller in exact proportion, and a
+       single portfolio blew it up to several times its height. The frame stays
+       500x302 whatever n is; the columns are laid out inside it. */
+    var n = ready.length;
+    var W = 500, padL = 46, padR = 14, top = 10, padB = 42, plotH = 250;
+    var H = top + plotH + padB;
+    var slot = (W - padL - padR) / n;
+    /* Capped, so one portfolio is a column and not a slab, and floored so four
+       stay legible. Each column is centred in its own slot. */
+    var colW = Math.max(30, Math.min(96, slot - 28));
     var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Allocation by '
       + 'category for ' + n + ' portfolio' + (n > 1 ? 's' : '')
       + '. The allocation table below carries the exact values.">';
     [0, 25, 50, 75, 100].forEach(function (t) {
-      var x = padL + barW * t / 100;
-      svg += '<line class="gl" x1="' + x + '" y1="' + top + '" x2="' + x + '" y2="'
-        + (top + n * rowH + (n - 1) * gap) + '"/>'
-        + '<text class="tick" x="' + x + '" y="' + (H - 8) + '" text-anchor="middle">' + t + '%</text>';
+      var y = top + plotH - plotH * t / 100;
+      svg += '<line class="gl" x1="' + padL + '" y1="' + y + '" x2="' + (W - padR)
+        + '" y2="' + y + '"/>'
+        + '<text class="tick" x="' + (padL - 8) + '" y="' + (y + 4)
+        + '" text-anchor="end">' + t + '%</text>';
     });
     ready.forEach(function (col, i) {
-      var y = top + i * (rowH + gap), x = padL;
-      var label = col.data.header;
-      svg += '<text class="plbl" x="' + (padL - 12) + '" y="' + (y + rowH / 2 + 4)
-        + '" text-anchor="end">' + esc(label.length > 22 ? label.slice(0, 21) + '…' : label) + '</text>';
+      var x = padL + i * slot + (slot - colW) / 2;
+      var y = top + plotH;                       /* stack upward from the axis */
       col.data.categories.forEach(function (category) {
         var v = category.weightPct;
         if (!isFinite(v) || v < 0.05) return;
-        var w = barW * v / 100;
-        svg += '<rect class="seg" x="' + x + '" y="' + y + '" width="' + Math.max(0.5, w)
-          + '" height="' + rowH + '" rx="' + (w > 6 ? 3 : 0) + '" fill="' + catColor(category.name) + '"'
-          + ' data-tip="' + esc(col.data.header + ' · ' + category.name) + '|'
+        var h = plotH * v / 100;
+        y -= h;
+        svg += '<rect class="seg" x="' + x + '" y="' + y + '" width="' + colW
+          + '" height="' + Math.max(0.5, h) + '" rx="' + (h > 6 ? 3 : 0)
+          + '" fill="' + catColor(category.name) + '"'
+          + ' data-tip="' + esc(headerName(col.key) + ' \u00b7 ' + category.name) + '|'
           + v.toFixed(1) + '%"></rect>';
-        if (w > 46) {
-          svg += '<text class="lbl" x="' + (x + w / 2) + '" y="' + (y + rowH / 2 + 4)
+        if (h > 15) {
+          svg += '<text class="lbl" x="' + (x + colW / 2) + '" y="' + (y + h / 2 + 4)
             + '" text-anchor="middle">' + v.toFixed(0) + '%</text>';
         }
-        x += w;
       });
+      /* The name sits under its own column, wrapped onto a second line rather
+         than truncated - the long risk-level labels need the room. */
+      var label = headerName(col.key);
+      var words = label.split(' ');
+      var line1 = words.shift();
+      while (words.length && (line1 + ' ' + words[0]).length <= 14) line1 += ' ' + words.shift();
+      var line2 = words.join(' ');
+      if (line2.length > 16) line2 = line2.slice(0, 15) + '\u2026';
+      svg += '<text class="plbl" x="' + (x + colW / 2) + '" y="' + (top + plotH + 18)
+        + '" text-anchor="middle">' + esc(line1) + '</text>';
+      if (line2) {
+        svg += '<text class="plbl" x="' + (x + colW / 2) + '" y="' + (top + plotH + 31)
+          + '" text-anchor="middle">' + esc(line2) + '</text>';
+      }
     });
     comp.innerHTML = svg + '</svg>';
   }
@@ -1428,11 +1955,11 @@ function renderCharts() {
       var x = X(col.data.metrics.volatilityPct), y = Y(col.data.metrics.estimatedReturnPct);
       svg2 += '<circle class="dot" cx="' + x + '" cy="' + y + '" r="' + (isBase ? 7.5 : 6) + '"'
         + ' fill="' + (isBase ? '#16243A' : '#1F5FBF') + '"'
-        + ' data-tip="' + esc(col.data.header) + '|vol '
+        + ' data-tip="' + esc(headerName(col.key)) + '|vol '
         + col.data.metrics.volatilityPct.toFixed(2) + '% · return '
         + col.data.metrics.estimatedReturnPct.toFixed(2) + '%"></circle>';
       var above = (y > pT + 28);
-      var label = col.data.header;
+      var label = headerName(col.key);
       svg2 += '<text class="plbl" x="' + x + '" y="' + (above ? y - 13 : y + 20)
         + '" text-anchor="middle">' + esc(label.length > 20 ? label.slice(0, 19) + '…' : label) + '</text>';
     });
@@ -1440,15 +1967,67 @@ function renderCharts() {
   }
 }
 
+/* The provenance line is no longer printed. dataInfo still rides the schema
+   (D4) and still tells the bake apart from the live path when something has to
+   be diagnosed - it is just not on screen. */
+/* Shown while anything is resolving or rebuilding. Purely visual - the live
+   regions already announce readiness and failure, so an assistive-tech user
+   is told what happened rather than that a spinner span exists. */
+/* The stage headings and the risk dashboard stay out of the way until there
+   is something under them. On arrival the document is one panel saying what to
+   do; a title and a standfirst above an empty page are just furniture. */
+var stageShown = false;
+
+function renderStageChrome() {
+  var base = state.columns[0] || null;
+  /* Whether there is something to SHOW, not whether it has finished
+     resolving. A re-resolve leaves the previous figures in place, so judging
+     on status alone hid the headings and the risk dashboard mid-change - the
+     page collapsing and springing back - and then re-armed the reveal, so the
+     whole document faded in again on every exclusion toggle. */
+  var show = state.phase === 'workspace'
+    && !!(base && (base.status === 'ready' || base.data));
+  var heads = document.querySelectorAll('#view-aa .sec-head.stage-head');
+  for (var i = 0; i < heads.length; i++) heads[i].hidden = !show;
+  var risk = document.getElementById('risk');
+  if (risk) {
+    var section = risk.closest('.sec');
+    if (section) section.hidden = !show;
+  }
+
+  /* The first time there is something to show, the whole document arrives as
+     one movement rather than section by section. Every part of it is already
+     at its final size when the fade starts, so nothing pushes anything else
+     down the page. */
+  var view = document.getElementById('view-aa');
+  if (view && show && !stageShown) {
+    stageShown = true;
+    var reduced = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) {
+      view.classList.remove('doc-reveal');
+      void view.offsetWidth;                 /* restart if it is still running */
+      view.classList.add('doc-reveal');
+      window.setTimeout(function () { view.classList.remove('doc-reveal'); }, 1400);
+    }
+  }
+  /* Re-arm only for a genuinely new scenario - no columns at all, or back on
+     the landing. A column that is merely re-resolving must not reveal twice. */
+  if (state.phase !== 'workspace' || !state.columns.length) stageShown = false;
+}
+
+function renderResolving() {
+  var el = document.getElementById('resolving'); if (!el) return;
+  var busy = state.phase === 'workspace'
+    && (state.rebuilding
+        || state.columns.some(function (c) { return c.status === 'loading'; }));
+  el.hidden = !busy;
+}
+
 function renderFooter() {
   var el = document.getElementById('doc-foot'); if (!el) return;
-  var info = opt('dataInfo', null);
-  if (!info || state.phase !== 'workspace') { el.hidden = true; return; }
-  el.hidden = false;
-  el.textContent = 'Data: ' + (info.source || '')
-    + (info.dataversion ? ' · ' + info.dataversion : '')
-    + (info.asOf ? ' · as of ' + info.asOf : '')
-    + (info.adapter ? ' · adapter: ' + info.adapter : '');
+  el.hidden = true;
+  el.textContent = '';
 }
 
 /* ---- mandate dialog render ---------------------------------------------- */
@@ -1483,9 +2062,9 @@ function renderDialog() {
       '<div class="scrim" data-scrim></div>'
     + '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
-    + '<h2 id="dlgTitle">' + (first ? 'New scenario' : 'Edit mandate') + '</h2>'
-    + '<p class="dlg-sub">Mandate details for this client.</p>'
-    + '<div class="field"><label for="mdtop">Top account size</label>'
+    + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
+    + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
+    + '<div class="field"><label for="mdtop">Top Account Size ($AUS)</label>'
     + '<input type="text" id="mdtop" inputmode="numeric" autocomplete="off" value="'
     + (draft.top ? esc(money(draft.top)) : '') + '"' + invalid('mdtop')
     + (draft.saving ? ' disabled' : '') + '></div>'
@@ -1493,8 +2072,8 @@ function renderDialog() {
     + '<input type="text" id="mdsize" inputmode="numeric" autocomplete="off" value="'
     + (draft.size ? esc(money(draft.size)) : '') + '"' + invalid('mdsize')
     + (draft.saving ? ' disabled' : '') + '>'
-    + '<span class="field-hint">At least ' + money(opt('rules.mandateFloor', 5000000))
-    + ', and no more than the top account.</span></div>'
+    + '<span class="field-hint">Minimum '
+    + money(opt('rules.mandateFloor', 5000000)) + '</span></div>'
     + '<div class="field combo"><label for="mdpwa">Primary PWA</label>'
     + '<input type="text" id="mdpwa" role="combobox" autocomplete="off" spellcheck="false"'
     + ' aria-expanded="' + listOpen + '" aria-controls="pwa-list" aria-autocomplete="list"'
@@ -1539,6 +2118,8 @@ function refresh() {
     renderAlloc();
     renderRisk();
     renderCharts();
+    renderStageChrome();
+    renderResolving();
     renderFooter();
     extras.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } });
     sizeComparisonTables();
@@ -1703,8 +2284,25 @@ document.addEventListener('keydown', function (e) {
 });
 
 document.addEventListener('change', function (e) {
-  if (e.target.id === 'ccy') { requestBasisChange('currency', e.target.value); return; }
-  if (e.target.id === 'hedge') { requestBasisChange('hedging', e.target.value); return; }
+  if (e.target.id === 'ccy' || e.target.id === 'hedge') {
+    var field = e.target.id === 'ccy' ? 'currency' : 'hedging';
+    if (!state.basisChosen) {
+      /* First answer on a fresh scenario: record it against the basis the
+         scenario already carries, and treat the pair as settled - the other
+         half keeps whatever the mandate was created with, which is the value
+         the schema was fetched against. No rebuild confirmation, because
+         there is nothing built yet to rebuild. */
+      if (!e.target.value) return;
+      state.basis[field] = e.target.value;
+      state.basisChosen = true;
+      persistBasis();
+      fetchSchema();
+      refresh();
+      return;
+    }
+    requestBasisChange(field, e.target.value);
+    return;
+  }
 
   if (e.target.id === 'bpa' || e.target.id === 'bpre' || e.target.id === 'bptaa'
       || e.target.id === 'bpr') {
@@ -1760,8 +2358,10 @@ return {
   columns: function () { return state.columns; },
   base: function () { return state.columns[0] || null; },
   step: function () { return state.step; },
+  implSeen: function () { return state.implSeen; },
   setStep: function (s) {
     state.step = s;
+    if (s === 'impl') state.implSeen = true;   /* stop beckoning once opened */
     announce('polite', s === 'impl' ? 'Implementation step.' : 'Asset allocation step.');
     refresh();
   },
@@ -1771,6 +2371,7 @@ return {
   canEdit: canEdit,
   canExport: canExport,
   autoSleeveCategories: autoSleeveCategories,
+  riskLabel: riskLabel,
 
   /* keys, names, availability */
   keyStr: keyStr,
@@ -1792,6 +2393,11 @@ return {
   sleeveLib: function () { return state.sleeveLib; },
   ensureSleeveLib: ensureSleeveLib,
   chooseSleeve: chooseSleeve,
+  variant: function () { return state.variant; },
+  setVariant: setVariant,
+  implementationVariants: function () {
+    return opt('options.implementationVariants', []);
+  },
 
   /* misc */
   scenarioId: function () { return state.scenarioId; },

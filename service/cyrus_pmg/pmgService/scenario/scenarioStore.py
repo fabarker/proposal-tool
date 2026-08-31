@@ -89,6 +89,7 @@ def createScenario(mandate: MandateInput, basis: BasisInput) -> dict:
             'basis': basis.toDict(),
             'base': None,
             'comparisons': [],
+            'variant': None,
             'sleeves': {},
         }
         _writeAtomic(_path(scenarioId), state)
@@ -115,14 +116,25 @@ def _save(state: dict) -> dict:
 
 
 def updateScenario(scenarioId: str, mandate: MandateInput = None,
-                   basis: BasisInput = None, sleeves: dict = None) -> dict:
-    """Apply a partial state update (the PUT endpoint - deviation D2)."""
+                   basis: BasisInput = None, sleeves: dict = None,
+                   variant: str = None) -> dict:
+    """Apply a partial state update (the PUT endpoint - deviation D2).
+
+    A variant change clears the sleeve map in the same write unless the caller
+    supplied one, because sleeve names are only meaningful under the variant
+    they were chosen from (D29). Doing it here rather than in the router keeps
+    the two from ever being persisted out of step.
+    """
     with _lock:
         state = getScenario(scenarioId)
         if mandate is not None:
             state['mandate'] = mandate.toDict()
         if basis is not None:
             state['basis'] = basis.toDict()
+        if variant is not None and variant != state.get('variant'):
+            state['variant'] = variant
+            if sleeves is None:
+                state['sleeves'] = {}
         if sleeves is not None:
             state['sleeves'] = dict(sleeves)
         return _save(state)

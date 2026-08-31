@@ -23,7 +23,8 @@ from fastapi.responses import JSONResponse
 from cyrus_pmg.pmgService.core.accessControl import requireAuth, requireEditor
 from cyrus_pmg.pmgService.scenario import scenarioStore
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
-from cyrus_pmg.pmgService.scenario.rules import exportFilename, validateBasis
+from cyrus_pmg.pmgService.scenario.rules import (
+    exportFilename, validateBasis, validateVariant)
 from cyrus_pmg.pmgService.scenario.sleeves import sleeveExists
 from cyrus_pmg.pmgService.scenario.types import (
     AnalyticsError,
@@ -73,6 +74,7 @@ def _scenarioPayload(state: dict) -> dict:
         'basis': state['basis'],
         'base': state['base'],
         'comparisons': state['comparisons'],
+        'variant': state.get('variant'),
         'sleeves': state['sleeves'],
     }
 
@@ -106,12 +108,24 @@ def searchAdvisors(q: str = '', limit: int = 20):
 
 
 @router.get('/scenario/sleeves')
-def listSleeves(category: str, currency: str = 'USD', hedging: str = 'Hedged'):
-    """The sleeve library for one category (spec 3.4)."""
+def listSleeves(category: str, variant: str = None, currency: str = 'USD',
+                hedging: str = 'Hedged'):
+    """The sleeve library for one category, under one variant (spec 3.4, D29).
+
+    *variant* is required. It is declared optional only so that an absent one
+    reaches validateVariant and comes back as a 422 naming the field, rather
+    than as FastAPI's own unfielded "Malformed request." Serving a default
+    library to a caller that has not chosen a variant is how the wrong
+    products reach the wrong book, so it is never a fallback.
+    """
     basis = BasisInput(currency=currency, hedging=hedging)
     try:
-        return {'category': category,
-                'sleeves': list(getScenarioPort().list_sleeves(category, basis))}
+        validateVariant(variant)
+        return {'category': category, 'variant': variant,
+                'sleeves': list(getScenarioPort().list_sleeves(
+                    category, basis, variant))}
+    except ValidationError as exc:
+        return _validationError(exc)
     except AnalyticsError as exc:
         return _analyticsError(exc)
 
@@ -145,37 +159,53 @@ def createScenario(payload: dict = Body(...), user: str = Depends(requireEditor)
 @router.put('/scenario/{scenarioId}')
 def updateScenario(scenarioId: str, payload: dict = Body(...),
                    user: str = Depends(requireEditor)):
-    """Persist mandate, basis or sleeve updates (deviation D2).
+    """Persist mandate, basis, variant or sleeve updates (deviations D2, D29).
 
-    Accepts any subset of {mandate, basis, sleeves}. Mandate updates are
-    validated server-side; sleeve maps are checked against the library, and
+    Accepts any subset of {mandate, basis, variant, sleeves}. Mandate updates
+    are validated server-side; sleeve maps are checked against the library, and
     auto-attached categories are refused so a client bug cannot store one.
+
+    Sleeve names are checked against the variant in force *after* this update,
+    not the stored one, so a client may change variant and choose sleeves from
+    the new library in a single write. Where only the variant moves, the store
+    clears the sleeve map: the old names were chosen from a library this
+    variant may not offer.
     """
     port = getScenarioPort()
     try:
         current = scenarioStore.getScenario(scenarioId)
-        mandate = basis = sleeves = None
+        mandate = basis = sleeves = variant = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
             port.validate_mandate(mandate)
         if 'basis' in payload:
             basis = BasisInput.fromDict(payload['basis'] or {})
             validateBasis(basis)
+        if 'variant' in payload:
+            variant = payload['variant']
+            validateVariant(variant)
         if 'sleeves' in payload:
             from cyrus_pmg.pmgService.scenario.rules import AUTO_SLEEVE_CATEGORIES
+            against = variant or current.get('variant')
+            if not against:
+                raise ValidationError(
+                    'variant',
+                    'Choose an implementation variant before attaching sleeves.')
             sleeves = {}
             for category, name in (payload['sleeves'] or {}).items():
                 if category in AUTO_SLEEVE_CATEGORIES:
                     raise ValidationError(
                         'sleeves',
                         '{} carries its sleeve automatically.'.format(category))
-                if name is not None and not sleeveExists(category, name):
+                if name is not None and not sleeveExists(category, name, against):
                     raise ValidationError(
                         'sleeves',
-                        'No sleeve named {!r} for {}.'.format(name, category))
+                        'No sleeve named {!r} for {} under {}.'.format(
+                            name, category, against))
                 sleeves[category] = name
         state = scenarioStore.updateScenario(
-            scenarioId, mandate=mandate, basis=basis, sleeves=sleeves)
+            scenarioId, mandate=mandate, basis=basis, sleeves=sleeves,
+            variant=variant)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
@@ -233,15 +263,18 @@ def removePortfolio(scenarioId: str, portfolioKey: str,
 def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
     """The Excel workbook (spec 14). Assembled from stored scenario state.
 
-    Refuses (422) while a category lacks a sleeve - the UI disables the
-    button, the server re-enforces. Column payloads are re-resolved through
-    the port, which is cheap when its caches are warm and correct when not.
+    Refuses (422) while no variant is chosen or a category lacks a sleeve -
+    the UI disables the button, the server re-enforces. Column payloads are
+    re-resolved through the port, which is cheap when its caches are warm and
+    correct when not.
     """
     port = getScenarioPort()
     try:
         state = scenarioStore.getScenario(scenarioId)
         if not state['base']:
             raise ValidationError('base', 'No base portfolio to implement.')
+        variant = state.get('variant')
+        validateVariant(variant)
         basis = BasisInput.fromDict(state['basis'])
         mandate = MandateInput.fromDict(state['mandate'])
 
@@ -261,7 +294,7 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
                     ', '.join(missing)))
 
         content = port.build_export(basis, mandate, results,
-                                    {'sleeves': sleeves})
+                                    {'sleeves': sleeves, 'variant': variant})
         filename = exportFilename(basis)
         return Response(
             content=content,

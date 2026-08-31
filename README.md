@@ -18,14 +18,27 @@
 > |---|---|
 > | `service/README.md` | running it, the wire contract, the adapters, baking |
 > | `service/TRANSPLANT.md` | the porting list — configuration only |
-> | `service/DEVIATIONS.md` | every departure from this package (D1–D28) and the spec gaps found (G1–G8) |
+> | `service/DEVIATIONS.md` | every departure from this package (D1–D46) and the spec gaps found (G1–G8) |
 > | `service/PERFORMANCE.md` | the analytics profile and what fixed it: 255s → 15ms |
 > | `service/tests/` | the safety net around §8.4's arithmetic and §15.8's finiteness guard |
 >
-> **`spec.html` is now revision 4, and describes the system as built.** §1.5
+> **`spec.html` is now revision 6, and describes the system as built.** §1.5
 > is the map: one row per section that changed, each pointing at the deviation
 > that explains it. The spec carries the intent and the shape; `DEVIATIONS.md`
 > carries the reasoning and the measurements behind each change.
+>
+> Revision 5 added **implementation variants** (§8.1, D29): step 2 opens on a
+> required choice of one of four product universes — PMG Multi-Asset Portfolio,
+> PMG ESG, US Onshore, Irish Onshore — and no sleeve can be attached before it
+> is made. Note §1.3's warning that "variant" now means two things; the four
+> sleeve libraries behind it are **stub data** (open item 18).
+>
+> Revision 6 records the interface as it now stands (D30–D46): portfolios named
+> currency-risk-allocation from the key rather than from a stored name, the risk
+> dashboard sizing itself on auto layout, a four-timing motion system for
+> change, a display gate that keeps a re-resolving column's figures on screen,
+> and an arrival sequence that asks for the basis, then the base portfolio, then
+> the implementation — each inert until its turn.
 
 Everything needed to build this service, front to back. Nothing here is left for you to
 invent: where a decision is still open it is listed in **spec §16** and marked as such.
@@ -44,7 +57,7 @@ convenient local one. `BRIEF.md` and `HOST_AUDIT.md` cover what that means in pr
 | Step | What the PWA does | Output |
 |---|---|---|
 | **1 — Asset allocation** | Enters the client mandate, sets the scenario basis, defines a base portfolio, compares it against up to three alternatives | Allocation table, two summary charts, three-section risk dashboard |
-| **2 — Implementation** | Attaches one PMG-authored sleeve of investible products to each category of the base portfolio | Product-level model with weights, fees and notional, exported to Excel |
+| **2 — Implementation** | Chooses an implementation variant, then attaches one PMG-authored sleeve of investible products to each category of the base portfolio | Product-level model with weights, fees and notional, exported to Excel |
 
 Both steps live in **one page**. It ships as a page folder inside the existing PMG dashboard:
 plain HTML and JavaScript, **no build step, no framework**.
@@ -76,7 +89,7 @@ proposal-tool/
   PROMPT.md                  the kickoff instruction to hand a developer
   BRIEF.md                   the engineering brief: scope, phasing, constraints
   HOST_AUDIT.md              how the target host is built; the back end must match it
-  spec.html                  the build reference, revision 4 (as built; §1.5 maps the changes)
+  spec.html                  the build reference, revision 6 (as built; §1.5 maps the changes)
   PORTING.md                 dropping it into the host dashboard
   DECISIONS.md               decision log, Q1-Q50
 

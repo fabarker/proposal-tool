@@ -166,8 +166,8 @@ class EpsilonPhiScenarioPort:
         self._resolveCache[cacheKey] = payload
         return payload
 
-    def list_sleeves(self, category: str, basis: BasisInput):
-        return sleeves.listSleeves(category)
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str):
+        return sleeves.listSleeves(category, variant)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:
@@ -202,7 +202,8 @@ class EpsilonPhiScenarioPort:
                         book.remove(book['assumptions'])
                     writeImplementationSheet(
                         book, results[0], (implementation or {}).get('sleeves', {}),
-                        rules.AUTO_SLEEVE_CATEGORIES, mandate.mandateSize)
+                        rules.AUTO_SLEEVE_CATEGORIES, mandate.mandateSize,
+                        (implementation or {}).get('variant'))
                     buffer = io.BytesIO()
                     book.save(buffer)
                     return buffer.getvalue()

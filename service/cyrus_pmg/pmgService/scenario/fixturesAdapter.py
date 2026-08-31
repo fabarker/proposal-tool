@@ -149,19 +149,20 @@ class FixturesScenarioPort:
 
         return portfolioResult(basis, key, categories, metrics, stress, premia)
 
-    def list_sleeves(self, category: str, basis: BasisInput):
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str):
         fail = _knob('SCENARIO_FIXTURES_FAIL_SLEEVES')
         if fail and fail.lower() in ('any', category.lower()):
             raise AnalyticsError('Fixture failure: sleeves for {} unavailable.'.format(category))
-        return sleeves.listSleeves(category)
+        return sleeves.listSleeves(category, variant)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:
         if _knob('SCENARIO_FIXTURES_FAIL_EXPORT') == '1':
             raise AnalyticsError('Fixture failure: export unavailable.')
         sleevesMap = (implementation or {}).get('sleeves', {})
+        variant = (implementation or {}).get('variant')
         return writeFixturesWorkbook(basis, mandate, list(portfolios), sleevesMap,
-                                     rules.AUTO_SLEEVE_CATEGORIES)
+                                     rules.AUTO_SLEEVE_CATEGORIES, variant)
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

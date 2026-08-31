@@ -12,3 +12,7 @@ __pycache__/
 #   python3 -m cyrus_pmg.pmgService.scenario.bake --all
 # or, with no database, --adapter fixtures.
 service/var/
+
+# The IMF WEO release download writes an empty file relative to the working
+# directory before falling back to the vendored copy (D11). Nothing reads it.
+service/weo_2026_1.csv

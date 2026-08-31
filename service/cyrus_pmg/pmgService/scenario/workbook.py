@@ -43,7 +43,8 @@ IMPL_COLUMNS = [
 
 
 def buildImplementationRows(baseResult: dict, sleevesMap: dict,
-                            autoCategories, mandateSize: float) -> dict:
+                            autoCategories, mandateSize: float,
+                            variant: str = None) -> dict:
     """The implementation model's numbers, derived per spec 8.4.
 
     Returns {'groups': [...], 'total': {...}, 'complete': bool}. Each group is
@@ -61,14 +62,15 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         name = category['name']
         catWeight = float(category['weightPct'])
         if name in autoCategories:
-            library = listSleeves(name)
+            library = listSleeves(name, variant)
             sleeve = library[0] if library else None
             auto = True
         else:
             chosen = (sleevesMap or {}).get(name)
             sleeve = None
             if chosen:
-                sleeve = next((s for s in listSleeves(name) if s['name'] == chosen), None)
+                sleeve = next((s for s in listSleeves(name, variant)
+                               if s['name'] == chosen), None)
             auto = False
         items = []
         if sleeve:
@@ -107,10 +109,18 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
 
 
 def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
-                             autoCategories, mandateSize: float) -> None:
+                             autoCategories, mandateSize: float,
+                             variant: str = None) -> None:
     """Append the implementation sheet: the thirteen columns of spec 9.3, in
-    order, grouped by category with subtotals and a grand total."""
-    model = buildImplementationRows(baseResult, sleevesMap, autoCategories, mandateSize)
+    order, grouped by category with subtotals and a grand total.
+
+    The variant is written above the header, because the same category and
+    sleeve name can carry different products under a different variant and a
+    workbook that does not say which one it was built from cannot be checked
+    against anything (D29).
+    """
+    model = buildImplementationRows(baseResult, sleevesMap, autoCategories,
+                                    mandateSize, variant)
     sheet = book.create_sheet('Implementation')
     headFont = Font(name='Aptos Narrow', size=12, bold=True, color='FFFFFF')
     bodyFont = Font(name='Aptos Narrow', size=12)
@@ -118,12 +128,24 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     headFill = PatternFill('solid', fgColor=_HEADER_NAVY)
     bandFill = PatternFill('solid', fgColor=_BAND)
 
+    # openpyxl reports max_row == 1 for an empty sheet, so the header row is
+    # counted rather than measured.
+    headerRow = 1
+    if variant:
+        sheet.append(['Implementation variant', variant])
+        sheet.cell(row=1, column=1).font = boldFont
+        sheet.append([])
+        headerRow = 3
+
     sheet.append(IMPL_COLUMNS)
-    for cell in sheet[1]:
+    for cell in sheet[headerRow]:
         cell.font = headFont
         cell.fill = headFill
-    sheet.row_dimensions[1].height = 20
-    sheet.freeze_panes = 'A2'
+    sheet.row_dimensions[headerRow].height = 20
+    # A string, not sheet.cell(...).coordinate: addressing a cell materialises
+    # it and pushes max_row past the header, so the first category row would
+    # append one row late and leave a blank behind it.
+    sheet.freeze_panes = 'A' + str(headerRow + 1)
 
     def _weightCell(cell, pct):
         cell.value = pct / 100.0
@@ -193,7 +215,8 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
             cell.alignment = Alignment(horizontal='left')
 
 
-def writeFixturesWorkbook(basis, mandate, results, sleevesMap, autoCategories) -> bytes:
+def writeFixturesWorkbook(basis, mandate, results, sleevesMap, autoCategories,
+                          variant: str = None) -> bytes:
     """A complete workbook from fixture payloads: Portfolios, Risk Dashboard
     and Implementation sheets, styled after the house report (spec 14.3)."""
     book = Workbook()
@@ -373,7 +396,7 @@ def writeFixturesWorkbook(basis, mandate, results, sleevesMap, autoCategories) -
 
     # ---- Implementation sheet --------------------------------------------
     writeImplementationSheet(book, results[0], sleevesMap, autoCategories,
-                             mandate.mandateSize)
+                             mandate.mandateSize, variant)
 
     buffer = io.BytesIO()
     book.save(buffer)

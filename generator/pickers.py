@@ -57,8 +57,9 @@ SHARED_CSS = r"""
   --cat-6:#4a3aa7;--cat-7:#e34948}
 .viz{--viz-grid:#E4EAF0;--viz-axis:#C3CDD8;--viz-ink:var(--ink);--viz-mut:var(--ink-2)}
 .viz-grid{display:grid;grid-template-columns:1fr;gap:18px}
-@media (min-width:1180px){.viz-grid{grid-template-columns:1.35fr 1fr}}
+@media (min-width:1180px){.viz-grid{grid-template-columns:1fr 1fr}}
 .viz-card{background:var(--surface);border:1px solid var(--line-strong);
+  border-left:3px solid var(--accent);
   border-radius:var(--radius);padding:16px 18px 14px;min-width:0}
 .viz-card h3{margin:0 0 2px;font-size:15px;font-weight:700;color:#16243A;
   font-family:var(--f-display)}
@@ -187,8 +188,13 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
   width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow-y:auto;
   background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius);
   box-shadow:0 24px 60px -12px rgba(16,24,40,.4);padding:24px 26px 22px}
-.dialog h2{margin:0 0 4px;font-size:19px;color:#16243A;font-family:var(--f-display)}
-.dialog .dlg-sub{margin:0 0 20px;font-size:13.5px;color:var(--ink-3)}
+/* 20px below, the gap the dropped standfirst used to carry. */
+.dialog h2{margin:0 0 20px;font-size:19px;color:#16243A;font-family:var(--f-display)}
+/* Capitals through text-transform rather than in the markup, so the
+   accessible name stays "Start a proposal" - some screen readers spell out an
+   all-capitals string as an acronym. */
+.dialog h2.dlg-shout{text-transform:uppercase;letter-spacing:.07em;font-size:17px;
+  font-family:var(--f-num);font-weight:700}
 .dialog .field{margin:0 0 16px}
 .dialog .field label{font-size:13px;color:var(--ink-2);font-weight:600}
 .dialog input[type=text]{background:var(--surface);border-color:var(--line-strong);

@@ -70,9 +70,19 @@ class ScenarioPort(Protocol):
         analytics, return everything the tables need. THE EXPENSIVE CALL - may
         take seconds. Implementations should cache."""
 
-    def list_sleeves(self, category: str, basis: "BasisInput") -> "Sequence[Sleeve]":
-        """The PMG-authored sleeve library for one category. A sleeve is a fixed
-        block: name plus products whose weights sum to 1."""
+    def list_sleeves(
+        self, category: str, basis: "BasisInput", variant: str
+    ) -> "Sequence[Sleeve]":
+        """The PMG-authored sleeve library for one category, under one
+        implementation variant. A sleeve is a fixed block: name plus products
+        whose weights sum to 1.
+
+        *variant* is one of the schema's options.implementationVariants and
+        decides both which sleeves the category offers and what they contain
+        (deviation D29). It is not optional and has no default: a caller that
+        has not settled a variant has nothing to list. An empty sequence is a
+        legitimate answer - that variant reaches no sleeve for that category.
+        """
 
     def build_export(
         self,

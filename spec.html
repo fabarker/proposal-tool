@@ -169,7 +169,7 @@ td code,th code{white-space:nowrap}
 
 <header class="mast">
   <div class="mast-in">
-    <p class="eyebrow">Production build specification &middot; revision 4 &middot; as built</p>
+    <p class="eyebrow">Production build specification &middot; revision 6 &middot; as built</p>
     <h1>Epsilon Phi Proposal Tool</h1>
     <p>A page for Goldman Sachs PMG. A Private Wealth Advisor defines a model portfolio from a
       client mandate, compares it against up to three alternatives, then attaches sleeves of
@@ -252,6 +252,14 @@ td code,th code{white-space:nowrap}
     <code>ScenarioPort</code>, the <em>Scenario basis</em> rail tier, the <em>New scenario</em>
     dialog and the export filename. Renaming the product does not rename the thing it produces,
     and conflating the two would churn the whole HTTP contract for a cosmetic change.</p></div>
+  <div class="rule"><p><strong>&ldquo;Variant&rdquo; now means two things, so it is never used
+    bare.</strong> Everywhere before &sect;8 it means an <em>allocation variant</em> &mdash; one
+    of the six of &sect;2.1, the thing a portfolio key selects. From &sect;8 it can also mean an
+    <em>implementation variant</em> (D29), one of the four product universes a book is
+    implemented from. They are unrelated: the allocation variant decides what the portfolio
+    holds, the implementation variant decides which products may hold it, and neither
+    constrains the other. Qualify it every time. Where this document said only
+    &ldquo;the variant&rdquo; before revision 5, it meant the allocation variant.</p></div>
 
   <h3><span class="n">1.4</span>Out of scope</h3>
   <ul>
@@ -274,7 +282,7 @@ td code,th code{white-space:nowrap}
       <em>assumption</em>, it was not &mdash; challenge those first.</p>
   </div>
 
-  <h3><span class="n">1.5</span>What revision 4 changed</h3>
+  <h3><span class="n">1.5</span>What revisions 4 to 6 changed</h3>
   <p>Revisions 1 to 3 specified a system that did not yet exist. <strong>This revision describes
     the one that does.</strong> Where the two differ the text now states what was built and, in
     italics, what it replaced; the reasoning for each lives in
@@ -282,6 +290,44 @@ td code,th code{white-space:nowrap}
   <div class="tw"><table>
     <thead><tr><th>Section</th><th>Now says</th><th>Ref</th></tr></thead>
     <tbody>
+      <tr><td><strong>&sect;8.1</strong></td><td><strong>Revision 5.</strong> Implementation
+        variants: step 2 opens on a required choice of one of four, and no sleeve can be attached
+        before it. <code>list_sleeves</code> takes it, the schema carries the names, the workbook
+        records it, and &sect;1.3 disambiguates it from the allocation variant.</td>
+        <td>D29</td></tr>
+      <tr><td><strong>&sect;2.3</strong></td><td><strong>Revision 6.</strong> Portfolio names
+        read currency, risk level, allocation, exclusions, with the risk level printed as its
+        display label. Derived from the key, never from a stored name.</td><td>D35, D36</td></tr>
+      <tr><td><strong>&sect;7.1</strong></td><td><strong>Revision 6.</strong> The page asks one
+        question at a time: basis, then base portfolio, then implementation. Each is inert and
+        un-ringed until its turn.</td><td>D45</td></tr>
+      <tr><td><strong>&sect;9.1</strong>,
+        <strong>&sect;9.2</strong></td><td><strong>Revision 6.</strong> Table typography and
+        chrome; the risk dashboard sizes on auto layout with column one pinned and the wrapper
+        scrolling.</td><td>D37, D38</td></tr>
+      <tr><td><strong>&sect;9.5</strong></td><td><strong>Revision 6.</strong> The category chart
+        is vertical, in a frame that does not change size with the portfolio
+        count.</td><td>D39</td></tr>
+      <tr><td><strong>&sect;10.1</strong></td><td><strong>Revision 6.</strong> A display gate
+        distinct from readiness: a re-resolving column keeps its figures. Waiting is a spinner,
+        not a pill.</td><td>D43, D44</td></tr>
+      <tr><td><strong>&sect;12</strong></td><td><strong>Revision 6.</strong> A motion system for
+        change &mdash; columns, rows, values and the document's first
+        appearance.</td><td>D42</td></tr>
+      <tr><td><strong>&sect;9.1</strong></td><td><strong>Revision 5.</strong> The allocation
+        table's heading reads <em>Strategic Asset Allocation</em> over a standfirst, both taking
+        <code>proposalToolv2</code>'s stage-heading type; the notices strip above it becomes
+        exception-only.</td><td>D33, D34</td></tr>
+      <tr><td><strong>&sect;7.2</strong></td><td><strong>Revision 5.</strong> The step nav is
+        numbered circles with a stage name over a description, joined by a connector and centred
+        &mdash; the treatment from <code>proposalToolv2</code>. Appearance only: the tablist
+        semantics of &sect;13.2 are unchanged.</td><td>D32</td></tr>
+      <tr><td><strong>&sect;8.5</strong></td><td><strong>Revision 5.</strong> A row of five
+        composition doughnuts between the implementation table and the download, which moves
+        below them. New subsection.</td><td>D31</td></tr>
+      <tr><td><strong>&sect;7.2</strong></td><td><strong>Revision 5.</strong> The rail's fold is
+        animated; its content is clipped rather than reflowed, and the columns are sized once
+        when it settles.</td><td>D30</td></tr>
       <tr><td>&sect;3.4</td><td><code>PUT /api/scenario/{id}</code> added; capabilities and
         describe ride the schema</td><td>D2, D4</td></tr>
       <tr><td>&sect;4.5</td><td>Three corrections to the analytics chain: the context's dates,
@@ -386,12 +432,26 @@ td code,th code{white-space:nowrap}
     means the variant has no such concept.</p>
 
   <h3><span class="n">2.3</span>Portfolio naming</h3>
-  <pre><code>{currency} {allocation} {risk_level}[ " ex RE" ][ " ex TAA" ]</code></pre>
+  <pre><code>{currency} {risk_level_label} {allocation}[ " ex RE" ][ " ex TAA" ]</code></pre>
   <p>Names are <strong>derived and not editable</strong>. The <code>ex RE</code> suffix applies
     <strong>only where real estate was possible but excluded</strong> &mdash; Full and Ex HFs. Core
     and Ex Alts never carry it. Currency is constant across every column, so it is
     <strong>omitted from column headers</strong> and shown once in the rail; the full name is used in
     the export, in tooltips and in <code>aria-label</code>s.</p>
+  <div class="rule"><p><strong>The risk level prints as a label, and the key keeps the
+    value.</strong> <em>Moderate-Aggressive</em> on screen, <code>Mod Agg</code> in the key.
+    The short form is the fourth field of the canonical key, so it is what the availability
+    set, every stored scenario and all 272 baked payloads are keyed on; renaming it in the data
+    would invalidate the bake. The schema therefore carries
+    <code>options.riskLevelLabels</code> beside <code>options.riskLevels</code>, and the UI
+    renders one while submitting the other &mdash; &sect;4.3's rule applied to a name rather
+    than an option list. Deviation D35.</p></div>
+  <div class="rule"><p><strong>Every displayed name is derived from the KEY, never from a
+    stored one.</strong> <code>PortfolioResult</code> carries <code>name</code> and
+    <code>header</code>, and both are frozen into the baked slices &mdash; so a page that read
+    them would show a naming change on some surfaces and not others until a re-bake. The page
+    builds its own from the key instead, and the two agree the moment the rule changes.
+    Deviation D36.</p></div>
   <div class="tw"><table>
     <thead><tr><th>Allocation</th><th>Exclusions</th><th>Column header</th></tr></thead>
     <tbody>
@@ -579,12 +639,16 @@ def serve_proposal_tool(filename):
           <strong>The expensive call.</strong></td><td><strong>up to ~5s</strong></td></tr>
       <tr><td><code>DELETE /api/scenario/{id}/portfolio/{key}</code></td><td>Remove a column.</td><td>Fast</td></tr>
       <tr><td><code>PUT /api/scenario/{id}</code></td>
-        <td>Persist any subset of <code>{mandate, basis, sleeves}</code>. <strong>Added at build
-          time</strong>: &sect;11.8 restores all three after a refresh, but the surface above
-          provides writes only for columns, so without this they cannot survive one.</td>
+        <td>Persist any subset of <code>{mandate, basis, variant, sleeves}</code>.
+          <strong>Added at build time</strong>: &sect;11.8 restores all of them after a refresh,
+          but the surface above provides writes only for columns, so without this they cannot
+          survive one. Sleeve maps validate against the implementation variant in force
+          <em>after</em> the update; a variant change on its own clears the map (D29).</td>
         <td>Fast</td></tr>
-      <tr><td><code>GET /api/scenario/sleeves?category=</code></td>
-        <td>The sleeve library for a category, with product detail.</td><td>Fast</td></tr>
+      <tr><td><code>GET /api/scenario/sleeves?category=&amp;variant=</code></td>
+        <td>The sleeve library for a category under one implementation variant, with product
+          detail. <code>variant</code> is required: an absent or unknown one is a 422 naming the
+          field, never a default library (D29).</td><td>Fast</td></tr>
       <tr><td><code>POST /api/scenario/{id}/export</code></td>
         <td>Excel workbook. <code>Content-Disposition: attachment</code>.</td><td>Moderate</td></tr>
     </tbody>
@@ -663,9 +727,17 @@ class ScenarioPort(Protocol):
         analytics, return everything the tables need. THE EXPENSIVE CALL - may
         take seconds. Implementations should cache."""
 
-    def list_sleeves(self, category: str, basis: BasisInput) -> Sequence[Sleeve]:
-        """The PMG-authored sleeve library for one category. A sleeve is a fixed
-        block: name plus products whose weights sum to 1."""
+    def list_sleeves(
+        self, category: str, basis: BasisInput, variant: str
+    ) -> Sequence[Sleeve]:
+        """The PMG-authored sleeve library for one category, under one
+        implementation variant. A sleeve is a fixed block: name plus products
+        whose weights sum to 1.
+
+        *variant* is one of options.implementationVariants and decides both
+        which sleeves the category offers and what they contain (D29). It has
+        no default. An empty sequence is a legitimate answer.
+        """
 
     def build_export(
         self, basis: BasisInput, mandate: MandateInput,
@@ -738,7 +810,8 @@ class ScenarioPort(Protocol):
         holds</em> (&sect;2.2)</td><td>The four-portfolio cap</td></tr>
       <tr><td>Mandate thresholds ($5m, $20m)</td><td>The Nominal/Real column pairing</td></tr>
       <tr><td>The availability set</td><td>Breakpoints, focus order, ARIA wiring</td></tr>
-      <tr><td>The sleeve library and every product field</td><td>Chart forms and the categorical palette</td></tr>
+      <tr><td>The sleeve library and every product field, and the four implementation-variant
+        names that select between libraries (D29)</td><td>Chart forms and the categorical palette</td></tr>
       <tr><td>Fee values</td><td>The naming <em>template</em>, and the rounding rule (&sect;8.4)</td></tr>
     </tbody>
   </table></div>
@@ -987,7 +1060,8 @@ async function apiFetch(path, opts) {
   scenarioId: "sc_7fa2…",
   mandate: { topAccountSize, mandateSize, primaryPwa, editing, error },
   basis:   { currency: "USD", hedging: "Hedged" },
-  schema:  { allocations[], riskLevels[], categories[], availability: Set, rules },
+  schema:  { allocations[], riskLevels[], implementationVariants[], categories[],
+             availability: Set, rules },
   step:    "aa" | "impl",
   columns: [                       // index 0 is always the base
     { key: {allocation, excludeRE, excludeTAA, riskLevel},
@@ -1218,6 +1292,20 @@ async function apiFetch(path, opts) {
   <p>The page opens on a <strong>landing phase</strong>, not on the workspace. Until a mandate
     exists there is nothing to put in the rail and nothing to put in the document, so the rail
     and the step nav are both hidden and the page shows a single front door.</p>
+  <div class="rule"><p><strong>The page asks one question at a time.</strong> On arrival the
+    scenario basis is unanswered &mdash; currency and hedging both read <em>Select&hellip;</em>
+    &mdash; and its tier carries the ring. The base portfolio's controls are disabled and its
+    tier is <em>not</em> ringed: two rings competing say nothing about which to answer first.
+    Answering the basis enables the base tier and moves the ring to it; resolving an allocation
+    reveals the document and unlocks step 2, which then pulses until it is opened. The scenario
+    always holds a basis &mdash; the schema is fetched against one &mdash; so the unanswered
+    state is presentation rather than absence, and answering either half settles the pair with
+    no rebuild confirmation, because nothing is built yet to rebuild. A rehydrated scenario that
+    already has columns skips the sequence entirely. Deviation D45.</p></div>
+  <div class="rule"><p><strong>Nothing is titled until there is something under it.</strong>
+    The stage heading, its standfirst and the whole risk dashboard stay hidden until an
+    allocation resolves. Until then the document is one panel saying what to do; a title over an
+    empty page is furniture.</p></div>
   <div class="rule"><p><strong>The landing is a phase, not a route.</strong> It is the same
     document and the same page folder, entered and left by toggling <code>phase</code>
     (&sect;5.3) and a <code>body.phase-landing</code> class. Nothing navigates. This matters at
@@ -1306,8 +1394,8 @@ async function apiFetch(path, opts) {
 │  PROPOSAL TOOL                    ││                                            │
 ├───────────────────────────────────┤├────────────────────────────────────────────┤
 │ MANDATE                    Edit   ││                                            │
-│ Top account $48,500,000           ││  ┌─1 Asset allocation─┬─2 Implementation─┐ │
-│ Mandate $26,000,000               ││  └────────────────────┴──────────────────┘ │
+│ Top account $48,500,000           ││ (1) Asset allocation ── (2) Implementation │
+│ Mandate $26,000,000               ││     Build & compare        Sleeves & export│
 │ M. Aldridge — Zurich              ││                                            │
 ├───────────────────────────────────┤│ ⟨Matched⟩ ⟨RE unavailable⟩ ⟨3 of 4⟩        │
 │ SCENARIO BASIS                    ││                                            │
@@ -1345,15 +1433,47 @@ async function apiFetch(path, opts) {
 └───────────────────────────────────┘└────────────────────────────────────────────┘</code></pre>
 
   <div class="rule"><p><strong>There is no topbar.</strong> The document opens on the step nav.
-    The product name it carried is now the rail's brand block, and the status chip it carried
-    &mdash; <em>Lookup matched</em>, <em>Resolving</em>, <em>Rebuilding</em>,
-    <em>n columns failed</em> &mdash; is the first chip of the notices strip, which is the one
-    surface for it.</p></div>
+    The product name it carried is now the rail's brand block, and the status it carried
+    survives only where it says something: <em>Rebuilding</em> and <em>n columns failed</em>
+    are the first chip of the notices strip, while the settled <em>Lookup matched</em> and the
+    portfolio count were dropped in revision 5 (D34). The strip is exception-only &mdash; with
+    nothing to report it renders nothing and takes no room, so the document opens straight onto
+    its own heading.</p></div>
   <div class="rule"><p><strong>The rail collapses.</strong> A control in the brand block folds it
     to a 48px strip that still carries the control, so the way back is always in view, and the
     document reclaims the width. The preference persists in <code>localStorage</code>, because
     this page rehydrates through a refresh and the choice should survive it. Below 1040px, where
     the rail is already a stacked block, collapsing hides the tiers instead.</p></div>
+  <div class="rule"><p><strong>Change is animated, on four timings.</strong>
+    <code>--col-motion</code> 420ms carries a column width; <code>--row-motion</code> 900ms a
+    row arriving or leaving; <code>--value-motion</code> 900ms <em>linear</em> a figure changing
+    in place; <code>--reveal-motion</code> 700ms the document's first appearance. The value fade
+    is linear where the rest is eased because the shared curve is front-loaded: a moving row
+    still reads as travelling through its tail, but a fade is perceptually over by 0.9 opacity,
+    so on the same curve the number looked finished while the row was still going. A row cannot
+    be transitioned &mdash; <code>display:table-row</code> does not interpolate &mdash; so what
+    moves is each cell's padding, line-height and border, and the max-height of a wrapper inside
+    it. Reduced motion gets every finished state and no animation. Deviation D42.</p></div>
+  <div class="rule"><p><strong>The first appearance is one movement, not a sequence.</strong>
+    Rows are not animated into a table that was empty: opening each from collapsed made the
+    allocation table grow under the sections below it and shove them down the page. Everything
+    is at its final size before anything becomes visible, and the document fades in whole.</p></div>
+  <div class="rule"><p><strong>The fold is animated, and the tier content is clipped rather than
+    reflowed.</strong> 280ms on <code>cubic-bezier(.4,0,.2,1)</code>, carrying the rail's width
+    and the document's margin together. Everything inside the rail is held at the expanded width
+    so that narrowing slides it out of view behind <code>overflow-x</code>; letting 352px of form
+    controls reflow through every width down to 48px looks like the fields crushing themselves
+    and costs a full relayout per frame. The tiers fade and take
+    <code>visibility:hidden</code> at the end of the fold, not the start, so they leave the tab
+    order only once they have gone. Reduced motion gets the finished layout and no animation
+    (&sect;13).</p></div>
+  <div class="rule"><p><strong>The columns are sized once, when the fold settles.</strong> Not per
+    frame: one pass over the allocation and risk tables measures at about 18ms, past the frame
+    budget on its own, and it usually has nothing to do &mdash; the data columns sit at their cap
+    whenever the document has room, so widening it changes nothing. Where the columns are
+    share-constrained the width moves once, as the slide comes to rest. The pass is bounded by a
+    timer as well as by <code>transitionend</code>, which does not arrive if the transition never
+    starts.</p></div>
 
   <h4>Rail tiers</h4>
   <div class="tw"><table>
@@ -1410,9 +1530,16 @@ async function apiFetch(path, opts) {
 
   <h3><span class="n">8.1</span>The screen</h3>
 <pre class="wire"><code>┌── RAIL ───────────────────────────┐┌── DOCUMENT ────────────────────────────────┐
-│ (mandate, basis, base as step 1)  ││  ┌─1 Asset allocation─┬─2 Implementation─┐ │
-├───────────────────────────────────┤│  └────────────────────┴──────────────────┘ │
+│ (mandate, basis, base as step 1)  ││ (1) Asset allocation ── (2) Implementation │
+├───────────────────────────────────┤│     Build & compare        Sleeves & export│
 │ SLEEVES                    3 of 5 ││                                            │
+│ Implementation variant            ││                                            │
+│ ┌───────────────────────────────┐ ││                                            │
+│ │ PMG Multi-Asset Portfolio   ▾ │ ││                                            │
+│ └───────────────────────────────┘ ││                                            │
+│ Sleeves below are those PMG       ││                                            │
+│ Multi-Asset Portfolio can hold.   ││                                            │
+│ ───────────────────────────────── ││                                            │
 │ Investment Grade Fixed Inc 42.5%  ││  Implementing Core Mod against a mandate   │
 │ ┌───────────────────────────────┐ ││  of $26,000,000.                           │
 │ │ Funds Only                  ▾ │ ││  ⟨2 categories still need a sleeve⟩        │
@@ -1433,15 +1560,42 @@ async function apiFetch(path, opts) {
 │ ┌───────────────────────────────┐ ││  │Total       │        │100.00│   │   │  │ │
 │ │ Tactical Tilt Fund       🔒   │ ││  └────────────┴────────┴──────┴───┴───┴──┘ │
 │ └───────────────────────────────┘ ││                                            │
-│ Attached automatically with TAA.  ││  [ Download .xlsx ]  Attach a sleeve to    │
+│ Attached automatically with TAA.  ││  Composition of the implemented model      │
+│                                   ││  ╭────╮ ╭────╮ ╭────╮ ╭────╮ ╭────╮        │
+│ 3 of 5 categories have a sleeve.  ││  │ ◍  │ │ ◍  │ │ ◍  │ │ ◍  │ │ ◍  │        │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░               ││  ╰────╯ ╰────╯ ╰────╯ ╰────╯ ╰────╯        │
+│                                   ││  Style  Vehic. Source Liquid. Exp ccy      │
+│                                   ││                                            │
+│                                   ││  [ Download .xlsx ]  Attach a sleeve to    │
 │                                   ││  every category to enable the download.    │
-│ 3 of 5 categories have a sleeve.  ││                                            │
-│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░               ││                                            │
 └───────────────────────────────────┘└────────────────────────────────────────────┘</code></pre>
   <p>Real figures, from USD / Core / Mod with tactical tilts included. Five categories, because
     that is what Core holds &mdash; not because five is the number. <em>Asset Allocation
     Strategies</em> shows as already attached and locked (&sect;2.6); it counts toward the gate and
     can never fail it.</p>
+
+  <div class="rule"><p><strong>The implementation variant comes first, and nothing works before it.</strong>
+    Step 2 opens on a required choice of an <em>implementation variant</em> &mdash; the four in
+    <code>options.implementationVariants</code>. Until one is set the sleeve pickers are not
+    rendered at all (a disabled control invites a click that has nothing behind it), the
+    automatic sleeve of &sect;2.6 does not attach, no library is fetched, and the document shows
+    a single panel pointing at the rail. It decides <em>both</em> which sleeves a
+    category offers and what those sleeves contain, so a library fetched without one would be
+    the wrong library rather than an incomplete one. Deviation D29.</p></div>
+  <div class="rule"><p><strong>Changing it clears every sleeve choice.</strong> Sleeve names are
+    only meaningful under the implementation variant they were chosen from &mdash;
+    <em>Concentrated Active</em>
+    exists under US Onshore and not under Irish Onshore &mdash; so the map is dropped rather
+    than revalidated name by name, on the client and in the store, in the same write as the
+    variant. The count is announced in a live region (&sect;13.4), because work disappears.
+    This is the harder-edged sibling of &sect;11.6's basis-change rule, which keeps what still
+    validates; here almost nothing does.</p></div>
+  <div class="rule"><p><strong>An implementation variant may reach no sleeve for a held category.</strong> That
+    is a legitimate state, not an error: the category simply cannot be implemented under that
+    variant, and the completeness gate says so rather than waiting for a choice that cannot be
+    made. The four libraries as they stand all cover all seven categories, so the state is
+    unreachable today &mdash; it is specified because the library is data and will not stay
+    that way by accident.</p></div>
 
   <h3><span class="n">8.2</span>Rules</h3>
   <ul>
@@ -1496,6 +1650,32 @@ portfolio total fee = Σ weighted fee</code></pre>
     </tbody>
   </table></div>
   <p><strong>Notional is taken against the mandate size, not the top account size.</strong></p>
+
+  <h3><span class="n">8.5</span>Composition doughnuts</h3>
+  <p>A row of five small multiples between the table and the download, showing how the
+    implemented money divides across each product attribute: <em>Style</em>, <em>Vehicle</em>,
+    <em>Source</em>, <em>Liquidity</em>, <em>Exposure currency</em>. They summarise the table
+    above them and are not a second source of anything &mdash; every arc is a sum of the
+    <em>printed</em> weights of &sect;8.4, so a reader can add the rows up and arrive at the
+    slice. Deviation D31.</p>
+  <div class="rule"><p><strong>Colour is keyed to the value's name, never to the slice's
+    position.</strong> The same rule &sect;6.6 sets for the category charts, and for the same
+    reason: slices are ordered by weight, so a colour tied to position would change
+    <em>Passive</em>'s hue the moment it overtook <em>Active</em>. Names are ranked
+    alphabetically to choose a palette slot, which is stable for a given set of values and
+    independent of which sleeves happen to be attached. The palette is the categorical
+    <code>--cat-1</code>&hellip;<code>--cat-7</code> of &sect;6.6; with more distinct values than
+    slots it repeats, and the legend disambiguates.</p></div>
+  <div class="rule"><p><strong>The shares are of what is attached, and the chart says so.</strong>
+    Normalising to the attached total keeps the ring closed while categories are still empty,
+    but that is a different number from a share of the portfolio, so the note carries the figure
+    covered until the model is complete. Percentages print to one decimal by largest remainder
+    (&sect;8.4's rule at 0.1 rather than 0.01) so the legend sums to exactly
+    <code>100.0</code>; the arcs keep the exact fractions.</p></div>
+  <div class="rule"><p><strong>The download sits below the charts.</strong> The row is part of
+    the model being reviewed, not an appendix to it, so the button that commits the model to a
+    workbook comes after everything the reviewer is meant to have read. The gate and its reason
+    (&sect;8.2) are unchanged and travel with the button.</p></div>
 </section>
 
 <section class="block" id="s9">
@@ -1554,6 +1734,14 @@ portfolio total fee = Σ weighted fee</code></pre>
   </div>
 
   <h3><span class="n">9.2</span>Risk dashboard</h3>
+  <div class="rule"><p><strong>This table lays out automatically, and pins its first column.
+    </strong> Column one holds the crisis names, so it is fixed by <code>width</code>,
+    <code>min-width</code> and <code>max-width</code> together to its widest cell plus a gutter;
+    the data cells state only a floor and share what is left; below that floor the table stops
+    shrinking and the wrapper scrolls. Fixed layout was tried and does not work here: with
+    <code>colspan="2"</code> header pairs neither a width on <code>&lt;col&gt;</code> nor one on
+    the first cell moved the column &mdash; the browser distributed the width itself and let the
+    last column absorb the surplus. Deviation D38.</p></div>
   <p>Three sections in one table. The column structure is <strong>not uniform</strong>, and this is
     the most error-prone part of the build.</p>
   <div class="tw"><table>
@@ -1714,7 +1902,9 @@ portfolio total fee = Σ weighted fee</code></pre>
       <tr><td>Mandate dialog submit</td><td>Continue shows a spinner and reads <em>Working&hellip;</em>;
         fields disabled; dialog does not close.</td></tr>
       <tr><td>Typeahead</td><td>After the debounce, a single <em>Searching&hellip;</em> row.</td></tr>
-      <tr><td>Sleeve library</td><td>Select shows <em>Loading sleeves&hellip;</em> and is disabled.</td></tr>
+      <tr><td>Sleeve library</td><td>Select shows <em>Loading sleeves&hellip;</em> and is disabled.
+        Every category's library loads independently, so one can be loading while another has
+        failed and a third is ready &mdash; the per-column rule of &sect;10.1 applies here too.</td></tr>
       <tr><td>Export</td><td>Button reads <em>Preparing&hellip;</em> with a spinner, disabled.</td></tr>
       <tr><td>Full rebuild</td><td>All columns enter loading together; a <code>.b-bind</code> chip
         reads <em>Rebuilding 4 portfolios&hellip;</em> &mdash; in the notices strip, since there
@@ -1722,6 +1912,17 @@ portfolio total fee = Σ weighted fee</code></pre>
     </tbody>
   </table></div>
   <p>Shimmer respects <code>prefers-reduced-motion</code>: a static tint of the same colour.</p>
+  <div class="rule"><p><strong>Showing is not the same as being ready.</strong> A column that is
+    re-resolving still holds the figures from last time, and it keeps showing them. Judging on
+    status alone emptied the row union, blanked every cell, emptied the risk dashboard and hid
+    the charts &mdash; the whole document collapsing and springing back for the twenty
+    milliseconds a re-resolve takes. A column that has never resolved has nothing to show and
+    still skeletons, so the rule above holds for a genuinely new column. Deviation D43.</p></div>
+  <div class="rule"><p><strong>Waiting is a spinner, not a pill.</strong> The notices strip is
+    hidden when empty, so a transient pill grew it &mdash; its own height plus its margin
+    &mdash; above the table, and shifted the document down and back on every resolve. The
+    spinner is absolutely positioned in the stage heading and cannot move anything. A failure
+    keeps its pill: it is persistent and worth the space. Deviation D44.</p></div>
   <div class="note">
     <h4>As built, the threshold is never reached</h4>
     <p>Against the baked adapter a resolve returns in about 15ms, so the 200ms timer is always
@@ -1749,7 +1950,11 @@ portfolio total fee = Σ weighted fee</code></pre>
       <tr><td>Document, step 2</td><td>No base portfolio</td>
         <td><strong>&ldquo;No base portfolio yet&rdquo;</strong> with a sentence directing the user to
           the rail. The sleeve tier says the same.</td></tr>
-      <tr><td>Implementation table</td><td>Base exists, no sleeves</td>
+      <tr><td>Document, step 2</td><td>Base ready, no implementation variant</td>
+        <td><strong>&ldquo;Choose an implementation variant&rdquo;</strong>, naming the base
+          portfolio and saying that the variant decides which sleeves its categories can hold.
+          The rail carries the control; the sleeve list is not drawn at all (D29).</td></tr>
+      <tr><td>Implementation table</td><td>Variant chosen, no sleeves</td>
         <td>Category rows render with their weights and a <code>.b-warn</code> badge reading
           <em>&ldquo;No sleeve attached&rdquo;</em>. Not an empty table &mdash; the structure is the
           instruction.</td></tr>
@@ -1908,13 +2113,21 @@ portfolio total fee = Σ weighted fee</code></pre>
 
   <h3><span class="n">11.7</span>Attaching a sleeve</h3>
   <ol class="body">
-    <li>The rail lists only the categories the base's variant has, each with its allocation weight.</li>
+    <li>The PWA picks an <strong>implementation variant</strong>. Nothing below happens before
+      this: no library is fetched and no picker is drawn (&sect;8.1, D29). The control sits above
+      the category list and stays there, so the choice can be revisited.</li>
+    <li>Every category's library is fetched for that variant, in parallel, each carrying its own
+      loading and error state exactly as a column does (&sect;10.1).</li>
+    <li>The rail lists only the categories the base's allocation variant has, each with its
+      allocation weight.</li>
     <li>Selecting a sleeve inserts its product rows immediately &mdash; the library is cached, so
       this is not a round trip.</li>
     <li>Weights, fees and notionals recompute across the whole table, because the largest-remainder
       rounding is global (&sect;8.4).</li>
     <li>When the last category is filled the export enables and the badge flips to
       <code>.b-ok</code>.</li>
+    <li>Changing the implementation variant returns to step 2 above: the cached libraries are
+      discarded, every choice is cleared and announced, and the export re-gates.</li>
   </ol>
 
   <h3><span class="n">11.8</span>Removal and refresh</h3>
@@ -2362,6 +2575,25 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
         <td><span class="bdg b-warn">Decision needed</span></td>
         <td>Two of the four currencies. Either load the missing rows or narrow the option list
           &mdash; which is a schema change, not a UI one (&sect;4.3).</td></tr>
+      <tr><td>18</td><td><strong>The implementation variants' sleeve libraries are stub data.</strong>
+        The four variants and the gate around them are built (D29), but which sleeves each one
+        offers, and the products inside them, are illustrative &mdash; authored to exercise the
+        mechanism, not supplied by PMG. The Multi-Asset library is the one the prototype
+        demonstrated; the ESG, US Onshore and Irish Onshore libraries are invented.</td>
+        <td><span class="bdg b-warn">Decision needed</span></td>
+        <td>Nothing structural &mdash; the shape is proven and replacing
+          <code>sleeves.py</code> behind its three functions is the whole change. But no
+          product, fee or vehicle on a variant other than Multi-Asset should be shown to anyone
+          until PMG supplies the real libraries.</td></tr>
+      <tr><td>19</td><td><strong>Do the variants restrict allocations, or only products?</strong>
+        Built on the assumption that they are independent: any implementation variant may
+        implement any allocation variant, and the variant changes no figure in step 1. If, say,
+        an Irish Onshore book cannot hold the private-asset allocations at all, that is an
+        availability rule in step 1 rather than a sleeve rule in step 2, and it would want the
+        variant chosen before the base portfolio rather than after.</td>
+        <td><span class="bdg b-warn">Decision needed</span></td>
+        <td>The order of the two steps. Cheap to change now, expensive once PWAs learn the
+          flow.</td></tr>
     </tbody>
   </table></div>
 
@@ -2407,7 +2639,11 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
 </div>
 
 <footer class="foot">
-  <p>Epsilon Phi Proposal Tool &middot; production build specification, revision 4 &middot;
-    revised 31 August 2026 to describe the system as built. Decisions trace to <code>DECISIONS.md</code>. Items marked
+  <p>Epsilon Phi Proposal Tool &middot; production build specification, revision 6 &middot;
+    revised 31 August 2026. Revision 5 added implementation variants (&sect;8.1), the animated
+    rail fold and restyled step nav (&sect;7.2) and the composition doughnuts (&sect;8.5).
+    Revision 6 records the interface as it now stands: naming, the sizing and motion rules, and
+    the order the page asks its questions in &mdash; D29 to D46. Revision 4 brought the document
+    in line with the system as built. Decisions trace to <code>DECISIONS.md</code>. Items marked
     <em>assumption</em> were not confirmed and should be challenged before they are built.</p>
 </footer>

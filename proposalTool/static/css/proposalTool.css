@@ -7,6 +7,8 @@
   --input-bg:var(--surface-2);
   --ink-2:var(--ink);
   --ink-3:var(--ink-2);
+  --ink-row:var(--ink-2);
+  --line-mid:var(--line-strong);
   --line-strong:var(--line);
   --cat-bg:transparent;
   --metric-bg:transparent;
@@ -19,6 +21,11 @@
   --neg:#B3261E;
   --panel-border:1px solid var(--line);
   --rail-w:320px;
+  --rail-motion:280ms cubic-bezier(.4,0,.2,1);
+  --col-motion:420ms cubic-bezier(.4,0,.2,1);
+  --row-motion:900ms cubic-bezier(.25,.8,.25,1);
+  --value-motion:900ms linear;
+  --reveal-motion:700ms;
   --rail-bg:var(--surface);
   --rail-ink:var(--ink);
   --rail-ink-2:var(--ink-2);
@@ -31,8 +38,10 @@
   --ink:#1C2733;
   --ink-2:#5B6B7C;
   --ink-3:#8494A4;
+  --ink-row:#4B5A6A;
   --line:#EEF1F4;
   --line-strong:#D4DAE2;
+  --line-mid:#AFBAC7;
   --accent:#1F5FBF;
   --accent-ink:#FFFFFF;
   --neg:#B42318;
@@ -52,7 +61,12 @@
   --f-body:'GS Sans','Roboto',system-ui,-apple-system,sans-serif;
   --f-num:'GS Sans Condensed','GS Sans','Roboto',system-ui,-apple-system,sans-serif;
   --rail-w:352px;
-  --rail-bg:#16243A;
+  --rail-motion:280ms cubic-bezier(.4,0,.2,1);
+  --col-motion:420ms cubic-bezier(.4,0,.2,1);
+  --row-motion:900ms cubic-bezier(.25,.8,.25,1);
+  --value-motion:900ms linear;
+  --reveal-motion:700ms;
+  --rail-bg:#12233f;
   --rail-ink:#FFFFFF;
   --rail-ink-2:#B6C2D2;
   --rail-ink-3:#7E90A8;
@@ -101,11 +115,50 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);
 .shell{max-width:1500px;margin:0 auto;padding:clamp(14px,2vw,24px) clamp(16px,3vw,44px) 96px}
 
 .sec{margin-bottom:clamp(26px,4vw,50px)}
+/* The charts close with a rule, so the Risk Dashboard title below reads as a
+   new part of the document rather than as a caption to them. Padding holds it
+   off the cards; .sec's own margin carries the space beneath it. */
+.sec.viz{padding-bottom:clamp(26px,4vw,50px);border-bottom:1px solid var(--line-strong)}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
   margin-bottom:14px;flex-wrap:wrap}
 h1,h2{margin:0;font-family:var(--f-display);font-weight:var(--head-weight,600);color:var(--ink)}
 h1{font-size:clamp(28.5px,3.5vw,41.5px);letter-spacing:var(--head-ls,-.015em);line-height:1.15}
 h2{font-size:clamp(18.5px,1.9vw,23px);letter-spacing:var(--head-ls,-.01em)}
+/* The stage title over the allocation table, matching proposalToolv2's
+   .stage-heading h1 declaration for declaration: GS Sans Condensed - which is
+   this page's --f-num - at 39px/1.08, weight 480, -.012em, no margin. The
+   condensed face is variable across 300-900, so 480 is a real weight here
+   rather than a synthesised one. Colour is not in v2's rule either; it
+   inherits, and ours inherits the same near-black navy from the theme.
+   Specificity (0,1,1) carries it over the h1,h2 and h2 rules above. */
+h2.stage-title{font-family:var(--f-num);font-size:39px;font-weight:480;
+  letter-spacing:-.012em;line-height:1.08;margin:0}
+/* Its standfirst, from the same v2 rule set (.stage-heading>div>p:last-child):
+   750px measure, 10px above, 16px, muted - our --ink-2 in place of v2's
+   --muted, the two being the same grey to within a point per channel. */
+.stage-sub{max-width:750px;margin:10px 0 0;color:var(--ink-2);font-size:16px}
+/* v2's .eyebrow, with its .stage-heading margin override folded in - ours only
+   ever appears above a stage title. --accent stands in for v2's --blue-600,
+   the two being the same mid blue in the same role. */
+.eyebrow{margin:0 0 8px;color:var(--accent);font-family:var(--f-num);font-size:12px;
+  font-weight:720;letter-spacing:.115em;text-transform:uppercase}
+/* The stage heading stands off its table further than a section head does:
+   it is a 39px title with a standfirst under it, not a 23px label. Scoped so
+   At a glance and Risk dashboard keep the 14px of .sec-head. */
+.sec-head.stage-head{margin-bottom:30px;position:relative}
+/* The waiting indicator. Absolutely positioned on purpose: the pill it
+   replaces lived in the notices strip, which is hidden when empty, so every
+   resolve grew the strip - its own height plus a 20-30px margin - and pushed
+   the whole document down and back. That shift above the table was the flash.
+   Taken out of flow, this cannot move anything. */
+.resolving{position:absolute;right:0;bottom:6px;width:18px;height:18px;
+  border:2px solid var(--line-strong);border-top-color:var(--accent);
+  border-radius:50%;animation:resolvespin .7s linear infinite}
+@keyframes resolvespin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){
+  .resolving{animation:none;border-top-color:var(--accent);opacity:.7}
+}
+@media (max-width:640px){h2.stage-title{font-size:32px}.stage-sub{font-size:14px}}
 .sec-note{font-size:14.5px;color:var(--ink-3);max-width:52ch}
 .lede{font-size:16.5px;color:var(--ink-2);max-width:62ch;margin:10px 0 0}
 
@@ -142,7 +195,11 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
   text-transform:var(--btn-case,uppercase);font-weight:700;padding:11px 24px;
   border-radius:var(--radius-sm);border:1px solid transparent;cursor:pointer;transition:.15s}
 .btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.btn-primary:hover{filter:brightness(1.1)}
+.btn-primary:hover:not(:disabled){filter:brightness(1.1)}
+/* There was no :disabled rule, so a disabled button looked identical to a
+   live one - the export button in particular sat there fully green while
+   refusing to be pressed. Matches .step:disabled, already the page's idiom. */
+.btn:disabled{opacity:.45;cursor:not-allowed}
 .btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--line-strong)}
 .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
 
@@ -152,7 +209,7 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
    stops at the document edge, where overflow-x takes over and it scrolls. */
 .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);
   width:fit-content;max-width:100%}
-.tbl{width:100%;border-collapse:collapse;font-family:var(--f-num);font-size:15px;min-width:850px}
+.tbl{width:100%;border-collapse:collapse;font-family:var(--f-display);font-size:15px;min-width:850px}
 .tbl th,.tbl td{text-align:left;padding:var(--cell-pad);white-space:nowrap}
 .tbl .num{text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 .tbl thead th{background:var(--head-bg);color:var(--head-ink);font-weight:700;font-size:12.5px;
@@ -165,7 +222,10 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
    auto-layout table a small percentage width resolves to the content's
    minimum, and cells are already nowrap. The implementation table is excluded:
    its first two columns are pinned at their specified widths (spec 9.3). */
-.tbl:not(.impl) .rowhead,.tbl:not(.impl) tbody th{width:1%}
+/* The risk table sizes its own columns through <col> (sizeRiskColumns), so
+   it must not also carry the shrink-to-content width the allocation table
+   uses - the two disagree and fixed layout picks the cell. */
+.tbl.alloc .rowhead,.tbl.alloc tbody th{width:1%}
 /* Every portfolio column exactly the same width, whatever the column count
    and however long the derived names are - a comparison table whose columns
    differ in width reads as though the numbers differ in kind. Auto layout
@@ -175,7 +235,49 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
    takes it, with the row header pinned to the measured content width the
    renderer publishes as --alloc-c1 and a min-width that keeps the equal
    columns wide enough for the longest header (see sizeAllocColumns). */
-.tbl.alloc,.tbl.risk{table-layout:fixed}
+.tbl.alloc{table-layout:fixed}
+/* Adding or removing a column changes three measured pixel values at once -
+   the table's own width and the two column widths the renderer publishes.
+   Registering the custom properties as lengths is what lets them interpolate;
+   unregistered they are just strings and jump. Browsers without @property
+   simply keep today's instant change, so this is additive. */
+@property --fixed-c1{syntax:'<length>';inherits:true;initial-value:0px}
+@property --fixed-col{syntax:'<length>';inherits:true;initial-value:0px}
+.tbl.alloc{transition:width var(--col-motion),
+  --fixed-c1 var(--col-motion),--fixed-col var(--col-motion)}
+@media (prefers-reduced-motion:reduce){.tbl.alloc{transition:none}}
+/* The risk table lays out automatically and takes its geometry from these two
+   measured values (sizeRiskColumns). Column one is pinned exactly - min and
+   max together - so the crisis names cannot be clipped and cannot push into
+   the first portfolio's Nominal column. The data cells only state a floor, so
+   they share whatever is left; when the floor wins, the table outgrows the
+   wrapper and it scrolls. */
+.tbl.risk th:first-child,.tbl.risk td:first-child{
+  width:var(--risk-c1,auto);min-width:var(--risk-c1,auto);max-width:var(--risk-c1,auto)}
+.tbl.risk tbody tr.band th,.tbl.risk tbody tr.band td{
+  width:auto;min-width:0;max-width:none}
+.tbl.risk thead th.num,.tbl.risk tbody td.num,.tbl.risk thead th.sub{
+  min-width:var(--risk-col,auto)}
+/* Twice the standard header height (37px measured), stated rather than padded
+   so it holds whatever the tallest cell contains - the base column carries a
+   tooltip and the comparisons a remove control, so their natural heights
+   differ. Scoped to the allocation table; the risk dashboard's header is two
+   rows already. */
+.tbl.alloc thead th{height:74px;vertical-align:middle}
+/* Same for the risk dashboard's first header row - the one carrying the
+   portfolio names. Its second row is the Nominal/Real pairing and keeps its
+   own height, so the rule is pinned to the first row rather than to thead. */
+.tbl.risk thead tr:first-child th{height:54px;vertical-align:middle}
+/* The export card is marked by a rule down its leading edge; the allocation
+   table and the two chart cards take the same device in the accent blue, so
+   the three read as one family. 3px against the card's 4px because the table
+   carries it across its full width, not down a short edge. An explicit class
+   rather than :has(.tbl.alloc) - this ships to a managed browser estate and
+   the selector is not worth the bet. */
+.tblwrap.accent-top{border-top:1px solid var(--accent)}
+/* Left-aligned, growing rightward as columns are added. Centring was tried
+   and abandoned: at one column the table sat hundreds of pixels from the
+   heading above it, and the section read as two alignments stacked. */
 .tbl.alloc thead th.rowhead{width:var(--fixed-c1,25%)}
 .tbl.alloc thead th.num:not(.addcol){width:var(--fixed-col,auto)}
 /* At the column cap a long derived name wraps rather than forcing the column
@@ -184,15 +286,17 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
 /* The risk table declares its columns: its header cells span Nominal/Real
    pairs, and <col> widths are the only way to split a pair exactly evenly
    under fixed layout. */
-.tbl.risk col.col-head{width:var(--fixed-c1,25%)}
-.tbl.risk col.col-data{width:var(--fixed-col,auto)}
+/* widths are written onto these by sizeRiskColumns, in pixels */
 /* Section bands wrap instead of forcing the first column wide enough to hold
    "Conditional Value at Risk with 99% Confidence". */
 tr.band th{white-space:normal}
 /* the Nominal/Real strip sits in the body, where the split begins */
+/* Nominal/Real. The .78 opacity is gone rather than the colour changed: it
+   was fading the text and its underline together, so lifting it darkens both
+   at once and the two stay in step. */
 tr.subhead th{background:var(--head-bg);color:var(--head-ink);font-weight:600;
-  font-size:12px;letter-spacing:.11em;text-transform:uppercase;opacity:.78;
-  border-bottom:1px solid var(--line-strong)}
+  font-size:12px;letter-spacing:.11em;text-transform:uppercase;
+  border-bottom:1px solid var(--line-mid,var(--line-strong))}
 tr.subhead td{background:var(--surface);position:sticky;left:0;z-index:1}
 .tbl tbody th{position:sticky;left:0;background:var(--surface);z-index:1;font-weight:400;
   color:var(--ink-2);text-align:left}
@@ -200,8 +304,13 @@ tr.subhead td{background:var(--surface);position:sticky;left:0;z-index:1}
   border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-ink);vertical-align:middle}
 tr.cat th,tr.cat td{font-weight:700;color:var(--ink);background:var(--cat-bg);
   border-top:1px solid var(--line-strong)}
-tr.asset th{padding-left:32px}
-tr.asset td,tr.asset th{color:var(--ink-2)}
+/* Cell content wrapper - the thing that can actually be collapsed when a row
+   comes or goes. inline-block so it shrink-wraps: sizeFixedColumns measures
+   the columns in auto layout, and a block child would claim the whole column
+   and wreck the measurement. */
+.cw{display:inline-block;vertical-align:top;overflow:hidden;max-width:100%}
+tr.asset th{padding-left:16px}
+tr.asset td,tr.asset th{color:var(--ink-row,var(--ink-2))}
 tr.total th,tr.total td{font-weight:800;color:var(--ink);background:var(--cat-bg);
   border-top:2px solid var(--line-strong);border-bottom:2px solid var(--line-strong)}
 tr.metric th,tr.metric td{font-weight:700;color:var(--ink);background:var(--metric-bg)}
@@ -210,7 +319,6 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
 .tbl tbody tr:not(.band):hover td,.tbl tbody tr:not(.band):hover th{background:var(--row-hover)}
 .neg{color:var(--neg)}
 .span2{border-left:1px solid var(--line)}
-.legend-note{margin-top:12px;font-size:13px;color:var(--ink-3);display:flex;gap:18px;flex-wrap:wrap}
 /* host convention: #alertArea carries API errors */
 #alertArea:empty{display:none}
 .alert{padding:11px 15px;border-radius:var(--radius-sm);margin:0 0 16px;font-size:14px;border:1px solid}
@@ -232,9 +340,9 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
   display:flex;flex-direction:column}
 .rail-brand{padding:18px 20px 14px;border-bottom:1px solid var(--rail-line);position:sticky;top:0;
   background:var(--rail-bg);z-index:2}
-.rail-brand b{display:block;font-family:var(--f-display);font-size:17px;color:var(--rail-ink);
+.rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
-.rail-brand span{display:block;margin-top:4px;font-size:11.5px;letter-spacing:.15em;
+.rail-brand>span{display:block;font-family:var(--f-num);margin-top:4px;font-size:11.5px;letter-spacing:.15em;
   text-transform:uppercase;color:var(--rail-ink-3);font-family:var(--f-num)}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
@@ -322,8 +430,9 @@ body.has-rail .shell{margin-left:var(--rail-w);max-width:1320px}
   --cat-6:#4a3aa7;--cat-7:#e34948}
 .viz{--viz-grid:#E4EAF0;--viz-axis:#C3CDD8;--viz-ink:var(--ink);--viz-mut:var(--ink-2)}
 .viz-grid{display:grid;grid-template-columns:1fr;gap:18px}
-@media (min-width:1180px){.viz-grid{grid-template-columns:1.35fr 1fr}}
+@media (min-width:1180px){.viz-grid{grid-template-columns:1fr 1fr}}
 .viz-card{background:var(--surface);border:1px solid var(--line-strong);
+  border-left:3px solid var(--accent);
   border-radius:var(--radius);padding:16px 18px 14px;min-width:0}
 .viz-card h3{margin:0 0 2px;font-size:15px;font-weight:700;color:#16243A;
   font-family:var(--f-display)}
@@ -452,8 +561,13 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
   width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow-y:auto;
   background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius);
   box-shadow:0 24px 60px -12px rgba(16,24,40,.4);padding:24px 26px 22px}
-.dialog h2{margin:0 0 4px;font-size:19px;color:#16243A;font-family:var(--f-display)}
-.dialog .dlg-sub{margin:0 0 20px;font-size:13.5px;color:var(--ink-3)}
+/* 20px below, the gap the dropped standfirst used to carry. */
+.dialog h2{margin:0 0 20px;font-size:19px;color:#16243A;font-family:var(--f-display)}
+/* Capitals through text-transform rather than in the markup, so the
+   accessible name stays "Start a proposal" - some screen readers spell out an
+   all-capitals string as an acronym. */
+.dialog h2.dlg-shout{text-transform:uppercase;letter-spacing:.07em;font-size:17px;
+  font-family:var(--f-num);font-weight:700}
 .dialog .field{margin:0 0 16px}
 .dialog .field label{font-size:13px;color:var(--ink-2);font-weight:600}
 .dialog input[type=text]{background:var(--surface);border-color:var(--line-strong);
@@ -537,7 +651,32 @@ main{display:block}
 /* the Base tier's ring while no base exists (spec 10.2). The spec names the
    accent for it; on the navy rail the accessible focus blue is the same
    adjustment section 6.2 makes for the rail button. */
-.tier-ring{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
+/* The ring that marks the tier still waiting for an answer (spec 10.2).
+
+   Drawn as a pseudo-element inset INSIDE the tier's padding rather than as an
+   outline on the box. An outline sits on the border edge, which for a tier is
+   the rail's own right edge - the ring's right side landed against the white
+   document and effectively disappeared. The insets here are independent, so
+   it can sit within the 20px horizontal padding without clipping the fields
+   vertically.
+
+   It breathes slowly to draw the eye, since it is the one thing on the page
+   the user has to act on before anything else works. */
+/* The document arriving for the first time: one fade, everything together.
+   No translate - a rising document would move the sections relative to each
+   other again, which is the thing being fixed. */
+.doc-reveal{animation:docreveal var(--reveal-motion) ease-out both}
+@keyframes docreveal{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.doc-reveal{animation:none}}
+
+.tier-ring{position:relative}
+.tier-ring::after{content:"";position:absolute;inset:6px 11px;pointer-events:none;
+  border:2px solid var(--rail-focus,#8FB4FF);border-radius:5px;
+  animation:tierpulse 2.6s ease-in-out infinite}
+@keyframes tierpulse{0%,100%{opacity:.22}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .tier-ring::after{animation:none;opacity:.85}
+}
 
 /* basis rebuild confirmation (spec 11.4) */
 .basis-confirm{margin-top:10px;background:var(--rail-input-bg,#1D2F4B);
@@ -596,16 +735,33 @@ main{display:block}
    rows above them keep the standard height. */
 .tbl.risk tbody tr.asset th,.tbl.risk tbody tr.asset td{padding-top:1px;padding-bottom:1px}
 .tbl.risk tbody tr.subhead th{padding-top:2px;padding-bottom:2px}
+/* Half the 12px the shared band rule sets: these three section bands are the
+   risk dashboard's own structure, and at full height they cost more vertical
+   room than the rows they introduce. */
+.tbl.risk tbody tr.band th{padding-top:6px;padding-bottom:6px}
 
 /* Remove a comparison from its own column header. The base has none: it
    cannot be removed, only changed (spec 2.7). */
-.tbl thead th.num{position:relative;padding-right:26px}
-.col-rm{position:absolute;top:2px;right:3px;width:22px;height:22px;padding:0;
-  display:flex;align-items:center;justify-content:center;border:0;border-radius:3px;
-  background:none;color:var(--ink-3);font-family:var(--f-num);font-size:15px;
-  line-height:1;cursor:pointer}
-.col-rm:hover{color:var(--neg,#B42318);background:var(--surface-2)}
+.tbl thead th.num{position:relative}
+/* Inline, immediately after the column's name rather than pinned to the
+   corner of the cell. 24px square for the WCAG 2.2 target-size minimum
+   (spec 13), but with no fill until hover, so what reads is the glyph beside
+   the label and not a button. Faint until wanted: a remove control on every
+   comparison column should not be the loudest thing in the header. */
+/* The label and the control are laid out together rather than the control
+   being hung off the baseline: vertical-align could only ever approximate
+   this, because the button is a 24px box and the label is 12.5px uppercase
+   with its own line box. A flex row centres the two on each other exactly. */
+.col-head{display:inline-flex;align-items:center;justify-content:flex-end;gap:1px;
+  max-width:100%;text-align:right}
+.col-rm{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+  width:24px;height:24px;padding:0;margin:0 -4px 0 1px;
+  border:0;border-radius:3px;background:none;color:var(--neg,#B42318);
+  font-family:var(--f-num);font-size:15px;line-height:1;cursor:pointer;
+  transition:background .12s ease}
+.col-rm:hover{background:var(--surface-2)}
 .col-rm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media (prefers-reduced-motion:reduce){.col-rm{transition:none}}
 
 /* Collapsing the rail. It folds to a strip that still carries the control, so
    the way back is always in view, and the document reclaims the width. */
@@ -620,21 +776,57 @@ main{display:block}
   cursor:pointer}
 .rail-toggle:hover{color:var(--rail-ink);background:var(--rail-input-bg,#1D2F4B)}
 .rail-toggle:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:2px}
+
+/* The fold is animated, and the technique matters: everything inside the rail
+   is held at the EXPANDED width so that narrowing the rail clips it, rather
+   than reflowing 352px of form controls through every width down to 48px. The
+   rail's own overflow-x does the clipping. Without this the collapse reads as
+   the fields crushing themselves, which is both ugly and expensive - a full
+   relayout of the tier content on every frame. */
+.rail{overflow-x:hidden;transition:width var(--rail-motion)}
+.rail-tiers{width:var(--rail-w);transition:opacity 190ms linear 70ms}
+.rail-brand{transition:padding var(--rail-motion)}
+/* nowrap rather than a fixed width: the brand lines already fit on one line at
+   the expanded width, so this holds them there and lets the rail clip them. */
+/* Child combinator throughout: the toggle button lives inside .rail-brand and
+   carries its own <span> for the chevron, which a descendant selector reaches
+   too - fading the brand lines would fade the control's glyph with them. */
+.rail-brand>b,.rail-brand>span{white-space:nowrap;transition:opacity 150ms linear}
+body.has-rail .shell{transition:margin-left var(--rail-motion)}
+/* The control sits against the rail's right edge in both states, so it is
+   carried inward by the same animation instead of jumping between two
+   positions. At 48px wide, right:10px leaves it centred in the strip. */
+.rail-toggle{right:10px}
+
 body.rail-collapsed .rail{width:var(--rail-w-collapsed,48px)}
-body.rail-collapsed .rail-tiers{display:none}
-body.rail-collapsed .rail-brand{padding:14px 0 12px;border-bottom:none}
-body.rail-collapsed .rail-brand b,body.rail-collapsed .rail-brand span{display:none}
-body.rail-collapsed .rail-toggle{position:static;margin:0 auto}
+/* visibility, not display: display cannot transition, and dropping the tiers
+   instantly would empty the rail before it had begun to move. The 0s delay
+   holds them in the accessibility tree and the tab order until the fold has
+   finished, and removes them the instant it does. */
+body.rail-collapsed .rail-tiers{opacity:0;visibility:hidden;
+  transition:opacity 150ms linear,visibility 0s 150ms}
+body.rail-collapsed .rail-brand{padding:14px 10px 12px;border-bottom:none}
+body.rail-collapsed .rail-brand>b,body.rail-collapsed .rail-brand>span{opacity:0;
+  transition:opacity 110ms linear}
 body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max-width:none}
+
+/* Spec 13: reduced motion gets the finished layout and no animation. */
+@media (prefers-reduced-motion:reduce){
+  .rail,.rail-tiers,.rail-brand,.rail-brand>b,.rail-brand>span,
+  body.has-rail .shell,body.rail-collapsed .rail-tiers,
+  body.rail-collapsed .rail-brand>b,body.rail-collapsed .rail-brand>span{transition:none}
+  body.rail-collapsed .rail-tiers{visibility:hidden}
+}
 @media (max-width:1039px){
-  .col-rm{width:44px;height:44px;top:0;right:0}
-  .tbl thead th.num{padding-right:46px}
+  /* Stacked: the rail is static and full width, so there is no fold to slide.
+     Collapsing hides the tiers and nothing animates sideways. */
+  .rail,body.has-rail .shell{transition:none}
   body.rail-collapsed .rail{width:auto}
+  body.rail-collapsed .rail-tiers{width:auto}
   body.has-rail.rail-collapsed .shell{margin-left:0}
 }
 
 .alert-info{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3}
-.impl-foot .bdg{margin-left:10px}
 
 
 .addcol{width:46px;min-width:46px}
@@ -663,17 +855,73 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .pop-full{margin:0 0 11px;font-size:14px;color:var(--ink-2);line-height:1.45}
 
 
-/* ── step nav ── */
-.steps{display:flex;gap:2px;margin:0 0 clamp(20px,3vw,28px);border-bottom:1px solid var(--line-strong)}
-.step{appearance:none;background:none;border:0;border-bottom:2px solid transparent;
-  font:inherit;font-family:var(--f-num);font-size:14.5px;font-weight:600;color:var(--ink-2);
-  padding:9px 16px;cursor:pointer;margin-bottom:-1px;display:flex;align-items:center;gap:8px}
-.step:hover{color:var(--ink)}
-.step[aria-selected="true"]{color:#16243A;border-bottom-color:var(--accent)}
-.step:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.step .sn{font-family:var(--f-num);font-size:11.5px;color:var(--ink-3);font-weight:700}
-.step[aria-selected="true"] .sn{color:var(--accent)}
-.step:disabled{opacity:.45;cursor:not-allowed}
+/* ── step nav ──
+   The numbered-circle treatment from proposalToolv2: a numeral in a ring, the
+   stage name over a one-line description, the two joined by a connector and
+   centred over the document. Ported to this page's own tokens rather than
+   v2's, so the theme swap of spec 6.5 stays a token change (D32).
+
+   The SEMANTICS are unchanged and deliberately not v2's. v2 marks these
+   aria-current="step", which describes a linear wizard; spec 13.2 fixes this
+   nav as role="tablist" with aria-selected and arrow-key movement, which is
+   what it is - two panels of one workspace, reachable in either order. Only
+   the appearance is borrowed.
+
+   .steps keeps display:flex, so the [hidden] !important rule above is still
+   what hides it on the landing (spec 15.1). */
+.steps{display:flex;align-items:center;justify-content:center;
+  margin:0 0 clamp(20px,3vw,28px);padding:12px 0 16px;
+  border-bottom:1px solid var(--line-strong)}
+.step{appearance:none;background:none;border:0;font:inherit;color:var(--ink-2);
+  display:flex;align-items:center;gap:10px;text-align:left;
+  padding:9px 13px;border-radius:var(--radius-sm);cursor:pointer}
+.step:hover{background:var(--surface-2);color:var(--ink)}
+.step:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.step:disabled{opacity:.4;cursor:not-allowed}
+.step:disabled:hover{background:none}
+/* Once step 2 is reachable it breathes until it has been opened, so the PWA
+   is told the next stage has unlocked rather than having to notice. The pulse
+   is on the numeral, not the whole tab: a moving block of text is harder to
+   read than a moving disc beside it. */
+.step-beckon .step-index{animation:stepbeckon 2.4s ease-in-out infinite;
+  border-color:var(--accent);color:var(--accent)}
+@keyframes stepbeckon{
+  0%,100%{box-shadow:0 0 0 0 rgba(31,95,191,.34)}
+  50%{box-shadow:0 0 0 6px rgba(31,95,191,0)}
+}
+@media (prefers-reduced-motion:reduce){
+  .step-beckon .step-index{animation:none;box-shadow:0 0 0 3px rgba(31,95,191,.28)}
+}
+.step:disabled:hover{background:none}
+.step-index{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--line-strong);border-radius:50%;background:var(--surface);
+  font-family:var(--f-num);font-size:12px;font-weight:700;color:var(--ink-3);
+  transition:background .15s ease,color .15s ease,border-color .15s ease}
+.step-label{display:grid}
+.step-label strong{font-family:var(--f-num);font-size:13.5px;font-weight:600;line-height:1.25}
+.step-label small{font-size:11px;color:var(--ink-3);margin-top:1px;line-height:1.25}
+.step[aria-selected="true"]{color:#16243A}
+.step[aria-selected="true"] .step-index{background:#16243A;color:#fff;border-color:#16243A}
+.step[aria-selected="true"] .step-label strong{font-weight:700}
+.step-connector{width:80px;height:1px;flex:0 0 auto;background:var(--line-strong);margin:0 10px}
+@media (prefers-reduced-motion:reduce){.step-index{transition:none}}
+/* Narrow: the descriptions go before the stage names do, and the connector
+   shrinks rather than pushing the second stage off the edge. */
+@media (max-width:719px){
+  .step-connector{width:24px;margin:0 4px}
+  .step-label small{display:none}
+}
+
+/* ── implementation variant: the first field of step 2 (D29) ──
+   Separated from the sleeve list by a rule rather than a heading: it gates
+   the list below it, so it reads as its precondition rather than as another
+   item in it. */
+.vr-field{display:grid;gap:5px;margin:0 0 14px;padding:0 0 14px;
+  border-bottom:1px solid var(--rail-line)}
+.vr-field label{font-size:13px;font-weight:600;color:var(--rail-ink-2);line-height:1.3}
+.vr-field.done label{color:var(--rail-ink)}
+.vr-field select{width:100%}
+.vr-note{margin:1px 0 0;font-size:12.5px;color:var(--rail-ink-3);line-height:1.45}
 
 /* ── sleeve pickers in the rail ── */
 .sl-list{display:grid;gap:9px}
@@ -689,10 +937,56 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 @media (prefers-reduced-motion:reduce){.sl-bar i{transition:none}}
 
 /* ── implementation table ── */
+/* 30px below, matching .sec-head.stage-head - both steps open on the same
+   block and must stand off their tables identically. */
 .impl-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;
-  flex-wrap:wrap;margin:0 0 14px}
-.impl-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:16px 0 0}
+  flex-wrap:wrap;margin:0 0 30px}
 .impl-gate{margin:0;font-size:14px;color:var(--ink-2)}
+
+/* ── completion progress, from proposalToolv2's .completion-summary ──
+   Replaces the pill that only ever said one of two things. Sits opposite the
+   stage block, which .impl-head's space-between already positions. */
+.completion-summary{min-width:230px}
+.completion-line{display:flex;justify-content:space-between;gap:15px;
+  font-family:var(--f-num);color:var(--ink-2);font-size:12px;margin-bottom:5px}
+.completion-line strong{color:var(--ink);font-variant-numeric:tabular-nums}
+.progress-track{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden}
+.progress-track i{display:block;height:100%;width:var(--progress);background:#176A33;
+  transition:width .2s ease}
+.progress-track.is-done i{background:#176A33}
+@media (prefers-reduced-motion:reduce){.progress-track i{transition:none}}
+
+/* ── export card, from proposalToolv2 ──
+   Its structure verbatim; its greens, ambers and reds swapped for the ones
+   this page's badges already use, so the card reads as part of the document
+   rather than as a transplant. */
+.impl-viz{padding-bottom:44px;border-bottom:1px solid var(--line-strong)}
+.export-card{margin:44px 0 0;padding:24px 26px;display:grid;
+  grid-template-columns:60px 1fr auto;gap:20px;align-items:center;
+  background:var(--surface);border:1px solid var(--line-strong);
+  border-left:4px solid #176A33;border-radius:7px;box-shadow:var(--shadow)}
+.export-icon{width:50px;height:58px;display:grid;place-items:center;position:relative;
+  background:#E7F4EC;border:1px solid #B7E0C5;border-radius:4px;color:#176A33;
+  font-family:var(--f-num);font-size:20px;font-weight:750}
+.export-icon:after{content:"";position:absolute;right:0;top:0;border-style:solid;
+  border-width:0 0 12px 12px;border-color:transparent transparent #B7E0C5 transparent}
+.export-copy h3{margin:0;font-family:var(--f-num);font-size:23px;font-weight:520;
+  color:#16243A}
+.export-copy>p:not(.eyebrow){margin:4px 0;color:var(--ink-2);font-size:13px}
+/* Scoped through .export-copy rather than carrying v2's !important: the
+   generic paragraph rule above is (0,2,1) because of its :not(), so a bare
+   .export-gate.blocked at (0,2,0) loses the colour it is there to set. */
+.export-copy>p.export-gate{font-weight:650}
+.export-copy>p.export-gate.ready{color:#176A33}
+.export-copy>p.export-gate.blocked{color:#B45309}
+.export-copy>p.export-gate.error{color:#9B1C1C}
+.btn-export{background:#176A33;color:#fff;border-color:#176A33;min-width:180px}
+.btn-export:hover:not(:disabled){background:#12572a;border-color:#12572a}
+@media (max-width:719px){
+  .export-card{grid-template-columns:1fr;gap:14px}
+  .export-icon{display:none}
+  .btn-export{width:100%}
+}
 .tbl.impl{min-width:1690px}
 .tbl.impl td.txt{white-space:nowrap}
 /* both identity columns stay pinned while the attribute and money columns scroll */
@@ -706,7 +1000,9 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
   border-right:1px solid var(--line-strong)}
 .tbl.impl thead .prodcol{z-index:4;background:var(--head-bg)}
 .tbl.impl tr.asset .prodcol{background:var(--surface);color:var(--ink)}
-.tbl.impl tr.asset.alt .prodcol{background:#E8F2E6}
+/* The products column bands with the row it is in, not against it - the green
+   was the only place on the page using that tint. */
+.tbl.impl tr.asset.alt .prodcol{background:var(--surface)}
 .tbl.impl tr.cat .prodcol{background:#E9EDF2}
 .tbl.impl tr.grand .prodcol{background:#16243A}
 .tbl.impl tbody tr:hover .prodcol{background:var(--row-hover)}
@@ -725,11 +1021,47 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .p-mf{background:#F3EDF9;color:#5B4380;border:1px solid #D9CCEA}
 .p-int{background:#E8EEF5;color:#1E4FA3;border:1px solid #C4D5E8}
 .p-ext{background:#F5F1E8;color:#7A5C2E;border:1px solid #E0D3BC}
+.p-ucits{background:#E4F1F4;color:#1C5A69;border:1px solid #BCDCE4}
+.p-icav{background:#EDEBF6;color:#453A7A;border:1px solid #CFC9E6}
 .p-sleeve{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}
+/* Remove control inside the sleeve pill. Sized to stay inside an 11px pill
+   without stretching it, and given a real hit area by the negative margin
+   rather than by growing the pill. */
+.pill-x{appearance:none;border:0;background:none;cursor:pointer;padding:0 0 0 5px;
+  margin:0 -2px 0 1px;font:inherit;font-size:13px;line-height:1;color:inherit;
+  opacity:.65;vertical-align:-1px}
+.pill-x:hover{opacity:1;color:var(--neg,#B42318)}
+.pill-x:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:2px;
+  opacity:1}
+/* ── composition doughnuts, between the table and the download ── */
+.impl-viz{margin:46px 0 0}
+.impl-viz-head{margin:0 0 14px}
+.impl-viz-head h3{margin:0 0 3px;font-family:var(--f-display);font-size:17px;color:#16243A;
+  font-weight:600}
+.impl-viz-head .sec-note{margin:0}
+/* auto-fit rather than five fixed tracks: the row holds five across on a wide
+   document and folds to three, then two, without a breakpoint per step - and
+   it keeps working if a sixth attribute is ever added. */
+.dn-row{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(196px,1fr))}
+.dn-card{background:var(--surface);border:1px solid var(--line-strong);
+  border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:14px 15px 12px;min-width:0;
+  display:flex;flex-direction:column;align-items:center}
+.dn-card h4{margin:0 0 10px;font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-2);font-weight:700;align-self:flex-start}
+.dn{width:118px;height:118px;display:block;transform:rotate(-90deg)}
+.dn-arc{transition:stroke-dasharray .25s ease,stroke-dashoffset .25s ease}
+@media (prefers-reduced-motion:reduce){.dn-arc{transition:none}}
+.dn-key{list-style:none;margin:11px 0 0;padding:0;width:100%;display:grid;gap:3px}
+.dn-key li{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);
+  line-height:1.35}
+.dn-sw{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+.dn-nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn-pc{font-family:var(--f-num);font-variant-numeric:tabular-nums;color:var(--ink);
+  flex:0 0 auto}
 .impl-empty{background:var(--surface);border:1px dashed var(--line-strong);border-radius:var(--radius);
   padding:clamp(28px,5vw,52px);text-align:center}
 .impl-empty h3{margin:0 0 7px;font-size:18.5px;color:#16243A;font-family:var(--f-display)}
 .impl-empty p{margin:0 auto;max-width:44ch;font-size:15px;color:var(--ink-2)}
-.impl-note{font-size:13px;color:var(--ink-3);margin:11px 0 0;max-width:76ch}
 
-.tbl thead th{border-bottom:1px solid var(--ink)}tr.band th{border-top:1px solid var(--accent);letter-spacing:.2em}.tblwrap{background:var(--surface);border:1px solid var(--line-strong)}tr.cat th,tr.cat td{border-top:none;border-bottom:1px solid var(--line-strong)}tr.total th,tr.total td{background:#F0F2F5}h2{color:#16243A}.base-tag{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0;border-radius:9px;font-size:11.5px;font-weight:700;padding:1px 7px;letter-spacing:.03em}.rail-brand{border-bottom:1px solid #233754}.rail-brand b{font-family:"Goldman Sans","GS Sans","Roboto",system-ui,sans-serif;font-weight:400;letter-spacing:.005em}.rail .grp-idx{letter-spacing:.18em}.rail .ta-hint{color:#7E90A8}.rail .is-disabled{opacity:.42}.bdg{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}.b-ok{background:#E7F4EC;color:#176A33;border:1px solid #B7E0C5}.b-warn{background:#FEF3C7;color:#B45309;border:1px solid #F3D48A}.b-breach{background:#FDE8E8;color:#9B1C1C;border:1px solid #F1B8B2}.b-bind{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}.b-slack{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}.notices{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:0 0 clamp(20px,3vw,30px)}.spec{margin:8px 0 0;background:#FFFBEB;border:1.5px dashed #D4A017;border-radius:6px;padding:13px 18px 15px;font-size:15px;color:#4A3B10}.spec h4{margin:0 0 8px;font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:#92600A;font-family:var(--f-num);font-weight:700}.spec p{margin:0 0 9px;line-height:1.5}.spec p:last-child{margin-bottom:0}.spec .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0 0}.spec .legend span.lbl{font-size:13px;color:#6B5716}.pos{color:#1A7F37}.neg{color:#B42318}.rail .is-disabled .field-note{color:#E0B25C}
+.tbl thead th{border-bottom:1px solid var(--ink)}tr.band th{border-top:1px solid var(--accent);letter-spacing:.2em}.tblwrap{background:var(--surface);border:1px solid var(--line-strong)}tr.cat th,tr.cat td{border-top:none;border-bottom:1px solid var(--line-strong)}tr.total th,tr.total td{background:#F0F2F5}h2{color:#16243A}.base-tag{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0;border-radius:9px;font-size:11.5px;font-weight:700;padding:1px 7px;letter-spacing:.03em}.rail-brand{border-bottom:1px solid #233754}.rail-brand>b{font-family:var(--f-num);font-weight:500;letter-spacing:.005em}.rail .grp-idx{letter-spacing:.18em}.rail .ta-hint{color:#7E90A8}.rail .is-disabled{opacity:.42}.bdg{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}.b-ok{background:#E7F4EC;color:#176A33;border:1px solid #B7E0C5}.b-warn{background:#FEF3C7;color:#B45309;border:1px solid #F3D48A}.b-breach{background:#FDE8E8;color:#9B1C1C;border:1px solid #F1B8B2}.b-bind{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}.b-slack{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}.notices{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:0 0 clamp(20px,3vw,30px)}.spec{margin:8px 0 0;background:#FFFBEB;border:1.5px dashed #D4A017;border-radius:6px;padding:13px 18px 15px;font-size:15px;color:#4A3B10}.spec h4{margin:0 0 8px;font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:#92600A;font-family:var(--f-num);font-weight:700}.spec p{margin:0 0 9px;line-height:1.5}.spec p:last-child{margin-bottom:0}.spec .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0 0}.spec .legend span.lbl{font-size:13px;color:#6B5716}.pos{color:#1A7F37}.neg{color:#B42318}.rail .is-disabled .field-note{color:#E0B25C}

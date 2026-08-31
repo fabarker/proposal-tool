@@ -14,6 +14,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from . import portfolio_weights as pw
+from .sleeves import VARIANTS as IMPLEMENTATION_VARIANTS, variantExists
 from .types import BasisInput, MandateInput, PortfolioKey, ValidationError
 
 MANDATE_FLOOR = 5_000_000
@@ -24,6 +25,22 @@ CURRENCIES = list(pw.CURRENCIES)
 HEDGING_POLICIES = ['Hedged', 'ISG Hedged', 'Unhedged', 'Equity Not Hedged']
 ALLOCATIONS = ['Full', 'Core', 'Ex HFs', 'Ex Alts']
 RISK_LEVELS = [str(level['name']) for level in pw.RISK_LEVELS]
+
+# Display names for the risk levels. The VALUES above are load-bearing: they
+# are the fourth field of the canonical portfolio key, so they key the
+# availability set, every stored scenario and all 272 baked payloads. Renaming
+# them in the data would invalidate the bake. The UI therefore shows a label
+# and submits the value, which is the schema-is-data rule of spec 4.3 applied
+# to a name rather than an option list (D35).
+RISK_LEVEL_LABELS = {
+    'Low Vol': 'Low Vol',
+    'Cons': 'Conservative',
+    'Cons Mod': 'Conservative-Moderate',
+    'Mod': 'Moderate',
+    'Mod Agg': 'Moderate-Aggressive',
+    'Agg': 'Aggressive',
+    'All Equity': 'All Equity',
+}
 
 # Real estate is only ever held by these allocations (spec 2.1); the others are
 # rendered checked-and-disabled because the exclusion is true, not inapplicable.
@@ -103,13 +120,21 @@ def availability(basis: BasisInput, mandateSize) -> list:
 
 
 def portfolioHeader(key: PortfolioKey) -> str:
-    """Column-header name: no currency, since it is constant (spec 2.3)."""
+    """Column-header name: no currency, since it is constant (spec 2.3).
+
+    Risk level, then allocation, then exclusions - and the risk level prints
+    through RISK_LEVEL_LABELS, so a name reads the way the rail reads
+    ("Moderate-Aggressive Core ex TAA"). The KEY is untouched by this: it
+    still carries the short value, which is what the availability set and the
+    bake are keyed on (D35, D36).
+    """
     suffix = ''
     if key.excludeRE and key.allocation in RE_ALLOWED:
         suffix += ' ex RE'
     if key.excludeTAA:
         suffix += ' ex TAA'
-    return '{} {}{}'.format(key.allocation, key.riskLevel, suffix)
+    risk = RISK_LEVEL_LABELS.get(key.riskLevel, key.riskLevel)
+    return '{} {}{}'.format(risk, key.allocation, suffix)
 
 
 def portfolioName(basis: BasisInput, key: PortfolioKey) -> str:
@@ -131,6 +156,20 @@ def validateBasis(basis: BasisInput) -> None:
         raise ValidationError('currency', 'Unknown currency {!r}.'.format(basis.currency))
     if basis.hedging not in HEDGING_POLICIES:
         raise ValidationError('hedging', 'Unknown hedging policy {!r}.'.format(basis.hedging))
+
+
+def validateVariant(variant) -> None:
+    """Reject an implementation variant outside the offered list (D29).
+
+    Enforced server-side as well as in the UI because the variant decides
+    which products a client can be shown at all - an unchecked one would let
+    a caller pull the US Onshore library into an Irish book.
+    """
+    if not variant:
+        raise ValidationError('variant', 'Choose an implementation variant.')
+    if not variantExists(variant):
+        raise ValidationError(
+            'variant', 'Unknown implementation variant {!r}.'.format(variant))
 
 
 def validateMandate(mandate: MandateInput, advisorExists) -> None:
@@ -166,7 +205,9 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'hedgingPolicies': HEDGING_POLICIES,
             'allocations': allocationsFor(mandateSize),
             'riskLevels': RISK_LEVELS,
+            'riskLevelLabels': RISK_LEVEL_LABELS,
             'reAllowed': RE_ALLOWED,
+            'implementationVariants': IMPLEMENTATION_VARIANTS,
         },
         'availability': availability(basis, mandateSize),
         'categories': categoriesInUniverseOrder(),

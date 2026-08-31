@@ -32,15 +32,6 @@
     <div class="tier" id="tier-base"></div>
 
     <div class="tier" id="tier-sleeves" hidden></div>
-
-    <div class="tier" id="tier-comparisons">
-      <div class="tier-h"><h3>Comparisons</h3>
-        <span class="tier-count" id="count">0 of 3</span></div>
-      <p class="pk-note">Add a comparison from the <strong>+</strong> column at the right of
-        the allocation table.</p>
-
-      <div class="built" id="built"></div>
-    </div>
   </div>
 </aside>
 
@@ -96,9 +87,14 @@
 
   <div class="steps" id="steps" role="tablist" aria-label="Scenario steps">
     <button type="button" class="step" data-step="aa" role="tab" aria-selected="true">
-      <span class="sn">1</span>Asset allocation</button>
+      <span class="step-index" aria-hidden="true">1</span>
+      <span class="step-label"><strong>Asset allocation</strong><small>Build &amp; compare</small></span>
+    </button>
+    <span class="step-connector" aria-hidden="true"></span>
     <button type="button" class="step" data-step="impl" role="tab" aria-selected="false">
-      <span class="sn">2</span>Implementation</button>
+      <span class="step-index" aria-hidden="true">2</span>
+      <span class="step-label"><strong>Implementation</strong><small>Sleeves &amp; export</small></span>
+    </button>
   </div>
 
 <div id="view-aa">
@@ -112,21 +108,19 @@
   </div>
 
   <section class="sec">
-    <div class="sec-head">
-      <h2>Allocation</h2>
+    <div class="sec-head stage-head">
+      <div>
+        <p class="eyebrow">Step 1 of 2</p>
+        <h2 class="stage-title">Strategic Asset Allocation</h2>
+        <p class="stage-sub">Comparing Portfolio Risk and Return Characteristics</p>
+      </div>
+      <span class="resolving" id="resolving" aria-hidden="true" hidden></span>
     </div>
-    <div class="tblwrap" tabindex="0" aria-label="Allocation table, scrolls horizontally">
+    <div class="tblwrap accent-top" tabindex="0" aria-label="Allocation table, scrolls horizontally">
       <table class="tbl alloc" id="alloc"></table></div>
-    <p class="legend-note"><span>Base portfolio pinned to the first column</span>
-      <span>Maximum of four portfolios</span></p>
   </section>
 
   <section class="sec viz">
-    <div class="sec-head">
-      <h2>At a glance</h2>
-      <span class="sec-note">Summarises the table above. Exact values stay in the tables —
-        these are for shape and position, not for reading numbers off.</span>
-    </div>
     <div class="viz-grid">
       <div class="viz-card">
         <h3>Allocation by category</h3>
@@ -144,10 +138,10 @@
   </section>
 
   <section class="sec">
-    <div class="sec-head">
-      <h2>Risk dashboard</h2>
-      <span class="sec-note">Three sections. Factor analytics span both sub-columns; stress periods
-        and risk premia split into Nominal and Real.</span>
+    <div class="sec-head stage-head">
+      <div>
+        <h2 class="stage-title">Risk Dashboard</h2>
+      </div>
     </div>
     <div class="tblwrap" tabindex="0" aria-label="Risk dashboard, scrolls horizontally">
       <table class="tbl risk" id="risk"></table></div>

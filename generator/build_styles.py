@@ -178,11 +178,50 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);
 .shell{max-width:1500px;margin:0 auto;padding:clamp(14px,2vw,24px) clamp(16px,3vw,44px) 96px}
 
 .sec{margin-bottom:clamp(26px,4vw,50px)}
+/* The charts close with a rule, so the Risk Dashboard title below reads as a
+   new part of the document rather than as a caption to them. Padding holds it
+   off the cards; .sec's own margin carries the space beneath it. */
+.sec.viz{padding-bottom:clamp(26px,4vw,50px);border-bottom:1px solid var(--line-strong)}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
   margin-bottom:14px;flex-wrap:wrap}
 h1,h2{margin:0;font-family:var(--f-display);font-weight:var(--head-weight,600);color:var(--ink)}
 h1{font-size:clamp(28.5px,3.5vw,41.5px);letter-spacing:var(--head-ls,-.015em);line-height:1.15}
 h2{font-size:clamp(18.5px,1.9vw,23px);letter-spacing:var(--head-ls,-.01em)}
+/* The stage title over the allocation table, matching proposalToolv2's
+   .stage-heading h1 declaration for declaration: GS Sans Condensed - which is
+   this page's --f-num - at 39px/1.08, weight 480, -.012em, no margin. The
+   condensed face is variable across 300-900, so 480 is a real weight here
+   rather than a synthesised one. Colour is not in v2's rule either; it
+   inherits, and ours inherits the same near-black navy from the theme.
+   Specificity (0,1,1) carries it over the h1,h2 and h2 rules above. */
+h2.stage-title{font-family:var(--f-num);font-size:39px;font-weight:480;
+  letter-spacing:-.012em;line-height:1.08;margin:0}
+/* Its standfirst, from the same v2 rule set (.stage-heading>div>p:last-child):
+   750px measure, 10px above, 16px, muted - our --ink-2 in place of v2's
+   --muted, the two being the same grey to within a point per channel. */
+.stage-sub{max-width:750px;margin:10px 0 0;color:var(--ink-2);font-size:16px}
+/* v2's .eyebrow, with its .stage-heading margin override folded in - ours only
+   ever appears above a stage title. --accent stands in for v2's --blue-600,
+   the two being the same mid blue in the same role. */
+.eyebrow{margin:0 0 8px;color:var(--accent);font-family:var(--f-num);font-size:12px;
+  font-weight:720;letter-spacing:.115em;text-transform:uppercase}
+/* The stage heading stands off its table further than a section head does:
+   it is a 39px title with a standfirst under it, not a 23px label. Scoped so
+   At a glance and Risk dashboard keep the 14px of .sec-head. */
+.sec-head.stage-head{margin-bottom:30px;position:relative}
+/* The waiting indicator. Absolutely positioned on purpose: the pill it
+   replaces lived in the notices strip, which is hidden when empty, so every
+   resolve grew the strip - its own height plus a 20-30px margin - and pushed
+   the whole document down and back. That shift above the table was the flash.
+   Taken out of flow, this cannot move anything. */
+.resolving{position:absolute;right:0;bottom:6px;width:18px;height:18px;
+  border:2px solid var(--line-strong);border-top-color:var(--accent);
+  border-radius:50%;animation:resolvespin .7s linear infinite}
+@keyframes resolvespin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){
+  .resolving{animation:none;border-top-color:var(--accent);opacity:.7}
+}
+@media (max-width:640px){h2.stage-title{font-size:32px}.stage-sub{font-size:14px}}
 .sec-note{font-size:14.5px;color:var(--ink-3);max-width:52ch}
 .lede{font-size:16.5px;color:var(--ink-2);max-width:62ch;margin:10px 0 0}
 
@@ -219,7 +258,11 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
   text-transform:var(--btn-case,uppercase);font-weight:700;padding:11px 24px;
   border-radius:var(--radius-sm);border:1px solid transparent;cursor:pointer;transition:.15s}
 .btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.btn-primary:hover{filter:brightness(1.1)}
+.btn-primary:hover:not(:disabled){filter:brightness(1.1)}
+/* There was no :disabled rule, so a disabled button looked identical to a
+   live one - the export button in particular sat there fully green while
+   refusing to be pressed. Matches .step:disabled, already the page's idiom. */
+.btn:disabled{opacity:.45;cursor:not-allowed}
 .btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--line-strong)}
 .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
 
@@ -229,7 +272,7 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
    stops at the document edge, where overflow-x takes over and it scrolls. */
 .tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);
   width:fit-content;max-width:100%}
-.tbl{width:100%;border-collapse:collapse;font-family:var(--f-num);font-size:15px;min-width:850px}
+.tbl{width:100%;border-collapse:collapse;font-family:var(--f-display);font-size:15px;min-width:850px}
 .tbl th,.tbl td{text-align:left;padding:var(--cell-pad);white-space:nowrap}
 .tbl .num{text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 .tbl thead th{background:var(--head-bg);color:var(--head-ink);font-weight:700;font-size:12.5px;
@@ -242,7 +285,10 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
    auto-layout table a small percentage width resolves to the content's
    minimum, and cells are already nowrap. The implementation table is excluded:
    its first two columns are pinned at their specified widths (spec 9.3). */
-.tbl:not(.impl) .rowhead,.tbl:not(.impl) tbody th{width:1%}
+/* The risk table sizes its own columns through <col> (sizeRiskColumns), so
+   it must not also carry the shrink-to-content width the allocation table
+   uses - the two disagree and fixed layout picks the cell. */
+.tbl.alloc .rowhead,.tbl.alloc tbody th{width:1%}
 /* Every portfolio column exactly the same width, whatever the column count
    and however long the derived names are - a comparison table whose columns
    differ in width reads as though the numbers differ in kind. Auto layout
@@ -252,7 +298,49 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
    takes it, with the row header pinned to the measured content width the
    renderer publishes as --alloc-c1 and a min-width that keeps the equal
    columns wide enough for the longest header (see sizeAllocColumns). */
-.tbl.alloc,.tbl.risk{table-layout:fixed}
+.tbl.alloc{table-layout:fixed}
+/* Adding or removing a column changes three measured pixel values at once -
+   the table's own width and the two column widths the renderer publishes.
+   Registering the custom properties as lengths is what lets them interpolate;
+   unregistered they are just strings and jump. Browsers without @property
+   simply keep today's instant change, so this is additive. */
+@property --fixed-c1{syntax:'<length>';inherits:true;initial-value:0px}
+@property --fixed-col{syntax:'<length>';inherits:true;initial-value:0px}
+.tbl.alloc{transition:width var(--col-motion),
+  --fixed-c1 var(--col-motion),--fixed-col var(--col-motion)}
+@media (prefers-reduced-motion:reduce){.tbl.alloc{transition:none}}
+/* The risk table lays out automatically and takes its geometry from these two
+   measured values (sizeRiskColumns). Column one is pinned exactly - min and
+   max together - so the crisis names cannot be clipped and cannot push into
+   the first portfolio's Nominal column. The data cells only state a floor, so
+   they share whatever is left; when the floor wins, the table outgrows the
+   wrapper and it scrolls. */
+.tbl.risk th:first-child,.tbl.risk td:first-child{
+  width:var(--risk-c1,auto);min-width:var(--risk-c1,auto);max-width:var(--risk-c1,auto)}
+.tbl.risk tbody tr.band th,.tbl.risk tbody tr.band td{
+  width:auto;min-width:0;max-width:none}
+.tbl.risk thead th.num,.tbl.risk tbody td.num,.tbl.risk thead th.sub{
+  min-width:var(--risk-col,auto)}
+/* Twice the standard header height (37px measured), stated rather than padded
+   so it holds whatever the tallest cell contains - the base column carries a
+   tooltip and the comparisons a remove control, so their natural heights
+   differ. Scoped to the allocation table; the risk dashboard's header is two
+   rows already. */
+.tbl.alloc thead th{height:74px;vertical-align:middle}
+/* Same for the risk dashboard's first header row - the one carrying the
+   portfolio names. Its second row is the Nominal/Real pairing and keeps its
+   own height, so the rule is pinned to the first row rather than to thead. */
+.tbl.risk thead tr:first-child th{height:54px;vertical-align:middle}
+/* The export card is marked by a rule down its leading edge; the allocation
+   table and the two chart cards take the same device in the accent blue, so
+   the three read as one family. 3px against the card's 4px because the table
+   carries it across its full width, not down a short edge. An explicit class
+   rather than :has(.tbl.alloc) - this ships to a managed browser estate and
+   the selector is not worth the bet. */
+.tblwrap.accent-top{border-top:1px solid var(--accent)}
+/* Left-aligned, growing rightward as columns are added. Centring was tried
+   and abandoned: at one column the table sat hundreds of pixels from the
+   heading above it, and the section read as two alignments stacked. */
 .tbl.alloc thead th.rowhead{width:var(--fixed-c1,25%)}
 .tbl.alloc thead th.num:not(.addcol){width:var(--fixed-col,auto)}
 /* At the column cap a long derived name wraps rather than forcing the column
@@ -261,15 +349,17 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
 /* The risk table declares its columns: its header cells span Nominal/Real
    pairs, and <col> widths are the only way to split a pair exactly evenly
    under fixed layout. */
-.tbl.risk col.col-head{width:var(--fixed-c1,25%)}
-.tbl.risk col.col-data{width:var(--fixed-col,auto)}
+/* widths are written onto these by sizeRiskColumns, in pixels */
 /* Section bands wrap instead of forcing the first column wide enough to hold
    "Conditional Value at Risk with 99% Confidence". */
 tr.band th{white-space:normal}
 /* the Nominal/Real strip sits in the body, where the split begins */
+/* Nominal/Real. The .78 opacity is gone rather than the colour changed: it
+   was fading the text and its underline together, so lifting it darkens both
+   at once and the two stay in step. */
 tr.subhead th{background:var(--head-bg);color:var(--head-ink);font-weight:600;
-  font-size:12px;letter-spacing:.11em;text-transform:uppercase;opacity:.78;
-  border-bottom:1px solid var(--line-strong)}
+  font-size:12px;letter-spacing:.11em;text-transform:uppercase;
+  border-bottom:1px solid var(--line-mid,var(--line-strong))}
 tr.subhead td{background:var(--surface);position:sticky;left:0;z-index:1}
 .tbl tbody th{position:sticky;left:0;background:var(--surface);z-index:1;font-weight:400;
   color:var(--ink-2);text-align:left}
@@ -277,8 +367,13 @@ tr.subhead td{background:var(--surface);position:sticky;left:0;z-index:1}
   border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-ink);vertical-align:middle}
 tr.cat th,tr.cat td{font-weight:700;color:var(--ink);background:var(--cat-bg);
   border-top:1px solid var(--line-strong)}
-tr.asset th{padding-left:32px}
-tr.asset td,tr.asset th{color:var(--ink-2)}
+/* Cell content wrapper - the thing that can actually be collapsed when a row
+   comes or goes. inline-block so it shrink-wraps: sizeFixedColumns measures
+   the columns in auto layout, and a block child would claim the whole column
+   and wreck the measurement. */
+.cw{display:inline-block;vertical-align:top;overflow:hidden;max-width:100%}
+tr.asset th{padding-left:16px}
+tr.asset td,tr.asset th{color:var(--ink-row,var(--ink-2))}
 tr.total th,tr.total td{font-weight:800;color:var(--ink);background:var(--cat-bg);
   border-top:2px solid var(--line-strong);border-bottom:2px solid var(--line-strong)}
 tr.metric th,tr.metric td{font-weight:700;color:var(--ink);background:var(--metric-bg)}
@@ -287,7 +382,6 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
 .tbl tbody tr:not(.band):hover td,.tbl tbody tr:not(.band):hover th{background:var(--row-hover)}
 .neg{color:var(--neg)}
 .span2{border-left:1px solid var(--line)}
-.legend-note{margin-top:12px;font-size:13px;color:var(--ink-3);display:flex;gap:18px;flex-wrap:wrap}
 /* host convention: #alertArea carries API errors */
 #alertArea:empty{display:none}
 .alert{padding:11px 15px;border-radius:var(--radius-sm);margin:0 0 16px;font-size:14px;border:1px solid}
@@ -349,7 +443,32 @@ main{display:block}
 /* the Base tier's ring while no base exists (spec 10.2). The spec names the
    accent for it; on the navy rail the accessible focus blue is the same
    adjustment section 6.2 makes for the rail button. */
-.tier-ring{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
+/* The ring that marks the tier still waiting for an answer (spec 10.2).
+
+   Drawn as a pseudo-element inset INSIDE the tier's padding rather than as an
+   outline on the box. An outline sits on the border edge, which for a tier is
+   the rail's own right edge - the ring's right side landed against the white
+   document and effectively disappeared. The insets here are independent, so
+   it can sit within the 20px horizontal padding without clipping the fields
+   vertically.
+
+   It breathes slowly to draw the eye, since it is the one thing on the page
+   the user has to act on before anything else works. */
+/* The document arriving for the first time: one fade, everything together.
+   No translate - a rising document would move the sections relative to each
+   other again, which is the thing being fixed. */
+.doc-reveal{animation:docreveal var(--reveal-motion) ease-out both}
+@keyframes docreveal{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.doc-reveal{animation:none}}
+
+.tier-ring{position:relative}
+.tier-ring::after{content:"";position:absolute;inset:6px 11px;pointer-events:none;
+  border:2px solid var(--rail-focus,#8FB4FF);border-radius:5px;
+  animation:tierpulse 2.6s ease-in-out infinite}
+@keyframes tierpulse{0%,100%{opacity:.22}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .tier-ring::after{animation:none;opacity:.85}
+}
 
 /* basis rebuild confirmation (spec 11.4) */
 .basis-confirm{margin-top:10px;background:var(--rail-input-bg,#1D2F4B);
@@ -408,16 +527,33 @@ main{display:block}
    rows above them keep the standard height. */
 .tbl.risk tbody tr.asset th,.tbl.risk tbody tr.asset td{padding-top:1px;padding-bottom:1px}
 .tbl.risk tbody tr.subhead th{padding-top:2px;padding-bottom:2px}
+/* Half the 12px the shared band rule sets: these three section bands are the
+   risk dashboard's own structure, and at full height they cost more vertical
+   room than the rows they introduce. */
+.tbl.risk tbody tr.band th{padding-top:6px;padding-bottom:6px}
 
 /* Remove a comparison from its own column header. The base has none: it
    cannot be removed, only changed (spec 2.7). */
-.tbl thead th.num{position:relative;padding-right:26px}
-.col-rm{position:absolute;top:2px;right:3px;width:22px;height:22px;padding:0;
-  display:flex;align-items:center;justify-content:center;border:0;border-radius:3px;
-  background:none;color:var(--ink-3);font-family:var(--f-num);font-size:15px;
-  line-height:1;cursor:pointer}
-.col-rm:hover{color:var(--neg,#B42318);background:var(--surface-2)}
+.tbl thead th.num{position:relative}
+/* Inline, immediately after the column's name rather than pinned to the
+   corner of the cell. 24px square for the WCAG 2.2 target-size minimum
+   (spec 13), but with no fill until hover, so what reads is the glyph beside
+   the label and not a button. Faint until wanted: a remove control on every
+   comparison column should not be the loudest thing in the header. */
+/* The label and the control are laid out together rather than the control
+   being hung off the baseline: vertical-align could only ever approximate
+   this, because the button is a 24px box and the label is 12.5px uppercase
+   with its own line box. A flex row centres the two on each other exactly. */
+.col-head{display:inline-flex;align-items:center;justify-content:flex-end;gap:1px;
+  max-width:100%;text-align:right}
+.col-rm{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+  width:24px;height:24px;padding:0;margin:0 -4px 0 1px;
+  border:0;border-radius:3px;background:none;color:var(--neg,#B42318);
+  font-family:var(--f-num);font-size:15px;line-height:1;cursor:pointer;
+  transition:background .12s ease}
+.col-rm:hover{background:var(--surface-2)}
 .col-rm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media (prefers-reduced-motion:reduce){.col-rm{transition:none}}
 
 /* Collapsing the rail. It folds to a strip that still carries the control, so
    the way back is always in view, and the document reclaims the width. */
@@ -432,21 +568,57 @@ main{display:block}
   cursor:pointer}
 .rail-toggle:hover{color:var(--rail-ink);background:var(--rail-input-bg,#1D2F4B)}
 .rail-toggle:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:2px}
+
+/* The fold is animated, and the technique matters: everything inside the rail
+   is held at the EXPANDED width so that narrowing the rail clips it, rather
+   than reflowing 352px of form controls through every width down to 48px. The
+   rail's own overflow-x does the clipping. Without this the collapse reads as
+   the fields crushing themselves, which is both ugly and expensive - a full
+   relayout of the tier content on every frame. */
+.rail{overflow-x:hidden;transition:width var(--rail-motion)}
+.rail-tiers{width:var(--rail-w);transition:opacity 190ms linear 70ms}
+.rail-brand{transition:padding var(--rail-motion)}
+/* nowrap rather than a fixed width: the brand lines already fit on one line at
+   the expanded width, so this holds them there and lets the rail clip them. */
+/* Child combinator throughout: the toggle button lives inside .rail-brand and
+   carries its own <span> for the chevron, which a descendant selector reaches
+   too - fading the brand lines would fade the control's glyph with them. */
+.rail-brand>b,.rail-brand>span{white-space:nowrap;transition:opacity 150ms linear}
+body.has-rail .shell{transition:margin-left var(--rail-motion)}
+/* The control sits against the rail's right edge in both states, so it is
+   carried inward by the same animation instead of jumping between two
+   positions. At 48px wide, right:10px leaves it centred in the strip. */
+.rail-toggle{right:10px}
+
 body.rail-collapsed .rail{width:var(--rail-w-collapsed,48px)}
-body.rail-collapsed .rail-tiers{display:none}
-body.rail-collapsed .rail-brand{padding:14px 0 12px;border-bottom:none}
-body.rail-collapsed .rail-brand b,body.rail-collapsed .rail-brand span{display:none}
-body.rail-collapsed .rail-toggle{position:static;margin:0 auto}
+/* visibility, not display: display cannot transition, and dropping the tiers
+   instantly would empty the rail before it had begun to move. The 0s delay
+   holds them in the accessibility tree and the tab order until the fold has
+   finished, and removes them the instant it does. */
+body.rail-collapsed .rail-tiers{opacity:0;visibility:hidden;
+  transition:opacity 150ms linear,visibility 0s 150ms}
+body.rail-collapsed .rail-brand{padding:14px 10px 12px;border-bottom:none}
+body.rail-collapsed .rail-brand>b,body.rail-collapsed .rail-brand>span{opacity:0;
+  transition:opacity 110ms linear}
 body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max-width:none}
+
+/* Spec 13: reduced motion gets the finished layout and no animation. */
+@media (prefers-reduced-motion:reduce){
+  .rail,.rail-tiers,.rail-brand,.rail-brand>b,.rail-brand>span,
+  body.has-rail .shell,body.rail-collapsed .rail-tiers,
+  body.rail-collapsed .rail-brand>b,body.rail-collapsed .rail-brand>span{transition:none}
+  body.rail-collapsed .rail-tiers{visibility:hidden}
+}
 @media (max-width:1039px){
-  .col-rm{width:44px;height:44px;top:0;right:0}
-  .tbl thead th.num{padding-right:46px}
+  /* Stacked: the rail is static and full width, so there is no fold to slide.
+     Collapsing hides the tiers and nothing animates sideways. */
+  .rail,body.has-rail .shell{transition:none}
   body.rail-collapsed .rail{width:auto}
+  body.rail-collapsed .rail-tiers{width:auto}
   body.has-rail.rail-collapsed .shell{margin-left:0}
 }
 
 .alert-info{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3}
-.impl-foot .bdg{margin-left:10px}
 """
 
 
@@ -465,9 +637,9 @@ RAIL_CSS = """
   display:flex;flex-direction:column}
 .rail-brand{padding:18px 20px 14px;border-bottom:1px solid var(--rail-line);position:sticky;top:0;
   background:var(--rail-bg);z-index:2}
-.rail-brand b{display:block;font-family:var(--f-display);font-size:17px;color:var(--rail-ink);
+.rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
-.rail-brand span{display:block;margin-top:4px;font-size:11.5px;letter-spacing:.15em;
+.rail-brand>span{display:block;font-family:var(--f-num);margin-top:4px;font-size:11.5px;letter-spacing:.15em;
   text-transform:uppercase;color:var(--rail-ink-3);font-family:var(--f-num)}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
@@ -543,14 +715,6 @@ PAGE_SHELL = """<!doctype html>
     <div class="tier" id="tier-base"></div>
 
     <div class="tier" id="tier-sleeves" hidden></div>
-
-    <div class="tier" id="tier-comparisons">
-      <div class="tier-h"><h3>Comparisons</h3>
-        <span class="tier-count" id="count">0 of 3</span></div>
-{pickerhtml}
-{actions}
-      <div class="built" id="built"></div>
-    </div>
   </div>
 </aside>
 
@@ -606,9 +770,14 @@ PAGE_SHELL = """<!doctype html>
 
   <div class="steps" id="steps" role="tablist" aria-label="Scenario steps">
     <button type="button" class="step" data-step="aa" role="tab" aria-selected="true">
-      <span class="sn">1</span>Asset allocation</button>
+      <span class="step-index" aria-hidden="true">1</span>
+      <span class="step-label"><strong>Asset allocation</strong><small>Build &amp; compare</small></span>
+    </button>
+    <span class="step-connector" aria-hidden="true"></span>
     <button type="button" class="step" data-step="impl" role="tab" aria-selected="false">
-      <span class="sn">2</span>Implementation</button>
+      <span class="step-index" aria-hidden="true">2</span>
+      <span class="step-label"><strong>Implementation</strong><small>Sleeves &amp; export</small></span>
+    </button>
   </div>
 
 <div id="view-aa">
@@ -622,21 +791,19 @@ PAGE_SHELL = """<!doctype html>
   </div>
 
   <section class="sec">
-    <div class="sec-head">
-      <h2>Allocation</h2>
+    <div class="sec-head stage-head">
+      <div>
+        <p class="eyebrow">Step 1 of 2</p>
+        <h2 class="stage-title">Strategic Asset Allocation</h2>
+        <p class="stage-sub">Comparing Portfolio Risk and Return Characteristics</p>
+      </div>
+      <span class="resolving" id="resolving" aria-hidden="true" hidden></span>
     </div>
-    <div class="tblwrap" tabindex="0" aria-label="Allocation table, scrolls horizontally">
+    <div class="tblwrap accent-top" tabindex="0" aria-label="Allocation table, scrolls horizontally">
       <table class="tbl alloc" id="alloc"></table></div>
-    <p class="legend-note"><span>Base portfolio pinned to the first column</span>
-      <span>Maximum of four portfolios</span></p>
   </section>
 
   <section class="sec viz">
-    <div class="sec-head">
-      <h2>At a glance</h2>
-      <span class="sec-note">Summarises the table above. Exact values stay in the tables \u2014
-        these are for shape and position, not for reading numbers off.</span>
-    </div>
     <div class="viz-grid">
       <div class="viz-card">
         <h3>Allocation by category</h3>
@@ -654,10 +821,10 @@ PAGE_SHELL = """<!doctype html>
   </section>
 
   <section class="sec">
-    <div class="sec-head">
-      <h2>Risk dashboard</h2>
-      <span class="sec-note">Three sections. Factor analytics span both sub-columns; stress periods
-        and risk premia split into Nominal and Real.</span>
+    <div class="sec-head stage-head">
+      <div>
+        <h2 class="stage-title">Risk Dashboard</h2>
+      </div>
     </div>
     <div class="tblwrap" tabindex="0" aria-label="Risk dashboard, scrolls horizontally">
       <table class="tbl risk" id="risk"></table></div>

@@ -117,26 +117,31 @@ def test_largest_remainder_sums_exactly():
         assert all(abs(p - e) < 0.01 + 1e-9 for p, e in zip(printed, exact))
 
 
-def _implementationFor(key, sleeveChoice=0, mandateSize=26_000_000):
+def _implementationFor(key, sleeveChoice=0, mandateSize=26_000_000,
+                       variant=sleeves.VARIANTS[0]):
     result = PORT.resolve_portfolio(BASIS, key)
     chosen = {}
     for category in result['categories']:
         name = category['name']
         if name in rules.AUTO_SLEEVE_CATEGORIES:
             continue
-        library = sleeves.listSleeves(name)
+        library = sleeves.listSleeves(name, variant)
         chosen[name] = library[sleeveChoice % len(library)]['name']
     return buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
-                                   mandateSize)
+                                   mandateSize, variant)
 
 
+@pytest.mark.parametrize('variant', sleeves.VARIANTS)
 @pytest.mark.parametrize('sleeveChoice', [0, 1, 2])
 @pytest.mark.parametrize('mandateSize', [26_000_000, 5_000_000, 19_999_900, 137_400_000])
-def test_implementation_invariants_over_the_whole_space(sleeveChoice, mandateSize):
+def test_implementation_invariants_over_the_whole_space(sleeveChoice, mandateSize,
+                                                        variant):
     """The section 8.4 table, held across every available USD combination,
-    every sleeve column, and awkward mandate sizes."""
+    every sleeve column, every implementation variant, and awkward mandate
+    sizes. The variant axis matters because each one carries its own product
+    mix and its own weights, so the rounding has to close on all four."""
     for key in _allKeys():
-        model = _implementationFor(key, sleeveChoice, mandateSize)
+        model = _implementationFor(key, sleeveChoice, mandateSize, variant)
         assert model['complete']
         items = [i for g in model['groups'] for i in g['items']]
         assert abs(sum(i['printedPct'] for i in items) - 100.0) < 1e-9
@@ -200,22 +205,25 @@ def test_fixtures_workbook_reconciles_and_has_three_sheets(tmp_path):
     from openpyxl import load_workbook
     key = PortfolioKey('Core', True, False, 'Mod')
     result = PORT.resolve_portfolio(BASIS, key)
-    chosen = {c['name']: sleeves.listSleeves(c['name'])[0]['name']
+    chosen = {c['name']: sleeves.listSleeves(c['name'], sleeves.VARIANTS[0])[0]['name']
               for c in result['categories']
               if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
     mandate = MandateInput(topAccountSize=48.5e6, mandateSize=26e6,
                            primaryPwa='M. Aldridge — Zurich')
-    payload = PORT.build_export(BASIS, mandate, [result], {'sleeves': chosen})
+    payload = PORT.build_export(BASIS, mandate, [result],
+                                {'sleeves': chosen, 'variant': sleeves.VARIANTS[0]})
     path = tmp_path / 'wb.xlsx'
     path.write_bytes(payload)
     book = load_workbook(path)
     assert book.sheetnames == ['Portfolios', 'Risk Dashboard', 'Implementation']
     sheet = book['Implementation']
     rows_ = list(sheet.iter_rows(values_only=True))
-    weights = [r[2] for r in rows_[1:]
+    assert rows_[0][0] == 'Implementation variant'
+    assert rows_[0][1] == sleeves.VARIANTS[0]
+    weights = [r[2] for r in rows_
                if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
     assert abs(sum(weights) * 100 - 100.0) < 1e-9
-    notionals = [r[12] for r in rows_[1:]
+    notionals = [r[12] for r in rows_
                  if r[12] is not None and r[0] and str(r[0]).startswith('  ')]
     assert sum(notionals) == 26_000_000
     assert all(n % 100 == 0 for n in notionals)
@@ -246,3 +254,152 @@ def test_store_lifecycle(tmp_path, monkeypatch):
         store.removeColumn(state['id'], other)      # base cannot be removed
     with pytest.raises(ScenarioNotFound):
         store.getScenario('sc_000000000000')
+
+
+# ------------------------------------------- implementation variants (D29) --
+
+def test_schema_offers_the_variants_and_never_defaults_one():
+    """The four names are data the UI reads, not a list it carries."""
+    schema = PORT.get_schema(BASIS, None)
+    assert schema['options']['implementationVariants'] == sleeves.VARIANTS
+    assert len(sleeves.VARIANTS) == 4
+    assert 'PMG Multi-Asset Portfolio' in sleeves.VARIANTS
+
+
+@pytest.mark.parametrize('variant', sleeves.VARIANTS)
+def test_every_variant_carries_exactly_one_auto_sleeve(variant):
+    """Spec 2.6 has to hold under all four, or the auto-attach that never
+    blocks the gate would block it for whichever variant lacks the sleeve."""
+    for category in rules.AUTO_SLEEVE_CATEGORIES:
+        assert len(sleeves.listSleeves(category, variant)) == 1
+
+
+@pytest.mark.parametrize('variant', sleeves.VARIANTS)
+def test_every_variant_covers_every_category_in_the_universe(variant):
+    """Not a rule the code enforces - a variant reaching no sleeve for a held
+    category is a legitimate state the gate reports. This pins what the stub
+    data currently is, so replacing it with PMG's own source has to be a
+    deliberate act rather than a silent hole in the completeness gate."""
+    for category in rules.categoriesInUniverseOrder():
+        assert sleeves.listSleeves(category, variant), \
+            '{} offers no sleeve for {}'.format(variant, category)
+
+
+def test_an_unchosen_variant_lists_nothing_rather_than_defaulting():
+    """The failure that matters: quietly serving one book's products to
+    another. None and nonsense both have to come back empty, never as the
+    Multi-Asset library."""
+    for bad in (None, '', 'Multi-Asset', 'PMG  ESG'):
+        assert sleeves.listSleeves('Public Equity', bad) == []
+        assert not sleeves.sleeveExists('Public Equity', 'Passive', bad)
+
+
+def test_sleeve_names_are_scoped_to_their_variant():
+    """A UCITS sleeve is not attachable in a US Onshore book."""
+    assert sleeves.sleeveExists('Public Equity', 'UCITS Core Equity', 'Irish Onshore')
+    assert not sleeves.sleeveExists('Public Equity', 'UCITS Core Equity', 'US Onshore')
+    assert sleeves.sleeveExists('Public Equity', 'Concentrated Active', 'US Onshore')
+    assert not sleeves.sleeveExists('Public Equity', 'Concentrated Active', 'Irish Onshore')
+
+
+def test_variants_differ_in_what_they_offer_and_in_what_a_sleeve_contains():
+    """Both halves of the requirement: a restricted set of sleeves, and the
+    same category resolving to different products."""
+    offered = {v: {s['name'] for s in sleeves.listSleeves('Public Equity', v)}
+               for v in sleeves.VARIANTS}
+    assert offered['PMG ESG'] != offered['PMG Multi-Asset Portfolio']
+    assert offered['Irish Onshore'] != offered['US Onshore']
+
+    def products(variant, sleeveName):
+        found = next(s for s in sleeves.listSleeves('Public Equity', variant)
+                     if s['name'] == sleeveName)
+        return {p['name'] for p in found['products']}
+
+    # 'Passive' exists under both, and is not the same sleeve.
+    assert products('PMG Multi-Asset Portfolio', 'Passive') \
+        != products('Irish Onshore', 'UCITS Passive')
+
+
+def test_validateVariant_rejects_absent_and_unknown():
+    with pytest.raises(ValidationError) as caught:
+        rules.validateVariant(None)
+    assert caught.value.field == 'variant'
+    with pytest.raises(ValidationError):
+        rules.validateVariant('PMG Offshore')
+    rules.validateVariant(sleeves.VARIANTS[-1])
+
+
+def test_changing_variant_clears_the_sleeve_map(tmp_path, monkeypatch):
+    """Sleeve names only mean something under the variant they came from, so
+    the store drops them in the same write rather than leaving a map that
+    validates against nothing."""
+    from cyrus_pmg.pmgService.scenario import scenarioStore
+    monkeypatch.setenv('SCENARIO_STORE_DIR', str(tmp_path))
+    mandate = MandateInput(48.5e6, 26e6, 'M. Aldridge — Zurich')
+    state = scenarioStore.createScenario(mandate, BASIS)
+    assert state['variant'] is None
+
+    scenarioStore.updateScenario(state['id'], variant='US Onshore')
+    scenarioStore.updateScenario(state['id'], sleeves={'Public Equity': 'Passive'})
+    assert scenarioStore.getScenario(state['id'])['sleeves'] == {'Public Equity': 'Passive'}
+
+    after = scenarioStore.updateScenario(state['id'], variant='Irish Onshore')
+    assert after['variant'] == 'Irish Onshore'
+    assert after['sleeves'] == {}
+
+    # Re-stating the same variant is not a change and keeps the map.
+    scenarioStore.updateScenario(after['id'], sleeves={'Public Equity': 'UCITS Passive'})
+    again = scenarioStore.updateScenario(after['id'], variant='Irish Onshore')
+    assert again['sleeves'] == {'Public Equity': 'UCITS Passive'}
+
+
+@pytest.mark.parametrize('variant', sleeves.VARIANTS)
+def test_workbook_records_the_variant_it_was_built_from(tmp_path, variant):
+    from openpyxl import load_workbook
+    key = PortfolioKey('Core', True, False, 'Mod')
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = {c['name']: sleeves.listSleeves(c['name'], variant)[0]['name']
+              for c in result['categories']
+              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    mandate = MandateInput(48.5e6, 26e6, 'M. Aldridge — Zurich')
+    path = tmp_path / 'wb.xlsx'
+    path.write_bytes(PORT.build_export(BASIS, mandate, [result],
+                                       {'sleeves': chosen, 'variant': variant}))
+    rows = list(load_workbook(path)['Implementation'].iter_rows(values_only=True))
+    assert rows[0][:2] == ('Implementation variant', variant)
+    weights = [r[2] for r in rows
+               if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
+    assert abs(sum(weights) * 100 - 100.0) < 1e-9
+
+
+# ------------------------------------------------ portfolio naming (D36) ----
+
+def test_portfolio_name_is_currency_risk_allocation_exclusions():
+    """Order is fixed and the risk level prints as its display label, so a name
+    reads the way the rail reads. The KEY is unaffected - it still carries the
+    short risk value, which is what the availability set and the bake are
+    keyed on."""
+    basis = BasisInput(currency='USD', hedging='Hedged')
+    cases = [
+        (PortfolioKey('Core', True, False, 'Mod Agg'), 'USD Moderate-Aggressive Core'),
+        (PortfolioKey('Full', False, True, 'Cons'), 'USD Conservative Full ex TAA'),
+        (PortfolioKey('Ex HFs', True, True, 'All Equity'),
+         'USD All Equity Ex HFs ex RE ex TAA'),
+        (PortfolioKey('Low Vol' and 'Ex Alts', True, False, 'Low Vol'),
+         'USD Low Vol Ex Alts'),
+    ]
+    for key, expected in cases:
+        assert rules.portfolioName(basis, key) == expected
+        assert rules.portfolioHeader(key) == expected[len('USD '):]
+    # 'ex RE' is only stated where the allocation could have held real estate
+    assert 'ex RE' not in rules.portfolioHeader(
+        PortfolioKey('Core', True, False, 'Mod'))
+
+
+def test_risk_level_labels_cover_every_value_and_leave_keys_alone():
+    for value in rules.RISK_LEVELS:
+        assert value in rules.RISK_LEVEL_LABELS, value
+    # the key is built from the value, never the label
+    key = PortfolioKey('Core', True, False, 'Mod Agg')
+    assert key.toStr().endswith('|Mod Agg')
+    assert 'Moderate' not in key.toStr()

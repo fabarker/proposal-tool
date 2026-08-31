@@ -91,8 +91,11 @@ def test_miss_without_delegate_raises_analytics_error(store):
 def test_miss_falls_through_to_the_delegate(store):
     port = BakedScenarioPort(storeDirectory=store, delegate=FixturesScenarioPort())
     unbaked = BasisInput(currency='USD', hedging='Unhedged')
-    result = port.resolve_portfolio(unbaked, PortfolioKey('Core', True, False, 'Mod'))
-    assert result['name'] == 'USD Core Mod'
+    key = PortfolioKey('Core', True, False, 'Mod')
+    result = port.resolve_portfolio(unbaked, key)
+    # against the naming rule, not a frozen string: the point of this test is
+    # that the miss reached the delegate, not what the delegate calls things
+    assert result['name'] == rules.portfolioName(unbaked, key)
 
 
 def test_schema_and_library_need_no_analytics(store):
@@ -102,7 +105,8 @@ def test_schema_and_library_need_no_analytics(store):
     assert schema['categories'][0] == 'Investment Grade Fixed Income'
     assert schema['dataInfo']['adapter'] == 'baked'
     assert '68 portfolios baked' in schema['dataInfo']['dataversion']
-    assert port.list_sleeves('Public Equity', BASIS)
+    from cyrus_pmg.pmgService.scenario.sleeves import VARIANTS
+    assert port.list_sleeves('Public Equity', BASIS, VARIANTS[0])
     assert port.search_advisors('ald')
 
 
@@ -111,17 +115,18 @@ def test_export_without_a_delegate_uses_the_payload_writer(store, tmp_path):
     port = BakedScenarioPort(storeDirectory=store)
     key = PortfolioKey('Core', True, False, 'Mod')
     result = port.resolve_portfolio(BASIS, key)
-    from cyrus_pmg.pmgService.scenario.sleeves import listSleeves
-    chosen = {c['name']: listSleeves(c['name'])[0]['name']
+    from cyrus_pmg.pmgService.scenario.sleeves import VARIANTS, listSleeves
+    chosen = {c['name']: listSleeves(c['name'], VARIANTS[0])[0]['name']
               for c in result['categories']
               if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
     mandate = MandateInput(48.5e6, 26e6, 'M. Aldridge — Zurich')
     path = tmp_path / 'baked.xlsx'
-    path.write_bytes(port.build_export(BASIS, mandate, [result], {'sleeves': chosen}))
+    path.write_bytes(port.build_export(
+        BASIS, mandate, [result], {'sleeves': chosen, 'variant': VARIANTS[0]}))
     book = load_workbook(path)
     assert book.sheetnames == ['Portfolios', 'Risk Dashboard', 'Implementation']
     rows = list(book['Implementation'].iter_rows(values_only=True))
-    weights = [r[2] for r in rows[1:]
+    weights = [r[2] for r in rows
                if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
     assert abs(sum(weights) * 100 - 100.0) < 1e-9
 

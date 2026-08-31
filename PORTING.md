@@ -87,8 +87,13 @@ curl -sI http://localhost:8001/proposalTool/static/fonts/gs-sans-variable.woff2
 The interface moved on from the specification in a number of places while it was being built
 — the topbar is gone, the base column is headed "Proposed Portfolio", the risk dashboard's
 premia are banded by measure, and the tables size their own columns.
-**`spec.html` revision 4 describes what is there now**, and its §1.5 maps every changed
-section to the entry in **`service/DEVIATIONS.md`** (D20–D28) that explains it.
+**`spec.html` revision 6 describes what is there now**, and its §1.5 maps every changed
+section to the entry in **`service/DEVIATIONS.md`** (D20–D46) that explains it. Two matter for
+a port: **D29**, implementation variants — step 2 opens on a required choice of one of four
+product universes, which changes the `list_sleeves` signature and adds `variant` to the
+scenario state; and **D35/D36**, naming — the risk level is shown by a label served in the
+schema while the key keeps its short value, so nothing about the availability set or the bake
+changes.
 
 ## Backend
 
