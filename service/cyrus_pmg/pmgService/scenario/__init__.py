@@ -10,7 +10,8 @@ Everything the scenario endpoints need lives in this package:
                           of proposal-tool/backend/portfolio_weights.py, which
                           remains the source of record)
     fixturesAdapter.py    ScenarioPort over static data - no analytics
-    epsilonPhiAdapter.py  ScenarioPort over epsilonPhi - the real analytics
+    liveAdapter.py        ScenarioPort over the SAA library - real analytics
+    engine.py             the one module naming that library (port seam)
     scenarioStore.py      file-backed scenario state (survives restarts and is
                           shared across service workers)
     advisors.py           the Primary PWA directory (Excel-backed reference)

@@ -1,4 +1,9 @@
-"""ScenarioPort over epsilonPhi - the real analytics.
+"""ScenarioPort over the live SAA analytics library - the real analytics.
+
+Every symbol taken from that library is imported from ``engine``, the one
+module that names it (see engine.py); the imports below stay inside the
+methods that use them, which is what keeps the engine's setup off the import
+path of a baked or fixtures-configured service.
 
 The chain is spec 4.5's: the supplied loader selects the stored weights, the
 memoised ``get_portfolio`` builds the ``SAAPortfolio`` against the cached
@@ -16,7 +21,7 @@ Operational choices (the brief leaves these to the adapter):
   payload, on top of the loader's own portfolio/context caches - a refresh or
   rehydrate re-resolves in microseconds, which is what makes the 200ms
   skeleton rule read as instant on warm paths (spec 10.1).
-* One coarse lock serialises analytics compute. epsilonPhi's caches and the
+* One coarse lock serialises analytics compute. The engine's caches and the
   mutable, self-memoising SAAPortfolio are not demonstrably thread-safe, and
   FastAPI runs sync handlers in a threadpool. Concurrent column resolves
   therefore queue; each column is its own HTTP request, so the UI's
@@ -69,8 +74,8 @@ def _paddedWeights(basis: BasisInput, key: PortfolioKey) -> dict:
     return dict(zip(padded['code'], padded['weight']))
 
 
-class EpsilonPhiScenarioPort:
-    """The eight methods over epsilonPhi."""
+class LiveScenarioPort:
+    """The eight methods over the live analytics library."""
 
     def __init__(self):
         self._lock = threading.RLock()
@@ -83,13 +88,13 @@ class EpsilonPhiScenarioPort:
         with self._lock:
             if self._ready:
                 return
-            from epsilonPhi.core.config.appConfig import CAppConfig
+            from .engine import CAppConfig
             CAppConfig.setup()
             self._ready = True
 
     def _dataversion(self):
         try:
-            from epsilonPhi.core.env.Env import DATAVERSION
+            from .engine import DATAVERSION
             return str(DATAVERSION)
         except Exception:
             return 'default'
@@ -175,7 +180,7 @@ class EpsilonPhiScenarioPort:
         implementation sheet appended (spec 14.4), the assumptions sheet
         Reporting always emits removed to honour open item 6's "three tables
         and nothing else"."""
-        from epsilonPhi.core.reporting.Reporting import Reporting
+        from .engine import Reporting
         from openpyxl import load_workbook
 
         results = list(portfolios)
@@ -218,8 +223,8 @@ class EpsilonPhiScenarioPort:
 
     def describe(self) -> dict:
         return {
-            'adapter': 'epsilonphi',
-            'source': 'epsilonPhi analytics over the supplied model allocations',
+            'adapter': 'live',
+            'source': 'SAA analytics over the supplied model allocations',
             'dataversion': 'dataversion {} · window {} to {}'.format(
                 self._dataversion(), pw.CONTEXT_START_DATE, pw.CONTEXT_END_DATE),
             'asOf': datetime.date.today().isoformat(),

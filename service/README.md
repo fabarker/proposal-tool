@@ -23,12 +23,12 @@ in the shell):
 |---|---|---|
 | `FRONTEND_PORT` / `PMG_SVC_PORT` | 8001 / 8002 | The host's ports |
 | `PMG_ALLOWED_KERBEROS` | `fbarker` | Comma-separated allowlist — the same variable host dev uses. Empty allows nobody. |
-| `SCENARIO_ADAPTER` | `fixtures` | `fixtures`, `epsilonphi` or `baked` (see below) |
+| `SCENARIO_ADAPTER` | `fixtures` | `fixtures`, `live` or `baked` (see below) |
 | `SCENARIO_BAKED_DIR` | `service/var/baked` | Where the bake store lives |
 | `SCENARIO_BAKED_FALLBACK` | `1` | `0` = never fall through to live analytics (no database needed at all) |
 | `SCENARIO_STORE_DIR` | system temp | Where scenario state files live |
 | `SCENARIO_RETENTION_HOURS` | 24 | Scenario expiry |
-| `PMG_SVC_WORKERS` | 1 | The host runs 2; epsilonPhi caches are per-process |
+| `PMG_SVC_WORKERS` | 1 | The host runs 2; engine caches are per-process |
 | `SCENARIO_FIXTURES_*` | unset | Fixture failure/latency knobs — see `dashboard.env.defaults` |
 
 Sign-in: the GSSSO stand-in lives at `/_dev_login` (the gate redirects there).
@@ -38,8 +38,8 @@ Tests (dev-side; nothing ships to the host's untested dashboard package):
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# the bit-identity guard for the epsilonPhi optimisation needs a database:
-EPSILONPHI_LIVE=1 PYTHONPATH=".:../../src/python" \
+# the bit-identity guard for the Tier 0 optimisation needs a database:
+SAA_ENGINE_LIVE=1 PYTHONPATH=".:../../src/python" \
     python3 -m pytest tests/test_tier0_beta_equivalence.py -q
 ```
 
@@ -48,8 +48,8 @@ EPSILONPHI_LIVE=1 PYTHONPATH=".:../../src/python" \
 | `SCENARIO_ADAPTER` | Data | Cold resolve | Database |
 |---|---|---:|---|
 | `fixtures` | Real supplied weights, synthetic analytics | ~0ms | no |
-| `epsilonphi` | Live analytics | ~97s | yes |
-| `baked` | Precomputed epsilonPhi results | **~15ms** | no (unless a miss falls through) |
+| `live` | Live analytics | ~97s | yes |
+| `baked` | Precomputed analytics results | **~15ms** | no (unless a miss falls through) |
 
 `baked` is the production setting. The analytics are computed once per data
 version by an offline bake and served from disk — the tool is a lookup over a

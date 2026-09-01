@@ -47,9 +47,9 @@ the build, ~14s of interest-rate curves inside the VaR path.
    (~3s), bootstrap paths (~6s), simulation. Asset-level caching cannot
    touch this — only precomputation can.
 
-## Tier 0 — epsilonPhi fixes (bit-identical)
+## Tier 0 — analytics-library fixes (bit-identical)
 
-In `epsilonPhi/core/estimator/assetReturnEstimator.py`: memoise the
+In the analytics library's `core/estimator/assetReturnEstimator.py`: memoise the
 per-window normalisation statistic in a shared `_window_cache`; drop the
 discarded conversion; key the beta cache on what the computation reads
 (`name, currency, start, end, normalized, model hash`) instead of on

@@ -27,10 +27,20 @@ cp -r proposal-tool/service/cyrus_pmg/pmgService/scenario \
       isg-cyrus-pmg/src/cyrus_pmg/pmgService/
 ```
 
-Verbatim. The package uses only intra-package relative imports; its single
-outward seam is `cyrus_pmg.pmgService.core.accessControl`, imported by the
-router (below), not by the package itself. Data files travel inside it
-(`advisors.xlsx`; `portfolio_weights.py` carries the supplied universe).
+Verbatim. The package uses only intra-package relative imports, and has exactly
+two outward seams:
+
+* `cyrus_pmg.pmgService.core.accessControl`, imported by the router (below),
+  not by the package itself.
+* **`engine.py` — the analytics library.** It is the only module that names
+  that library, and it resolves its six symbols lazily against
+  `SAA_ENGINE_PACKAGE` (default `epsilonPhi`). If the host's SAA library is
+  named differently, set that variable; if its internal layout also differs,
+  edit the `_SYMBOLS` table in that one file. Nothing else in the package —
+  adapter, loader, bake, router — names it at all (D47).
+
+Data files travel inside it (`advisors.xlsx`; `portfolio_weights.py` carries
+the supplied universe).
 
 `bake.py` travels with the package as an offline job (`python3 -m
 cyrus_pmg.pmgService.scenario.bake --all --workers 4`), run on a data refresh
@@ -38,9 +48,9 @@ rather than at request time; `bakedAdapter.py` serves its output. Neither adds
 a host dependency.
 
 **One change outside the package:** the Tier 0 optimisation of
-`epsilonPhi/core/estimator/assetReturnEstimator.py` (deviation D16) lives in
-epsilonPhi, not here. It is bit-identical and independently useful, so it
-should be raised with the epsilonPhi owners as its own change rather than
+the analytics library's `core/estimator/assetReturnEstimator.py` (deviation
+D16) lives in that library, not here. It is bit-identical and independently
+useful, so it should be raised with its owners as its own change rather than
 carried as part of this transplant. Without it the Proposal Tool still works —
 live resolves and bakes simply cost ~2.6× more.
 
@@ -105,13 +115,14 @@ copying the surrounding inline styles verbatim.
 
 | Setting | Here | There |
 |---|---|---|
-| `SCENARIO_ADAPTER` | `fixtures` default | `baked` (recommended) or `epsilonphi`, in `dashboard.env.defaults` |
+| `SCENARIO_ADAPTER` | `fixtures` default | `baked` (recommended) or `live`, in `dashboard.env.defaults` |
 | `SCENARIO_BAKED_DIR` / `SCENARIO_BAKED_FALLBACK` | `service/var/baked` / `1` | A host-writable store path; the bake is a scheduled job re-run when `dataversion` changes |
 | `PMG_ALLOWED_KERBEROS` | dev default | The real allowlist source the host already manages |
+| `SAA_ENGINE_PACKAGE` | unset (`epsilonPhi`) | The host's analytics package, if it is named differently — the only edit `engine.py` needs |
 | `SCENARIO_STORE_DIR` | system temp | A host-writable spool directory |
 | `SCENARIO_RETENTION_HOURS` | 24 | PMG's answer to open item 8 |
 | Ports / hosts | 8001/8002 on 127.0.0.1 | The host's `FRONTEND_PORT` / `PMG_SVC_PORT` on 0.0.0.0 |
-| Database / `env.ini`, `dataversion` | epsilon-phi's DEV config | The host's epsilonPhi configuration (open item 9) |
+| Database / `env.ini`, `dataversion` | epsilon-phi's DEV config | The host's analytics-library configuration (open item 9) |
 | Analytics window (`CONTEXT_START_DATE` / `_END_DATE` in `portfolio_weights.py`) | 30-Nov-1983 → 31-Dec-2022 | Whatever window the host's model set prescribes |
 | Theme | mpo-ui tokens | OneGS `--gs-*` token block at port time — a token swap by construction (§6.5), plus the §6.2 contrast re-audit |
 

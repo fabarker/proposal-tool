@@ -1,7 +1,7 @@
 """ScenarioPort served from the bake — the fast path.
 
 ``resolve_portfolio`` is a dictionary lookup into a slice file produced by
-``bake.py``: no analytics, no database, no epsilonPhi import on the read path.
+``bake.py``: no analytics, no database, no engine import on the read path.
 A cold process serves any baked portfolio in about a millisecond, against ~97s
 to compute one live (255s before the Tier 0 fixes).
 
@@ -9,7 +9,7 @@ Everything else the port owes is already cheap and stays local: the schema and
 its rules, the advisor directory, the sleeve library.
 
 Misses - an unbaked combination, or a currency this database cannot serve -
-fall through to *delegate* when one is configured (the epsilonPhi adapter), so
+fall through to *delegate* when one is configured (the live adapter), so
 correctness never depends on the bake being complete. With no delegate the
 service runs entirely without a database and a miss raises AnalyticsError,
 which the UI already renders as a column error with Retry.
@@ -147,14 +147,16 @@ class BakedScenarioPort:
         coverage = self.coverage()
         manifest = self._manifestData()
         # carry the analytics provenance recorded at bake time, so the footer
-        # still names the data version the figures were produced from
-        source = 'baked epsilonPhi analytics'
+        # still names the data version the figures were produced from. Only
+        # the dataversion is read back: the stored `source` is a string frozen
+        # at bake time, and echoing it would let a stale bake put superseded
+        # wording (an old adapter or library name) back on screen.
+        source = 'baked SAA analytics'
         dataversion = 'bake'
         for entry in (manifest.get('slices') or {}).values():
             described = entry.get('describe') or {}
             if described.get('dataversion'):
                 dataversion = described['dataversion']
-                source = described.get('source', source)
                 break
         return {
             'adapter': 'baked' + ('' if self._delegate is None else ' (live fallback)'),

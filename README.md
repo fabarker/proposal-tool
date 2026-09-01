@@ -11,7 +11,7 @@
 > ```
 >
 > `SCENARIO_ADAPTER` picks the data layer: `fixtures` (no database),
-> `epsilonphi` (live, ~97s cold), or **`baked`** (precomputed, ~15ms cold, no
+> `live` (live analytics, ~97s cold), or **`baked`** (precomputed, ~15ms cold, no
 > database — the production setting). All 272 USD portfolios are baked.
 >
 > | Read | For |
@@ -136,7 +136,7 @@ runs. Change `generator/*.py` and rebuild.
 ## The backend, in one paragraph
 
 **Built.** `ScenarioPort` (eight methods) is implemented three times — over fixtures, over
-epsilonPhi, and over a bake of epsilonPhi's results — and exposed on the HTTP surface in
+the SAA analytics library, and over a bake of its results — and exposed on the HTTP surface in
 **spec §3.4**, which the page consumes through `apiFetch()`. Endpoints live on
 `pmgService/dashboardRouter.py` under `/api/v1/`; the Flask proxy rewrites `/api/<x>` to
 `/api/v1/<x>`, so the page calls `/api/scenario/...`. Writes need `Depends(requireEditor)`;

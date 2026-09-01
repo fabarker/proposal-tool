@@ -3209,7 +3209,7 @@ function renderView() {
     + '<p class="eyebrow">Final deliverable</p>'
     + '<h3 id="exporttitle">Download the proposal workbook</h3>'
     + '<p>Generates Portfolios, Risk Dashboard and Implementation sheets from the '
-    + 'persisted scenario and the current epsilonPhi analytics.</p>'
+    + 'persisted scenario and the current SAA analytics.</p>'
     + '<p class="' + gateClass + '" id="implgate">' + App.esc(gateText) + '</p>'
     + '</div>'
     + '<button type="button" class="btn btn-export" id="implexport"'
@@ -3253,7 +3253,7 @@ async function exportWorkbook() {
       throw new Error(message);
     }
     var blob = await resp.blob();
-    var name = 'EpsilonPhi_Scenario.xlsx';
+    var name = 'PMG_Scenario.xlsx';
     var disposition = resp.headers.get('Content-Disposition') || '';
     var match = disposition.match(/filename="?([^";]+)"?/);
     if (match) name = match[1];

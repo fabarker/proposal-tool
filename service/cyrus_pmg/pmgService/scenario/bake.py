@@ -164,13 +164,14 @@ def _makePort(adapter: str):
     if adapter == 'fixtures':
         from .fixturesAdapter import FixturesScenarioPort
         return FixturesScenarioPort()
-    from .epsilonPhiAdapter import EpsilonPhiScenarioPort
-    return EpsilonPhiScenarioPort()
+    from .liveAdapter import LiveScenarioPort
+    return LiveScenarioPort()
 
 
 def _bakeOneInProcess(args_tuple):
-    """Worker entry point: one process per slice keeps epsilonPhi's
-    process-level caches (factor windows, betas) warm for the whole slice."""
+    """Worker entry point: one process per slice keeps the analytics
+    library's process-level caches (factor windows, betas) warm for the
+    whole slice."""
     adapter, currency, hedging, directory, resume, limit, flushEvery = args_tuple
     port = _makePort(adapter)
     return bakeSlice(port, currency, hedging, directory, resume=resume,
@@ -185,8 +186,8 @@ def main(argv=None) -> int:
                         help='hedging policy to bake; repeatable (default: all)')
     parser.add_argument('--all', action='store_true',
                         help='bake every currency x hedging slice')
-    parser.add_argument('--adapter', default='epsilonphi',
-                        choices=('epsilonphi', 'fixtures'))
+    parser.add_argument('--adapter', default='live',
+                        choices=('live', 'fixtures'))
     parser.add_argument('--out', default=None, help='store directory')
     parser.add_argument('--workers', type=int, default=1,
                         help='parallel slice workers (one process per slice)')

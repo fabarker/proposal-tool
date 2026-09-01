@@ -146,7 +146,7 @@ def exportFilename(basis: BasisInput) -> str:
     """The workbook filename (spec 14.2): hedging slugged, host-local date."""
     import datetime
     slug = basis.hedging.replace(' ', '')
-    return 'EpsilonPhi_Scenario_{}_{}_{}.xlsx'.format(
+    return 'PMG_Scenario_{}_{}_{}.xlsx'.format(
         basis.currency, slug, datetime.date.today().isoformat())
 
 

@@ -761,7 +761,7 @@ CONTEXT_END_DATE = "31-Dec-2022"
 
 @lru_cache(maxsize=None)
 def get_context(currency: str):
-    """Return the epsilonPhi analytics context for *currency*.
+    """Return the SAA analytics context for *currency*.
 
     Expensive: builds the full schema context. Cached unbounded because there
     are only four currencies.
@@ -771,7 +771,7 @@ def get_context(currency: str):
     availability set.
     """
 
-    from epsilonPhi.core.schema.Schema import ContextCreator
+    from .engine import ContextCreator
     return ContextCreator(
         currency=currency,
         start_date=CONTEXT_START_DATE,
@@ -780,7 +780,7 @@ def get_context(currency: str):
 
 
 # Hedging policy -> per-asset FX hedge ratio, by the asset's category.
-# ``SAAPortfolio.set_hedging_option`` is a dead path in this epsilonPhi
+# ``SAAPortfolio.set_hedging_option`` is a dead path in this engine
 # snapshot (it calls SAAHedging, which does not exist here), so the policy is
 # applied through ``set_hedging_ratios`` instead - the working mechanism the
 # estimators respect. Hedged/Unhedged/Equity Not Hedged carry their
@@ -803,7 +803,7 @@ def _build_portfolio(
 ):
     """Cached portfolio construction. Arguments must be hashable."""
 
-    from epsilonPhi.core.portfolio.SAAPortfolio import SAAPortfolio
+    from .engine import SAAPortfolio
 
     # The cache key sorts the items so equal weight maps share one entry; the
     # portfolio itself is built in the supplied universe order, so every

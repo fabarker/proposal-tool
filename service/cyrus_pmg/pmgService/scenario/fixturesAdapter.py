@@ -128,7 +128,7 @@ class FixturesScenarioPort:
             stress.append({'period': period, 'nominalPct': nominal,
                            'realPct': nominal - 2.4 * factor})
 
-        # Same grouping and horizons as the epsilonPhi adapter, so both
+        # Same grouping and horizons as the live adapter, so both
         # implementations render an identical risk dashboard (spec 4.4).
         premia = []
         horizons = (('Over 1 Month', 0.62), ('Over 1 Year', 1.55), ('Over 3 Years', 2.02))

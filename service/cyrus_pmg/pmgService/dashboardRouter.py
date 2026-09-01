@@ -42,7 +42,7 @@ _XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 # Build the port at import rather than on the first request, so any warm-up it
 # does (the baked adapter pre-builds the static weight tables on a daemon
 # thread) overlaps service start instead of the first user. Construction is
-# cheap for every adapter - epsilonPhi's own setup stays lazy - and a
+# cheap for every adapter - the engine's own setup stays lazy - and a
 # misconfigured adapter must not stop the router loading, so failures wait to
 # surface on the request that needs it.
 try:

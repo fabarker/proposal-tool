@@ -26,8 +26,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 pytestmark = pytest.mark.skipif(
-    os.getenv('EPSILONPHI_LIVE', '') != '1',
-    reason='needs a live epsilonPhi database; set EPSILONPHI_LIVE=1 to run',
+    os.getenv('SAA_ENGINE_LIVE', '') != '1',
+    reason='needs a live SAA analytics database; set SAA_ENGINE_LIVE=1 to run',
 )
 
 
@@ -66,7 +66,7 @@ def _original_calc_return_betas(asset, hedging_ratio=0.5, normalized=True):
 
 @pytest.fixture(scope='module')
 def portfolio():
-    from epsilonPhi.core.config.appConfig import CAppConfig
+    from cyrus_pmg.pmgService.scenario.engine import CAppConfig
     CAppConfig.setup()
     from cyrus_pmg.pmgService.scenario import portfolio_weights as pw
     frame = pw.load_portfolio_weights(
@@ -78,7 +78,7 @@ def portfolio():
 
 
 def test_optimised_betas_are_bit_identical(portfolio):
-    from epsilonPhi.core.estimator.assetReturnEstimator import AssetReturnEstimator
+    from cyrus_pmg.pmgService.scenario.engine import AssetReturnEstimator
     for name in list(portfolio.get_asset_names())[:4]:
         asset = portfolio.get_asset(name)
         reference = _original_calc_return_betas(asset, asset.hedging_ratio, True)
@@ -90,7 +90,7 @@ def test_optimised_betas_are_bit_identical(portfolio):
 
 def test_betas_do_not_vary_with_hedging_ratio(portfolio):
     """The premise of dropping hedging_ratio from the cache key."""
-    from epsilonPhi.core.estimator.assetReturnEstimator import AssetReturnEstimator
+    from cyrus_pmg.pmgService.scenario.engine import AssetReturnEstimator
     asset = portfolio.get_asset(list(portfolio.get_asset_names())[2])
     at = [AssetReturnEstimator.calc_return_betas(asset, r, True) for r in (0.0, 0.5, 1.0)]
     for other in at[1:]:
@@ -105,7 +105,7 @@ def test_currency_conversion_preserves_the_schema_object(portfolio):
 
 
 def test_cache_key_separates_currencies(portfolio):
-    from epsilonPhi.core.estimator.assetReturnEstimator import AssetReturnEstimator
+    from cyrus_pmg.pmgService.scenario.engine import AssetReturnEstimator
     from cyrus_pmg.pmgService.scenario import portfolio_weights as pw
     frame = pw.load_portfolio_weights(
         currency='CHF', allocation='Core', risk_level='Mod',
