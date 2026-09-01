@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from . import fees
 from . import portfolio_weights as pw
 from .sleeves import VARIANTS as IMPLEMENTATION_VARIANTS, variantExists
 from .types import BasisInput, MandateInput, PortfolioKey, ValidationError
@@ -46,15 +47,228 @@ RISK_LEVEL_LABELS = {
 # rendered checked-and-disabled because the exclusion is true, not inapplicable.
 RE_ALLOWED = ['Full', 'Ex HFs']
 
+# Which allocations each implementation variant offers (D49).
+#
+# This is why the variant is now chosen BEFORE the base portfolio rather than
+# on the implementation step: it decides what can be built, not merely what the
+# built thing is implemented with. An onshore book cannot hold alternatives, so
+# offering Full and then withdrawing it at step 2 would be asking a question
+# whose answer was never available.
+#
+# Risk levels are deliberately absent here. They stay data-driven through the
+# availability set - Ex Alts already has no Cons or Low Vol rows in the
+# supplied weights, so the ladder narrows on its own (spec 4.5).
+VARIANT_ALLOCATIONS = {
+    'PMG Multi-Asset Portfolio': ['Full', 'Core', 'Ex HFs', 'Ex Alts'],
+    'PMG ESG': ['Ex Alts', 'Ex HFs'],
+    'US Onshore': ['Ex Alts'],
+    'Irish Onshore': ['Ex Alts'],
+}
+
+# Variants that mandate the real-estate exclusion. Only bites on an allocation
+# in RE_ALLOWED - the others hold none in the first place - so under ESG the
+# Ex HFs sleeve is offered with the exclusion forced on and its toggle locked.
+VARIANTS_EXCLUDING_RE = ['PMG ESG']
+
+# --------------------------------------------------------- tactical tilts ---
+# Tactical asset allocation is an IMPLEMENTATION concept, not a strategic one
+# (D50). No strategic allocation carries it: every key is built with
+# excludeTAA true, which is why _availabilityForCurrency filters on it below
+# rather than offering both halves of that axis.
+#
+# The field stays in the canonical key - fourth of four - pinned to 1. Dropping
+# it would rekey all 272 baked payloads for no gain; pinning it leaves the bake
+# valid and simply narrows the offered set to the half that was already baked.
+#
+# At implementation level the tilt is a toggle: TACTICAL_TILT_PCT of the
+# portfolio, funded out of TACTICAL_TILT_FUNDED_FROM. The reduction is applied
+# to that category's weight, which scales its products pro rata by
+# construction, since every product weight is category weight x product share.
+TACTICAL_TILT_PCT = 8.0
+TACTICAL_TILT_FUNDED_FROM = 'Investment Grade Fixed Income'
+
+# The sleeve-library category the tilt is drawn from. It is no longer present
+# in any strategic allocation, so the toggle introduces it rather than the
+# weights carrying it; its library, and therefore its product, is still chosen
+# per variant (ESG holds an ESG tilt fund).
+TACTICAL_TILT_CATEGORY = 'Asset Allocation Strategies'
+
+
+def canFundTacticalTilt(categories) -> bool:
+    """Whether these payload categories can fund the tilt.
+
+    All Equity portfolios hold no investment grade fixed income at all, so
+    there is nothing to fund it from and the toggle is offered disabled rather
+    than producing a book that does not add to 100 (D50).
+    """
+    for category in categories or []:
+        if category.get('name') == TACTICAL_TILT_FUNDED_FROM:
+            return float(category.get('weightPct') or 0.0) >= TACTICAL_TILT_PCT
+    return False
+
+
+def tiltedCategories(categories, tacticalTilt) -> list:
+    """The payload's categories as *implemented* (D50).
+
+    With the tilt off, the strategic categories unchanged. With it on, the
+    funding category loses TACTICAL_TILT_PCT and the tilt category is appended
+    carrying it. Weight is moved, never created: the list still sums to 100.
+
+    The reduction is spread across the funding category's own assets in
+    proportion, which is what "pro rata" means here - and the product weights
+    in the implementation table need no separate treatment, because each is
+    the category weight times a fixed share of it.
+
+    Returns copies; the caller's payload (a cached or baked slice) is never
+    mutated. An unfundable tilt is silently no-op rather than an error: the
+    UI disables the toggle, and this is the same rule applied where the
+    workbook is written.
+
+    THE JAVASCRIPT MIRROR of this lives in implementation.js as
+    tiltCategories(). The two must agree exactly or the screen and the
+    workbook drift.
+    """
+    result = []
+    for category in categories or []:
+        copy = dict(category)
+        copy['assets'] = [dict(a) for a in category.get('assets') or []]
+        result.append(copy)
+    if not tacticalTilt or not canFundTacticalTilt(result):
+        return result
+
+    for category in result:
+        if category['name'] != TACTICAL_TILT_FUNDED_FROM:
+            continue
+        before = float(category['weightPct'])
+        after = before - TACTICAL_TILT_PCT
+        category['weightPct'] = after
+        share = (after / before) if before else 0.0
+        for asset in category['assets']:
+            asset['weightPct'] = float(asset['weightPct']) * share
+        break
+
+    result.append({
+        'name': TACTICAL_TILT_CATEGORY,
+        'weightPct': TACTICAL_TILT_PCT,
+        'assets': [{'reportingName': TACTICAL_TILT_CATEGORY,
+                    'weightPct': TACTICAL_TILT_PCT}],
+    })
+    return result
+
+
+def allocationsForVariant(variant) -> list:
+    """The allocations *variant* offers, in the canonical ALLOCATIONS order.
+
+    An unknown or absent variant applies no filter: the schema is fetched once
+    before a variant is chosen, and a rule cannot bind before its input exists
+    (the same reasoning as the mandate filter below).
+    """
+    offered = VARIANT_ALLOCATIONS.get(variant)
+    if not offered:
+        return list(ALLOCATIONS)
+    return [a for a in ALLOCATIONS if a in offered]
+
+
+def variantForcesExcludeRE(variant) -> bool:
+    """Whether *variant* mandates the real-estate exclusion."""
+    return variant in VARIANTS_EXCLUDING_RE
+
 # Private assets mean Private Equity and Other Private Assets; hedge funds are
 # not private assets (spec 2.5). These allocations hold private assets and are
 # therefore blocked under the $20m minimum.
 PRIVATE_ASSET_ALLOCATIONS = {'Full', 'Ex HFs'}
 
-# Asset Allocation Strategies carries exactly one sleeve, attached
-# automatically whenever the category is present (spec 2.6). Served in the
-# schema so the UI never hardcodes a category name.
-AUTO_SLEEVE_CATEGORIES = ['Asset Allocation Strategies']
+# Categories that carry exactly one sleeve, attached automatically whenever
+# the category is present (spec 2.6). Both are introduced by an implementation
+# toggle rather than by any strategic allocation - Asset Allocation Strategies
+# by the tactical tilt, Hybrid Fixed Income by the volatility premium (D53) -
+# so neither is ever present without its sleeve. Served in the schema so the
+# UI never hardcodes a category name.
+AUTO_SLEEVE_CATEGORIES = ['Asset Allocation Strategies', 'Hybrid Fixed Income']
+
+# ----------------------------------------- the strategic volatility premium ---
+# A second implementation overlay, the same shape as the tilt but proportional
+# rather than fixed (D53). Switched on, it holds VOL_PREMIUM_SHARE of the
+# funding category AS IMPLEMENTED - that is, of what is left after the tilt has
+# been funded out of it - and is funded pro rata from that category's own
+# products, exactly as the tilt is.
+#
+#   weight = (funding category, tilt already taken out) x VOL_PREMIUM_SHARE
+#
+# The category it introduces is placed immediately after the funding category,
+# which is where the sheet reads it: under Investment Grade Fixed Income and
+# before Other Fixed Income.
+VOL_PREMIUM_SHARE = 0.075
+VOL_PREMIUM_FUNDED_FROM = 'Investment Grade Fixed Income'
+VOL_PREMIUM_CATEGORY = 'Hybrid Fixed Income'
+
+# The product is forbidden outside these two currencies, so the rule is
+# enforced where the model is built and not only where the toggle is drawn: a
+# stale flag on a scenario whose basis has since moved to EUR must not put it
+# in the book. Served in the schema so the page never hardcodes a currency.
+VOL_PREMIUM_CURRENCIES = ['USD', 'GBP']
+
+
+def canHoldVolPremium(currency) -> bool:
+    """Whether a book in *currency* may hold the volatility premium at all."""
+    return currency in VOL_PREMIUM_CURRENCIES
+
+
+def volPremiumCategories(categories, volPremium, currency) -> list:
+    """The implemented categories with the volatility premium applied (D53).
+
+    Takes categories that have ALREADY been through tiltedCategories, since
+    the share is of the funding category as implemented. Weight is moved, not
+    created: the funding category loses exactly what the new one gains, and
+    its products scale pro rata, so the list still sums to 100.
+
+    A wrong currency, an absent funding category or one with no weight are all
+    silent no-ops rather than errors - the UI disables the toggle, and this is
+    the same rule applied where the workbook is written.
+
+    THE JAVASCRIPT MIRROR of this lives in implementation.js as
+    volPremiumCategories(). The two must agree exactly or the screen and the
+    workbook drift.
+    """
+    result = []
+    for category in categories or []:
+        copy = dict(category)
+        copy['assets'] = [dict(a) for a in category.get('assets') or []]
+        result.append(copy)
+    if not volPremium or not canHoldVolPremium(currency):
+        return result
+
+    for index, category in enumerate(result):
+        if category['name'] != VOL_PREMIUM_FUNDED_FROM:
+            continue
+        before = float(category['weightPct'])
+        if before <= 0:
+            break
+        take = before * VOL_PREMIUM_SHARE
+        after = before - take
+        category['weightPct'] = after
+        share = after / before
+        for asset in category['assets']:
+            asset['weightPct'] = float(asset['weightPct']) * share
+        result.insert(index + 1, {
+            'name': VOL_PREMIUM_CATEGORY,
+            'weightPct': take,
+            'assets': [{'reportingName': VOL_PREMIUM_CATEGORY, 'weightPct': take}],
+        })
+        break
+    return result
+
+
+def implementedCategories(categories, tacticalTilt, volPremium=False,
+                          currency=None) -> list:
+    """The strategic categories as implemented: both overlays, in order.
+
+    The tilt first, because the volatility premium's share is of what the
+    tilt leaves behind. Every caller that builds an implementation model goes
+    through here, so the two can never be applied in the other order.
+    """
+    return volPremiumCategories(
+        tiltedCategories(categories, tacticalTilt), volPremium, currency)
 
 
 def categoriesInUniverseOrder() -> list:
@@ -71,16 +285,23 @@ def categoriesInUniverseOrder() -> list:
     return seen
 
 
-def allocationsFor(mandateSize) -> list:
-    """Allocations available at this mandate size (spec 2.5, 10.5).
+def allocationsFor(mandateSize, variant=None) -> list:
+    """Allocations available at this mandate size, under this variant.
 
-    Under $20m the private-asset allocations are absent entirely - not
-    disabled options. A missing mandate (the pre-mandate schema fetch) applies
-    no filter, because the rule cannot bind before a mandate exists.
+    Two independent filters (spec 2.5, 10.5; D49), both subtractive: under
+    $20m the private-asset allocations are absent entirely - not disabled
+    options - and outside a variant's own list an allocation is absent for the
+    same reason. A missing mandate or variant applies no filter, because a
+    rule cannot bind before its input exists.
+
+    The intersection can be empty in principle; it is not for any variant
+    offered here, since every one of them offers Ex Alts, which holds no
+    private assets.
     """
+    allowed = allocationsForVariant(variant)
     if mandateSize is not None and mandateSize < PRIVATE_ASSETS_MINIMUM:
-        return [a for a in ALLOCATIONS if a not in PRIVATE_ASSET_ALLOCATIONS]
-    return list(ALLOCATIONS)
+        allowed = [a for a in allowed if a not in PRIVATE_ASSET_ALLOCATIONS]
+    return allowed
 
 
 @lru_cache(maxsize=None)
@@ -94,13 +315,17 @@ def _availabilityForCurrency(currency: str) -> tuple:
     """
     frame = pw.portfolio_weights_df
     rows = frame.loc[
-        frame['currency'].eq(str(currency).upper()) & frame['ui_available'],
+        frame['currency'].eq(str(currency).upper()) & frame['ui_available']
+        # tactical allocation is an implementation concept: no strategic
+        # allocation carries it, so only the ex-TAA half is offered (D50)
+        & frame['exclude_tactical_asset_allocation'],
         ['allocation_type', 'exclude_real_estate',
          'exclude_tactical_asset_allocation', 'risk_level'],
     ].drop_duplicates()
 
     keys = [
-        (str(record.allocation_type), PortfolioKey(
+        (str(record.allocation_type), bool(record.exclude_real_estate),
+         PortfolioKey(
             allocation=str(record.allocation_type),
             excludeRE=bool(record.exclude_real_estate),
             excludeTAA=bool(record.exclude_tactical_asset_allocation),
@@ -108,15 +333,25 @@ def _availabilityForCurrency(currency: str) -> tuple:
         ).toStr())
         for record in rows.itertuples(index=False)
     ]
-    return tuple(sorted(keys, key=lambda item: item[1]))
+    return tuple(sorted(keys, key=lambda item: item[2]))
 
 
-def availability(basis: BasisInput, mandateSize) -> list:
-    """The availability set as canonical key strings, filtered by the $20m
-    rule for this mandate size (spec 2.5, 3.4)."""
-    allowed = set(allocationsFor(mandateSize))
-    return [keyStr for allocation, keyStr in _availabilityForCurrency(basis.currency)
-            if allocation in allowed]
+def availability(basis: BasisInput, mandateSize, variant=None) -> list:
+    """The availability set as canonical key strings (spec 2.5, 3.4; D49).
+
+    Filtered by the $20m rule for this mandate size and by the variant's own
+    allocation list, and - where the variant mandates it - down to the keys
+    that already carry the real-estate exclusion. The set is the single
+    authority the UI selects against, so a key absent from it cannot be built
+    by the picker; ``validateKey`` enforces the same thing server-side for a
+    caller that does not use the picker.
+    """
+    allowed = set(allocationsFor(mandateSize, variant))
+    forceExRE = variantForcesExcludeRE(variant)
+    return [keyStr
+            for allocation, excludeRE, keyStr in _availabilityForCurrency(basis.currency)
+            if allocation in allowed
+            and not (forceExRE and allocation in RE_ALLOWED and not excludeRE)]
 
 
 def portfolioHeader(key: PortfolioKey) -> str:
@@ -131,8 +366,8 @@ def portfolioHeader(key: PortfolioKey) -> str:
     suffix = ''
     if key.excludeRE and key.allocation in RE_ALLOWED:
         suffix += ' ex RE'
-    if key.excludeTAA:
-        suffix += ' ex TAA'
+    # no ' ex TAA': every strategic allocation is now ex-TAA, and a suffix
+    # true of every portfolio distinguishes none of them (D50)
     risk = RISK_LEVEL_LABELS.get(key.riskLevel, key.riskLevel)
     return '{} {}{}'.format(risk, key.allocation, suffix)
 
@@ -172,6 +407,68 @@ def validateVariant(variant) -> None:
             'variant', 'Unknown implementation variant {!r}.'.format(variant))
 
 
+def validateFeeSchedule(schedule) -> None:
+    """Reject a fee schedule outside CASP / RDR (D51).
+
+    There is no default: a schedule decides every management fee on the
+    sheet, and a book priced under the wrong one is wrong in every row.
+    """
+    if not schedule:
+        raise ValidationError('feeSchedule', 'Choose a fee schedule.')
+    if schedule not in fees.SCHEDULES:
+        raise ValidationError(
+            'feeSchedule', 'Unknown fee schedule {!r}.'.format(schedule))
+
+
+def validateFeeLevel(level) -> None:
+    """Reject a fee level outside the six the framework prices (D51)."""
+    if not level:
+        raise ValidationError('feeLevel', 'Choose a fee level.')
+    if level not in fees.LEVELS:
+        raise ValidationError('feeLevel', 'Unknown fee level {!r}.'.format(level))
+
+
+def validateKey(key: PortfolioKey, variant, mandateSize=None) -> None:
+    """Reject a portfolio the variant does not offer (D49).
+
+    Enforced server-side as well as in the picker because the variant governs
+    what may be built at all: an unchecked key would let a caller resolve a
+    Full portfolio into an onshore book, which is the same class of error as
+    pulling the wrong sleeve library and is checked for the same reason.
+    """
+    if not variant:
+        raise ValidationError(
+            'variant', 'Choose an implementation variant before a portfolio.')
+    allowed = allocationsFor(mandateSize, variant)
+    if key.allocation not in allowed:
+        raise ValidationError('allocation', '{} does not offer the {} allocation.'
+                              .format(variant, key.allocation))
+    if (variantForcesExcludeRE(variant) and key.allocation in RE_ALLOWED
+            and not key.excludeRE):
+        raise ValidationError(
+            'excludeRE', '{} requires real estate to be excluded.'.format(variant))
+    if not key.excludeTAA:
+        raise ValidationError(
+            'excludeTAA', 'Tactical allocation is chosen at implementation, not '
+            'in the strategic allocation.')
+
+
+def keysInvalidForVariant(keyStrs, variant, mandateSize=None) -> list:
+    """Which of *keyStrs* the variant does not offer.
+
+    Used when the variant changes on a scenario that already has columns: the
+    ones it still offers are kept, so switching between two variants that
+    share an allocation does not throw away work.
+    """
+    invalid = []
+    for keyStr in keyStrs or []:
+        try:
+            validateKey(PortfolioKey.fromStr(keyStr), variant, mandateSize)
+        except ValidationError:
+            invalid.append(keyStr)
+    return invalid
+
+
 def validateMandate(mandate: MandateInput, advisorExists) -> None:
     """The server-authoritative mandate rules (spec 2.4).
 
@@ -192,31 +489,53 @@ def validateMandate(mandate: MandateInput, advisorExists) -> None:
 
 
 def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
-                  dataInfo: dict) -> dict:
+                  dataInfo: dict, variant=None, topAccountSize=None) -> dict:
     """Assemble the GET /api/scenario/schema response (spec 3.4).
 
     capabilities() and describe() ride along here: the port defines both but
     the HTTP surface gives them no endpoint of their own, and the footer needs
     describe() from first render. Recorded as deviation D4.
+
+    *variant* narrows ``allocations`` and ``availability``, so the schema is
+    re-fetched when it changes. The full per-variant table rides along under
+    ``options.variantAllocations`` as well, so the picker can say what a
+    variant would offer before it is chosen - the schema-is-data rule (4.3)
+    applied to a restriction rather than an option list (D49).
+
+    ``fees`` carries the whole fee framework - schedules, levels, tiers, fee
+    groups and both rate grids at the tier the *topAccountSize* falls in - so
+    the client can price the implementation sheet as it is built without a
+    round trip per product, and without a rate of its own (D51). Without a
+    top account size there is no tier and the block carries no rates.
     """
     return {
         'options': {
             'currencies': CURRENCIES,
             'hedgingPolicies': HEDGING_POLICIES,
-            'allocations': allocationsFor(mandateSize),
+            'allocations': allocationsFor(mandateSize, variant),
             'riskLevels': RISK_LEVELS,
             'riskLevelLabels': RISK_LEVEL_LABELS,
             'reAllowed': RE_ALLOWED,
             'implementationVariants': IMPLEMENTATION_VARIANTS,
+            'variantAllocations': VARIANT_ALLOCATIONS,
+            'variantsExcludingRealEstate': VARIANTS_EXCLUDING_RE,
         },
-        'availability': availability(basis, mandateSize),
+        'availability': availability(basis, mandateSize, variant),
         'categories': categoriesInUniverseOrder(),
         'rules': {
             'mandateFloor': MANDATE_FLOOR,
             'privateAssetsMinimum': PRIVATE_ASSETS_MINIMUM,
             'maxPortfolios': MAX_PORTFOLIOS,
             'autoSleeveCategories': AUTO_SLEEVE_CATEGORIES,
+            'tacticalTiltPct': TACTICAL_TILT_PCT,
+            'tacticalTiltFundedFrom': TACTICAL_TILT_FUNDED_FROM,
+            'tacticalTiltCategory': TACTICAL_TILT_CATEGORY,
+            'volPremiumShare': VOL_PREMIUM_SHARE,
+            'volPremiumFundedFrom': VOL_PREMIUM_FUNDED_FROM,
+            'volPremiumCategory': VOL_PREMIUM_CATEGORY,
+            'volPremiumCurrencies': VOL_PREMIUM_CURRENCIES,
         },
+        'fees': fees.feePayload(topAccountSize),
         'capabilities': capabilities,
         'dataInfo': dataInfo,
     }

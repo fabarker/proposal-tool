@@ -9,7 +9,15 @@ deviation D9. Production replaces this module's tables with the PMG-maintained
 source behind the same function.
 
 A sleeve is a fixed block: (category, name) identity, products whose weights
-sum to 1, every product carrying the eleven fields of spec 4.1.
+sum to 1, every product carrying the eleven fields of spec 4.1 - except that
+the management fee is no longer one of them. A product carries a fee group
+instead, and its management fee is resolved at pricing time from the fee
+schedule, the top account size and the fee level (fees.py, deviation D51).
+The groups below were assigned by a rule of thumb - passive products are
+Passive, hedge fund and private market strategies are Alternatives, specialist
+credit and emerging market strategies are Specialist Active, the tilt fund is
+Asset Allocation, everything else is Core Active - and are as much stub data as
+the products they sit on.
 
 Implementation variants (D29)
 -----------------------------
@@ -39,6 +47,8 @@ item 18 in the spec records that they need replacing before anyone sees them.
 
 from __future__ import annotations
 
+from .fees import FEE_GROUPS
+
 # The order the UI offers them in. First is not a default - nothing is
 # selected until a PWA selects it (spec 8.1).
 VARIANTS = [
@@ -50,12 +60,12 @@ VARIANTS = [
 
 
 def _product(name, ticker, assetClass, style, vehicle, source, liquidity,
-             exposureCurrency, productCost, managementFee, weight):
+             exposureCurrency, productCost, feeGroup, weight):
     return {
         'name': name, 'ticker': ticker, 'assetClass': assetClass,
         'style': style, 'vehicle': vehicle, 'source': source,
         'liquidity': liquidity, 'exposureCurrency': exposureCurrency,
-        'productCost': productCost, 'managementFee': managementFee,
+        'productCost': productCost, 'feeGroup': feeGroup,
         'weight': weight,
     }
 
@@ -65,81 +75,88 @@ P = _product
 BASELINE = {
     'Investment Grade Fixed Income': [
         {'name': 'GSAM Separately Managed Account', 'products': [
-            P('GSAM Core Municipal SMA', '—', 'Municipals', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.25, 0.30, 0.45),
-            P('GSAM Intermediate Credit SMA', '—', 'IG Corporate', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.28, 0.30, 0.35),
-            P('GSAM Short Duration SMA', '—', 'Short Duration', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.22, 0.30, 0.20)]},
+            P('GSAM Core Municipal SMA', '—', 'Municipals', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.25, 'Core Active', 0.45),
+            P('GSAM Intermediate Credit SMA', '—', 'IG Corporate', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.28, 'Core Active', 0.35),
+            P('GSAM Short Duration SMA', '—', 'Short Duration', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.22, 'Core Active', 0.20)]},
         {'name': 'Funds Only', 'products': [
-            P('GS US Corporate Bond Fund', 'GSUCX', 'IG Corporate', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.42, 0.30, 0.45),
-            P('Ashfield Global Credit Fund', 'AGCIX', 'IG Corporate', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.55, 0.30, 0.30),
-            P('GS Short Duration Income', 'GSSDX', 'Short Duration', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.38, 0.30, 0.25)]},
+            P('GS US Corporate Bond Fund', 'GSUCX', 'IG Corporate', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.42, 'Core Active', 0.45),
+            P('Ashfield Global Credit Fund', 'AGCIX', 'IG Corporate', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.55, 'Core Active', 0.30),
+            P('GS Short Duration Income', 'GSSDX', 'Short Duration', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.38, 'Core Active', 0.25)]},
         {'name': 'ETF & Mutual Funds', 'products': [
-            P('GS Access IG Corporate ETF', 'GIGB', 'IG Corporate', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.14, 0.30, 0.40),
-            P('GS Access Treasury 0-1 ETF', 'GBIL', 'Government', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.12, 0.30, 0.30),
-            P('GS Core Fixed Income Fund', 'GCFIX', 'Aggregate', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.46, 0.30, 0.30)]},
+            P('GS Access IG Corporate ETF', 'GIGB', 'IG Corporate', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.14, 'Passive', 0.40),
+            P('GS Access Treasury 0-1 ETF', 'GBIL', 'Government', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.12, 'Passive', 0.30),
+            P('GS Core Fixed Income Fund', 'GCFIX', 'Aggregate', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.46, 'Core Active', 0.30)]},
     ],
     'Other Fixed Income': [
         {'name': 'High Yield & EM Funds', 'products': [
-            P('GS High Yield Fund', 'GSHAX', 'High Yield', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.72, 0.30, 0.55),
-            P('GS Emerging Markets Debt', 'GSDAX', 'EM Debt', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.85, 0.30, 0.45)]},
+            P('GS High Yield Fund', 'GSHAX', 'High Yield', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.72, 'Specialist Active', 0.55),
+            P('GS Emerging Markets Debt', 'GSDAX', 'EM Debt', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.85, 'Specialist Active', 0.45)]},
         {'name': 'Multi-Sector Funds', 'products': [
-            P('GS Strategic Income Fund', 'GSZAX', 'Multi-Sector', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.79, 0.30, 0.60),
-            P('Calderwood Local EM Debt', 'CLEDX', 'EM Debt', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.91, 0.30, 0.40)]},
+            P('GS Strategic Income Fund', 'GSZAX', 'Multi-Sector', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.79, 'Specialist Active', 0.60),
+            P('Calderwood Local EM Debt', 'CLEDX', 'EM Debt', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.91, 'Specialist Active', 0.40)]},
         {'name': 'ETF Only', 'products': [
-            P('GS Access High Yield ETF', 'GHYB', 'High Yield', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.34, 0.30, 0.60),
-            P('GS Access EM USD Bond ETF', 'GEMD', 'EM Debt', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.39, 0.30, 0.40)]},
+            P('GS Access High Yield ETF', 'GHYB', 'High Yield', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.34, 'Passive', 0.60),
+            P('GS Access EM USD Bond ETF', 'GEMD', 'EM Debt', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.39, 'Passive', 0.40)]},
     ],
     'Public Equity': [
         {'name': 'Active-Passive', 'products': [
-            P('GS Access US Large Cap ETF', 'GSLC', 'US Large Cap', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.09, 0.30, 0.34),
-            P('GS US Equity Insights Fund', 'GCSAX', 'US All Cap', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.71, 0.30, 0.22),
-            P('Northbrook Intl Equity', 'NBIEX', 'Intl Developed', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.68, 0.30, 0.24),
-            P('GS Emerging Markets Equity', 'GEMAX', 'Emerging Markets', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 1.12, 0.30, 0.20)]},
+            P('GS Access US Large Cap ETF', 'GSLC', 'US Large Cap', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.09, 'Passive', 0.34),
+            P('GS US Equity Insights Fund', 'GCSAX', 'US All Cap', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.71, 'Core Active', 0.22),
+            P('Northbrook Intl Equity', 'NBIEX', 'Intl Developed', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.68, 'Core Active', 0.24),
+            P('GS Emerging Markets Equity', 'GEMAX', 'Emerging Markets', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 1.12, 'Specialist Active', 0.20)]},
         {'name': 'Passive', 'products': [
-            P('GS Access US Large Cap ETF', 'GSLC', 'US Large Cap', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.09, 0.30, 0.46),
-            P('GS Access Intl Equity ETF', 'GSIE', 'Intl Developed', 'Passive', 'ETF', 'Internal', 'Daily', 'Local', 0.25, 0.30, 0.32),
-            P('GS Access EM Equity ETF', 'GEM', 'Emerging Markets', 'Passive', 'ETF', 'Internal', 'Daily', 'Local', 0.37, 0.30, 0.22)]},
+            P('GS Access US Large Cap ETF', 'GSLC', 'US Large Cap', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.09, 'Passive', 0.46),
+            P('GS Access Intl Equity ETF', 'GSIE', 'Intl Developed', 'Passive', 'ETF', 'Internal', 'Daily', 'Local', 0.25, 'Passive', 0.32),
+            P('GS Access EM Equity ETF', 'GEM', 'Emerging Markets', 'Passive', 'ETF', 'Internal', 'Daily', 'Local', 0.37, 'Passive', 0.22)]},
         {'name': 'Concentrated Active', 'products': [
-            P('GS Concentrated Growth SMA', '—', 'US Large Cap', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.55, 0.30, 0.40),
-            P('GS US Focused Value SMA', '—', 'US Large Cap', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.55, 0.30, 0.32),
-            P('Northbrook Focused Intl', 'NBFIX', 'Intl Developed', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.94, 0.30, 0.28)]},
+            P('GS Concentrated Growth SMA', '—', 'US Large Cap', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.55, 'Core Active', 0.40),
+            P('GS US Focused Value SMA', '—', 'US Large Cap', 'Active', 'SMA', 'Internal', 'Daily', 'USD', 0.55, 'Core Active', 0.32),
+            P('Northbrook Focused Intl', 'NBFIX', 'Intl Developed', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.94, 'Core Active', 0.28)]},
     ],
     'Hedge Funds': [
         {'name': 'Multi-Strategy Fund of Funds', 'products': [
-            P('GS HedgeWorks Multi-Strategy', '—', 'Multi-Strategy', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.35, 0.30, 0.60),
-            P('Calderwood Global Macro', '—', 'Global Macro', 'Active', 'SMA', 'External', 'Quarterly', 'USD', 1.48, 0.30, 0.40)]},
+            P('GS HedgeWorks Multi-Strategy', '—', 'Multi-Strategy', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.35, 'Alternatives', 0.60),
+            P('Calderwood Global Macro', '—', 'Global Macro', 'Active', 'SMA', 'External', 'Quarterly', 'USD', 1.48, 'Alternatives', 0.40)]},
         {'name': 'Direct Single Manager', 'products': [
-            P('Ashfield Select Equity L/S', '—', 'Equity Long/Short', 'Active', 'SMA', 'External', 'Quarterly', 'USD', 1.62, 0.30, 0.55),
-            P('Northbrook Relative Value', '—', 'Relative Value', 'Active', 'SMA', 'External', 'Monthly', 'USD', 1.55, 0.30, 0.45)]},
+            P('Ashfield Select Equity L/S', '—', 'Equity Long/Short', 'Active', 'SMA', 'External', 'Quarterly', 'USD', 1.62, 'Alternatives', 0.55),
+            P('Northbrook Relative Value', '—', 'Relative Value', 'Active', 'SMA', 'External', 'Monthly', 'USD', 1.55, 'Alternatives', 0.45)]},
         {'name': 'Liquid Alternatives', 'products': [
-            P('GS Absolute Return Tracker', 'GARTX', 'Multi-Strategy', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.96, 0.30, 0.60),
-            P('GS Managed Futures Strategy', 'GMFAX', 'Managed Futures', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 1.08, 0.30, 0.40)]},
+            P('GS Absolute Return Tracker', 'GARTX', 'Multi-Strategy', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.96, 'Alternatives', 0.60),
+            P('GS Managed Futures Strategy', 'GMFAX', 'Managed Futures', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 1.08, 'Alternatives', 0.40)]},
     ],
     'Private Equity': [
         {'name': 'Diversified Vintage Program', 'products': [
-            P('GS Vintage Fund IX', '—', 'Secondaries', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.25, 0.30, 0.40),
-            P('GS Private Markets Buyout', '—', 'Buyout', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.45, 0.30, 0.35),
-            P('GS Growth Equity Partners', '—', 'Growth', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.50, 0.30, 0.25)]},
+            P('GS Vintage Fund IX', '—', 'Secondaries', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.25, 'Alternatives', 0.40),
+            P('GS Private Markets Buyout', '—', 'Buyout', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.45, 'Alternatives', 0.35),
+            P('GS Growth Equity Partners', '—', 'Growth', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.50, 'Alternatives', 0.25)]},
         {'name': 'Buyout Focus', 'products': [
-            P('GS Private Markets Buyout', '—', 'Buyout', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.45, 0.30, 0.65),
-            P('Ashfield Co-Investment', '—', 'Co-Investment', 'Active', 'SMA', 'External', 'Drawdown', 'EUR', 1.10, 0.30, 0.35)]},
+            P('GS Private Markets Buyout', '—', 'Buyout', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.45, 'Alternatives', 0.65),
+            P('Ashfield Co-Investment', '—', 'Co-Investment', 'Active', 'SMA', 'External', 'Drawdown', 'EUR', 1.10, 'Alternatives', 0.35)]},
         {'name': 'Growth & Venture', 'products': [
-            P('GS Growth Equity Partners', '—', 'Growth', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.50, 0.30, 0.55),
-            P('GS Venture Access Fund', '—', 'Venture', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.72, 0.30, 0.45)]},
+            P('GS Growth Equity Partners', '—', 'Growth', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.50, 'Alternatives', 0.55),
+            P('GS Venture Access Fund', '—', 'Venture', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.72, 'Alternatives', 0.45)]},
     ],
     'Other Private Assets': [
         {'name': 'Real Estate & Private Credit', 'products': [
-            P('GS Real Estate Partners', '—', 'Core Real Estate', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.30, 0.30, 0.55),
-            P('GS Private Credit Partners', '—', 'Private Credit', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.40, 0.30, 0.45)]},
+            P('GS Real Estate Partners', '—', 'Core Real Estate', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.30, 'Alternatives', 0.55),
+            P('GS Private Credit Partners', '—', 'Private Credit', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.40, 'Alternatives', 0.45)]},
         {'name': 'Private Credit Focus', 'products': [
-            P('GS Private Credit Partners', '—', 'Private Credit', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.40, 0.30, 0.60),
-            P('Ashfield Direct Lending', '—', 'Direct Lending', 'Active', 'SMA', 'External', 'Quarterly', 'USD', 1.35, 0.30, 0.40)]},
+            P('GS Private Credit Partners', '—', 'Private Credit', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.40, 'Alternatives', 0.60),
+            P('Ashfield Direct Lending', '—', 'Direct Lending', 'Active', 'SMA', 'External', 'Quarterly', 'USD', 1.35, 'Alternatives', 0.40)]},
         {'name': 'Diversified Real Assets', 'products': [
-            P('GS Real Assets Program', '—', 'Real Assets', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.22, 0.30, 0.55),
-            P('Calderwood Energy Transition', '—', 'Energy', 'Active', 'SMA', 'External', 'Drawdown', 'EUR', 1.38, 0.30, 0.45)]},
+            P('GS Real Assets Program', '—', 'Real Assets', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.22, 'Alternatives', 0.55),
+            P('Calderwood Energy Transition', '—', 'Energy', 'Active', 'SMA', 'External', 'Drawdown', 'EUR', 1.38, 'Alternatives', 0.45)]},
     ],
     'Asset Allocation Strategies': [
         {'name': 'Tactical Tilt Fund', 'products': [
-            P('Tactical Tilt Fund', 'TTF', 'Tactical Tilts', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.85, 0.30, 1.00)]},
+            P('Tactical Tilt Fund', 'TTF', 'Tactical Tilts', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.85, 'Asset Allocation', 1.00)]},
+    ],
+    # Held only when the strategic volatility premium is switched on, and only
+    # in USD and GBP books (D53). One sleeve, one product, attached
+    # automatically like the tilt fund.
+    'Hybrid Fixed Income': [
+        {'name': 'Strategic Volatility Premium', 'products': [
+            P('Strategic Volatility Premium', 'SVP', 'Volatility Premium', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.65, 'Specialist Active', 1.00)]},
     ],
 }
 
@@ -155,43 +172,49 @@ _VARIANT_OFFERS = {
     'PMG ESG': {
         'Investment Grade Fixed Income': [
             {'name': 'ESG Core Fixed Income', 'products': [
-                P('GS ESG US Corporate Bond Fund', 'GSECX', 'IG Corporate', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.44, 0.30, 0.55),
-                P('GS Access ESG Aggregate ETF', 'GSEA', 'Aggregate', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.16, 0.30, 0.45)]},
+                P('GS ESG US Corporate Bond Fund', 'GSECX', 'IG Corporate', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.44, 'Core Active', 0.55),
+                P('GS Access ESG Aggregate ETF', 'GSEA', 'Aggregate', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.16, 'Passive', 0.45)]},
             {'name': 'Green & Social Bonds', 'products': [
-                P('GS Green Bond Fund', 'GSGBX', 'Green Bonds', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.48, 0.30, 0.60),
-                P('Ashfield Social Impact Bond', 'ASIBX', 'Social Bonds', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.62, 0.30, 0.40)]},
+                P('GS Green Bond Fund', 'GSGBX', 'Green Bonds', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.48, 'Specialist Active', 0.60),
+                P('Ashfield Social Impact Bond', 'ASIBX', 'Social Bonds', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.62, 'Specialist Active', 0.40)]},
         ],
         'Other Fixed Income': [
             {'name': 'ESG High Yield & EM', 'products': [
-                P('GS ESG High Yield Fund', 'GSEHX', 'High Yield', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.76, 0.30, 0.55),
-                P('GS ESG Emerging Markets Debt', 'GSEDX', 'EM Debt', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.89, 0.30, 0.45)]},
+                P('GS ESG High Yield Fund', 'GSEHX', 'High Yield', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.76, 'Specialist Active', 0.55),
+                P('GS ESG Emerging Markets Debt', 'GSEDX', 'EM Debt', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.89, 'Specialist Active', 0.45)]},
         ],
         'Public Equity': [
             {'name': 'ESG Core Equity', 'products': [
-                P('GS Access ESG US Equity ETF', 'GSEU', 'US Large Cap', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.14, 0.30, 0.44),
-                P('GS ESG International Equity', 'GSIEX', 'Intl Developed', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 0.72, 0.30, 0.32),
-                P('GS ESG Emerging Markets Equity', 'GSEEX', 'Emerging Markets', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 1.05, 0.30, 0.24)]},
+                P('GS Access ESG US Equity ETF', 'GSEU', 'US Large Cap', 'Passive', 'ETF', 'Internal', 'Daily', 'USD', 0.14, 'Passive', 0.44),
+                P('GS ESG International Equity', 'GSIEX', 'Intl Developed', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 0.72, 'Core Active', 0.32),
+                P('GS ESG Emerging Markets Equity', 'GSEEX', 'Emerging Markets', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 1.05, 'Specialist Active', 0.24)]},
             {'name': 'Climate Transition', 'products': [
-                P('GS Climate Solutions Fund', 'GCSLX', 'Global Thematic', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 0.88, 0.30, 0.55),
-                P('Northbrook Paris-Aligned Equity', 'NPAEX', 'Intl Developed', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.79, 0.30, 0.45)]},
+                P('GS Climate Solutions Fund', 'GCSLX', 'Global Thematic', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'Local', 0.88, 'Specialist Active', 0.55),
+                P('Northbrook Paris-Aligned Equity', 'NPAEX', 'Intl Developed', 'Active', 'Mutual Fund', 'External', 'Daily', 'Local', 0.79, 'Core Active', 0.45)]},
         ],
         'Hedge Funds': [
             {'name': 'ESG-Screened Multi-Strategy', 'products': [
-                P('GS HedgeWorks ESG Multi-Strategy', '—', 'Multi-Strategy', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.38, 0.30, 1.00)]},
+                P('GS HedgeWorks ESG Multi-Strategy', '—', 'Multi-Strategy', 'Active', 'SMA', 'Internal', 'Quarterly', 'USD', 1.38, 'Alternatives', 1.00)]},
         ],
         'Private Equity': [
             {'name': 'Impact Private Equity', 'products': [
-                P('GS Sustainable Investing Group Fund', '—', 'Impact', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.55, 0.30, 0.60),
-                P('GS Growth Equity Partners', '—', 'Growth', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.50, 0.30, 0.40)]},
+                P('GS Sustainable Investing Group Fund', '—', 'Impact', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.55, 'Alternatives', 0.60),
+                P('GS Growth Equity Partners', '—', 'Growth', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.50, 'Alternatives', 0.40)]},
         ],
         'Other Private Assets': [
             {'name': 'Energy Transition & Real Assets', 'products': [
-                P('Calderwood Energy Transition', '—', 'Energy', 'Active', 'SMA', 'External', 'Drawdown', 'EUR', 1.38, 0.30, 0.55),
-                P('GS Sustainable Real Estate', '—', 'Core Real Estate', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.32, 0.30, 0.45)]},
+                P('Calderwood Energy Transition', '—', 'Energy', 'Active', 'SMA', 'External', 'Drawdown', 'EUR', 1.38, 'Alternatives', 0.55),
+                P('GS Sustainable Real Estate', '—', 'Core Real Estate', 'Active', 'SMA', 'Internal', 'Drawdown', 'USD', 1.32, 'Alternatives', 0.45)]},
         ],
         'Asset Allocation Strategies': [
             {'name': 'ESG Tactical Tilt Fund', 'products': [
-                P('ESG Tactical Tilt Fund', 'ETTF', 'Tactical Tilts', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.88, 0.30, 1.00)]},
+                P('ESG Tactical Tilt Fund', 'ETTF', 'Tactical Tilts', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.88, 'Asset Allocation', 1.00)]},
+        ],
+        # The one strategic volatility premium fund, unchanged: there is no
+        # ESG wrapper of it to offer, and no variant-specific version of a
+        # single house product (D53).
+        'Hybrid Fixed Income': [
+            'Strategic Volatility Premium',
         ],
     },
 
@@ -214,8 +237,8 @@ _VARIANT_OFFERS = {
         ],
         'Hedge Funds': [
             {'name': 'Registered Liquid Alternatives', 'products': [
-                P('GS Absolute Return Tracker', 'GARTX', 'Multi-Strategy', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.96, 0.30, 0.60),
-                P('GS Managed Futures Strategy', 'GMFAX', 'Managed Futures', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 1.08, 0.30, 0.40)]},
+                P('GS Absolute Return Tracker', 'GARTX', 'Multi-Strategy', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 0.96, 'Alternatives', 0.60),
+                P('GS Managed Futures Strategy', 'GMFAX', 'Managed Futures', 'Active', 'Mutual Fund', 'Internal', 'Daily', 'USD', 1.08, 'Alternatives', 0.40)]},
             'Multi-Strategy Fund of Funds',
         ],
         'Private Equity': [
@@ -229,6 +252,9 @@ _VARIANT_OFFERS = {
         'Asset Allocation Strategies': [
             'Tactical Tilt Fund',
         ],
+        'Hybrid Fixed Income': [
+            'Strategic Volatility Premium',
+        ],
     },
 
     # Irish-domiciled UCITS. Daily-dealing fund vehicles, no SMAs and no US
@@ -237,43 +263,49 @@ _VARIANT_OFFERS = {
     'Irish Onshore': {
         'Investment Grade Fixed Income': [
             {'name': 'UCITS Core Fixed Income', 'products': [
-                P('GS Global Credit Portfolio (UCITS)', '—', 'IG Corporate', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.52, 0.30, 0.55),
-                P('GS Sterling Credit Portfolio (UCITS)', '—', 'IG Corporate', 'Active', 'UCITS', 'Internal', 'Daily', 'GBP', 0.54, 0.30, 0.25),
-                P('GS Global Short Duration (UCITS)', '—', 'Short Duration', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.40, 0.30, 0.20)]},
+                P('GS Global Credit Portfolio (UCITS)', '—', 'IG Corporate', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.52, 'Core Active', 0.55),
+                P('GS Sterling Credit Portfolio (UCITS)', '—', 'IG Corporate', 'Active', 'UCITS', 'Internal', 'Daily', 'GBP', 0.54, 'Core Active', 0.25),
+                P('GS Global Short Duration (UCITS)', '—', 'Short Duration', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.40, 'Core Active', 0.20)]},
             {'name': 'UCITS Passive', 'products': [
-                P('GS Access Global Aggregate (UCITS)', '—', 'Aggregate', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.18, 0.30, 0.60),
-                P('GS Access Euro Government (UCITS)', '—', 'Government', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.15, 0.30, 0.40)]},
+                P('GS Access Global Aggregate (UCITS)', '—', 'Aggregate', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.18, 'Passive', 0.60),
+                P('GS Access Euro Government (UCITS)', '—', 'Government', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.15, 'Passive', 0.40)]},
         ],
         'Other Fixed Income': [
             {'name': 'UCITS High Yield & EM', 'products': [
-                P('GS Global High Yield (UCITS)', '—', 'High Yield', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.81, 0.30, 0.55),
-                P('GS Emerging Markets Debt (UCITS)', '—', 'EM Debt', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.94, 0.30, 0.45)]},
+                P('GS Global High Yield (UCITS)', '—', 'High Yield', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.81, 'Specialist Active', 0.55),
+                P('GS Emerging Markets Debt (UCITS)', '—', 'EM Debt', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.94, 'Specialist Active', 0.45)]},
         ],
         'Public Equity': [
             {'name': 'UCITS Core Equity', 'products': [
-                P('GS Access World Equity (UCITS)', '—', 'Global Developed', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.20, 0.30, 0.50),
-                P('GS Europe Core Equity (UCITS)', '—', 'Europe', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.78, 0.30, 0.28),
-                P('GS Emerging Markets Equity (UCITS)', '—', 'Emerging Markets', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 1.08, 0.30, 0.22)]},
+                P('GS Access World Equity (UCITS)', '—', 'Global Developed', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.20, 'Passive', 0.50),
+                P('GS Europe Core Equity (UCITS)', '—', 'Europe', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.78, 'Core Active', 0.28),
+                P('GS Emerging Markets Equity (UCITS)', '—', 'Emerging Markets', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 1.08, 'Specialist Active', 0.22)]},
             {'name': 'UCITS Passive', 'products': [
-                P('GS Access World Equity (UCITS)', '—', 'Global Developed', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.20, 0.30, 0.70),
-                P('GS Access EM Equity (UCITS)', '—', 'Emerging Markets', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.32, 0.30, 0.30)]},
+                P('GS Access World Equity (UCITS)', '—', 'Global Developed', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.20, 'Passive', 0.70),
+                P('GS Access EM Equity (UCITS)', '—', 'Emerging Markets', 'Passive', 'UCITS', 'Internal', 'Daily', 'EUR', 0.32, 'Passive', 0.30)]},
         ],
         'Hedge Funds': [
             {'name': 'UCITS Liquid Alternatives', 'products': [
-                P('GS Absolute Return (UCITS)', '—', 'Multi-Strategy', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 1.12, 0.30, 0.60),
-                P('Calderwood Global Macro (UCITS)', '—', 'Global Macro', 'Active', 'UCITS', 'External', 'Daily', 'EUR', 1.24, 0.30, 0.40)]},
+                P('GS Absolute Return (UCITS)', '—', 'Multi-Strategy', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 1.12, 'Alternatives', 0.60),
+                P('Calderwood Global Macro (UCITS)', '—', 'Global Macro', 'Active', 'UCITS', 'External', 'Daily', 'EUR', 1.24, 'Alternatives', 0.40)]},
         ],
         'Private Equity': [
             {'name': 'ICAV Private Markets Feeder', 'products': [
-                P('GS Private Markets ICAV Feeder', '—', 'Buyout', 'Active', 'ICAV', 'Internal', 'Drawdown', 'EUR', 1.58, 0.30, 1.00)]},
+                P('GS Private Markets ICAV Feeder', '—', 'Buyout', 'Active', 'ICAV', 'Internal', 'Drawdown', 'EUR', 1.58, 'Alternatives', 1.00)]},
         ],
         'Other Private Assets': [
             {'name': 'ICAV Private Credit Feeder', 'products': [
-                P('GS Private Credit ICAV Feeder', '—', 'Private Credit', 'Active', 'ICAV', 'Internal', 'Quarterly', 'EUR', 1.48, 0.30, 1.00)]},
+                P('GS Private Credit ICAV Feeder', '—', 'Private Credit', 'Active', 'ICAV', 'Internal', 'Quarterly', 'EUR', 1.48, 'Alternatives', 1.00)]},
         ],
         'Asset Allocation Strategies': [
             {'name': 'Tactical Tilt Fund (UCITS)', 'products': [
-                P('Tactical Tilt Fund (UCITS)', '—', 'Tactical Tilts', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.92, 0.30, 1.00)]},
+                P('Tactical Tilt Fund (UCITS)', '—', 'Tactical Tilts', 'Active', 'UCITS', 'Internal', 'Daily', 'EUR', 0.92, 'Asset Allocation', 1.00)]},
+        ],
+        # The US mutual fund as authored. Every other Irish Onshore sleeve is
+        # a UCITS, so whether this book reaches the fund itself or needs a
+        # wrapper is a question for PMG, not an invention for here (D53).
+        'Hybrid Fixed Income': [
+            'Strategic Volatility Premium',
         ],
     },
 }
@@ -306,12 +338,14 @@ SLEEVE_LIBRARY = {name: _resolveVariant(name) for name in VARIANTS}
 
 
 def _assertWellFormed() -> None:
-    """Every sleeve's weights sum to 1, and no variant offers a name twice.
+    """Every sleeve's weights sum to 1, no variant offers a name twice, and
+    every product's fee group is one the fee framework prices.
 
     Weights that do not sum to 1 do not fail loudly - they quietly scale every
     printed weight and notional in the category, and the workbook and the
-    screen would agree with each other while both being wrong. Cheaper to
-    prove here, once, at import.
+    screen would agree with each other while both being wrong. An unknown fee
+    group would fail, but only at export and only under RDR, long after the
+    sleeve was chosen. Cheaper to prove both here, once, at import.
     """
     for variant, library in SLEEVE_LIBRARY.items():
         for category, sleeves in library.items():
@@ -324,6 +358,12 @@ def _assertWellFormed() -> None:
                     raise ValueError(
                         '%s / %s / %s: product weights sum to %r, not 1'
                         % (variant, category, sleeve['name'], total))
+                for product in sleeve['products']:
+                    if product['feeGroup'] not in FEE_GROUPS:
+                        raise ValueError(
+                            '%s / %s / %s / %s: fee group %r is not one of %s'
+                            % (variant, category, sleeve['name'], product['name'],
+                               product['feeGroup'], FEE_GROUPS))
 
 
 _assertWellFormed()

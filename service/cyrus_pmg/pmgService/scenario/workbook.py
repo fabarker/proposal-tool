@@ -25,6 +25,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from . import fees, rules
 from .payloads import roundWeightsLargestRemainder
 from .sleeves import listSleeves
 
@@ -35,30 +36,75 @@ _HEADER_NAVY = '092532'
 _BAND = 'D3DDEA'
 _DOTTED = Side(style='dotted', color='A9A9A9')
 
+# The thirteen columns of spec 9.3 plus 'Fee group' (D51): the management fee
+# is resolved from the fee schedule and the product's group, and a sheet that
+# shows the fee without the group it was priced from cannot be checked.
 IMPL_COLUMNS = [
     'Categories & Asset Classes', 'Products', 'Allocation (%)', 'Ticker',
     'Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy', 'Cost',
-    'Mgmt fee', 'Wtd fee (bp)', 'Notional',
+    'Fee group', 'Mgmt fee', 'Wtd fee (bp)', 'Notional',
 ]
+# The three the sheet loses when the proposal excludes fees (D52). A proposal
+# that does not show fees must not ship a sheet with three empty columns and a
+# header saying which schedule priced them: the columns go, and so do the fee
+# rows above the header.
+FEE_COLUMNS = ('Fee group', 'Mgmt fee', 'Wtd fee (bp)')
+_WIDTHS = {
+    'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
+    'Ticker': 9, 'Style': 9, 'Vehicle': 12, 'Source': 10, 'Liquidity': 11,
+    'Exposure ccy': 12, 'Cost': 8, 'Fee group': 16, 'Mgmt fee': 10,
+    'Wtd fee (bp)': 12, 'Notional': 14,
+}
+
+
+def implColumns(includeFees: bool = True) -> list:
+    """The sheet's columns, in order, for a priced or an unpriced proposal."""
+    if includeFees:
+        return list(IMPL_COLUMNS)
+    return [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS]
 
 
 def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                             autoCategories, mandateSize: float,
-                            variant: str = None) -> dict:
+                            variant: str = None, tacticalTilt: bool = False,
+                            feeSchedule: str = None, feeLevel: str = None,
+                            topAccountSize: float = None,
+                            volPremium: bool = False,
+                            currency: str = None) -> dict:
     """The implementation model's numbers, derived per spec 8.4.
 
-    Returns {'groups': [...], 'total': {...}, 'complete': bool}. Each group is
-    a category: its sleeve name (auto categories take their single library
-    sleeve), product line items with printed weight, weighted fee in bp and
-    notional, and group subtotals. Weights are rounded to 2dp by largest
-    remainder across the WHOLE table so the column sums to exactly 100.00;
-    notional and weighted fee derive from that printed weight.
+    Returns {'groups': [...], 'total': {...}, 'complete': bool, 'priced': bool,
+    'tier': {...} | None}. Each group is a category: its sleeve name (auto
+    categories take their single library sleeve), product line items with
+    printed weight, weighted fee in bp and notional, and group subtotals.
+    Weights are rounded to 2dp by largest remainder across the WHOLE table so
+    the column sums to exactly 100.00; notional and weighted fee derive from
+    that printed weight.
+
+    The management fee is resolved per product from *feeSchedule*, the tier
+    that *topAccountSize* falls in, *feeLevel* and the product's fee group
+    (D51). Without a schedule the model is unpriced: ``managementFee`` and
+    ``wtdFeeBp`` are None on every item and in the total. The level defaults
+    to the framework's prescribed one, as the store does; the schedule never
+    defaults.
     """
     autoCategories = set(autoCategories or [])
     groups = []
     lineItems = []
+    priced = feeSchedule is not None
+    tier = fees.tierFor(topAccountSize) if priced else None
+    feeLevel = feeLevel or fees.DEFAULT_LEVEL
 
-    for category in baseResult['categories']:
+    # The implemented book, not the strategic one: with the tilt on, the
+    # funding category is reduced and the tilt category appended (D50); with
+    # the volatility premium on, the same category gives up a share of what is
+    # left and Hybrid Fixed Income follows it (D53). The currency goes in
+    # because the premium is forbidden outside USD and GBP, and the rule
+    # belongs where the model is built, not only where the toggle is drawn.
+    categories = rules.implementedCategories(baseResult['categories'],
+                                             tacticalTilt, volPremium, currency)
+
+    for category in categories:
         name = category['name']
         catWeight = float(category['weightPct'])
         if name in autoCategories:
@@ -95,32 +141,58 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         else:
             printed = [round(i['exactPct'], 2) for i in lineItems]
         for item, weight in zip(lineItems, printed):
-            allIn = float(item['productCost']) + float(item['managementFee'])
             item['printedPct'] = weight
-            item['wtdFeeBp'] = allIn * weight            # percent x percent = bp
             item['notional'] = round(mandateSize * weight / 100.0 / 100.0) * 100.0
+            if priced:
+                item['managementFee'] = fees.managementFee(
+                    feeSchedule, topAccountSize, feeLevel, item['feeGroup'])
+                allIn = float(item['productCost']) + item['managementFee']
+                item['wtdFeeBp'] = allIn * weight        # percent x percent = bp
+            else:
+                item['managementFee'] = None
+                item['wtdFeeBp'] = None
 
     total = {
         'weightPct': sum(i.get('printedPct', 0.0) for i in lineItems),
-        'wtdFeeBp': sum(i.get('wtdFeeBp', 0.0) for i in lineItems),
+        'wtdFeeBp': sum(i.get('wtdFeeBp') or 0.0 for i in lineItems) if priced else None,
         'notional': sum(i.get('notional', 0.0) for i in lineItems),
     }
-    return {'groups': groups, 'total': total, 'complete': complete}
+    return {'groups': groups, 'total': total, 'complete': complete,
+            'priced': priced, 'tier': tier}
 
 
 def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                              autoCategories, mandateSize: float,
-                             variant: str = None) -> None:
-    """Append the implementation sheet: the thirteen columns of spec 9.3, in
+                             variant: str = None,
+                             tacticalTilt: bool = False,
+                             feeSchedule: str = None, feeLevel: str = None,
+                             topAccountSize: float = None,
+                             includeFees: bool = True,
+                             volPremium: bool = False,
+                             currency: str = None) -> None:
+    """Append the implementation sheet: the columns of ``implColumns``, in
     order, grouped by category with subtotals and a grand total.
 
     The variant is written above the header, because the same category and
     sleeve name can carry different products under a different variant and a
     workbook that does not say which one it was built from cannot be checked
-    against anything (D29).
+    against anything (D29). The fee schedule, fee level and account-size tier
+    follow it for the same reason: every management fee on the sheet was
+    resolved from those three, and a reader re-pricing a row needs them (D51).
+
+    With *includeFees* false the proposal does not show fees at all (D52): the
+    three fee columns and the three fee header rows are absent, and the model
+    is built unpriced whatever schedule the scenario happens to remember, so
+    there is no path by which a fee reaches a sheet that does not name it.
     """
+    if not includeFees:
+        feeSchedule = None
+    columns = implColumns(includeFees)
+    at = {name: index for index, name in enumerate(columns, start=1)}
     model = buildImplementationRows(baseResult, sleevesMap, autoCategories,
-                                    mandateSize, variant)
+                                    mandateSize, variant, tacticalTilt,
+                                    feeSchedule, feeLevel, topAccountSize,
+                                    volPremium, currency)
     sheet = book.create_sheet('Implementation')
     headFont = Font(name='Aptos Narrow', size=12, bold=True, color='FFFFFF')
     bodyFont = Font(name='Aptos Narrow', size=12)
@@ -131,13 +203,22 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     # openpyxl reports max_row == 1 for an empty sheet, so the header row is
     # counted rather than measured.
     headerRow = 1
+    preamble = []
     if variant:
-        sheet.append(['Implementation variant', variant])
-        sheet.cell(row=1, column=1).font = boldFont
+        preamble.append(['Implementation variant', variant])
+    if model['priced']:
+        preamble.append(['Fee schedule', feeSchedule])
+        preamble.append(['Fee level', feeLevel or fees.DEFAULT_LEVEL])
+        preamble.append(['Account size tier',
+                         '{} ({})'.format(model['tier']['id'], model['tier']['label'])])
+    if preamble:
+        for line in preamble:
+            sheet.append(line)
+            sheet.cell(row=sheet.max_row, column=1).font = boldFont
         sheet.append([])
-        headerRow = 3
+        headerRow = len(preamble) + 2
 
-    sheet.append(IMPL_COLUMNS)
+    sheet.append(columns)
     for cell in sheet[headerRow]:
         cell.font = headFont
         cell.fill = headFill
@@ -152,13 +233,26 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
         cell.number_format = '0.00%'
 
     def _feeCell(cell, pct):
+        if pct is None:                     # unpriced: the cell stays empty
+            return
         cell.value = pct / 100.0
         cell.number_format = '0.00%'
+
+    def _bpCell(cell, bp):
+        if bp is None:
+            return
+        cell.value = bp
+        cell.number_format = '0.0'
+
+    def _bpAt(row, value):
+        """The weighted-fee cell, when the sheet has one."""
+        if includeFees:
+            _bpCell(sheet.cell(row=row, column=at['Wtd fee (bp)']), value)
 
     for group in model['groups']:
         sheet.append([group['category'], group['sleeve'] or 'No sleeve attached'])
         row = sheet.max_row
-        for column in range(1, len(IMPL_COLUMNS) + 1):
+        for column in range(1, len(columns) + 1):
             cell = sheet.cell(row=row, column=column)
             cell.fill = bandFill
             cell.font = boldFont
@@ -166,57 +260,60 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                     sum(i['printedPct'] for i in group['items'])
                     if group['items'] else group['weightPct'])
         if group['items']:
-            bp = sheet.cell(row=row, column=12)
-            bp.value = sum(i['wtdFeeBp'] for i in group['items'])
-            bp.number_format = '0.0'
-            notional = sheet.cell(row=row, column=13)
+            _bpAt(row, sum(i['wtdFeeBp'] for i in group['items'])
+                  if model['priced'] else None)
+            notional = sheet.cell(row=row, column=at['Notional'])
             notional.value = sum(i['notional'] for i in group['items'])
             notional.number_format = '$#,##0'
         for item in group['items']:
-            sheet.append([
+            line = [
                 '  ' + item['assetClass'], item['name'], None, item['ticker'],
                 item['style'], item['vehicle'], item['source'], item['liquidity'],
-                item['exposureCurrency'], None, None, None, None,
-            ])
+                item['exposureCurrency'], None,
+            ]
+            if includeFees:
+                line += [item['feeGroup'], None, None]
+            sheet.append(line + [None])
             row = sheet.max_row
-            for column in range(1, len(IMPL_COLUMNS) + 1):
+            for column in range(1, len(columns) + 1):
                 sheet.cell(row=row, column=column).font = bodyFont
             _weightCell(sheet.cell(row=row, column=3), item['printedPct'])
-            _feeCell(sheet.cell(row=row, column=10), float(item['productCost']))
-            _feeCell(sheet.cell(row=row, column=11), float(item['managementFee']))
-            bp = sheet.cell(row=row, column=12)
-            bp.value = item['wtdFeeBp']
-            bp.number_format = '0.0'
-            notional = sheet.cell(row=row, column=13)
+            _feeCell(sheet.cell(row=row, column=at['Cost']), float(item['productCost']))
+            if includeFees:
+                _feeCell(sheet.cell(row=row, column=at['Mgmt fee']), item['managementFee'])
+            _bpAt(row, item['wtdFeeBp'])
+            notional = sheet.cell(row=row, column=at['Notional'])
             notional.value = item['notional']
             notional.number_format = '$#,##0'
 
     sheet.append(['Total'])
     row = sheet.max_row
-    for column in range(1, len(IMPL_COLUMNS) + 1):
+    for column in range(1, len(columns) + 1):
         cell = sheet.cell(row=row, column=column)
         cell.font = boldFont
         cell.border = Border(top=_DOTTED)
     _weightCell(sheet.cell(row=row, column=3), model['total']['weightPct'])
-    bp = sheet.cell(row=row, column=12)
-    bp.value = model['total']['wtdFeeBp']
-    bp.number_format = '0.0'
-    notional = sheet.cell(row=row, column=13)
+    _bpAt(row, model['total']['wtdFeeBp'])
+    notional = sheet.cell(row=row, column=at['Notional'])
     notional.value = model['total']['notional']
     notional.number_format = '$#,##0'
 
-    widths = [34, 32, 12, 9, 9, 12, 10, 11, 12, 8, 10, 12, 14]
-    for index, width in enumerate(widths, start=1):
-        sheet.column_dimensions[get_column_letter(index)].width = width
-    for row_cells in sheet.iter_rows(min_row=2):
+    for index, name in enumerate(columns, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = _WIDTHS[name]
+    for row_cells in sheet.iter_rows(min_row=headerRow + 1):
         for cell in row_cells[2:]:
             cell.alignment = Alignment(horizontal='right')
         for cell in row_cells[3:9]:
             cell.alignment = Alignment(horizontal='left')
+        if includeFees:
+            row_cells[at['Fee group'] - 1].alignment = Alignment(horizontal='left')
 
 
 def writeFixturesWorkbook(basis, mandate, results, sleevesMap, autoCategories,
-                          variant: str = None) -> bytes:
+                          variant: str = None, tacticalTilt: bool = False,
+                          feeSchedule: str = None, feeLevel: str = None,
+                          includeFees: bool = True,
+                          volPremium: bool = False) -> bytes:
     """A complete workbook from fixture payloads: Portfolios, Risk Dashboard
     and Implementation sheets, styled after the house report (spec 14.3)."""
     book = Workbook()
@@ -396,7 +493,9 @@ def writeFixturesWorkbook(basis, mandate, results, sleevesMap, autoCategories,
 
     # ---- Implementation sheet --------------------------------------------
     writeImplementationSheet(book, results[0], sleevesMap, autoCategories,
-                             mandate.mandateSize, variant)
+                             mandate.mandateSize, variant, tacticalTilt,
+                             feeSchedule, feeLevel, mandate.topAccountSize,
+                             includeFees, volPremium, basis.currency)
 
     buffer = io.BytesIO()
     book.save(buffer)

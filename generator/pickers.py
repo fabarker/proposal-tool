@@ -228,6 +228,10 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .md-err{margin:0;padding:7px 9px;border-radius:4px;background:#FDE8E8;border:1px solid #F1B8B2;
   color:#9B1C1C;font-size:13px;line-height:1.4;font-weight:600}
 .chk{display:flex;align-items:flex-start;gap:9px;padding:1px 0}
+/* The exclusions stand off the selects above them: the selects are the choice
+   and the tick boxes narrow what it produced, so they read as a second group
+   rather than as a fourth field. On top of the .basis grid gap. */
+.basis>.chk{margin-top:8px}
 .chk input{appearance:none;-webkit-appearance:none;width:16px;height:16px;border-radius:3px;
   border:1px solid var(--rail-input-border);background:var(--rail-input-bg);flex-shrink:0;
   margin:1px 0 0;cursor:pointer;position:relative}
@@ -238,7 +242,10 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .chk input:disabled{cursor:not-allowed;opacity:.5}
 .chk label{font-size:14px;color:var(--rail-ink-2);cursor:pointer;line-height:1.35}
 .chk input:disabled + label{opacity:.55;cursor:not-allowed}
-.chk-note{font-size:12.5px;color:var(--rail-ink-3);margin:1px 0 4px 25px;line-height:1.4}
+/* Flush with the tick box's own left edge, not indented under its label:
+   every line in the rail starts on the same rule, and a note that steps
+   in reads as a second column. The popover keeps its indent (below). */
+.chk-note{font-size:12.5px;color:var(--rail-ink-3);margin:1px 0 4px;line-height:1.4}
 .rail input[aria-invalid="true"]{border-color:#E0796D}
 """
 

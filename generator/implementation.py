@@ -77,7 +77,85 @@ IMPL_CSS = r"""
 .vr-field label{font-size:13px;font-weight:600;color:var(--rail-ink-2);line-height:1.3}
 .vr-field.done label{color:var(--rail-ink)}
 .vr-field select{width:100%}
+/* the answered variant, read-only: it is chosen with the base portfolio on
+   step 1, so step 2 shows the value rather than a second control (D49) */
+.vr-field .vr-value{margin:0;font-size:14px;font-weight:600;color:var(--rail-ink);
+  line-height:1.35}
 .vr-note{margin:1px 0 0;font-size:12.5px;color:var(--rail-ink-3);line-height:1.45}
+/* the tactical tilt toggle: an implementation choice, so it sits with the
+   sleeves rather than in the strategic tier (D50) */
+.tilt-field{display:grid;gap:4px;margin:0 0 14px;padding:0 0 14px;
+  border-bottom:1px solid var(--rail-line)}
+.tilt-field .chk{margin:0}
+.tilt-field.done label{color:var(--rail-ink)}
+.tilt-field .chk-note{margin:0}
+/* ── pricing: fee schedule and fee level (D51) ──
+   The schedule is a two-way segmented control with nothing pressed until a
+   PWA presses it; the level is a two-by-three grid, one row per source, so
+   the six levels read as the band they are rather than as a list. Both sit
+   with the sleeves because they price the sheet the sleeves build.
+
+   They close the tier, below the pickers, and the group carries its own label
+   because the tier heading says Sleeves and a fee schedule is not one. The
+   rule is on TOP of the group here - between the sleeve list and pricing -
+   and the last field drops its own, so the group's last line is not a rule
+   sitting a few pixels above the tier's. */
+.fee-group{margin:16px 0 0;padding:15px 0 0;border-top:1px solid var(--rail-line)}
+/* PRICING is a section heading like the tier headings above it, and reads the
+   same - it is only a separate rule because it sits inside a tier. */
+.fee-group-h{margin:0 0 11px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--rail-ink-3);line-height:1}
+/* ── the include-fees toggle (D52) ──
+   Off, it is the only thing under the Pricing label and the table has no fee
+   column; on, the schedule and the level unravel beneath it. The tick box
+   matches the tactical tilt's, which is the rail's other section switch. */
+.fee-toggle{display:grid;gap:4px}
+.fee-toggle .chk{margin:0}
+.fee-toggle.done label{color:var(--rail-ink)}
+.fee-toggle .chk-note{margin:0}
+.fee-body{display:block;margin:13px 0 0}
+/* Reveal and hide. The reveal plays on nodes that were just rendered, where a
+   transition would have nothing to move from, so both directions are keyframe
+   animations; the leave fills forwards because it has to hold the collapsed
+   state until the render that removes the block. max-height is the animatable
+   stand-in for auto height - 420px clears the block at every rate grid the
+   framework can serve, and the overflow only applies while it plays. */
+@keyframes feeunravel{from{opacity:0;max-height:0;transform:translateY(-6px)}
+  to{opacity:1;max-height:420px;transform:none}}
+@keyframes feeravel{from{opacity:1;max-height:420px}
+  to{opacity:0;max-height:0;transform:translateY(-6px)}}
+.fee-body.unravel{animation:feeunravel 360ms cubic-bezier(.4,0,.2,1);overflow:hidden}
+.fee-body.ravel{animation:feeravel 360ms cubic-bezier(.4,0,.2,1) both;overflow:hidden}
+@media (prefers-reduced-motion:reduce){
+  .fee-body.unravel,.fee-body.ravel{animation:none}}
+.fee-field{display:grid;gap:6px;margin:0 0 14px;padding:0 0 14px;
+  border-bottom:1px solid var(--rail-line)}
+.fee-group .fee-field:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+.fee-field .fee-label{font-size:13px;font-weight:600;color:var(--rail-ink-2);line-height:1.3}
+.fee-field.done .fee-label{color:var(--rail-ink)}
+.fee-seg{display:grid;grid-template-columns:1fr 1fr;
+  border:1px solid var(--rail-input-border,#52739C);border-radius:4px;overflow:hidden}
+.fee-seg button{font:inherit;font-size:13px;font-weight:600;padding:7px 6px;cursor:pointer;
+  background:var(--rail-input-bg,#1D2F4B);color:var(--rail-ink-2);border:0;line-height:1.2}
+.fee-seg button+button{border-left:1px solid var(--rail-input-border,#52739C)}
+.fee-seg button:hover{color:var(--rail-ink)}
+.fee-seg button[aria-pressed="true"]{background:var(--rail-accent,var(--accent));
+  color:var(--rail-accent-ink,#fff)}
+.fee-seg button:disabled{cursor:default;opacity:.6}
+.fee-seg button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
+.fee-levels{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 5px;align-items:center}
+.fee-levels .rh{font-size:12px;font-weight:600;color:var(--rail-ink-3);padding-right:4px;
+  white-space:nowrap}
+.fee-levels button{font:inherit;font-family:var(--f-num);font-size:12px;padding:6px 2px;
+  cursor:pointer;background:var(--rail-input-bg,#1D2F4B);color:var(--rail-ink-2);
+  border:1px solid var(--rail-input-border,#52739C);border-radius:3px;line-height:1.2}
+.fee-levels button:hover{border-color:var(--rail-accent,var(--accent));color:var(--rail-ink)}
+.fee-levels button[aria-pressed="true"]{background:var(--rail-accent,var(--accent));
+  border-color:var(--rail-accent,var(--accent));color:var(--rail-accent-ink,#fff);font-weight:700}
+.fee-levels button:disabled{cursor:default;opacity:.6}
+.fee-levels button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:1px}
+/* placeholder pricing is flagged in the rail as long as fees.json says so */
+.fee-flag{margin:2px 0 0;font-size:12px;font-weight:600;color:#F3C46B;line-height:1.4}
 
 /* ── sleeve pickers in the rail ── */
 .sl-list{display:grid;gap:9px}
@@ -143,7 +221,12 @@ IMPL_CSS = r"""
   .export-icon{display:none}
   .btn-export{width:100%}
 }
-.tbl.impl{min-width:1690px}
+/* Narrower by the three fee columns when the proposal excludes them (D52).
+   The width is transitioned so the table closes up as the columns collapse
+   rather than snapping when the render lands. */
+.tbl.impl{min-width:1690px;transition:min-width var(--col-motion)}
+.tbl.impl.no-fees,.tbl.impl.fees-out{min-width:1340px}
+@media (prefers-reduced-motion:reduce){.tbl.impl{transition:none}}
 .tbl.impl td.txt{white-space:nowrap}
 /* both identity columns stay pinned while the attribute and money columns scroll */
 /* Column 1 sizes to its longest label rather than a fixed 248px. Column 2 is
@@ -180,6 +263,34 @@ IMPL_CSS = r"""
 .p-ucits{background:#E4F1F4;color:#1C5A69;border:1px solid #BCDCE4}
 .p-icav{background:#EDEBF6;color:#453A7A;border:1px solid #CFC9E6}
 .p-sleeve{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}
+/* the fee group (D51): struck through, not removed, under a schedule that
+   does not read it - the column still says what the product is */
+.p-grp{background:#EEF1F4;color:#3E4E60;border:1px solid #D8DEE6}
+.tbl.impl .fee-dead .p-grp{text-decoration:line-through;opacity:.55}
+.tbl.impl th.fee-dead{text-decoration:line-through;opacity:.7}
+/* ── the fee columns arriving and leaving (D52) ──
+   A column has no width of its own: it takes it from the widest cell. So the
+   animation runs on two things at once - the cell's side padding, and a span
+   around the content whose max-width is what the column measures. Together
+   they open the column from nothing and close it back to nothing, with the
+   contents fading over the top. The leave fills forwards, because it has to
+   hold the collapsed state until the render that removes the cells. */
+.tbl.impl .fcw{display:inline-block;max-width:220px;overflow:hidden;
+  white-space:nowrap;vertical-align:middle}
+@keyframes feecolin{from{opacity:0;padding-left:0;padding-right:0}}
+@keyframes feecolout{to{opacity:0;padding-left:0;padding-right:0}}
+@keyframes feespanin{from{max-width:0;opacity:0}}
+@keyframes feespanout{to{max-width:0;opacity:0}}
+.tbl.impl.fees-in th.fee-col,.tbl.impl.fees-in td.fee-col{
+  animation:feecolin 360ms ease-out}
+.tbl.impl.fees-in .fcw{animation:feespanin 360ms cubic-bezier(.4,0,.2,1)}
+.tbl.impl.fees-out th.fee-col,.tbl.impl.fees-out td.fee-col{
+  animation:feecolout 360ms ease-in both}
+.tbl.impl.fees-out .fcw{animation:feespanout 360ms cubic-bezier(.4,0,.2,1) both}
+@media (prefers-reduced-motion:reduce){
+  .tbl.impl.fees-in th.fee-col,.tbl.impl.fees-in td.fee-col,.tbl.impl.fees-in .fcw,
+  .tbl.impl.fees-out th.fee-col,.tbl.impl.fees-out td.fee-col,
+  .tbl.impl.fees-out .fcw{animation:none}}
 /* Remove control inside the sleeve pill. Sized to stay inside an 11px pill
    without stretching it, and given a real hit area by the negative margin
    rather than by growing the pill. */

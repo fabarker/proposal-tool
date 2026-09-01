@@ -24,11 +24,30 @@ var state = {
   basisChosen: false,               /* the PWA has answered currency + hedging */
   implSeen: false,                  /* step 2 has been opened at least once */
   variant: null,                    /* implementation variant; gates step 2 (D29) */
+  /* On by default: the tilt is house practice wherever it can be funded.
+     A portfolio that cannot fund it renders the toggle off and disabled,
+     and tiltCategories no-ops, so this one default covers both (D50). */
+  tacticalTilt: true,
+  /* The strategic volatility premium (D53): a product a PWA adds, so off by
+     default, and forbidden outside the currencies the schema names. */
+  volPremium: false,
+  /* Whether the proposal shows fees at all (D52). Off to begin with: a fee is
+     a conversation a PWA opens deliberately, and until they do, the pricing
+     controls and the three fee columns are not in the page. */
+  includeFees: false,
+  /* How the book is priced (D51). The schedule is a choice with no default,
+     like the variant; the level has a prescribed one, which the server sets
+     when it creates the scenario and the schema names (fees.defaultLevel). */
+  feeSchedule: null,                /* 'CASP' | 'RDR' | null */
+  feeLevel: null,                   /* e.g. 'PMG Target' */
   sleeves: {},                      /* category -> sleeve name (pickable categories only) */
   sleeveLib: {},                    /* category -> {status, sleeves, error} */
   exporting: { status: 'idle', error: null },
   basisDraft: null,                 /* pending basis change awaiting confirmation */
-  baseDraft: { allocation: '', excludeRE: false, excludeTAA: false, riskLevel: '' },
+  /* excludeTAA is pinned true: tactical allocation is an implementation
+     concept, so no strategic key carries it (D50). The field stays in the
+     canonical key - fourth of four - so the bake is untouched. */
+  baseDraft: { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' },
   rebuilding: false
 };
 var draft = null;                   /* mandate dialog working copy */
@@ -36,6 +55,9 @@ var dlgOpener = null;
 var seqCounter = 0;
 var extras = [];
 var picker = null;
+/* In-flight variant PUT. A resolve waits on it, so the server always
+   knows the variant before it is asked to validate a key against it. */
+var variantPending = null;
 
 /* ---- tiny utilities ----------------------------------------------------- */
 function esc(t) {
@@ -109,7 +131,7 @@ function riskLabel(value) {
 
 /* Derived naming (the template is hardcodable; the values are not - spec 4.3).
    Order is risk level, then allocation, then exclusions, with the currency in
-   front of the full form: "USD Moderate-Aggressive Core ex TAA". The risk
+   front of the full form: "USD Moderate-Aggressive Core". The risk
    level prints through riskLabel, so the name says what the rail says.
 
    Built from the KEY, never from the payload's own name or header fields.
@@ -119,7 +141,6 @@ function riskLabel(value) {
 function headerName(k) {
   var suffix = '';
   if (k.excludeRE && reAllowed(k.allocation)) suffix += ' ex RE';
-  if (k.excludeTAA) suffix += ' ex TAA';
   return riskLabel(k.riskLevel) + ' ' + k.allocation + suffix;
 }
 function fullName(k) { return state.basis.currency + ' ' + headerName(k); }
@@ -174,17 +195,41 @@ function schemaQuery() {
   if (state.mandate && state.mandate.mandateSize) {
     q += '&mandateSize=' + encodeURIComponent(state.mandate.mandateSize);
   }
+  /* The top account size sets the fee tier, and the schema carries the
+     rates at that tier (D51). */
+  if (state.mandate && state.mandate.topAccountSize) {
+    q += '&topAccountSize=' + encodeURIComponent(state.mandate.topAccountSize);
+  }
+  /* The variant narrows options.allocations and the availability set, so it
+     belongs in the key of what the schema describes (D49). */
+  if (state.variant) q += '&variant=' + encodeURIComponent(state.variant);
   return q;
+}
+
+/* Whether the chosen variant mandates the real-estate exclusion. Read from the
+   schema, never a list in this file - the same rule the categories and the
+   risk labels follow (spec 4.3). */
+function variantForcesExcludeRE(name) {
+  if (!name) return false;
+  return opt('options.variantsExcludingRealEstate', []).indexOf(name) !== -1;
 }
 
 async function fetchSchema() {
   state.schemaStatus = 'loading';
   refresh();
+  var tierBefore = opt('fees.tier.id', null);
   try {
     state.schema = await apiFetch('/scenario/schema' + schemaQuery());
     state.schemaStatus = 'ready';
     state.schemaError = null;
     pruneUnavailableColumns();
+    /* A mandate edit can move the account-size tier, which re-prices every
+       management fee on the sheet without any row visibly changing. */
+    var tierAfter = opt('fees.tier.id', null);
+    if (tierBefore && tierAfter && tierBefore !== tierAfter) {
+      announce('polite', 'Account size tier is now ' + opt('fees.tier.label', tierAfter)
+        + '; management fees re-priced.');
+    }
   } catch (err) {
     state.schemaStatus = 'error';
     state.schemaError = err.message || String(err);
@@ -247,7 +292,8 @@ function startResolve(col) {
   col.abort = controller;
 
   if (!state.scenarioId) { return; }
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId) + '/portfolio', {
+  Promise.resolve(variantPending).then(function () {
+  return apiFetch('/scenario/' + encodeURIComponent(state.scenarioId) + '/portfolio', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key: col.key, role: col.role }),
@@ -273,6 +319,7 @@ function startResolve(col) {
     settleRebuilding();
     announce('assertive', headerName(col.key) + ' could not be built. Retry available.');
     refresh();
+  });
   });
 }
 
@@ -518,24 +565,180 @@ function ensureSleeveLib(category, onReady) {
 /* The variant decides which sleeves exist and what they contain, so changing
    it invalidates every cached library and every choice made from one. Both go
    in the same turn as the PUT, which clears the server's map too (D29). */
-function setVariant(name) {
+async function setVariant(name) {
   if (!canEdit()) return;
   if (!name || name === state.variant) return;
   var had = Object.keys(state.sleeves).length;
+  var hadBase = state.columns[0] || null;
   state.variant = name;
   state.sleeveLib = {};
   state.sleeves = {};
+  /* The base draft was assembled against the previous variant's allocations,
+     so a half-made selection is discarded rather than silently carried into a
+     variant that may not offer it. */
+  state.baseDraft = { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' };
+  refresh();
+
+  /* Persist FIRST, and wait for it. The server validates every resolve against
+     the variant it has stored (D49), so anything issued while this is in
+     flight is judged against a scenario that does not know the variant yet and
+     comes back 422. Ordering this after the schema fetch left a whole extra
+     round trip in which a fast selection could do exactly that. */
   if (state.scenarioId) {
-    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    variantPending = apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ variant: name })
     }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    await variantPending;
+    variantPending = null;
+  }
+
+  /* The variant narrows options.allocations and the availability set, so the
+     schema is re-fetched before anything is judged against it (D49). */
+  try {
+    state.schema = await apiFetch('/scenario/schema' + schemaQuery());
+  } catch (err) {
+    showAlert('error', err.message || String(err));
+    return;
+  }
+  pruneUnavailableColumns();
+  /* The base is column one and the comparisons are read against it. If the new
+     variant cannot build the base, the whole set goes rather than leaving
+     comparisons anchored to nothing - the same rule the store applies, so the
+     two never diverge. */
+  if (hadBase && state.columns.indexOf(hadBase) === -1 && state.columns.length) {
+    state.columns.slice().forEach(function (col) {
+      abortColumn(col);
+      deleteColumnOnServer(col.key);
+    });
+    state.columns = [];
   }
   announce('assertive', had
     ? 'Implementation variant set to ' + name + '. ' + had
       + ' sleeve choice' + (had === 1 ? '' : 's') + ' cleared - the library has changed.'
     : 'Implementation variant set to ' + name + '.');
+  refresh();
+}
+
+/* The tilt is an implementation choice: it moves weight between the
+   implemented categories and never re-resolves the strategic portfolio, so
+   nothing here touches the analytics or the availability set (D50). */
+function setTacticalTilt(on) {
+  if (!canEdit()) return;
+  on = !!on;
+  if (on === state.tacticalTilt) return;
+  state.tacticalTilt = on;
+  if (state.scenarioId) {
+    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tacticalTilt: on })
+    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  }
+  announce('polite', on
+    ? 'Tactical tilt added, funded from ' + opt('rules.tacticalTiltFundedFrom', '') + '.'
+    : 'Tactical tilt removed.');
+  refresh();
+}
+
+/* ---- pricing (D51) -------------------------------------------------------
+   The schedule and the level are stored on the scenario and validated
+   server-side against the same lists the schema serves. Neither touches the
+   analytics: they re-price the implementation sheet and nothing else. */
+function feeScheduleIds() {
+  return opt('fees.schedules', []).map(function (s) { return s.id; });
+}
+
+function feeLevelIds() {
+  return opt('fees.levels', []).map(function (l) { return l.id; });
+}
+
+function feeLevel() {
+  return state.feeLevel || opt('fees.defaultLevel', null);
+}
+
+function pushFee(patch) {
+  if (!state.scenarioId) return;
+  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+}
+
+/* The strategic volatility premium (D53). Same shape as the tilt - an
+   implementation overlay that moves weight and re-resolves nothing - with one
+   extra gate: the product is forbidden outside the currencies the schema
+   lists, so a book in any other currency cannot turn it on. The rule is
+   applied server-side too; this is the half that keeps it off the screen. */
+function volPremiumCurrencies() { return opt('rules.volPremiumCurrencies', []); }
+
+function canHoldVolPremium() {
+  return volPremiumCurrencies().indexOf(state.basis.currency) >= 0;
+}
+
+function setVolPremium(on) {
+  if (!canEdit()) return;
+  on = !!on;
+  if (!canHoldVolPremium()) return;
+  if (on === state.volPremium) return;
+  state.volPremium = on;
+  if (state.scenarioId) {
+    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volPremium: on })
+    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  }
+  announce('polite', on
+    ? 'Strategic Volatility Premium added, funded pro rata from '
+      + opt('rules.volPremiumFundedFrom', '') + '.'
+    : 'Strategic Volatility Premium removed.');
+  refresh();
+}
+
+/* The include-fees toggle (D52). It carries the whole pricing question: with
+   it off the rail's schedule and level are not rendered and the table drops
+   its three fee columns, so a proposal that does not discuss fees never shows
+   an empty fee column or an unanswered control.
+
+   Turning it OFF is animated by the caller BEFORE the state moves - the
+   columns have to fade out of a DOM that still contains them - so this takes
+   the commit as a continuation rather than assuming it can run immediately.
+   Turning it on needs none of that: the new cells animate themselves in. */
+function setIncludeFees(on) {
+  if (!canEdit()) return;
+  on = !!on;
+  if (on === state.includeFees) return;
+  state.includeFees = on;
+  pushFee({ includeFees: on });
+  announce('polite', on
+    ? 'Fees included. ' + (state.feeSchedule
+        ? 'Priced ' + state.feeSchedule + ', ' + feeLevel() + '.'
+        : 'Choose a fee schedule to price the model.')
+    : 'Fees excluded from the proposal.');
+  refresh();
+}
+
+function setFeeSchedule(name) {
+  if (!canEdit()) return;
+  if (feeScheduleIds().indexOf(name) === -1) return;
+  if (name === state.feeSchedule) return;
+  state.feeSchedule = name;
+  pushFee({ feeSchedule: name });
+  var entry = opt('fees.schedules', []).filter(function (s) { return s.id === name; })[0];
+  announce('polite', 'Fee schedule ' + name + (entry && entry.note ? ': ' + entry.note : '.'));
+  refresh();
+}
+
+function setFeeLevel(level) {
+  if (!canEdit()) return;
+  if (feeLevelIds().indexOf(level) === -1) return;
+  if (level === feeLevel()) return;
+  state.feeLevel = level;
+  pushFee({ feeLevel: level });
+  announce('polite', 'Fee level ' + level + '.');
   refresh();
 }
 
@@ -664,6 +867,12 @@ async function commitMandate() {
         body: JSON.stringify({ mandate: mandate, basis: state.basis })
       });
       state.scenarioId = created.id;
+      /* the server sets the prescribed fee level on a new scenario, and
+         leaves fees excluded until they are asked for (D52) */
+      state.includeFees = !!(created.scenario && created.scenario.includeFees);
+      state.volPremium = !!(created.scenario && created.scenario.volPremium);
+      state.feeSchedule = (created.scenario && created.scenario.feeSchedule) || null;
+      state.feeLevel = (created.scenario && created.scenario.feeLevel) || null;
       try {
         history.replaceState(null, '', '?scenario=' + encodeURIComponent(created.id));
       } catch (e) { /* file:// review mode */ }
@@ -725,6 +934,18 @@ async function boot() {
       state.mandate = stored.mandate;
       state.basis = stored.basis;
       state.variant = stored.variant || null;
+      /* absent means a scenario stored before the field existed, which
+         takes the default; only an explicit false turns it off */
+      state.tacticalTilt = stored.tacticalTilt !== false;
+      /* off unless it was explicitly turned on, and never carried into a
+         currency that cannot hold it */
+      state.volPremium = !!stored.volPremium;
+      state.feeSchedule = stored.feeSchedule || null;
+      state.feeLevel = stored.feeLevel || null;
+      /* A scenario stored before the toggle existed has no includeFees, and
+         the server fills it from whether a schedule was ever chosen: a
+         proposal already priced keeps showing its fees (D52). */
+      state.includeFees = !!stored.includeFees;
       /* a scenario with columns has already been through the basis step */
       state.basisChosen = !!(stored.base || (stored.comparisons || []).length);
       state.sleeves = stored.sleeves || {};
@@ -841,7 +1062,7 @@ function renderBase() {
   var allocation = key ? key.allocation : pending.allocation;
   var canRE = allocation ? reAllowed(allocation) : false;
   var exRE = key ? key.excludeRE : (allocation ? (canRE ? pending.excludeRE : true) : false);
-  var exTAA = key ? key.excludeTAA : pending.excludeTAA;
+  var exTAA = true;                 /* never strategic any more (D50) */
   var risk = key ? key.riskLevel : pending.riskLevel;
   /* The basis comes first. Until it is answered these controls are inert and
      the ring stays on the tier above - two tiers competing for attention tells
@@ -849,6 +1070,22 @@ function renderBase() {
   var locked = !state.basisChosen;
   var disabled = (!schemaReady() || !canEdit() || locked) ? ' disabled' : '';
   var ring = (state.phase === 'workspace' && !base && !locked) ? ' tier-ring' : '';
+
+  /* Then the variant, which decides which allocations exist at all (D49).
+     Until it is answered the allocation and risk selects are inert for the
+     same reason the whole tier is inert before the basis: their options are
+     not merely unknown, they are undecided. */
+  var variant = state.variant;
+  var variantLocked = locked || !variant;
+  var afterVariant = (!schemaReady() || !canEdit() || variantLocked) ? ' disabled' : '';
+  var forceExRE = variantForcesExcludeRE(variant);
+  if (forceExRE && canRE) exRE = true;
+
+  var variants = opt('options.implementationVariants', []);
+  var variantOptions = (variant ? '' : '<option value="" selected>Select…</option>')
+    + variants.map(function (v) {
+        return '<option' + (v === variant ? ' selected' : '') + '>' + esc(v) + '</option>';
+      }).join('');
 
   var allocationOptions = (allocation ? '' :
       '<option value="" selected>Select…</option>')
@@ -872,23 +1109,26 @@ function renderBase() {
      choice, the tick boxes narrow what it produced. */
   el.innerHTML = '<div class="tier-h"><h3>Base portfolio</h3></div>'
     + '<div class="basis" style="grid-template-columns:1fr">'
-    + '<div class="field"><label for="bpa">Allocation</label><select id="bpa"' + disabled + '>'
-    + allocationOptions + '</select></div>'
+    + '<div class="field"><label for="bpv">Implementation Variant</label>'
+    + '<select id="bpv"' + disabled + '>' + variantOptions + '</select></div>'
+    + (variantLocked && !locked
+        ? '<p class="chk-note">Choose a variant first — it decides which '
+          + 'allocations are available.</p>' : '')
+    + '<div class="field"><label for="bpa">Allocation</label><select id="bpa"'
+    + afterVariant + '>' + allocationOptions + '</select></div>'
     + '<div class="field"><label for="bpr">Risk level</label><select id="bpr"'
-    + (allocation && canEdit() && schemaReady() ? '' : ' disabled') + '>'
+    + (allocation && !variantLocked && canEdit() && schemaReady() ? '' : ' disabled') + '>'
     + riskOptions + '</select></div>'
     + '<div class="chk"><input type="checkbox" id="bpre"'
     + ((allocation && !canRE) || exRE ? ' checked' : '')
-    + ((allocation && canRE && canEdit()) ? '' : ' disabled')
-    + ((allocation && !canRE) ? ' aria-describedby="bprenote"' : '') + '>'
+    + ((allocation && canRE && canEdit() && !forceExRE) ? '' : ' disabled')
+    + ((allocation && (!canRE || forceExRE)) ? ' aria-describedby="bprenote"' : '') + '>'
     + '<label for="bpre">Exclude Real Estate</label></div>'
     + ((allocation && !canRE)
         ? '<p class="chk-note" id="bprenote">Not available — ' + esc(allocation)
-          + ' holds no real estate.</p>' : '')
-    + '<div class="chk"><input type="checkbox" id="bptaa"'
-    + (exTAA ? ' checked' : '') + (allocation && canEdit() ? '' : ' disabled') + '>'
-    + '<label for="bptaa">Exclude Tactical Asset Allocation</label></div>'
-    + '<p class="chk-note">TAA is included in every allocation by default.</p>'
+          + ' holds no real estate.</p>'
+        : (allocation && forceExRE)
+        ? '<p class="chk-note" id="bprenote">Required by ' + esc(variant) + '.</p>' : '')
     + '</div>';
 }
 
@@ -2304,26 +2544,30 @@ document.addEventListener('change', function (e) {
     return;
   }
 
-  if (e.target.id === 'bpa' || e.target.id === 'bpre' || e.target.id === 'bptaa'
-      || e.target.id === 'bpr') {
+  if (e.target.id === 'bpv') {
+    setVariant(e.target.value);
+    return;
+  }
+
+  if (e.target.id === 'bpa' || e.target.id === 'bpre' || e.target.id === 'bpr') {
+    var forced = variantForcesExcludeRE(state.variant);
     var base = state.columns[0] || null;
     if (!base) {
       /* no base yet: accumulate the draft; build once allocation + risk exist */
       var pending = state.baseDraft;
       if (e.target.id === 'bpa') { pending.allocation = e.target.value; pending.excludeRE = false; }
       if (e.target.id === 'bpre') pending.excludeRE = e.target.checked;
-      if (e.target.id === 'bptaa') pending.excludeTAA = e.target.checked;
       if (e.target.id === 'bpr') pending.riskLevel = e.target.value;
       if (pending.allocation && pending.riskLevel) {
         var pendingCanRE = reAllowed(pending.allocation);
         var built = setBase({
           allocation: pending.allocation,
-          excludeRE: pendingCanRE ? !!pending.excludeRE : true,
-          excludeTAA: !!pending.excludeTAA,
+          excludeRE: pendingCanRE ? (forced || !!pending.excludeRE) : true,
+          excludeTAA: true,
           riskLevel: pending.riskLevel
         });
         if (built) {
-          state.baseDraft = { allocation: '', excludeRE: false, excludeTAA: false, riskLevel: '' };
+          state.baseDraft = { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' };
         }
       } else {
         refresh();
@@ -2336,10 +2580,11 @@ document.addEventListener('change', function (e) {
     var canRE = reAllowed(allocation);
     var exRE;
     if (!canRE) exRE = true;                       /* forced on, box disabled */
+    else if (forced) exRE = true;                  /* the variant mandates it */
     else if (e.target.id === 'bpre') exRE = e.target.checked;
     else if (e.target.id === 'bpa') exRE = false;  /* new allocation: RE held by default */
     else exRE = current.excludeRE;
-    var exTAA = (e.target.id === 'bptaa') ? e.target.checked : current.excludeTAA;
+    var exTAA = true;
     var risk = (e.target.id === 'bpr') ? e.target.value : current.riskLevel;
     if (!risk) { refresh(); return; }
     setBase({ allocation: allocation, excludeRE: exRE, excludeTAA: exTAA, riskLevel: risk });
@@ -2394,6 +2639,17 @@ return {
   ensureSleeveLib: ensureSleeveLib,
   chooseSleeve: chooseSleeve,
   variant: function () { return state.variant; },
+  tacticalTilt: function () { return state.tacticalTilt; },
+  volPremium: function () { return state.volPremium && canHoldVolPremium(); },
+  canHoldVolPremium: canHoldVolPremium,
+  setVolPremium: setVolPremium,
+  setTacticalTilt: setTacticalTilt,
+  includeFees: function () { return state.includeFees; },
+  setIncludeFees: setIncludeFees,
+  feeSchedule: function () { return state.feeSchedule; },
+  feeLevel: feeLevel,
+  setFeeSchedule: setFeeSchedule,
+  setFeeLevel: setFeeLevel,
   setVariant: setVariant,
   implementationVariants: function () {
     return opt('options.implementationVariants', []);

@@ -100,10 +100,11 @@ class LiveScenarioPort:
             return 'default'
 
     # ------------------------------------------------------------- the port --
-    def get_schema(self, basis: BasisInput, mandate: MandateInput):
+    def get_schema(self, basis: BasisInput, mandate: MandateInput, variant=None):
         mandateSize = mandate.mandateSize if mandate else None
+        topAccountSize = mandate.topAccountSize if mandate else None
         return rules.schemaPayload(basis, mandateSize, self.capabilities(),
-                                   self.describe())
+                                   self.describe(), variant, topAccountSize)
 
     def search_advisors(self, query: str, limit: int = 20):
         return advisors.searchAdvisors(query, limit)
@@ -205,10 +206,18 @@ class LiveScenarioPort:
                     book = load_workbook(report.output_path)
                     if 'assumptions' in book.sheetnames:
                         book.remove(book['assumptions'])
+                    implementation = implementation or {}
                     writeImplementationSheet(
-                        book, results[0], (implementation or {}).get('sleeves', {}),
+                        book, results[0], implementation.get('sleeves', {}),
                         rules.AUTO_SLEEVE_CATEGORIES, mandate.mandateSize,
-                        (implementation or {}).get('variant'))
+                        implementation.get('variant'),
+                        bool(implementation.get('tacticalTilt')),
+                        implementation.get('feeSchedule'),
+                        implementation.get('feeLevel'),
+                        mandate.topAccountSize,
+                        implementation.get('includeFees', True),
+                        bool(implementation.get('volPremium')),
+                        basis.currency)
                     buffer = io.BytesIO()
                     book.save(buffer)
                     return buffer.getvalue()

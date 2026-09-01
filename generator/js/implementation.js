@@ -1,8 +1,9 @@
 (function () {
 'use strict';
 /* =============================================================================
-   Implementation layer (spec 8): the sleeve tier in the rail, the
-   thirteen-column product table, and the Excel download.
+   Implementation layer (spec 8): the sleeve tier in the rail, the product
+   table (the thirteen columns of spec 9.3 plus the fee group, D51), and the
+   Excel download.
 
    Categories come from the resolved base portfolio - never a list in this
    file (spec 2.2). Asset Allocation Strategies (or whatever the schema's
@@ -41,7 +42,144 @@ function pillFor(v) {
 
 function isAuto(category) { return App.autoSleeveCategories().indexOf(category) >= 0; }
 
+/* ---- the management fee (D51) -------------------------------------------
+   Not a property of the product. It is resolved from the fee schedule, the
+   fee level and - under a schedule that prices by group - the product's fee
+   group, against the rates the schema serves for the mandate's account-size
+   tier. The tier is resolved server-side; the client only ever holds one
+   tier's rates, so this is a lookup and nothing more.
+
+   THE PYTHON MIRROR is fees.managementFee(), read through fees.ratesAtTier();
+   the test suite checks the two agree across every schedule, level and group.
+   Anything unknown resolves to null - rendered as a dash and blocking the
+   export - never to a guessed rate. */
+function resolveFee(rates, schedule, level, feeGroup) {
+  if (!rates || !schedule || !level) return null;
+  var table = rates[schedule];
+  if (!table) return null;
+  var levels = table.byGroup ? (table.groups || {})[feeGroup] : table.levels;
+  if (!levels) return null;
+  var rate = levels[level];
+  return (typeof rate === 'number') ? rate : null;
+}
+
+function feeRates() { return App.opt('fees.rates', null); }
+function feeSchedules() { return App.opt('fees.schedules', []); }
+
+function feeScheduleEntry() {
+  var chosen = App.feeSchedule();
+  return feeSchedules().filter(function (s) { return s.id === chosen; })[0] || null;
+}
+
+/* Whether the chosen schedule reads the fee group at all. */
+function feeByGroup() {
+  var entry = feeScheduleEntry();
+  return !!(entry && entry.byGroup);
+}
+
+function managementFee(feeGroup) {
+  return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup);
+}
+
+function groupPill(name) {
+  return '<span class="pill p-grp">' + App.esc(name || '—') + '</span>';
+}
+
+function feeText(pct) { return pct === null ? '—' : App.num(pct, 2, '%'); }
+function bpText(bp) { return bp === null ? '—' : App.num(bp, 1, 'bp'); }
+
+/* ---- the tactical tilt (D50) --------------------------------------------
+   Tactical allocation is an implementation concept, so it is not in any
+   strategic payload: the toggle introduces it here, funded out of the
+   category the schema names, and the weight is moved rather than created.
+
+   THE PYTHON MIRROR is rules.tiltedCategories(); the two must agree exactly
+   or the screen and the workbook drift - the same discipline roundWeights
+   follows. Everything downstream (products, fees, notionals, doughnuts) is
+   derived from these category weights, so nothing else needs to know. */
+function tiltPct() { return App.opt('rules.tacticalTiltPct', 8); }
+function tiltFundedFrom() { return App.opt('rules.tacticalTiltFundedFrom', ''); }
+function tiltCategory() { return App.opt('rules.tacticalTiltCategory', ''); }
+
+function canFundTilt(categories) {
+  var from = tiltFundedFrom();
+  for (var i = 0; i < categories.length; i++) {
+    if (categories[i].name === from) return categories[i].weightPct >= tiltPct();
+  }
+  return false;
+}
+
+function tiltCategories(categories, on) {
+  var out = categories.map(function (c) {
+    return { name: c.name, weightPct: c.weightPct, assets: (c.assets || []).slice() };
+  });
+  if (!on || !canFundTilt(out)) return out;
+  var pct = tiltPct(), from = tiltFundedFrom();
+  out.forEach(function (c) {
+    if (c.name !== from) return;
+    var before = c.weightPct, after = before - pct;
+    c.weightPct = after;
+    var share = before ? after / before : 0;
+    c.assets = c.assets.map(function (a) {
+      return { reportingName: a.reportingName, weightPct: a.weightPct * share };
+    });
+  });
+  out.push({ name: tiltCategory(), weightPct: pct,
+             assets: [{ reportingName: tiltCategory(), weightPct: pct }] });
+  return out;
+}
+
+/* ---- the strategic volatility premium (D53) ------------------------------
+   The second overlay, and the mirror of rules.volPremiumCategories(). It
+   takes ALREADY-TILTED categories, because the share is of the funding
+   category as implemented: what the tilt left behind. The new category is
+   inserted directly after the one that funded it, which is where the sheet
+   reads it - under Investment Grade Fixed Income, before Other Fixed Income.
+
+   The currency gate is not here. App.volPremium() has already applied it, on
+   the same list of currencies the schema serves to both sides. */
+function volPremiumShare() { return App.opt('rules.volPremiumShare', 0.075); }
+function volPremiumFundedFrom() { return App.opt('rules.volPremiumFundedFrom', ''); }
+function volPremiumCategory() { return App.opt('rules.volPremiumCategory', ''); }
+
+function volPremiumCategories(categories, on) {
+  var out = categories.map(function (c) {
+    return { name: c.name, weightPct: c.weightPct, assets: (c.assets || []).slice() };
+  });
+  if (!on) return out;
+  var share = volPremiumShare(), from = volPremiumFundedFrom();
+  for (var i = 0; i < out.length; i++) {
+    if (out[i].name !== from) continue;
+    var before = out[i].weightPct;
+    if (before <= 0) break;
+    var take = before * share, after = before - take;
+    out[i].weightPct = after;
+    var scale = after / before;
+    out[i].assets = out[i].assets.map(function (a) {
+      return { reportingName: a.reportingName, weightPct: a.weightPct * scale };
+    });
+    out.splice(i + 1, 0, {
+      name: volPremiumCategory(), weightPct: take,
+      assets: [{ reportingName: volPremiumCategory(), weightPct: take }]
+    });
+    break;
+  }
+  return out;
+}
+
+/* The categories AS IMPLEMENTED - what every row, fee and chart below is
+   built from. Step 1 keeps showing the strategic allocation untouched.
+   Tilt first, then the premium, the order rules.implementedCategories()
+   fixes: the premium's share is of what the tilt leaves. */
 function baseCategories() {
+  var base = App.base();
+  if (!base || base.status !== 'ready') return [];
+  return volPremiumCategories(
+    tiltCategories(base.data.categories, App.tacticalTilt()), App.volPremium());
+}
+
+/* The strategic categories, for the funding test the toggle is gated on. */
+function strategicCategories() {
   var base = App.base();
   if (!base || base.status !== 'ready') return [];
   return base.data.categories;
@@ -77,6 +215,18 @@ function filledCount() {
   return { filled: filled, total: live.length };
 }
 
+/* What the rail counts: the categories a PWA picks a sleeve for. The
+   auto-attached ones are carried by their toggle and have no control in the
+   list, so counting them would report progress against work nobody does.
+   complete() keeps using filledCount - the gate is about the whole model,
+   including a category whose library has not loaded yet. */
+function pickedCount() {
+  var live = baseCategories().filter(function (c) { return !isAuto(c.name); });
+  var filled = 0;
+  live.forEach(function (category) { if (sleeveFor(category.name)) filled += 1; });
+  return { filled: filled, total: live.length };
+}
+
 function complete() {
   var counts = filledCount();
   return counts.total > 0 && counts.filled === counts.total;
@@ -95,7 +245,8 @@ function rows() {
           name: product.name, ticker: product.ticker, assetClass: product.assetClass,
           style: product.style, vehicle: product.vehicle, source: product.source,
           liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
-          cost: product.productCost, mgmt: product.managementFee,
+          cost: product.productCost, feeGroup: product.feeGroup,
+          mgmt: managementFee(product.feeGroup),
           exact: category.weightPct * product.weight
         };
         items.push(item);
@@ -116,48 +267,263 @@ function rows() {
       : all.map(function (i) { return Math.round(i.exact * 100) / 100; });
     all.forEach(function (item, ix) {
       item.weight = printed[ix];
-      item.wtdBp = (item.cost + item.mgmt) * item.weight;
+      /* percent x percent = bp; null while the book is unpriced */
+      item.wtdBp = item.mgmt === null ? null : (item.cost + item.mgmt) * item.weight;
       item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
     });
   }
   return groups;
 }
 
+/* Weight and notional always add up; the fee adds up only once every row
+   has one, and is null - not zero - until then. */
 function totals(groups) {
-  var weight = 0, bp = 0, notional = 0;
+  var weight = 0, bp = 0, notional = 0, unpriced = false;
   groups.forEach(function (group) {
     group.items.forEach(function (item) {
-      weight += item.weight; bp += item.wtdBp; notional += item.notional;
+      weight += item.weight; notional += item.notional;
+      if (item.wtdBp === null) unpriced = true; else bp += item.wtdBp;
     });
   });
-  return { weight: weight, bp: bp, notional: notional };
+  return { weight: weight, bp: unpriced ? null : bp, notional: notional };
 }
 
-/* ---- the variant control (spec 8.1, D29) --------------------------------
-   The names are schema data, never a list in this file - the same rule the
-   categories follow (spec 2.2, 4.3). Rendered as the first field of the
-   sleeve tier because it is the first decision of step 2 and every other one
-   depends on it. */
-function variantField() {
-  var variants = App.implementationVariants();
+/* ---- the variant, as read here (spec 8.1, D29, D49) ---------------------
+   The choice itself moved to the base portfolio tier of step 1: the variant
+   decides which allocations exist, so it has to be answered before anything
+   is built, not after (D49). What remains here is the answer, shown because
+   every sleeve below is scoped by it and a PWA arriving at step 2 needs to
+   see which book they are implementing. */
+function variantSummary() {
   var chosen = App.variant();
-  if (!variants.length) {
-    return '<p class="field-note">The implementation variants could not be '
-      + 'loaded, so no sleeve can be attached.</p>';
+  if (!chosen) return '';
+  return '<div class="vr-field done">'
+    + '<label>Implementation Variant</label>'
+    + '<p class="vr-value">' + App.esc(chosen) + '</p>'
+    + '<p class="vr-note">Set with the base portfolio. Sleeves below are those '
+    + App.esc(chosen) + ' can hold.</p></div>';
+}
+
+/* ---- the tactical tilt toggle (D50) -------------------------------------
+   Offered disabled, with the reason, where the strategic portfolio cannot
+   fund it - every All Equity book holds no investment grade fixed income at
+   all. Silently doing nothing, or quietly funding it from somewhere else,
+   would both be worse than saying so. */
+function tacticalTiltField() {
+  var strategic = strategicCategories();
+  if (!strategic.length) return '';
+  var fundable = canFundTilt(strategic);
+  var on = App.tacticalTilt() && fundable;
+  var pct = tiltPct();
+  return '<div class="tilt-field' + (on ? ' done' : '') + '">'
+    + '<div class="chk"><input type="checkbox" id="impltilt" data-tilt="1"'
+    + (on ? ' checked' : '')
+    + (fundable && App.canEdit() ? '' : ' disabled')
+    + ' aria-describedby="tiltnote">'
+    + '<label for="impltilt">Tactical Tilts</label></div>'
+    + '<p class="chk-note" id="tiltnote">' + (fundable
+        ? App.esc(pct.toFixed(0)) + '% funded pro rata from '
+          + App.esc(tiltFundedFrom()) + '.'
+        : 'Needs ' + App.esc(pct.toFixed(0)) + '% of '
+          + App.esc(tiltFundedFrom()) + ' to fund; this portfolio holds none.')
+    + '</p></div>';
+}
+
+/* The volatility premium toggle, beneath the tilt and reading the same way.
+   Two reasons it can be offered disabled, and each says which: a currency
+   that may not hold the product at all, and a portfolio with nothing to fund
+   it from. The currencies come from the schema - the page never names one. */
+function volPremiumField() {
+  var strategic = strategicCategories();
+  if (!strategic.length) return '';
+  var from = volPremiumFundedFrom();
+  var allowed = App.canHoldVolPremium();
+  var fundable = strategic.some(function (c) {
+    return c.name === from && c.weightPct > 0;
+  });
+  var on = App.volPremium() && fundable;
+  var currencies = App.opt('rules.volPremiumCurrencies', []);
+  var note;
+  if (!allowed) {
+    note = 'Available in ' + App.esc(currencies.join(' and '))
+      + ' only; this book is in ' + App.esc(App.basis().currency) + '.';
+  } else if (!fundable) {
+    note = 'Funded from ' + App.esc(from) + '; this portfolio holds none.';
+  } else {
+    note = App.esc((volPremiumShare() * 100).toFixed(1))
+      + '% of ' + App.esc(from) + ' after tilts, funded pro rata from it.';
   }
-  var options = variants.map(function (name) {
-    return '<option value="' + App.esc(name) + '"'
-      + (chosen === name ? ' selected' : '') + '>' + App.esc(name) + '</option>';
+  return '<div class="tilt-field' + (on ? ' done' : '') + '">'
+    + '<div class="chk"><input type="checkbox" id="implvolprem" data-volprem="1"'
+    + (on ? ' checked' : '')
+    + (allowed && fundable && App.canEdit() ? '' : ' disabled')
+    + ' aria-describedby="volpremnote">'
+    + '<label for="implvolprem">Strategic Volatility Premium</label></div>'
+    + '<p class="chk-note" id="volpremnote">' + note + '</p></div>';
+}
+
+/* ---- revealing and hiding the fee layer (D52) ----------------------------
+   Two mechanisms, because the two directions are not symmetrical. Turning
+   fees ON re-renders first: the rail block and the fee cells are brand new
+   nodes, and a CSS transition does not run on a node that was born in its
+   final state, so they carry a one-shot class and a keyframe animation plays
+   itself in. Turning them OFF has to animate what is about to be destroyed,
+   so the caller runs the leave animation on the live DOM and only then lets
+   the state move and the render take the cells away.
+
+   feeReveal is read by both renderRail and renderView in one pass of the
+   renderer and cleared at the end of it, so a single toggle animates the
+   rail and the table together. */
+var FEE_MOTION = 360;                 /* ms; the fee reveal, in and out */
+var feeReveal = false;
+var feeHiding = false;
+
+function reducedMotion() {
+  return !!(window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+/* Play the leave animation over the live DOM, then hand back. Reduced motion
+   and a page with nothing to animate both commit straight away. */
+function hideFeesThen(commit) {
+  if (feeHiding) return;
+  var body = document.querySelector('#tier-sleeves .fee-body');
+  var table = document.querySelector('.tbl.impl');
+  if (reducedMotion() || (!body && !table)) { commit(); return; }
+  feeHiding = true;
+  if (body) body.classList.add('ravel');
+  if (table) table.classList.add('fees-out');
+  window.setTimeout(function () { feeHiding = false; commit(); }, FEE_MOTION);
+}
+
+/* Bring the pricing group into the rail's own view when it opens.
+   The group closes the tier, so on a rail already scrolled to the sleeve
+   pickers it unravels below the fold and a PWA is left looking at the
+   controls they did not just ask for. The rail scrolls, never the document:
+   scrollIntoView would move both. The target is the group's TOP - it does not
+   move while the body grows downwards, so this can run before the animation
+   finishes - offset by the sticky brand block, which would otherwise cover it. */
+function scrollFeeGroupIntoView(smooth) {
+  var rail = document.querySelector('.rail');
+  var group = document.querySelector('#tier-sleeves .fee-group');
+  if (!rail || !group || rail.scrollHeight <= rail.clientHeight) return;
+  var railBox = rail.getBoundingClientRect();
+  var groupBox = group.getBoundingClientRect();
+  if (groupBox.top >= railBox.top && groupBox.bottom <= railBox.bottom) return;
+  var brand = rail.querySelector('.rail-brand');
+  var pad = (brand ? brand.offsetHeight : 0) + 10;
+  var top = rail.scrollTop + (groupBox.top - railBox.top) - pad;
+  if (rail.scrollTo) {
+    rail.scrollTo({ top: top, behavior: (smooth && !reducedMotion()) ? 'smooth' : 'auto' });
+  } else {
+    rail.scrollTop = top;
+  }
+}
+
+/* Strip the one-shot classes once they have played, so nothing is left
+   holding an overflow or an animation the next render would replay - and
+   correct the scroll once the block has its full height, since until then
+   the rail had less to scroll through than the target asked for. */
+function settleFeeReveal() {
+  var played = document.querySelectorAll('.fee-body.unravel, .tbl.impl.fees-in');
+  Array.prototype.forEach.call(played, function (node) {
+    node.addEventListener('animationend', function handler() {
+      node.removeEventListener('animationend', handler);
+      node.classList.remove('unravel');
+      node.classList.remove('fees-in');
+      if (node.classList.contains('fee-body')) scrollFeeGroupIntoView(false);
+    });
+  });
+}
+
+/* ---- pricing: the fee schedule and the fee level (D51) ------------------
+   The schedule is a segmented control with no default, the level a grid of
+   the six points the framework prices, and under both a line saying which
+   account-size tier the mandate fell in - the one input a PWA cannot see
+   otherwise, since it comes from the top account size and not from anything
+   in this tier. Every list here is the schema's, not this file's (spec 4.3).
+
+   Rendered at the FOOT of the sleeve tier, below the pickers, behind its own
+   Pricing label. It sat between the tilt toggle and the pickers until the rail
+   grew too long to read; pricing is answered once and the pickers are answered
+   five times, so the thing that repeats comes first and the thing that does not
+   settles under it. The label is there because a fee schedule is not a sleeve
+   and the tier heading says Sleeves. */
+function feeFields() {
+  var schedules = feeSchedules();
+  if (!schedules.length) return '';
+  var chosen = App.feeSchedule();
+  var level = App.feeLevel();
+  var tier = App.opt('fees.tier', null);
+  var editable = App.canEdit();
+  var entry = feeScheduleEntry();
+  var on = App.includeFees();
+
+  /* The toggle is the whole question: off, there is nothing below it and no
+     fee column in the table (D52). It is a tick box rather than a segmented
+     control because it has a default - no - and because the thing it turns on
+     is a section, not a value. */
+  var head = '<div class="fee-group">'
+    + '<p class="fee-group-h">Pricing</p>'
+    + '<div class="fee-toggle' + (on ? ' done' : '') + '">'
+    + '<div class="chk"><input type="checkbox" id="implincfees" data-incfees'
+    + (on ? ' checked' : '') + (editable ? '' : ' disabled')
+    + ' aria-describedby="incfeesnote">'
+    + '<label for="implincfees">Include fees</label></div>'
+    + '<p class="chk-note" id="incfeesnote">' + (on
+        ? 'Fee columns are shown in the table and written to the workbook.'
+        : 'The proposal shows no fees. Tick to price the model.')
+    + '</p></div>';
+  if (!on) return head + '</div>';
+
+  var seg = schedules.map(function (s) {
+    return '<button type="button" data-feesched="' + App.esc(s.id) + '"'
+      + ' aria-pressed="' + (s.id === chosen ? 'true' : 'false') + '"'
+      + (editable ? '' : ' disabled') + '>' + App.esc(s.id) + '</button>';
   }).join('');
-  return '<div class="vr-field' + (chosen ? ' done' : '') + '">'
-    + '<label for="implvariant">Implementation variant</label>'
-    + '<select id="implvariant" data-variant="1"'
-    + (App.canEdit() ? '' : ' disabled') + '>'
-    + '<option value="">Select a variant…</option>' + options + '</select>'
-    + (chosen
-        ? '<p class="vr-note">Sleeves below are those ' + App.esc(chosen)
-          + ' can hold.</p>'
-        : '') + '</div>';
+  /* .fee-body is one element so the reveal has one thing to animate; the
+     class is a one-shot the renderer strips when the animation ends. */
+  var html = head
+    + '<div class="fee-body' + (feeReveal ? ' unravel' : '') + '">'
+    + '<div class="fee-field' + (chosen ? ' done' : '') + '">'
+    + '<span class="fee-label" id="feeschedlabel">Fee schedule</span>'
+    + '<div class="fee-seg" role="group" aria-labelledby="feeschedlabel">' + seg + '</div>'
+    + '<p class="vr-note">' + (entry
+        ? App.esc(entry.note || '')
+        : 'Choose how the book is priced. Nothing is priced until it is chosen.')
+    + '</p></div>';
+
+  var sources = App.opt('fees.sources', []);
+  var points = App.opt('fees.points', []);
+  var levels = App.opt('fees.levels', []);
+  function idFor(source, point) {
+    for (var i = 0; i < levels.length; i++) {
+      if (levels[i].source === source && levels[i].point === point) return levels[i].id;
+    }
+    return null;
+  }
+  var grid = '';
+  sources.forEach(function (source) {
+    grid += '<span class="rh">' + App.esc(source) + '</span>';
+    points.forEach(function (point) {
+      var id = idFor(source, point);
+      grid += '<button type="button" data-feelevel="' + App.esc(id || '') + '"'
+        + ' aria-pressed="' + (id && id === level ? 'true' : 'false') + '"'
+        + ' aria-label="' + App.esc(id || point) + '"'
+        + (editable && id ? '' : ' disabled') + '>' + App.esc(point) + '</button>';
+    });
+  });
+  html += '<div class="fee-field done">'
+    + '<span class="fee-label" id="feelevellabel">Fee level</span>'
+    + '<div class="fee-levels" role="group" aria-labelledby="feelevellabel">' + grid + '</div>'
+    + '<p class="vr-note">' + (tier
+        ? 'Tier ' + App.esc(tier.id) + ', ' + App.esc(tier.label) + ', from the top account size.'
+        : 'No account-size tier: the mandate has no top account size.')
+    + '</p>'
+    + (App.opt('fees.placeholder', false)
+        ? '<p class="fee-flag">Placeholder rates, not the published schedule.</p>' : '')
+    + '</div></div></div>';
+  return html;
 }
 
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
@@ -166,26 +532,30 @@ function renderRail() {
   if (App.step() !== 'impl' || App.phase() !== 'workspace') { el.hidden = true; return; }
   el.hidden = false;
   var base = App.base();
-  var counts = filledCount();
+  var counts = pickedCount();
   var chosenVariant = App.variant();
 
-  /* The variant does not depend on the base portfolio - it is a property of
-     the book being implemented, not of the allocation - so its control is
-     rendered before the base-status returns and can be answered while the
-     base is still resolving. */
+  /* The variant is already answered by the time this tier renders - it is
+     chosen with the base portfolio, and nothing resolves without it (D49) -
+     so the summary sits above the base-status returns and reads the same
+     whether the base is ready, resolving or failed. */
   var head = '<div class="tier-h"><h3>Sleeves</h3>'
     + (chosenVariant && base && base.status === 'ready'
         ? '<span class="tier-count">' + counts.filled + ' of ' + counts.total + '</span>'
-        : '') + '</div>' + variantField();
+        : '') + '</div>' + variantSummary() + tacticalTiltField() + volPremiumField();
 
+  /* Pricing closes the tier on every path, including the ones that never draw
+     a picker: the schedule and the level are scenario state, answerable while
+     the base is still resolving, and taking them away when the base fails
+     would lose an answer the PWA had already given. */
   if (!base) {
-    el.innerHTML = head + '<p class="field-note">Build a base portfolio first.</p>';
+    el.innerHTML = head + '<p class="field-note">Build a base portfolio first.</p>' + feeFields();
     return;
   }
   if (base.status !== 'ready') {
     el.innerHTML = head + '<p class="field-note">' + (base.status === 'error'
         ? 'The base portfolio could not be built. Retry it from the allocation step.'
-        : 'Resolving the base portfolio…') + '</p>';
+        : 'Resolving the base portfolio…') + '</p>' + feeFields();
     return;
   }
   var html = head;
@@ -193,24 +563,26 @@ function renderRail() {
   /* The gate: no variant, no sleeves. Rendering the pickers disabled would
      invite clicking them; there is nothing behind them to pick yet. */
   if (!chosenVariant) {
-    el.innerHTML = html + '<p class="field-note">Choose an implementation variant '
-      + 'to see the sleeves available to it. It decides which sleeves each '
-      + 'category offers and what they hold.</p>';
+    /* Not reachable by the normal route - a portfolio cannot be built without
+       a variant, and step 2 is gated on a portfolio - but a hand-edited or
+       part-migrated scenario could arrive here, so it says where to go. */
+    el.innerHTML = html + '<p class="field-note">No implementation variant is '
+      + 'set. Choose one with the base portfolio on the allocation step; it '
+      + 'decides which sleeves each category offers and what they hold.</p>'
+      + feeFields();
     return;
   }
 
+  /* Only the categories a PWA actually picks for. An auto-attached category
+     carries one sleeve by rule and is put there by the toggle above, so a
+     control for it would be a control that can never be used; the count and
+     the note below say it is in the model (D53). */
   html += '<div class="sl-list">';
-  baseCategories().forEach(function (category, i) {
+  baseCategories().filter(function (category) {
+    return !isAuto(category.name);
+  }).forEach(function (category, i) {
     var lib = App.sleeveLib()[category.name];
     var chosen = sleeveFor(category.name);
-    if (isAuto(category.name)) {
-      html += '<div class="sl-row done auto"><span class="cat"><b>' + App.esc(category.name)
-        + '</b><span>' + App.num(category.weightPct, 1, '%') + '</span></span>'
-        + '<p class="sl-auto" id="slauto' + i + '">'
-        + (chosen ? App.esc(chosen.name) + ' 🔒' : 'Loading sleeve…')
-        + '</p></div>';
-      return;
-    }
     var select;
     if (!lib || lib.status === 'loading') {
       select = '<select id="sl' + i + '" disabled><option>Loading sleeves…</option></select>';
@@ -236,11 +608,19 @@ function renderRail() {
   html += '</div><p class="sl-progress">' + counts.filled + ' of ' + counts.total
     + ' categories have a sleeve.'
     + '<span class="sl-bar"><i style="width:' + progressPct + '%"></i></span></p>';
-  var hasAuto = baseCategories().some(function (c) { return isAuto(c.name); });
-  if (hasAuto) {
-    html += '<p class="field-note">' + App.esc(App.autoSleeveCategories()[0])
-      + ' is attached automatically while tactical tilts are included.</p>';
+  /* Both overlays introduce an auto-attached category, so the note names the
+     ones actually present rather than the first in the list (D53). */
+  var autos = baseCategories().filter(function (c) { return isAuto(c.name); })
+    .map(function (c) { return c.name; });
+  if (autos.length) {
+    html += '<p class="field-note">'
+      + App.esc(autos.length > 1
+          ? autos.slice(0, -1).join(', ') + ' and ' + autos[autos.length - 1]
+          : autos[0])
+      + (autos.length > 1 ? ' are' : ' is')
+      + ' attached automatically by the toggles above.</p>';
   }
+  html += feeFields();
   el.innerHTML = html;
 }
 
@@ -430,10 +810,28 @@ function renderView() {
 
   var groups = rows();
   var t = totals(groups);
-  var counts = filledCount();
+  /* The same count the rail shows, so the two never disagree about how far
+     along the implementation is (D53). */
+  var counts = pickedCount();
   var done = complete();
   var columnsBusy = App.columns().some(function (c) { return c.status !== 'ready'; });
   var exporting = App.exporting();
+  /* the fee group is struck through, not hidden, under a schedule that
+     ignores it: the column still says what the product is */
+  var schedule = App.feeSchedule();
+  var groupDead = !!schedule && !feeByGroup();
+  var groupCell = groupDead
+    ? '<td class="txt fee-col fee-dead" title="Not read under ' + App.esc(schedule) + '">'
+    : '<td class="txt fee-col">';
+  /* The three fee columns are in the table only while the proposal includes
+     fees (D52). Each fee cell wraps its content in a span, because a column
+     takes its width from its content: animating the span is what makes the
+     column itself open and close rather than appearing at full width. */
+  var fees = App.includeFees();
+  function feeCell(cls, inner) {
+    return fees ? '<td class="' + cls + ' fee-col"><span class="fcw">'
+      + inner + '</span></td>' : '';
+  }
 
   /* The same stage block step 1 carries: eyebrow, title, standfirst. The
      "Implementing X against a mandate of Y" line becomes the standfirst
@@ -456,7 +854,8 @@ function renderView() {
     + '</div></div>';
 
   html += '<div class="tblwrap" tabindex="0" aria-label="Implementation model, scrolls horizontally">'
-    + '<table class="tbl impl">'
+    + '<table class="tbl impl' + (fees ? '' : ' no-fees')
+    + (fees && feeReveal ? ' fees-in' : '') + '">'
     + '<caption class="sr-only">Implementation model by product</caption><thead><tr>'
     + '<th scope="col" class="rowhead txt">Categories &amp; Asset Classes</th>'
     + '<th scope="col" class="txt prodcol">Products</th>'
@@ -468,15 +867,20 @@ function renderView() {
     + '<th scope="col" class="txt">Liquidity</th>'
     + '<th scope="col" class="txt">Exposure ccy</th>'
     + '<th scope="col" class="num">Cost</th>'
-    + '<th scope="col" class="num">Mgmt fee</th>'
-    + '<th scope="col" class="num">Wtd fee</th>'
+    + (fees
+        ? '<th scope="col" class="txt fee-col' + (groupDead ? ' fee-dead' : '')
+          + '"><span class="fcw">Fee group</span></th>'
+          + '<th scope="col" class="num fee-col"><span class="fcw">Mgmt fee</span></th>'
+          + '<th scope="col" class="num fee-col"><span class="fcw">Wtd fee</span></th>'
+        : '')
     + '<th scope="col" class="num">Notional</th>'
     + '</tr></thead><tbody>';
 
   groups.forEach(function (group) {
     var groupBp = 0, groupNotional = 0, groupWeight = 0;
     group.items.forEach(function (item) {
-      groupBp += item.wtdBp; groupNotional += item.notional; groupWeight += item.weight;
+      groupNotional += item.notional; groupWeight += item.weight;
+      if (groupBp !== null) groupBp = item.wtdBp === null ? null : groupBp + item.wtdBp;
     });
     var shownWeight = group.items.length ? groupWeight : group.weightPct;
     var shownNotional = group.items.length ? groupNotional
@@ -497,8 +901,9 @@ function renderView() {
           : '<span class="bdg b-warn">No sleeve attached</span>') + '</td>'
       + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
       + '<td colspan="6"></td>'
-      + '<td class="num"></td><td class="num"></td>'
-      + '<td class="num">' + (group.items.length ? App.num(groupBp, 1, 'bp') : '') + '</td>'
+      + '<td class="num"></td>'
+      + feeCell('txt', '') + feeCell('num', '')
+      + feeCell('num', group.items.length ? bpText(groupBp) : '')
       + '<td class="num">' + money(shownNotional) + '</td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '') + '"><th scope="row">'
@@ -512,16 +917,21 @@ function renderView() {
         + '<td class="txt">' + App.esc(item.liquidity) + '</td>'
         + '<td class="txt tick">' + App.esc(item.exposureCurrency) + '</td>'
         + '<td class="num">' + App.num(item.cost, 2, '%') + '</td>'
-        + '<td class="num">' + App.num(item.mgmt, 2, '%') + '</td>'
-        + '<td class="num">' + App.num(item.wtdBp, 1, 'bp') + '</td>'
+        + (fees
+            ? groupCell + '<span class="fcw">' + groupPill(item.feeGroup) + '</span></td>'
+              + feeCell('num', feeText(item.mgmt))
+              + feeCell('num', bpText(item.wtdBp))
+            : '')
         + '<td class="num">' + money(item.notional) + '</td></tr>';
     });
   });
+  /* The filler spans Ticker through Mgmt fee, so it is two columns shorter
+     when the fee columns are not there. */
   html += '<tr class="grand"><th scope="row">Total</th>'
     + '<td class="prodcol"></td>'
     + '<td class="num">' + App.num(t.weight, 2, '%') + '</td>'
-    + '<td colspan="8"></td>'
-    + '<td class="num">' + App.num(t.bp, 1, 'bp') + '</td>'
+    + '<td colspan="' + (fees ? 9 : 7) + '"></td>'
+    + feeCell('num', bpText(t.bp))
     + '<td class="num">' + money(t.notional) + '</td></tr>';
   html += '</tbody></table></div>';
   html += renderDonuts(groups, done);
@@ -529,6 +939,9 @@ function renderView() {
   var reason = null;
   if (!App.canExport()) reason = 'Export is not available for your role.';
   else if (!App.variant()) reason = 'Choose an implementation variant first.';
+  /* Only a proposal that includes fees needs a schedule: one that does not
+     exports a sheet with no fee column to price (D52). */
+  else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
   else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
   var disabled = !!reason || exporting.status === 'working';
@@ -623,8 +1036,23 @@ async function exportWorkbook() {
 /* ---- events ------------------------------------------------------------- */
 document.addEventListener('change', function (e) {
   if (!e.target.dataset) return;
-  if (e.target.dataset.variant !== undefined) {
-    App.setVariant(e.target.value || null);
+  if (e.target.dataset.tilt !== undefined) {
+    App.setTacticalTilt(e.target.checked);
+    return;
+  }
+  if (e.target.dataset.volprem !== undefined) {
+    App.setVolPremium(e.target.checked);
+    return;
+  }
+  /* Revealing renders first and lets the new nodes animate themselves in;
+     hiding animates what is on screen and commits when it has played (D52). */
+  if (e.target.dataset.incfees !== undefined) {
+    if (e.target.checked) {
+      feeReveal = true;
+      App.setIncludeFees(true);
+    } else {
+      hideFeesThen(function () { App.setIncludeFees(false); });
+    }
     return;
   }
   if (e.target.dataset.cat !== undefined) {
@@ -635,6 +1063,10 @@ document.addEventListener('click', function (e) {
   var step = e.target.closest ? e.target.closest('.step') : null;
   if (step) { App.setStep(step.dataset.step); return; }
   if (e.target.id === 'implexport') { exportWorkbook(); return; }
+  var sched = e.target.closest ? e.target.closest('[data-feesched]') : null;
+  if (sched) { App.setFeeSchedule(sched.dataset.feesched); return; }
+  var level = e.target.closest ? e.target.closest('[data-feelevel]') : null;
+  if (level) { App.setFeeLevel(level.dataset.feelevel); return; }
   var rm = e.target.closest ? e.target.closest('[data-rmsleeve]') : null;
   if (rm) { App.chooseSleeve(rm.dataset.rmsleeve, null); return; }
   var retry = e.target.closest ? e.target.closest('.sl-retry') : null;
@@ -648,5 +1080,17 @@ document.addEventListener('click', function (e) {
 
 /* ensureLibraries runs first so a library kicked off this cycle already
    shows its loading state when the rail paints */
-App.addRenderer(function () { ensureLibraries(); renderRail(); renderView(); });
+App.addRenderer(function () {
+  ensureLibraries();
+  renderRail();
+  renderView();
+  /* Both painted from the same one-shot, so it is cleared once, here, and
+     the classes it wrote are stripped when they have finished playing. The
+     rail follows the block it just opened. */
+  if (feeReveal) {
+    feeReveal = false;
+    settleFeeReveal();
+    scrollFeeGroupIntoView(true);
+  }
+});
 })();

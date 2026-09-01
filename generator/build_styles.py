@@ -506,10 +506,10 @@ main{display:block}
 /* keyboard users can scroll the wide tables (spec 13.2) */
 .tblwrap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-/* sleeve tier: the auto-attached row and the per-select retry */
-.sl-auto{margin:0;font-size:13.5px;color:var(--rail-ink);
-  background:var(--rail-input-bg,#1D2F4B);border:1px solid var(--rail-input-border,#52739C);
-  border-radius:4px;padding:8px 11px}
+/* sleeve tier: the per-select retry. The auto-attached row it used to carry
+   is gone - a category whose sleeve is fixed by rule and put there by a
+   toggle needs no control in the rail, only the note that says it is in the
+   model (D53). */
 .sl-retry{font:inherit;font-size:12px;color:var(--rail-focus,#8FB4FF);background:none;
   border:1px solid var(--rail-input-border,#52739C);border-radius:4px;padding:4px 8px;
   cursor:pointer;justify-self:start}
@@ -639,8 +639,13 @@ RAIL_CSS = """
   background:var(--rail-bg);z-index:2}
 .rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
-.rail-brand>span{display:block;font-family:var(--f-num);margin-top:4px;font-size:11.5px;letter-spacing:.15em;
-  text-transform:uppercase;color:var(--rail-ink-3);font-family:var(--f-num)}
+/* The product line under the group name is the one place the rail carries a
+   colour of its own: the full #F3C46B, the same gold the placeholder-rates
+   flag carries. Chosen deliberately - the two are far apart in the rail and
+   read as one house accent rather than as a shared signal. 9.7:1 on the navy.
+   Its own token, so moving one does not move the other. */
+.rail-brand>span{display:block;font-family:var(--f-body);margin-top:4px;font-size:11.5px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--rail-eyebrow,var(--rail-ink-3))}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--rail-ink-3);font-weight:700;margin:0 0 4px}

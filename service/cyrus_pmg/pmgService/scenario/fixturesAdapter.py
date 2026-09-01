@@ -82,12 +82,13 @@ def _knob(name, default=''):
 class FixturesScenarioPort:
     """The eight methods over static data."""
 
-    def get_schema(self, basis: BasisInput, mandate: MandateInput):
+    def get_schema(self, basis: BasisInput, mandate: MandateInput, variant=None):
         if _knob('SCENARIO_FIXTURES_FAIL_SCHEMA') == '1':
             raise AnalyticsError('Fixture failure: schema unavailable.')
         mandateSize = mandate.mandateSize if mandate else None
+        topAccountSize = mandate.topAccountSize if mandate else None
         return rules.schemaPayload(basis, mandateSize, self.capabilities(),
-                                   self.describe())
+                                   self.describe(), variant, topAccountSize)
 
     def search_advisors(self, query: str, limit: int = 20):
         return advisors.searchAdvisors(query, limit)
@@ -159,10 +160,16 @@ class FixturesScenarioPort:
                      portfolios, implementation) -> bytes:
         if _knob('SCENARIO_FIXTURES_FAIL_EXPORT') == '1':
             raise AnalyticsError('Fixture failure: export unavailable.')
-        sleevesMap = (implementation or {}).get('sleeves', {})
-        variant = (implementation or {}).get('variant')
-        return writeFixturesWorkbook(basis, mandate, list(portfolios), sleevesMap,
-                                     rules.AUTO_SLEEVE_CATEGORIES, variant)
+        implementation = implementation or {}
+        return writeFixturesWorkbook(basis, mandate, list(portfolios),
+                                     implementation.get('sleeves', {}),
+                                     rules.AUTO_SLEEVE_CATEGORIES,
+                                     implementation.get('variant'),
+                                     bool(implementation.get('tacticalTilt')),
+                                     implementation.get('feeSchedule'),
+                                     implementation.get('feeLevel'),
+                                     implementation.get('includeFees', True),
+                                     bool(implementation.get('volPremium')))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

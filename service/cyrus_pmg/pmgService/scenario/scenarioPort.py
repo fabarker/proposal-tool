@@ -43,7 +43,8 @@ if TYPE_CHECKING:
 class ScenarioPort(Protocol):
     """Everything the UI needs from the host. Eight methods, no more."""
 
-    def get_schema(self, basis: "BasisInput", mandate: "MandateInput") -> "Schema":
+    def get_schema(self, basis: "BasisInput", mandate: "MandateInput",
+                   variant: str = None) -> "Schema":
         """Field definitions, option values, validation rules, and the set of
         (allocation, excludeRE, excludeTAA, riskLevel) combinations that have a
         stored portfolio for this currency, hedging policy AND mandate size.
@@ -90,7 +91,13 @@ class ScenarioPort(Protocol):
         implementation: "Implementation | None",
     ) -> bytes:
         """Return an .xlsx byte stream. The reference adapter calls
-        Reporting.generate_report(include_wealth_simulations=False)."""
+        Reporting.generate_report(include_wealth_simulations=False).
+
+        *implementation* carries ``sleeves``, ``variant``, ``tacticalTilt``,
+        ``volPremium``, ``includeFees``, ``feeSchedule`` and ``feeLevel``; the fee tier comes
+        from the mandate's top account size (D51). With ``includeFees`` false
+        the sheet carries no fee columns at all and no schedule is needed
+        (D52)."""
 
     def capabilities(self) -> dict:
         """{"canExport": bool, "canEdit": bool}. One role today; this is the seam."""

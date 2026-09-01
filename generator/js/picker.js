@@ -23,7 +23,9 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', mountPop);
 } else { mountPop(); }
 
-var cur = { allocation: '', excludeRE: false, excludeTAA: false, riskLevel: '' };
+/* excludeTAA is pinned true - the popover mirrors the base tier (D12), and
+   tactical allocation left the strategic step entirely (D50). */
+var cur = { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' };
 var opener = null;
 var justAdded = '';
 
@@ -89,8 +91,6 @@ function paint() {
     + ((cur.allocation && !canRE)
         ? '<p class="chk-note" id="prenote">Not available — ' + App.esc(cur.allocation)
           + ' holds no real estate.</p>' : '')
-    + '<div class="chk"><input type="checkbox" id="ptaa"' + (cur.excludeTAA ? ' checked' : '') + '>'
-    + '<label for="ptaa">Exclude Tactical Asset Allocation</label></div>'
     + '<div class="field"><label for="pr">Risk level</label><select id="pr"'
     + (cur.allocation ? '' : ' disabled') + '>' + riskOptions + '</select></div>'
     + '<div class="pop-actions">'
@@ -150,7 +150,6 @@ pop.addEventListener('change', function (e) {
     return;
   }
   if (e.target.id === 'pre') { cur.excludeRE = e.target.checked; paint(); return; }
-  if (e.target.id === 'ptaa') { cur.excludeTAA = e.target.checked; paint(); return; }
   if (e.target.id === 'pr') { cur.riskLevel = e.target.value || ''; paint(); return; }
 });
 

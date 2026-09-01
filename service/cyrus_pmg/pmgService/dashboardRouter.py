@@ -24,7 +24,8 @@ from cyrus_pmg.pmgService.core.accessControl import requireAuth, requireEditor
 from cyrus_pmg.pmgService.scenario import scenarioStore
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
-    exportFilename, validateBasis, validateVariant)
+    exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
+    validateKey, validateVariant)
 from cyrus_pmg.pmgService.scenario.sleeves import sleeveExists
 from cyrus_pmg.pmgService.scenario.types import (
     AnalyticsError,
@@ -66,6 +67,18 @@ def _analyticsError(exc: AnalyticsError):
     return JSONResponse(status_code=502, content={'error': str(exc)})
 
 
+def _includeFees(state: dict) -> bool:
+    """Whether the proposal shows fees at all (D52).
+
+    Absent means a scenario stored before the toggle existed. One that had
+    already chosen a schedule was showing fees, and keeps showing them; one
+    that never chose is left as a new scenario starts, with fees off.
+    """
+    if 'includeFees' in state:
+        return bool(state['includeFees'])
+    return bool(state.get('feeSchedule'))
+
+
 def _scenarioPayload(state: dict) -> dict:
     """A stored scenario as the wire shape of GET /scenario/{id}."""
     return {
@@ -75,7 +88,12 @@ def _scenarioPayload(state: dict) -> dict:
         'base': state['base'],
         'comparisons': state['comparisons'],
         'variant': state.get('variant'),
+        'tacticalTilt': bool(state.get('tacticalTilt', True)),
+        'volPremium': bool(state.get('volPremium', False)),
         'sleeves': state['sleeves'],
+        'includeFees': _includeFees(state),
+        'feeSchedule': state.get('feeSchedule'),
+        'feeLevel': state.get('feeLevel'),
     }
 
 
@@ -85,16 +103,27 @@ def _scenarioPayload(state: dict) -> dict:
 
 @router.get('/scenario/schema')
 def getScenarioSchema(currency: str = 'USD', hedging: str = 'Hedged',
-                      mandateSize: float = None):
-    """Field options, rules and the availability set (spec 3.4)."""
+                      mandateSize: float = None, variant: str = None,
+                      topAccountSize: float = None):
+    """Field options, rules and the availability set (spec 3.4).
+
+    *variant* narrows ``allocations`` and ``availability`` (D49). It is
+    optional because the schema is fetched once before a variant is chosen;
+    absent, no variant filter applies and the picker stays disabled
+    client-side until one is set.
+
+    *mandateSize* gates the $20m private-assets rule and *topAccountSize*
+    sets the fee tier (D51). Each binds only when given: a schema fetched
+    before the mandate exists carries every allocation and no fee rates.
+    """
     basis = BasisInput(currency=currency, hedging=hedging)
     try:
         validateBasis(basis)
         mandate = None
-        if mandateSize is not None:
-            mandate = MandateInput(topAccountSize=mandateSize,
+        if mandateSize is not None or topAccountSize is not None:
+            mandate = MandateInput(topAccountSize=topAccountSize,
                                    mandateSize=mandateSize, primaryPwa='')
-        return getScenarioPort().get_schema(basis, mandate)
+        return getScenarioPort().get_schema(basis, mandate, variant)
     except ValidationError as exc:
         return _validationError(exc)
     except AnalyticsError as exc:
@@ -161,9 +190,11 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                    user: str = Depends(requireEditor)):
     """Persist mandate, basis, variant or sleeve updates (deviations D2, D29).
 
-    Accepts any subset of {mandate, basis, variant, sleeves}. Mandate updates
-    are validated server-side; sleeve maps are checked against the library, and
-    auto-attached categories are refused so a client bug cannot store one.
+    Accepts any subset of {mandate, basis, variant, tacticalTilt, volPremium,
+    sleeves, includeFees, feeSchedule, feeLevel}. Mandate updates are validated server-side; sleeve
+    maps are checked against the library, and auto-attached categories are
+    refused so a client bug cannot store one. The fee schedule and level are
+    checked against the framework's lists (D51).
 
     Sleeve names are checked against the variant in force *after* this update,
     not the stored one, so a client may change variant and choose sleeves from
@@ -175,6 +206,8 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
     try:
         current = scenarioStore.getScenario(scenarioId)
         mandate = basis = sleeves = variant = None
+        tacticalTilt = feeSchedule = feeLevel = includeFees = None
+        volPremium = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
             port.validate_mandate(mandate)
@@ -184,6 +217,18 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         if 'variant' in payload:
             variant = payload['variant']
             validateVariant(variant)
+        if 'tacticalTilt' in payload:
+            tacticalTilt = bool(payload['tacticalTilt'])
+        if 'volPremium' in payload:
+            volPremium = bool(payload['volPremium'])
+        if 'includeFees' in payload:
+            includeFees = bool(payload['includeFees'])
+        if 'feeSchedule' in payload:
+            feeSchedule = payload['feeSchedule']
+            validateFeeSchedule(feeSchedule)
+        if 'feeLevel' in payload:
+            feeLevel = payload['feeLevel']
+            validateFeeLevel(feeLevel)
         if 'sleeves' in payload:
             from cyrus_pmg.pmgService.scenario.rules import AUTO_SLEEVE_CATEGORIES
             against = variant or current.get('variant')
@@ -205,7 +250,9 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                 sleeves[category] = name
         state = scenarioStore.updateScenario(
             scenarioId, mandate=mandate, basis=basis, sleeves=sleeves,
-            variant=variant)
+            variant=variant, tacticalTilt=tacticalTilt,
+            feeSchedule=feeSchedule, feeLevel=feeLevel,
+            includeFees=includeFees, volPremium=volPremium)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
@@ -230,6 +277,10 @@ def resolvePortfolio(scenarioId: str, payload: dict = Body(...),
         if role not in ('base', 'comparison'):
             raise ValidationError('role', 'role must be base or comparison.')
         basis = BasisInput.fromDict(state['basis'])
+        # The variant governs what may be built at all, so it is checked
+        # before the expensive call rather than after it (D49).
+        mandateSize = (state.get('mandate') or {}).get('mandateSize')
+        validateKey(key, state.get('variant'), mandateSize)
         try:
             result = port.resolve_portfolio(basis, key)
         except LookupError as exc:
@@ -263,8 +314,11 @@ def removePortfolio(scenarioId: str, portfolioKey: str,
 def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
     """The Excel workbook (spec 14). Assembled from stored scenario state.
 
-    Refuses (422) while no variant is chosen or a category lacks a sleeve -
-    the UI disables the button, the server re-enforces. Column payloads are
+    Refuses (422) while no variant is chosen, a category lacks a sleeve, or
+    the proposal includes fees and no schedule is chosen - the UI disables the
+    button, the server re-enforces. The fee level always has a value (the
+    store defaults it) but is validated all the same, since it is read back
+    from a file. Column payloads are
     re-resolved through the port, which is cheap when its caches are warm and
     correct when not.
     """
@@ -275,6 +329,15 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
             raise ValidationError('base', 'No base portfolio to implement.')
         variant = state.get('variant')
         validateVariant(variant)
+        # A proposal that excludes fees needs no schedule to export, and the
+        # sheet it produces carries no fee column to price (D52). One that
+        # includes them must have chosen one: there is no default.
+        includeFees = _includeFees(state)
+        feeSchedule = state.get('feeSchedule')
+        feeLevel = state.get('feeLevel')
+        if includeFees:
+            validateFeeSchedule(feeSchedule)
+            validateFeeLevel(feeLevel)
         basis = BasisInput.fromDict(state['basis'])
         mandate = MandateInput.fromDict(state['mandate'])
 
@@ -294,7 +357,11 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
                     ', '.join(missing)))
 
         content = port.build_export(basis, mandate, results,
-                                    {'sleeves': sleeves, 'variant': variant})
+                                    {'sleeves': sleeves, 'variant': variant,
+                                     'tacticalTilt': bool(state.get('tacticalTilt', True)),
+                                     'volPremium': bool(state.get('volPremium', False)),
+                                     'includeFees': includeFees,
+                                     'feeSchedule': feeSchedule, 'feeLevel': feeLevel})
         filename = exportFilename(basis)
         return Response(
             content=content,

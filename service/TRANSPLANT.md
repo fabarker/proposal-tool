@@ -58,12 +58,39 @@ What the host swaps later, behind unchanged functions, when real sources
 arrive — all internal to the package, no caller changes:
 
 * `sleeves.py` tables → the PMG-maintained sleeve library, **for all four
-  implementation variants** (data ownership is the flagged open PMG question).
+  implementation variants**; data ownership is the flagged open PMG question.
   `BASELINE` plus `_VARIANT_OFFERS` compose into `SLEEVE_LIBRARY`; the only
   contract the rest of the package depends on is `VARIANTS`, `listSleeves(
   category, variant)` and `sleeveExists(category, name, variant)`. The three
   non-Multi-Asset libraries are invented — spec open item 18, and the one
   thing here that must not reach a client as it stands (D29).
+* `rules.TACTICAL_TILT_PCT` / `_FUNDED_FROM` / `_CATEGORY` → PMG's own tilt
+  size and funding source (D50). Changing the percentage is a constant;
+  changing the funding category is a constant plus a re-check that every
+  offered portfolio can fund it, which `canFundTacticalTilt` already gates.
+* `fees.json` → the published CASP and RDR schedules (D51). **Every rate in
+  the file is a placeholder** and the file says so (`"placeholder": true`);
+  the rail shows a flag until it is cleared. The tiers, the six levels and
+  both grids are read from the file, so the published schedule's own tier
+  edges and rates drop in without touching `fees.py`; `_assertWellFormed`
+  rejects a file with gaps, overlapping tiers or a floor above its ceiling
+  at import. The products' `feeGroup` values in `sleeves.py` are assigned by
+  a rule of thumb (passive, core active, specialist active, alternatives,
+  asset allocation) and want confirming against PMG's own grouping when the
+  library is swapped. None of it is reached at all until a PWA ticks
+  **Include fees** (D52), which a new scenario starts without.
+* The **Strategic Volatility Premium** product and its *Hybrid Fixed Income*
+  category (D53). Everything about it is stub data on the same footing as the
+  rest of the library — the ticker, the 0.65% product cost and the
+  *Specialist Active* fee group are placeholders — and it is offered under all
+  four variants from one definition. `rules.VOL_PREMIUM_SHARE` (0.075),
+  `VOL_PREMIUM_FUNDED_FROM` and `VOL_PREMIUM_CURRENCIES` are the constants to
+  confirm with PMG; changing any of them is a one-line change that both the
+  server and the page pick up, since the page reads all three from the schema.
+* `rules.VARIANT_ALLOCATIONS` and `rules.VARIANTS_EXCLUDING_RE` → the same
+  question for the *allocations* each variant may hold, which is a stricter
+  rule than the sleeves: it decides what can be built at all (D49). Confirm
+  this table with PMG alongside the libraries above.
 * `advisors.py` workbook read → the production advisor table (open item 7).
 * `portfolio_weights.py` synthetic anchors → approved stored allocations (the
   module's own docstring: "replace the constants before production use").

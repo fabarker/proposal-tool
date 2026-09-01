@@ -155,7 +155,9 @@ python3 -m cyrus_pmg.pmgService.scenario.bake --all --workers 4
 Run on a data refresh, not at request time — re-run it when `dataversion` changes, since that
 is what makes a bake stale.
 
-**What is baked here is USD only**: 4 hedging policies × 68 portfolios = 272 payloads. GBP has
+**What is baked here is USD only**: 4 hedging policies × 68 portfolios = 272 payloads. Half of
+those are now unreachable — since D50 every key is `excludeTAA=1`, so 34 per slice are served and
+the rest are dead weight the next bake will drop. GBP has
 a currency config on the development database and has not been baked; CHF and EUR have no
 config there at all. On the host, bake every currency you intend to offer, or the uncovered
 ones fall through to the live adapter at ~97s a portfolio.
@@ -202,13 +204,43 @@ The interface moved on from the specification in a number of places while it was
 — the topbar is gone, the base column is headed "Proposed Portfolio", the risk dashboard's
 premia are banded by measure, and the tables size their own columns.
 **`spec.html` revision 6 describes what is there now**, and its §1.5 maps every changed
-section to the entry in **`service/DEVIATIONS.md`** (D20–D48) that explains it. Four matter
+section to the entry in **`service/DEVIATIONS.md`** (D20–D53) that explains it. Eight matter
 for a port:
 
-- **D29**, implementation variants — step 2 opens on a required choice of one of four product
-  universes, which changes the `list_sleeves` signature and adds `variant` to scenario state.
+- **D29/D49**, implementation variants — one of four product universes, chosen in the base
+  portfolio tier of step 1 *before* the allocation, because it restricts which allocations
+  exist (onshore books hold no alternatives; ESG forces the real-estate exclusion). It changes
+  the `list_sleeves` signature, adds `variant` to scenario state, and is taken by
+  `get_schema`, `allocationsFor` and `availability`.
 - **D35/D36**, naming — the risk level is shown by a label served in the schema while the key
   keeps its short value, so nothing about the availability set or the bake changes.
+- **D50**, tactical allocation — no longer strategic. Every key is `excludeTAA=1` (which is why
+  availability is 34 per currency, not 68) and the tilt is an implementation toggle: 8% funded from
+  Investment Grade Fixed Income, applied in `rules.tiltedCategories` and its JavaScript mirror. It
+  never re-resolves, so it adds no analytics cost and no bake dimension.
+- **D51**, management fees — resolved, not carried. A product has a fee group; the fee comes
+  from the schedule (CASP or RDR), the top account size's tier and one of six fee levels, all
+  read from `service/cyrus_pmg/pmgService/scenario/fees.json` by `fees.py`. **The rates in
+  that file are invented placeholders** — swapping in the published schedule is a data change.
+  It adds `feeSchedule`/`feeLevel` to scenario state, a `fees` block to `get_schema` (the
+  tier's rates only, so the page never sees the whole table) and both to `build_export`; the
+  workbook gains a *Fee group* column and three header rows. No bake dimension: fees are
+  priced from the schema on the page and from the file in the workbook.
+- **D53**, the strategic volatility premium — a second implementation overlay beside the tilt.
+  A toggle introduces a *Hybrid Fixed Income* category holding one product, weighted at
+  `rules.VOL_PREMIUM_SHARE` of Investment Grade Fixed Income after the tilt has been funded
+  out of it and funded pro rata from the same products, inserted directly after its funding
+  category. Enabled in USD and GBP only, and that rule is applied in `volPremiumCategories`
+  as well as on the toggle. It adds `volPremium` to scenario state and to `implementation`,
+  a second entry to `AUTO_SLEEVE_CATEGORIES`, four keys to the schema's `rules` block, and a
+  `currency` argument to `buildImplementationRows`. No bake dimension: like the tilt it moves
+  weight between implemented categories and never re-resolves a portfolio.
+- **D52**, fees are optional — a proposal shows none until an **Include fees** tick box asks
+  for them, and a new scenario starts with it off. It adds `includeFees` to scenario state and
+  to `implementation`, and `workbook.implColumns(includeFees)` decides whether the sheet is
+  fourteen columns or eleven. Two consequences to carry across: the export needs no fee
+  schedule when fees are excluded, and a scenario stored without the field takes it from
+  whether a schedule was ever chosen.
 - **D47**, the `engine.py` seam described in §2.
 - **D48**, the renames that came with it — see *Carried over* below.
 
@@ -226,6 +258,10 @@ Things a porter will meet that are not defects in the port itself:
   from baked data shows the old form. Fixed by a re-bake, or by migrating the stored fields.
 - **Sleeve libraries for three of the four variants are invented.** Only PMG Multi-Asset is
   real. Spec open item 18, and the one thing here that must not reach a client as it stands.
+- **The per-variant allocation table is authored here**, in `rules.VARIANT_ALLOCATIONS` and
+  `rules.VARIANTS_EXCLUDING_RE`. It encodes what was specified — Multi-Asset all four, ESG
+  `Ex HFs`/`Ex Alts` with real estate off, US and Irish Onshore `Ex Alts` — and is the table
+  to confirm with PMG alongside the sleeve libraries.
 
 ## Not addressed
 
@@ -245,6 +281,6 @@ Things a porter will meet that are not defects in the port itself:
 |---|---|
 | `service/README.md` | running it, the wire contract, the three adapters, baking |
 | `service/TRANSPLANT.md` | the porting list, file by file |
-| `service/DEVIATIONS.md` | every departure from the package, D1–D48, the adapter-side decisions, and the spec gaps found (G1–G8) |
+| `service/DEVIATIONS.md` | every departure from the package, D1–D50, the adapter-side decisions, and the spec gaps found (G1–G8) |
 | `service/PERFORMANCE.md` | the analytics profile, its causes, and the measurements |
 | `spec.html` | revision 6 — what the tool does, §1.5 mapping the changes |
