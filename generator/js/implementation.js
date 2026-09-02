@@ -42,6 +42,38 @@ function pillFor(v) {
 
 function isAuto(category) { return App.autoSleeveCategories().indexOf(category) >= 0; }
 
+/* Sleeve groups (D60): categories implemented together, which therefore carry
+   one sleeve chosen once. The grouping rides the schema, so this file names no
+   category - THE PYTHON MIRROR is rules.sleeveCategory / rules.sleeveCategories
+   and the two must agree, or the rail would offer a choice the export gate
+   does not ask for. */
+function sleeveGroups() { return App.opt('rules.sleeveGroups', []) || []; }
+
+function sleeveCategory(category) {
+  var groups = sleeveGroups();
+  for (var i = 0; i < groups.length; i += 1) {
+    if ((groups[i].categories || []).indexOf(category) !== -1) return groups[i].name;
+  }
+  return category;
+}
+
+/* The categories reduced to the things a sleeve is chosen FOR, each carrying
+   the summed weight of what it stands for. */
+function sleeveCategories(categories) {
+  var out = [], byName = {};
+  categories.forEach(function (entry) {
+    var name = sleeveCategory(entry.name);
+    if (byName[name]) {
+      byName[name].weightPct += entry.weightPct;
+      byName[name].members.push(entry.name);
+      return;
+    }
+    byName[name] = { name: name, weightPct: entry.weightPct, members: [entry.name] };
+    out.push(byName[name]);
+  });
+  return out;
+}
+
 /* ---- the management fee (D51) -------------------------------------------
    Not a property of the product. It is resolved from the fee schedule, the
    fee level and - under a schedule that prices by group - the product's fee
@@ -190,10 +222,11 @@ function strategicCategories() {
    variant-specific too, so it cannot be attached earlier either (D29). */
 function sleeveFor(category) {
   if (!App.variant()) return null;
-  var lib = App.sleeveLib()[category];
+  var under = sleeveCategory(category);
+  var lib = App.sleeveLib()[under];
   if (!lib || lib.status !== 'ready') return null;
   if (isAuto(category)) return lib.sleeves[0] || null;
-  var name = App.sleeves()[category];
+  var name = App.sleeves()[under];
   if (!name) return null;
   for (var i = 0; i < lib.sleeves.length; i++) {
     if (lib.sleeves[i].name === name) return lib.sleeves[i];
@@ -203,13 +236,13 @@ function sleeveFor(category) {
 
 function ensureLibraries() {
   if (App.step() !== 'impl' || !App.variant()) return;
-  baseCategories().forEach(function (category) {
+  sleeveCategories(baseCategories()).forEach(function (category) {
     App.ensureSleeveLib(category.name);
   });
 }
 
 function filledCount() {
-  var live = baseCategories();
+  var live = sleeveCategories(baseCategories());
   var filled = 0;
   live.forEach(function (category) { if (sleeveFor(category.name)) filled += 1; });
   return { filled: filled, total: live.length };
@@ -221,7 +254,7 @@ function filledCount() {
    complete() keeps using filledCount - the gate is about the whole model,
    including a category whose library has not loaded yet. */
 function pickedCount() {
-  var live = baseCategories().filter(function (c) { return !isAuto(c.name); });
+  var live = sleeveCategories(baseCategories()).filter(function (c) { return !isAuto(c.name); });
   var filled = 0;
   live.forEach(function (category) { if (sleeveFor(category.name)) filled += 1; });
   return { filled: filled, total: live.length };
@@ -367,6 +400,7 @@ function volPremiumField() {
 var FEE_MOTION = 360;                 /* ms; the fee reveal, in and out */
 var feeReveal = false;
 var feeHiding = false;
+var railPadWas = null;                /* the rail's own padding, while borrowed */
 
 function reducedMotion() {
   return !!(window.matchMedia
@@ -399,10 +433,48 @@ function scrollFeeGroupIntoView(smooth) {
   if (!rail || !group || rail.scrollHeight <= rail.clientHeight) return;
   var railBox = rail.getBoundingClientRect();
   var groupBox = group.getBoundingClientRect();
-  if (groupBox.top >= railBox.top && groupBox.bottom <= railBox.bottom) return;
+  /* Judge the guard on the height the body is growing INTO, not the height it
+     has this frame. The unravel clips it with max-height, so for the first
+     frames the group is short enough to look as though it already fits, the
+     guard returns, and the only scroll left is the one settleFeeReveal fires
+     on animationend - which is what made the rail appear to wait for the
+     table. scrollHeight sees past the clip, so the decision is the same at
+     the start of the animation as at the end and the two move together. */
+  var body = group.querySelector('.fee-body');
+  var pending = body
+    ? Math.max(0, body.scrollHeight - body.getBoundingClientRect().height)
+    : 0;
+  if (groupBox.top >= railBox.top
+      && groupBox.bottom + pending <= railBox.bottom) return;
   var brand = rail.querySelector('.rail-brand');
   var pad = (brand ? brand.offsetHeight : 0) + 10;
   var top = rail.scrollTop + (groupBox.top - railBox.top) - pad;
+  /* The clip shortens the rail's own scroll range as well, so the browser
+     clamps this scroll to whatever range exists mid-animation and the rest is
+     made up only once the block has grown - which is the staging this exists
+     to remove, one layer down. Borrow exactly the shortfall as padding so the
+     range the scroll needs is there when it is issued, and hand it back when
+     the block has grown into it: by then the real content occupies that space,
+     so the scroll position does not move when the padding goes.
+
+     Never borrow more than the block will actually add. The target can sit
+     past the end of the rail - a group near the foot cannot be brought to the
+     top of a viewport that has nothing left beneath it - and padding past that
+     point buys a scroll that snaps back the moment it is handed in, which is a
+     worse jump than the one being fixed. Capped here, the scroll goes as far
+     as it can while the block grows, and settleFeeReveal takes up any few
+     pixels left when the rest of the rail settles. */
+  var shortfall = Math.min(
+    Math.round(top - (rail.scrollHeight - rail.clientHeight)),
+    Math.round(pending));
+  if (shortfall > 0 && railPadWas === null) {
+    railPadWas = rail.style.paddingBottom;
+    var own = parseFloat(window.getComputedStyle(rail).paddingBottom) || 0;
+    rail.style.paddingBottom = (own + shortfall) + 'px';
+    /* animationend is the normal release; this is the backstop for a render
+       that replaces the node mid-play, where it never fires. */
+    window.setTimeout(releaseRailPad, FEE_MOTION + 80);
+  }
   if (rail.scrollTo) {
     rail.scrollTo({ top: top, behavior: (smooth && !reducedMotion()) ? 'smooth' : 'auto' });
   } else {
@@ -417,6 +489,13 @@ function scrollFeeGroupIntoView(smooth) {
    correction is smooth too: an instant one on top of the smooth scroll that
    is still running is exactly the jump it exists to avoid, and where the
    first scroll already arrived it is a no-op. */
+function releaseRailPad() {
+  if (railPadWas === null) return;
+  var rail = document.querySelector('.rail');
+  if (rail) rail.style.paddingBottom = railPadWas;
+  railPadWas = null;
+}
+
 function settleFeeReveal() {
   var played = document.querySelectorAll('.fee-body.unravel, .tbl.impl.fees-in');
   Array.prototype.forEach.call(played, function (node) {
@@ -424,7 +503,10 @@ function settleFeeReveal() {
       node.removeEventListener('animationend', handler);
       node.classList.remove('unravel');
       node.classList.remove('fees-in');
-      if (node.classList.contains('fee-body')) scrollFeeGroupIntoView(true);
+      if (node.classList.contains('fee-body')) {
+        releaseRailPad();
+        scrollFeeGroupIntoView(true);
+      }
     });
   });
 }
@@ -462,11 +544,15 @@ function feeFields() {
     + '<div class="chk"><input type="checkbox" id="implincfees" data-incfees'
     + (on ? ' checked' : '') + (editable ? '' : ' disabled')
     + ' aria-describedby="incfeesnote">'
-    + '<label for="implincfees">Include fees</label></div>'
+    + '<label for="implincfees">Include Fees</label></div>'
     + '<p class="chk-note" id="incfeesnote">' + (on
         ? 'Fee columns are shown in the table and written to the workbook.'
         : 'The proposal shows no fees. Tick to price the model.')
-    + '</p></div>';
+    + '</p>'
+    /* the card is read only: this opens it, nothing here changes it (D55) */
+    + '<button type="button" class="btn btn-ghost fee-view" data-feeview>'
+    + 'View fee card</button>'
+    + '</div>';
   if (!on) return head + '</div>';
 
   var seg = schedules.map(function (s) {
@@ -479,13 +565,17 @@ function feeFields() {
   var html = head
     + '<div class="fee-body' + (feeReveal ? ' unravel' : '') + '">'
     + '<div class="fee-field' + (chosen ? ' done' : '') + '">'
-    + '<span class="fee-label" id="feeschedlabel">Fee schedule</span>'
+    + '<span class="fee-label" id="feeschedlabel">Fee Schedule</span>'
     + '<div class="fee-seg" role="group" aria-labelledby="feeschedlabel">' + seg + '</div>'
     + '<p class="vr-note">' + (entry
         ? App.esc(entry.note || '')
         : 'Choose how the book is priced. Nothing is priced until it is chosen.')
     + '</p></div>';
 
+  /* The level is one value with two halves - a source and a point on that
+     source's band - so it is chosen as two segmented controls stacked, the
+     same control the schedule uses above. A combination the framework does
+     not price is offered disabled rather than composed and refused. */
   var sources = App.opt('fees.sources', []);
   var points = App.opt('fees.points', []);
   var levels = App.opt('fees.levels', []);
@@ -495,28 +585,256 @@ function feeFields() {
     }
     return null;
   }
-  var grid = '';
-  sources.forEach(function (source) {
-    grid += '<span class="rh">' + App.esc(source) + '</span>';
-    points.forEach(function (point) {
-      var id = idFor(source, point);
-      grid += '<button type="button" data-feelevel="' + App.esc(id || '') + '"'
-        + ' aria-pressed="' + (id && id === level ? 'true' : 'false') + '"'
-        + ' aria-label="' + App.esc(id || point) + '"'
-        + (editable && id ? '' : ' disabled') + '>' + App.esc(point) + '</button>';
-    });
-  });
+  var chosenLevel = levels.filter(function (l) { return l.id === level; })[0] || null;
+  var curSource = chosenLevel ? chosenLevel.source : (sources[0] || null);
+  var curPoint = chosenLevel ? chosenLevel.point : (points[0] || null);
+
+  /* Both controls are sized from the schema's own lists, not from a count
+     written here: a framework that priced four points would still lay out. */
+  function segment(values, chosen, other, attribute, resolve, label) {
+    var buttons = values.map(function (value) {
+      var id = resolve(value, other);
+      return '<button type="button" ' + attribute + '="' + App.esc(value) + '"'
+        + ' aria-pressed="' + (value === chosen ? 'true' : 'false') + '"'
+        + ' aria-label="' + App.esc(id || value) + '"'
+        + (editable && id ? '' : ' disabled') + '>' + App.esc(value) + '</button>';
+    }).join('');
+    return '<div class="fee-seg" role="group" aria-label="' + App.esc(label) + '"'
+      + ' style="grid-template-columns:repeat(' + values.length + ',1fr)">'
+      + buttons + '</div>';
+  }
+
   html += '<div class="fee-field done">'
-    + '<span class="fee-label" id="feelevellabel">Fee level</span>'
-    + '<div class="fee-levels" role="group" aria-labelledby="feelevellabel">' + grid + '</div>'
+    + '<span class="fee-label" id="feelevellabel">Fee Level</span>'
+    + segment(sources, curSource, curPoint, 'data-feesource',
+              function (source, point) { return idFor(source, point); }, 'Fee source')
+    + segment(points, curPoint, curSource, 'data-feepoint',
+              function (point, source) { return idFor(source, point); }, 'Fee Level point')
     + '<p class="vr-note">' + (tier
         ? 'Tier ' + App.esc(tier.id) + ', ' + App.esc(tier.label) + ', from the top account size.'
         : 'No account-size tier: the mandate has no top account size.')
     + '</p>'
     + (App.opt('fees.placeholder', false)
         ? '<p class="fee-flag">Placeholder rates, not the published schedule.</p>' : '')
+    + feeCardLine()
     + '</div></div></div>';
   return html;
+}
+
+/* The card's own line under the level: which delivery priced this book. */
+function feeCardLine() {
+  var delivery = App.opt('fees.delivery', null) || {};
+  return '<p class="fee-card">Card ' + App.esc(delivery.version || 'unversioned') + '</p>';
+}
+
+/* ---- the rate card viewer (D55) -------------------------------------------
+   Every cell at one tier or one fee group, read only. The card is what the
+   delivering team sent; it changes by delivery (feeTools --accept), never
+   here, so there is nothing to type into and nothing to save. The whole card
+   is fetched once and pivoted in the client, so flipping the axis or the
+   selection is instant. */
+var feePanel = { open: false, card: null, pivot: 'group', tier: null, group: 0,
+                 error: null, busy: false };
+
+function feeCellKey(schedule, group, tier, source, point) {
+  return [schedule, group || '', tier, source, point].join('|');
+}
+
+async function loadFeeCard() {
+  feePanel.busy = true; renderFeePanel();
+  try {
+    var resp = await fetch(window.API_BASE + '/scenario/fees?whole=1',
+                           { credentials: 'same-origin' });
+    var data = null;
+    try { data = await resp.json(); } catch (e) { /* no body */ }
+    if (!resp.ok) {
+      if (data && data.loginUrl) { window.location = data.loginUrl; return; }
+      throw new Error((data && data.error) || ('Could not load the card (' + resp.status + ')'));
+    }
+    feePanel.card = data;
+    feePanel.error = null;
+  } catch (err) { feePanel.error = err.message; }
+  feePanel.busy = false;
+  renderFeePanel();
+}
+
+async function openFeePanel(groupName) {
+  var tier = App.opt('fees.tier', null);
+  feePanel.open = true;
+  feePanel.tier = tier ? tier.id : null;    /* the by-tier chooser starts here... */
+  feePanel.mandateTier = tier ? tier.id : null;   /* ...and this one never moves */
+  feePanel.error = null;
+  feePanel.returnTo = document.activeElement;
+  renderFeePanel();
+  await loadFeeCard();
+  /* Opened AT a fee group - from the catalogue's drawer (D58) - the card
+     arrives pivoted to that group's ladder, which is the one thing about a
+     product the catalogue cannot show. */
+  if (groupName && feePanel.card) {
+    var at = feePanel.card.groups.findIndex(function (g) { return g.feeGroup === groupName; });
+    if (at !== -1) { feePanel.pivot = 'group'; feePanel.group = at; renderFeePanel(); }
+  }
+  var sel = document.getElementById('feeaxis');
+  if (sel) sel.focus();
+}
+
+function closeFeePanel() {
+  feePanel.open = false; feePanel.card = null; feePanel.error = null;
+  renderFeePanel();
+  var trigger = feePanel.returnTo && document.contains(feePanel.returnTo)
+    ? feePanel.returnTo : document.querySelector('[data-feeview]');
+  feePanel.returnTo = null;
+  if (trigger && trigger.focus) trigger.focus();
+}
+
+function feeGroupLabel(entry) {
+  return entry.feeGroup ? entry.schedule + ' · ' + entry.feeGroup
+    : entry.schedule + ' · one rate for every product';
+}
+
+/* The card pivots on which axis is a whole table and which is one choice.
+   By fee group: a group's ladder down the tiers - the shape a rate card is
+   published in. By tier: everything that prices at one account size. */
+function feePivot() {
+  var card = feePanel.card;
+  if (feePanel.pivot === 'group') {
+    var group = card.groups[Math.min(feePanel.group, card.groups.length - 1)];
+    return {
+      rowHead: 'Account-size tier',
+      rows: card.tiers.map(function (t) {
+        return { label: t.id, sub: t.label, mark: t.id === feePanel.mandateTier,
+                 key: function (src, pt) {
+                   return feeCellKey(group.schedule, group.feeGroup, t.id, src, pt);
+                 } };
+      })
+    };
+  }
+  var tierId = feePanel.tier || card.tiers[0].id;
+  return {
+    rowHead: 'Schedule / fee group',
+    rows: card.groups.map(function (g) {
+      return { label: g.schedule, sub: g.feeGroup || 'one rate for every product',
+               mark: !!(App.feeSchedule && App.feeSchedule() === g.schedule),
+               key: function (src, pt) {
+                 return feeCellKey(g.schedule, g.feeGroup, tierId, src, pt);
+               } };
+    })
+  };
+}
+
+function renderFeePanel() {
+  var host = document.getElementById('feeDialog'); if (!host) return;
+  if (!feePanel.open) {
+    host.innerHTML = ''; host.hidden = true; App.setBackgroundInert(false); return;
+  }
+  host.hidden = false;
+  App.setBackgroundInert(true);
+  var card = feePanel.card;
+  var delivery = (card && card.delivery) || App.opt('fees.delivery', {}) || {};
+  var placeholder = App.opt('fees.placeholder', false);
+
+  /* The level this mandate prices at - the scenario's own, or the framework's
+     default when none is chosen yet. It is one column of the grid, and the
+     one a reader is looking for. */
+  var levelId = (App.feeLevel && App.feeLevel()) || null;
+  var byGroupPivot = feePanel.pivot === 'group';
+  var mandateTier = feePanel.mandateTier;
+  var tierLabel = function (id) {
+    var t = card && card.tiers.filter(function (x) { return x.id === id; })[0];
+    return t ? t.label : id;
+  };
+
+  var controls = '', table = '', legend = '';
+  if (card) {
+    var options = byGroupPivot
+      ? card.groups.map(function (g, i) {
+          return '<option value="' + i + '"' + (i === feePanel.group ? ' selected' : '') + '>'
+            + App.esc(feeGroupLabel(g)) + '</option>';
+        }).join('')
+      : card.tiers.map(function (t) {
+          return '<option value="' + App.esc(t.id) + '"'
+            + (t.id === (feePanel.tier || card.tiers[0].id) ? ' selected' : '') + '>'
+            + App.esc(t.id + ' · ' + t.label + (t.id === mandateTier ? ' · this mandate' : '')) + '</option>';
+        }).join('');
+    controls = '<div class="rc-controls">'
+      + '<div class="rc-seg" role="tablist" aria-label="Pivot">'
+      + '<button type="button" role="tab" data-feepivot="group" aria-selected="' + (byGroupPivot ? 'true' : 'false') + '">By fee group</button>'
+      + '<button type="button" role="tab" data-feepivot="tier" aria-selected="' + (byGroupPivot ? 'false' : 'true') + '">By tier</button>'
+      + '</div>'
+      + '<label class="sr-only" for="feeaxis">' + (byGroupPivot ? 'Schedule and fee group' : 'Account-size tier') + '</label>'
+      + '<select id="feeaxis" class="rc-axis">' + options + '</select>'
+      + '</div>';
+
+    var pivot = feePivot();
+    var isLevel = function (src, pt) { return levelId === src + ' ' + pt; };
+    var head1 = '<tr><th rowspan="2" class="rowhead">' + App.esc(pivot.rowHead) + '</th>'
+      + card.sources.map(function (src) {
+          return '<th colspan="' + card.points.length + '" class="src rc-grp"><span>' + App.esc(src) + '</span></th>';
+        }).join('') + '</tr>';
+    var head2 = '<tr>' + card.sources.map(function (src) {
+        return card.points.map(function (pt, i) {
+          var lvl = isLevel(src, pt);
+          return '<th class="pt' + (i === 0 ? ' rc-grp' : '') + (lvl ? ' lvl' : '') + '">'
+            + App.esc(pt) + (lvl ? '<small>fee level</small>' : '') + '</th>';
+        }).join('');
+      }).join('') + '</tr>';
+    var body = pivot.rows.map(function (row) {
+      var head = '<th scope="row" class="rowhead">'
+        + '<span class="rc-id">' + App.esc(row.label) + '</span>'
+        + '<span class="rc-lbl">' + App.esc(row.sub) + '</span>'
+        /* by tier, the marked rows are a whole schedule and the key names it;
+           a tag on each of five rows would say the same thing five times */
+        + (row.mark && byGroupPivot ? '<span class="rc-tag">this mandate</span>' : '')
+        + '</th>';
+      var cells = card.sources.map(function (src) {
+        return card.points.map(function (pt, i) {
+          var rate = card.cells[row.key(src, pt)];
+          var lvl = isLevel(src, pt);
+          /* the one cell that is this mandate's rate: its tier, its level */
+          var ring = byGroupPivot && row.mark && lvl;
+          return '<td class="rate' + (i === 0 ? ' rc-grp' : '') + (lvl ? ' lvl' : '') + (ring ? ' ring' : '') + '">'
+            + (typeof rate === 'number' ? rate.toFixed(2) : '—') + '</td>';
+        }).join('');
+      }).join('');
+      return '<tr' + (row.mark ? ' class="mark"' : '') + '>' + head + cells + '</tr>';
+    }).join('');
+    table = '<div class="rc-wrap"><table class="rate-grid"><thead>' + head1 + head2
+      + '</thead><tbody>' + body + '</tbody></table></div>';
+
+    var keys = ['<span><i class="k-unit"></i>Annual management fee, percent</span>'];
+    if (levelId) keys.push('<span><i class="k-lvl"></i>' + App.esc(levelId) + ' — the level this proposal prices at</span>');
+    if (byGroupPivot && mandateTier) {
+      keys.push('<span><i class="k-mark"></i>' + App.esc(mandateTier + ' · ' + tierLabel(mandateTier)) + ' — this mandate’s tier</span>');
+      if (levelId) keys.push('<span><i class="k-ring"></i>This mandate’s rate on the schedule shown</span>');
+    } else if (!byGroupPivot && App.feeSchedule && App.feeSchedule()) {
+      keys.push('<span><i class="k-mark"></i>' + App.esc(App.feeSchedule()) + ' — this proposal’s schedule</span>');
+    }
+    legend = '<p class="rc-legend">' + keys.join('') + '</p>';
+  } else if (!feePanel.error) {
+    table = '<p class="rc-loading">Loading the card…</p>';
+  }
+
+  host.innerHTML =
+      '<div class="scrim" data-feescrim></div>'
+    + '<div class="dialog wide rc" role="dialog" aria-modal="true" aria-labelledby="feeTitle">'
+    + '<button type="button" class="dlg-close" id="feeclose" aria-label="Close">×</button>'
+    + '<div class="rc-head">'
+    + '<h2 id="feeTitle">Fee card</h2>'
+    + '<p class="rc-meta">'
+    + '<span>Delivery <b>' + App.esc(delivery.version || 'unversioned') + '</b></span>'
+    + (delivery.asOf ? '<span>as of <b>' + App.esc(delivery.asOf) + '</b></span>' : '')
+    + (delivery.source ? '<span>from <b>' + App.esc(delivery.source) + '</b></span>' : '')
+    + '</p>'
+    + (placeholder ? '<span class="rc-flag">Placeholder rates</span>' : '')
+    + '</div>'
+    + controls
+    + table
+    + legend
+    + (feePanel.error ? '<p class="md-err" role="alert">' + App.esc(feePanel.error) + '</p>' : '')
+    + '<div class="rc-actions">'
+    + '<span class="rc-note">The card is delivered and read only — it changes by delivery, not here.</span>'
+    + '<button type="button" class="btn btn-primary" id="feecancel">Close</button>'
+    + '</div></div>';
 }
 
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
@@ -532,10 +850,19 @@ function renderRail() {
      chosen with the base portfolio, and nothing resolves without it (D49) -
      so the summary sits above the base-status returns and reads the same
      whether the base is ready, resolving or failed. */
-  var head = '<div class="tier-h"><h3>Sleeves</h3>'
+  /* The admin shortcut sits on the heading rather than on every picker row:
+     one control for the tier, opening the repository on the implementation
+     type already chosen, rather than five that each say the same thing (D62). */
+  var head = '<div class="tier-h"><h3>Sleeves</h3><span class="tier-h-r">'
     + (chosenVariant && base && base.status === 'ready'
         ? '<span class="tier-count">' + counts.filled + ' of ' + counts.total + '</span>'
-        : '') + '</div>' + tacticalTiltField() + volPremiumField();
+        : '')
+    + (App.opt('capabilities.canAdmin', false)
+        ? '<button type="button" class="tier-admin" data-openrepo'
+          + ' aria-label="Open the sleeve repository" title="Sleeve repository">'
+          + '<svg viewBox="0 0 20 20" aria-hidden="true"><use href="#i-sleeves"/></svg></button>'
+        : '')
+    + '</span></div>' + tacticalTiltField() + volPremiumField();
 
   /* Pricing closes the tier on every path, including the ones that never draw
      a picker: the schedule and the level are scenario state, answerable while
@@ -571,7 +898,7 @@ function renderRail() {
      control for it would be a control that can never be used; the count and
      the note below say it is in the model (D53). */
   html += '<div class="sl-list">';
-  baseCategories().filter(function (category) {
+  sleeveCategories(baseCategories()).filter(function (category) {
     return !isAuto(category.name);
   }).forEach(function (category, i) {
     var lib = App.sleeveLib()[category.name];
@@ -730,7 +1057,7 @@ function renderDonuts(groups, done) {
      from 100% of the portfolio, and the note says so rather than letting the
      chart imply the model is finished. */
   return '<div class="impl-viz"><div class="impl-viz-head">'
-    + '<h3>Composition of the implemented model</h3>'
+    + '<h3>Composition of the Implemented Model</h3>'
     + '<p class="sec-note">Share of allocation by product attribute'
     + (done ? '.' : ', across the ' + App.num(attached, 2, '%')
         + ' attached so far &mdash; not of the whole portfolio.')
@@ -1015,8 +1342,17 @@ async function exportWorkbook() {
 }
 
 /* ---- events ------------------------------------------------------------- */
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && feePanel.open) closeFeePanel();
+});
 document.addEventListener('change', function (e) {
   if (!e.target.dataset) return;
+  if (e.target.id === 'feeaxis') {
+    if (feePanel.pivot === 'group') feePanel.group = parseInt(e.target.value, 10) || 0;
+    else feePanel.tier = e.target.value;
+    renderFeePanel();                    /* the card is already here: no fetch */
+    return;
+  }
   if (e.target.dataset.tilt !== undefined) {
     App.setTacticalTilt(e.target.checked);
     return;
@@ -1043,11 +1379,43 @@ document.addEventListener('change', function (e) {
 document.addEventListener('click', function (e) {
   var step = e.target.closest ? e.target.closest('.step') : null;
   if (step) { App.setStep(step.dataset.step); return; }
+  /* the rate card panel (D55) */
+  if (e.target.closest && e.target.closest('[data-openrepo]')) {
+    var at = e.target.closest('[data-openrepo]');
+    if (App.openRepository) App.openRepository(at, 'sleeves', { variant: App.variant() });
+    return;
+  }
+  if (e.target.closest && e.target.closest('[data-feeview]')) { openFeePanel(); return; }
+  if (e.target.id === 'feeclose' || e.target.id === 'feecancel'
+      || (e.target.dataset && e.target.dataset.feescrim !== undefined)) { closeFeePanel(); return; }
+  var pivotTab = e.target.closest && e.target.closest('[data-feepivot]');
+  if (pivotTab) {
+    if (feePanel.pivot === pivotTab.dataset.feepivot) return;
+    feePanel.pivot = pivotTab.dataset.feepivot;
+    renderFeePanel();
+    var axis = document.getElementById('feeaxis'); if (axis) axis.focus();
+    return;
+  }
   if (e.target.id === 'implexport') { exportWorkbook(); return; }
   var sched = e.target.closest ? e.target.closest('[data-feesched]') : null;
   if (sched) { App.setFeeSchedule(sched.dataset.feesched); return; }
-  var level = e.target.closest ? e.target.closest('[data-feelevel]') : null;
-  if (level) { App.setFeeLevel(level.dataset.feelevel); return; }
+  /* Either half of the level composes the whole: the other half is read from
+     the level in force, so pressing Ceiling keeps the source it was on. */
+  var half = e.target.closest
+    ? e.target.closest('[data-feesource],[data-feepoint]') : null;
+  if (half) {
+    var levels = App.opt('fees.levels', []);
+    var inForce = levels.filter(function (l) { return l.id === App.feeLevel(); })[0];
+    var source = half.dataset.feesource
+      || (inForce && inForce.source) || App.opt('fees.sources', [])[0];
+    var point = half.dataset.feepoint
+      || (inForce && inForce.point) || App.opt('fees.points', [])[0];
+    var chosen = levels.filter(function (l) {
+      return l.source === source && l.point === point;
+    })[0];
+    if (chosen) App.setFeeLevel(chosen.id);
+    return;
+  }
   var rm = e.target.closest ? e.target.closest('[data-rmsleeve]') : null;
   if (rm) { App.chooseSleeve(rm.dataset.rmsleeve, null); return; }
   var retry = e.target.closest ? e.target.closest('.sl-retry') : null;
@@ -1061,6 +1429,9 @@ document.addEventListener('click', function (e) {
 
 /* ensureLibraries runs first so a library kicked off this cycle already
    shows its loading state when the rail paints */
+App.openFeePanel = openFeePanel;      /* the catalogue's drawer opens it at a group (D58) */
+App.managementFee = managementFee;    /* the catalogue's Mgmt column prices from the same mirror (D63) */
+
 App.addRenderer(function () {
   ensureLibraries();
   renderRail();

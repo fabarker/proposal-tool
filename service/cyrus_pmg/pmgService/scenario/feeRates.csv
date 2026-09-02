@@ -1,0 +1,181 @@
+schedule,feeGroup,tier,tierMin,tierMax,source,point,rate
+CASP,,T1,0,10000000,Management,Floor,0.45
+CASP,,T1,0,10000000,Management,Target,0.6
+CASP,,T1,0,10000000,Management,Ceiling,0.75
+CASP,,T1,0,10000000,PMG,Floor,0.47
+CASP,,T1,0,10000000,PMG,Target,0.56
+CASP,,T1,0,10000000,PMG,Ceiling,0.65
+CASP,,T2,10000000,25000000,Management,Floor,0.37
+CASP,,T2,10000000,25000000,Management,Target,0.52
+CASP,,T2,10000000,25000000,Management,Ceiling,0.67
+CASP,,T2,10000000,25000000,PMG,Floor,0.39
+CASP,,T2,10000000,25000000,PMG,Target,0.48
+CASP,,T2,10000000,25000000,PMG,Ceiling,0.57
+CASP,,T3,25000000,50000000,Management,Floor,0.3
+CASP,,T3,25000000,50000000,Management,Target,0.45
+CASP,,T3,25000000,50000000,Management,Ceiling,0.6
+CASP,,T3,25000000,50000000,PMG,Floor,0.32
+CASP,,T3,25000000,50000000,PMG,Target,0.41
+CASP,,T3,25000000,50000000,PMG,Ceiling,0.5
+CASP,,T4,50000000,100000000,Management,Floor,0.23
+CASP,,T4,50000000,100000000,Management,Target,0.38
+CASP,,T4,50000000,100000000,Management,Ceiling,0.53
+CASP,,T4,50000000,100000000,PMG,Floor,0.25
+CASP,,T4,50000000,100000000,PMG,Target,0.34
+CASP,,T4,50000000,100000000,PMG,Ceiling,0.43
+CASP,,T5,100000000,,Management,Floor,0.17
+CASP,,T5,100000000,,Management,Target,0.32
+CASP,,T5,100000000,,Management,Ceiling,0.47
+CASP,,T5,100000000,,PMG,Floor,0.19
+CASP,,T5,100000000,,PMG,Target,0.28
+CASP,,T5,100000000,,PMG,Ceiling,0.37
+RDR,Passive,T1,0,10000000,Management,Floor,0.15
+RDR,Passive,T1,0,10000000,Management,Target,0.3
+RDR,Passive,T1,0,10000000,Management,Ceiling,0.45
+RDR,Passive,T1,0,10000000,PMG,Floor,0.17
+RDR,Passive,T1,0,10000000,PMG,Target,0.26
+RDR,Passive,T1,0,10000000,PMG,Ceiling,0.35
+RDR,Passive,T2,10000000,25000000,Management,Floor,0.11
+RDR,Passive,T2,10000000,25000000,Management,Target,0.26
+RDR,Passive,T2,10000000,25000000,Management,Ceiling,0.41
+RDR,Passive,T2,10000000,25000000,PMG,Floor,0.13
+RDR,Passive,T2,10000000,25000000,PMG,Target,0.22
+RDR,Passive,T2,10000000,25000000,PMG,Ceiling,0.31
+RDR,Passive,T3,25000000,50000000,Management,Floor,0.07
+RDR,Passive,T3,25000000,50000000,Management,Target,0.22
+RDR,Passive,T3,25000000,50000000,Management,Ceiling,0.37
+RDR,Passive,T3,25000000,50000000,PMG,Floor,0.09
+RDR,Passive,T3,25000000,50000000,PMG,Target,0.18
+RDR,Passive,T3,25000000,50000000,PMG,Ceiling,0.27
+RDR,Passive,T4,50000000,100000000,Management,Floor,0.03
+RDR,Passive,T4,50000000,100000000,Management,Target,0.18
+RDR,Passive,T4,50000000,100000000,Management,Ceiling,0.33
+RDR,Passive,T4,50000000,100000000,PMG,Floor,0.05
+RDR,Passive,T4,50000000,100000000,PMG,Target,0.14
+RDR,Passive,T4,50000000,100000000,PMG,Ceiling,0.23
+RDR,Passive,T5,100000000,,Management,Floor,0.0
+RDR,Passive,T5,100000000,,Management,Target,0.15
+RDR,Passive,T5,100000000,,Management,Ceiling,0.3
+RDR,Passive,T5,100000000,,PMG,Floor,0.02
+RDR,Passive,T5,100000000,,PMG,Target,0.11
+RDR,Passive,T5,100000000,,PMG,Ceiling,0.2
+RDR,Core Active,T1,0,10000000,Management,Floor,0.4
+RDR,Core Active,T1,0,10000000,Management,Target,0.55
+RDR,Core Active,T1,0,10000000,Management,Ceiling,0.7
+RDR,Core Active,T1,0,10000000,PMG,Floor,0.42
+RDR,Core Active,T1,0,10000000,PMG,Target,0.51
+RDR,Core Active,T1,0,10000000,PMG,Ceiling,0.6
+RDR,Core Active,T2,10000000,25000000,Management,Floor,0.33
+RDR,Core Active,T2,10000000,25000000,Management,Target,0.48
+RDR,Core Active,T2,10000000,25000000,Management,Ceiling,0.63
+RDR,Core Active,T2,10000000,25000000,PMG,Floor,0.35
+RDR,Core Active,T2,10000000,25000000,PMG,Target,0.44
+RDR,Core Active,T2,10000000,25000000,PMG,Ceiling,0.53
+RDR,Core Active,T3,25000000,50000000,Management,Floor,0.27
+RDR,Core Active,T3,25000000,50000000,Management,Target,0.42
+RDR,Core Active,T3,25000000,50000000,Management,Ceiling,0.57
+RDR,Core Active,T3,25000000,50000000,PMG,Floor,0.29
+RDR,Core Active,T3,25000000,50000000,PMG,Target,0.38
+RDR,Core Active,T3,25000000,50000000,PMG,Ceiling,0.47
+RDR,Core Active,T4,50000000,100000000,Management,Floor,0.21
+RDR,Core Active,T4,50000000,100000000,Management,Target,0.36
+RDR,Core Active,T4,50000000,100000000,Management,Ceiling,0.51
+RDR,Core Active,T4,50000000,100000000,PMG,Floor,0.23
+RDR,Core Active,T4,50000000,100000000,PMG,Target,0.32
+RDR,Core Active,T4,50000000,100000000,PMG,Ceiling,0.41
+RDR,Core Active,T5,100000000,,Management,Floor,0.15
+RDR,Core Active,T5,100000000,,Management,Target,0.3
+RDR,Core Active,T5,100000000,,Management,Ceiling,0.45
+RDR,Core Active,T5,100000000,,PMG,Floor,0.17
+RDR,Core Active,T5,100000000,,PMG,Target,0.26
+RDR,Core Active,T5,100000000,,PMG,Ceiling,0.35
+RDR,Specialist Active,T1,0,10000000,Management,Floor,0.6
+RDR,Specialist Active,T1,0,10000000,Management,Target,0.75
+RDR,Specialist Active,T1,0,10000000,Management,Ceiling,0.9
+RDR,Specialist Active,T1,0,10000000,PMG,Floor,0.62
+RDR,Specialist Active,T1,0,10000000,PMG,Target,0.71
+RDR,Specialist Active,T1,0,10000000,PMG,Ceiling,0.8
+RDR,Specialist Active,T2,10000000,25000000,Management,Floor,0.53
+RDR,Specialist Active,T2,10000000,25000000,Management,Target,0.68
+RDR,Specialist Active,T2,10000000,25000000,Management,Ceiling,0.83
+RDR,Specialist Active,T2,10000000,25000000,PMG,Floor,0.55
+RDR,Specialist Active,T2,10000000,25000000,PMG,Target,0.64
+RDR,Specialist Active,T2,10000000,25000000,PMG,Ceiling,0.73
+RDR,Specialist Active,T3,25000000,50000000,Management,Floor,0.45
+RDR,Specialist Active,T3,25000000,50000000,Management,Target,0.6
+RDR,Specialist Active,T3,25000000,50000000,Management,Ceiling,0.75
+RDR,Specialist Active,T3,25000000,50000000,PMG,Floor,0.47
+RDR,Specialist Active,T3,25000000,50000000,PMG,Target,0.56
+RDR,Specialist Active,T3,25000000,50000000,PMG,Ceiling,0.65
+RDR,Specialist Active,T4,50000000,100000000,Management,Floor,0.37
+RDR,Specialist Active,T4,50000000,100000000,Management,Target,0.52
+RDR,Specialist Active,T4,50000000,100000000,Management,Ceiling,0.67
+RDR,Specialist Active,T4,50000000,100000000,PMG,Floor,0.39
+RDR,Specialist Active,T4,50000000,100000000,PMG,Target,0.48
+RDR,Specialist Active,T4,50000000,100000000,PMG,Ceiling,0.57
+RDR,Specialist Active,T5,100000000,,Management,Floor,0.3
+RDR,Specialist Active,T5,100000000,,Management,Target,0.45
+RDR,Specialist Active,T5,100000000,,Management,Ceiling,0.6
+RDR,Specialist Active,T5,100000000,,PMG,Floor,0.32
+RDR,Specialist Active,T5,100000000,,PMG,Target,0.41
+RDR,Specialist Active,T5,100000000,,PMG,Ceiling,0.5
+RDR,Alternatives,T1,0,10000000,Management,Floor,0.8
+RDR,Alternatives,T1,0,10000000,Management,Target,0.95
+RDR,Alternatives,T1,0,10000000,Management,Ceiling,1.1
+RDR,Alternatives,T1,0,10000000,PMG,Floor,0.82
+RDR,Alternatives,T1,0,10000000,PMG,Target,0.91
+RDR,Alternatives,T1,0,10000000,PMG,Ceiling,1.0
+RDR,Alternatives,T2,10000000,25000000,Management,Floor,0.73
+RDR,Alternatives,T2,10000000,25000000,Management,Target,0.88
+RDR,Alternatives,T2,10000000,25000000,Management,Ceiling,1.03
+RDR,Alternatives,T2,10000000,25000000,PMG,Floor,0.75
+RDR,Alternatives,T2,10000000,25000000,PMG,Target,0.84
+RDR,Alternatives,T2,10000000,25000000,PMG,Ceiling,0.93
+RDR,Alternatives,T3,25000000,50000000,Management,Floor,0.65
+RDR,Alternatives,T3,25000000,50000000,Management,Target,0.8
+RDR,Alternatives,T3,25000000,50000000,Management,Ceiling,0.95
+RDR,Alternatives,T3,25000000,50000000,PMG,Floor,0.67
+RDR,Alternatives,T3,25000000,50000000,PMG,Target,0.76
+RDR,Alternatives,T3,25000000,50000000,PMG,Ceiling,0.85
+RDR,Alternatives,T4,50000000,100000000,Management,Floor,0.57
+RDR,Alternatives,T4,50000000,100000000,Management,Target,0.72
+RDR,Alternatives,T4,50000000,100000000,Management,Ceiling,0.87
+RDR,Alternatives,T4,50000000,100000000,PMG,Floor,0.59
+RDR,Alternatives,T4,50000000,100000000,PMG,Target,0.68
+RDR,Alternatives,T4,50000000,100000000,PMG,Ceiling,0.77
+RDR,Alternatives,T5,100000000,,Management,Floor,0.5
+RDR,Alternatives,T5,100000000,,Management,Target,0.65
+RDR,Alternatives,T5,100000000,,Management,Ceiling,0.8
+RDR,Alternatives,T5,100000000,,PMG,Floor,0.52
+RDR,Alternatives,T5,100000000,,PMG,Target,0.61
+RDR,Alternatives,T5,100000000,,PMG,Ceiling,0.7
+RDR,Asset Allocation,T1,0,10000000,Management,Floor,0.25
+RDR,Asset Allocation,T1,0,10000000,Management,Target,0.4
+RDR,Asset Allocation,T1,0,10000000,Management,Ceiling,0.55
+RDR,Asset Allocation,T1,0,10000000,PMG,Floor,0.27
+RDR,Asset Allocation,T1,0,10000000,PMG,Target,0.36
+RDR,Asset Allocation,T1,0,10000000,PMG,Ceiling,0.45
+RDR,Asset Allocation,T2,10000000,25000000,Management,Floor,0.2
+RDR,Asset Allocation,T2,10000000,25000000,Management,Target,0.35
+RDR,Asset Allocation,T2,10000000,25000000,Management,Ceiling,0.5
+RDR,Asset Allocation,T2,10000000,25000000,PMG,Floor,0.22
+RDR,Asset Allocation,T2,10000000,25000000,PMG,Target,0.31
+RDR,Asset Allocation,T2,10000000,25000000,PMG,Ceiling,0.4
+RDR,Asset Allocation,T3,25000000,50000000,Management,Floor,0.15
+RDR,Asset Allocation,T3,25000000,50000000,Management,Target,0.3
+RDR,Asset Allocation,T3,25000000,50000000,Management,Ceiling,0.45
+RDR,Asset Allocation,T3,25000000,50000000,PMG,Floor,0.17
+RDR,Asset Allocation,T3,25000000,50000000,PMG,Target,0.26
+RDR,Asset Allocation,T3,25000000,50000000,PMG,Ceiling,0.35
+RDR,Asset Allocation,T4,50000000,100000000,Management,Floor,0.11
+RDR,Asset Allocation,T4,50000000,100000000,Management,Target,0.26
+RDR,Asset Allocation,T4,50000000,100000000,Management,Ceiling,0.41
+RDR,Asset Allocation,T4,50000000,100000000,PMG,Floor,0.13
+RDR,Asset Allocation,T4,50000000,100000000,PMG,Target,0.22
+RDR,Asset Allocation,T4,50000000,100000000,PMG,Ceiling,0.31
+RDR,Asset Allocation,T5,100000000,,Management,Floor,0.07
+RDR,Asset Allocation,T5,100000000,,Management,Target,0.22
+RDR,Asset Allocation,T5,100000000,,Management,Ceiling,0.37
+RDR,Asset Allocation,T5,100000000,,PMG,Floor,0.09
+RDR,Asset Allocation,T5,100000000,,PMG,Target,0.18
+RDR,Asset Allocation,T5,100000000,,PMG,Ceiling,0.27

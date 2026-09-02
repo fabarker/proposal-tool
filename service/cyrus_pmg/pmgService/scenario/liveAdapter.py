@@ -42,36 +42,15 @@ import os
 import tempfile
 import threading
 
-from . import advisors, rules, sleeves
+from . import advisors, rules, sleeves, universe
 from . import portfolio_weights as pw
-from .payloads import categoryRows, portfolioResult, selectWeights
+from .payloads import categoryRows, portfolioResult
 from .types import AnalyticsError, BasisInput, MandateInput, PortfolioKey
 from .workbook import writeImplementationSheet
 
 # Horizon wording follows the existing report's var/pol table, which
 # labels its rows "Over 1 Month" and so on beneath the measure title.
 _VAR_HORIZONS = ((0, 'Over 1 Month'), (11, 'Over 1 Year'), (33, 'Over 3 Years'))
-
-
-def _paddedWeights(basis: BasisInput, key: PortfolioKey) -> dict:
-    """The full 19-code weight map, zeros included.
-
-    The analytics portfolio is built zero-padded so every portfolio carries an
-    identical asset set: padding changes no number (verified to 1e-12), and it
-    is what lets ``Reporting.get_portfolios_table`` union portfolios with
-    different holdings - its own union-with-zero-fill convention - instead of
-    tripping over heterogeneous row indexes. The SCREEN payload still comes
-    from the held rows only, preserving the blank/dash semantics of spec 2.2.
-    """
-    padded = pw.load_portfolio_weights(
-        currency=basis.currency,
-        allocation=key.allocation,
-        risk_level=key.riskLevel,
-        exclude_real_estate=key.excludeRE,
-        exclude_tactical_asset_allocation=key.excludeTAA,
-        include_zero_weights=True,
-    )
-    return dict(zip(padded['code'], padded['weight']))
 
 
 class LiveScenarioPort:
@@ -118,9 +97,10 @@ class LiveScenarioPort:
         if cached is not None:
             return cached
 
-        selected = selectWeights(basis, key)      # LookupError -> router 422
-        categories = categoryRows(selected)
-        weights = _paddedWeights(basis, key)
+        categories = categoryRows(key)          # LookupError -> router 422
+        # zero-padded to the full universe so every portfolio carries an
+        # identical asset set - Reporting's union-with-zero-fill convention (D13)
+        weights = universe.weightMap(key)
 
         self._ensureReady()
         with self._lock:
@@ -191,8 +171,12 @@ class LiveScenarioPort:
                 copies = []
                 for result in results:
                     key = PortfolioKey.fromDict(result['key'])
+                    # the same zero-padded map resolve_portfolio builds from:
+                    # every portfolio carries an identical asset set, which is
+                    # what lets Reporting union portfolios with different
+                    # holdings instead of tripping over their row indexes.
                     built = pw.get_portfolio(basis.currency,
-                                             _paddedWeights(basis, key),
+                                             universe.weightMap(key),
                                              hedging_option=basis.hedging)
                     # the cached instance is shared - name the deepcopy only
                     copy = built.deepcopy()

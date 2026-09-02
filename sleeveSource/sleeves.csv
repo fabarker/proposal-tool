@@ -1,0 +1,261 @@
+Variant,Category,Sleeve,ProductId,Weight
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA Only,gsam-core-municipal-sma,0.45
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA Only,gsam-intermediate-credit-sma,0.35
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA Only,gsam-short-duration-sma,0.2
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA & ETFs,gsam-intermediate-credit-sma,0.5
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA & ETFs,gs-access-ig-corporate-etf,0.3
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA & ETFs,gs-access-treasury-0-1-etf,0.2
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,ETFs Only,gs-access-ig-corporate-etf,0.6
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,ETFs Only,gs-access-treasury-0-1-etf,0.4
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA Sov. Agency,gsam-short-duration-sma,0.55
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA Sov. Agency,gs-access-treasury-0-1-etf,0.45
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA: Gilts Only,gsam-short-duration-sma,0.6
+PMG Multi-Asset Portfolio,Investment Grade Fixed Income,SMA: Gilts Only,gs-sterling-credit-portfolio-ucits,0.4
+PMG Multi-Asset Portfolio,Hybrid Fixed Income,SVP,strategic-volatility-premium,1.0
+PMG Multi-Asset Portfolio,Other Fixed Income,Mutual Funds,gs-high-yield-fund,0.45
+PMG Multi-Asset Portfolio,Other Fixed Income,Mutual Funds,gs-emerging-markets-debt,0.35
+PMG Multi-Asset Portfolio,Other Fixed Income,Mutual Funds,gs-strategic-income-fund,0.2
+PMG Multi-Asset Portfolio,Other Fixed Income,GPP,gs-strategic-income-fund,0.5
+PMG Multi-Asset Portfolio,Other Fixed Income,GPP,gs-access-high-yield-etf,0.3
+PMG Multi-Asset Portfolio,Other Fixed Income,GPP,gs-access-em-usd-bond-etf,0.2
+PMG Multi-Asset Portfolio,Public Equity,Passive,gs-access-us-large-cap-etf,0.55
+PMG Multi-Asset Portfolio,Public Equity,Passive,gs-access-intl-equity-etf,0.3
+PMG Multi-Asset Portfolio,Public Equity,Passive,gs-access-em-equity-etf,0.15
+PMG Multi-Asset Portfolio,Public Equity,Active Passive,gs-access-us-large-cap-etf,0.4
+PMG Multi-Asset Portfolio,Public Equity,Active Passive,gs-us-equity-insights-fund,0.35
+PMG Multi-Asset Portfolio,Public Equity,Active Passive,northbrook-intl-equity,0.25
+PMG Multi-Asset Portfolio,Public Equity,Global Active,gs-us-equity-insights-fund,0.45
+PMG Multi-Asset Portfolio,Public Equity,Global Active,northbrook-intl-equity,0.35
+PMG Multi-Asset Portfolio,Public Equity,Global Active,gs-emerging-markets-equity,0.2
+PMG Multi-Asset Portfolio,Public Equity,Concentrated Active Passive,gs-concentrated-growth-sma,0.4
+PMG Multi-Asset Portfolio,Public Equity,Concentrated Active Passive,gs-us-focused-value-sma,0.3
+PMG Multi-Asset Portfolio,Public Equity,Concentrated Active Passive,gs-access-intl-equity-etf,0.3
+PMG Multi-Asset Portfolio,Public Equity,Concentrated Active Passive (Low TE),gs-access-us-large-cap-etf,0.55
+PMG Multi-Asset Portfolio,Public Equity,Concentrated Active Passive (Low TE),gs-concentrated-growth-sma,0.25
+PMG Multi-Asset Portfolio,Public Equity,Concentrated Active Passive (Low TE),gs-us-focused-value-sma,0.2
+PMG Multi-Asset Portfolio,Public Equity,Global Concentrated,gs-concentrated-growth-sma,0.4
+PMG Multi-Asset Portfolio,Public Equity,Global Concentrated,northbrook-focused-intl,0.35
+PMG Multi-Asset Portfolio,Public Equity,Global Concentrated,gs-emerging-markets-equity,0.25
+PMG Multi-Asset Portfolio,Hedge Funds,HFM & ART,gs-hedgeworks-multi-strategy,0.6
+PMG Multi-Asset Portfolio,Hedge Funds,HFM & ART,gs-absolute-return-tracker,0.4
+PMG Multi-Asset Portfolio,Hedge Funds,HFO & ART,ashfield-select-equity-l-s,0.35
+PMG Multi-Asset Portfolio,Hedge Funds,HFO & ART,northbrook-relative-value,0.25
+PMG Multi-Asset Portfolio,Hedge Funds,HFO & ART,gs-absolute-return-tracker,0.4
+PMG Multi-Asset Portfolio,Hedge Funds,GMMAP & ART,calderwood-global-macro,0.55
+PMG Multi-Asset Portfolio,Hedge Funds,GMMAP & ART,gs-absolute-return-tracker,0.45
+PMG Multi-Asset Portfolio,Hedge Funds,Aptitude & ART,northbrook-relative-value,0.5
+PMG Multi-Asset Portfolio,Hedge Funds,Aptitude & ART,gs-absolute-return-tracker,0.5
+PMG Multi-Asset Portfolio,Hedge Funds,HFO Only,ashfield-select-equity-l-s,0.4
+PMG Multi-Asset Portfolio,Hedge Funds,HFO Only,northbrook-relative-value,0.35
+PMG Multi-Asset Portfolio,Hedge Funds,HFO Only,gs-managed-futures-strategy,0.25
+PMG Multi-Asset Portfolio,Asset Allocation Strategies,Tactical Tilt Overlay Portfolio,tactical-tilt-fund,1.0
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Private Equity Managers,gs-private-markets-buyout,0.3
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Private Equity Managers,gs-vintage-fund-ix,0.25
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Private Equity Managers,gs-growth-equity-partners,0.2
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Private Equity Managers,gs-private-credit-partners,0.15
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Private Equity Managers,gs-real-estate-partners,0.1
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-real-assets-program,0.25
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-real-estate-partners,0.2
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-private-credit-partners,0.2
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Alternative Portfolio Services,ashfield-direct-lending,0.15
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Alternative Portfolio Services,ashfield-co-investment,0.1
+PMG Multi-Asset Portfolio,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-venture-access-fund,0.1
+PMG ESG,Investment Grade Fixed Income,SMA Only,gsam-core-municipal-sma,0.45
+PMG ESG,Investment Grade Fixed Income,SMA Only,gsam-intermediate-credit-sma,0.35
+PMG ESG,Investment Grade Fixed Income,SMA Only,gsam-short-duration-sma,0.2
+PMG ESG,Investment Grade Fixed Income,SMA & ETFs,gsam-intermediate-credit-sma,0.5
+PMG ESG,Investment Grade Fixed Income,SMA & ETFs,gs-access-esg-aggregate-etf,0.5
+PMG ESG,Investment Grade Fixed Income,ETFs Only,gs-access-esg-aggregate-etf,0.55
+PMG ESG,Investment Grade Fixed Income,ETFs Only,gs-access-ig-corporate-etf,0.45
+PMG ESG,Investment Grade Fixed Income,SMA ESG,gsam-intermediate-credit-sma,0.55
+PMG ESG,Investment Grade Fixed Income,SMA ESG,gs-esg-us-corporate-bond-fund,0.45
+PMG ESG,Investment Grade Fixed Income,SMA & ETFs ESG,gsam-intermediate-credit-sma,0.4
+PMG ESG,Investment Grade Fixed Income,SMA & ETFs ESG,gs-access-esg-aggregate-etf,0.35
+PMG ESG,Investment Grade Fixed Income,SMA & ETFs ESG,gs-esg-us-corporate-bond-fund,0.25
+PMG ESG,Investment Grade Fixed Income,Funds Only ESG,gs-esg-us-corporate-bond-fund,0.45
+PMG ESG,Investment Grade Fixed Income,Funds Only ESG,gs-green-bond-fund,0.3
+PMG ESG,Investment Grade Fixed Income,Funds Only ESG,ashfield-social-impact-bond,0.25
+PMG ESG,Investment Grade Fixed Income,SMA Sov. Agency,gsam-short-duration-sma,0.55
+PMG ESG,Investment Grade Fixed Income,SMA Sov. Agency,gs-access-treasury-0-1-etf,0.45
+PMG ESG,Investment Grade Fixed Income,SMA: Gilts Only,gsam-short-duration-sma,0.6
+PMG ESG,Investment Grade Fixed Income,SMA: Gilts Only,gs-sterling-credit-portfolio-ucits,0.4
+PMG ESG,Hybrid Fixed Income,SVP,strategic-volatility-premium,1.0
+PMG ESG,Other Fixed Income,Mutual Funds,gs-esg-high-yield-fund,0.55
+PMG ESG,Other Fixed Income,Mutual Funds,gs-esg-emerging-markets-debt,0.45
+PMG ESG,Other Fixed Income,ESG High Yield,gs-esg-high-yield-fund,0.65
+PMG ESG,Other Fixed Income,ESG High Yield,gs-esg-emerging-markets-debt,0.35
+PMG ESG,Other Fixed Income,GPP,gs-strategic-income-fund,0.5
+PMG ESG,Other Fixed Income,GPP,gs-access-high-yield-etf,0.3
+PMG ESG,Other Fixed Income,GPP,gs-access-em-usd-bond-etf,0.2
+PMG ESG,Public Equity,Passive,gs-access-esg-us-equity-etf,0.6
+PMG ESG,Public Equity,Passive,gs-access-em-equity-etf,0.4
+PMG ESG,Public Equity,Active Passive,gs-access-us-large-cap-etf,0.4
+PMG ESG,Public Equity,Active Passive,gs-us-equity-insights-fund,0.35
+PMG ESG,Public Equity,Active Passive,northbrook-intl-equity,0.25
+PMG ESG,Public Equity,Global Active,gs-us-equity-insights-fund,0.45
+PMG ESG,Public Equity,Global Active,northbrook-intl-equity,0.35
+PMG ESG,Public Equity,Global Active,gs-emerging-markets-equity,0.2
+PMG ESG,Public Equity,Concentrated Active Passive,gs-concentrated-growth-sma,0.4
+PMG ESG,Public Equity,Concentrated Active Passive,gs-us-focused-value-sma,0.3
+PMG ESG,Public Equity,Concentrated Active Passive,gs-access-intl-equity-etf,0.3
+PMG ESG,Public Equity,Concentrated Active Passive (Low TE),gs-access-us-large-cap-etf,0.55
+PMG ESG,Public Equity,Concentrated Active Passive (Low TE),gs-concentrated-growth-sma,0.25
+PMG ESG,Public Equity,Concentrated Active Passive (Low TE),gs-us-focused-value-sma,0.2
+PMG ESG,Public Equity,Global Concentrated,gs-concentrated-growth-sma,0.4
+PMG ESG,Public Equity,Global Concentrated,northbrook-focused-intl,0.35
+PMG ESG,Public Equity,Global Concentrated,gs-emerging-markets-equity,0.25
+PMG ESG,Public Equity,Active Passive Funds ESG,gs-access-esg-us-equity-etf,0.45
+PMG ESG,Public Equity,Active Passive Funds ESG,gs-esg-international-equity,0.35
+PMG ESG,Public Equity,Active Passive Funds ESG,gs-esg-emerging-markets-equity,0.2
+PMG ESG,Public Equity,GEP + ESG Screened ETFs,gs-esg-international-equity,0.4
+PMG ESG,Public Equity,GEP + ESG Screened ETFs,gs-access-esg-us-equity-etf,0.4
+PMG ESG,Public Equity,GEP + ESG Screened ETFs,gs-access-em-equity-etf,0.2
+PMG ESG,Public Equity,GEP + ESG SRI ETFs,northbrook-paris-aligned-equity,0.4
+PMG ESG,Public Equity,GEP + ESG SRI ETFs,gs-access-esg-us-equity-etf,0.4
+PMG ESG,Public Equity,GEP + ESG SRI ETFs,gs-climate-solutions-fund,0.2
+PMG ESG,Public Equity,ESG Screened ETFs,gs-access-esg-us-equity-etf,0.6
+PMG ESG,Public Equity,ESG Screened ETFs,gs-access-intl-equity-etf,0.4
+PMG ESG,Public Equity,ESG SRI ETFs,gs-access-esg-us-equity-etf,0.55
+PMG ESG,Public Equity,ESG SRI ETFs,gs-access-em-equity-etf,0.45
+PMG ESG,Hedge Funds,HFM & ART,gs-hedgeworks-esg-multi-strategy,0.6
+PMG ESG,Hedge Funds,HFM & ART,gs-absolute-return-tracker,0.4
+PMG ESG,Hedge Funds,HFO & ART,ashfield-select-equity-l-s,0.35
+PMG ESG,Hedge Funds,HFO & ART,northbrook-relative-value,0.25
+PMG ESG,Hedge Funds,HFO & ART,gs-absolute-return-tracker,0.4
+PMG ESG,Hedge Funds,GMMAP & ART,calderwood-global-macro,0.55
+PMG ESG,Hedge Funds,GMMAP & ART,gs-absolute-return-tracker,0.45
+PMG ESG,Hedge Funds,Aptitude & ART,northbrook-relative-value,0.5
+PMG ESG,Hedge Funds,Aptitude & ART,gs-absolute-return-tracker,0.5
+PMG ESG,Hedge Funds,HFO Only,ashfield-select-equity-l-s,0.4
+PMG ESG,Hedge Funds,HFO Only,northbrook-relative-value,0.35
+PMG ESG,Hedge Funds,HFO Only,gs-managed-futures-strategy,0.25
+PMG ESG,Asset Allocation Strategies,Tactical Tilt Overlay Portfolio,esg-tactical-tilt-fund,1.0
+PMG ESG,Private Equity & Other Private Assets,Private Equity Managers,gs-sustainable-investing-group-fund,0.3
+PMG ESG,Private Equity & Other Private Assets,Private Equity Managers,gs-private-markets-buyout,0.25
+PMG ESG,Private Equity & Other Private Assets,Private Equity Managers,gs-vintage-fund-ix,0.2
+PMG ESG,Private Equity & Other Private Assets,Private Equity Managers,gs-sustainable-real-estate,0.25
+PMG ESG,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-sustainable-real-estate,0.35
+PMG ESG,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-real-assets-program,0.3
+PMG ESG,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-sustainable-investing-group-fund,0.2
+PMG ESG,Private Equity & Other Private Assets,Alternative Portfolio Services,calderwood-energy-transition,0.15
+US Onshore,Investment Grade Fixed Income,SMA Only,gsam-core-municipal-sma,0.45
+US Onshore,Investment Grade Fixed Income,SMA Only,gsam-intermediate-credit-sma,0.35
+US Onshore,Investment Grade Fixed Income,SMA Only,gsam-short-duration-sma,0.2
+US Onshore,Investment Grade Fixed Income,SMA & ETFs,gsam-intermediate-credit-sma,0.5
+US Onshore,Investment Grade Fixed Income,SMA & ETFs,gs-access-ig-corporate-etf,0.3
+US Onshore,Investment Grade Fixed Income,SMA & ETFs,gs-access-treasury-0-1-etf,0.2
+US Onshore,Investment Grade Fixed Income,ETFs Only,gs-access-ig-corporate-etf,0.6
+US Onshore,Investment Grade Fixed Income,ETFs Only,gs-access-treasury-0-1-etf,0.4
+US Onshore,Investment Grade Fixed Income,SMA Sov. Agency,gsam-short-duration-sma,0.55
+US Onshore,Investment Grade Fixed Income,SMA Sov. Agency,gs-access-treasury-0-1-etf,0.45
+US Onshore,Investment Grade Fixed Income,SMA: Gilts Only,gsam-short-duration-sma,0.6
+US Onshore,Investment Grade Fixed Income,SMA: Gilts Only,gs-sterling-credit-portfolio-ucits,0.4
+US Onshore,Hybrid Fixed Income,SVP,strategic-volatility-premium,1.0
+US Onshore,Other Fixed Income,Mutual Funds,gs-high-yield-fund,0.45
+US Onshore,Other Fixed Income,Mutual Funds,gs-emerging-markets-debt,0.35
+US Onshore,Other Fixed Income,Mutual Funds,gs-strategic-income-fund,0.2
+US Onshore,Other Fixed Income,Funds US Onshore,gs-high-yield-fund,0.5
+US Onshore,Other Fixed Income,Funds US Onshore,gs-emerging-markets-debt,0.3
+US Onshore,Other Fixed Income,Funds US Onshore,calderwood-local-em-debt,0.2
+US Onshore,Other Fixed Income,GPP,gs-strategic-income-fund,0.5
+US Onshore,Other Fixed Income,GPP,gs-access-high-yield-etf,0.3
+US Onshore,Other Fixed Income,GPP,gs-access-em-usd-bond-etf,0.2
+US Onshore,Public Equity,Passive,gs-access-us-large-cap-etf,0.55
+US Onshore,Public Equity,Passive,gs-access-intl-equity-etf,0.3
+US Onshore,Public Equity,Passive,gs-access-em-equity-etf,0.15
+US Onshore,Public Equity,Active Passive,gs-access-us-large-cap-etf,0.4
+US Onshore,Public Equity,Active Passive,gs-us-equity-insights-fund,0.35
+US Onshore,Public Equity,Active Passive,northbrook-intl-equity,0.25
+US Onshore,Public Equity,Global Active,gs-us-equity-insights-fund,0.45
+US Onshore,Public Equity,Global Active,northbrook-intl-equity,0.35
+US Onshore,Public Equity,Global Active,gs-emerging-markets-equity,0.2
+US Onshore,Public Equity,Concentrated Active Passive,gs-concentrated-growth-sma,0.4
+US Onshore,Public Equity,Concentrated Active Passive,gs-us-focused-value-sma,0.3
+US Onshore,Public Equity,Concentrated Active Passive,gs-access-intl-equity-etf,0.3
+US Onshore,Public Equity,Concentrated Active Passive (Low TE),gs-access-us-large-cap-etf,0.55
+US Onshore,Public Equity,Concentrated Active Passive (Low TE),gs-concentrated-growth-sma,0.25
+US Onshore,Public Equity,Concentrated Active Passive (Low TE),gs-us-focused-value-sma,0.2
+US Onshore,Public Equity,Global Concentrated,gs-concentrated-growth-sma,0.4
+US Onshore,Public Equity,Global Concentrated,northbrook-focused-intl,0.35
+US Onshore,Public Equity,Global Concentrated,gs-emerging-markets-equity,0.25
+US Onshore,Public Equity,US Onshore ETFs,gs-access-us-large-cap-etf,0.6
+US Onshore,Public Equity,US Onshore ETFs,gs-access-intl-equity-etf,0.25
+US Onshore,Public Equity,US Onshore ETFs,gs-access-em-equity-etf,0.15
+US Onshore,Public Equity,US Onshore Concentrated Active Passive,gs-concentrated-growth-sma,0.4
+US Onshore,Public Equity,US Onshore Concentrated Active Passive,gs-us-focused-value-sma,0.3
+US Onshore,Public Equity,US Onshore Concentrated Active Passive,gs-access-us-large-cap-etf,0.3
+US Onshore,Public Equity,US Onshore Concentrated Active Passive (Low TE),gs-access-us-large-cap-etf,0.6
+US Onshore,Public Equity,US Onshore Concentrated Active Passive (Low TE),gs-concentrated-growth-sma,0.2
+US Onshore,Public Equity,US Onshore Concentrated Active Passive (Low TE),gs-us-focused-value-sma,0.2
+US Onshore,Hedge Funds,HFM & ART,gs-hedgeworks-multi-strategy,0.6
+US Onshore,Hedge Funds,HFM & ART,gs-absolute-return-tracker,0.4
+US Onshore,Hedge Funds,HFO & ART,ashfield-select-equity-l-s,0.35
+US Onshore,Hedge Funds,HFO & ART,northbrook-relative-value,0.25
+US Onshore,Hedge Funds,HFO & ART,gs-absolute-return-tracker,0.4
+US Onshore,Hedge Funds,GMMAP & ART,calderwood-global-macro,0.55
+US Onshore,Hedge Funds,GMMAP & ART,gs-absolute-return-tracker,0.45
+US Onshore,Hedge Funds,Aptitude & ART,northbrook-relative-value,0.5
+US Onshore,Hedge Funds,Aptitude & ART,gs-absolute-return-tracker,0.5
+US Onshore,Hedge Funds,HFO Only,ashfield-select-equity-l-s,0.4
+US Onshore,Hedge Funds,HFO Only,northbrook-relative-value,0.35
+US Onshore,Hedge Funds,HFO Only,gs-managed-futures-strategy,0.25
+US Onshore,Asset Allocation Strategies,Tactical Tilt Overlay Portfolio Onshore,tactical-tilt-fund,1.0
+US Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-private-markets-buyout,0.3
+US Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-vintage-fund-ix,0.25
+US Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-growth-equity-partners,0.2
+US Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-private-credit-partners,0.15
+US Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-real-estate-partners,0.1
+US Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-real-assets-program,0.25
+US Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-real-estate-partners,0.2
+US Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-private-credit-partners,0.2
+US Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,ashfield-direct-lending,0.15
+US Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,ashfield-co-investment,0.1
+US Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-venture-access-fund,0.1
+Irish Onshore,Investment Grade Fixed Income,SMA Only,gsam-core-municipal-sma,0.45
+Irish Onshore,Investment Grade Fixed Income,SMA Only,gsam-intermediate-credit-sma,0.35
+Irish Onshore,Investment Grade Fixed Income,SMA Only,gsam-short-duration-sma,0.2
+Irish Onshore,Investment Grade Fixed Income,SMA & ETFs,gsam-intermediate-credit-sma,0.5
+Irish Onshore,Investment Grade Fixed Income,SMA & ETFs,gs-access-global-aggregate-ucits,0.3
+Irish Onshore,Investment Grade Fixed Income,SMA & ETFs,gs-access-euro-government-ucits,0.2
+Irish Onshore,Investment Grade Fixed Income,ETFs Only,gs-access-global-aggregate-ucits,0.6
+Irish Onshore,Investment Grade Fixed Income,ETFs Only,gs-access-euro-government-ucits,0.4
+Irish Onshore,Investment Grade Fixed Income,SMA Sov. Agency,gsam-short-duration-sma,0.55
+Irish Onshore,Investment Grade Fixed Income,SMA Sov. Agency,gs-access-euro-government-ucits,0.45
+Irish Onshore,Investment Grade Fixed Income,SMA: Gilts Only,gsam-short-duration-sma,0.6
+Irish Onshore,Investment Grade Fixed Income,SMA: Gilts Only,gs-sterling-credit-portfolio-ucits,0.4
+Irish Onshore,Hybrid Fixed Income,SVP,strategic-volatility-premium,1.0
+Irish Onshore,Other Fixed Income,Mutual Funds,gs-global-high-yield-ucits,0.6
+Irish Onshore,Other Fixed Income,Mutual Funds,gs-emerging-markets-debt-ucits,0.4
+Irish Onshore,Other Fixed Income,Funds Irish,gs-global-high-yield-ucits,0.6
+Irish Onshore,Other Fixed Income,Funds Irish,gs-emerging-markets-debt-ucits,0.4
+Irish Onshore,Other Fixed Income,GPP,gs-global-high-yield-ucits,0.55
+Irish Onshore,Other Fixed Income,GPP,gs-emerging-markets-debt-ucits,0.45
+Irish Onshore,Public Equity,Passive,gs-access-world-equity-ucits,0.6
+Irish Onshore,Public Equity,Passive,gs-access-em-equity-ucits,0.4
+Irish Onshore,Public Equity,Active Passive,gs-access-world-equity-ucits,0.55
+Irish Onshore,Public Equity,Active Passive,gs-europe-core-equity-ucits,0.45
+Irish Onshore,Public Equity,Global Active,gs-europe-core-equity-ucits,0.55
+Irish Onshore,Public Equity,Global Active,gs-emerging-markets-equity-ucits,0.45
+Irish Onshore,Public Equity,Concentrated Active Passive,gs-europe-core-equity-ucits,0.5
+Irish Onshore,Public Equity,Concentrated Active Passive,gs-access-world-equity-ucits,0.5
+Irish Onshore,Public Equity,Concentrated Active Passive (Low TE),gs-access-world-equity-ucits,0.65
+Irish Onshore,Public Equity,Concentrated Active Passive (Low TE),gs-europe-core-equity-ucits,0.35
+Irish Onshore,Public Equity,Global Concentrated,gs-europe-core-equity-ucits,0.6
+Irish Onshore,Public Equity,Global Concentrated,gs-emerging-markets-equity-ucits,0.4
+Irish Onshore,Hedge Funds,HFM & ART,gs-absolute-return-ucits,0.6
+Irish Onshore,Hedge Funds,HFM & ART,calderwood-global-macro-ucits,0.4
+Irish Onshore,Hedge Funds,HFO & ART,calderwood-global-macro-ucits,0.55
+Irish Onshore,Hedge Funds,HFO & ART,gs-absolute-return-ucits,0.45
+Irish Onshore,Hedge Funds,GMMAP & ART,calderwood-global-macro-ucits,0.6
+Irish Onshore,Hedge Funds,GMMAP & ART,gs-absolute-return-ucits,0.4
+Irish Onshore,Hedge Funds,Aptitude & ART,gs-absolute-return-ucits,0.55
+Irish Onshore,Hedge Funds,Aptitude & ART,calderwood-global-macro-ucits,0.45
+Irish Onshore,Hedge Funds,HFO Only,gs-absolute-return-ucits,0.6
+Irish Onshore,Hedge Funds,HFO Only,calderwood-global-macro-ucits,0.4
+Irish Onshore,Asset Allocation Strategies,Tactical Tilt Overlay Portfolio,tactical-tilt-fund-ucits,1.0
+Irish Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-private-markets-icav-feeder,0.4
+Irish Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-private-credit-icav-feeder,0.3
+Irish Onshore,Private Equity & Other Private Assets,Private Equity Managers,gs-vintage-fund-ix,0.3
+Irish Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-private-credit-icav-feeder,0.4
+Irish Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-private-markets-icav-feeder,0.35
+Irish Onshore,Private Equity & Other Private Assets,Alternative Portfolio Services,gs-real-assets-program,0.25

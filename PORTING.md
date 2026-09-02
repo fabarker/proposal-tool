@@ -204,10 +204,10 @@ The interface moved on from the specification in a number of places while it was
 — the topbar is gone, the base column is headed "Proposed Portfolio", the risk dashboard's
 premia are banded by measure, and the tables size their own columns.
 **`spec.html` revision 6 describes what is there now**, and its §1.5 maps every changed
-section to the entry in **`service/DEVIATIONS.md`** (D20–D53) that explains it. Eight matter
+section to the entry in **`service/DEVIATIONS.md`** (D20–D63) that explains it. Thirteen matter
 for a port:
 
-- **D29/D49**, implementation variants — one of four product universes, chosen in the base
+- **D29/D49**, implementation types — one of four product universes, chosen in the base
   portfolio tier of step 1 *before* the allocation, because it restricts which allocations
   exist (onshore books hold no alternatives; ESG forces the real-estate exclusion). It changes
   the `list_sleeves` signature, adds `variant` to scenario state, and is taken by
@@ -226,6 +226,39 @@ for a port:
   tier's rates only, so the page never sees the whole table) and both to `build_export`; the
   workbook gains a *Fee group* column and three header rows. No bake dimension: fees are
   priced from the schema on the page and from the file in the workbook.
+- **D57**, the sleeve repository — the library is a SQLite database the service writes
+  (`SCENARIO_SLEEVES_DB`), seeded once from a tabular extract (`SCENARIO_SLEEVES_SEED`) and
+  maintained by admins in an in-app console. `sleeves.py` keeps its three-function contract,
+  so nothing that reads sleeves changes. Adds a third role (`requireAdmin`,
+  `PMG_ADMIN_KERBEROS`) to `accessControl`, `capabilities.canAdmin` to `get_schema`, four
+  admin-only routes under `/scenario/repository`, and `sleeveTools` (census / export /
+  import). The host points the database at a writable path and backs it up like any other.
+  The same console carries a view-only product catalogue for admins (D58): no new route,
+  one more field (`orphans`) on the repository payload, a second entry link. The catalogue's
+  delivery gains two optional columns, `DistributionYield` and `MinimumInvestment` (D63);
+  a delivery without them still loads.
+- **D60**, sleeve groups — Private Equity and Other Private Assets are one choice.
+  `rules.SLEEVE_GROUPS` and `rules.sleeveCategory` decide what a sleeve is picked and
+  stored under; the rail, the scenario store, the export gate, the workbook and the
+  repository all key by it, and the page reads the grouping from the schema. Adding or
+  removing a group is one entry in that list.
+- **D56**, the product catalogue — products are a delivered one-table extract
+  (`SCENARIO_PRODUCTS_SOURCE`, one row per product, `ProductId` the key) read by
+  `products.py` and joined into sleeves when they are served. Read only; a bad extract is
+  refused at load. Run `sleeveTools --census` against the real one before anything else:
+  it lists every sleeve a missing product would break.
+- **D55**, the rate card — delivered as a long CSV at `SCENARIO_FEES_SOURCE` and read only in
+  the service: it changes by delivery through `feeTools` (census / diff / accept), never
+  through the app. Adds `GET /scenario/fees`, a read-only fee card viewer in the UI, a
+  `Fee Card` row in the workbook header naming the delivered version, and `feeCard` in the
+  bake manifest.
+- **D54**, the strategic universe — the supplying database is the authority. Portfolios are
+  read from its extract (`SCENARIO_SAA_SOURCE`), each name parsed into the key
+  `currency|riskLevel|allocationType|excludeRealAssets`, and every selector option is derived
+  from the key set. This changes the key format (currency in, tactical allocation out), the
+  availability set, the bake (which now enumerates the extract and records facets, provenance
+  and unparsed names in the manifest), and what `get_schema` serves. The parse is offline and
+  strict; run the bake's `--census` against the real extract before anything else.
 - **D53**, the strategic volatility premium — a second implementation overlay beside the tilt.
   A toggle introduces a *Hybrid Fixed Income* category holding one product, weighted at
   `rules.VOL_PREMIUM_SHARE` of Investment Grade Fixed Income after the tilt has been funded
@@ -281,6 +314,6 @@ Things a porter will meet that are not defects in the port itself:
 |---|---|
 | `service/README.md` | running it, the wire contract, the three adapters, baking |
 | `service/TRANSPLANT.md` | the porting list, file by file |
-| `service/DEVIATIONS.md` | every departure from the package, D1–D50, the adapter-side decisions, and the spec gaps found (G1–G8) |
+| `service/DEVIATIONS.md` | every departure from the package, D1–D63, the adapter-side decisions, and the spec gaps found (G1–G8) |
 | `service/PERFORMANCE.md` | the analytics profile, its causes, and the measurements |
 | `spec.html` | revision 6 — what the tool does, §1.5 mapping the changes |

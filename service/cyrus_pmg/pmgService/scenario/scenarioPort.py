@@ -73,7 +73,7 @@ class ScenarioPort(Protocol):
         self, category: str, basis: "BasisInput", variant: str
     ) -> "Sequence[Sleeve]":
         """The PMG-authored sleeve library for one category, under one
-        implementation variant. A sleeve is a fixed block: name plus products
+        implementation type. A sleeve is a fixed block: name plus products
         whose weights sum to 1.
 
         *variant* is one of the schema's options.implementationVariants and

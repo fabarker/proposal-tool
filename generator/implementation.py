@@ -26,11 +26,11 @@ IMPL_CSS = r"""
    .steps keeps display:flex, so the [hidden] !important rule above is still
    what hides it on the landing (spec 15.1). */
 .steps{display:flex;align-items:center;justify-content:center;
-  margin:0 0 clamp(20px,3vw,28px);padding:12px 0 16px;
+  margin:0 0 clamp(25px,3.75vw,35px);padding:15px 0 20px;
   border-bottom:1px solid var(--line-strong)}
 .step{appearance:none;background:none;border:0;font:inherit;color:var(--ink-2);
-  display:flex;align-items:center;gap:10px;text-align:left;
-  padding:9px 13px;border-radius:var(--radius-sm);cursor:pointer}
+  display:flex;align-items:center;gap:12.5px;text-align:left;
+  padding:11px 16px;border-radius:var(--radius-sm);cursor:pointer}
 .step:hover{background:var(--surface-2);color:var(--ink)}
 .step:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .step:disabled{opacity:.4;cursor:not-allowed}
@@ -38,33 +38,44 @@ IMPL_CSS = r"""
 /* Once step 2 is reachable it breathes until it has been opened, so the PWA
    is told the next stage has unlocked rather than having to notice. The pulse
    is on the numeral, not the whole tab: a moving block of text is harder to
-   read than a moving disc beside it. */
-.step-beckon .step-index{animation:stepbeckon 2.4s ease-in-out infinite;
-  border-color:var(--accent);color:var(--accent)}
+   read than a moving disc beside it - that much is unchanged, and it is why
+   none of what follows touches the label.
+
+   It is loud on purpose. The first version was a single faint ring on a slow
+   cycle, which read as a rendering artefact rather than an invitation; this
+   one carries a tinted disc, two rings leaving at different rates, and a small
+   swell of the disc itself, on a cycle short enough to catch the eye without
+   nagging. Reduced motion keeps the tint and a static double ring, so the
+   affordance survives with the movement removed. */
+.step-beckon .step-index{animation:stepbeckon 1.6s ease-in-out infinite;
+  border-color:var(--accent);color:var(--accent);background:#EAF1FC}
 @keyframes stepbeckon{
-  0%,100%{box-shadow:0 0 0 0 rgba(31,95,191,.34)}
-  50%{box-shadow:0 0 0 6px rgba(31,95,191,0)}
+  0%,100%{box-shadow:0 0 0 0 rgba(31,95,191,.55),0 0 0 0 rgba(31,95,191,.3);
+    transform:scale(1)}
+  50%{box-shadow:0 0 0 10px rgba(31,95,191,0),0 0 0 17px rgba(31,95,191,0);
+    transform:scale(1.09)}
 }
 @media (prefers-reduced-motion:reduce){
-  .step-beckon .step-index{animation:none;box-shadow:0 0 0 3px rgba(31,95,191,.28)}
+  .step-beckon .step-index{animation:none;transform:none;
+    box-shadow:0 0 0 4px rgba(31,95,191,.34),0 0 0 8px rgba(31,95,191,.16)}
 }
 .step:disabled:hover{background:none}
-.step-index{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
+.step-index{width:37.5px;height:37.5px;flex:0 0 auto;display:grid;place-items:center;
   border:1px solid var(--line-strong);border-radius:50%;background:var(--surface);
-  font-family:var(--f-num);font-size:12px;font-weight:700;color:var(--ink-3);
+  font-family:var(--f-num);font-size:15px;font-weight:700;color:var(--ink-3);
   transition:background .15s ease,color .15s ease,border-color .15s ease}
 .step-label{display:grid}
-.step-label strong{font-family:var(--f-num);font-size:13.5px;font-weight:600;line-height:1.25}
-.step-label small{font-size:11px;color:var(--ink-3);margin-top:1px;line-height:1.25}
+.step-label strong{font-family:var(--f-num);font-size:17px;font-weight:600;line-height:1.25}
+.step-label small{font-size:13.5px;color:var(--ink-3);margin-top:1px;line-height:1.25}
 .step[aria-selected="true"]{color:#16243A}
 .step[aria-selected="true"] .step-index{background:#16243A;color:#fff;border-color:#16243A}
 .step[aria-selected="true"] .step-label strong{font-weight:700}
-.step-connector{width:80px;height:1px;flex:0 0 auto;background:var(--line-strong);margin:0 10px}
+.step-connector{width:100px;height:1px;flex:0 0 auto;background:var(--line-strong);margin:0 12.5px}
 @media (prefers-reduced-motion:reduce){.step-index{transition:none}}
 /* Narrow: the descriptions go before the stage names do, and the connector
    shrinks rather than pushing the second stage off the edge. */
 @media (max-width:719px){
-  .step-connector{width:24px;margin:0 4px}
+  .step-connector{width:30px;margin:0 5px}
   .step-label small{display:none}
 }
 
@@ -123,8 +134,11 @@ IMPL_CSS = r"""
 .fee-group .fee-field:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
 .fee-field .fee-label{font-size:13px;font-weight:600;color:var(--rail-ink-2);line-height:1.3}
 .fee-field.done .fee-label{color:var(--rail-ink)}
+/* Two columns by default; the level's two controls set their own from the
+   schema's lists, so a framework with four points would still lay out. */
 .fee-seg{display:grid;grid-template-columns:1fr 1fr;
   border:1px solid var(--rail-input-border,#52739C);border-radius:4px;overflow:hidden}
+.fee-seg button+button{border-left:1px solid var(--rail-input-border,#52739C)}
 .fee-seg button{font:inherit;font-size:13px;font-weight:600;padding:7px 6px;cursor:pointer;
   background:var(--rail-input-bg,#1D2F4B);color:var(--rail-ink-2);border:0;line-height:1.2}
 .fee-seg button+button{border-left:1px solid var(--rail-input-border,#52739C)}
@@ -133,17 +147,102 @@ IMPL_CSS = r"""
   color:var(--rail-accent-ink,#fff)}
 .fee-seg button:disabled{cursor:default;opacity:.6}
 .fee-seg button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
-.fee-levels{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 5px;align-items:center}
-.fee-levels .rh{font-size:12px;font-weight:600;color:var(--rail-ink-3);padding-right:4px;
-  white-space:nowrap}
-.fee-levels button{font:inherit;font-family:var(--f-num);font-size:12px;padding:6px 2px;
-  cursor:pointer;background:var(--rail-input-bg,#1D2F4B);color:var(--rail-ink-2);
-  border:1px solid var(--rail-input-border,#52739C);border-radius:3px;line-height:1.2}
-.fee-levels button:hover{border-color:var(--rail-accent,var(--accent));color:var(--rail-ink)}
-.fee-levels button[aria-pressed="true"]{background:var(--rail-accent,var(--accent));
-  border-color:var(--rail-accent,var(--accent));color:var(--rail-accent-ink,#fff);font-weight:700}
-.fee-levels button:disabled{cursor:default;opacity:.6}
-.fee-levels button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:1px}
+/* the card's own line: delivery version, adjustments, and the way in (D55) */
+.fee-card{margin:6px 0 0;font-size:12px;color:var(--rail-ink-3);line-height:1.5}
+/* the way into the card, under the toggle that turns fees on */
+.fee-view{width:100%;margin:9px 0 0;font-size:12.5px;padding:6px 10px;
+  background:var(--rail-input-bg,#1D2F4B);border:1px solid var(--rail-input-border,#52739C);
+  color:var(--rail-ink);border-radius:4px;cursor:pointer}
+.fee-view:hover{border-color:var(--rail-accent,var(--accent))}
+.fee-view:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:2px}
+/* ── the rate card panel (D55) ──
+   The mandate dialog's chrome, widened for a six-column grid. A cell shows
+   the rate in force; amber means an adjustment is saved on top of the
+   delivered rate, blue means changed here and not yet saved. */
+.dialog.wide{width:min(940px,calc(100vw - 32px))}
+/* The card can be opened from inside the repository console (D58), so it
+   stacks above that dialog and its scrim rather than under them. */
+#feeDialog .scrim{z-index:94}
+#feeDialog .dialog{z-index:95}
+/* ── the fee card (D55), laid out to be read at a glance ──
+   A short head (what delivery this is), one row of controls (which way the
+   card is turned, and which slice), then the grid. Three things carry the
+   emphasis and nothing else does: the two source groups are visibly two
+   groups; the column of the level this proposal prices at is heavier and
+   tinted; and, pivoted by fee group, the one cell that is THIS mandate's rate
+   - its tier crossed with that level - wears a ring. Everything else is
+   quiet, so those three read first. */
+.dialog.rc{padding:22px 26px 20px}
+.rc-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 14px;margin:0 0 16px;padding-right:36px}
+.dialog.rc .rc-head h2{margin:0}
+.rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;margin:0;font-family:var(--f-num);font-size:12.5px;
+  color:var(--ink-3)}
+.rc-meta b{color:var(--ink-2);font-weight:600}
+.rc-flag{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:#92600A;background:#FEF3C7;border:1px solid #F3D48A;border-radius:9px;padding:1px 8px;line-height:16px}
+.rc-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 12px}
+.rc-seg{display:flex;border:1px solid var(--line-strong);border-radius:4px;overflow:hidden}
+.rc-seg button{appearance:none;border:0;border-left:1px solid var(--line-strong);background:var(--surface);
+  color:var(--ink-2);font:inherit;font-size:13px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.rc-seg button:first-child{border-left:0}
+.rc-seg button:hover{background:var(--surface-2);color:var(--ink)}
+.rc-seg button[aria-selected="true"]{background:#16243A;color:#fff;font-weight:600}
+.rc-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rc-axis{width:auto;min-width:240px;font-size:13px}
+.rc-loading{color:var(--ink-3);font-size:13px;margin:12px 0}
+.rc-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:var(--radius)}
+.rate-grid{border-collapse:collapse;width:100%;font-size:13px}
+.rate-grid th,.rate-grid td{padding:0 12px;border-bottom:1px solid var(--line);white-space:nowrap;
+  height:38px;vertical-align:middle}
+.rate-grid thead th{font-family:var(--f-num);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);background:var(--surface-2);font-weight:700;text-align:right;height:30px}
+/* the two source groups: a spanning head with its own rule, and a stronger
+   line plus a little air where one group becomes the next */
+.rate-grid th.src{text-align:center;border-bottom:1px solid var(--line-strong);height:32px;
+  font-size:11.5px;letter-spacing:.14em;color:var(--ink-2)}
+.rate-grid th.src span{display:inline-block;padding:0 6px 3px;border-bottom:2px solid var(--ink-3)}
+/* its own name, not .grp: the page has a .grp + .grp rule for stacked
+   groups that would otherwise pad the second source head down */
+.rate-grid .rc-grp{border-left:2px solid var(--line-strong);padding-left:20px}
+.rate-grid thead th.rowhead{text-align:left;vertical-align:bottom;padding-bottom:8px}
+/* the row head: an id set as a small pill, the band beside it, a tag when it
+   is this mandate's own row */
+.rate-grid tbody th.rowhead{text-align:left;font-weight:500;color:var(--ink);min-width:220px;
+  display:flex;align-items:center;gap:9px;height:38px}
+.rc-id{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.04em;color:var(--ink-2);
+  background:var(--surface-2);border:1px solid var(--line-strong);border-radius:4px;padding:1px 7px;line-height:17px;
+  min-width:34px;text-align:center}
+.rc-lbl{font-size:13px;color:var(--ink)}
+.rc-tag{margin-left:auto;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:#1E4FA3;background:#E3EBFA;border-radius:8px;padding:0 7px;line-height:16px}
+/* the level this proposal prices at: heavier, tinted, named in its head */
+.rate-grid th.lvl{color:#1E4FA3;background:#E9F0FB}
+.rate-grid th.lvl small{display:block;font-size:9px;letter-spacing:.08em;font-weight:700;color:#1E4FA3;
+  opacity:.85;margin-top:1px}
+.rate-grid td.lvl{background:#F3F7FD;font-weight:700;color:#16243A}
+/* this mandate's own row */
+.rate-grid tr.mark td,.rate-grid tr.mark th.rowhead{background:#F0F4FB}
+.rate-grid tr.mark td.lvl{background:#E3EBFA}
+.rate-grid tr.mark th.rowhead{box-shadow:inset 3px 0 0 var(--accent)}
+.rate-grid tr.mark .rc-id{background:#fff;border-color:#B9CDF0;color:#1E4FA3}
+/* the one cell that is this mandate's rate */
+.rate-grid td.ring{box-shadow:inset 0 0 0 2px var(--accent);border-radius:3px;color:#1E4FA3}
+.rate-grid td.rate{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;
+  color:var(--ink-2);min-width:74px;font-size:13.5px}
+.rate-grid tbody tr:last-child td,.rate-grid tbody tr:last-child th{border-bottom:none}
+.rate-grid tbody tr:hover td:not(.lvl),.rate-grid tbody tr:hover th.rowhead{background:var(--row-hover,var(--surface-2))}
+.rate-grid tbody tr.mark:hover td:not(.lvl),.rate-grid tbody tr.mark:hover th.rowhead{background:#E9EFF9}
+/* the key: one swatch per emphasis, in the order they appear */
+.rc-legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;font-size:12px;color:var(--ink-2)}
+.rc-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:6px;
+  border:1px solid var(--line-strong);background:var(--surface)}
+.rc-legend i.k-unit{border-style:dashed}
+.rc-legend i.k-lvl{background:#E9F0FB;border-color:#B9CDF0}
+.rc-legend i.k-mark{background:#F0F4FB;border-color:#B9CDF0;box-shadow:inset 3px 0 0 var(--accent)}
+.rc-legend i.k-ring{box-shadow:inset 0 0 0 2px var(--accent);background:#E3EBFA;border-color:transparent}
+.rc-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.rc-note{font-family:var(--f-num);font-size:12px;color:var(--ink-3)}
+.dialog .md-err{margin-top:12px}
 /* placeholder pricing is flagged in the rail as long as fees.json says so */
 .fee-flag{margin:2px 0 0;font-size:12px;font-weight:600;color:#F3C46B;line-height:1.4}
 
@@ -214,7 +313,9 @@ IMPL_CSS = r"""
 /* Narrower by the three fee columns when the proposal excludes them (D52).
    The width is transitioned so the table closes up as the columns collapse
    rather than snapping when the render lands. */
-.tbl.impl{min-width:1690px;transition:min-width var(--col-motion)}
+/* Smaller type than the step 1 tables carry: this one is 23 columns wide and
+   read across, where those are read down. .tbl sets 15px for both. */
+.tbl.impl{min-width:1690px;transition:min-width var(--col-motion);font-size:13px}
 .tbl.impl.no-fees,.tbl.impl.fees-out{min-width:1340px}
 @media (prefers-reduced-motion:reduce){.tbl.impl{transition:none}}
 .tbl.impl td.txt{white-space:nowrap}

@@ -18,6 +18,24 @@
 <!-- Live regions: present from first paint, or they are never announced. -->
 <div id="live-polite" class="sr-only" aria-live="polite"></div>
 <div id="live-assertive" class="sr-only" aria-live="assertive"></div>
+<!-- Admin glyphs (D62). One copy each, referenced with <use> so the navy
+     rail and the white landing page share them and take their colour from
+     currentColor. Two glyphs do not justify an icon font or a sprite fetch. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <defs>
+    <g id="i-sleeves" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 2.2 17.5 6 10 9.8 2.5 6z"/><path d="M2.5 10 10 13.8 17.5 10"/>
+      <path d="M2.5 14 10 17.8 17.5 14"/>
+    </g>
+    <g id="i-catalogue" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.5" y="3" width="15" height="14" rx="2"/>
+      <path d="M2.5 7.6h15M8 7.6V17M2.5 12.3h15"/>
+    </g>
+  </defs>
+</svg>
+
 <aside class="rail" aria-label="Scenario">
   <div class="rail-brand">
     <b>Portfolio Management Group</b>
@@ -32,6 +50,19 @@
     <div class="tier" id="tier-base"></div>
 
     <div class="tier" id="tier-sleeves" hidden></div>
+  </div>
+
+  <!-- Administration (D62): outside the masthead, which fades on collapse, and
+       sticky to the foot so a long rail cannot scroll it away. Collapsed, the
+       caption goes and the two glyphs stack - which is what a 48px rail is for. -->
+  <div class="rail-admin-bar" id="railadmin" hidden>
+    <span class="rail-admin-cap">Admin</span>
+    <a href="#repository" class="rail-admin-btn" id="repolink"
+       aria-label="Sleeve repository" title="Sleeve repository">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><use href="#i-sleeves"/></svg></a>
+    <a href="#catalogue" class="rail-admin-btn" id="catlink"
+       aria-label="Product catalogue" title="Product catalogue">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><use href="#i-catalogue"/></svg></a>
   </div>
 </aside>
 
@@ -162,6 +193,8 @@
      implementation layers attach to it. -->
 <!-- Mandate dialog, rendered on demand. -->
 <div id="mandateDialog" hidden></div>
+<div id="feeDialog" hidden></div>
+<div id="repoDialog" hidden></div>
 
 <script src="static/js/proposalTool.js"></script>
 </body>

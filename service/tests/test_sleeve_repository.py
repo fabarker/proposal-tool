@@ -1,0 +1,664 @@
+"""The sleeve repository and the product catalogue (D56, D57).
+
+The store under test is the per-session temporary database conftest points
+SCENARIO_SLEEVES_DB at, seeded from the packaged extract exactly as a first
+run would be. Tests that write clean up after themselves.
+"""
+
+import csv
+import os
+
+import pytest
+from starlette.requests import Request
+
+from cyrus_pmg.pmgService import dashboardRouter
+from cyrus_pmg.pmgService.core import accessControl
+from cyrus_pmg.pmgService.scenario import (fees, products, rules, sleeveRepo, sleeveTools,
+                                           sleeves)
+from cyrus_pmg.pmgService.scenario.types import ValidationError
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SEED = os.path.join(HERE, '..', '..', 'sleeveSource', 'sleeves.csv')
+CATALOGUE = os.path.join(HERE, '..', '..', 'productSource', 'products.csv')
+
+A_PRODUCT = 'gs-us-corporate-bond-fund'
+ANOTHER = 'ashfield-global-credit-fund'
+
+
+def _aPlacedProduct():
+    """A product some sleeve actually holds. Chosen from the library rather
+    than named, because which products are placed is the seed's business and
+    the seed is data - it changed once already (D9's authored sleeves for
+    PMG's own names) and will change again when PMG's real library lands."""
+    for entry in sleeveRepo.listAll():
+        for row in entry['products']:
+            return row['productId']
+    raise AssertionError('the library is empty')
+
+
+def _seedRows():
+    with open(SEED, newline='', encoding='utf-8') as fh:
+        reader = csv.reader(fh)
+        next(reader)
+        return [(v, c, s, p, float(w)) for v, c, s, p, w in reader]
+
+
+def _request(kerberos=None):
+    headers = [(b'x-kerberos', kerberos.encode())] if kerberos else []
+    return Request({'type': 'http', 'method': 'GET', 'path': '/', 'query_string': b'',
+                    'headers': headers})
+
+
+# ---- the catalogue (D56) -----------------------------------------------------
+
+def test_catalogue_serves_the_delivered_table_in_the_product_shape():
+    """One row per product, every field a sleeve product has always carried,
+    the fee left out and the group in its place; an empty ticker is the dash
+    the table has always shown."""
+    rows = products.all()
+    assert len(rows) == 73
+    expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'source',
+                'liquidity', 'exposureCurrency', 'productCost', 'feeGroup',
+                'distributionYield', 'minimumInvestment'}
+    for p in rows:
+        assert set(p) == expected, p['productId']
+        assert 'managementFee' not in p
+        assert p['feeGroup'] in fees.FEE_GROUPS
+        assert p['productCost'] >= 0
+    sma = products.get('gsam-core-municipal-sma')
+    assert sma['ticker'] == '—'
+    # the two figures the catalogue compares on (D63): a number, or None
+    # where the delivery leaves the cell blank - an ETF has no minimum
+    assert isinstance(sma['distributionYield'], float) and sma['minimumInvestment'] == 5_000_000.0
+    assert products.get('gs-access-ig-corporate-etf')['minimumInvestment'] is None
+    assert products.get('nope') is None and not products.has('nope')
+    assert products.describeSource()['products'] == 73
+
+
+def test_an_extract_without_the_optional_figures_still_loads(tmp_path, monkeypatch):
+    """The two figures are optional in the file (D63): a delivery from before
+    they existed loads, and serves them as None rather than refusing."""
+    with open(CATALOGUE, newline='', encoding='utf-8') as fh:
+        rows = list(csv.reader(fh))
+    keep = [i for i, h in enumerate(rows[0]) if h not in ('DistributionYield', 'MinimumInvestment')]
+    path = tmp_path / 'products.csv'
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows([[r[i] for i in keep] for r in rows])
+    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
+    products.reload()
+    try:
+        p = products.get('gsam-core-municipal-sma')
+        assert p['distributionYield'] is None and p['minimumInvestment'] is None
+        assert len(products.all()) == 73
+    finally:
+        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
+        products.reload()
+
+
+@pytest.mark.parametrize('bad, message', [
+    ('FeeGroup', 'fee group'),
+    ('ProductCost', 'not a number'),
+    ('ProductId', 'duplicate'),
+    ('DistributionYield', 'not a number'),
+    ('MinimumInvestment', 'negative'),
+])
+def test_catalogue_rejects_a_bad_extract_at_load(tmp_path, monkeypatch, bad, message):
+    """A wrong fee group would otherwise fail at export under RDR; a bad
+    cost or a repeated id would corrupt every sleeve that used it. All are
+    refused before anything is served."""
+    with open(CATALOGUE, newline='', encoding='utf-8') as fh:
+        rows = list(csv.reader(fh))
+    head, body = rows[0], rows[1:]
+    col = head.index(bad)
+    if bad == 'ProductId':
+        body[1][col] = body[0][col]
+    elif bad == 'FeeGroup':
+        body[0][col] = 'Made Up'
+    elif bad == 'MinimumInvestment':
+        body[0][col] = '-1'
+    else:
+        body[0][col] = 'free'
+    path = tmp_path / 'products.csv'
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows([head] + body)
+    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
+    products.reload()
+    try:
+        with pytest.raises(products.BadCatalogue) as exc:
+            products.all()
+        assert message in str(exc.value)
+    finally:
+        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
+        products.reload()
+
+
+# ---- the seed and the served shape (D57) --------------------------------------
+
+def test_seed_equals_the_extract_sleeve_for_sleeve_and_weight_for_weight():
+    """The parity that lets the rest of the suite pass unchanged: what the
+    repository serves is what the tables used to say."""
+    want = {}
+    for v, c, s, p, w in _seedRows():
+        want.setdefault((v, c, s), {})[p] = w
+    got = {}
+    for variant in sleeves.VARIANTS:
+        for category in sleeveRepo.categories():
+            for sleeve in sleeves.listSleeves(category, variant):
+                for product in sleeve['products']:
+                    got.setdefault((variant, category, sleeve['name']), {})[product['productId']] = product['weight']
+    assert got == want
+    assert len(got) == 102
+    counts = {}
+    for (v, _, _) in got:
+        counts[v] = counts.get(v, 0) + 1
+    assert counts == {'PMG Multi-Asset Portfolio': 22, 'PMG ESG': 31,
+                      'US Onshore': 26, 'Irish Onshore': 23}
+    # every book can be completed: no category is empty under any type
+    for variant in sleeves.VARIANTS:
+        for category in sleeveRepo.categories():
+            assert sleeves.listSleeves(category, variant), (variant, category)
+
+
+def test_served_sleeve_keeps_the_shape_every_consumer_reads():
+    sleeve = sleeves.listSleeves('Investment Grade Fixed Income', sleeves.VARIANTS[0])[0]
+    assert set(sleeve) == {'id', 'name', 'note', 'products'}
+    assert abs(sum(p['weight'] for p in sleeve['products']) - 1.0) < 1e-9
+    for p in sleeve['products']:
+        assert 'managementFee' not in p and 'feeGroup' in p and 'weight' in p
+    assert sleeves.sleeveExists('Investment Grade Fixed Income', sleeve['name'], sleeves.VARIANTS[0])
+    assert not sleeves.sleeveExists('Investment Grade Fixed Income', sleeve['name'], 'Not A Type')
+    assert sleeves.listSleeves('Public Equity', 'Not A Type') == []
+
+
+def test_categories_follow_the_implementation_table_order():
+    """The universe's categories, the volatility premium's after the category
+    that funds it, the tilt's last - the order the table renders them in."""
+    cats = sleeveRepo.categories()
+    universe = rules.categoriesInUniverseOrder()
+    assert cats.index(rules.VOL_PREMIUM_CATEGORY) == cats.index(rules.VOL_PREMIUM_FUNDED_FROM) + 1
+    assert cats[-1] == rules.TACTICAL_TILT_CATEGORY
+    # the universe's order, with grouped categories collapsed to their one
+    # name and appearing where the first of them did (D60)
+    seen = []
+    for c in universe:
+        under = rules.sleeveCategory(c)
+        if under not in seen:
+            seen.append(under)
+    assert [c for c in cats if c in seen] == seen
+    assert set(sleeveRepo.fixedCategories()) == set(rules.AUTO_SLEEVE_CATEGORIES)
+    # a grouped category is never offered on its own
+    for group in rules.SLEEVE_GROUPS:
+        assert group['name'] in cats
+        for member in group['categories']:
+            assert member not in cats
+
+
+def test_every_fixed_category_holds_exactly_one_sleeve_under_every_type():
+    for variant in sleeves.VARIANTS:
+        for category in sleeveRepo.fixedCategories():
+            assert len(sleeves.listSleeves(category, variant)) == 1, (variant, category)
+    assert sleeveRepo.census()['fixedCategoryProblems'] == []
+
+
+# ---- writing -----------------------------------------------------------------
+
+def test_create_update_delete_round_trip_with_provenance():
+    variant, category = 'PMG ESG', 'Public Equity'
+    before = [s['name'] for s in sleeves.listSleeves(category, variant)]
+    made = sleeveRepo.createSleeve(
+        variant, category, '  Round Trip  ',
+        [{'productId': A_PRODUCT, 'weight': 0.6}, {'productId': ANOTHER, 'weight': 0.4}],
+        note='temporary', user='alice')
+    try:
+        assert made['name'] == 'Round Trip' and made['createdBy'] == 'alice'
+        assert made['problems'] == [] and made['fixed'] is False
+        assert [p['productId'] for p in made['products']] == [A_PRODUCT, ANOTHER]
+        assert made['products'][0]['product']['name'] == 'GS US Corporate Bond Fund'
+        served = [s['name'] for s in sleeves.listSleeves(category, variant)]
+        assert served == before + ['Round Trip']
+
+        upd = sleeveRepo.updateSleeve(made['id'], 'Round Trip 2',
+                                      [{'productId': ANOTHER, 'weight': 1.0}], user='bob')
+        assert upd['name'] == 'Round Trip 2' and upd['updatedBy'] == 'bob'
+        assert upd['createdBy'] == 'alice'
+        assert len(upd['products']) == 1
+        assert sleeveRepo.getSleeve(made['id'])['name'] == 'Round Trip 2'
+    finally:
+        gone = sleeveRepo.deleteSleeve(made['id'], user='alice')
+    assert gone['name'] == 'Round Trip 2'
+    assert [s['name'] for s in sleeves.listSleeves(category, variant)] == before
+    assert sleeveRepo.getSleeve(made['id']) is None
+
+
+@pytest.mark.parametrize('field, kwargs', [
+    ('variant',  dict(variant='Not A Type')),
+    ('category', dict(category='Cash')),
+    ('name',     dict(name='   ')),
+    ('name',     dict(name='x' * 81)),
+    ('name',     dict(name='Passive')),                               # already there
+    ('products', dict(products=[])),
+    ('products', dict(products=[{'productId': 'nope', 'weight': 1}])),
+    ('products', dict(products=[{'productId': A_PRODUCT, 'weight': .5},
+                                {'productId': A_PRODUCT, 'weight': .5}])),
+    ('weights',  dict(products=[{'productId': A_PRODUCT, 'weight': .98}])),
+    ('weights',  dict(products=[{'productId': A_PRODUCT, 'weight': 'lots'}])),
+    ('weights',  dict(products=[{'productId': A_PRODUCT, 'weight': 0},
+                                {'productId': ANOTHER, 'weight': 1}])),
+    ('category', dict(category='Hybrid Fixed Income')),                # fixed: already has its one
+])
+def test_every_rule_refuses_naming_its_field(field, kwargs):
+    args = dict(variant='PMG ESG', category='Public Equity', name='Should Not Save',
+                products=[{'productId': A_PRODUCT, 'weight': 1.0}])
+    args.update(kwargs)
+    total = sleeveRepo.census()['total']
+    with pytest.raises(ValidationError) as exc:
+        sleeveRepo.createSleeve(args['variant'], args['category'], args['name'], args['products'])
+    assert exc.value.field == field
+    assert sleeveRepo.census()['total'] == total, 'nothing may be written on refusal'
+
+
+def test_a_fixed_category_sleeve_can_be_edited_but_not_deleted():
+    variant = sleeves.VARIANTS[0]
+    entry = [e for e in sleeveRepo.listAll(variant)
+             if e['category'] == rules.VOL_PREMIUM_CATEGORY][0]
+    assert entry['fixed'] is True
+    with pytest.raises(ValidationError) as exc:
+        sleeveRepo.deleteSleeve(entry['id'])
+    assert exc.value.field == 'category'
+    # edits are fine - the products and weights are the admin's to maintain
+    original = [{'productId': p['productId'], 'weight': p['weight']} for p in entry['products']]
+    upd = sleeveRepo.updateSleeve(entry['id'], entry['name'], original, note='checked', user='alice')
+    assert upd['note'] == 'checked'
+    sleeveRepo.updateSleeve(entry['id'], entry['name'], original, note=entry['note'])
+
+
+def test_renaming_onto_an_existing_name_is_refused():
+    variant, category = 'PMG ESG', 'Public Equity'
+    names = [s['name'] for s in sleeves.listSleeves(category, variant)]
+    mine = sleeveRepo.createSleeve(variant, category, 'Rename Me',
+                                   [{'productId': A_PRODUCT, 'weight': 1}])
+    try:
+        with pytest.raises(ValidationError) as exc:
+            sleeveRepo.updateSleeve(mine['id'], names[0], [{'productId': A_PRODUCT, 'weight': 1}])
+        assert exc.value.field == 'name'
+        # renaming onto its own name is not a clash
+        sleeveRepo.updateSleeve(mine['id'], 'Rename Me', [{'productId': A_PRODUCT, 'weight': 1}])
+    finally:
+        sleeveRepo.deleteSleeve(mine['id'])
+
+
+def test_a_sleeve_whose_product_left_the_catalogue_is_withheld_but_listed(tmp_path, monkeypatch):
+    """A new product extract without a product breaks every sleeve holding
+    it: gone from the pickers, present in the console with the reason."""
+    with open(CATALOGUE, newline='', encoding='utf-8') as fh:
+        rows = list(csv.reader(fh))
+    dropped = _aPlacedProduct()
+    kept = [r for r in rows if r[0] != dropped]
+    assert len(kept) == len(rows) - 1
+    path = tmp_path / 'products.csv'
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows(kept)
+    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
+    products.reload()
+    try:
+        holders = [e for e in sleeveRepo.listAll()
+                   if any(p['productId'] == dropped for p in e['products'])]
+        assert holders, 'the fixture product is in at least one sleeve'
+        for e in holders:
+            assert any(dropped in problem for problem in e['problems'])
+            assert not sleeves.sleeveExists(e['category'], e['name'], e['variant'])
+        assert len(sleeveRepo.census()['broken']) == len(holders)
+    finally:
+        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
+        products.reload()
+    assert sleeveRepo.census()['broken'] == []
+
+
+# ---- interchange ---------------------------------------------------------------
+
+def test_export_returns_the_seed_and_import_round_trips(tmp_path, monkeypatch):
+    assert sorted(sleeveRepo.exportRows()) == sorted(_seedRows())
+    out = tmp_path / 'out.csv'
+    assert sleeveTools.main(['--export', str(out)]) == 0
+    # import the export into a fresh store: the same library comes back
+    monkeypatch.setenv('SCENARIO_SLEEVES_DB', str(tmp_path / 'fresh.db'))
+    monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
+    assert sleeveRepo.describe()['sleeves'] == 0
+    assert sleeveTools.main(['--import', str(out)]) == 0
+    assert sleeveRepo.describe()['sleeves'] == 102
+    assert sorted(sleeveRepo.exportRows()) == sorted(_seedRows())
+    assert sleeveTools.main(['--census']) == 0
+
+
+def test_import_refuses_a_bad_library_wholesale(tmp_path, monkeypatch):
+    bad = tmp_path / 'bad.csv'
+    with open(bad, 'w', newline='', encoding='utf-8') as fh:
+        w = csv.writer(fh)
+        w.writerow(sleeveRepo.SEED_COLUMNS)
+        w.writerow(['PMG ESG', 'Public Equity', 'Fine', A_PRODUCT, 1.0])
+        w.writerow(['PMG ESG', 'Public Equity', 'Short', A_PRODUCT, 0.9])
+    monkeypatch.setenv('SCENARIO_SLEEVES_DB', str(tmp_path / 'fresh.db'))
+    monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
+    assert sleeveTools.main(['--import', str(bad)]) == 1
+    assert sleeveRepo.describe()['sleeves'] == 0, 'a single bad sleeve aborts the whole load'
+
+
+# ---- the admin role --------------------------------------------------------------
+
+def test_admin_is_a_third_role_gating_the_repository(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice,bob')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice,carol')
+    assert accessControl.isAdmin('alice')
+    assert not accessControl.isAdmin('bob'), 'an editor is not an admin'
+    assert not accessControl.isAdmin('carol'), 'an admin must also be on the access list'
+    assert accessControl.requireAdmin(_request('alice')) == 'alice'
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        accessControl.requireAdmin(_request('bob'))
+    assert exc.value.status_code == 403 and 'error' in exc.value.detail
+    with pytest.raises(HTTPException) as exc:
+        accessControl.requireAdmin(_request(None))
+    assert exc.value.status_code == 401
+
+
+def test_schema_tells_the_page_whether_the_caller_is_an_admin(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice,bob')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    admin = dashboardRouter.getScenarioSchema(_request('alice'))
+    editor = dashboardRouter.getScenarioSchema(_request('bob'))
+    assert admin['capabilities']['canAdmin'] is True
+    assert editor['capabilities']['canAdmin'] is False
+    assert admin['capabilities']['canEdit'] is True, 'the existing capabilities survive'
+    # and the stamp did not leak into whatever the port hands back
+    again = dashboardRouter.getScenarioSchema(_request('bob'))
+    assert again['capabilities']['canAdmin'] is False
+
+
+def test_every_repository_route_requires_the_admin_role():
+    found = {}
+    for route in dashboardRouter.router.routes:
+        if '/scenario/repository' in route.path:
+            names = [d.call.__name__ for d in route.dependant.dependencies]
+            found[(route.path, tuple(sorted(route.methods)))] = names
+    assert set(found) == {
+        ('/scenario/repository', ('GET',)),
+        ('/scenario/repository/sleeves', ('POST',)),
+        ('/scenario/repository/sleeves/{sleeveId}', ('PUT',)),
+        ('/scenario/repository/sleeves/{sleeveId}', ('DELETE',)),
+    }
+    for key, names in found.items():
+        assert 'requireAdmin' in names, key
+
+
+def test_the_console_payload_and_the_write_handlers(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    body = dashboardRouter.getRepository(user='alice')
+    assert body['variants'] == sleeves.VARIANTS
+    assert body['categories'] == sleeveRepo.categories()
+    assert len(body['products']) == 73 and len(body['sleeves']) == 102
+    assert body['user'] == 'alice' and body['store']['sleeves'] == 102
+
+    made = dashboardRouter.createRepositorySleeve(
+        {'variant': 'PMG ESG', 'category': 'Public Equity', 'name': 'Via Route',
+         'products': [{'productId': A_PRODUCT, 'weight': 1}]}, user='alice')
+    sleeveId = made['sleeve']['id']
+    try:
+        refused = dashboardRouter.updateRepositorySleeve(
+            sleeveId, {'name': 'Via Route', 'products': [{'productId': A_PRODUCT, 'weight': .5}]},
+            user='alice')
+        assert refused.status_code == 422
+        import json
+        assert json.loads(refused.body)['field'] == 'weights'
+        ok = dashboardRouter.updateRepositorySleeve(
+            sleeveId, {'name': 'Via Route 2', 'products': [{'productId': A_PRODUCT, 'weight': 1}]},
+            user='alice')
+        assert ok['sleeve']['name'] == 'Via Route 2'
+    finally:
+        gone = dashboardRouter.deleteRepositorySleeve(sleeveId, user='alice')
+    assert gone['deleted']['id'] == sleeveId
+
+
+# ---- the catalogue view (D58) ----------------------------------------------------
+
+def test_no_orphans_in_the_seed_and_the_payload_carries_the_field(monkeypatch):
+    assert sleeveRepo.orphanProducts() == []
+    assert sleeveRepo.census()['orphans'] == []
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    assert dashboardRouter.getRepository(user='alice')['orphans'] == []
+
+
+def test_a_dropped_product_is_reported_by_product_with_the_sleeves_it_breaks(tmp_path, monkeypatch, capsys):
+    """The other side of a broken sleeve: gathered by product, which is the
+    question the catalogue view answers, and printed by the census."""
+    dropped = _aPlacedProduct()
+    with open(CATALOGUE, newline='', encoding='utf-8') as fh:
+        rows = list(csv.reader(fh))
+    kept = [r for r in rows if r[0] != dropped]
+    path = tmp_path / 'products.csv'
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows(kept)
+    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
+    products.reload()
+    try:
+        orphans = sleeveRepo.orphanProducts()
+        assert [o['productId'] for o in orphans] == [dropped]
+        breaks = orphans[0]['sleeves']
+        assert breaks and all(set(s) == {'id', 'variant', 'category', 'name'} for s in breaks)
+        broken = {e['id'] for e in sleeveRepo.census()['broken']}
+        assert {s['id'] for s in breaks} == broken, 'the two views of the same failure agree'
+        assert sleeveTools.main(['--census']) == 1
+        out = capsys.readouterr().out
+        assert 'NOT IN THE CATALOGUE (1)' in out and dropped in out
+    finally:
+        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
+        products.reload()
+
+
+def test_catalogue_helpers_mirror_the_rules_they_implement():
+    """The view's pure functions - the join, the enrichment, the derived
+    figures, the faceted counts, the filter, the sort and the best-per-row
+    marking - run through node against fixture data, the way the rounding and
+    tilt mirrors are proved (D63)."""
+    import json
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    jsPath = os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js')
+    with open(jsPath, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('/* catalogue-helpers-begin')
+    end = source.index('/* catalogue-helpers-end */')
+    helpers = source[start:end]
+    productsFx = [
+        {'productId': 'a', 'name': 'Alpha ETF', 'ticker': 'ALP', 'assetClass': 'IG Corporate', 'style': 'Passive',
+         'vehicle': 'ETF', 'source': 'Internal', 'liquidity': 'Daily', 'exposureCurrency': 'USD',
+         'productCost': 0.14, 'feeGroup': 'Passive', 'distributionYield': 4.62, 'minimumInvestment': None},
+        {'productId': 'b', 'name': 'Beta SMA', 'ticker': '—', 'assetClass': 'IG Corporate', 'style': 'Active',
+         'vehicle': 'SMA', 'source': 'Internal', 'liquidity': 'Daily', 'exposureCurrency': 'USD',
+         'productCost': 0.28, 'feeGroup': 'Core Active', 'distributionYield': 4.85, 'minimumInvestment': 5_000_000},
+        {'productId': 'c', 'name': 'Gamma Fund', 'ticker': 'GAM', 'assetClass': 'Multi-Strategy', 'style': 'Active',
+         'vehicle': 'Mutual Fund', 'source': 'External', 'liquidity': 'Quarterly', 'exposureCurrency': 'Local',
+         'productCost': 0.90, 'feeGroup': 'Alternatives', 'distributionYield': None, 'minimumInvestment': 1000},
+    ]
+    sleevesFx = [
+        {'id': 1, 'variant': 'T1', 'category': 'Fixed Income', 'name': 'S1',
+         'products': [{'productId': 'a', 'weight': 0.6}, {'productId': 'b', 'weight': 0.4}]},
+        {'id': 2, 'variant': 'T2', 'category': 'Fixed Income', 'name': 'S2',
+         'products': [{'productId': 'a', 'weight': 1.0}]},
+    ]
+    facets = [{'key': 'category'}, {'key': 'vehicle'}, {'key': 'liquidity'}, {'key': 'book'}]
+    script = helpers + '''
+const products = %s, sleeves = %s, facets = %s;
+const mgmt = g => ({ 'Passive': 0.26, 'Core Active': 0.32, 'Alternatives': 0.52 })[g];
+const rows = catEnrich(products, sleeves, mgmt, 2000000);
+const ids = rs => rs.map(r => r.p.productId);
+const run = (state, sort) => ids(catSort(catFilter(rows, state), sort));
+const none = { query: '', filters: {} };
+process.stdout.write(JSON.stringify({
+  join: catJoin(sleeves),
+  enriched: rows.map(r => ({ id: r.p.productId, used: r.used, cats: r.categories, books: r.books, mgmt: r.mgmt,
+                              allIn: +r.allIn.toFixed(2), net: r.net === null ? null : +r.net.toFixed(2), tooBig: r.tooBig })),
+  unpriced: catEnrich(products, sleeves, null, null).map(r => [r.mgmt, +r.allIn.toFixed(2), r.tooBig]),
+  facets: catFacets(rows, facets, none, { book: ['T1', 'T2', 'Not yet placed'] }),
+  facetsOtherFilters: catFacets(rows, facets, { query: '', filters: { vehicle: ['ETF'] } }, {}),
+  byVehicle: run({ query: '', filters: { vehicle: ['SMA', 'ETF'] } }, null),
+  byBook: run({ query: '', filters: { book: ['T2'] } }, null),
+  unplaced: run({ query: '', filters: { category: ['Not yet placed'] } }, null),
+  bySearch: run({ query: 'gam', filters: {} }, null),
+  allInAsc: run(none, { key: 'allIn', dir: 'asc' }),
+  yieldDesc: run(none, { key: 'distributionYield', dir: 'desc' }),
+  yieldAsc: run(none, { key: 'distributionYield', dir: 'asc' }),
+  minAsc: run(none, { key: 'minimumInvestment', dir: 'asc' }),
+  best: catBest(rows),
+}));
+''' % (json.dumps(productsFx), json.dumps(sleevesFx), json.dumps(facets))
+    out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
+    got = json.loads(out.stdout)
+    assert got['join'] == {'a': {'used': 2, 'categories': ['Fixed Income'], 'books': ['T1', 'T2']},
+                           'b': {'used': 1, 'categories': ['Fixed Income'], 'books': ['T1']}}
+    a, b, c = got['enriched']
+    assert (a['mgmt'], a['allIn'], a['net']) == (0.26, 0.40, 4.22)
+    assert (b['mgmt'], b['allIn'], b['net'], b['tooBig']) == (0.32, 0.60, 4.25, True), 'a $5m minimum is above a $2m mandate'
+    assert (c['net'], c['used'], c['cats'], c['books']) == (None, 0, [], []), 'no yield means no net; unplaced means empty joins'
+    assert got['unpriced'] == [[None, 0.14, False], [None, 0.28, False], [None, 0.90, False]], 'no schedule: all-in is cost, nothing flagged'
+    f = got['facets']
+    assert f['category'] == [{'value': 'Fixed Income', 'count': 2}, {'value': 'Not yet placed', 'count': 1}]
+    assert f['book'] == [{'value': 'T1', 'count': 2}, {'value': 'T2', 'count': 1}, {'value': 'Not yet placed', 'count': 1}]
+    assert f['liquidity'] == [{'value': 'Daily', 'count': 2}, {'value': 'Quarterly', 'count': 1}]
+    # with Vehicle = ETF in force, every OTHER facet counts only the ETF, and
+    # the vehicle facet itself still counts everything - so a choice can be widened
+    g = got['facetsOtherFilters']
+    assert g['liquidity'] == [{'value': 'Daily', 'count': 1}, {'value': 'Quarterly', 'count': 0}]
+    assert g['vehicle'] == [{'value': 'ETF', 'count': 1}, {'value': 'Mutual Fund', 'count': 1}, {'value': 'SMA', 'count': 1}]
+    assert got['byVehicle'] == ['a', 'b'] and got['byBook'] == ['a'] and got['unplaced'] == ['c']
+    assert got['bySearch'] == ['c']
+    assert got['allInAsc'] == ['a', 'b', 'c']
+    assert got['yieldDesc'] == ['b', 'a', 'c'] and got['yieldAsc'] == ['a', 'b', 'c'], 'a blank sorts last either way'
+    assert got['minAsc'] == ['c', 'b', 'a']
+    assert got['best'] == {'productCost': 'a', 'mgmt': 'a', 'allIn': 'a', 'distributionYield': 'b', 'net': 'b'}
+# ---- creating under several books, and copying between them (D61) ----------------
+
+def test_one_definition_can_be_created_under_several_types_at_once():
+    """The console's Create, and its right-click Add to implementation type,
+    are the same call: a sleeve is defined once and offered wherever it is
+    wanted, rather than typed out per book."""
+    made = sleeveRepo.createSleeves(
+        ['PMG ESG', 'Irish Onshore'], 'Public Equity', 'Shared Definition',
+        [{'productId': A_PRODUCT, 'weight': 0.6}, {'productId': ANOTHER, 'weight': 0.4}],
+        note='one definition', user='alice')
+    try:
+        assert [m['variant'] for m in made] == ['PMG ESG', 'Irish Onshore'], 'VARIANTS order'
+        for m in made:
+            assert m['name'] == 'Shared Definition' and m['note'] == 'one definition'
+            assert [p['productId'] for p in m['products']] == [A_PRODUCT, ANOTHER]
+            assert sorted(m['offeredUnder']) == ['Irish Onshore', 'PMG ESG']
+        # and it reaches the pickers of both, but not of the books not asked for
+        for variant in ('PMG ESG', 'Irish Onshore'):
+            assert sleeves.sleeveExists('Public Equity', 'Shared Definition', variant)
+        for variant in ('PMG Multi-Asset Portfolio', 'US Onshore'):
+            assert not sleeves.sleeveExists('Public Equity', 'Shared Definition', variant)
+    finally:
+        for m in made:
+            sleeveRepo.deleteSleeve(m['id'])
+
+
+def test_a_clash_in_one_type_writes_none_of_them():
+    """All or nothing. A half-applied create would leave the library saying
+    something nobody asked for, and the admin with no way to tell."""
+    # a name PMG ESG offers and Irish Onshore does not, so the refusal comes
+    # from one of the two and the other is left provably untouched
+    irish = {s['name'] for s in sleeves.listSleeves('Public Equity', 'Irish Onshore')}
+    clashing = next(s['name'] for s in sleeves.listSleeves('Public Equity', 'PMG ESG')
+                    if s['name'] not in irish)
+    before = sleeveRepo.describe()['sleeves']
+    with pytest.raises(ValidationError) as exc:
+        sleeveRepo.createSleeves(
+            ['Irish Onshore', 'PMG ESG'], 'Public Equity', clashing,
+            [{'productId': A_PRODUCT, 'weight': 1.0}])
+    assert exc.value.field == 'name'
+    assert sleeveRepo.describe()['sleeves'] == before
+    assert not sleeves.sleeveExists('Public Equity', clashing, 'Irish Onshore')
+
+
+@pytest.mark.parametrize('variants, field', [
+    ([], 'variants'),
+    (['Not A Type'], 'variant'),
+    (['PMG ESG', 'Not A Type'], 'variant'),
+])
+def test_the_type_list_itself_is_validated(variants, field):
+    """An unknown type is named, never quietly dropped - a caller that asks
+    for a book that does not exist has made a mistake worth hearing about."""
+    with pytest.raises(ValidationError) as exc:
+        sleeveRepo.createSleeves(variants, 'Public Equity', 'Should Not Save',
+                                 [{'productId': A_PRODUCT, 'weight': 1.0}])
+    assert exc.value.field == field
+
+
+def test_a_fixed_category_refuses_a_second_sleeve_however_it_arrives():
+    """Copying into a book whose fixed category already holds its one sleeve
+    is the same refusal as building a second one by hand."""
+    variant = sleeves.VARIANTS[1]
+    with pytest.raises(ValidationError) as exc:
+        sleeveRepo.createSleeves([variant], rules.VOL_PREMIUM_CATEGORY, 'A Second One',
+                                 [{'productId': A_PRODUCT, 'weight': 1.0}])
+    assert exc.value.field == 'category'
+
+
+def test_the_route_takes_a_list_of_types_and_reports_them_all(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    body = dashboardRouter.createRepositorySleeve(
+        {'variants': ['US Onshore', 'PMG Multi-Asset Portfolio'], 'category': 'Hedge Funds',
+         'name': 'Route Shared', 'products': [{'productId': A_PRODUCT, 'weight': 1}]},
+        user='alice')
+    made = body['sleeves']
+    try:
+        assert len(made) == 2 and body['sleeve'] == made[0]
+        assert {m['variant'] for m in made} == {'US Onshore', 'PMG Multi-Asset Portfolio'}
+        # the single-type form still works, for callers that send one
+        one = dashboardRouter.createRepositorySleeve(
+            {'variant': 'PMG ESG', 'category': 'Hedge Funds', 'name': 'Route Shared',
+             'products': [{'productId': A_PRODUCT, 'weight': 1}]}, user='alice')
+        made.append(one['sleeve'])
+        assert one['sleeve']['variant'] == 'PMG ESG'
+    finally:
+        for m in made:
+            sleeveRepo.deleteSleeve(m['id'])
+
+
+# ---- the built stylesheet carries every section the console needs ----------------
+
+def test_the_built_stylesheet_still_carries_every_console_section():
+    """A splice that replaces one stylesheet section by its neighbours' markers
+    can take a whole section with it and nothing fails - the page renders,
+    unstyled. It happened once (D62 took the catalogue's styles). The built
+    CSS is what the host serves, so that is what is checked: one selector
+    from each section of the console's stylesheet, and the page's own."""
+    css = os.path.join(HERE, '..', '..', 'proposalTool', 'static', 'css', 'proposalTool.css')
+    with open(css, encoding='utf-8') as fh:
+        built = fh.read()
+    sections = {
+        'console frame':      ['.dialog.repo{', '.repo-h{', '.repo-seg button[aria-selected="true"]'],
+        'sleeve panes':       ['.repo-cat[aria-selected="true"]', '.repo-sleeve{', '.repo-fixed{'],
+        'editor':             ['.repo-prods .pr{', '.repo-search{', '.repo-menu li[aria-selected="true"]', '.repo-tot{'],
+        'creation and menu':  ['.btn.btn-create{', '.repo-vars{', '.repo-ctx{', '.repo-mi.danger{'],
+        'catalogue view':     ['.cat-tools{', '.cat-facets{', '.cat-fo.on{', '.cat-menu{', '.cat-tbl th{',
+                               '.cat-tbl td.nm{', '.cat-tbl tr.pin td{', '.cat-tbl tr.cur td{', '.cat-tbl td.used.zero{',
+                               '.liq.slow{', '.cat-tray{', '.cat-cmp td.best{', '.cat-detail{', '.cat-usedin .r{',
+                               '.cat-link{'],
+        'admin entry points': ['.rail-admin-bar{', '.rail-admin-btn{', 'body.rail-collapsed .rail-admin-bar{',
+                               '.tier-admin{'],
+        'fee card':           ['.dialog.rc{', '.rc-seg button[aria-selected="true"]', '.rate-grid .rc-grp{',
+                               '.rate-grid td.ring{', '.rc-legend i.k-ring{'],
+    }
+    missing = {name: [s for s in selectors if s not in built] for name, selectors in sections.items()}
+    missing = {name: gone for name, gone in missing.items() if gone}
+    assert not missing, 'stylesheet sections missing from the build: {}'.format(missing)
+    # and the mirror the host serves is the same file
+    mirror = os.path.join(HERE, '..', 'cyrus_pmg', 'dashboard', 'proposalTool', 'static', 'css', 'proposalTool.css')
+    with open(mirror, encoding='utf-8') as fh:
+        assert fh.read() == built, 'the service mirror has drifted from the page'

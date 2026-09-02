@@ -23,7 +23,7 @@ var state = {
   columns: [],                      /* index 0 is always the base; see makeColumn */
   basisChosen: false,               /* the PWA has answered currency + hedging */
   implSeen: false,                  /* step 2 has been opened at least once */
-  variant: null,                    /* implementation variant; gates step 2 (D29) */
+  variant: null,                    /* implementation type; gates step 2 (D29) */
   /* On by default: the tilt is house practice wherever it can be funded.
      A portfolio that cannot fund it renders the toggle off and disabled,
      and tiltCategories no-ops, so this one default covers both (D50). */
@@ -52,10 +52,10 @@ var state = {
   sleeveLib: {},                    /* category -> {status, sleeves, error} */
   exporting: { status: 'idle', error: null },
   basisDraft: null,                 /* pending basis change awaiting confirmation */
-  /* excludeTAA is pinned true: tactical allocation is an implementation
-     concept, so no strategic key carries it (D50). The field stays in the
-     canonical key - fourth of four - so the bake is untouched. */
-  baseDraft: { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' },
+  /* The base tier's unfinished answer. The key is built from these three the
+     moment they are enough (D54): a risk level with no allocation types - an
+     all-equity book - is enough on its own. */
+  baseDraft: { allocationType: '', excludeRealAssets: false, riskLevel: '' },
   rebuilding: false
 };
 var draft = null;                   /* mandate dialog working copy */
@@ -92,8 +92,12 @@ function pct1(x) { /* weights: dash under 0.05, else 1dp percent */
   return (x < 0.05) ? '—' : x.toFixed(1) + '%';
 }
 
+/* currency | riskLevel | allocationType | excludeRealAssets - the supplying
+   database's own key, read out of its portfolio names (D54). An all-equity
+   book has no allocation type and both trailing fields read NA. */
 function keyStr(k) {
-  return [k.allocation, k.excludeRE ? 1 : 0, k.excludeTAA ? 1 : 0, k.riskLevel].join('|');
+  if (!k.allocationType) return [k.currency, k.riskLevel, 'NA', 'NA'].join('|');
+  return [k.currency, k.riskLevel, k.allocationType, k.excludeRealAssets ? 1 : 0].join('|');
 }
 function keyEq(a, b) { return keyStr(a) === keyStr(b); }
 
@@ -121,8 +125,44 @@ function available(k) { return !!availabilitySet()[keyStr(k)]; }
 function used(k) {
   return state.columns.some(function (c) { return keyEq(c.key, k); });
 }
-function reAllowed(allocation) {
-  return opt('options.reAllowed', ['Full', 'Ex HFs']).indexOf(allocation) >= 0;
+function reAllowed(allocationType) {
+  return opt('options.reAllowed', ['Full', 'ex-HFs']).indexOf(allocationType) >= 0;
+}
+
+/* The allocation types a risk level offers - the facet the schema derives
+   from the universe. Empty for an all-equity level: it holds no alternatives,
+   so there is nothing to choose, which is what greys the selector. Nothing
+   here names a risk level (D54). */
+function typesForRisk(risk) {
+  var byRisk = opt('options.allocationTypesByRisk', null);
+  if (!byRisk || !risk) return opt('options.allocations', []);
+  return byRisk[risk] || [];
+}
+function isAllEquityRisk(risk) { return !!risk && typesForRisk(risk).length === 0; }
+
+/* What the allocation select may offer: the variant's and mandate's list,
+   narrowed to what the chosen risk level actually holds. */
+function allocationChoices(risk) {
+  var offered = opt('options.allocations', []);
+  if (!risk) return offered;
+  var types = typesForRisk(risk);
+  return offered.filter(function (t) { return types.indexOf(t) >= 0; });
+}
+
+/* One place builds a key from the three controls. A level with no allocation
+   types yields the all-equity key whatever the other two say; otherwise an
+   allocation is needed, and the exclusion only counts where the type can hold
+   real assets at all. Null means "not enough to build yet". */
+function buildKey(allocationType, excludeRealAssets, riskLevel) {
+  if (!riskLevel) return null;
+  var currency = state.basis.currency;
+  if (isAllEquityRisk(riskLevel)) {
+    return { currency: currency, riskLevel: riskLevel,
+             allocationType: null, excludeRealAssets: null };
+  }
+  if (!allocationType) return null;
+  return { currency: currency, riskLevel: riskLevel, allocationType: allocationType,
+           excludeRealAssets: reAllowed(allocationType) ? !!excludeRealAssets : false };
 }
 function canEdit() { return opt('capabilities.canEdit', true); }
 function canExport() { return opt('capabilities.canExport', true); }
@@ -138,20 +178,21 @@ function riskLabel(value) {
 }
 
 /* Derived naming (the template is hardcodable; the values are not - spec 4.3).
-   Order is risk level, then allocation, then exclusions, with the currency in
-   front of the full form: "USD Moderate-Aggressive Core". The risk
-   level prints through riskLabel, so the name says what the rail says.
+   Order is risk level, then allocation type, then the exclusion, with the
+   currency in front of the full form: "USD Moderate-Aggressive Core ex-RAs".
+   The risk level prints through riskLabel, so the name says what the rail
+   says - the key carries the database's own spelling (D54).
 
    Built from the KEY, never from the payload's own name or header fields.
    Those are frozen into the baked slices, so a naming change would show on
    some surfaces and not others until a re-bake; deriving from the key makes
    the screen consistent the moment the rule changes (D36). */
 function headerName(k) {
-  var suffix = '';
-  if (k.excludeRE && reAllowed(k.allocation)) suffix += ' ex RE';
-  return riskLabel(k.riskLevel) + ' ' + k.allocation + suffix;
+  var risk = riskLabel(k.riskLevel);
+  if (!k.allocationType) return risk;               /* an all-equity book is its risk level */
+  return risk + ' ' + k.allocationType + (k.excludeRealAssets ? ' ex-RAs' : '');
 }
-function fullName(k) { return state.basis.currency + ' ' + headerName(k); }
+function fullName(k) { return (k.currency || state.basis.currency) + ' ' + headerName(k); }
 
 /* ---- live regions (spec 13.3): present from first paint -----------------
    Messages queue rather than replace: two columns dropped in the same tick
@@ -394,9 +435,8 @@ function setBase(key) {
     var risks = opt('options.riskLevels', []);
     var fallen = null;
     for (var i = 0; i < risks.length; i++) {
-      var probe = { allocation: key.allocation, excludeRE: key.excludeRE,
-                    excludeTAA: key.excludeTAA, riskLevel: risks[i] };
-      if (available(probe)) { fallen = probe; break; }
+      var probe = buildKey(key.allocationType, key.excludeRealAssets, risks[i]);
+      if (probe && available(probe)) { fallen = probe; break; }
     }
     if (!fallen) return false;
     key = fallen;
@@ -584,7 +624,7 @@ async function setVariant(name) {
   /* The base draft was assembled against the previous variant's allocations,
      so a half-made selection is discarded rather than silently carried into a
      variant that may not offer it. */
-  state.baseDraft = { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' };
+  state.baseDraft = { allocationType: '', excludeRealAssets: false, riskLevel: '' };
   refresh();
 
   /* Persist FIRST, and wait for it. The server validates every resolve against
@@ -623,9 +663,9 @@ async function setVariant(name) {
     state.columns = [];
   }
   announce('assertive', had
-    ? 'Implementation variant set to ' + name + '. ' + had
+    ? 'Implementation type set to ' + name + '. ' + had
       + ' sleeve choice' + (had === 1 ? '' : 's') + ' cleared - the library has changed.'
-    : 'Implementation variant set to ' + name + '.');
+    : 'Implementation type set to ' + name + '.');
   refresh();
 }
 
@@ -967,8 +1007,10 @@ async function boot() {
       });
       keys.forEach(function (entry) {
         var parts = entry.str.split('|');
-        var key = { allocation: parts[0], excludeRE: parts[1] === '1',
-                    excludeTAA: parts[2] === '1', riskLevel: parts[3] };
+        var na = parts[2] === 'NA';
+        var key = { currency: parts[0], riskLevel: parts[1],
+                    allocationType: na ? null : parts[2],
+                    excludeRealAssets: na ? null : parts[3] === '1' };
         var col = makeColumn(key, entry.role);
         state.columns.push(col);
         startResolve(col);                /* columns come back loading (spec 11.8) */
@@ -1031,14 +1073,14 @@ function renderBasis() {
   var placeholder = '<option value="" selected>Select…</option>';
   var html = '<div class="tier-h"><h3>Scenario basis</h3></div>'
     + '<div class="basis">'
-    + '<div class="field"><label for="ccy">Currency</label><select id="ccy"' + disabled + '>'
+    + '<div class="field"><label for="ccy">Base Currency</label><select id="ccy"' + disabled + '>'
     + (pending ? placeholder : '')
     + opt('options.currencies', []).map(function (c) {
         return '<option' + (!pending && c === showing.currency ? ' selected' : '') + '>'
           + esc(c) + '</option>';
       }).join('')
     + '</select></div>'
-    + '<div class="field"><label for="hedge">Hedging</label><select id="hedge"' + disabled + '>'
+    + '<div class="field"><label for="hedge">Currency Hedging</label><select id="hedge"' + disabled + '>'
     + (pending ? placeholder : '')
     + opt('options.hedgingPolicies', []).map(function (c) {
         return '<option' + (!pending && c === showing.hedging ? ' selected' : '') + '>'
@@ -1104,14 +1146,21 @@ function renderBase() {
   var el = document.getElementById('tier-base'); if (!el) return;
   var base = state.columns[0] || null;
   /* before a base exists, the tier renders the pending draft so a partial
-     selection (allocation chosen, risk not yet) survives the re-render */
-  var key = base ? base.key : null;
+     selection survives the re-render */
   var pending = state.baseDraft;
-  var allocation = key ? key.allocation : pending.allocation;
-  var canRE = allocation ? reAllowed(allocation) : false;
-  var exRE = key ? key.excludeRE : (allocation ? (canRE ? pending.excludeRE : true) : false);
-  var exTAA = true;                 /* never strategic any more (D50) */
+  /* A draft in progress wins over the built key: moving an all-equity base to
+     a level that needs an allocation leaves the tier half-answered, and the
+     controls must show that half rather than snap back to the old book. */
+  var drafting = !!(pending.allocationType || pending.riskLevel);
+  var key = (base && !drafting) ? base.key : null;
+  var allocationType = key ? (key.allocationType || '') : pending.allocationType;
   var risk = key ? key.riskLevel : pending.riskLevel;
+  /* An all-equity level holds no alternatives: the allocation select and the
+     exclusion have nothing to say, and grey out. Derived from the facet, not
+     from the words "All Equity" (D54). */
+  var allEquity = isAllEquityRisk(risk);
+  var canRA = allocationType ? reAllowed(allocationType) : false;
+  var exRA = key ? !!key.excludeRealAssets : !!pending.excludeRealAssets;
   /* The basis comes first. Until it is answered these controls are inert and
      the ring stays on the tier above - two tiers competing for attention tells
      the PWA nothing about which to answer first. */
@@ -1126,8 +1175,8 @@ function renderBase() {
   var variant = state.variant;
   var variantLocked = locked || !variant;
   var afterVariant = (!schemaReady() || !canEdit() || variantLocked) ? ' disabled' : '';
-  var forceExRE = variantForcesExcludeRE(variant);
-  if (forceExRE && canRE) exRE = true;
+  var forceExRA = variantForcesExcludeRE(variant);
+  if (forceExRA && canRA) exRA = true;
 
   var variants = opt('options.implementationVariants', []);
   var variantOptions = (variant ? '' : '<option value="" selected>Select…</option>')
@@ -1135,26 +1184,38 @@ function renderBase() {
         return '<option' + (v === variant ? ' selected' : '') + '>' + esc(v) + '</option>';
       }).join('');
 
-  var allocationOptions = (allocation ? '' :
-      '<option value="" selected>Select…</option>')
-    + opt('options.allocations', []).map(function (a) {
-        return '<option' + (a === allocation ? ' selected' : '') + '>' + esc(a) + '</option>';
-      }).join('');
+  var allocationOptions = allEquity
+    ? '<option value="" selected>—</option>'
+    : (allocationType ? '' : '<option value="" selected>Select…</option>')
+      + allocationChoices(risk).map(function (a) {
+          return '<option' + (a === allocationType ? ' selected' : '') + '>' + esc(a) + '</option>';
+        }).join('');
+  /* Every level is offered; a level the current allocation cannot reach is
+     shown disabled, and an all-equity level is reachable with no allocation
+     at all - so the risk select is live as soon as the variant is. */
   var riskOptions = (risk ? '' : '<option value="" selected>Select…</option>')
     + opt('options.riskLevels', []).map(function (r) {
-        var probe = allocation
-          ? { allocation: allocation, excludeRE: canRE ? exRE : true,
-              excludeTAA: exTAA, riskLevel: r }
-          : null;
+        var probe = buildKey(allocationType, exRA, r);
         var ok = probe ? available(probe) : true;
         return '<option value="' + esc(r) + '"'
           + (r === risk ? ' selected' : '') + (ok ? '' : ' disabled') + '>'
           + esc(riskLabel(r)) + (ok ? '' : ' — unavailable') + '</option>';
       }).join('');
 
+  var raNote = '';
+  if (allEquity) {
+    raNote = 'An all-equity book holds no alternatives, so no allocation type '
+      + 'or exclusion applies.';
+  } else if (allocationType && !canRA) {
+    raNote = 'Not available — ' + esc(allocationType) + ' holds no real assets.';
+  } else if (allocationType && forceExRA) {
+    raNote = 'Required by ' + esc(variant) + '.';
+  }
+  var raEnabled = !allEquity && allocationType && canRA && canEdit() && !forceExRA;
+
   el.className = 'tier' + ring;
-  /* Allocation, then risk level, then the two exclusions: the selects are the
-     choice, the tick boxes narrow what it produced. */
+  /* Allocation, then risk level, then the exclusion: the selects are the
+     choice, the tick box narrows what it produced. */
   /* The heading carries the chevron, so the tier can be reopened wherever it
      was rolled up; the controls go in .tier-body, which is the thing that
      rolls. aria-expanded and aria-controls carry the state to a reader. */
@@ -1168,26 +1229,25 @@ function renderBase() {
     + '</button></div>'
     + '<div class="tier-body" id="basebody">'
     + '<div class="basis" style="grid-template-columns:1fr">'
-    + '<div class="field"><label for="bpv">Implementation Variant</label>'
+    /* The type gates everything, so it leads and its note follows it. Then
+       risk, then allocation: a risk level that is entirely public equity has
+       no allocation type at all, so the field below is a consequence of the
+       one above it (D54). */
+    + '<div class="field"><label for="bpv">Implementation Type</label>'
     + '<select id="bpv"' + disabled + '>' + variantOptions + '</select></div>'
     + (variantLocked && !locked
-        ? '<p class="chk-note">Choose a variant first — it decides which '
-          + 'allocations are available.</p>' : '')
+        ? '<p class="chk-note" style="margin-left:0">Choose an implementation '
+          + 'type first — it decides which portfolios are available.</p>' : '')
+    + '<div class="field"><label for="bpr">Risk Level</label><select id="bpr"'
+    + afterVariant + '>' + riskOptions + '</select></div>'
     + '<div class="field"><label for="bpa">Allocation</label><select id="bpa"'
-    + afterVariant + '>' + allocationOptions + '</select></div>'
-    + '<div class="field"><label for="bpr">Risk level</label><select id="bpr"'
-    + (allocation && !variantLocked && canEdit() && schemaReady() ? '' : ' disabled') + '>'
-    + riskOptions + '</select></div>'
+    + (afterVariant || (allEquity ? ' disabled' : '')) + '>' + allocationOptions + '</select></div>'
     + '<div class="chk"><input type="checkbox" id="bpre"'
-    + ((allocation && !canRE) || exRE ? ' checked' : '')
-    + ((allocation && canRE && canEdit() && !forceExRE) ? '' : ' disabled')
-    + ((allocation && (!canRE || forceExRE)) ? ' aria-describedby="bprenote"' : '') + '>'
-    + '<label for="bpre">Exclude Real Estate</label></div>'
-    + ((allocation && !canRE)
-        ? '<p class="chk-note" id="bprenote">Not available — ' + esc(allocation)
-          + ' holds no real estate.</p>'
-        : (allocation && forceExRE)
-        ? '<p class="chk-note" id="bprenote">Required by ' + esc(variant) + '.</p>' : '')
+    + (exRA && canRA && !allEquity ? ' checked' : '')
+    + (raEnabled ? '' : ' disabled')
+    + (raNote ? ' aria-describedby="bprenote"' : '') + '>'
+    + '<label for="bpre">Exclude Real Assets</label></div>'
+    + (raNote ? '<p class="chk-note" id="bprenote">' + raNote + '</p>' : '')
     + '</div></div>';
   applyBaseRoll();
 }
@@ -1236,9 +1296,9 @@ function renderNotices() {
   var status = lookupStatus();
   if (status) pieces.push('<span class="bdg ' + status.cls + '">' + esc(status.text) + '</span>');
   var base = state.columns[0];
-  if (base && !reAllowed(base.key.allocation)) {
-    pieces.push('<span class="bdg b-warn">Real estate excluded — Allocation is '
-      + esc(base.key.allocation) + '</span>');
+  if (base && base.key.allocationType && !reAllowed(base.key.allocationType)) {
+    pieces.push('<span class="bdg b-warn">No real assets — Allocation is '
+      + esc(base.key.allocationType) + '</span>');
   }
   /* Nothing to say: the strip takes no room rather than sitting there empty. */
   if (!pieces.length) { el.hidden = true; el.innerHTML = ''; return; }
@@ -2614,42 +2674,33 @@ document.addEventListener('change', function (e) {
   if (e.target.id === 'bpa' || e.target.id === 'bpre' || e.target.id === 'bpr') {
     var forced = variantForcesExcludeRE(state.variant);
     var base = state.columns[0] || null;
-    if (!base) {
-      /* no base yet: accumulate the draft; build once allocation + risk exist */
-      var pending = state.baseDraft;
-      if (e.target.id === 'bpa') { pending.allocation = e.target.value; pending.excludeRE = false; }
-      if (e.target.id === 'bpre') pending.excludeRE = e.target.checked;
-      if (e.target.id === 'bpr') pending.riskLevel = e.target.value;
-      if (pending.allocation && pending.riskLevel) {
-        var pendingCanRE = reAllowed(pending.allocation);
-        var built = setBase({
-          allocation: pending.allocation,
-          excludeRE: pendingCanRE ? (forced || !!pending.excludeRE) : true,
-          excludeTAA: true,
-          riskLevel: pending.riskLevel
-        });
-        if (built) {
-          state.baseDraft = { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' };
-        }
-      } else {
-        refresh();
-      }
-      return;
+    var pending = state.baseDraft;
+    var drafting = !!(pending.allocationType || pending.riskLevel);
+    var current = (base && !drafting) ? base.key : null;
+    /* what the three controls say now: the built key, or the draft in
+       progress, then the one control that just changed on top */
+    var allocationType = current ? (current.allocationType || '') : pending.allocationType;
+    var exRA = current ? !!current.excludeRealAssets : !!pending.excludeRealAssets;
+    var risk = current ? current.riskLevel : pending.riskLevel;
+    if (e.target.id === 'bpa') { allocationType = e.target.value; exRA = false; }
+    if (e.target.id === 'bpre') exRA = e.target.checked;
+    if (e.target.id === 'bpr') risk = e.target.value;
+    if (allocationType && reAllowed(allocationType) && forced) exRA = true;
+    /* buildKey decides whether that is enough - an all-equity level needs
+       nothing more - and setBase replaces column one or falls to the nearest
+       risk level the combination offers (D54) */
+    var key = buildKey(allocationType, exRA, risk);
+    var built = key ? setBase(key) : false;
+    if (built || (key && base && keyEq(key, base.key))) {
+      /* built, or the answer is the book already there: nothing pending */
+      state.baseDraft = { allocationType: '', excludeRealAssets: false, riskLevel: '' };
+      if (!built) refresh();
+    } else {
+      /* not enough to build yet, or nothing the combination offers: keep
+         what was answered so the controls show it, base or no base */
+      state.baseDraft = { allocationType: allocationType, excludeRealAssets: exRA, riskLevel: risk };
+      refresh();
     }
-    var current = base.key;
-    var allocation = (e.target.id === 'bpa') ? e.target.value : current.allocation;
-    if (!allocation) return;
-    var canRE = reAllowed(allocation);
-    var exRE;
-    if (!canRE) exRE = true;                       /* forced on, box disabled */
-    else if (forced) exRE = true;                  /* the variant mandates it */
-    else if (e.target.id === 'bpre') exRE = e.target.checked;
-    else if (e.target.id === 'bpa') exRE = false;  /* new allocation: RE held by default */
-    else exRE = current.excludeRE;
-    var exTAA = true;
-    var risk = (e.target.id === 'bpr') ? e.target.value : current.riskLevel;
-    if (!risk) { refresh(); return; }
-    setBase({ allocation: allocation, excludeRE: exRE, excludeTAA: exTAA, riskLevel: risk });
     return;
   }
 });
@@ -2697,6 +2748,14 @@ return {
   used: used,
   slotsLeft: slotsLeft,
   reAllowed: reAllowed,
+  /* for the rate-card panel (D55): re-serve the schema after an edit so the
+     rates re-price, and hold the page inert behind a dialog */
+  refetchSchema: fetchSchema,
+  setBackgroundInert: setBackgroundInert,
+  buildKey: buildKey,
+  typesForRisk: typesForRisk,
+  allocationChoices: allocationChoices,
+  isAllEquityRisk: isAllEquityRisk,
 
   /* actions */
   addComparison: addComparison,

@@ -27,6 +27,7 @@ from openpyxl.utils import get_column_letter
 
 from . import fees, rules
 from .payloads import roundWeightsLargestRemainder
+from .rules import sleeveCategory
 from .sleeves import listSleeves
 
 # House palette from the existing report (spec 14.3). The UI navy differs by
@@ -107,15 +108,17 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     for category in categories:
         name = category['name']
         catWeight = float(category['weightPct'])
+        # grouped categories share one choice, stored under the group (D60)
+        pickedUnder = sleeveCategory(name)
         if name in autoCategories:
-            library = listSleeves(name, variant)
+            library = listSleeves(pickedUnder, variant)
             sleeve = library[0] if library else None
             auto = True
         else:
-            chosen = (sleevesMap or {}).get(name)
+            chosen = (sleevesMap or {}).get(pickedUnder)
             sleeve = None
             if chosen:
-                sleeve = next((s for s in listSleeves(name, variant)
+                sleeve = next((s for s in listSleeves(pickedUnder, variant)
                                if s['name'] == chosen), None)
             auto = False
         items = []
@@ -205,12 +208,18 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     headerRow = 1
     preamble = []
     if variant:
-        preamble.append(['Implementation variant', variant])
+        preamble.append(['Implementation Type', variant])
     if model['priced']:
-        preamble.append(['Fee schedule', feeSchedule])
-        preamble.append(['Fee level', feeLevel or fees.DEFAULT_LEVEL])
-        preamble.append(['Account size tier',
+        preamble.append(['Fee Schedule', feeSchedule])
+        preamble.append(['Fee Level', feeLevel or fees.DEFAULT_LEVEL])
+        preamble.append(['Account Size Tier',
                          '{} ({})'.format(model['tier']['id'], model['tier']['label'])])
+        # which card priced it: without the version, a re-delivery would leave
+        # the sheet claiming rates it no longer matches (D55)
+        card = fees.deliveryInfo()
+        preamble.append(['Fee Card', '{}{}'.format(
+            card.get('version') or 'unversioned',
+            ' · placeholder' if card.get('placeholder') else '')])
     if preamble:
         for line in preamble:
             sheet.append(line)

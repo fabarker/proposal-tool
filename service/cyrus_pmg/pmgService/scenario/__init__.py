@@ -15,7 +15,13 @@ Everything the scenario endpoints need lives in this package:
     scenarioStore.py      file-backed scenario state (survives restarts and is
                           shared across service workers)
     advisors.py           the Primary PWA directory (Excel-backed reference)
-    sleeves.py            the PMG sleeve library (authored stub data)
+    sleeves.py            the PMG sleeve library - the facade (VARIANTS,
+                          listSleeves, sleeveExists, variantExists)
+    sleeveRepo.py         the library itself: a SQLite store the service
+                          writes, seeded from proposal-tool/sleeveSource (D57)
+    sleeveTools.py        census / export / import for that store
+    products.py           the delivered product catalogue every sleeve
+                          selects from (D56)
     workbook.py           Excel writers: the implementation sheet, and the
                           fixtures workbook
     registry.py           adapter selection via SCENARIO_ADAPTER

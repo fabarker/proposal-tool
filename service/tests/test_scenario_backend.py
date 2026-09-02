@@ -40,7 +40,8 @@ def _allKeys(currency='USD'):
 
 def test_availability_matches_supplied_universe():
     schema = PORT.get_schema(BASIS, None)
-    assert len(schema['availability']) == 34          # spec 4.5, D50
+    # 7 risk levels x (4 types + the two ex-RAs variants) + one all-equity book
+    assert len(schema['availability']) == 43          # spec 4.5, D54
     assert schema['categories'][0] == 'Investment Grade Fixed Income'
     assert len(schema['categories']) == 7
 
@@ -48,9 +49,9 @@ def test_availability_matches_supplied_universe():
 def test_twenty_million_rule_removes_private_allocations():
     small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='')
     schema = PORT.get_schema(BASIS, small)
-    assert schema['options']['allocations'] == ['Core', 'Ex Alts']
-    assert len(schema['availability']) == 12
-    assert all(not k.startswith(('Full|', 'Ex HFs|')) for k in schema['availability'])
+    assert schema['options']['allocations'] == ['Core', 'ex-Alts']
+    assert len(schema['availability']) == 15          # 7 x (Core, ex-Alts) + all-equity
+    assert all('|Full|' not in k and '|ex-HFs|' not in k for k in schema['availability'])
 
 
 def test_variant_restricts_the_allocations_offered():
@@ -59,13 +60,13 @@ def test_variant_restricts_the_allocations_offered():
     offered = {}
     for variant in rules.IMPLEMENTATION_VARIANTS:
         offered[variant] = PORT.get_schema(BASIS, None, variant)['options']['allocations']
-    assert offered['PMG Multi-Asset Portfolio'] == ['Full', 'Core', 'Ex HFs', 'Ex Alts']
-    assert offered['PMG ESG'] == ['Ex HFs', 'Ex Alts']
-    assert offered['US Onshore'] == ['Ex Alts']
-    assert offered['Irish Onshore'] == ['Ex Alts']
+    assert offered['PMG Multi-Asset Portfolio'] == ['Full', 'Core', 'ex-Alts', 'ex-HFs']
+    assert offered['PMG ESG'] == ['ex-Alts', 'ex-HFs']
+    assert offered['US Onshore'] == ['ex-Alts']
+    assert offered['Irish Onshore'] == ['ex-Alts']
     # no variant applies no filter: the schema is fetched before one is chosen
     assert PORT.get_schema(BASIS, None)['options']['allocations'] == \
-        ['Full', 'Core', 'Ex HFs', 'Ex Alts']
+        ['Full', 'Core', 'ex-Alts', 'ex-HFs']
 
 
 def test_variant_narrows_the_availability_set():
@@ -74,23 +75,27 @@ def test_variant_narrows_the_availability_set():
     full = PORT.get_schema(BASIS, None, 'PMG Multi-Asset Portfolio')['availability']
     onshore = PORT.get_schema(BASIS, None, 'US Onshore')['availability']
     esg = PORT.get_schema(BASIS, None, 'PMG ESG')['availability']
-    assert len(full) == 34
-    assert len(onshore) == 5 and all(k.startswith('Ex Alts|') for k in onshore)
-    # ESG keeps Ex HFs only where real estate is already excluded
-    assert len(esg) == 11
+    assert len(full) == 43
+    # ex-Alts at every risk level, plus the all-equity book any variant may hold
+    assert len(onshore) == 8
+    assert all('|ex-Alts|' in k or PortfolioKey.fromStr(k).isAllEquity for k in onshore)
+    # ESG keeps ex-HFs only where real assets are already excluded
+    assert len(esg) == 15
     for keyStr in esg:
         key = PortfolioKey.fromStr(keyStr)
-        assert key.allocation in ('Ex HFs', 'Ex Alts')
-        if key.allocation in rules.RE_ALLOWED:
-            assert key.excludeRE, keyStr
+        assert key.isAllEquity or key.allocationType in ('ex-HFs', 'ex-Alts')
+        if key.allocationType in rules.RE_ALLOWED:
+            assert key.excludeRealAssets, keyStr
 
 
 def test_risk_levels_stay_data_driven_under_a_variant():
-    """Risk is not restricted by variant - Ex Alts simply has no Cons or Low
-    Vol rows in the supplied weights, so the ladder narrows on its own (4.5)."""
+    """Risk is not restricted by variant: the ladder is whatever the universe
+    holds for the allocations the variant offers (4.5, D54). It is served in
+    risk order, least to most risky, which no name can supply."""
     onshore = PORT.get_schema(BASIS, None, 'US Onshore')['availability']
-    levels = sorted({PortfolioKey.fromStr(k).riskLevel for k in onshore})
-    assert levels == ['Agg', 'All Equity', 'Cons Mod', 'Mod', 'Mod Agg']
+    levels = {PortfolioKey.fromStr(k).riskLevel for k in onshore}
+    assert levels == set(rules.RISK_LEVELS)
+    assert rules.RISK_LEVELS[0] == 'LowVol' and rules.RISK_LEVELS[-1] == 'All Equity'
     assert 'All Equity' in rules.RISK_LEVELS         # a risk level, not an allocation
 
 
@@ -98,25 +103,30 @@ def test_variant_is_enforced_server_side():
     """The picker cannot offer these, but a caller that is not the picker can
     still ask for them - the variant governs which products a client may be
     shown at all, so it is checked again here."""
-    full = PortfolioKey(allocation='Full', excludeRE=False,
-                        excludeTAA=True, riskLevel='Mod')
+    full = PortfolioKey('USD', 'Moderate', 'Full', False)
     with pytest.raises(ValidationError) as exc:
         rules.validateKey(full, 'US Onshore')
-    assert exc.value.field == 'allocation'
+    assert exc.value.field == 'allocationType'
 
     with pytest.raises(ValidationError) as exc:
         rules.validateKey(full, None)
     assert exc.value.field == 'variant'
 
-    withRE = PortfolioKey(allocation='Ex HFs', excludeRE=False,
-                          excludeTAA=True, riskLevel='Mod')
+    withRA = PortfolioKey('USD', 'Moderate', 'ex-HFs', False)
     with pytest.raises(ValidationError) as exc:
-        rules.validateKey(withRE, 'PMG ESG')
-    assert exc.value.field == 'excludeRE'
+        rules.validateKey(withRA, 'PMG ESG')
+    assert exc.value.field == 'excludeRealAssets'
     # the same allocation is fine once the exclusion is on
-    withRE = PortfolioKey(allocation='Ex HFs', excludeRE=True,
-                          excludeTAA=True, riskLevel='Mod')
-    rules.validateKey(withRE, 'PMG ESG')
+    rules.validateKey(PortfolioKey('USD', 'Moderate', 'ex-HFs', True), 'PMG ESG')
+
+    # a key the universe does not hold is refused before any variant rule:
+    # Core holds no real assets, so no ex-RAs variant of it exists (D54)
+    with pytest.raises(ValidationError) as exc:
+        rules.validateKey(PortfolioKey('USD', 'Moderate', 'Core', True),
+                          'PMG Multi-Asset Portfolio')
+    assert exc.value.field == 'key'
+    # and an all-equity book passes every variant, since it holds nothing to restrict
+    rules.validateKey(PortfolioKey('USD', 'All Equity', None, None), 'US Onshore')
 
 
 def test_variant_and_mandate_filters_compose():
@@ -124,15 +134,15 @@ def test_variant_and_mandate_filters_compose():
     which holds no private assets, so no intersection is empty."""
     small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='')
     esg = PORT.get_schema(BASIS, small, 'PMG ESG')['options']['allocations']
-    assert esg == ['Ex Alts']                 # Ex HFs is a private-asset allocation
+    assert esg == ['ex-Alts']                 # ex-HFs is a private-asset allocation
     for variant in rules.IMPLEMENTATION_VARIANTS:
         assert rules.allocationsFor(10e6, variant), variant
 
 
 def test_columns_the_new_variant_cannot_build_are_named():
     """What the store prunes on a variant change (D49)."""
-    keys = ['Full|0|1|Mod', 'Ex Alts|1|1|Mod']
-    assert rules.keysInvalidForVariant(keys, 'US Onshore') == ['Full|0|1|Mod']
+    keys = ['USD|Moderate|Full|0', 'USD|Moderate|ex-Alts|0']
+    assert rules.keysInvalidForVariant(keys, 'US Onshore') == ['USD|Moderate|Full|0']
     assert rules.keysInvalidForVariant(keys, 'PMG Multi-Asset Portfolio') == []
 
 
@@ -154,14 +164,15 @@ def test_mandate_validation_fields():
 # ---------------------------------------------- finiteness guard (15.8) -----
 
 def test_every_available_portfolio_resolves_finite():
-    """All 34 x 4 currencies resolve; every number on every surface finite."""
+    """Every portfolio the universe offers, in every currency, resolves; every
+    number on every surface is finite. An all-equity book holds one category."""
     for currency in rules.CURRENCIES:
         for key in _allKeys(currency):
             result = PORT.resolve_portfolio(
                 BasisInput(currency=currency, hedging='Hedged'), key)
             total = sum(c['weightPct'] for c in result['categories'])
             assert abs(total - 100.0) < 1e-6, (currency, key.toStr(), total)
-            assert 2 <= len(result['categories']) <= 7
+            assert (1 if key.isAllEquity else 2) <= len(result['categories']) <= 7
             for metric in result['metrics'].values():
                 assert math.isfinite(metric)
             for row in result['stress'] + result['premia']:
@@ -170,23 +181,22 @@ def test_every_available_portfolio_resolves_finite():
 
 
 def test_no_strategic_allocation_carries_tactical():
-    """Tactical allocation is an implementation concept (D50). The weights
-    still hold both halves of the axis; the offered set is only the ex-TAA
-    half, and the server refuses the other even if asked directly."""
+    """Tactical allocation is an implementation concept (D50). The supplying
+    database's names have no such field, the key has none (D54), and no
+    strategic portfolio resolves with the tilt category in it."""
     for keyStr in rules.availability(BASIS, None):
-        assert PortfolioKey.fromStr(keyStr).excludeTAA, keyStr
-    for result in (PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'Mod')),):
+        assert len(keyStr.split('|')) == 4, keyStr
+    for keyStr in rules.availability(BASIS, None)[:4]:
+        result = PORT.resolve_portfolio(BASIS, PortfolioKey.fromStr(keyStr))
         assert rules.TACTICAL_TILT_CATEGORY not in [c['name'] for c in result['categories']]
-    with pytest.raises(ValidationError) as exc:
-        rules.validateKey(PortfolioKey('Core', True, False, 'Mod'),
-                          'PMG Multi-Asset Portfolio')
-    assert exc.value.field == 'excludeTAA'
+    with pytest.raises(ValidationError):
+        PortfolioKey.fromStr('USD|Moderate|Core|0|1')
 
 
 def test_tactical_tilt_moves_weight_it_does_not_create_it():
     """8% out of investment grade fixed income, pro rata across its assets,
     into the tilt category. The book still adds to 100."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'Mod'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Core', False))
     before = result['categories']
     after = rules.tiltedCategories(before, True)
     byName = lambda cats: {c['name']: c['weightPct'] for c in cats}
@@ -227,7 +237,7 @@ def test_tactical_tilt_is_refused_where_it_cannot_be_funded():
     """All Equity holds no investment grade fixed income at all, so there is
     nothing to fund the tilt from and it is a no-op rather than a book that
     does not add to 100 (D50)."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'All Equity'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'All Equity', None, None))
     assert not rules.canFundTacticalTilt(result['categories'])
     after = rules.tiltedCategories(result['categories'], True)
     assert [c['name'] for c in after] == [c['name'] for c in result['categories']]
@@ -237,7 +247,7 @@ def test_tactical_tilt_is_refused_where_it_cannot_be_funded():
 def test_tactical_tilt_never_mutates_the_payload_it_is_given():
     """Payloads are cached in the adapters and read straight off the baked
     slices, so tilting one must not change the portfolio for the next reader."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'Mod'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Core', False))
     snapshot = [(c['name'], c['weightPct']) for c in result['categories']]
     rules.tiltedCategories(result['categories'], True)
     assert [(c['name'], c['weightPct']) for c in result['categories']] == snapshot
@@ -245,11 +255,9 @@ def test_tactical_tilt_never_mutates_the_payload_it_is_given():
 
 def test_tilted_implementation_still_sums_to_one_hundred():
     """The rounding guarantee of spec 8.4 has to survive the tilt."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'Mod'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Core', False))
     variant = sleeves.VARIANTS[0]
-    chosen = {c['name']: sleeves.listSleeves(c['name'], variant)[0]['name']
-              for c in rules.tiltedCategories(result['categories'], True)
-              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    chosen = _sleeveMap(rules.tiltedCategories(result['categories'], True), variant)
     model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
                                     26_000_000, variant, True)
     assert model['complete']
@@ -259,7 +267,7 @@ def test_tilted_implementation_still_sums_to_one_hundred():
 
 def test_ex_re_narrows_other_private_assets_instead_of_dropping_it():
     """Spec 2.2: excluding RE keeps Other Private Assets via Private Credit."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Full', True, False, 'Mod'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', True))
     opa = [c for c in result['categories'] if c['name'] == 'Other Private Assets']
     assert opa, 'Full ex RE must still hold Other Private Assets'
     assets = [a['reportingName'] for a in opa[0]['assets']]
@@ -289,17 +297,29 @@ def _implementationFor(key, sleeveChoice=0, mandateSize=26_000_000,
                        feeLevel=None, topAccountSize=TOP_ACCOUNT,
                        volPremium=False, currency=None):
     result = PORT.resolve_portfolio(BASIS, key)
-    chosen = {}
-    for category in result['categories']:
-        name = category['name']
-        if name in rules.AUTO_SLEEVE_CATEGORIES:
-            continue
-        library = sleeves.listSleeves(name, variant)
-        chosen[name] = library[sleeveChoice % len(library)]['name']
+    chosen = _sleeveMap(result['categories'], variant, sleeveChoice)
     return buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
                                    mandateSize, variant, False,
                                    feeSchedule, feeLevel, topAccountSize,
                                    volPremium, currency)
+
+
+def _sleeveMap(categories, variant, pick=0):
+    """A complete sleeve map for *categories*: one choice per SLEEVE category,
+    which is not one per category - grouped categories share a sleeve and so
+    appear once, under the group's name (D60). Keyed the way the store, the
+    export gate and the workbook all key it."""
+    chosen = {}
+    for category in categories:
+        if category['name'] in rules.AUTO_SLEEVE_CATEGORIES:
+            continue
+        under = rules.sleeveCategory(category['name'])
+        if under in chosen:
+            continue
+        library = sleeves.listSleeves(under, variant)
+        assert library, '{} offers no sleeve for {}'.format(variant, under)
+        chosen[under] = library[pick % len(library)]['name']
+    return chosen
 
 
 @pytest.mark.parametrize('variant', sleeves.VARIANTS)
@@ -308,7 +328,7 @@ def _implementationFor(key, sleeveChoice=0, mandateSize=26_000_000,
 def test_implementation_invariants_over_the_whole_space(sleeveChoice, mandateSize,
                                                         variant):
     """The section 8.4 table, held across every available USD combination,
-    every sleeve column, every implementation variant, and awkward mandate
+    every sleeve column, every implementation type, and awkward mandate
     sizes. The variant axis matters because each one carries its own product
     mix and its own weights, so the rounding has to close on all four."""
     for key in _allKeys():
@@ -331,7 +351,7 @@ def test_implementation_invariants_over_the_whole_space(sleeveChoice, mandateSiz
 
 
 def test_round_million_mandate_notional_sums_exactly():
-    model = _implementationFor(PortfolioKey('Core', True, False, 'Mod'))
+    model = _implementationFor(PortfolioKey('USD', 'Moderate', 'Core', False))
     assert model['total']['notional'] == 26_000_000
 
 
@@ -378,11 +398,9 @@ def test_js_rounding_mirror_agrees_with_python():
 
 def test_fixtures_workbook_reconciles_and_has_three_sheets(tmp_path):
     from openpyxl import load_workbook
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = PORT.resolve_portfolio(BASIS, key)
-    chosen = {c['name']: sleeves.listSleeves(c['name'], sleeves.VARIANTS[0])[0]['name']
-              for c in result['categories']
-              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     mandate = MandateInput(topAccountSize=48.5e6, mandateSize=26e6,
                            primaryPwa='M. Aldridge — Zurich')
     payload = PORT.build_export(BASIS, mandate, [result],
@@ -394,7 +412,7 @@ def test_fixtures_workbook_reconciles_and_has_three_sheets(tmp_path):
     assert book.sheetnames == ['Portfolios', 'Risk Dashboard', 'Implementation']
     sheet = book['Implementation']
     rows_ = list(sheet.iter_rows(values_only=True))
-    assert rows_[0][0] == 'Implementation variant'
+    assert rows_[0][0] == 'Implementation Type'
     assert rows_[0][1] == sleeves.VARIANTS[0]
     weights = [r[2] for r in rows_
                if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
@@ -415,9 +433,9 @@ def test_store_lifecycle(tmp_path, monkeypatch):
     mandate = MandateInput(topAccountSize=48.5e6, mandateSize=26e6,
                            primaryPwa='M. Aldridge — Zurich')
     state = store.createScenario(mandate, BASIS)
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     store.recordColumn(state['id'], key, 'base')
-    other = PortfolioKey('Full', False, False, 'Mod Agg')
+    other = PortfolioKey('USD', 'ModAgg', 'Full', False)
     store.recordColumn(state['id'], other, 'comparison')
     loaded = store.getScenario(state['id'])
     assert loaded['base'] == key.toStr()
@@ -433,7 +451,7 @@ def test_store_lifecycle(tmp_path, monkeypatch):
         store.getScenario('sc_000000000000')
 
 
-# ------------------------------------------- implementation variants (D29) --
+# ------------------------------------------- implementation types (D29) --
 
 def test_schema_offers_the_variants_and_never_defaults_one():
     """The four names are data the UI reads, not a list it carries."""
@@ -458,8 +476,10 @@ def test_every_variant_covers_every_category_in_the_universe(variant):
     data currently is, so replacing it with PMG's own source has to be a
     deliberate act rather than a silent hole in the completeness gate."""
     for category in rules.categoriesInUniverseOrder():
-        assert sleeves.listSleeves(category, variant), \
-            '{} offers no sleeve for {}'.format(variant, category)
+        under = rules.sleeveCategory(category)
+        assert sleeves.listSleeves(under, variant), \
+            '{} offers no sleeve for {} (chosen under {})'.format(
+                variant, category, under)
 
 
 def test_an_unchosen_variant_lists_nothing_rather_than_defaulting():
@@ -472,11 +492,13 @@ def test_an_unchosen_variant_lists_nothing_rather_than_defaulting():
 
 
 def test_sleeve_names_are_scoped_to_their_variant():
-    """A UCITS sleeve is not attachable in a US Onshore book."""
-    assert sleeves.sleeveExists('Public Equity', 'UCITS Core Equity', 'Irish Onshore')
-    assert not sleeves.sleeveExists('Public Equity', 'UCITS Core Equity', 'US Onshore')
-    assert sleeves.sleeveExists('Public Equity', 'Concentrated Active', 'US Onshore')
-    assert not sleeves.sleeveExists('Public Equity', 'Concentrated Active', 'Irish Onshore')
+    """An Irish book's own sleeve is not attachable in a US Onshore one, and
+    the other way round. The names are PMG's; which book each belongs to is
+    the library's business, so this asserts the scoping, not the vocabulary."""
+    assert sleeves.sleeveExists('Other Fixed Income', 'Funds Irish', 'Irish Onshore')
+    assert not sleeves.sleeveExists('Other Fixed Income', 'Funds Irish', 'US Onshore')
+    assert sleeves.sleeveExists('Public Equity', 'US Onshore ETFs', 'US Onshore')
+    assert not sleeves.sleeveExists('Public Equity', 'US Onshore ETFs', 'Irish Onshore')
 
 
 def test_variants_differ_in_what_they_offer_and_in_what_a_sleeve_contains():
@@ -492,9 +514,12 @@ def test_variants_differ_in_what_they_offer_and_in_what_a_sleeve_contains():
                      if s['name'] == sleeveName)
         return {p['name'] for p in found['products']}
 
-    # 'Passive' exists under both, and is not the same sleeve.
+    # 'Passive' is offered under both, and is not the same sleeve: an Irish
+    # book reaches UCITS where a Multi-Asset one reaches US-listed ETFs.
     assert products('PMG Multi-Asset Portfolio', 'Passive') \
-        != products('Irish Onshore', 'UCITS Passive')
+        != products('Irish Onshore', 'Passive')
+    assert products('PMG Multi-Asset Portfolio', 'Passive') \
+        != products('PMG ESG', 'Passive')
 
 
 def test_validateVariant_rejects_absent_and_unknown():
@@ -533,17 +558,15 @@ def test_changing_variant_clears_the_sleeve_map(tmp_path, monkeypatch):
 @pytest.mark.parametrize('variant', sleeves.VARIANTS)
 def test_workbook_records_the_variant_it_was_built_from(tmp_path, variant):
     from openpyxl import load_workbook
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = PORT.resolve_portfolio(BASIS, key)
-    chosen = {c['name']: sleeves.listSleeves(c['name'], variant)[0]['name']
-              for c in result['categories']
-              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    chosen = _sleeveMap(result['categories'], variant)
     mandate = MandateInput(48.5e6, 26e6, 'M. Aldridge — Zurich')
     path = tmp_path / 'wb.xlsx'
     path.write_bytes(PORT.build_export(BASIS, mandate, [result],
                                        {'sleeves': chosen, 'variant': variant}))
     rows = list(load_workbook(path)['Implementation'].iter_rows(values_only=True))
-    assert rows[0][:2] == ('Implementation variant', variant)
+    assert rows[0][:2] == ('Implementation Type', variant)
     weights = [r[2] for r in rows
                if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
     assert abs(sum(weights) * 100 - 100.0) < 1e-9
@@ -626,10 +649,11 @@ def test_unknown_schedule_and_level_raise_rather_than_default():
 def test_every_product_carries_a_priced_fee_group_and_no_fee():
     """The fee left the product (D51): what remains is the group the RDR
     schedule reads, and every group is one the framework prices."""
+    from cyrus_pmg.pmgService.scenario import sleeveRepo
     seen = set()
-    for variant, library in sleeves.SLEEVE_LIBRARY.items():
-        for category, offered in library.items():
-            for sleeve in offered:
+    for variant in sleeves.VARIANTS:
+        for category in sleeveRepo.categories():
+            for sleeve in sleeves.listSleeves(category, variant):
                 for product in sleeve['products']:
                     assert 'managementFee' not in product, (variant, product['name'])
                     assert product['feeGroup'] in fees.FEE_GROUPS, (variant, product['name'])
@@ -698,7 +722,7 @@ def test_schema_carries_the_fee_framework_at_the_mandates_tier():
 
 
 def test_implementation_fee_is_resolved_from_the_schedule_not_the_product():
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     casp = _implementationFor(key, feeSchedule='CASP')
     items = [i for g in casp['groups'] for i in g['items']]
     assert casp['priced'] and casp['tier']['id'] == fees.tierFor(TOP_ACCOUNT)['id']
@@ -733,12 +757,10 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
     tier, so the sheet says which - and the fee group column lets a reader
     re-price any row against the published table."""
     from openpyxl import load_workbook
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = PORT.resolve_portfolio(BASIS, key)
     variant = sleeves.VARIANTS[0]
-    chosen = {c['name']: sleeves.listSleeves(c['name'], variant)[0]['name']
-              for c in result['categories']
-              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    chosen = _sleeveMap(result['categories'], variant)
     mandate = MandateInput(TOP_ACCOUNT, 26e6, 'M. Aldridge — Zurich')
     path = tmp_path / 'wb.xlsx'
     path.write_bytes(PORT.build_export(BASIS, mandate, [result], {
@@ -746,12 +768,15 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
         'feeSchedule': schedule, 'feeLevel': 'PMG Floor'}))
     rows = list(load_workbook(path)['Implementation'].iter_rows(values_only=True))
     tier = fees.tierFor(TOP_ACCOUNT)
-    assert rows[0][:2] == ('Implementation variant', variant)
-    assert rows[1][:2] == ('Fee schedule', schedule)
-    assert rows[2][:2] == ('Fee level', 'PMG Floor')
-    assert rows[3][:2] == ('Account size tier', '{} ({})'.format(tier['id'], tier['label']))
-    assert rows[4] == (None,) * len(IMPL_COLUMNS)
-    assert rows[5] == tuple(IMPL_COLUMNS)
+    assert rows[0][:2] == ('Implementation Type', variant)
+    assert rows[1][:2] == ('Fee Schedule', schedule)
+    assert rows[2][:2] == ('Fee Level', 'PMG Floor')
+    assert rows[3][:2] == ('Account Size Tier', '{} ({})'.format(tier['id'], tier['label']))
+    # and which card priced it (D55): the delivered version, flagged as placeholder
+    assert rows[4][0] == 'Fee Card'
+    assert fees.DELIVERY['version'] in rows[4][1] and 'placeholder' in rows[4][1]
+    assert rows[5] == (None,) * len(IMPL_COLUMNS)
+    assert rows[6] == tuple(IMPL_COLUMNS)
     group, mgmt, bp = (IMPL_COLUMNS.index(c) for c in ('Fee group', 'Mgmt fee', 'Wtd fee (bp)'))
     assets = _assetRows(rows)
     assert assets
@@ -764,17 +789,15 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
 
 def test_unpriced_workbook_leaves_the_fee_cells_empty(tmp_path):
     from openpyxl import load_workbook
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = PORT.resolve_portfolio(BASIS, key)
     variant = sleeves.VARIANTS[0]
-    chosen = {c['name']: sleeves.listSleeves(c['name'], variant)[0]['name']
-              for c in result['categories']
-              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    chosen = _sleeveMap(result['categories'], variant)
     path = tmp_path / 'wb.xlsx'
     path.write_bytes(PORT.build_export(BASIS, MandateInput(TOP_ACCOUNT, 26e6, ''), [result],
                                        {'sleeves': chosen, 'variant': variant}))
     rows = list(load_workbook(path)['Implementation'].iter_rows(values_only=True))
-    assert [r[0] for r in rows[:3]] == ['Implementation variant', None, 'Categories & Asset Classes']
+    assert [r[0] for r in rows[:3]] == ['Implementation Type', None, 'Categories & Asset Classes']
     mgmt, bp = IMPL_COLUMNS.index('Mgmt fee'), IMPL_COLUMNS.index('Wtd fee (bp)')
     assert all(r[mgmt] is None and r[bp] is None for r in _assetRows(rows))
 
@@ -782,7 +805,7 @@ def test_unpriced_workbook_leaves_the_fee_cells_empty(tmp_path):
 # ---- the strategic volatility premium (D53) ----
 
 def _categoriesFor(tilt=True, volPremium=True, currency='USD',
-                   key=PortfolioKey('Core', True, True, 'Mod')):
+                   key=PortfolioKey('USD', 'Moderate', 'Core', False)):
     result = PORT.resolve_portfolio(BasisInput(currency, 'Hedged'), key)
     return rules.implementedCategories(result['categories'], tilt, volPremium, currency)
 
@@ -859,7 +882,7 @@ def test_the_premium_is_forbidden_outside_its_currencies(currency, allowed):
 
 def test_the_premium_never_mutates_the_payload_it_is_given():
     """Payloads are cached and shared, like the tilt's (D50)."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'Mod'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Core', False))
     before = json.dumps(result['categories'], sort_keys=True)
     rules.implementedCategories(result['categories'], True, True, 'USD')
     assert json.dumps(result['categories'], sort_keys=True) == before
@@ -868,7 +891,7 @@ def test_the_premium_never_mutates_the_payload_it_is_given():
 def test_a_portfolio_with_nothing_to_fund_it_from_is_a_no_op():
     """All Equity holds no investment grade fixed income at all; the toggle is
     offered disabled and this is the same rule where the workbook is written."""
-    result = PORT.resolve_portfolio(BASIS, PortfolioKey('Core', True, True, 'All Equity'))
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'All Equity', None, None))
     categories = rules.implementedCategories(result['categories'], True, True, 'USD')
     assert rules.VOL_PREMIUM_CATEGORY not in [c['name'] for c in categories]
     assert sum(c['weightPct'] for c in categories) == pytest.approx(100.0)
@@ -897,7 +920,7 @@ def test_the_premium_product_is_priced_like_any_other():
 
 
 def test_the_premium_reaches_the_implementation_model_and_the_sheet():
-    key = PortfolioKey('Core', True, True, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     model = _implementationFor(key, feeSchedule='RDR', feeLevel='PMG Target',
                                volPremium=True, currency='USD')
     group = [g for g in model['groups'] if g['category'] == rules.VOL_PREMIUM_CATEGORY]
@@ -928,10 +951,11 @@ def test_js_vol_premium_mirror_agrees_with_python():
                 source.index('/* The categories AS IMPLEMENTED')]
 
     cases, expected = [], []
-    for allocation, riskLevel in (('Core', 'Mod'), ('Full', 'Mod Agg'),
-                                  ('Ex HFs', 'Cons'), ('Core', 'All Equity')):
+    for allocation, riskLevel in (('Core', 'Moderate'), ('Full', 'ModAgg'),
+                                  ('ex-HFs', 'Conservative'), (None, 'All Equity')):
         result = PORT.resolve_portfolio(
-            BASIS, PortfolioKey(allocation, True, True, riskLevel))
+            BASIS, PortfolioKey('USD', riskLevel, allocation,
+                                None if allocation is None else False))
         for tilt in (False, True):
             tilted = rules.tiltedCategories(result['categories'], tilt)
             for on in (False, True):
@@ -959,17 +983,232 @@ def test_js_vol_premium_mirror_agrees_with_python():
                 [x['weightPct'] for x in b['assets']], abs=1e-12)
 
 
+# ---- the strategic universe: the database is the authority (D54) ----
+
+def test_every_name_in_the_source_parses_round_trips_and_is_unique():
+    """The parse is total over the extract, invertible, and injective - the
+    three invariants that let a rename upstream fail at bake time."""
+    from cyrus_pmg.pmgService.scenario import saaKeys, universe
+    assert universe.failures() == []
+    assert universe.unknownTickers() == {}
+    keys = universe.keys()
+    assert len(keys) == 172
+    assert len({k.toStr() for k in keys}) == len(keys)
+    for key in keys:
+        name = universe.nameOf(key)
+        assert saaKeys.parseName(name) == key
+        assert saaKeys.formatKey(key) == name
+
+
+def test_the_parser_rejects_rather_than_guesses():
+    from cyrus_pmg.pmgService.scenario import saaKeys
+    good = saaKeys.parseName('USD Moderate ex-HFs ex-RAs')
+    assert good == PortfolioKey('USD', 'Moderate', 'ex-HFs', True)
+    assert good.toStr() == 'USD|Moderate|ex-HFs|1'
+    assert good.withHedging('Hedged') == 'USD|Moderate|ex-HFs|1|Hedged'
+    assert saaKeys.parseName('USD All Equity') == PortfolioKey('USD', 'All Equity', None, None)
+    assert saaKeys.parseName('  USD   Moderate  Full ') == PortfolioKey('USD', 'Moderate', 'Full', False)
+    for bad in ('', 'SGD Moderate Full', 'USD Medium Full', 'USD Moderate Balanced',
+                'USD Moderate ex-RAs', 'USD', 'Moderate Full'):
+        with pytest.raises(saaKeys.UnparseableName):
+            saaKeys.parseName(bad)
+
+
+def test_the_selectors_are_derived_from_the_key_set():
+    """Nothing names a risk level or an allocation type: a selector is empty
+    because the data holds nothing for it, which is what greys it out."""
+    from cyrus_pmg.pmgService.scenario import universe
+    f = universe.facets()
+    assert f['currencies'] == ['USD', 'GBP', 'CHF', 'EUR']
+    assert f['riskLevels'][0] == 'LowVol' and f['riskLevels'][-1] == 'All Equity'
+    assert f['allocationTypes']['Moderate'] == ['Full', 'Core', 'ex-Alts', 'ex-HFs']
+    assert f['allocationTypes']['All Equity'] == []          # the selector greys out
+    assert f['exclusionOffered'] == {'Full': True, 'Core': False,
+                                     'ex-Alts': False, 'ex-HFs': True}
+    # and the literal list the tool used to carry falls out of the data
+    assert rules.RE_ALLOWED == ['Full', 'ex-HFs'] == universe.realAssetTypes()
+    schema = PORT.get_schema(BASIS, None)
+    assert schema['options']['allocationTypesByRisk'] == f['allocationTypes']
+    assert schema['options']['exclusionOffered'] == f['exclusionOffered']
+
+
+def test_every_portfolio_in_the_universe_has_whole_weights():
+    from cyrus_pmg.pmgService.scenario import universe
+    from cyrus_pmg.pmgService.scenario import portfolio_weights as pw
+    codes = [code for code, _, _ in pw.ASSET_METADATA]
+    for key in universe.keys():
+        held = universe.holdings(key)
+        assert abs(sum(w for _, w in held) - 1.0) < 1e-9, key.toStr()
+        padded = universe.weightMap(key)
+        assert list(padded) == codes                          # every code, in universe order
+        assert abs(sum(padded.values()) - 1.0) < 1e-9
+        rows = universe.categoryRows(key)
+        assert abs(sum(c['weightPct'] for c in rows) - 100.0) < 1e-6
+        if key.isAllEquity:
+            assert [c['name'] for c in rows] == ['Public Equity']
+
+
+def test_all_equity_holds_nothing_the_allocation_axis_describes():
+    """One all-equity book per currency, 100% public equity, no allocation
+    type - so it passes every variant and mandate filter, and Core, ex-Alts,
+    ex-HFs and Full are all absent from its key."""
+    from cyrus_pmg.pmgService.scenario import universe
+    allEquity = [k for k in universe.keys() if k.isAllEquity]
+    assert [k.currency for k in allEquity] == ['USD', 'GBP', 'CHF', 'EUR']
+    for key in allEquity:
+        assert key.toStr().endswith('|All Equity|NA|NA')
+        for variant in rules.IMPLEMENTATION_VARIANTS:
+            rules.validateKey(key, variant, 5e6)
+        result = PORT.resolve_portfolio(BasisInput(key.currency, 'Hedged'), key)
+        assert [c['name'] for c in result['categories']] == ['Public Equity']
+
+
+def test_unparsed_names_are_recorded_not_fatal(tmp_path, monkeypatch):
+    """A name the vocabulary does not cover is left out and reported; the
+    rest of the extract still loads. The bake's census prints exactly this."""
+    from cyrus_pmg.pmgService.scenario import universe
+    src = tmp_path / 'saa.csv'
+    src.write_text('PortfolioName,AssetTicker,Weight\n'
+                   'USD Moderate Core,LHTRYIN,0.6\nUSD Moderate Core,FRUS1GR,0.4\n'
+                   'USD Balanced Core,LHTRYIN,1.0\n'
+                   'GBP All Equity,FRUS1GR,1.0\n'
+                   'USD Moderate Core,NOT_A_TICKER,0.0\n')
+    monkeypatch.setenv('SCENARIO_SAA_SOURCE', str(src))
+    universe.reload()
+    try:
+        assert [k.toStr() for k in universe.keys()] == ['USD|Moderate|Core|0', 'GBP|All Equity|NA|NA']
+        assert universe.failures() == [('USD Balanced Core',
+                                        "unknown risk level 'Balanced' in 'USD Balanced Core'")]
+        assert universe.unknownTickers() == {'NOT_A_TICKER': 1}
+        assert universe.describeSource()['unparsed'] == 1
+    finally:
+        monkeypatch.delenv('SCENARIO_SAA_SOURCE')
+        universe.reload()
+
+
+def test_database_free_availability_means_baked(tmp_path):
+    """Without a live fallback, a portfolio that enumerated but never baked is
+    not offered - or a PWA would pick a column that errors (D54)."""
+    from cyrus_pmg.pmgService.scenario import bake
+    from cyrus_pmg.pmgService.scenario.bakedAdapter import BakedScenarioPort
+    store = str(tmp_path / 'baked')
+    bake.bakeSlice(PORT, 'USD', 'Hedged', store, limit=5, verbose=False)
+    alone = BakedScenarioPort(storeDirectory=store, warm=False)
+    assert len(alone.get_schema(BASIS, None)['availability']) == 5
+    withFallback = BakedScenarioPort(storeDirectory=store, delegate=PORT, warm=False)
+    assert len(withFallback.get_schema(BASIS, None)['availability']) == 43
+    manifest = json.load(open(os.path.join(store, 'manifest.json')))
+    assert manifest['facets']['allocationTypes']['All Equity'] == []
+    assert manifest['vocabulary']['riskLevels'][0] == 'LowVol'
+    assert manifest['source']['portfolios'] == 172 and manifest['unparsedNames'] == []
+
+
+# ---- the rate card: delivered, versioned, read only (D55) ----
+
+def test_the_card_is_read_from_the_delivery_and_its_shape_is_derived():
+    """Tiers and fee groups come from the rows; the level vocabulary and the
+    default from fees.json; nothing is a list that can drift from the file."""
+    from cyrus_pmg.pmgService.scenario import feeTools
+    assert fees.ratesPath().endswith('feeRates.csv')
+    assert fees.deliveryInfo()['cells'] == 180
+    assert [t['id'] for t in fees.TIERS] == ['T1', 'T2', 'T3', 'T4', 'T5']
+    assert fees.TIERS[0]['label'] == 'Under $10m' and fees.TIERS[-1]['label'] == '$100m and up'
+    assert fees.TIERS[1]['label'] == '$10m – $25m'
+    assert fees.FEE_GROUPS == ['Passive', 'Core Active', 'Specialist Active',
+                               'Alternatives', 'Asset Allocation']
+    assert fees.DELIVERY['version'] and fees.PLACEHOLDER
+    assert feeTools.census() == 0
+
+
+def test_a_bad_delivery_is_refused_at_read(tmp_path):
+    from cyrus_pmg.pmgService.scenario import fees as f
+    good = open(f.ratesPath()).read().splitlines()
+    def write(lines):
+        p = tmp_path / 'card.csv'; p.write_text('\n'.join(lines) + '\n'); return str(p)
+    def withRate(prefix, rate):
+        return [l.rsplit(',', 1)[0] + ',' + str(rate) if l.startswith(prefix) else l for l in good]
+    # a crossed band: a floor above its target and ceiling
+    card = f._readDelivery(write(withRate('CASP,,T2,10000000,25000000,Management,Floor,', 9.0)))
+    with pytest.raises(ValueError):
+        f._checkBands(card['cells'], set(card['cells']))
+    # a tier whose edges disagree between rows
+    bad = list(good); bad[1] = bad[1].replace('T1,0,10000000,', 'T1,0,12000000,')
+    with pytest.raises(f.BadRateCard):
+        f._readDelivery(write(bad))
+    # a negative rate
+    with pytest.raises(f.BadRateCard):
+        f._readDelivery(write(withRate('CASP,,T1,0,10000000,Management,Target,', -0.1)))
+    # a missing column
+    with pytest.raises(f.BadRateCard):
+        f._readDelivery(write(['schedule,tier,rate', 'CASP,T1,0.5']))
+
+
+def test_the_card_the_viewer_reads_pivots_both_ways_over_the_same_cells():
+    """One payload, both axes: a tier's fee groups and a group's tier ladder
+    are the same 180 cells addressed differently, so the client can flip
+    without a round trip."""
+    card = fees.card()
+    assert len(card['cells']) == 180
+    assert [g['schedule'] for g in card['groups']] == ['CASP'] + ['RDR'] * 5
+    assert card['groups'][0]['feeGroup'] is None
+    assert card['levels'][:2] == ['Management Floor', 'Management Target']
+    # every cell the two pivots address is in the payload, and agrees with grid()
+    for tier in card['tiers']:
+        grid = fees.grid(tier['id'])
+        for row in grid['rows']:
+            for level, rate in row['cells'].items():
+                source, point = level.split(' ', 1)
+                key = '|'.join([row['schedule'], row['feeGroup'] or '',
+                                tier['id'], source, point])
+                assert card['cells'][key] == rate
+                assert rate == fees.managementFee(
+                    row['schedule'], tier['min'], level, row['feeGroup'])
+    assert card['delivery']['version'] == fees.DELIVERY['version']
+    with pytest.raises(KeyError):
+        fees.grid('T9')
+
+
+def test_the_card_cannot_be_written_through_the_service():
+    """Read only (D55): the module offers no way to change a rate, and the
+    router carries no write for it. The card changes by delivery."""
+    from cyrus_pmg.pmgService import dashboardRouter
+    for gone in ('applyEdits', 'resetEdits', 'overlayInfo'):
+        assert not hasattr(fees, gone), gone
+    paths = {(r.path, tuple(sorted(r.methods))) for r in dashboardRouter.router.routes}
+    feeRoutes = {p: m for p, m in paths if p.endswith('/fees')}
+    assert feeRoutes == {'/scenario/fees': ('GET',)}, feeRoutes
+    from cyrus_pmg.pmgService.core import accessControl
+    assert not hasattr(accessControl, 'requireFeeAdmin')
+
+
+def test_the_workbook_names_the_card_that_priced_it(tmp_path):
+    rows = _exported(tmp_path, {'includeFees': True, 'feeSchedule': 'RDR',
+                                'feeLevel': 'PMG Target'})
+    assert rows[4][0] == 'Fee Card'
+    assert fees.DELIVERY['version'] in rows[4][1] and 'placeholder' in rows[4][1]
+
+
+def test_a_redelivery_is_diffed_cell_by_cell(tmp_path, capsys):
+    from cyrus_pmg.pmgService.scenario import feeTools
+    lines = open(fees.ratesPath()).read().splitlines()
+    moved = [l if not l.startswith('RDR,Passive,T1,') else l.rsplit(',', 1)[0] + ',0.20'
+             for l in lines][:-1]                                     # and one cell removed
+    path = tmp_path / 'redelivery.csv'; path.write_text('\n'.join(moved) + '\n')
+    assert feeTools.diff(str(path)) == 0
+    out = capsys.readouterr().out
+    assert 'of 180 rates changed, 0 added, 1 removed' in out
+    assert 'REMOVED' in out
+
+
 # ---- excluding fees from the proposal (D52) ----
 
 def _exported(tmp_path, implementation, mandate=None):
     """The Implementation sheet's rows for one implementation dict."""
     from openpyxl import load_workbook
-    key = PortfolioKey('Core', True, False, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = PORT.resolve_portfolio(BASIS, key)
     variant = implementation.get('variant') or sleeves.VARIANTS[0]
-    chosen = {c['name']: sleeves.listSleeves(c['name'], variant)[0]['name']
-              for c in result['categories']
-              if c['name'] not in rules.AUTO_SLEEVE_CATEGORIES}
+    chosen = _sleeveMap(result['categories'], variant)
     payload = dict({'sleeves': chosen, 'variant': variant}, **implementation)
     path = tmp_path / 'wb.xlsx'
     path.write_bytes(PORT.build_export(
@@ -995,7 +1234,7 @@ def test_an_excluded_workbook_carries_no_fee_column_and_no_fee_header(tmp_path):
     rows = _exported(tmp_path, {'includeFees': False,
                                 'feeSchedule': 'RDR', 'feeLevel': 'PMG Target'})
     columns = implColumns(False)
-    assert rows[0][:2] == ('Implementation variant', sleeves.VARIANTS[0])
+    assert rows[0][:2] == ('Implementation Type', sleeves.VARIANTS[0])
     assert rows[1] == (None,) * len(columns)          # no fee schedule/level/tier rows
     assert rows[2] == tuple(columns)
     assert 'Fee group' not in rows[2] and 'Mgmt fee' not in rows[2]
@@ -1093,25 +1332,25 @@ def test_portfolio_name_is_currency_risk_allocation_exclusions():
     keyed on."""
     basis = BasisInput(currency='USD', hedging='Hedged')
     cases = [
-        (PortfolioKey('Core', True, False, 'Mod Agg'), 'USD Moderate-Aggressive Core'),
-        (PortfolioKey('Full', False, True, 'Cons'), 'USD Conservative Full'),
-        (PortfolioKey('Ex HFs', True, True, 'All Equity'),
-         'USD All Equity Ex HFs ex RE'),
-        (PortfolioKey('Low Vol' and 'Ex Alts', True, False, 'Low Vol'),
-         'USD Low Vol Ex Alts'),
+        (PortfolioKey('USD', 'ModAgg', 'Core', False), 'USD Moderate-Aggressive Core'),
+        (PortfolioKey('USD', 'Conservative', 'Full', False), 'USD Conservative Full'),
+        (PortfolioKey('USD', 'Moderate', 'ex-HFs', True), 'USD Moderate ex-HFs ex-RAs'),
+        (PortfolioKey('USD', 'LowVol', 'ex-Alts', False), 'USD Low Vol ex-Alts'),
+        # an all-equity book is its risk level and nothing more
+        (PortfolioKey('USD', 'All Equity', None, None), 'USD All Equity'),
     ]
     for key, expected in cases:
         assert rules.portfolioName(basis, key) == expected
         assert rules.portfolioHeader(key) == expected[len('USD '):]
-    # 'ex RE' is only stated where the allocation could have held real estate
-    assert 'ex RE' not in rules.portfolioHeader(
-        PortfolioKey('Core', True, False, 'Mod'))
+    # the exclusion is only stated where it is set
+    assert 'ex-RAs' not in rules.portfolioHeader(
+        PortfolioKey('USD', 'Moderate', 'Core', False))
 
 
 def test_risk_level_labels_cover_every_value_and_leave_keys_alone():
     for value in rules.RISK_LEVELS:
         assert value in rules.RISK_LEVEL_LABELS, value
-    # the key is built from the value, never the label
-    key = PortfolioKey('Core', True, False, 'Mod Agg')
-    assert key.toStr().endswith('|Mod Agg')
-    assert 'Moderate' not in key.toStr()
+    # the key is built from the database's value, never the label
+    key = PortfolioKey('USD', 'ModAgg', 'Core', False)
+    assert key.toStr() == 'USD|ModAgg|Core|0'
+    assert 'Moderate-Aggressive' not in key.toStr()

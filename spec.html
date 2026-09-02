@@ -255,9 +255,9 @@ td code,th code{white-space:nowrap}
   <div class="rule"><p><strong>&ldquo;Variant&rdquo; now means two things, so it is never used
     bare.</strong> Everywhere before &sect;8 it means an <em>allocation variant</em> &mdash; one
     of the six of &sect;2.1, the thing a portfolio key selects. From &sect;8 it can also mean an
-    <em>implementation variant</em> (D29), one of the four product universes a book is
+    <em>implementation type</em> (D29), one of the four product universes a book is
     implemented from. They are unrelated: the allocation variant decides what the portfolio
-    holds, the implementation variant decides which products may hold it, and neither
+    holds, the implementation type decides which products may hold it, and neither
     constrains the other. Qualify it every time. Where this document said only
     &ldquo;the variant&rdquo; before revision 5, it meant the allocation variant.</p></div>
 
@@ -291,7 +291,7 @@ td code,th code{white-space:nowrap}
     <thead><tr><th>Section</th><th>Now says</th><th>Ref</th></tr></thead>
     <tbody>
       <tr><td><strong>&sect;8.1</strong></td><td><strong>Revision 5.</strong> Implementation
-        variants: step 2 opens on a required choice of one of four, and no sleeve can be attached
+        Types: step 2 opens on a required choice of one of four, and no sleeve can be attached
         before it. <code>list_sleeves</code> takes it, the schema carries the names, the workbook
         records it, and &sect;1.3 disambiguates it from the allocation variant.</td>
         <td>D29</td></tr>
@@ -642,11 +642,11 @@ def serve_proposal_tool(filename):
         <td>Persist any subset of <code>{mandate, basis, variant, sleeves}</code>.
           <strong>Added at build time</strong>: &sect;11.8 restores all of them after a refresh,
           but the surface above provides writes only for columns, so without this they cannot
-          survive one. Sleeve maps validate against the implementation variant in force
+          survive one. Sleeve maps validate against the implementation type in force
           <em>after</em> the update; a variant change on its own clears the map (D29).</td>
         <td>Fast</td></tr>
       <tr><td><code>GET /api/scenario/sleeves?category=&amp;variant=</code></td>
-        <td>The sleeve library for a category under one implementation variant, with product
+        <td>The sleeve library for a category under one implementation type, with product
           detail. <code>variant</code> is required: an absent or unknown one is a 422 naming the
           field, never a default library (D29).</td><td>Fast</td></tr>
       <tr><td><code>POST /api/scenario/{id}/export</code></td>
@@ -731,7 +731,7 @@ class ScenarioPort(Protocol):
         self, category: str, basis: BasisInput, variant: str
     ) -> Sequence[Sleeve]:
         """The PMG-authored sleeve library for one category, under one
-        implementation variant. A sleeve is a fixed block: name plus products
+        implementation type. A sleeve is a fixed block: name plus products
         whose weights sum to 1.
 
         *variant* is one of options.implementationVariants and decides both
@@ -1533,7 +1533,7 @@ async function apiFetch(path, opts) {
 │ (mandate, basis, base as step 1)  ││ (1) Asset allocation ── (2) Implementation │
 ├───────────────────────────────────┤│     Build & compare        Sleeves & export│
 │ SLEEVES                    3 of 5 ││                                            │
-│ Implementation variant            ││                                            │
+│ Implementation Type            ││                                            │
 │ ┌───────────────────────────────┐ ││                                            │
 │ │ PMG Multi-Asset Portfolio   ▾ │ ││                                            │
 │ └───────────────────────────────┘ ││                                            │
@@ -1560,7 +1560,7 @@ async function apiFetch(path, opts) {
 │ ┌───────────────────────────────┐ ││  │Total       │        │100.00│   │   │  │ │
 │ │ Tactical Tilt Fund       🔒   │ ││  └────────────┴────────┴──────┴───┴───┴──┘ │
 │ └───────────────────────────────┘ ││                                            │
-│ Attached automatically with TAA.  ││  Composition of the implemented model      │
+│ Attached automatically with TAA.  ││  Composition of the Implemented Model      │
 │                                   ││  ╭────╮ ╭────╮ ╭────╮ ╭────╮ ╭────╮        │
 │ 3 of 5 categories have a sleeve.  ││  │ ◍  │ │ ◍  │ │ ◍  │ │ ◍  │ │ ◍  │        │
 │ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░               ││  ╰────╯ ╰────╯ ╰────╯ ╰────╯ ╰────╯        │
@@ -1574,8 +1574,8 @@ async function apiFetch(path, opts) {
     Strategies</em> shows as already attached and locked (&sect;2.6); it counts toward the gate and
     can never fail it.</p>
 
-  <div class="rule"><p><strong>The implementation variant comes first, and nothing works before it.</strong>
-    Step 2 opens on a required choice of an <em>implementation variant</em> &mdash; the four in
+  <div class="rule"><p><strong>The implementation type comes first, and nothing works before it.</strong>
+    Step 2 opens on a required choice of an <em>implementation type</em> &mdash; the four in
     <code>options.implementationVariants</code>. Until one is set the sleeve pickers are not
     rendered at all (a disabled control invites a click that has nothing behind it), the
     automatic sleeve of &sect;2.6 does not attach, no library is fetched, and the document shows
@@ -1583,14 +1583,14 @@ async function apiFetch(path, opts) {
     category offers and what those sleeves contain, so a library fetched without one would be
     the wrong library rather than an incomplete one. Deviation D29.</p></div>
   <div class="rule"><p><strong>Changing it clears every sleeve choice.</strong> Sleeve names are
-    only meaningful under the implementation variant they were chosen from &mdash;
+    only meaningful under the implementation type they were chosen from &mdash;
     <em>Concentrated Active</em>
     exists under US Onshore and not under Irish Onshore &mdash; so the map is dropped rather
     than revalidated name by name, on the client and in the store, in the same write as the
     variant. The count is announced in a live region (&sect;13.4), because work disappears.
     This is the harder-edged sibling of &sect;11.6's basis-change rule, which keeps what still
     validates; here almost nothing does.</p></div>
-  <div class="rule"><p><strong>An implementation variant may reach no sleeve for a held category.</strong> That
+  <div class="rule"><p><strong>An implementation type may reach no sleeve for a held category.</strong> That
     is a legitimate state, not an error: the category simply cannot be implemented under that
     variant, and the completeness gate says so rather than waiting for a choice that cannot be
     made. The four libraries as they stand all cover all seven categories, so the state is
@@ -1950,8 +1950,8 @@ portfolio total fee = Σ weighted fee</code></pre>
       <tr><td>Document, step 2</td><td>No base portfolio</td>
         <td><strong>&ldquo;No base portfolio yet&rdquo;</strong> with a sentence directing the user to
           the rail. The sleeve tier says the same.</td></tr>
-      <tr><td>Document, step 2</td><td>Base ready, no implementation variant</td>
-        <td><strong>&ldquo;Choose an implementation variant&rdquo;</strong>, naming the base
+      <tr><td>Document, step 2</td><td>Base ready, no implementation type</td>
+        <td><strong>&ldquo;Choose an implementation type&rdquo;</strong>, naming the base
           portfolio and saying that the variant decides which sleeves its categories can hold.
           The rail carries the control; the sleeve list is not drawn at all (D29).</td></tr>
       <tr><td>Implementation table</td><td>Variant chosen, no sleeves</td>
@@ -2113,7 +2113,7 @@ portfolio total fee = Σ weighted fee</code></pre>
 
   <h3><span class="n">11.7</span>Attaching a sleeve</h3>
   <ol class="body">
-    <li>The PWA picks an <strong>implementation variant</strong>. Nothing below happens before
+    <li>The PWA picks an <strong>implementation type</strong>. Nothing below happens before
       this: no library is fetched and no picker is drawn (&sect;8.1, D29). The control sits above
       the category list and stays there, so the choice can be revisited.</li>
     <li>Every category's library is fetched for that variant, in parallel, each carrying its own
@@ -2126,7 +2126,7 @@ portfolio total fee = Σ weighted fee</code></pre>
       rounding is global (&sect;8.4).</li>
     <li>When the last category is filled the export enables and the badge flips to
       <code>.b-ok</code>.</li>
-    <li>Changing the implementation variant returns to step 2 above: the cached libraries are
+    <li>Changing the implementation type returns to step 2 above: the cached libraries are
       discarded, every choice is cleared and announced, and the export re-gates.</li>
   </ol>
 
@@ -2575,7 +2575,7 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
         <td><span class="bdg b-warn">Decision needed</span></td>
         <td>Two of the four currencies. Either load the missing rows or narrow the option list
           &mdash; which is a schema change, not a UI one (&sect;4.3).</td></tr>
-      <tr><td>18</td><td><strong>The implementation variants' sleeve libraries are stub data.</strong>
+      <tr><td>18</td><td><strong>The implementation types' sleeve libraries are stub data.</strong>
         The four variants and the gate around them are built (D29), but which sleeves each one
         offers, and the products inside them, are illustrative &mdash; authored to exercise the
         mechanism, not supplied by PMG. The Multi-Asset library is the one the prototype
@@ -2586,7 +2586,7 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
           product, fee or vehicle on a variant other than Multi-Asset should be shown to anyone
           until PMG supplies the real libraries.</td></tr>
       <tr><td>19</td><td><strong>Do the variants restrict allocations, or only products?</strong>
-        Built on the assumption that they are independent: any implementation variant may
+        Built on the assumption that they are independent: any implementation type may
         implement any allocation variant, and the variant changes no figure in step 1. If, say,
         an Irish Onshore book cannot hold the private-asset allocations at all, that is an
         availability rule in step 1 rather than a sleeve rule in step 2, and it would want the
@@ -2640,7 +2640,7 @@ e.g. EpsilonPhi_Scenario_USD_Hedged_2026-08-29.xlsx</code></pre>
 
 <footer class="foot">
   <p>Epsilon Phi Proposal Tool &middot; production build specification, revision 6 &middot;
-    revised 31 August 2026. Revision 5 added implementation variants (&sect;8.1), the animated
+    revised 31 August 2026. Revision 5 added implementation types (&sect;8.1), the animated
     rail fold and restyled step nav (&sect;7.2) and the composition doughnuts (&sect;8.5).
     Revision 6 records the interface as it now stands: naming, the sizing and motion rules, and
     the order the page asks its questions in &mdash; D29 to D46. Revision 4 brought the document

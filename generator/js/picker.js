@@ -23,21 +23,15 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', mountPop);
 } else { mountPop(); }
 
-/* excludeTAA is pinned true - the popover mirrors the base tier (D12), and
-   tactical allocation left the strategic step entirely (D50). */
-var cur = { allocation: '', excludeRE: false, excludeTAA: true, riskLevel: '' };
+/* The popover mirrors the base tier (D12): allocation type, the real-assets
+   exclusion, risk level - and App.buildKey decides when they are enough, so
+   an all-equity level needs no allocation at all (D54). */
+var cur = { allocationType: '', excludeRealAssets: false, riskLevel: '' };
 var opener = null;
 var justAdded = '';
 
 function currentKey() {
-  if (!cur.allocation || !cur.riskLevel) return null;
-  var canRE = App.reAllowed(cur.allocation);
-  return {
-    allocation: cur.allocation,
-    excludeRE: canRE ? cur.excludeRE : true,
-    excludeTAA: cur.excludeTAA,
-    riskLevel: cur.riskLevel
-  };
+  return App.buildKey(cur.allocationType, cur.excludeRealAssets, cur.riskLevel);
 }
 
 function paint() {
@@ -51,21 +45,19 @@ function paint() {
       + 'Done</button></div>';
     return;
   }
-  var canRE = cur.allocation ? App.reAllowed(cur.allocation) : false;
+  var allEquity = App.isAllEquityRisk(cur.riskLevel);
+  var canRA = cur.allocationType ? App.reAllowed(cur.allocationType) : false;
   var key = currentKey();
   var ok = key && App.available(key) && !App.used(key);
-  var allocationOptions = (cur.allocation ? '' : '<option value="" selected>Select…</option>')
-    + App.opt('options.allocations', []).map(function (a) {
-        return '<option' + (a === cur.allocation ? ' selected' : '') + '>' + App.esc(a) + '</option>';
-      }).join('');
+  var allocationOptions = allEquity
+    ? '<option value="" selected>—</option>'
+    : (cur.allocationType ? '' : '<option value="" selected>Select…</option>')
+      + App.allocationChoices(cur.riskLevel).map(function (a) {
+          return '<option' + (a === cur.allocationType ? ' selected' : '') + '>' + App.esc(a) + '</option>';
+        }).join('');
   var riskOptions = '<option value=""' + (cur.riskLevel ? '' : ' selected') + '>Select…</option>'
     + App.opt('options.riskLevels', []).map(function (r) {
-        var probe = cur.allocation ? {
-          allocation: cur.allocation,
-          excludeRE: canRE ? cur.excludeRE : true,
-          excludeTAA: cur.excludeTAA,
-          riskLevel: r
-        } : null;
+        var probe = App.buildKey(cur.allocationType, cur.excludeRealAssets, r);
         var why = '';
         var enabled = true;
         if (probe) {
@@ -73,7 +65,7 @@ function paint() {
           else if (App.used(probe)) { enabled = false; why = ' — already added'; }
         }
         return '<option value="' + App.esc(r) + '"' + (r === cur.riskLevel ? ' selected' : '')
-          + (enabled ? '' : ' disabled') + '>' + App.esc(r) + why + '</option>';
+          + (enabled ? '' : ' disabled') + '>' + App.esc(App.riskLabel(r)) + why + '</option>';
       }).join('');
 
   pop.innerHTML = '<button type="button" class="pop-close" aria-label="Close">×</button>'
@@ -81,18 +73,21 @@ function paint() {
     + '<p class="slots">' + left + ' slot' + (left === 1 ? '' : 's') + ' remaining'
     + (justAdded ? ' · <span class="pop-added">' + App.esc(justAdded) + ' added</span>' : '')
     + '</p>'
-    + '<div class="field"><label for="pa">Allocation</label><select id="pa">'
-    + allocationOptions + '</select></div>'
+    + '<div class="field"><label for="pa">Allocation</label><select id="pa"'
+    + (allEquity ? ' disabled' : '') + '>' + allocationOptions + '</select></div>'
     + '<div class="chk"><input type="checkbox" id="pre"'
-    + ((cur.allocation && !canRE) || cur.excludeRE ? ' checked' : '')
-    + ((cur.allocation && canRE) ? '' : ' disabled')
-    + ((cur.allocation && !canRE) ? ' aria-describedby="prenote"' : '') + '>'
-    + '<label for="pre">Exclude Real Estate</label></div>'
-    + ((cur.allocation && !canRE)
-        ? '<p class="chk-note" id="prenote">Not available — ' + App.esc(cur.allocation)
-          + ' holds no real estate.</p>' : '')
-    + '<div class="field"><label for="pr">Risk level</label><select id="pr"'
-    + (cur.allocation ? '' : ' disabled') + '>' + riskOptions + '</select></div>'
+    + (cur.excludeRealAssets && canRA && !allEquity ? ' checked' : '')
+    + ((cur.allocationType && canRA && !allEquity) ? '' : ' disabled')
+    + ((allEquity || (cur.allocationType && !canRA)) ? ' aria-describedby="prenote"' : '') + '>'
+    + '<label for="pre">Exclude Real Assets</label></div>'
+    + (allEquity
+        ? '<p class="chk-note" id="prenote">An all-equity book holds no alternatives, so '
+          + 'no allocation type or exclusion applies.</p>'
+        : (cur.allocationType && !canRA)
+        ? '<p class="chk-note" id="prenote">Not available — ' + App.esc(cur.allocationType)
+          + ' holds no real assets.</p>' : '')
+    + '<div class="field"><label for="pr">Risk Level</label><select id="pr">'
+    + riskOptions + '</select></div>'
     + '<div class="pop-actions">'
     + '<button type="button" class="btn btn-primary" id="padd"' + (ok ? '' : ' disabled') + '>'
     + 'Add to table</button>'
@@ -140,16 +135,15 @@ document.addEventListener('click', function (e) {
 
 pop.addEventListener('change', function (e) {
   if (e.target.id === 'pa') {
-    cur.allocation = e.target.value;
-    cur.excludeRE = false;
-    cur.riskLevel = '';
+    cur.allocationType = e.target.value;
+    cur.excludeRealAssets = false;
     justAdded = '';
     paint();
     var risk = pop.querySelector('#pr');
-    if (risk && cur.allocation) risk.focus();
+    if (risk && cur.allocationType && !cur.riskLevel) risk.focus();
     return;
   }
-  if (e.target.id === 'pre') { cur.excludeRE = e.target.checked; paint(); return; }
+  if (e.target.id === 'pre') { cur.excludeRealAssets = e.target.checked; paint(); return; }
   if (e.target.id === 'pr') { cur.riskLevel = e.target.value || ''; paint(); return; }
 });
 

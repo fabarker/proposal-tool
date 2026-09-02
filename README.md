@@ -27,7 +27,7 @@
 > that explains it. The spec carries the intent and the shape; `DEVIATIONS.md`
 > carries the reasoning and the measurements behind each change.
 >
-> Revision 5 added **implementation variants** (§8.1, D29): step 2 opens on a
+> Revision 5 added **implementation types** (§8.1, D29): step 2 opens on a
 > required choice of one of four product universes — PMG Multi-Asset Portfolio,
 > PMG ESG, US Onshore, Irish Onshore — and no sleeve can be attached before it
 > is made. Note §1.3's warning that "variant" now means two things; the four
@@ -57,7 +57,7 @@ convenient local one. `BRIEF.md` and `HOST_AUDIT.md` cover what that means in pr
 | Step | What the PWA does | Output |
 |---|---|---|
 | **1 — Asset allocation** | Enters the client mandate, sets the scenario basis, defines a base portfolio, compares it against up to three alternatives | Allocation table, two summary charts, three-section risk dashboard |
-| **2 — Implementation** | Chooses an implementation variant, then attaches one PMG-authored sleeve of investible products to each category of the base portfolio | Product-level model with weights, fees and notional, exported to Excel |
+| **2 — Implementation** | Chooses an implementation type, then attaches one PMG-authored sleeve of investible products to each category of the base portfolio | Product-level model with weights, fees and notional, exported to Excel |
 
 Both steps live in **one page**. It ships as a page folder inside the existing PMG dashboard:
 plain HTML and JavaScript, **no build step, no framework**.

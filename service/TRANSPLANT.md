@@ -31,7 +31,12 @@ Verbatim. The package uses only intra-package relative imports, and has exactly
 two outward seams:
 
 * `cyrus_pmg.pmgService.core.accessControl`, imported by the router (below),
-  not by the package itself.
+  not by the package itself. Since D57 the router takes a third name from it,
+  `requireAdmin`, beside `requireAuth` and `requireEditor` &mdash; the host's
+  module needs that one addition (a dependency reading `PMG_ADMIN_KERBEROS`,
+  or whatever source its other allowlist reads), plus `isAdmin` and
+  `getKerberosFromFastApiRequest`, which the schema route uses to tell the
+  page whether the caller may open the sleeve repository.
 * **`engine.py` — the analytics library.** It is the only module that names
   that library, and it resolves its six symbols lazily against
   `SAA_ENGINE_PACKAGE` (default `epsilonPhi`). If the host's SAA library is
@@ -39,8 +44,13 @@ two outward seams:
   edit the `_SYMBOLS` table in that one file. Nothing else in the package —
   adapter, loader, bake, router — names it at all (D47).
 
-Data files travel inside it (`advisors.xlsx`; `portfolio_weights.py` carries
-the supplied universe).
+Data files travel inside it (`advisors.xlsx`, `fees.json`, `feeRates.csv`).
+The strategic universe does not: it is read from `SCENARIO_SAA_SOURCE`, the
+supplying database's extract, which the host points at (D54, below). Nor do
+the products or the sleeves: the catalogue is read from
+`SCENARIO_PRODUCTS_SOURCE` (D56) and the sleeve library lives in a database
+the service writes at `SCENARIO_SLEEVES_DB`, seeded once from
+`SCENARIO_SLEEVES_SEED` (D57, below).
 
 `bake.py` travels with the package as an offline job (`python3 -m
 cyrus_pmg.pmgService.scenario.bake --all --workers 4`), run on a data refresh
@@ -57,24 +67,55 @@ live resolves and bakes simply cost ~2.6× more.
 What the host swaps later, behind unchanged functions, when real sources
 arrive — all internal to the package, no caller changes:
 
-* `sleeves.py` tables → the PMG-maintained sleeve library, **for all four
-  implementation variants**; data ownership is the flagged open PMG question.
-  `BASELINE` plus `_VARIANT_OFFERS` compose into `SLEEVE_LIBRARY`; the only
-  contract the rest of the package depends on is `VARIANTS`, `listSleeves(
-  category, variant)` and `sleeveExists(category, name, variant)`. The three
-  non-Multi-Asset libraries are invented — spec open item 18, and the one
-  thing here that must not reach a client as it stands (D29).
+* **`SCENARIO_SAA_SOURCE` → the supplying database's extract** (D54). The
+  strategic universe is read from it: `PortfolioName, AssetTicker, Weight`,
+  CSV or XLSX, one row per holding. Every currency, risk level and allocation
+  type the UI offers is derived from the names in it. The packaged default
+  is the fictitious stand-in under `proposal-tool/saaSource`; run
+  `python3 -m cyrus_pmg.pmgService.scenario.bake --census` against the real
+  one first and fix any name it rejects before baking. `saaKeys.RISK_LEVELS`
+  and `ALLOCATION_TYPES` are the closed vocabularies the parser matches
+  against, in selector order - confirm them against the database's own.
+* **`SCENARIO_PRODUCTS_SOURCE` → the product database's extract** (D56):
+  one row per product, `ProductId, Name, Ticker, AssetClass, Style, Vehicle,
+  Source, Liquidity, ExposureCurrency, ProductCost, FeeGroup`, CSV or XLSX.
+  `ProductId` is the key sleeves reference, so it must be stable across
+  deliveries; `FeeGroup` must be one the fee card prices or the extract is
+  refused at load. `DistributionYield` and `MinimumInvestment` are optional
+  columns (D63) the catalogue view compares on; absent, they serve as blanks. The packaged one is the stand-in under
+  `proposal-tool/productSource`.
+* **`SCENARIO_SLEEVES_DB` → a host-writable path** (D57). The sleeve library
+  is a SQLite file the service creates on first open and seeds from
+  `SCENARIO_SLEEVES_SEED` (the packaged `proposal-tool/sleeveSource/sleeves.csv`
+  &mdash; PMG's own sleeve names, 110 across the four books, with placeholder
+  products and weights, D59); after that the database is the library and admins
+  maintain it in the app. Back it up like any small
+  database; move it between environments with `python3 -m
+  cyrus_pmg.pmgService.scenario.sleeveTools --export` / `--import`. The only
+  contract the rest of the package depends on is unchanged: `VARIANTS`,
+  `listSleeves(category, variant)` and `sleeveExists(category, name,
+  variant)` in `sleeves.py`. The seeded sleeves for the three non-Multi-Asset
+  types are invented — spec open item 18, and the one thing here that must
+  not reach a client as it stands (D29); the repository is how PMG replaces
+  them. The same console shows admins the catalogue itself, view only, with
+  every product's sleeves and the products a delivery dropped (D58) - run
+  `sleeveTools --census` after a delivery for the same list at the shell.
 * `rules.TACTICAL_TILT_PCT` / `_FUNDED_FROM` / `_CATEGORY` → PMG's own tilt
   size and funding source (D50). Changing the percentage is a constant;
   changing the funding category is a constant plus a re-check that every
   offered portfolio can fund it, which `canFundTacticalTilt` already gates.
-* `fees.json` → the published CASP and RDR schedules (D51). **Every rate in
-  the file is a placeholder** and the file says so (`"placeholder": true`);
-  the rail shows a flag until it is cleared. The tiers, the six levels and
-  both grids are read from the file, so the published schedule's own tier
-  edges and rates drop in without touching `fees.py`; `_assertWellFormed`
-  rejects a file with gaps, overlapping tiers or a floor above its ceiling
-  at import. The products' `feeGroup` values in `sleeves.py` are assigned by
+* **`SCENARIO_FEES_SOURCE` → the delivered rate card** (D51, D55): a long
+  CSV, one row per cell (`schedule, feeGroup, tier, tierMin, tierMax, source,
+  point, rate`), from which the tiers and fee groups are derived. **The
+  packaged `feeRates.csv` is a placeholder** and `fees.json` says so
+  (`"placeholder": true`); the rail and the workbook flag it until a real
+  card is accepted. The service cannot change the card; review a delivery with
+  `python3 -m cyrus_pmg.pmgService.scenario.feeTools --diff <csv>` - it lists
+  every cell that moved and any local adjustment sitting on one - then
+  `--accept <csv> --version V --source S`, which stamps the provenance into
+  `fees.json`. The reader rejects a card with a gap, disagreeing tier edges
+  or a floor above its ceiling. The UI shows the card through a read-only
+  viewer and has no way to edit it. The products' `feeGroup` values in `sleeves.py` are assigned by
   a rule of thumb (passive, core active, specialist active, alternatives,
   asset allocation) and want confirming against PMG's own grouping when the
   library is swapped. None of it is reached at all until a PWA ticks
@@ -92,8 +133,9 @@ arrive — all internal to the package, no caller changes:
   rule than the sleeves: it decides what can be built at all (D49). Confirm
   this table with PMG alongside the libraries above.
 * `advisors.py` workbook read → the production advisor table (open item 7).
-* `portfolio_weights.py` synthetic anchors → approved stored allocations (the
-  module's own docstring: "replace the constants before production use").
+* `portfolio_weights.py` keeps only the engine bridge (`get_portfolio`, the
+  hedge ratios of D3, `ASSET_METADATA`). Its synthetic anchor tables and the
+  generated frame are no longer read for weights or availability (D54).
 * `HEDGE_RATIOS_BY_OPTION` → the host's hedging service or house ratios (D3).
 
 ## 3. The router endpoints — INSERT
@@ -145,6 +187,9 @@ copying the surrounding inline styles verbatim.
 | `SCENARIO_ADAPTER` | `fixtures` default | `baked` (recommended) or `live`, in `dashboard.env.defaults` |
 | `SCENARIO_BAKED_DIR` / `SCENARIO_BAKED_FALLBACK` | `service/var/baked` / `1` | A host-writable store path; the bake is a scheduled job re-run when `dataversion` changes |
 | `PMG_ALLOWED_KERBEROS` | dev default | The real allowlist source the host already manages |
+| `PMG_ADMIN_KERBEROS` | dev default | Who may maintain the sleeve repository (D57): a subset of the access list, from the same source |
+| `SCENARIO_PRODUCTS_SOURCE` | `productSource/products.csv` | The product database's extract (D56) |
+| `SCENARIO_SLEEVES_DB` / `SCENARIO_SLEEVES_SEED` | `service/var/sleeves.db` / `sleeveSource/sleeves.csv` | A host-writable database path; the seed is read once, when it is first created (D57) |
 | `SAA_ENGINE_PACKAGE` | unset (`epsilonPhi`) | The host's analytics package, if it is named differently — the only edit `engine.py` needs |
 | `SCENARIO_STORE_DIR` | system temp | A host-writable spool directory |
 | `SCENARIO_RETENTION_HOURS` | 24 | PMG's answer to open item 8 |

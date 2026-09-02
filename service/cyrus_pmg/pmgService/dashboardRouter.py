@@ -17,11 +17,12 @@ Handlers are sync ``def`` on purpose: FastAPI runs them in the threadpool, so
 a slow resolve_portfolio never blocks the event loop.
 """
 
-from fastapi import APIRouter, Body, Depends, Response
+from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
-from cyrus_pmg.pmgService.core.accessControl import requireAuth, requireEditor
-from cyrus_pmg.pmgService.scenario import scenarioStore
+from cyrus_pmg.pmgService.core.accessControl import (
+    getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)
+from cyrus_pmg.pmgService.scenario import fees, products, scenarioStore, sleeveRepo
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
     exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
@@ -102,7 +103,7 @@ def _scenarioPayload(state: dict) -> dict:
 # as an id.
 
 @router.get('/scenario/schema')
-def getScenarioSchema(currency: str = 'USD', hedging: str = 'Hedged',
+def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'Hedged',
                       mandateSize: float = None, variant: str = None,
                       topAccountSize: float = None):
     """Field options, rules and the availability set (spec 3.4).
@@ -123,11 +124,43 @@ def getScenarioSchema(currency: str = 'USD', hedging: str = 'Hedged',
         if mandateSize is not None or topAccountSize is not None:
             mandate = MandateInput(topAccountSize=topAccountSize,
                                    mandateSize=mandateSize, primaryPwa='')
-        return getScenarioPort().get_schema(basis, mandate, variant)
+        schema = dict(getScenarioPort().get_schema(basis, mandate, variant))
+        # Who is asking decides one capability (D57). Copied before it is
+        # stamped: the port may hand back a cached dict, and one caller's
+        # admin flag must not be the next caller's.
+        capabilities = dict(schema.get('capabilities') or {})
+        capabilities['canAdmin'] = isAdmin(getKerberosFromFastApiRequest(request))
+        schema['capabilities'] = capabilities
+        return schema
     except ValidationError as exc:
         return _validationError(exc)
     except AnalyticsError as exc:
         return _analyticsError(exc)
+
+
+# ---- the rate card (D55) ------------------------------------------------
+# Read only: the card is what the delivering team sent, and it changes by
+# delivery (feeTools --accept), never through the service. Static paths,
+# declared before /scenario/{scenarioId} like the others.
+
+@router.get('/scenario/fees')
+def getFeeCard(tier: str = None, topAccountSize: float = None, whole: bool = False):
+    """The card: every cell at every tier when *whole*, else one tier - by id,
+    or the tier a top account size falls in. Each cell carries the delivered
+    rate beside the rate in force and whether they differ. The panel takes the
+    whole card and pivots it locally."""
+    try:
+        if whole:
+            return fees.card()
+        if not tier:
+            if topAccountSize is None:
+                raise ValidationError('tier', 'Give a tier id, a top account size, or whole=1.')
+            tier = fees.tierFor(topAccountSize)['id']
+        return fees.grid(tier)
+    except (KeyError, ValueError) as exc:
+        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'tier'})
+    except ValidationError as exc:
+        return _validationError(exc)
 
 
 @router.get('/scenario/advisors')
@@ -157,6 +190,89 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
         return _validationError(exc)
     except AnalyticsError as exc:
         return _analyticsError(exc)
+    except products.BadCatalogue as exc:
+        # the delivered catalogue cannot be read: the column shows the
+        # library error state with Retry, the same as an analytics failure
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+# ---- the sleeve repository (D57) ------------------------------------------
+# Admin only, reads included: the console is the repository's only client,
+# and the whole catalogue is not something an editor has a use for on its
+# own. Static paths, declared before /scenario/{scenarioId} like the others.
+# Every write goes through the repository's own validation and comes back
+# as the {error, field} body the page already knows how to show.
+
+@router.get('/scenario/repository')
+def getRepository(user: str = Depends(requireAdmin)):
+    """Everything the console needs in one fetch: the types, the
+    categories, every sleeve (broken ones included, with their problems
+    and provenance), the whole catalogue, the products sleeves reference
+    that the catalogue no longer carries (D58), and where both came from."""
+    try:
+        return {
+            'variants': list(sleeveRepo.VARIANTS),
+            'categories': sleeveRepo.categories(),
+            'fixedCategories': sleeveRepo.fixedCategories(),
+            'sleeves': sleeveRepo.listAll(),
+            'orphans': sleeveRepo.orphanProducts(),
+            'products': products.all(),
+            'catalogue': products.describeSource(),
+            'store': sleeveRepo.describe(),
+            'user': user,
+        }
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.post('/scenario/repository/sleeves')
+def createRepositorySleeve(payload: dict = Body(...), user: str = Depends(requireAdmin)):
+    """Build a sleeve: {category, name, note, products: [{productId, weight}]},
+    weights as fractions summing to 1, under `variants` (a list) or `variant`.
+
+    Several types in one call is how the console both creates a sleeve for a
+    set of books and copies an existing one into another (D61). All or
+    nothing: a name that clashes in any of them writes none of them.
+    """
+    try:
+        variants = payload.get('variants')
+        if not variants:
+            variants = [payload.get('variant')] if payload.get('variant') else []
+        made = sleeveRepo.createSleeves(
+            variants, payload.get('category'), payload.get('name'),
+            payload.get('products') or [], note=payload.get('note', ''), user=user)
+        return {'sleeves': made, 'sleeve': made[0]}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.put('/scenario/repository/sleeves/{sleeveId}')
+def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
+                           user: str = Depends(requireAdmin)):
+    """Rename, re-note or re-weight a sleeve. Its type and category are
+    fixed at creation - a sleeve moved between them is a different sleeve."""
+    try:
+        sleeve = sleeveRepo.updateSleeve(
+            sleeveId, payload.get('name'), payload.get('products') or [],
+            note=payload.get('note', ''), user=user)
+        return {'sleeve': sleeve}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.delete('/scenario/repository/sleeves/{sleeveId}')
+def deleteRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
+    """Retire a sleeve. Refused for a fixed category, which always holds one.
+    A scenario still naming it keeps the name and shows the picker's
+    'no longer offered' state until a PWA re-picks - never a substitution."""
+    try:
+        return {'deleted': sleeveRepo.deleteSleeve(sleeveId, user=user)}
+    except ValidationError as exc:
+        return _validationError(exc)
 
 
 @router.get('/scenario/{scenarioId}')
@@ -235,7 +351,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             if not against:
                 raise ValidationError(
                     'variant',
-                    'Choose an implementation variant before attaching sleeves.')
+                    'Choose an implementation type before attaching sleeves.')
             sleeves = {}
             for category, name in (payload['sleeves'] or {}).items():
                 if category in AUTO_SLEEVE_CATEGORIES:
@@ -243,6 +359,8 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                         'sleeves',
                         '{} carries its sleeve automatically.'.format(category))
                 if name is not None and not sleeveExists(category, name, against):
+                    # *category* is already the group name where there is one:
+                    # the page sends what it picked under (D60)
                     raise ValidationError(
                         'sleeves',
                         'No sleeve named {!r} for {} under {}.'.format(
@@ -277,6 +395,12 @@ def resolvePortfolio(scenarioId: str, payload: dict = Body(...),
         if role not in ('base', 'comparison'):
             raise ValidationError('role', 'role must be base or comparison.')
         basis = BasisInput.fromDict(state['basis'])
+        # the key carries its currency (D54); a column can only be built in the
+        # scenario's own, and the picker never offers another
+        if key.currency != basis.currency:
+            raise ValidationError(
+                'currency', 'A {} portfolio cannot be added to a {} scenario.'.format(
+                    key.currency, basis.currency))
         # The variant governs what may be built at all, so it is checked
         # before the expensive call rather than after it (D49).
         mandateSize = (state.get('mandate') or {}).get('mandateSize')
@@ -345,11 +469,17 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
         results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k))
                    for k in keys]
 
-        from cyrus_pmg.pmgService.scenario.rules import AUTO_SLEEVE_CATEGORIES
+        from cyrus_pmg.pmgService.scenario.rules import (
+            AUTO_SLEEVE_CATEGORIES, sleeveCategory)
         sleeves = state['sleeves'] or {}
-        missing = [c['name'] for c in results[0]['categories']
-                   if c['name'] not in AUTO_SLEEVE_CATEGORIES
-                   and not sleeves.get(c['name'])]
+        # one choice per sleeve category: grouped categories share theirs (D60)
+        missing = []
+        for c in results[0]['categories']:
+            if c['name'] in AUTO_SLEEVE_CATEGORIES:
+                continue
+            under = sleeveCategory(c['name'])
+            if not sleeves.get(under) and under not in missing:
+                missing.append(under)
         if missing:
             raise ValidationError(
                 'sleeves',

@@ -109,8 +109,16 @@ class BakedScenarioPort:
     def get_schema(self, basis: BasisInput, mandate: MandateInput, variant=None):
         mandateSize = mandate.mandateSize if mandate else None
         topAccountSize = mandate.topAccountSize if mandate else None
+        # Database-free, availability means "baked": a portfolio that enumerated
+        # but never completed its analytics is not offered, or a PWA would pick
+        # a column that errors (D54). With a delegate every enumerated key is
+        # offered, since a miss falls through to it.
+        available = None
+        if self._delegate is None:
+            available = set(self._slice(basis.currency, basis.hedging))
         return rules.schemaPayload(basis, mandateSize, self.capabilities(),
-                                   self.describe(), variant, topAccountSize)
+                                   self.describe(), variant, topAccountSize,
+                                   availableKeyStrs=available)
 
     def search_advisors(self, query: str, limit: int = 20):
         return advisors.searchAdvisors(query, limit)

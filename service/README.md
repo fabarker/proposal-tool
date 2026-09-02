@@ -104,7 +104,7 @@ carries `loginUrl`; validation adds `field`), per spec §3.5.
 | `DELETE /api/scenario/{id}/portfolio/{key}` | Key URL-encoded canonical string. Idempotent; the base refuses with 422. |
 | `POST /api/scenario/{id}/export` | The workbook; `Content-Disposition: attachment`. 422 while no variant is chosen or a category lacks a sleeve. The variant is written above the implementation sheet's header. |
 
-## Implementation variants (D29)
+## Implementation Types (D29)
 
 Step 2 opens on a required choice of one of four variants, and no sleeve can be
 attached until it is made. The variant decides which sleeves each category

@@ -1,0 +1,74 @@
+ProductId,Name,Ticker,AssetClass,Style,Vehicle,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
+gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Active,SMA,Internal,Daily,USD,0.25,Core Active,3.20,5000000
+gsam-intermediate-credit-sma,GSAM Intermediate Credit SMA,,IG Corporate,Active,SMA,Internal,Daily,USD,0.28,Core Active,4.80,5000000
+gsam-short-duration-sma,GSAM Short Duration SMA,,Short Duration,Active,SMA,Internal,Daily,USD,0.22,Core Active,4.70,5000000
+gs-us-corporate-bond-fund,GS US Corporate Bond Fund,GSUCX,IG Corporate,Active,Mutual Fund,Internal,Daily,USD,0.42,Core Active,4.80,1000
+ashfield-global-credit-fund,Ashfield Global Credit Fund,AGCIX,IG Corporate,Active,Mutual Fund,External,Daily,Local,0.55,Core Active,4.80,1000
+gs-short-duration-income,GS Short Duration Income,GSSDX,Short Duration,Active,Mutual Fund,Internal,Daily,USD,0.38,Core Active,4.70,1000
+gs-access-ig-corporate-etf,GS Access IG Corporate ETF,GIGB,IG Corporate,Passive,ETF,Internal,Daily,USD,0.14,Passive,4.80,
+gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF,GBIL,Government,Passive,ETF,Internal,Daily,USD,0.12,Passive,4.90,
+gs-core-fixed-income-fund,GS Core Fixed Income Fund,GCFIX,Aggregate,Active,Mutual Fund,Internal,Daily,USD,0.46,Core Active,4.50,1000
+gs-high-yield-fund,GS High Yield Fund,GSHAX,High Yield,Active,Mutual Fund,Internal,Daily,USD,0.72,Specialist Active,6.90,1000
+gs-emerging-markets-debt,GS Emerging Markets Debt,GSDAX,EM Debt,Active,Mutual Fund,Internal,Daily,USD,0.85,Specialist Active,6.30,1000
+gs-strategic-income-fund,GS Strategic Income Fund,GSZAX,Multi-Sector,Active,Mutual Fund,Internal,Daily,USD,0.79,Specialist Active,5.40,1000
+calderwood-local-em-debt,Calderwood Local EM Debt,CLEDX,EM Debt,Active,Mutual Fund,External,Daily,Local,0.91,Specialist Active,6.30,1000
+gs-access-high-yield-etf,GS Access High Yield ETF,GHYB,High Yield,Passive,ETF,Internal,Daily,USD,0.34,Passive,6.90,
+gs-access-em-usd-bond-etf,GS Access EM USD Bond ETF,GEMD,EM Debt,Passive,ETF,Internal,Daily,USD,0.39,Passive,6.30,
+gs-access-us-large-cap-etf,GS Access US Large Cap ETF,GSLC,US Large Cap,Passive,ETF,Internal,Daily,USD,0.09,Passive,1.30,
+gs-us-equity-insights-fund,GS US Equity Insights Fund,GCSAX,US All Cap,Active,Mutual Fund,Internal,Daily,USD,0.71,Core Active,1.10,1000
+northbrook-intl-equity,Northbrook Intl Equity,NBIEX,Intl Developed,Active,Mutual Fund,External,Daily,Local,0.68,Core Active,2.70,1000
+gs-emerging-markets-equity,GS Emerging Markets Equity,GEMAX,Emerging Markets,Active,Mutual Fund,Internal,Daily,Local,1.12,Specialist Active,2.40,1000
+gs-access-intl-equity-etf,GS Access Intl Equity ETF,GSIE,Intl Developed,Passive,ETF,Internal,Daily,Local,0.25,Passive,2.70,
+gs-access-em-equity-etf,GS Access EM Equity ETF,GEM,Emerging Markets,Passive,ETF,Internal,Daily,Local,0.37,Passive,2.40,
+gs-concentrated-growth-sma,GS Concentrated Growth SMA,,US Large Cap,Active,SMA,Internal,Daily,USD,0.55,Core Active,1.30,5000000
+gs-us-focused-value-sma,GS US Focused Value SMA,,US Large Cap,Active,SMA,Internal,Daily,USD,0.55,Core Active,1.30,5000000
+northbrook-focused-intl,Northbrook Focused Intl,NBFIX,Intl Developed,Active,Mutual Fund,External,Daily,Local,0.94,Core Active,2.70,1000
+gs-hedgeworks-multi-strategy,GS HedgeWorks Multi-Strategy,,Multi-Strategy,Active,SMA,Internal,Quarterly,USD,1.35,Alternatives,0.00,5000000
+calderwood-global-macro,Calderwood Global Macro,,Global Macro,Active,SMA,External,Quarterly,USD,1.48,Alternatives,0.00,5000000
+ashfield-select-equity-l-s,Ashfield Select Equity L/S,,Equity Long/Short,Active,SMA,External,Quarterly,USD,1.62,Alternatives,0.00,5000000
+northbrook-relative-value,Northbrook Relative Value,,Relative Value,Active,SMA,External,Monthly,USD,1.55,Alternatives,0.00,5000000
+gs-absolute-return-tracker,GS Absolute Return Tracker,GARTX,Multi-Strategy,Active,Mutual Fund,Internal,Daily,USD,0.96,Alternatives,0.00,1000
+gs-managed-futures-strategy,GS Managed Futures Strategy,GMFAX,Managed Futures,Active,Mutual Fund,Internal,Daily,USD,1.08,Alternatives,0.00,1000
+gs-vintage-fund-ix,GS Vintage Fund IX,,Secondaries,Active,SMA,Internal,Drawdown,USD,1.25,Alternatives,0.00,5000000
+gs-private-markets-buyout,GS Private Markets Buyout,,Buyout,Active,SMA,Internal,Drawdown,USD,1.45,Alternatives,0.00,5000000
+gs-growth-equity-partners,GS Growth Equity Partners,,Growth,Active,SMA,Internal,Drawdown,USD,1.5,Alternatives,0.00,5000000
+ashfield-co-investment,Ashfield Co-Investment,,Co-Investment,Active,SMA,External,Drawdown,EUR,1.1,Alternatives,0.00,5000000
+gs-venture-access-fund,GS Venture Access Fund,,Venture,Active,SMA,Internal,Drawdown,USD,1.72,Alternatives,0.00,5000000
+gs-real-estate-partners,GS Real Estate Partners,,Core Real Estate,Active,SMA,Internal,Drawdown,USD,1.3,Alternatives,3.80,5000000
+gs-private-credit-partners,GS Private Credit Partners,,Private Credit,Active,SMA,Internal,Quarterly,USD,1.4,Alternatives,8.20,5000000
+ashfield-direct-lending,Ashfield Direct Lending,,Direct Lending,Active,SMA,External,Quarterly,USD,1.35,Alternatives,8.60,5000000
+gs-real-assets-program,GS Real Assets Program,,Real Assets,Active,SMA,Internal,Drawdown,USD,1.22,Alternatives,4.10,5000000
+calderwood-energy-transition,Calderwood Energy Transition,,Energy,Active,SMA,External,Drawdown,EUR,1.38,Alternatives,2.90,5000000
+tactical-tilt-fund,Tactical Tilt Fund,TTF,Tactical Tilts,Active,Mutual Fund,Internal,Daily,USD,0.85,Asset Allocation,0.50,1000
+strategic-volatility-premium,Strategic Volatility Premium,SVP,Volatility Premium,Active,Mutual Fund,Internal,Daily,USD,0.65,Specialist Active,2.20,1000
+gs-esg-us-corporate-bond-fund,GS ESG US Corporate Bond Fund,GSECX,IG Corporate,Active,Mutual Fund,Internal,Daily,USD,0.44,Core Active,4.80,1000
+gs-access-esg-aggregate-etf,GS Access ESG Aggregate ETF,GSEA,Aggregate,Passive,ETF,Internal,Daily,USD,0.16,Passive,4.50,
+gs-green-bond-fund,GS Green Bond Fund,GSGBX,Green Bonds,Active,Mutual Fund,Internal,Daily,USD,0.48,Specialist Active,4.20,1000
+ashfield-social-impact-bond,Ashfield Social Impact Bond,ASIBX,Social Bonds,Active,Mutual Fund,External,Daily,Local,0.62,Specialist Active,4.30,1000
+gs-esg-high-yield-fund,GS ESG High Yield Fund,GSEHX,High Yield,Active,Mutual Fund,Internal,Daily,USD,0.76,Specialist Active,6.90,1000
+gs-esg-emerging-markets-debt,GS ESG Emerging Markets Debt,GSEDX,EM Debt,Active,Mutual Fund,Internal,Daily,USD,0.89,Specialist Active,6.30,1000
+gs-access-esg-us-equity-etf,GS Access ESG US Equity ETF,GSEU,US Large Cap,Passive,ETF,Internal,Daily,USD,0.14,Passive,1.30,
+gs-esg-international-equity,GS ESG International Equity,GSIEX,Intl Developed,Active,Mutual Fund,Internal,Daily,Local,0.72,Core Active,2.70,1000
+gs-esg-emerging-markets-equity,GS ESG Emerging Markets Equity,GSEEX,Emerging Markets,Active,Mutual Fund,Internal,Daily,Local,1.05,Specialist Active,2.40,1000
+gs-climate-solutions-fund,GS Climate Solutions Fund,GCSLX,Global Thematic,Active,Mutual Fund,Internal,Daily,Local,0.88,Specialist Active,0.80,1000
+northbrook-paris-aligned-equity,Northbrook Paris-Aligned Equity,NPAEX,Intl Developed,Active,Mutual Fund,External,Daily,Local,0.79,Core Active,2.70,1000
+gs-hedgeworks-esg-multi-strategy,GS HedgeWorks ESG Multi-Strategy,,Multi-Strategy,Active,SMA,Internal,Quarterly,USD,1.38,Alternatives,0.00,5000000
+gs-sustainable-investing-group-fund,GS Sustainable Investing Group Fund,,Impact,Active,SMA,Internal,Drawdown,USD,1.55,Alternatives,0.00,5000000
+gs-sustainable-real-estate,GS Sustainable Real Estate,,Core Real Estate,Active,SMA,Internal,Drawdown,USD,1.32,Alternatives,3.80,5000000
+esg-tactical-tilt-fund,ESG Tactical Tilt Fund,ETTF,Tactical Tilts,Active,Mutual Fund,Internal,Daily,USD,0.88,Asset Allocation,0.50,1000
+gs-global-credit-portfolio-ucits,GS Global Credit Portfolio (UCITS),,IG Corporate,Active,UCITS,Internal,Daily,EUR,0.52,Core Active,4.80,10000
+gs-sterling-credit-portfolio-ucits,GS Sterling Credit Portfolio (UCITS),,IG Corporate,Active,UCITS,Internal,Daily,GBP,0.54,Core Active,4.80,10000
+gs-global-short-duration-ucits,GS Global Short Duration (UCITS),,Short Duration,Active,UCITS,Internal,Daily,EUR,0.4,Core Active,4.70,10000
+gs-access-global-aggregate-ucits,GS Access Global Aggregate (UCITS),,Aggregate,Passive,UCITS,Internal,Daily,EUR,0.18,Passive,4.50,10000
+gs-access-euro-government-ucits,GS Access Euro Government (UCITS),,Government,Passive,UCITS,Internal,Daily,EUR,0.15,Passive,4.90,10000
+gs-global-high-yield-ucits,GS Global High Yield (UCITS),,High Yield,Active,UCITS,Internal,Daily,EUR,0.81,Specialist Active,6.90,10000
+gs-emerging-markets-debt-ucits,GS Emerging Markets Debt (UCITS),,EM Debt,Active,UCITS,Internal,Daily,EUR,0.94,Specialist Active,6.30,10000
+gs-access-world-equity-ucits,GS Access World Equity (UCITS),,Global Developed,Passive,UCITS,Internal,Daily,EUR,0.2,Passive,2.10,10000
+gs-europe-core-equity-ucits,GS Europe Core Equity (UCITS),,Europe,Active,UCITS,Internal,Daily,EUR,0.78,Core Active,3.00,10000
+gs-emerging-markets-equity-ucits,GS Emerging Markets Equity (UCITS),,Emerging Markets,Active,UCITS,Internal,Daily,EUR,1.08,Specialist Active,2.40,10000
+gs-access-em-equity-ucits,GS Access EM Equity (UCITS),,Emerging Markets,Passive,UCITS,Internal,Daily,EUR,0.32,Passive,2.40,10000
+gs-absolute-return-ucits,GS Absolute Return (UCITS),,Multi-Strategy,Active,UCITS,Internal,Daily,EUR,1.12,Alternatives,0.00,10000
+calderwood-global-macro-ucits,Calderwood Global Macro (UCITS),,Global Macro,Active,UCITS,External,Daily,EUR,1.24,Alternatives,0.00,10000
+gs-private-markets-icav-feeder,GS Private Markets ICAV Feeder,,Buyout,Active,ICAV,Internal,Drawdown,EUR,1.58,Alternatives,0.00,5000000
+gs-private-credit-icav-feeder,GS Private Credit ICAV Feeder,,Private Credit,Active,ICAV,Internal,Quarterly,EUR,1.48,Alternatives,8.20,5000000
+tactical-tilt-fund-ucits,Tactical Tilt Fund (UCITS),,Tactical Tilts,Active,UCITS,Internal,Daily,EUR,0.92,Asset Allocation,0.50,10000

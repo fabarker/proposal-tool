@@ -1,0 +1,400 @@
+<meta charset="utf-8">
+<title>Sleeve Repository</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+/* ── tokens: the tool's own palette, light first, dark under the same names ── */
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --navy:#12233F; --navy-ink:#C8D3E4; --navy-line:#233754;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1120px;margin:0 auto;padding:40px 28px 80px}
+h1,h2,h3,h4{font-family:var(--f-body);text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:52px 0 14px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h3{font-size:16px;font-weight:700;margin:22px 0 8px}
+p{margin:0 0 12px;max-width:72ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:70ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:14px 0 0}
+code,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:3px}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0 6px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-num);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+td:first-child{white-space:nowrap}
+.tbl-wrap{overflow-x:auto}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:72ch}
+li{margin:0 0 5px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:16px 18px}
+.card h3{margin-top:0}
+.pill{display:inline-block;font-family:var(--f-num);font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.p-mute{background:var(--surface-2);color:var(--ink-2)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;margin:14px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)}
+.callout p:last-child{margin-bottom:0}
+.size{font-family:var(--f-num);font-weight:700;color:var(--ink-2)}
+
+/* ── data-flow diagram: boxes and arrows, no library ── */
+.flow{display:grid;grid-template-columns:1fr 34px 1fr 34px 1fr;gap:10px 0;align-items:center;margin:16px 0 4px}
+.flow .box{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:11px 13px;min-height:74px}
+.flow .box b{display:block;font-size:14px;margin-bottom:2px}
+.flow .box span{display:block;font-size:12.5px;color:var(--ink-2);line-height:1.4}
+.flow .box.store{border-color:var(--accent);background:var(--accent-soft)}
+.flow .box.store b{color:var(--accent-ink)}
+.flow .arrow{text-align:center;color:var(--ink-3);font-size:18px}
+.flow .lbl{grid-column:1/-1;font-family:var(--f-num);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-top:8px}
+@media (max-width:760px){.flow{grid-template-columns:1fr}.flow .arrow{transform:rotate(90deg)}}
+
+/* ── the mockup: painted in the app's literal colours, it depicts the app ── */
+.mock-wrap{overflow-x:auto;margin:14px 0 6px;border:1px solid var(--line-strong);border-radius:8px;background:#DDE3EA}
+.mock{width:1180px;height:760px;position:relative;font-family:var(--f-body);color:#1C2733;background:#F6F7F9;overflow:hidden}
+.mock *{box-sizing:border-box}
+.mock .bg-rail{position:absolute;left:0;top:0;bottom:0;width:230px;background:#12233F;opacity:.55}
+.mock .bg-doc{position:absolute;left:230px;right:0;top:0;bottom:0;background:#F6F7F9;opacity:.55}
+.mock .scrim{position:absolute;inset:0;background:rgba(18,35,63,.42)}
+.dlg{position:absolute;left:40px;top:34px;width:1100px;height:692px;background:#fff;border-radius:8px;
+  box-shadow:0 24px 60px rgba(12,24,44,.35);display:grid;grid-template-rows:56px 1fr 52px;overflow:hidden}
+.dlg-h{display:flex;align-items:center;gap:18px;padding:0 20px;border-bottom:1px solid #D4DAE2}
+.dlg-h .ttl{font-family:var(--f-num);font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#1C2733}
+.seg{display:flex;border:1px solid #C7D0DB;border-radius:4px;overflow:hidden;font-size:13px}
+.seg span{padding:6px 12px;border-left:1px solid #C7D0DB;color:#5B6B7C;background:#fff}
+.seg span:first-child{border-left:0}
+.seg span.on{background:#16243A;color:#fff;font-weight:600}
+.dlg-h .cat{margin-left:auto;font-family:var(--f-num);font-size:12.5px;color:#5B6B7C}
+.dlg-h .x{width:28px;height:28px;border:1px solid #C7D0DB;border-radius:4px;display:grid;place-items:center;color:#5B6B7C;font-size:16px}
+.dlg-b{display:grid;grid-template-columns:232px 300px 1fr;min-height:0}
+.pane{border-right:1px solid #E3E7EC;overflow:hidden;display:flex;flex-direction:column}
+.pane:last-child{border-right:0}
+.pane-h{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7E8A99;padding:14px 16px 8px;display:flex;align-items:center;gap:8px}
+.pane-h .btn{margin-left:auto}
+.cats .row{display:flex;align-items:center;padding:9px 16px;font-size:13.5px;color:#1C2733;border-left:3px solid transparent}
+.cats .row .n{margin-left:auto;font-family:var(--f-num);font-size:12px;color:#7E8A99}
+.cats .row.on{background:#E3EBFA;border-left-color:#1F5FBF;color:#1E4FA3;font-weight:600}
+.cats .row.on .n{color:#1E4FA3}
+.cats .row .lock{margin-left:7px;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5B6B7C;background:#EEF1F4;border-radius:8px;padding:0 6px;line-height:16px}
+.sl .row{padding:10px 16px;border-bottom:1px solid #EEF1F4;display:grid;gap:2px}
+.sl .row b{font-size:13.5px;font-weight:600}
+.sl .row small{font-size:12px;color:#5B6B7C}
+.sl .row.on{background:#F0F4FB;box-shadow:inset 3px 0 0 #1F5FBF}
+.sl .row .warn{color:#B45309;font-weight:600}
+.btn{display:inline-block;font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:6px 12px;border-radius:4px;border:1px solid #C7D0DB;color:#1C2733;background:#fff;white-space:nowrap}
+.btn.pri{background:#1F5FBF;border-color:#1F5FBF;color:#fff}
+.btn.danger{color:#9B1C1C;border-color:#F1B8B2}
+.btn.ghost{border-color:transparent;color:#5B6B7C}
+.pane.ed{padding:14px 20px 0;display:flex;flex-direction:column;gap:12px;overflow:visible}
+.fld{display:grid;gap:5px}
+.fld label{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#5B6B7C}
+.inp{border:1px solid #C7D0DB;border-radius:4px;padding:7px 10px;font-size:13.5px;background:#fff;min-height:34px;display:flex;align-items:center}
+.inp.muted{color:#7E8A99}
+.frow{display:grid;grid-template-columns:1fr 200px;gap:14px}
+.prods{border:1px solid #D4DAE2;border-radius:6px;overflow:visible}
+.prods .ph,.prods .pr{display:grid;grid-template-columns:1fr 92px 32px;align-items:center;gap:10px;padding:8px 12px}
+.prods .ph{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;border-bottom:1px solid #E3E7EC;background:#F6F7F9}
+.prods .pr{border-bottom:1px solid #EEF1F4;font-size:13.5px}
+.prods .pr .pk{display:grid;gap:1px;min-width:0}
+.prods .pr .pk b{font-weight:500}
+.prods .pr .pk .t{font-family:var(--f-num);font-size:12px;color:#5B6B7C}
+.prods .pr .w{font-family:var(--f-num);font-size:13.5px;text-align:right;border:1px solid #C7D0DB;border-radius:4px;padding:5px 8px;background:#fff}
+.prods .pr .rm{color:#7E8A99;text-align:center}
+.prods .pr.adding{position:relative;background:#F0F4FB}
+.prods .pr.adding .pk{border:1px solid #1F5FBF;border-radius:4px;padding:6px 10px;background:#fff;box-shadow:0 0 0 3px rgba(31,95,191,.18)}
+.prods .pr.adding .pk .cur{border-right:1px solid #1C2733;padding-right:1px}
+.menu{position:absolute;left:12px;top:46px;width:calc(100% - 24px);background:#fff;border:1px solid #C7D0DB;border-radius:6px;box-shadow:0 10px 30px rgba(12,24,44,.18);z-index:5;font-size:13px}
+.menu .mi{display:grid;grid-template-columns:1fr auto;gap:8px;padding:8px 12px;border-bottom:1px solid #EEF1F4}
+.menu .mi:last-child{border-bottom:0}
+.menu .mi.on{background:#E3EBFA}
+.menu .mi b{font-weight:500}
+.menu .mi small{display:block;color:#5B6B7C;font-family:var(--f-num);font-size:12px}
+.menu .mi .grp{font-family:var(--f-num);font-size:11.5px;color:#1E4FA3;background:#E3EBFA;border-radius:9px;padding:1px 8px;align-self:center}
+.menu .hint{padding:6px 12px;font-family:var(--f-num);font-size:11.5px;color:#7E8A99;border-top:1px solid #EEF1F4;background:#F6F7F9}
+.tot{display:grid;grid-template-columns:1fr 92px 32px;gap:10px;padding:9px 12px;font-family:var(--f-num);font-size:13px;font-weight:700;background:#F6F7F9;border-top:1px solid #E3E7EC}
+.tot .ok{color:#176A33;text-align:right}
+.prov{font-family:var(--f-num);font-size:12px;color:#7E8A99;margin-top:auto;padding-bottom:6px}
+.dlg-f{display:flex;align-items:center;gap:10px;padding:0 20px;border-top:1px solid #D4DAE2;background:#F6F7F9}
+.dlg-f .src{font-family:var(--f-num);font-size:12px;color:#7E8A99}
+.dlg-f .btn.pri{margin-left:auto}
+
+/* ── smaller state mocks ── */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:14px 0 0}
+.state{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:12px 14px}
+.state .cap{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 8px;font-weight:700}
+.state .shot{background:#fff;color:#1C2733;border:1px solid #D4DAE2;border-radius:4px;padding:10px 12px;font-size:13px}
+.state .shot .row{display:grid;gap:2px}
+.state .shot b{font-weight:600}
+.state .shot small{color:#5B6B7C;font-size:12px}
+.state .shot .tot{border:0;padding:6px 0 0;background:none;grid-template-columns:1fr auto;font-size:13px}
+.state .shot .bad{color:#9B1C1C}
+.state .shot .note{font-size:12px;color:#5B6B7C;margin-top:6px}
+.entry{background:#12233F;color:#fff;border-radius:6px;padding:14px 16px;font-size:13px}
+.entry b{display:block;font-size:15px;font-weight:500}
+.entry .sub{color:#F2B25C;font-size:12px;font-weight:700;margin-bottom:8px}
+.entry a{color:#8FB3F2;font-family:var(--f-num);font-size:12px;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;border-bottom:1px solid rgba(143,179,242,.4)}
+.landing{background:#fff;color:#1C2733;border:1px solid #D4DAE2;border-radius:6px;padding:14px 16px}
+.landing .cta{display:inline-block;background:#1F5FBF;color:#fff;font-family:var(--f-num);font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:9px 16px;border-radius:4px;box-shadow:0 4px 10px rgba(31,95,191,.35)}
+.landing a{display:block;margin-top:10px;font-family:var(--f-num);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#1E4FA3;text-decoration:none}
+.step-list li{margin-bottom:9px}
+.step-list b{display:inline-block;min-width:0}
+.q{counter-reset:q}
+.q .item{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.q .item:last-child{border-bottom:0}
+.q .item .num{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:1px}
+.q .item b{display:block;margin-bottom:3px}
+.q .item p{margin:0;font-size:14px}
+.rec{color:var(--accent-ink);font-weight:500}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="page">
+  <p class="eyebrow">Proposal Tool · design note</p>
+  <h1>Sleeve Repository</h1>
+  <p class="lede">Move sleeves out of a Python file and into a database the app manages, put the products they are built from into a catalogue table, and give a small set of admins a console to build and maintain sleeves from inside the tool.</p>
+  <div class="meta"><span>2 September 2026</span><span>Status: built 2 September 2026, as specified below</span><span>Recorded as D56 and D57 in DEVIATIONS.md</span></div>
+
+  <h2>What is being asked</h2>
+  <ul>
+    <li><b>Sleeves come from a database</b>, the way strategic portfolios come from the supplying database's extract (D54) — not from tables hand-written in <code>sleeves.py</code>.</li>
+    <li><b>Sleeves are manageable inside the app.</b> A repository where a sleeve can be built for a given category: created, edited, retired.</li>
+    <li><b>Only a special admin</b> can reach that repository. Ordinary editors go on choosing sleeves; they never see the console.</li>
+    <li><b>Products come from a database too</b> — one table, one row per product, one column per field — and building a sleeve means <b>selecting products from that table</b>, not typing them.</li>
+  </ul>
+
+  <h2>Where things stand today</h2>
+  <p>Everything is in one file, <code>service/cyrus_pmg/pmgService/scenario/sleeves.py</code>: four libraries (one per Implementation Type) expressed as a <code>BASELINE</code> table plus per-type deltas, 56 sleeves, 73 distinct products written inline with their eleven fields. Import-time checks prove every sleeve's weights sum to 1, no name repeats, and every product's fee group is one the fee card prices. The public API is three functions — <code>listSleeves(category, variant)</code>, <code>sleeveExists</code>, <code>variantExists</code> — and that narrow contract is what makes this change contained: the workbook, the rules, all three adapters and the bake call those three and nothing else.</p>
+  <p>Two facts from the survey shape the design. First, the same product appears in several sleeves (37 of the 73 do) with identical attributes every time — so products are genuinely a separate table, not sleeve-local rows. Second, <b>38 of the 73 products have no ticker</b> (SMAs and private-market programmes), so a ticker cannot be the product key; the catalogue needs an id column of its own.</p>
+
+  <h2>Design</h2>
+
+  <div class="flow">
+    <div class="box"><b>Product extract</b><span>CSV or XLSX from the product database. One row per product. Delivered, read-only.<br><code>SCENARIO_PRODUCTS_SOURCE</code></span></div>
+    <div class="arrow">→</div>
+    <div class="box"><b>Catalogue reader</b><span><code>products.py</code>, memoised, re-read when the file changes. Rejects a bad extract at load.</span></div>
+    <div class="arrow">→</div>
+    <div class="box"><b>Sleeve console</b><span>Admin-only overlay in the app. Picks products from the catalogue, sets weights, saves.</span></div>
+
+    <div class="box"><b>Sleeve extract</b><span>Same shape, one row per product-in-sleeve. Seeds an empty database; exports for review.<br><code>SCENARIO_SLEEVES_SEED</code></span></div>
+    <div class="arrow">→</div>
+    <div class="box store"><b>Sleeve database</b><span>SQLite file the service owns and writes. The library lives here.<br><code>SCENARIO_SLEEVES_DB</code></span></div>
+    <div class="arrow">→</div>
+    <div class="box"><b>The tool, unchanged</b><span><code>listSleeves()</code> reads the database and joins the catalogue. Rail pickers, table, workbook, bake: untouched.</span></div>
+    <div class="lbl">Delivered on the left, authored in the middle, consumed on the right</div>
+  </div>
+
+  <h3>1 · Products: a delivered table, read like the portfolios</h3>
+  <p>A new extract folder <code>productSource/</code> with <code>products.csv</code> and <code>products.xlsx</code>, exactly the pattern of <code>saaSource/</code>. Columns:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Column</th><th>Meaning</th></tr>
+    <tr><td><code>ProductId</code></td><td>The key sleeves reference. Slugs of the names in the stand-in; the real catalogue brings its own ids.</td></tr>
+    <tr><td><code>Name</code>, <code>Ticker</code></td><td>Ticker may be empty; it is served as the em dash the table already shows.</td></tr>
+    <tr><td><code>AssetClass</code>, <code>Style</code>, <code>Vehicle</code>, <code>Source</code>, <code>Liquidity</code>, <code>ExposureCurrency</code></td><td>The attribute columns of the implementation table, as they are today.</td></tr>
+    <tr><td><code>ProductCost</code></td><td>Numeric, per cent. Non-negative.</td></tr>
+    <tr><td><code>FeeGroup</code></td><td>Must be one of the groups the fee card prices, checked at load — otherwise it would fail at export, under RDR, long after the product was placed.</td></tr>
+  </table></div>
+  <p>The reader (<code>scenario/products.py</code>) exposes <code>all()</code>, <code>get(id)</code>, <code>has(id)</code>, <code>describeSource()</code>, and raises <code>BadCatalogue</code> on a missing column, duplicate id, empty name, bad cost or unknown group. A product it serves carries the same field names a sleeve product has always carried, so nothing downstream can tell where it came from.</p>
+  <p><b>Read-only in the app.</b> The brief says <em>select from</em> the product database, not edit it — so, like the fee card, the catalogue changes by delivery. A product editor is additive later if wanted.</p>
+
+  <h3>2 · Sleeves: a real, writable database</h3>
+  <p>A SQLite file (<code>SCENARIO_SLEEVES_DB</code>, default <code>service/var/sleeves.db</code>), stdlib only, transactional, host-swappable. Two tables:</p>
+  <div class="grid2">
+    <div class="card"><h3>sleeves</h3><p style="font-size:14px"><code>id</code> · <code>variant</code> (Implementation Type) · <code>category</code> · <code>name</code> · <code>note</code> · <code>createdBy</code> · <code>createdAt</code> · <code>updatedBy</code> · <code>updatedAt</code><br>Unique on (variant, category, name).</p></div>
+    <div class="card"><h3>sleeveProducts</h3><p style="font-size:14px"><code>sleeveId</code> · <code>position</code> · <code>productId</code> · <code>weight</code> (fraction)<br>Primary key (sleeveId, productId). Cascades on sleeve delete.</p></div>
+  </div>
+  <p style="margin-top:12px">A database that does not exist yet is created and <b>seeded</b> from <code>sleeveSource/sleeves.csv</code> — today's 56 sleeves written out row by row (<code>Variant, Category, Sleeve, ProductId, Weight</code>). After that the database is the library and the seed is never read again. The same shape is the <b>interchange format</b>: <code>sleeveTools --export</code> / <code>--import</code> move a library between environments or put it in front of someone as a table.</p>
+  <p>A sleeve stays keyed by <b>Implementation Type + Category</b>. The type decides what a category offers and what those sleeves contain (D29) — a US Onshore book reaches SMAs, an Irish Onshore book reaches UCITS — so the console is always working under one type.</p>
+
+  <h3>3 · Admin: a third role</h3>
+  <p>Beside <code>PMG_ALLOWED_KERBEROS</code>, a second list <code>PMG_ADMIN_KERBEROS</code>. In <code>accessControl.py</code> (the host seam, already carrying <code>requireAuth</code> and <code>requireEditor</code>) a third dependency, <code>requireAdmin</code>, gates every repository endpoint with a 403 for anyone else. The page learns whether to show the entry through the schema — <code>capabilities.canAdmin</code> next to the existing <code>canEdit</code> — so the UI hardcodes nothing and a non-admin never sees a control they cannot use.</p>
+
+  <h2>The console</h2>
+  <p>An overlay inside the Proposal Tool, on the same footing as the fee card viewer: the page behind it goes inert, Escape closes it, focus returns to whatever opened it. Three panes, left to right: the categories under the chosen Implementation Type, the sleeves in the chosen category, and the editor for the chosen sleeve.</p>
+
+  <div class="mock-wrap"><div class="mock" aria-label="Mockup of the Sleeve Repository console">
+    <div class="bg-rail"></div><div class="bg-doc"></div><div class="scrim"></div>
+    <div class="dlg" role="img">
+      <div class="dlg-h">
+        <span class="ttl">Sleeve Repository</span>
+        <div class="seg"><span class="on">PMG Multi-Asset Portfolio</span><span>PMG ESG</span><span>US Onshore</span><span>Irish Onshore</span></div>
+        <span class="cat">Catalogue · 73 products · products.csv · 2 Sep 2026</span>
+        <span class="x">×</span>
+      </div>
+      <div class="dlg-b">
+        <div class="pane cats">
+          <div class="pane-h">Categories</div>
+          <div class="row on">Investment Grade Fixed Income <span class="n">3</span></div>
+          <div class="row">Hybrid Fixed Income <span class="lock">fixed</span><span class="n">1</span></div>
+          <div class="row">Other Fixed Income <span class="n">3</span></div>
+          <div class="row">Public Equity <span class="n">3</span></div>
+          <div class="row">Hedge Funds <span class="n">3</span></div>
+          <div class="row">Private Equity <span class="n">3</span></div>
+          <div class="row">Other Private Assets <span class="n">3</span></div>
+          <div class="row">Asset Allocation Strategies <span class="lock">fixed</span><span class="n">1</span></div>
+        </div>
+        <div class="pane sl">
+          <div class="pane-h">Investment Grade Fixed Income <span class="btn">+ New sleeve</span></div>
+          <div class="row"><b>GSAM Separately Managed Account</b><small>3 products · SMA · saved 28 Aug by fbarker</small></div>
+          <div class="row on"><b>Funds Only</b><small>3 products · Mutual Fund · saved 2 Sep by fbarker</small></div>
+          <div class="row"><b>ETF &amp; Mutual Funds</b><small>3 products · ETF, Mutual Fund · saved 28 Aug by fbarker</small></div>
+        </div>
+        <div class="pane ed">
+          <div class="frow">
+            <div class="fld"><label>Sleeve name</label><div class="inp">Funds Only</div></div>
+            <div class="fld"><label>Category</label><div class="inp muted">Investment Grade Fixed Income</div></div>
+          </div>
+          <div class="fld"><label>Note</label><div class="inp muted">Optional. Shown to PWAs in the picker hint.</div></div>
+          <div class="fld"><label>Products</label>
+            <div class="prods">
+              <div class="ph"><span>Product · from the catalogue</span><span style="text-align:right">Weight %</span><span></span></div>
+              <div class="pr"><div class="pk"><b>GS US Corporate Bond Fund</b><span class="t">GSUCX · IG Corporate · Mutual Fund · Core Active</span></div><div class="w">45.00</div><div class="rm">×</div></div>
+              <div class="pr"><div class="pk"><b>Ashfield Global Credit Fund</b><span class="t">AGCIX · IG Corporate · Mutual Fund · External</span></div><div class="w">30.00</div><div class="rm">×</div></div>
+              <div class="pr adding">
+                <div class="pk"><b>short<span class="cur"></span></b></div><div class="w" style="color:#7E8A99">25.00</div><div class="rm">×</div>
+                <div class="menu">
+                  <div class="mi on"><div><b>GS Short Duration Income</b><small>GSSDX · Short Duration · Mutual Fund · Internal · Daily · 0.38%</small></div><span class="grp">Core Active</span></div>
+                  <div class="mi"><div><b>GSAM Short Duration SMA</b><small>— · Short Duration · SMA · Internal · Daily · 0.22%</small></div><span class="grp">Core Active</span></div>
+                  <div class="hint">2 of 73 match · ↑↓ to move, Enter to choose · products already in this sleeve are hidden</div>
+                </div>
+              </div>
+              <div class="tot"><span>Total</span><span class="ok">100.00 ✓</span><span></span></div>
+            </div>
+          </div>
+          <div class="prov">Created 28 Aug 2026 by fbarker · last saved 2 Sep 2026 14:12 by fbarker · offered under PMG Multi-Asset Portfolio and US Onshore</div>
+        </div>
+      </div>
+      <div class="dlg-f">
+        <span class="src">Library · sleeves.db · 56 sleeves · seeded 2 Sep 2026 from sleeveSource/sleeves.csv</span>
+        <span class="btn danger">Delete sleeve</span>
+        <span class="btn pri">Save sleeve</span>
+      </div>
+    </div>
+  </div></div>
+  <p style="font-size:13px;color:var(--ink-3);margin-top:6px">The picker is shown open, mid-search: typing filters the whole catalogue by name, ticker, asset class or vehicle; a product already in the sleeve is hidden from the results. The weight column takes per cent to two places and the total judges the sleeve live.</p>
+
+  <h3>The states it has to carry</h3>
+  <div class="states">
+    <div class="state"><p class="cap">Weights do not add up</p><div class="shot">
+      <div class="tot"><span>Total</span><span class="bad">98.00 ✗</span></div>
+      <div class="note">Save is disabled. The message names the shortfall: <em>Weights sum to 98.00%; a sleeve must sum to 100%.</em></div></div></div>
+    <div class="state"><p class="cap">Fixed categories</p><div class="shot">
+      <div class="row"><b>Tactical Tilt Fund <span class="pill p-mute">fixed</span></b><small>Asset Allocation Strategies · 1 product</small></div>
+      <div class="note">Hybrid Fixed Income and Asset Allocation Strategies attach their one sleeve automatically from a toggle, so each holds exactly one: its products and weights are editable, but it cannot be deleted and a second cannot be added.</div></div></div>
+    <div class="state"><p class="cap">A product left the catalogue</p><div class="shot">
+      <div class="row"><b>Green &amp; Social Bonds <span class="pill p-warn">1 product missing</span></b><small>PMG ESG · Investment Grade Fixed Income</small></div>
+      <div class="note">A new product extract no longer carries <code>ashfield-social-impact-bond</code>. The sleeve stays in the repository, flagged, but is withheld from the pickers until an admin fixes it — a sleeve that cannot be priced is never offered.</div></div></div>
+    <div class="state"><p class="cap">Duplicate name</p><div class="shot">
+      <div class="row"><b>Funds Only</b><small class="bad">A sleeve named Funds Only already exists in this category under PMG Multi-Asset Portfolio.</small></div>
+      <div class="note">Names are unique within a type and category, matching today's import-time check.</div></div></div>
+  </div>
+
+  <h3>Where an admin gets in</h3>
+  <div class="grid2">
+    <div>
+      <div class="entry"><b>Portfolio Management Group</b><div class="sub">Proposal Tool</div><a>Sleeve repository ↗</a></div>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:8px">In the rail's brand block, under the title, on every page past the landing. Rendered only when <code>capabilities.canAdmin</code> is true.</p>
+    </div>
+    <div>
+      <div class="landing"><span class="cta">Start Here →</span><a>Sleeve repository ↗</a></div>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:8px">On the landing page beneath Start Here, so an admin can maintain sleeves without opening a proposal. Also reachable as <code>proposalTool.html#repository</code>.</p>
+    </div>
+  </div>
+
+  <h2>Behaviour and rules</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Rule</th><th>Enforced where</th><th>Note</th></tr>
+    <tr><td>Weights sum to 100%</td><td>Server (repository) and live in the console</td><td>Stored as fractions; tolerance 1e-6. Today's import-time check, moved to save time.</td></tr>
+    <tr><td>At least one product; no product twice</td><td>Server and console</td><td>The picker hides products already in the sleeve.</td></tr>
+    <tr><td>Every product exists in the catalogue</td><td>Server</td><td>A sleeve referencing a missing product is flagged in the console and withheld from <code>listSleeves</code>.</td></tr>
+    <tr><td>Name unique within type + category; 1–80 characters</td><td>Server and console</td><td>Renaming is allowed; scenarios referencing the old name show the picker's existing "no longer offered" state.</td></tr>
+    <tr><td>Fixed categories hold exactly one sleeve</td><td>Server and console</td><td>The two auto-attached categories. Delete and second-add refused with a message.</td></tr>
+    <tr><td>Fee group is priced</td><td>Catalogue load</td><td>Inherited from the product; not a sleeve concern any more.</td></tr>
+    <tr><td>Only admins write</td><td><code>requireAdmin</code> on every repository route</td><td>Editors get 403 with the host's <code>{error}</code> body; the UI never shows them the entry.</td></tr>
+    <tr><td>Saved sleeves reach open scenarios</td><td>Console</td><td>On save, the page clears its per-category sleeve cache and re-fetches, so a PWA's picker shows the change on their next render. No restart.</td></tr>
+  </table></div>
+
+  <h2>API</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Route</th><th>Gate</th><th>Purpose</th></tr>
+    <tr><td><code>GET /scenario/repository</code></td><td>admin</td><td>Everything the console needs in one fetch: types, categories, every sleeve (hydrated, with problems and provenance), the whole catalogue, source descriptions.</td></tr>
+    <tr><td><code>POST /scenario/repository/sleeves</code></td><td>admin</td><td>Create. Body: type, category, name, note, products [{productId, weight}].</td></tr>
+    <tr><td><code>PUT /scenario/repository/sleeves/{id}</code></td><td>admin</td><td>Update name, note, products.</td></tr>
+    <tr><td><code>DELETE /scenario/repository/sleeves/{id}</code></td><td>admin</td><td>Delete; refused for a fixed category.</td></tr>
+    <tr><td><code>GET /scenario/sleeves</code> <span class="pill p-mute">existing</span></td><td>auth</td><td>Unchanged contract; now served from the database.</td></tr>
+    <tr><td><code>GET /scenario/schema</code> <span class="pill p-mute">existing</span></td><td>auth</td><td>Gains <code>capabilities.canAdmin</code>.</td></tr>
+  </table></div>
+  <p>Validation failures return the <code>{error, field}</code> shape the rest of the API uses, so the console's field-level messages come straight from the server.</p>
+
+  <h2>Configuration and tooling</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Setting</th><th>Default here</th><th>On the host</th></tr>
+    <tr><td><code>SCENARIO_PRODUCTS_SOURCE</code></td><td><code>productSource/products.csv</code></td><td>The product database's extract, CSV or XLSX.</td></tr>
+    <tr><td><code>SCENARIO_SLEEVES_DB</code></td><td><code>service/var/sleeves.db</code></td><td>A host-writable path. Backed up like any small database.</td></tr>
+    <tr><td><code>SCENARIO_SLEEVES_SEED</code></td><td><code>sleeveSource/sleeves.csv</code></td><td>Read once, when the database is first created.</td></tr>
+    <tr><td><code>PMG_ADMIN_KERBEROS</code></td><td><code>fbarker</code></td><td>The real admin list, from wherever the host keeps its allowlists.</td></tr>
+  </table></div>
+  <p><code>python3 -m cyrus_pmg.pmgService.scenario.sleeveTools</code> with <code>--census</code> (what the database holds, every problem, catalogue health), <code>--export out.csv</code>, <code>--import in.csv [--replace]</code>, <code>--seed</code>. The same idiom as <code>feeTools</code> and <code>bake --census</code>.</p>
+
+  <h2>What does not change</h2>
+  <ul>
+    <li>The rail's sleeve pickers, the implementation table, the donuts, the workbook, the fee resolver, the bake store — all read <code>listSleeves()</code> and see the same shape they see today.</li>
+    <li><code>VARIANTS</code> (the four Implementation Types) stays configuration, not data. Adding a fifth is a one-line change as now.</li>
+    <li>The auto-attach rules for Tactical Tilts and the Strategic Volatility Premium: they look up their category's single sleeve, which the fixed-category rule guarantees.</li>
+    <li>Nothing about the transplant recipe: two verbatim copies and two inserts. The new pieces are one more file in the package, one more dependency in <code>accessControl.py</code>, and three environment values.</li>
+  </ul>
+
+  <h2>Work plan</h2>
+  <ol class="step-list">
+    <li><b>Sources</b> <span class="size">S</span> — <code>productSource/</code> and <code>sleeveSource/</code>: extracts, build scripts, READMEs. <span class="pill p-ok">done, before the pause</span></li>
+    <li><b>Catalogue reader</b> <span class="size">S</span> — <code>scenario/products.py</code>. <span class="pill p-ok">done, before the pause — nothing imports it yet</span></li>
+    <li><b>Repository store</b> <span class="size">M</span> — <code>scenario/sleeveRepo.py</code>: schema, seed, hydrate, list, create, update, delete, validation, export, import, census.</li>
+    <li><b>Facade</b> <span class="size">S</span> — <code>sleeves.py</code> becomes three delegating functions plus <code>VARIANTS</code>; the inline tables go.</li>
+    <li><b>Admin role</b> <span class="size">S</span> — <code>accessControl.py</code>: allowlist, <code>isAdmin</code>, <code>requireAdmin</code>; <code>canAdmin</code> on the schema.</li>
+    <li><b>Endpoints</b> <span class="size">S</span> — the four repository routes in <code>dashboardRouter.py</code>.</li>
+    <li><b>Tooling</b> <span class="size">S</span> — <code>sleeveTools.py</code>.</li>
+    <li><b>Console</b> <span class="size">L</span> — <code>generator/js/repository.js</code> and <code>generator/repository.py</code>, wired into <code>build_styles.py</code>; entry links; cache invalidation on save.</li>
+    <li><b>Tests</b> <span class="size">M</span> — a per-session temporary database via <code>conftest.py</code>; repository CRUD and every validation rule; parity (the seeded library equals today's, sleeve for sleeve, weight for weight, so the existing suite passes unchanged); the admin gate (403 for an editor); route shapes.</li>
+    <li><b>Docs</b> <span class="size">S</span> — D56 and D57 in DEVIATIONS.md; TRANSPLANT.md and PORTING.md for the new seam and settings; <code>dashboard.env.defaults</code>.</li>
+    <li><b>Verify</b> — rebuild, restart, drive the console in the browser, run the suite.</li>
+  </ol>
+  <p>Roughly 2,000 lines across the service, the page and the tests. The console is the bulk of it.</p>
+
+  <h2>Decisions I have made, and the ones that are yours</h2>
+  <div class="q">
+    <div class="item"><span class="num">1</span><div><b>SQLite for the sleeve store.</b><p>A writable, transactional, stdlib database in one file; the host points <code>SCENARIO_SLEEVES_DB</code> at its own path or swaps the store module for its database behind the same functions. The alternative — JSON files like the scenario spool — is simpler but is not a database and handles two admins saving at once badly. <span class="rec">Recommended: SQLite.</span></p></div></div>
+    <div class="item"><span class="num">2</span><div><b>Products read-only in the app.</b><p>Delivered as a table, like fees and portfolios; changed by delivery. If you want products created and edited in the console too, that is a fourth pane and a write path — additive, but it roughly doubles the console. <span class="rec">Assumed: read-only, catalogue changes by delivery.</span></p></div></div>
+    <div class="item"><span class="num">3</span><div><b>Sleeves keyed by Implementation Type + Category.</b><p>As today (D29). A sleeve shared across types is entered under each; the provenance line shows where else the same name is offered. A later "copy to another type" action is cheap if wanted. <span class="rec">Assumed: keep the per-type model.</span></p></div></div>
+    <div class="item"><span class="num">4</span><div><b>Entry points.</b><p>Rail brand block and landing page, admin-only. The user chip at top right is painted by the host's <code>accessGate.js</code>, so putting the link there would mean a host change. <span class="rec">Recommended: rail + landing.</span></p></div></div>
+    <div class="item"><span class="num">5</span><div><b>What a retired sleeve does to an open scenario.</b><p>Proposed: the scenario keeps the name; the picker shows its existing "no longer offered" state and the column's completeness gate stays open until a PWA re-picks. No silent substitution. <span class="rec">Proposed: flag, never substitute.</span></p></div></div>
+    <div class="item"><span class="num">6</span><div><b>Audit.</b><p>Provenance (who, when) on every sleeve is in scope. A full change history (every version of every sleeve) is not — it is a straightforward addition (a <code>sleeveHistory</code> table written on every save) if you want it from the start.</p></div></div>
+  </div>
+
+  <div class="callout warn">
+    <p><b>Data caveat, unchanged by this work.</b> Every product and every sleeve in the seed is stub data — the authored library of D9 and D29. The three non-Multi-Asset libraries in particular are invented, and the fee groups on products were assigned by rule of thumb. The repository is the mechanism by which PMG replaces them; it does not replace them itself.</p>
+  </div>
+</div>

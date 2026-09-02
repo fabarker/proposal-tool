@@ -14,6 +14,7 @@ classes would add a serialisation layer without adding safety.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 from urllib.parse import quote, unquote
 
 
@@ -84,36 +85,57 @@ class MandateInput:
 
 @dataclass(frozen=True)
 class PortfolioKey:
-    """What identifies a portfolio within a scenario (spec 2.1).
+    """What identifies a strategic portfolio (spec 2.1; D54).
 
-    The canonical string form - ``allocation|RE|TAA|riskLevel`` with the
-    booleans as 0/1, e.g. ``Ex HFs|1|0|Mod Agg`` - is the availability-set
-    entry, the column identity in the UI, and (URL-encoded) the path parameter
-    of DELETE /api/scenario/{id}/portfolio/{key}.
+    Four fields, all read out of the supplying database's portfolio NAME:
+
+        currency | riskLevel | allocationType | excludeRealAssets
+
+    The canonical string form - ``USD|Moderate|ex-HFs|1`` - is the
+    availability-set entry, the column identity in the UI, the bake's key and
+    (URL-encoded) the path parameter of DELETE /api/scenario/{id}/portfolio/{key}.
+
+    An all-equity book has no alternatives to include or exclude, so it has no
+    allocation type: both trailing fields are None, and print as ``NA`` -
+    ``USD|All Equity|NA|NA``. Hedging is not a property of the portfolio and is
+    not in this key; it joins the string only when the analytics are run
+    (``withHedging``).
     """
 
-    allocation: str
-    excludeRE: bool
-    excludeTAA: bool
+    currency: str
     riskLevel: str
+    allocationType: Optional[str]          # None for an all-equity book
+    excludeRealAssets: Optional[bool]      # None for an all-equity book
+
+    NA = 'NA'
+
+    @property
+    def isAllEquity(self) -> bool:
+        return self.allocationType is None
 
     def toStr(self) -> str:
+        if self.isAllEquity:
+            return '|'.join([self.currency, self.riskLevel, self.NA, self.NA])
         return '|'.join([
-            self.allocation,
-            '1' if self.excludeRE else '0',
-            '1' if self.excludeTAA else '0',
+            self.currency,
             self.riskLevel,
+            self.allocationType,
+            '1' if self.excludeRealAssets else '0',
         ])
+
+    def withHedging(self, hedging: str) -> str:
+        """The analysis key: this portfolio under one hedging assumption."""
+        return '{}|{}'.format(self.toStr(), hedging)
 
     def toPath(self) -> str:
         return quote(self.toStr(), safe='')
 
     def toDict(self) -> dict:
         return {
-            'allocation': self.allocation,
-            'excludeRE': self.excludeRE,
-            'excludeTAA': self.excludeTAA,
+            'currency': self.currency,
             'riskLevel': self.riskLevel,
+            'allocationType': self.allocationType,
+            'excludeRealAssets': self.excludeRealAssets,
         }
 
     @staticmethod
@@ -121,23 +143,22 @@ class PortfolioKey:
         parts = unquote(str(value)).split('|')
         if len(parts) != 4:
             raise ValidationError('key', 'Malformed portfolio key: {!r}'.format(value))
-        return PortfolioKey(
-            allocation=parts[0],
-            excludeRE=parts[1] == '1',
-            excludeTAA=parts[2] == '1',
-            riskLevel=parts[3],
-        )
+        currency, riskLevel, allocationType, exclusion = parts
+        if allocationType == PortfolioKey.NA:
+            return PortfolioKey(currency, riskLevel, None, None)
+        return PortfolioKey(currency, riskLevel, allocationType, exclusion == '1')
 
     @staticmethod
     def fromDict(data) -> "PortfolioKey":
         if not isinstance(data, dict):
             raise ValidationError('key', 'The portfolio key must be an object.')
         try:
-            return PortfolioKey(
-                allocation=str(data['allocation']).strip(),
-                excludeRE=bool(data['excludeRE']),
-                excludeTAA=bool(data['excludeTAA']),
-                riskLevel=str(data['riskLevel']).strip(),
-            )
+            currency = str(data['currency']).strip()
+            riskLevel = str(data['riskLevel']).strip()
         except KeyError as exc:
             raise ValidationError('key', 'The portfolio key is missing {}.'.format(exc))
+        allocationType = data.get('allocationType')
+        if allocationType in (None, '', PortfolioKey.NA):
+            return PortfolioKey(currency, riskLevel, None, None)
+        return PortfolioKey(currency, riskLevel, str(allocationType).strip(),
+                            bool(data.get('excludeRealAssets', False)))

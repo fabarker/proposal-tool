@@ -1,0 +1,509 @@
+<meta charset="utf-8">
+<title>Catalogue Redesign</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1400px;margin:0 auto;padding:40px 28px 80px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:56px 0 14px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h3{font-size:17px;font-weight:700;margin:22px 0 8px}
+h4{font-size:14px;font-weight:700;margin:14px 0 6px}
+p{margin:0 0 12px;max-width:74ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:72ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:14px 0 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:3px}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:74ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+table.doc th,table.doc td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc th{font-family:var(--f-num);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.tbl-wrap{overflow-x:auto}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)} .p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)}
+.callout p:last-child{margin-bottom:0}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:900px){.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:16px 18px}
+.card h3,.card h4{margin-top:0}
+.card p,.card li{font-size:14px}
+.q .item{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.q .item:last-child{border-bottom:0}
+.q .item .num{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:1px}
+.q .item b{display:block;margin-bottom:3px}
+.q .item p{margin:0;font-size:14px}
+
+/* ── option frames ── */
+.option{margin:26px 0 0;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;overflow:hidden}
+.option.rec{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.option-h{padding:18px 22px 14px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:18px;border-bottom:1px solid var(--line)}
+@media (max-width:1000px){.option-h{grid-template-columns:1fr}}
+.option-h .lbl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+.option-h h3{margin:0 0 6px;font-size:20px}
+.option-h p,.option-h li{font-size:13.5px;margin:0 0 6px}
+.option-h ul{padding-left:18px;margin:0}
+.mock-wrap{overflow-x:auto;background:#DDE3EA;padding:18px}
+.mock{width:1340px;background:#F6F7F9;border-radius:6px;box-shadow:0 10px 30px rgba(12,24,44,.25);overflow:hidden;font-family:var(--f-body);color:#1C2733}
+.mock *{box-sizing:border-box}
+.assump{padding:12px 22px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2);background:var(--surface-2)}
+.assump b{color:var(--ink)}
+
+/* ── shared app furniture, literal colours (depicts the app) ── */
+.tb{display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff;border-bottom:1px solid #D4DAE2}
+.tb .ttl{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#1C2733;margin-right:6px}
+.search{display:flex;align-items:center;gap:7px;border:1px solid #C7D0DB;border-radius:4px;background:#fff;padding:0 9px;height:30px;font-size:13px;color:#7E8A99}
+.search b{color:#1C2733;font-weight:400}
+.search kbd{margin-left:auto;font-family:var(--f-num);font-size:10.5px;border:1px solid #D4DAE2;border-radius:3px;padding:0 5px;color:#7E8A99;background:#F6F7F9}
+.chip{display:inline-flex;align-items:center;gap:5px;border:1px solid #C7D0DB;border-radius:14px;background:#fff;padding:3px 10px;font-family:var(--f-num);font-size:12px;color:#5B6B7C;white-space:nowrap}
+.chip.on{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3;font-weight:700}
+.chip .car{font-size:9px;color:#7E8A99}
+.tb .sp{flex:1}
+.tb .cnt{font-family:var(--f-num);font-size:12px;color:#7E8A99;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:6px 11px;border-radius:4px;border:1px solid #C7D0DB;color:#1C2733;background:#fff;white-space:nowrap}
+.btn.pri{background:#1F5FBF;border-color:#1F5FBF;color:#fff}
+.btn.ghost{border-color:transparent;color:#5B6B7C}
+.seg{display:flex;border:1px solid #C7D0DB;border-radius:4px;overflow:hidden;font-family:var(--f-num);font-size:11.5px}
+.seg span{padding:5px 9px;border-left:1px solid #C7D0DB;color:#5B6B7C;background:#fff;text-transform:uppercase;letter-spacing:.05em}
+.seg span:first-child{border-left:0}.seg span.on{background:#16243A;color:#fff;font-weight:700}
+
+/* facet rail */
+.facets{width:212px;flex:0 0 auto;border-right:1px solid #E3E7EC;background:#fff;padding:10px 0;font-size:12.5px}
+.fh{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7E8A99;padding:10px 14px 4px}
+.fo{display:flex;align-items:center;gap:8px;padding:4px 14px;color:#1C2733}
+.fo i{width:12px;height:12px;border:1px solid #C7D0DB;border-radius:3px;background:#fff;flex:0 0 auto}
+.fo.on i{background:#1F5FBF;border-color:#1F5FBF}
+.fo .n{margin-left:auto;font-family:var(--f-num);font-size:11.5px;color:#7E8A99}
+.fo.off{color:#B6BEC8}
+
+/* the tables */
+.t{border-collapse:separate;border-spacing:0;width:100%;font-size:13px}
+.t th{position:sticky;top:0;background:#F6F7F9;border-bottom:1px solid #D4DAE2;font-family:var(--f-num);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;font-weight:700;padding:8px 10px;white-space:nowrap;text-align:left;z-index:2}
+.t th.n,.t td.n{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.t th.sort{color:#1E4FA3}.t th.sort::after{content:" ▼";font-size:8px}
+.t th.drv{color:#5B6B7C;font-style:italic}
+.t td{padding:0 10px;border-bottom:1px solid #EEF1F4;white-space:nowrap;vertical-align:middle;color:#1C2733}
+.t.dense td{height:34px;font-size:12.5px}
+.t.mid td{height:40px}
+.t.airy td{height:46px;font-size:13.5px}
+.t td.nm{white-space:normal;min-width:200px}
+.t td.nm b{font-weight:500;display:block;line-height:1.15}
+.t td.nm small{font-family:var(--f-num);font-size:11px;color:#5B6B7C}
+.t td.tk{font-family:var(--f-num);font-weight:700;color:#1C2733;letter-spacing:.02em}
+.t td.mute,.t th.mute{color:#7E8A99}
+.t tr.pin td{background:#F0F4FB}
+.t tr.pin td:first-child{box-shadow:inset 3px 0 0 #1F5FBF}
+.t tr.on td{background:#E3EBFA}
+.t tr.dim td{color:#9AA5B3}.t tr.dim td.nm b{color:#7E8A99}
+.t td.neg{color:#9B1C1C}.t td.pos{color:#176A33}
+.t td.up::before{content:"+";color:#176A33}
+.t .veh{display:inline-block;font-family:var(--f-num);font-size:10.5px;font-weight:700;color:#5B6B7C;background:#EEF1F4;border-radius:3px;padding:0 5px;line-height:16px;letter-spacing:.04em}
+.t .grp{display:inline-block;font-family:var(--f-num);font-size:10.5px;font-weight:700;color:#1E4FA3;background:#E3EBFA;border-radius:8px;padding:0 6px;line-height:16px}
+.t .liq{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.04em;color:#5B6B7C;background:#EEF1F4;border-radius:8px;padding:0 7px;line-height:16px}
+.t .liq.slow{color:#92600A;background:#FEF3C7}
+.t .liq.lock{color:#9B1C1C;background:#FDE8E8}
+.t .flag{display:inline-block;font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#92600A;background:#FEF3C7;border-radius:8px;padding:0 6px;line-height:15px;margin-left:6px}
+.pinbox{width:14px;height:14px;border:1px solid #C7D0DB;border-radius:3px;display:inline-block;vertical-align:-2px;background:#fff}
+.pinbox.on{background:#1F5FBF;border-color:#1F5FBF;position:relative}
+.pinbox.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.bar{display:inline-block;height:8px;background:#C9D6EA;border-radius:2px;vertical-align:middle;margin-left:6px}
+.bar.cost{background:#E6CFA8}
+.gh td{height:30px!important;background:#EEF1F4;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5B6B7C;border-bottom:1px solid #D4DAE2;position:sticky;top:34px;z-index:1}
+.gh td span{font-weight:400;letter-spacing:0;text-transform:none;color:#7E8A99;margin-left:10px;font-size:11.5px}
+
+/* compare tray */
+.tray{border-top:2px solid #16243A;background:#fff;padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:12.5px}
+.tray .ttl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#1C2733}
+.tray .pins{display:flex;gap:6px}
+.tray .pn{border:1px solid #B9CDF0;background:#E3EBFA;color:#1E4FA3;border-radius:4px;padding:2px 8px;font-family:var(--f-num);font-size:11.5px;font-weight:700}
+.cmp{width:300px;flex:0 0 auto;border-left:1px solid #E3E7EC;background:#fff;display:flex;flex-direction:column}
+.cmp .h{padding:10px 12px;border-bottom:1px solid #E3E7EC;display:flex;align-items:center;gap:8px}
+.cmp .h b{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#1C2733}
+.cmp table{border-collapse:collapse;width:100%;font-size:12px}
+.cmp th{font-family:var(--f-num);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#7E8A99;padding:6px 8px;text-align:right;border-bottom:1px solid #E3E7EC;font-weight:700;vertical-align:bottom;line-height:1.2}
+.cmp th:first-child{text-align:left}
+.cmp td{padding:5px 8px;border-bottom:1px solid #F1F3F6;text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;color:#1C2733}
+.cmp td:first-child{text-align:left;font-family:var(--f-body);color:#5B6B7C;font-size:11.5px}
+.cmp td.best{font-weight:700;color:#1E4FA3;background:#F0F4FB}
+.cmp tr.sec td{background:#FAFBFC;font-family:var(--f-num);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;padding-top:8px}
+.cmp .ft{margin-top:auto;padding:10px 12px;display:flex;gap:6px}
+
+/* detail panel (option C) */
+.det{width:380px;flex:0 0 auto;border-left:1px solid #E3E7EC;background:#fff;padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:12.5px}
+.det .eyeb{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7E8A99}
+.det h4{margin:0;font-size:17px;font-weight:600;line-height:1.2}
+.det .tk{font-family:var(--f-num);font-size:12px;color:#5B6B7C}
+.det .mg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.det .m{border:1px solid #E3E7EC;border-radius:5px;padding:7px 9px}
+.det .m small{display:block;font-family:var(--f-num);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7E8A99}
+.det .m b{font-family:var(--f-num);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.det .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;margin:0}
+.det .kv dt{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7E8A99;padding-top:1px}
+.det .kv dd{margin:0;color:#1C2733}
+.det .used{border:1px solid #E3E7EC;border-radius:5px}
+.det .used .uh{padding:6px 10px;background:#F6F7F9;border-bottom:1px solid #E3E7EC;font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99}
+.det .used .ur{padding:6px 10px;border-bottom:1px solid #F1F3F6;font-size:12px}
+.det .used .ur small{display:block;font-family:var(--f-num);color:#5B6B7C;font-size:11px}
+.det .lad{font-family:var(--f-num);font-size:11.5px;display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.det .lad div{border:1px solid #E3E7EC;border-radius:4px;padding:4px 6px;text-align:center;color:#5B6B7C}
+.det .lad div.cur{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3;font-weight:700}
+.det .lad small{display:block;font-size:9.5px;letter-spacing:.06em}
+.det .prov{font-family:var(--f-num);font-size:11px;color:#7E8A99;margin-top:auto}
+
+/* data-treatment strip */
+.strip{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin:16px 0 0}
+@media (max-width:1000px){.strip{grid-template-columns:1fr}}
+.strip .card{padding:0;overflow:hidden}
+.strip .card .cap{padding:12px 16px;border-bottom:1px solid var(--line)}
+.strip .card .cap h4{margin:0 0 4px}
+.strip .card .cap p{margin:0;font-size:13px}
+.strip .mini{background:#fff;padding:10px 12px;overflow-x:auto}
+.mini .t{font-size:12.5px}.mini .t td{height:32px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="page">
+  <p class="eyebrow">Proposal Tool · design exploration · revision 2</p>
+  <h1>Catalogue Redesign</h1>
+  <p class="lede">The product catalogue, rethought for the people who will actually use it: investment professionals who already know the products, comparing candidates against a slot in a portfolio under time pressure. Three complete directions to compare side by side, one comparison of how the numbers should be drawn, and the decisions that separate them &mdash; built on the data that will actually exist.</p>
+  <div class="meta"><span>2 September 2026</span><span>Status: Option A built — 2 September 2026 (D63)</span><span>Revision 2: no realised fund metrics. The data is the delivered sheet plus distribution yield and minimum investment; nothing else is assumed.</span></div>
+
+  <h2>Who is using it, and what that changes</h2>
+  <p>The catalogue today is an admin's inventory: a sortable table of the delivered extract, filters derived from its columns, a drawer saying which sleeves hold a product. Adequate for <em>is this product here and where is it used</em>. The brief describes a different user with a different question &mdash; <em>which of these implements this slot best</em> &mdash; and that reframes almost everything:</p>
+  <ul>
+    <li><b>They start from a slot, not from a product.</b> A PWA implementing Investment Grade Fixed Income for a US Onshore book already knows the category, the vehicles the book can hold, the liquidity the client needs and the currency. The catalogue's job is to get from that constraint set to a shortlist in seconds &mdash; so the organising axis is <b>category first, then constraints, then the numbers</b>, and the constraints should be one click each with counts, not a search-and-hope.</li>
+    <li><b>The numbers are few, and that is a gift.</b> With no realised metrics, a product compares on <b>cost, distribution yield, minimum investment and liquidity</b>, against a set of categorical constraints (vehicle, style, source, exposure currency, fee group). Four numbers fit in anyone's eye at once. The catalogue does not need to become a screen of figures; it needs to make those four unmissable and everything else quiet.</li>
+    <li><b>They compare, they do not browse.</b> A shortlist of two to five candidates seen side by side beats any amount of scrolling. That means a way to <b>pin</b> rows and a place where pinned rows line up.</li>
+    <li><b>They know the tickers.</b> Search must be instant on ticker and name fragments, reachable from the keyboard (<code>/</code>), and it must never reset the filters &mdash; a search is a narrowing of a view, not a new view.</li>
+    <li><b>They come back.</b> Repeat use rewards persistence: the view's state (filters, sort, columns, pins) belongs in the URL so it can be bookmarked and shared.</li>
+    <li><b>They are on a desktop, in a hurry.</b> Density is a feature. Sticky column headers, a sticky first column when the table scrolls sideways, and running category headers turn scrolling into paging. Responsiveness means holding up at 1100px, not fitting a phone.</li>
+  </ul>
+
+  <div class="callout">
+    <p><b>The data, stated plainly.</b> Everything below is drawn from the eleven fields the catalogue already carries &mdash; id, name, ticker, asset class, style, vehicle, source, liquidity, exposure currency, product cost, fee group &mdash; plus the two the delivery will gain, <b>distribution yield</b> and <b>minimum investment</b>, plus two things the tool already knows and can join in: the <b>management fee</b> at the open mandate's tier and level (the fee card, D55) and <b>which sleeves and books</b> hold a product (the repository, D57). One figure is <em>derived</em> and marked as such wherever it appears: <b>net yield</b>, distribution yield less all-in cost, because it is the number a PWA is actually computing in their head. The yields and minimums in the mockups are invented; the names, costs and attributes are the real delivered ones.</p>
+  </div>
+
+  <h2>What every option shares</h2>
+  <p>Some choices are simply better for a professional decision-support table, and there is no point offering their opposites. Every option below is built on them:</p>
+  <div class="grid3">
+    <div class="card"><h4>No images</h4><p>A manager's logo tells a same-house catalogue nothing, and a product has no picture. With no time series there is no sparkline to argue for either. The only graphic worth a row is a data bar behind a figure, and only where ranking a column by eye is the point.</p></div>
+    <div class="card"><h4>Numbers as numbers</h4><p>Right-aligned tabular figures in the condensed face; cost and yield to two decimals, minimum investment as compact money (<code>$5m</code>, <code>$1k</code>, <code>—</code>); a true minus sign; units in the header, once, never in the cell.</p></div>
+    <div class="card"><h4>Liquidity is the risk signal</h4><p>Without volatility, the one thing in the data that says <em>be careful</em> is liquidity. <code>Daily</code> is plain; <code>Monthly</code> and <code>Quarterly</code> are amber; <code>Drawdown</code> is red. It is the only place colour is used on a row attribute, so it cannot be missed.</p></div>
+    <div class="card"><h4>Colour only where it means something</h4><p>The accent is for selection and pins. Beyond liquidity, semantic colour marks two states: a product not yet placed in any sleeve, and a product whose minimum exceeds what the open mandate would put in it.</p></div>
+    <div class="card"><h4>Sticky everything that orients</h4><p>Column headers stay while you scroll down; the product column stays while you scroll across; category headers, where used, run along the top of their group.</p></div>
+    <div class="card"><h4>Keyboard first, state in the URL</h4><p><code>/</code> searches, <code>↑↓</code> move, <code>space</code> pins, <code>enter</code> opens, <code>c</code> compares. Filters, sort, columns and pins encode into the query string: a view is a link.</p></div>
+  </div>
+
+  <h2>Information hierarchy per product</h2>
+  <p>The clutter in a catalogue is almost never one styling choice; it is showing tier-two information at tier-one weight. Three tiers, and the rule each option follows in its own way:</p>
+  <div class="tbl-wrap"><table class="doc">
+    <tr><th style="width:120px">Tier</th><th>Fields</th><th>Treatment</th></tr>
+    <tr><td><b>Instant</b><br><small>read at a glance, in the row</small></td>
+        <td>Name and ticker · asset class · vehicle · liquidity · <b>cost</b> (product cost; all-in when a mandate is open) · <b>distribution yield</b> · <b>minimum investment</b></td>
+        <td>Always a column. Name in the body face at medium weight; everything numeric in the condensed face, right-aligned; liquidity as a pill.</td></tr>
+    <tr><td><b>On request</b><br><small>a column you can add, or the comparison</small></td>
+        <td>Net yield (derived) · style · source · exposure currency · fee group · management fee at tier · which books offer it · where used</td>
+        <td>Behind a column picker by default; all present in the comparison, grouped as <em>terms</em>, <em>cost</em>, <em>yield</em>, <em>placement</em>.</td></tr>
+    <tr><td><b>On demand</b><br><small>one product, opened</small></td>
+        <td>The fee ladder at every tier for the product's group · where used with weights · the books it is offered under · delivery provenance</td>
+        <td>A drawer. There is no description and there are no documents in the data, so the drawer is short &mdash; which is honest, and is why Option C's persistent panel is a weaker idea than it was.</td></tr>
+  </table></div>
+  <p><b>Assumptions:</b> distribution yield is trailing twelve months, in the product's exposure currency, as delivered; minimum investment is per account in the product's currency, blank for exchange-traded products. Both are shown exactly as delivered and never adjusted.</p>
+
+  <!-- ══════════════════════════════════════════════════════════════ OPTION A -->
+  <h2>Three directions</h2>
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option A</p><h3>The terminal</h3>
+        <p>Maximum density, keyboard first, every field visible at once. A facet rail on the left carries every constraint with counts; the table is 34px rows with the four numbers on the right; pinned rows collect in a tray at the foot that opens into the comparison. With fewer numeric columns than the first revision, this is less of a wall than it was &mdash; the width now goes on the categorical attributes, which are the constraints an expert is scanning for.</p></div>
+      <div><p class="lbl">Optimises for</p><ul>
+        <li>Speed for expert repeat users &mdash; twenty products in view, every attribute in a column, no clicks to reveal.</li>
+        <li>Constraint-driven narrowing: the facet rail <em>is</em> the search for most sessions.</li>
+        <li>Cheapest to maintain: the delivered table plus two fields, nothing derived but net yield.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul>
+        <li>Intimidating on first contact; nothing explains itself.</li>
+        <li>Fourteen columns still want a column picker and a sticky first column, and at 1100px it scrolls sideways.</li>
+        <li>Looks like a terminal &mdash; a virtue to this audience, a vice to anyone who wants it to look like the rest of the tool.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="tb"><span class="ttl">Product catalogue</span>
+        <span class="search" style="width:280px"><span>⌕</span><b>credit</b><kbd>/</kbd></span>
+        <span class="chip on">Investment Grade Fixed Income <span class="car">▼</span></span>
+        <div class="seg"><span class="on">Dense</span><span>Comfortable</span></div>
+        <span class="btn ghost">Columns · 14</span>
+        <span class="sp"></span><span class="cnt">Showing 7 of 73 · sorted by all-in cost</span></div>
+      <div style="display:flex">
+        <div class="facets">
+          <p class="fh">Category</p>
+          <div class="fo on"><i></i>Investment Grade FI<span class="n">18</span></div>
+          <div class="fo"><i></i>Other Fixed Income<span class="n">10</span></div>
+          <div class="fo"><i></i>Public Equity<span class="n">18</span></div>
+          <div class="fo"><i></i>Hedge Funds<span class="n">9</span></div>
+          <div class="fo"><i></i>Private markets<span class="n">14</span></div>
+          <p class="fh">Vehicle</p>
+          <div class="fo on"><i></i>SMA<span class="n">3</span></div><div class="fo on"><i></i>Mutual Fund<span class="n">7</span></div>
+          <div class="fo on"><i></i>ETF<span class="n">3</span></div><div class="fo"><i></i>UCITS<span class="n">5</span></div>
+          <p class="fh">Liquidity</p>
+          <div class="fo on"><i></i>Daily<span class="n">18</span></div><div class="fo off"><i></i>Quarterly<span class="n">0</span></div>
+          <p class="fh">Style</p>
+          <div class="fo"><i></i>Active<span class="n">10</span></div><div class="fo"><i></i>Passive<span class="n">3</span></div>
+          <p class="fh">Exposure</p>
+          <div class="fo"><i></i>USD<span class="n">11</span></div><div class="fo"><i></i>Local<span class="n">2</span></div>
+          <p class="fh">Fee group</p>
+          <div class="fo"><i></i>Core Active<span class="n">8</span></div><div class="fo"><i></i>Passive<span class="n">3</span></div><div class="fo"><i></i>Specialist Active<span class="n">2</span></div>
+          <p class="fh">Book</p>
+          <div class="fo"><i></i>Offered in US Onshore<span class="n">9</span></div>
+          <div class="fo"><i></i>Not yet placed<span class="n">4</span></div>
+        </div>
+        <div style="flex:1;min-width:0;overflow-x:auto">
+          <table class="t dense">
+            <thead><tr>
+              <th style="width:30px"></th><th>Ticker</th><th>Product</th><th>Class</th><th>Veh</th><th>Style</th><th>Src</th><th>Ccy</th><th>Liq</th>
+              <th class="n">Cost</th><th class="n">Mgmt<br>@T4</th><th class="n sort">All-in</th><th class="n">Yield</th><th class="n drv">Net</th><th class="n">Min</th><th class="n">Used</th>
+            </tr></thead>
+            <tbody>
+              <tr class="pin"><td><span class="pinbox on"></span></td><td class="tk">GIGB</td><td class="nm"><b>GS Access IG Corporate ETF</b></td><td class="mute">IG Corporate</td><td><span class="veh">ETF</span></td><td class="mute">Passive</td><td class="mute">Internal</td><td class="mute">USD</td><td><span class="liq">Daily</span></td><td class="n">0.14</td><td class="n mute">0.26</td><td class="n"><b>0.40</b></td><td class="n">4.62</td><td class="n up">4.22</td><td class="n mute">—</td><td class="n">5</td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="tk">GBIL</td><td class="nm"><b>GS Access Treasury 0-1 ETF</b></td><td class="mute">Government</td><td><span class="veh">ETF</span></td><td class="mute">Passive</td><td class="mute">Internal</td><td class="mute">USD</td><td><span class="liq">Daily</span></td><td class="n">0.12</td><td class="n mute">0.26</td><td class="n"><b>0.38</b></td><td class="n">4.91</td><td class="n up">4.53</td><td class="n mute">—</td><td class="n">7</td></tr>
+              <tr class="pin"><td><span class="pinbox on"></span></td><td class="tk">—</td><td class="nm"><b>GSAM Intermediate Credit SMA</b></td><td class="mute">IG Corporate</td><td><span class="veh">SMA</span></td><td class="mute">Active</td><td class="mute">Internal</td><td class="mute">USD</td><td><span class="liq">Daily</span></td><td class="n">0.28</td><td class="n mute">0.32</td><td class="n"><b>0.60</b></td><td class="n">4.85</td><td class="n up">4.25</td><td class="n">$5m</td><td class="n">10</td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="tk">GSSDX</td><td class="nm"><b>GS Short Duration Income</b></td><td class="mute">Short Duration</td><td><span class="veh">MF</span></td><td class="mute">Active</td><td class="mute">Internal</td><td class="mute">USD</td><td><span class="liq">Daily</span></td><td class="n">0.38</td><td class="n mute">0.32</td><td class="n"><b>0.70</b></td><td class="n">4.70</td><td class="n up">4.00</td><td class="n">$1k</td><td class="n">0</td></tr>
+              <tr class="pin"><td><span class="pinbox on"></span></td><td class="tk">GSUCX</td><td class="nm"><b>GS US Corporate Bond Fund</b></td><td class="mute">IG Corporate</td><td><span class="veh">MF</span></td><td class="mute">Active</td><td class="mute">Internal</td><td class="mute">USD</td><td><span class="liq">Daily</span></td><td class="n">0.42</td><td class="n mute">0.32</td><td class="n"><b>0.74</b></td><td class="n">5.08</td><td class="n up">4.34</td><td class="n">$1k</td><td class="n">0</td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="tk">GCFIX</td><td class="nm"><b>GS Core Fixed Income Fund</b></td><td class="mute">Aggregate</td><td><span class="veh">MF</span></td><td class="mute">Active</td><td class="mute">Internal</td><td class="mute">USD</td><td><span class="liq">Daily</span></td><td class="n">0.46</td><td class="n mute">0.32</td><td class="n"><b>0.78</b></td><td class="n">4.55</td><td class="n up">3.77</td><td class="n">$1k</td><td class="n">0</td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="tk">AGCIX</td><td class="nm"><b>Ashfield Global Credit Fund</b></td><td class="mute">IG Corporate</td><td><span class="veh">MF</span></td><td class="mute">Active</td><td class="mute">External</td><td class="mute">Local</td><td><span class="liq">Daily</span></td><td class="n">0.55</td><td class="n mute">0.32</td><td class="n"><b>0.87</b></td><td class="n">4.40</td><td class="n up">3.53</td><td class="n">$1k</td><td class="n">0</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="tray"><span class="ttl">Pinned</span><span class="pins"><span class="pn">GIGB</span><span class="pn">GSAM Int. Credit</span><span class="pn">GSUCX</span></span>
+        <span style="color:#7E8A99">3 of 7</span><span class="sp" style="flex:1"></span><span class="btn ghost">Clear</span><span class="btn pri">Compare · c</span></div>
+    </div></div>
+    <div class="assump"><b>Assumptions in this mockup.</b> <em>Mgmt @T4</em> is the management fee at the open mandate's tier and level (PMG Target, T4) for the product's fee group, from the fee card &mdash; blank when no mandate is open, and then <em>All-in</em> collapses to product cost. <em>Net</em> is the derived figure, yield less all-in, and its header is set in italic to say so. The <em>Book</em> facet reads the sleeve repository. Yields and minimums are invented.</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ OPTION B -->
+  <div class="option rec">
+    <div class="option-h">
+      <div><p class="lbl">Option B <span class="pill p-ok">strongest</span></p><h3>The ledger</h3>
+        <p>Organised the way the work is: products grouped under running category headers in the allocation's own order, each group sorted by all-in cost, with a comparison panel on the right where pinned candidates line up field by field. The table is 40px rows; cost and yield carry a small data bar so either column can be ranked by eye; liquidity is a pill; a product whose minimum exceeds what the open mandate would put in it is dimmed and flagged. This revision also gives the comparison panel section headings, because with the numbers gone it is mostly <em>terms</em>, and terms want grouping.</p></div>
+      <div><p class="lbl">Optimises for</p><ul>
+        <li>The slot workflow: the category you are implementing is a heading you scroll to, and everything under it is a candidate.</li>
+        <li>Comparison as a first-class act: pin, and the panel fills; the lowest cost and highest yield are marked.</li>
+        <li>The constraint that bites: a minimum you cannot meet is shown before you have pinned the product, not after.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul>
+        <li>Grouping fights a global sort &mdash; sorting by yield sorts <em>within</em> each group, which is what you want for a slot and not for "highest yield anywhere". The <em>Flat</em> toggle is the answer.</li>
+        <li>The comparison panel takes 300px; at 1100px it becomes a bottom sheet.</li>
+        <li>Data bars need a scale per column, and a bar on cost means "more" while a bar on yield means "better" &mdash; two colours, and a key.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="tb"><span class="ttl">Product catalogue</span>
+        <span class="search" style="width:250px"><span>⌕</span><span>Search name or ticker…</span><kbd>/</kbd></span>
+        <span class="chip">Vehicle <span class="car">▼</span></span><span class="chip on">Liquidity · Daily <span class="car">▼</span></span><span class="chip">Style <span class="car">▼</span></span><span class="chip">Exposure <span class="car">▼</span></span>
+        <div class="seg"><span class="on">By category</span><span>Flat</span></div>
+        <span class="sp"></span><span class="cnt">54 of 73 · US Onshore · $30m mandate · sorted by all-in cost within category</span></div>
+      <div style="display:flex">
+        <div style="flex:1;min-width:0;overflow-x:auto">
+          <table class="t mid">
+            <thead><tr>
+              <th style="width:30px"></th><th>Product</th><th>Class</th>
+              <th class="n">Cost</th><th class="n sort">All-in</th><th class="n">Yield</th><th class="n drv">Net yield</th><th class="n">Min</th><th>Liq</th><th class="n">Used</th>
+            </tr></thead>
+            <tbody>
+              <tr class="gh"><td colspan="10">Investment Grade Fixed Income <span>18 products · 24.1% of this proposal · $7.2m</span></td></tr>
+              <tr class="pin"><td><span class="pinbox on"></span></td><td class="nm"><b>GS Access IG Corporate ETF</b><small>GIGB · <span class="veh">ETF</span> · Passive · USD</small></td><td class="mute">IG Corporate</td><td class="n">0.14<span class="bar cost" style="width:11px"></span></td><td class="n"><b>0.40</b></td><td class="n">4.62<span class="bar" style="width:52px"></span></td><td class="n up">4.22</td><td class="n mute">—</td><td><span class="liq">Daily</span></td><td class="n">5</td></tr>
+              <tr class="pin"><td><span class="pinbox on"></span></td><td class="nm"><b>GSAM Intermediate Credit SMA</b><small><span class="veh">SMA</span> · Active · USD</small></td><td class="mute">IG Corporate</td><td class="n">0.28<span class="bar cost" style="width:22px"></span></td><td class="n"><b>0.60</b></td><td class="n">4.85<span class="bar" style="width:55px"></span></td><td class="n up">4.25</td><td class="n">$5m</td><td><span class="liq">Daily</span></td><td class="n">10</td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="nm"><b>GS Short Duration Income</b><small>GSSDX · <span class="veh">MF</span> · Active · USD</small></td><td class="mute">Short Duration</td><td class="n">0.38<span class="bar cost" style="width:30px"></span></td><td class="n"><b>0.70</b></td><td class="n">4.70<span class="bar" style="width:53px"></span></td><td class="n up">4.00</td><td class="n">$1k</td><td><span class="liq">Daily</span></td><td class="n">0</td></tr>
+              <tr class="pin"><td><span class="pinbox on"></span></td><td class="nm"><b>GS US Corporate Bond Fund</b><small>GSUCX · <span class="veh">MF</span> · Active · USD</small></td><td class="mute">IG Corporate</td><td class="n">0.42<span class="bar cost" style="width:33px"></span></td><td class="n"><b>0.74</b></td><td class="n">5.08<span class="bar" style="width:58px"></span></td><td class="n up">4.34</td><td class="n">$1k</td><td><span class="liq">Daily</span></td><td class="n">0</td></tr>
+              <tr class="gh"><td colspan="10">Other Fixed Income <span>10 products · 9.0% · $2.7m</span></td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="nm"><b>GS Access High Yield ETF</b><small>GHYB · <span class="veh">ETF</span> · Passive · USD</small></td><td class="mute">High Yield</td><td class="n">0.34<span class="bar cost" style="width:27px"></span></td><td class="n"><b>0.66</b></td><td class="n">6.84<span class="bar" style="width:78px"></span></td><td class="n up">6.18</td><td class="n mute">—</td><td><span class="liq">Daily</span></td><td class="n">4</td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="nm"><b>GS High Yield Fund</b><small>GSHAX · <span class="veh">MF</span> · Active · USD</small></td><td class="mute">High Yield</td><td class="n">0.72<span class="bar cost" style="width:57px"></span></td><td class="n"><b>1.20</b></td><td class="n">6.95<span class="bar" style="width:79px"></span></td><td class="n up">5.75</td><td class="n">$1k</td><td><span class="liq">Daily</span></td><td class="n">8</td></tr>
+              <tr class="gh"><td colspan="10">Hedge Funds <span>9 products · 10.0% · $3.0m</span></td></tr>
+              <tr><td><span class="pinbox"></span></td><td class="nm"><b>GS Absolute Return Tracker</b><small>GARTX · <span class="veh">MF</span> · Active · USD</small></td><td class="mute">Multi-Strategy</td><td class="n">0.90<span class="bar cost" style="width:71px"></span></td><td class="n"><b>1.42</b></td><td class="n">1.10<span class="bar" style="width:13px"></span></td><td class="n neg">−0.32</td><td class="n">$1k</td><td><span class="liq">Daily</span></td><td class="n">7</td></tr>
+              <tr class="dim"><td><span class="pinbox"></span></td><td class="nm"><b>GS HedgeWorks Multi-Strategy <span class="flag">min $5m</span></b><small><span class="veh">SMA</span> · Active · USD</small></td><td class="mute">Multi-Strategy</td><td class="n">1.35<span class="bar cost" style="width:107px"></span></td><td class="n"><b>1.87</b></td><td class="n">0.00</td><td class="n neg">−1.87</td><td class="n">$5m</td><td><span class="liq slow">Quarterly</span></td><td class="n">6</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cmp">
+          <div class="h"><b>Compare · 3</b><span style="margin-left:auto;font-family:var(--f-num);font-size:11px;color:#7E8A99">lowest cost · highest yield marked</span></div>
+          <table>
+            <thead><tr><th></th><th>GIGB</th><th>GSAM<br>Int. Cr.</th><th>GSUCX</th></tr></thead>
+            <tbody>
+              <tr class="sec"><td colspan="4">Terms</td></tr>
+              <tr><td>Vehicle</td><td>ETF</td><td>SMA</td><td>MF</td></tr>
+              <tr><td>Style · source</td><td>Passive · Int.</td><td>Active · Int.</td><td>Active · Int.</td></tr>
+              <tr><td>Exposure</td><td>USD</td><td>USD</td><td>USD</td></tr>
+              <tr><td>Liquidity</td><td>Daily</td><td>Daily</td><td>Daily</td></tr>
+              <tr><td>Min. investment</td><td>—</td><td>$5,000,000</td><td>$1,000</td></tr>
+              <tr class="sec"><td colspan="4">Cost · % p.a.</td></tr>
+              <tr><td>Product cost</td><td class="best">0.14</td><td>0.28</td><td>0.42</td></tr>
+              <tr><td>Fee group</td><td>Passive</td><td>Core Active</td><td>Core Active</td></tr>
+              <tr><td>Mgmt @ T4 · Target</td><td class="best">0.26</td><td>0.32</td><td>0.32</td></tr>
+              <tr><td>All-in</td><td class="best">0.40</td><td>0.60</td><td>0.74</td></tr>
+              <tr class="sec"><td colspan="4">Yield · % p.a.</td></tr>
+              <tr><td>Distribution yield</td><td>4.62</td><td>4.85</td><td class="best">5.08</td></tr>
+              <tr><td><em>Net of all-in</em></td><td>4.22</td><td>4.25</td><td class="best">4.34</td></tr>
+              <tr class="sec"><td colspan="4">Placement</td></tr>
+              <tr><td>Offered in</td><td>4 books</td><td>4 books</td><td>—</td></tr>
+              <tr><td>Used in sleeves</td><td>5</td><td>10</td><td>0</td></tr>
+            </tbody>
+          </table>
+          <div class="ft"><span class="btn ghost">Clear</span><span class="btn">Export</span><span class="btn pri" style="margin-left:auto">Open in repository</span></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumptions in this mockup.</b> The group headers carry the open proposal's weight and notional for the category (<em>24.1% · $7.2m</em>); with no scenario open they read as plain counts. The <em>min $5m</em> flag compares a product's minimum with the notional the open mandate would put into <em>the whole category</em>, which is the most generous reading &mdash; a stricter one (the product's share of a sleeve) needs the sleeve chosen first. Cost bars are amber and mean "more"; yield bars are blue and mean "more" too, and the key has to say so. Yields and minimums are invented.</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ OPTION C -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option C</p><h3>The sheet</h3>
+        <p>A calmer lookup tool: a narrower table carrying only the instant tier at 46px rows, and a persistent panel on the right that shows one product in full &mdash; its terms, the fee ladder at every tier, where it is used and which books offer it. Comparison is two products at a time, by pinning one and selecting another. This looks most like the rest of the Proposal Tool. <b>It is weaker than it was</b>: with no description and no documents in the data, the panel is a short list of terms and a fee ladder, and a panel that short does not need to be persistent.</p></div>
+      <div><p class="lbl">Optimises for</p><ul>
+        <li>Reading one product properly, with the fee ladder answering "what would this cost at other sizes" in place.</li>
+        <li>Newer and occasional users, who get context without a column picker.</li>
+        <li>Visual continuity with the implementation table and the fee card.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul>
+        <li>Fewer rows per screen, and comparison across five candidates means five clicks and memory.</li>
+        <li>The panel has 380px and, on this data, about 300px of content. The rest is air that a comparison would use better.</li>
+        <li>Under time pressure, breathing room is scrolling.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="tb"><span class="ttl">Product catalogue</span>
+        <span class="search" style="width:260px"><span>⌕</span><b>GS access</b><kbd>/</kbd></span>
+        <span class="chip on">Public Equity <span class="car">▼</span></span><span class="chip">Vehicle <span class="car">▼</span></span><span class="chip">Liquidity <span class="car">▼</span></span>
+        <span class="sp"></span><span class="cnt">Showing 4 of 73</span></div>
+      <div style="display:flex">
+        <div style="flex:1;min-width:0;overflow-x:auto">
+          <table class="t airy">
+            <thead><tr><th>Product</th><th>Class</th><th>Vehicle</th><th class="n sort">Cost</th><th class="n">Yield</th><th class="n">Min</th><th>Liquidity</th><th>Exposure</th></tr></thead>
+            <tbody>
+              <tr class="on"><td class="nm"><b>GS Access US Large Cap ETF</b><small>GSUS · US Large Cap</small></td><td class="mute">US Large Cap</td><td><span class="veh">ETF</span> Passive</td><td class="n"><b>0.09</b></td><td class="n">1.31</td><td class="n mute">—</td><td><span class="liq">Daily</span></td><td class="mute">USD</td></tr>
+              <tr><td class="nm"><b>GS Access Intl Equity ETF</b><small>GSIE · Intl Developed</small></td><td class="mute">Intl Developed</td><td><span class="veh">ETF</span> Passive</td><td class="n"><b>0.13</b></td><td class="n">2.74</td><td class="n mute">—</td><td><span class="liq">Daily</span></td><td class="mute">Local</td></tr>
+              <tr><td class="nm"><b>GS Access EM Equity ETF</b><small>GSEM · Emerging Markets</small></td><td class="mute">Emerging Markets</td><td><span class="veh">ETF</span> Passive</td><td class="n"><b>0.24</b></td><td class="n">2.36</td><td class="n mute">—</td><td><span class="liq">Daily</span></td><td class="mute">Local</td></tr>
+              <tr><td class="nm"><b>GS Access ESG US Equity ETF</b><small>GSEG · US Large Cap</small></td><td class="mute">US Large Cap</td><td><span class="veh">ETF</span> Passive</td><td class="n"><b>0.11</b></td><td class="n">1.22</td><td class="n mute">—</td><td><span class="liq">Daily</span></td><td class="mute">USD</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="det">
+          <span class="eyeb">Product</span>
+          <h4>GS Access US Large Cap ETF</h4>
+          <span class="tk">GSUS · gs-access-us-large-cap-etf</span>
+          <div class="mg">
+            <div class="m"><small>Cost</small><b>0.09</b></div><div class="m"><small>All-in @ T4</small><b>0.35</b></div><div class="m"><small>Yield</small><b>1.31</b></div>
+          </div>
+          <dl class="kv">
+            <dt>Asset class</dt><dd>US Large Cap</dd><dt>Vehicle</dt><dd>ETF · Passive</dd><dt>Source</dt><dd>Internal</dd>
+            <dt>Exposure</dt><dd>USD</dd><dt>Liquidity</dt><dd>Daily</dd><dt>Minimum</dt><dd>None</dd><dt>Fee group</dt><dd>Passive</dd>
+          </dl>
+          <span class="eyeb">Management fee · PMG Target · Passive</span>
+          <div class="lad"><div><small>T1</small>0.40</div><div><small>T2</small>0.33</div><div><small>T3</small>0.27</div><div class="cur"><small>T4</small>0.26</div><div><small>T5</small>0.20</div></div>
+          <div class="used"><div class="uh">Used in · 12 sleeves · offered in 4 books</div>
+            <div class="ur">Passive · 55%<small>PMG Multi-Asset Portfolio · Public Equity</small></div>
+            <div class="ur">Active Passive · 40%<small>PMG Multi-Asset Portfolio · Public Equity</small></div>
+            <div class="ur">US Onshore ETFs · 60%<small>US Onshore · Public Equity</small></div></div>
+          <span class="prov">products.csv · delivered 2 Sep 2026</span>
+          <div style="display:flex;gap:6px"><span class="btn">Pin to compare</span><span class="btn ghost">Open in repository</span></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumptions in this mockup.</b> Everything in the panel is real data or a real join: the fee ladder is the fee card pivoted to the product's group and the proposal's level, where-used and offered-in come from the repository, provenance from the delivery. Nothing here needs feeding &mdash; and nothing here needs 380px of persistent width either, which is the point made above.</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ DATA TREATMENT -->
+  <h2>How the numbers are drawn</h2>
+  <p>Layout and data treatment are separate decisions &mdash; any of the three layouts can carry any of these. The same five products, four ways. With four numbers rather than nine the question is narrower, and mostly about whether the two that matter most &mdash; cost and yield &mdash; should be readable as a shape.</p>
+  <div class="strip">
+    <div class="card"><div class="cap"><h4>1 · Plain figures <span class="pill p-ok">baseline</span></h4><p>Right-aligned tabular numerals, two decimals, minimums as compact money. Nothing to maintain, nothing to misread. Ranking a column takes a sort.</p></div>
+      <div class="mini"><table class="t"><thead><tr><th>Product</th><th class="n">Cost</th><th class="n">All-in</th><th class="n">Yield</th><th class="n">Min</th><th>Liq</th></tr></thead><tbody>
+        <tr><td class="nm"><b>GS Access IG Corporate ETF</b></td><td class="n">0.14</td><td class="n">0.40</td><td class="n">4.62</td><td class="n mute">—</td><td>Daily</td></tr>
+        <tr><td class="nm"><b>GSAM Intermediate Credit SMA</b></td><td class="n">0.28</td><td class="n">0.60</td><td class="n">4.85</td><td class="n">$5m</td><td>Daily</td></tr>
+        <tr><td class="nm"><b>GS High Yield Fund</b></td><td class="n">0.72</td><td class="n">1.20</td><td class="n">6.95</td><td class="n">$1k</td><td>Daily</td></tr>
+        <tr><td class="nm"><b>GS HedgeWorks Multi-Strategy</b></td><td class="n">1.35</td><td class="n">1.87</td><td class="n">0.00</td><td class="n">$5m</td><td>Quarterly</td></tr>
+        <tr><td class="nm"><b>GS Private Credit Partners</b></td><td class="n">1.10</td><td class="n">1.62</td><td class="n">8.20</td><td class="n">$5m</td><td>Drawdown</td></tr>
+      </tbody></table></div></div>
+    <div class="card"><div class="cap"><h4>2 · Liquidity as the signal <span class="pill p-ok">recommended everywhere</span></h4><p>Liquidity becomes a pill &mdash; plain for daily, amber for monthly and quarterly, red for drawdown &mdash; and a minimum the open mandate cannot meet is flagged and its row dimmed. Both are derived from what is already there; nothing to maintain. This is the colour in the catalogue, and it is only ever about a constraint.</p></div>
+      <div class="mini"><table class="t"><thead><tr><th>Product</th><th class="n">Cost</th><th class="n">All-in</th><th class="n">Yield</th><th class="n">Min</th><th>Liq</th></tr></thead><tbody>
+        <tr><td class="nm"><b>GS Access IG Corporate ETF</b></td><td class="n">0.14</td><td class="n">0.40</td><td class="n">4.62</td><td class="n mute">—</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GSAM Intermediate Credit SMA</b></td><td class="n">0.28</td><td class="n">0.60</td><td class="n">4.85</td><td class="n">$5m</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GS High Yield Fund</b></td><td class="n">0.72</td><td class="n">1.20</td><td class="n">6.95</td><td class="n">$1k</td><td><span class="liq">Daily</span></td></tr>
+        <tr class="dim"><td class="nm"><b>GS HedgeWorks Multi-Strategy <span class="flag">min $5m</span></b></td><td class="n">1.35</td><td class="n">1.87</td><td class="n">0.00</td><td class="n">$5m</td><td><span class="liq slow">Quarterly</span></td></tr>
+        <tr class="dim"><td class="nm"><b>GS Private Credit Partners <span class="flag">min $5m</span></b></td><td class="n">1.10</td><td class="n">1.62</td><td class="n">8.20</td><td class="n">$5m</td><td><span class="liq lock">Drawdown</span></td></tr>
+      </tbody></table></div></div>
+    <div class="card"><div class="cap"><h4>3 · Data bars on cost and yield <span class="pill p-ok">recommended for B</span></h4><p>A bar behind the figure, scaled to the visible set, so a column can be ranked by eye without sorting. Two colours, because a longer cost bar and a longer yield bar mean opposite things to the reader; the key has to say so. Costs 60px per column and a scale rule.</p></div>
+      <div class="mini"><table class="t"><thead><tr><th>Product</th><th class="n">Cost</th><th class="n">Yield</th><th class="n">Min</th><th>Liq</th></tr></thead><tbody>
+        <tr><td class="nm"><b>GS Access IG Corporate ETF</b></td><td class="n">0.14<span class="bar cost" style="width:7px"></span></td><td class="n">4.62<span class="bar" style="width:39px"></span></td><td class="n mute">—</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GSAM Intermediate Credit SMA</b></td><td class="n">0.28<span class="bar cost" style="width:14px"></span></td><td class="n">4.85<span class="bar" style="width:41px"></span></td><td class="n">$5m</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GS High Yield Fund</b></td><td class="n">0.72<span class="bar cost" style="width:37px"></span></td><td class="n">6.95<span class="bar" style="width:59px"></span></td><td class="n">$1k</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GS HedgeWorks Multi-Strategy</b></td><td class="n">1.35<span class="bar cost" style="width:70px"></span></td><td class="n">0.00</td><td class="n">$5m</td><td><span class="liq slow">Quarterly</span></td></tr>
+        <tr><td class="nm"><b>GS Private Credit Partners</b></td><td class="n">1.10<span class="bar cost" style="width:57px"></span></td><td class="n">8.20<span class="bar" style="width:70px"></span></td><td class="n">$5m</td><td><span class="liq lock">Drawdown</span></td></tr>
+      </tbody></table></div></div>
+    <div class="card"><div class="cap"><h4>4 · Net yield as a column</h4><p>Yield less all-in cost, signed, with the header in italic to say it is derived. It is the number a PWA computes in their head anyway; putting it in a column saves the arithmetic and makes a fund with a fee it does not earn back (the tracker at −0.32) visible at once. The cost is a definition to agree: which cost, at which tier, and whether a product with no yield shows a negative number or a dash.</p></div>
+      <div class="mini"><table class="t"><thead><tr><th>Product</th><th class="n">All-in</th><th class="n">Yield</th><th class="n drv">Net</th><th>Liq</th></tr></thead><tbody>
+        <tr><td class="nm"><b>GS Access IG Corporate ETF</b></td><td class="n">0.40</td><td class="n">4.62</td><td class="n up">4.22</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GSAM Intermediate Credit SMA</b></td><td class="n">0.60</td><td class="n">4.85</td><td class="n up">4.25</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GS High Yield Fund</b></td><td class="n">1.20</td><td class="n">6.95</td><td class="n up">5.75</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GS Absolute Return Tracker</b></td><td class="n">1.42</td><td class="n">1.10</td><td class="n neg">−0.32</td><td><span class="liq">Daily</span></td></tr>
+        <tr><td class="nm"><b>GS Access US Large Cap ETF</b></td><td class="n">0.35</td><td class="n">1.31</td><td class="n up">0.96</td><td><span class="liq">Daily</span></td></tr>
+      </tbody></table></div></div>
+  </div>
+
+  <h2>Where the options genuinely differ</h2>
+  <div class="tbl-wrap"><table class="doc">
+    <tr><th>Tension</th><th>A · Terminal</th><th>B · Ledger</th><th>C · Sheet</th></tr>
+    <tr><td>Density vs breathing room</td><td>34px rows, 20 in view. A screen of attributes.</td><td>40px rows, 15 in view. Four numbers with air, bars for shape.</td><td>46px rows, 12 in view. Reads as a document.</td></tr>
+    <tr><td>Comprehensive vs scannable</td><td>Every field visible; the picker takes columns away.</td><td>Instant tier visible; the rest in the comparison, under headings.</td><td>Instant tier only; the rest in the panel, one product at a time.</td></tr>
+    <tr><td>Organising axis</td><td>Facets narrow a flat list.</td><td>Category groups, then constraints within.</td><td>Chips narrow a flat list; the panel is the destination.</td></tr>
+    <tr><td>Comparison</td><td>Pin many; the tray opens a comparison view.</td><td>Pin up to five; they line up beside the table.</td><td>Two at a time.</td></tr>
+    <tr><td>Where the minimum bites</td><td>A column; you read it.</td><td>A flag and a dimmed row, before you pin.</td><td>A line in the panel, after you select.</td></tr>
+    <tr><td>Distinctive vs utilitarian</td><td>Utilitarian. Looks like the tools this audience already uses.</td><td>Utilitarian with one considered gesture (the bars).</td><td>Continuous with the rest of the Proposal Tool.</td></tr>
+    <tr><td>Beautiful vs cheap to maintain</td><td>Cheapest: the delivered table plus two fields.</td><td>The same, plus a scale rule per bar column.</td><td>The same &mdash; on this data there is nothing extra to feed, and nothing extra to show.</td></tr>
+    <tr><td>First contact</td><td>Steep.</td><td>Familiar &mdash; it is the allocation's own order.</td><td>Gentle.</td></tr>
+  </table></div>
+
+  <h3>Where this reasoning lands</h3>
+  <p><b>B is the strongest direction, and the narrower data makes the case cleaner, not weaker.</b> With four numbers rather than nine, the terminal's advantage &mdash; everything in view &mdash; costs it little to give up, and what it gives up is the two things that matter most to this workflow: products in the order the work happens in, and a comparison where the eye already is. The minimum-investment flag belongs to B alone; it is the one constraint that quietly disqualifies a product, and B is the only option that says so before the product is pinned. C's argument was its panel, and on this data the panel is a fee ladder and a list of terms &mdash; worth having, as B's drawer, on demand.</p>
+  <p>The data treatment to pair with it is <b>2 + 3 + 4</b>: liquidity as the signal everywhere, bars on cost and yield in the table, and net yield as a column &mdash; the last one only once its definition is agreed.</p>
+
+  <h2>What I would need from you before this is worth committing to</h2>
+  <div class="q">
+    <div class="item"><span class="num">1</span><div><b>Who is the user, formally.</b><p>The brief describes PWAs; the current catalogue is admin-only behind <code>requireAdmin</code>. If PWAs are to use it, the gate becomes <code>requireAuth</code>, the entry point moves out of the admin bar and into the sleeve tier, and compliance signs off on showing yields to advisers. A one-line change in the service; a real change in what the page is.</p></div></div>
+    <div class="item"><span class="num">2</span><div><b>What distribution yield is, exactly.</b><p>Trailing twelve months or indicated? Gross or net of the product's own cost? In the exposure currency? With an as-of date per product, or one for the whole delivery? The column header has to say what it is in three words, and "yield" alone is not enough for an adviser to rely on.</p></div></div>
+    <div class="item"><span class="num">3</span><div><b>What minimum investment means for each vehicle.</b><p>Per account, presumably &mdash; but in which currency for a Local-exposure fund, and is an SMA's minimum the manager's or the platform's? And what the value is for a product with none: blank, zero, or a dash the reader should trust.</p></div></div>
+    <div class="item"><span class="num">4</span><div><b>Whether to show net yield at all, and what cost it nets.</b><p>It is derived, it is the number people compute anyway, and it is the most useful column in the mockups. It is also the one most likely to be misread as a return. If shown: net of product cost alone (defined without a mandate) or of all-in (defined only with one)?</p></div></div>
+    <div class="item"><span class="num">5</span><div><b>Whether to flag a minimum the mandate cannot meet, and against what.</b><p>The mockups compare the minimum with the notional the open mandate puts into the whole category &mdash; the most generous reading. A stricter one needs the sleeve chosen first. Either is a rule the desk should own.</p></div></div>
+    <div class="item"><span class="num">6</span><div><b>Whether the two new fields ride the same extract.</b><p>Two more columns in <code>products.csv</code> is one reader and one delivery. A separate feed joined on <code>ProductId</code> is a second thing that can go stale and a second provenance line.</p></div></div>
+    <div class="item"><span class="num">7</span><div><b>Whether shortlists and saved views persist, and for whom.</b><p>Per session is free (it is the URL). Per user needs a small store keyed by kerberos and a decision about private versus shared with the desk.</p></div></div>
+    <div class="item"><span class="num">8</span><div><b>Overlay or page.</b><p>The catalogue lives inside the repository console today. A comparison workflow wants the whole viewport; that argues for it becoming its own view of the tool, reached from the sleeve tier. It changes the plumbing more than the design.</p></div></div>
+    <div class="item"><span class="num">9</span><div><b>The default density and the default grouping</b><p>&mdash; best decided by putting the built thing in front of two or three of the people described in the brief for a week, with both toggles in the toolbar, and reading what they leave it set to.</p></div></div>
+  </div>
+</div>

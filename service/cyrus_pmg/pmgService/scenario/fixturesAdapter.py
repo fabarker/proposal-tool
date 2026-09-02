@@ -31,7 +31,7 @@ import os
 import time
 
 from . import advisors, rules, sleeves
-from .payloads import categoryRows, portfolioResult, selectWeights
+from .payloads import categoryRows, portfolioResult
 from .types import AnalyticsError, BasisInput, MandateInput, PortfolioKey
 from .workbook import writeFixturesWorkbook
 
@@ -101,12 +101,11 @@ class FixturesScenarioPort:
         if latency:
             time.sleep(float(latency) / 1000.0)
         fail = _knob('SCENARIO_FIXTURES_FAIL')
-        if fail and fail.lower() in ('any', '{}|{}'.format(key.allocation, key.riskLevel).lower()):
+        if fail and fail.lower() in ('any', '{}|{}'.format(key.allocationType or 'NA', key.riskLevel).lower()):
             raise AnalyticsError(
                 'Fixture failure: {} could not be built.'.format(rules.portfolioName(basis, key)))
 
-        selected = selectWeights(basis, key)
-        categories = categoryRows(selected)
+        categories = categoryRows(key)          # LookupError -> router 422
         weightByName = {c['name']: c['weightPct'] for c in categories}
 
         ccyFactor = _CCY_FACTOR.get(basis.currency, 1.0)

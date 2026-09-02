@@ -343,13 +343,15 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
   background:var(--rail-bg);z-index:2}
 .rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
-/* The product line under the group name is the one place the rail carries a
-   colour of its own: the full #F3C46B, the same gold the placeholder-rates
-   flag carries. Chosen deliberately - the two are far apart in the rail and
-   read as one house accent rather than as a shared signal. 9.7:1 on the navy.
-   Its own token, so moving one does not move the other. */
-.rail-brand>span{display:block;font-family:var(--f-body);margin-top:4px;font-size:11.5px;letter-spacing:.15em;
-  text-transform:uppercase;color:var(--rail-eyebrow,var(--rail-ink-3))}
+/* The product line under the group name is styled to match the
+   placeholder-rates flag exactly, on request: the same 12px semibold gold at
+   the same line height, sentence case and unspaced, inheriting the body face
+   as the flag does. It mirrors .fee-flag in implementation.py, and the values
+   are repeated rather than shared so that restyling the warning does not
+   silently restyle the brand. display:block is the one addition, and is
+   structural - .fee-flag is a <p>, this a <span>. */
+.rail-brand>span{display:block;margin:2px 0 0;font-size:12px;font-weight:600;
+  color:var(--rail-eyebrow,#F3C46B);line-height:1.4}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--rail-ink-3);font-weight:700;margin:0 0 4px}
@@ -908,11 +910,11 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
    .steps keeps display:flex, so the [hidden] !important rule above is still
    what hides it on the landing (spec 15.1). */
 .steps{display:flex;align-items:center;justify-content:center;
-  margin:0 0 clamp(20px,3vw,28px);padding:12px 0 16px;
+  margin:0 0 clamp(25px,3.75vw,35px);padding:15px 0 20px;
   border-bottom:1px solid var(--line-strong)}
 .step{appearance:none;background:none;border:0;font:inherit;color:var(--ink-2);
-  display:flex;align-items:center;gap:10px;text-align:left;
-  padding:9px 13px;border-radius:var(--radius-sm);cursor:pointer}
+  display:flex;align-items:center;gap:12.5px;text-align:left;
+  padding:11px 16px;border-radius:var(--radius-sm);cursor:pointer}
 .step:hover{background:var(--surface-2);color:var(--ink)}
 .step:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .step:disabled{opacity:.4;cursor:not-allowed}
@@ -920,33 +922,44 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 /* Once step 2 is reachable it breathes until it has been opened, so the PWA
    is told the next stage has unlocked rather than having to notice. The pulse
    is on the numeral, not the whole tab: a moving block of text is harder to
-   read than a moving disc beside it. */
-.step-beckon .step-index{animation:stepbeckon 2.4s ease-in-out infinite;
-  border-color:var(--accent);color:var(--accent)}
+   read than a moving disc beside it - that much is unchanged, and it is why
+   none of what follows touches the label.
+
+   It is loud on purpose. The first version was a single faint ring on a slow
+   cycle, which read as a rendering artefact rather than an invitation; this
+   one carries a tinted disc, two rings leaving at different rates, and a small
+   swell of the disc itself, on a cycle short enough to catch the eye without
+   nagging. Reduced motion keeps the tint and a static double ring, so the
+   affordance survives with the movement removed. */
+.step-beckon .step-index{animation:stepbeckon 1.6s ease-in-out infinite;
+  border-color:var(--accent);color:var(--accent);background:#EAF1FC}
 @keyframes stepbeckon{
-  0%,100%{box-shadow:0 0 0 0 rgba(31,95,191,.34)}
-  50%{box-shadow:0 0 0 6px rgba(31,95,191,0)}
+  0%,100%{box-shadow:0 0 0 0 rgba(31,95,191,.55),0 0 0 0 rgba(31,95,191,.3);
+    transform:scale(1)}
+  50%{box-shadow:0 0 0 10px rgba(31,95,191,0),0 0 0 17px rgba(31,95,191,0);
+    transform:scale(1.09)}
 }
 @media (prefers-reduced-motion:reduce){
-  .step-beckon .step-index{animation:none;box-shadow:0 0 0 3px rgba(31,95,191,.28)}
+  .step-beckon .step-index{animation:none;transform:none;
+    box-shadow:0 0 0 4px rgba(31,95,191,.34),0 0 0 8px rgba(31,95,191,.16)}
 }
 .step:disabled:hover{background:none}
-.step-index{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;
+.step-index{width:37.5px;height:37.5px;flex:0 0 auto;display:grid;place-items:center;
   border:1px solid var(--line-strong);border-radius:50%;background:var(--surface);
-  font-family:var(--f-num);font-size:12px;font-weight:700;color:var(--ink-3);
+  font-family:var(--f-num);font-size:15px;font-weight:700;color:var(--ink-3);
   transition:background .15s ease,color .15s ease,border-color .15s ease}
 .step-label{display:grid}
-.step-label strong{font-family:var(--f-num);font-size:13.5px;font-weight:600;line-height:1.25}
-.step-label small{font-size:11px;color:var(--ink-3);margin-top:1px;line-height:1.25}
+.step-label strong{font-family:var(--f-num);font-size:17px;font-weight:600;line-height:1.25}
+.step-label small{font-size:13.5px;color:var(--ink-3);margin-top:1px;line-height:1.25}
 .step[aria-selected="true"]{color:#16243A}
 .step[aria-selected="true"] .step-index{background:#16243A;color:#fff;border-color:#16243A}
 .step[aria-selected="true"] .step-label strong{font-weight:700}
-.step-connector{width:80px;height:1px;flex:0 0 auto;background:var(--line-strong);margin:0 10px}
+.step-connector{width:100px;height:1px;flex:0 0 auto;background:var(--line-strong);margin:0 12.5px}
 @media (prefers-reduced-motion:reduce){.step-index{transition:none}}
 /* Narrow: the descriptions go before the stage names do, and the connector
    shrinks rather than pushing the second stage off the edge. */
 @media (max-width:719px){
-  .step-connector{width:24px;margin:0 4px}
+  .step-connector{width:30px;margin:0 5px}
   .step-label small{display:none}
 }
 
@@ -1005,8 +1018,11 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .fee-group .fee-field:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
 .fee-field .fee-label{font-size:13px;font-weight:600;color:var(--rail-ink-2);line-height:1.3}
 .fee-field.done .fee-label{color:var(--rail-ink)}
+/* Two columns by default; the level's two controls set their own from the
+   schema's lists, so a framework with four points would still lay out. */
 .fee-seg{display:grid;grid-template-columns:1fr 1fr;
   border:1px solid var(--rail-input-border,#52739C);border-radius:4px;overflow:hidden}
+.fee-seg button+button{border-left:1px solid var(--rail-input-border,#52739C)}
 .fee-seg button{font:inherit;font-size:13px;font-weight:600;padding:7px 6px;cursor:pointer;
   background:var(--rail-input-bg,#1D2F4B);color:var(--rail-ink-2);border:0;line-height:1.2}
 .fee-seg button+button{border-left:1px solid var(--rail-input-border,#52739C)}
@@ -1015,17 +1031,102 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
   color:var(--rail-accent-ink,#fff)}
 .fee-seg button:disabled{cursor:default;opacity:.6}
 .fee-seg button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
-.fee-levels{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 5px;align-items:center}
-.fee-levels .rh{font-size:12px;font-weight:600;color:var(--rail-ink-3);padding-right:4px;
-  white-space:nowrap}
-.fee-levels button{font:inherit;font-family:var(--f-num);font-size:12px;padding:6px 2px;
-  cursor:pointer;background:var(--rail-input-bg,#1D2F4B);color:var(--rail-ink-2);
-  border:1px solid var(--rail-input-border,#52739C);border-radius:3px;line-height:1.2}
-.fee-levels button:hover{border-color:var(--rail-accent,var(--accent));color:var(--rail-ink)}
-.fee-levels button[aria-pressed="true"]{background:var(--rail-accent,var(--accent));
-  border-color:var(--rail-accent,var(--accent));color:var(--rail-accent-ink,#fff);font-weight:700}
-.fee-levels button:disabled{cursor:default;opacity:.6}
-.fee-levels button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:1px}
+/* the card's own line: delivery version, adjustments, and the way in (D55) */
+.fee-card{margin:6px 0 0;font-size:12px;color:var(--rail-ink-3);line-height:1.5}
+/* the way into the card, under the toggle that turns fees on */
+.fee-view{width:100%;margin:9px 0 0;font-size:12.5px;padding:6px 10px;
+  background:var(--rail-input-bg,#1D2F4B);border:1px solid var(--rail-input-border,#52739C);
+  color:var(--rail-ink);border-radius:4px;cursor:pointer}
+.fee-view:hover{border-color:var(--rail-accent,var(--accent))}
+.fee-view:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:2px}
+/* ── the rate card panel (D55) ──
+   The mandate dialog's chrome, widened for a six-column grid. A cell shows
+   the rate in force; amber means an adjustment is saved on top of the
+   delivered rate, blue means changed here and not yet saved. */
+.dialog.wide{width:min(940px,calc(100vw - 32px))}
+/* The card can be opened from inside the repository console (D58), so it
+   stacks above that dialog and its scrim rather than under them. */
+#feeDialog .scrim{z-index:94}
+#feeDialog .dialog{z-index:95}
+/* ── the fee card (D55), laid out to be read at a glance ──
+   A short head (what delivery this is), one row of controls (which way the
+   card is turned, and which slice), then the grid. Three things carry the
+   emphasis and nothing else does: the two source groups are visibly two
+   groups; the column of the level this proposal prices at is heavier and
+   tinted; and, pivoted by fee group, the one cell that is THIS mandate's rate
+   - its tier crossed with that level - wears a ring. Everything else is
+   quiet, so those three read first. */
+.dialog.rc{padding:22px 26px 20px}
+.rc-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 14px;margin:0 0 16px;padding-right:36px}
+.dialog.rc .rc-head h2{margin:0}
+.rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;margin:0;font-family:var(--f-num);font-size:12.5px;
+  color:var(--ink-3)}
+.rc-meta b{color:var(--ink-2);font-weight:600}
+.rc-flag{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:#92600A;background:#FEF3C7;border:1px solid #F3D48A;border-radius:9px;padding:1px 8px;line-height:16px}
+.rc-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 12px}
+.rc-seg{display:flex;border:1px solid var(--line-strong);border-radius:4px;overflow:hidden}
+.rc-seg button{appearance:none;border:0;border-left:1px solid var(--line-strong);background:var(--surface);
+  color:var(--ink-2);font:inherit;font-size:13px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.rc-seg button:first-child{border-left:0}
+.rc-seg button:hover{background:var(--surface-2);color:var(--ink)}
+.rc-seg button[aria-selected="true"]{background:#16243A;color:#fff;font-weight:600}
+.rc-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rc-axis{width:auto;min-width:240px;font-size:13px}
+.rc-loading{color:var(--ink-3);font-size:13px;margin:12px 0}
+.rc-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:var(--radius)}
+.rate-grid{border-collapse:collapse;width:100%;font-size:13px}
+.rate-grid th,.rate-grid td{padding:0 12px;border-bottom:1px solid var(--line);white-space:nowrap;
+  height:38px;vertical-align:middle}
+.rate-grid thead th{font-family:var(--f-num);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);background:var(--surface-2);font-weight:700;text-align:right;height:30px}
+/* the two source groups: a spanning head with its own rule, and a stronger
+   line plus a little air where one group becomes the next */
+.rate-grid th.src{text-align:center;border-bottom:1px solid var(--line-strong);height:32px;
+  font-size:11.5px;letter-spacing:.14em;color:var(--ink-2)}
+.rate-grid th.src span{display:inline-block;padding:0 6px 3px;border-bottom:2px solid var(--ink-3)}
+/* its own name, not .grp: the page has a .grp + .grp rule for stacked
+   groups that would otherwise pad the second source head down */
+.rate-grid .rc-grp{border-left:2px solid var(--line-strong);padding-left:20px}
+.rate-grid thead th.rowhead{text-align:left;vertical-align:bottom;padding-bottom:8px}
+/* the row head: an id set as a small pill, the band beside it, a tag when it
+   is this mandate's own row */
+.rate-grid tbody th.rowhead{text-align:left;font-weight:500;color:var(--ink);min-width:220px;
+  display:flex;align-items:center;gap:9px;height:38px}
+.rc-id{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.04em;color:var(--ink-2);
+  background:var(--surface-2);border:1px solid var(--line-strong);border-radius:4px;padding:1px 7px;line-height:17px;
+  min-width:34px;text-align:center}
+.rc-lbl{font-size:13px;color:var(--ink)}
+.rc-tag{margin-left:auto;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:#1E4FA3;background:#E3EBFA;border-radius:8px;padding:0 7px;line-height:16px}
+/* the level this proposal prices at: heavier, tinted, named in its head */
+.rate-grid th.lvl{color:#1E4FA3;background:#E9F0FB}
+.rate-grid th.lvl small{display:block;font-size:9px;letter-spacing:.08em;font-weight:700;color:#1E4FA3;
+  opacity:.85;margin-top:1px}
+.rate-grid td.lvl{background:#F3F7FD;font-weight:700;color:#16243A}
+/* this mandate's own row */
+.rate-grid tr.mark td,.rate-grid tr.mark th.rowhead{background:#F0F4FB}
+.rate-grid tr.mark td.lvl{background:#E3EBFA}
+.rate-grid tr.mark th.rowhead{box-shadow:inset 3px 0 0 var(--accent)}
+.rate-grid tr.mark .rc-id{background:#fff;border-color:#B9CDF0;color:#1E4FA3}
+/* the one cell that is this mandate's rate */
+.rate-grid td.ring{box-shadow:inset 0 0 0 2px var(--accent);border-radius:3px;color:#1E4FA3}
+.rate-grid td.rate{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;
+  color:var(--ink-2);min-width:74px;font-size:13.5px}
+.rate-grid tbody tr:last-child td,.rate-grid tbody tr:last-child th{border-bottom:none}
+.rate-grid tbody tr:hover td:not(.lvl),.rate-grid tbody tr:hover th.rowhead{background:var(--row-hover,var(--surface-2))}
+.rate-grid tbody tr.mark:hover td:not(.lvl),.rate-grid tbody tr.mark:hover th.rowhead{background:#E9EFF9}
+/* the key: one swatch per emphasis, in the order they appear */
+.rc-legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:10px 0 0;font-size:12px;color:var(--ink-2)}
+.rc-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:6px;
+  border:1px solid var(--line-strong);background:var(--surface)}
+.rc-legend i.k-unit{border-style:dashed}
+.rc-legend i.k-lvl{background:#E9F0FB;border-color:#B9CDF0}
+.rc-legend i.k-mark{background:#F0F4FB;border-color:#B9CDF0;box-shadow:inset 3px 0 0 var(--accent)}
+.rc-legend i.k-ring{box-shadow:inset 0 0 0 2px var(--accent);background:#E3EBFA;border-color:transparent}
+.rc-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.rc-note{font-family:var(--f-num);font-size:12px;color:var(--ink-3)}
+.dialog .md-err{margin-top:12px}
 /* placeholder pricing is flagged in the rail as long as fees.json says so */
 .fee-flag{margin:2px 0 0;font-size:12px;font-weight:600;color:#F3C46B;line-height:1.4}
 
@@ -1096,7 +1197,9 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 /* Narrower by the three fee columns when the proposal excludes them (D52).
    The width is transitioned so the table closes up as the columns collapse
    rather than snapping when the render lands. */
-.tbl.impl{min-width:1690px;transition:min-width var(--col-motion)}
+/* Smaller type than the step 1 tables carry: this one is 23 columns wide and
+   read across, where those are read down. .tbl sets 15px for both. */
+.tbl.impl{min-width:1690px;transition:min-width var(--col-motion);font-size:13px}
 .tbl.impl.no-fees,.tbl.impl.fees-out{min-width:1340px}
 @media (prefers-reduced-motion:reduce){.tbl.impl{transition:none}}
 .tbl.impl td.txt{white-space:nowrap}
@@ -1202,5 +1305,356 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
   padding:clamp(28px,5vw,52px);text-align:center}
 .impl-empty h3{margin:0 0 7px;font-size:18.5px;color:#16243A;font-family:var(--f-display)}
 .impl-empty p{margin:0 auto;max-width:44ch;font-size:15px;color:var(--ink-2)}
+
+
+/* ── the sleeve repository console (D57) ──
+   A three-pane overlay on the dialog base: categories, the sleeves in one,
+   the editor for one. Sized to the viewport rather than to its content so
+   the panes scroll independently and the footer stays put. */
+.dialog.repo{width:min(1180px,calc(100vw - 32px));height:min(780px,calc(100vh - 32px));
+  padding:0;display:flex;flex-direction:column;overflow:hidden}
+/* A column of fixed bands around one band that takes the rest. Flex rather
+   than a grid template because two of the bands - the unsaved-changes notice,
+   the orphans notice - are only sometimes there, and a row template that
+   counts children hands the wrong track to the wrong band when one is missing. */
+.dialog.repo>.repo-h,.dialog.repo>.repo-f,.dialog.repo>.cat-tools,.dialog.repo>.repo-notice{flex:0 0 auto}
+.dialog.repo>.repo-b,.dialog.repo>.cat-b{flex:1 1 auto;min-height:0}
+.repo-h{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;
+  padding:12px 16px 12px 20px;border-bottom:1px solid var(--line-strong)}
+/* The header carries a title, two segmented controls, the source line and the
+   close button. Below full width there is not room for all of it: the source
+   line goes first (the footer says the same thing), and wrapping is the
+   backstop so a narrow window pushes a row down rather than clipping the last
+   implementation type off the end. */
+.dialog.repo .repo-h h2{margin:0;font-family:var(--f-num);font-size:13px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink)}
+.repo-seg{display:flex;border:1px solid var(--line-strong);border-radius:4px;overflow:hidden}
+.repo-seg button{appearance:none;border:0;border-left:1px solid var(--line-strong);
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:13px;padding:6px 12px;
+  cursor:pointer;white-space:nowrap}
+.repo-seg button:first-child{border-left:0}
+.repo-seg button:hover{background:var(--surface-2);color:var(--ink)}
+.repo-seg button[aria-selected="true"]{background:#16243A;color:#fff;font-weight:600}
+.repo-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.repo-src{font-family:var(--f-num);font-size:12.5px;color:var(--ink-3);white-space:nowrap}
+.repo-h .repo-src{margin-left:auto}
+.dialog.repo .dlg-close{position:static;margin-left:4px}
+.repo-b{display:grid;grid-template-columns:232px 300px minmax(0,1fr);min-height:0}
+.repo-pane{border-right:1px solid var(--line);min-height:0;overflow:auto;display:flex;flex-direction:column}
+.repo-pane:last-child{border-right:0}
+.repo-pane-h{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);padding:14px 16px 8px;display:flex;align-items:center;
+  gap:8px;flex:0 0 auto;min-height:44px}
+.repo-pane-h .btn{margin-left:auto;padding:5px 10px;font-size:11px}
+.repo-cat{display:flex;align-items:center;gap:6px;width:100%;text-align:left;appearance:none;
+  background:none;border:0;border-left:3px solid transparent;font:inherit;font-size:13.5px;
+  color:var(--ink);padding:9px 16px 9px 13px;cursor:pointer;line-height:1.3}
+.repo-cat:hover{background:var(--surface-2)}
+.repo-cat .n{margin-left:auto;font-family:var(--f-num);font-size:12px;color:var(--ink-3)}
+.repo-cat[aria-selected="true"]{background:#E3EBFA;border-left-color:var(--accent);color:#1E4FA3;font-weight:600}
+.repo-cat[aria-selected="true"] .n{color:#1E4FA3}
+.repo-fixed{display:inline-block;font-family:var(--f-num);font-size:10.5px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:var(--surface-2);
+  border-radius:8px;padding:0 6px;line-height:16px;vertical-align:middle}
+.repo-sleeve{display:grid;gap:2px;width:100%;text-align:left;appearance:none;background:none;
+  border:0;border-bottom:1px solid var(--line);font:inherit;padding:10px 16px;cursor:pointer;
+  color:var(--ink);line-height:1.35}
+.repo-sleeve:hover{background:var(--surface-2)}
+.repo-sleeve b{font-size:13.5px;font-weight:600}
+.repo-sleeve small{font-size:12px;color:var(--ink-2)}
+.repo-sleeve[aria-selected="true"],.repo-sleeve.new{background:#F0F4FB;box-shadow:inset 3px 0 0 var(--accent)}
+.repo-sleeve .warn,.repo-pick .warn{color:#B45309;font-weight:600}
+.repo-none{margin:10px 16px;font-size:13px;color:var(--ink-3)}
+.repo-ed{padding:14px 20px 12px;gap:12px}
+.repo-frow{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:14px}
+.repo-fld{display:grid;gap:5px}
+.repo-fld label{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-2)}
+.repo-fld input[type=text]{border:1px solid var(--line-strong);border-radius:4px;padding:7px 10px;
+  font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);min-height:34px;width:100%}
+.repo-fld input[aria-invalid="true"]{border-color:#B42318}
+.repo-fld .ro{border:1px solid var(--line-strong);border-radius:4px;padding:7px 10px;font-size:13.5px;
+  color:var(--ink-3);background:var(--surface-2);min-height:34px;display:flex;align-items:center;gap:6px}
+.repo-prods{border:1px solid var(--line-strong);border-radius:6px}
+.repo-prods .ph,.repo-prods .pr{display:grid;grid-template-columns:minmax(0,1fr) 96px 32px;
+  align-items:center;gap:10px;padding:8px 12px}
+.repo-prods .ph{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--line);background:var(--surface-2)}
+.repo-prods .pr{border-bottom:1px solid var(--line);position:relative}
+.repo-pick{appearance:none;background:none;border:1px solid transparent;border-radius:4px;
+  text-align:left;font:inherit;padding:4px 6px;display:grid;gap:1px;min-width:0;cursor:pointer;
+  color:var(--ink);line-height:1.3}
+.repo-pick:hover{border-color:var(--line-strong)}
+.repo-pick b{font-weight:500;font-size:13.5px}
+.repo-pick small{font-family:var(--f-num);font-size:12px;color:var(--ink-2)}
+.repo-pick.empty b{color:var(--ink-3);font-weight:400}
+.repo-w{font-family:var(--f-num);font-size:13.5px;text-align:right;border:1px solid var(--line-strong);
+  border-radius:4px;padding:5px 8px;width:96px;background:var(--surface);color:var(--ink)}
+.repo-rm{appearance:none;background:none;border:0;color:var(--ink-3);font-size:18px;line-height:1;
+  cursor:pointer;padding:4px}
+.repo-rm:hover{color:#9B1C1C}
+.repo-search{width:100%;border:1px solid var(--accent);border-radius:4px;padding:6px 10px;
+  font:inherit;font-size:13.5px;box-shadow:0 0 0 3px rgba(31,95,191,.18);background:var(--surface);color:var(--ink)}
+.repo-menu{position:absolute;left:12px;right:12px;top:calc(100% - 2px);background:var(--surface);
+  border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 10px 30px rgba(12,24,44,.18);
+  z-index:5;max-height:280px;overflow:auto;margin:0;padding:0;list-style:none}
+.repo-menu li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:8px 12px;
+  border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;line-height:1.3}
+.repo-menu li:hover{background:var(--surface-2)}
+.repo-menu li[aria-selected="true"]{background:#E3EBFA}
+.repo-menu li b{font-weight:500}
+.repo-menu li small{display:block;color:var(--ink-2);font-family:var(--f-num);font-size:12px}
+.repo-menu .grp{font-family:var(--f-num);font-size:11.5px;color:#1E4FA3;background:#E3EBFA;
+  border-radius:9px;padding:1px 8px;align-self:center;white-space:nowrap}
+.repo-menu .hint{display:block;padding:6px 12px;font-family:var(--f-num);font-size:11.5px;
+  color:var(--ink-3);background:var(--surface-2);cursor:default;border-bottom:0}
+.repo-tot{display:grid;grid-template-columns:minmax(0,1fr) 96px 32px;gap:10px;padding:9px 12px;
+  font-family:var(--f-num);font-size:13px;font-weight:700;background:var(--surface-2)}
+.repo-tot .ok{color:#176A33;text-align:right}
+.repo-tot .bad{color:#9B1C1C;text-align:right}
+.repo-add{align-self:start;margin-top:8px}
+.repo-problems{margin:0;font-size:12.5px;color:#7A4A0A}
+.repo-prov{font-family:var(--f-num);font-size:12px;color:var(--ink-3);margin:auto 0 0;line-height:1.5}
+.repo-empty,.repo-loading{margin:20px;color:var(--ink-3);font-size:14px}
+.repo-notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 20px;
+  background:#FEF3C7;color:#7A4A0A;font-size:13px;border-bottom:1px solid #F3D48A}
+.repo-notice .btn{padding:5px 10px;font-size:11px}
+.repo-ed .repo-notice{border:1px solid #F3D48A;border-radius:4px;padding:9px 12px}
+.repo-f{display:flex;align-items:center;gap:10px;padding:10px 20px;border-top:1px solid var(--line-strong);
+  background:var(--surface-2)}
+.repo-f .spacer{flex:1}
+.repo-f .md-err{margin:0;padding:6px 10px}
+.btn.btn-danger{color:#9B1C1C;border-color:#F1B8B2;background:var(--surface)}
+.btn.btn-danger:hover{background:#FDE8E8}
+/* Create sits at the far left of the footer, away from Save and Delete: it
+   does not act on the sleeve being edited, it starts a different one (D61). */
+.btn.btn-create{background:#176A33;border-color:#176A33;color:#fff}
+.btn.btn-create:hover{background:#12572A;border-color:#12572A}
+.btn.btn-create:disabled{opacity:.5}
+/* the two answers only a new sleeve gives */
+.repo-fld select{border:1px solid var(--line-strong);border-radius:4px;padding:7px 10px;
+  font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);min-height:34px;width:100%}
+.repo-vars{display:flex;flex-wrap:wrap;gap:6px 14px}
+.repo-var{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer}
+.repo-var.off{color:var(--ink-3);cursor:not-allowed}
+/* the context menu on a sleeve: inside the dialog, clamped off its edges */
+.repo-ctx{position:absolute;z-index:8;min-width:238px;background:var(--surface);
+  border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 12px 34px rgba(12,24,44,.24);
+  padding:6px 0;display:grid}
+.repo-ctx .h{margin:0;padding:7px 12px 6px;font-size:13.5px;font-weight:600;color:var(--ink);
+  border-bottom:1px solid var(--line)}
+.repo-ctx .h small{display:block;font-family:var(--f-num);font-size:11.5px;font-weight:400;color:var(--ink-3)}
+.repo-ctx .lbl{margin:0;padding:8px 12px 4px;font-family:var(--f-num);font-size:10.5px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.repo-ctx .none{margin:0;padding:2px 12px 8px;font-size:12.5px;color:var(--ink-3)}
+.repo-ctx .sep{margin:5px 0;border-top:1px solid var(--line)}
+.repo-mi{appearance:none;background:none;border:0;text-align:left;font:inherit;font-size:13px;
+  color:var(--ink);padding:7px 12px;cursor:pointer;width:100%}
+.repo-mi:hover:not(:disabled){background:#E3EBFA;color:#1E4FA3}
+.repo-mi:disabled{color:var(--ink-3);cursor:not-allowed}
+.repo-mi.danger{color:#9B1C1C}
+.repo-mi.danger:hover:not(:disabled){background:#FDE8E8;color:#9B1C1C}
+.repo-mi:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* ── the admin entry points (D62) ──
+   Two glyphs, three places, one job each: the rail's utility bar is where the
+   tools LIVE, the icon on the sleeve tier is the shortcut from the thing that
+   needs fixing, and the landing tiles are for an admin who came to maintain
+   the library rather than write a proposal. All three hidden unless the
+   schema says canAdmin. */
+.rail-admin-bar{position:sticky;bottom:0;margin-top:auto;z-index:2;
+  display:flex;align-items:center;gap:8px;padding:9px 12px;
+  background:#0E1C33;border-top:1px solid var(--rail-line)}
+.rail-admin-cap{margin-right:auto;font-family:var(--f-num);font-size:10.5px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--rail-ink-3);white-space:nowrap}
+.rail-admin-btn{width:32px;height:32px;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--rail-input-border,#52739C);border-radius:6px;
+  color:var(--rail-ink-2);text-decoration:none;background:transparent;
+  transition:background 120ms linear,color 120ms linear,border-color 120ms linear}
+.rail-admin-btn svg{width:17px;height:17px;display:block}
+.rail-admin-btn:hover{background:var(--rail-input-bg,#1D2F4B);color:#fff;border-color:#5590E4}
+.rail-admin-btn:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:2px}
+/* Collapsed, the bar is the only thing in the rail with anything to say: the
+   caption goes and the glyphs stack down the 48px strip. */
+body.rail-collapsed .rail-admin-cap{display:none}
+body.rail-collapsed .rail-admin-bar{flex-direction:column;gap:6px;padding:9px 0}
+body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
+/* the shortcut on the sleeve tier's own heading */
+.tier-admin{width:24px;height:24px;flex:0 0 auto;display:grid;place-items:center;padding:0;
+  border:1px solid transparent;border-radius:5px;background:none;color:var(--rail-ink-3);cursor:pointer}
+.tier-admin svg{width:15px;height:15px;display:block}
+.tier-admin:hover{color:#fff;border-color:var(--rail-input-border,#52739C)}
+.tier-admin:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:1px}
+.tier-h-r{display:flex;align-items:center;gap:9px}
+@media (prefers-reduced-motion:reduce){.rail-admin-btn{transition:none}}
+/* ── the catalogue view (D58), laid out as the terminal (D63) ──
+   A facet rail, a dense table with the figures on the right, a tray of pins
+   that opens into a comparison, a side panel on demand. Density is the
+   point; colour is only ever a constraint (liquidity, a minimum above the
+   mandate, a product no sleeve holds) or a selection. */
+.dialog.repo.catalogue{width:min(1560px,calc(100vw - 32px))}
+.cat-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 16px;
+  border-bottom:1px solid var(--line);background:var(--surface-2)}
+.cat-search{display:flex;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);padding:0 8px;width:270px;color:var(--ink-3)}
+.cat-search input{border:0;background:none;font:inherit;font-size:13px;color:var(--ink);padding:6px 0;width:100%;outline:none}
+.cat-search input::-webkit-search-cancel-button{-webkit-appearance:none}
+.cat-search kbd{font-family:var(--f-num);font-size:10.5px;border:1px solid var(--line-strong);border-radius:3px;
+  padding:0 5px;color:var(--ink-3);background:var(--surface-2)}
+.cat-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.18)}
+.cat-density button{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px}
+.cat-chipwrap{position:relative}
+.cat-chip{appearance:none;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-strong);
+  border-radius:14px;background:var(--surface);padding:3px 10px;font-family:var(--f-num);font-size:12px;
+  color:var(--ink-2);cursor:pointer;white-space:nowrap;line-height:1.4}
+.cat-chip:hover{border-color:var(--ink-3)}
+.cat-chip.on{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3;font-weight:700}
+.cat-chip b{color:var(--ink);font-weight:700}
+.cat-chip .car{font-size:9px;color:var(--ink-3)}
+.cat-menu{position:absolute;left:0;top:calc(100% + 4px);min-width:210px;background:var(--surface);
+  border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 10px 30px rgba(12,24,44,.18);
+  z-index:6;padding:6px 0;display:grid}
+.cat-opt{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center;padding:4px 12px;
+  font-size:13px;cursor:pointer;color:var(--ink)}
+.cat-opt.fixed{color:var(--ink-3)}
+.cat-opt:hover{background:var(--surface-2)}
+.cat-clear{appearance:none;background:none;border:0;padding:0;font:inherit;font-family:var(--f-num);font-size:12px;
+  color:#1E4FA3;cursor:pointer;text-decoration:underline}
+.cat-menu .cat-clear{margin:6px 12px 2px;justify-self:start}
+.cat-count{margin-left:auto;font-family:var(--f-num);font-size:12px;color:var(--ink-3);white-space:nowrap}
+.cat-orphans{gap:6px 14px}
+.cat-orphan{font-size:12.5px}
+/* the body: rail, table (or comparison), and the panel over the right edge */
+.cat-b{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:0;position:relative}
+.cat-facets{border-right:1px solid var(--line);overflow:auto;min-height:0;padding:6px 0 12px;background:var(--surface)}
+.cat-fh{margin:0;padding:10px 14px 4px;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+.cat-fo{display:flex;align-items:center;gap:8px;padding:3px 14px;font-size:12.5px;color:var(--ink);cursor:pointer;line-height:1.35}
+.cat-fo:hover{background:var(--surface-2)}
+.cat-fo input{margin:0;width:12px;height:12px;flex:0 0 auto;accent-color:var(--accent)}
+.cat-fo .v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-fo .n{margin-left:auto;font-family:var(--f-num);font-size:11.5px;color:var(--ink-3)}
+.cat-fo.on{color:#1E4FA3;font-weight:600}
+.cat-fo.on .n{color:#1E4FA3}
+.cat-fo.off{color:var(--ink-3);cursor:not-allowed}
+.cat-facets-clear{margin:12px 14px 0}
+.cat-tblwrap{overflow:auto;min-height:0}
+.cat-tblwrap:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.cat-tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px}
+.cat-tbl.comfortable{font-size:13px}
+.cat-tbl th{position:sticky;top:0;background:var(--surface-2);border-bottom:1px solid var(--line-strong);
+  padding:0;white-space:nowrap;z-index:2;text-align:left}
+.cat-tbl th.num,.cat-tbl td.num{text-align:right}
+.cat-tbl th.num .cat-sort{justify-content:flex-end}
+.cat-tbl th.pinc,.cat-tbl td.pinc{width:30px;padding:0 0 0 10px;position:sticky;left:0;z-index:3;background:var(--surface-2)}
+.cat-tbl td.pinc{background:var(--surface);z-index:1}
+.cat-sort{appearance:none;background:none;border:0;width:100%;display:flex;align-items:baseline;gap:4px;font-family:var(--f-num);
+  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:8px 10px;
+  cursor:pointer;text-align:inherit;line-height:1.2}
+.cat-sort small{font-size:9px;letter-spacing:.06em;color:var(--ink-3);font-weight:400}
+.cat-sort:hover{color:var(--ink)}
+.cat-sort.on{color:#1E4FA3}
+.cat-sort.drv{font-style:italic;color:var(--ink-2)}
+.cat-tbl td{padding:0 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle;color:var(--ink);
+  height:34px}
+.cat-tbl.comfortable td{height:40px}
+.cat-tbl td.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-size:12.5px}
+.cat-tbl.comfortable td.num{font-size:13px}
+.cat-tbl td.tk{font-family:var(--f-num);font-weight:700;letter-spacing:.02em}
+.cat-tbl td.nm{white-space:nowrap;min-width:200px;position:sticky;left:40px;background:var(--surface);z-index:1;
+  font-weight:500;box-shadow:inset -1px 0 0 var(--line)}
+.cat-tbl td.nm b{font-weight:500}
+.cat-tbl td.mute{color:var(--ink-3)}
+.cat-tbl tr[data-catrow]{cursor:pointer}
+.cat-tbl tr[data-catrow]:hover td{background:var(--row-hover,var(--surface-2))}
+.cat-tbl tr[data-catrow]:hover td.nm,.cat-tbl tr[data-catrow]:hover td.pinc{background:var(--row-hover,var(--surface-2))}
+.cat-tbl tr.pin td{background:#F0F4FB}
+.cat-tbl tr.pin td.pinc{box-shadow:inset 3px 0 0 var(--accent)}
+.cat-tbl tr.cur td{box-shadow:inset 0 -1px 0 var(--accent),inset 0 1px 0 var(--accent)}
+.cat-tbl tr.cur td.pinc{box-shadow:inset 3px 0 0 var(--accent),inset 0 -1px 0 var(--accent),inset 0 1px 0 var(--accent)}
+.cat-tbl tr.on td{background:#E3EBFA}
+.cat-tbl tr.dim td:not(.pinc){color:var(--ink-3)}
+.cat-tbl tr.dim td.nm b{color:var(--ink-2)}
+.cat-tbl td.pos{color:#176A33}
+.cat-tbl td.neg{color:#9B1C1C}
+.cat-tbl .veh{display:inline-block;font-family:var(--f-num);font-size:10.5px;font-weight:700;color:var(--ink-2);
+  background:var(--surface-2);border-radius:3px;padding:0 5px;line-height:16px;letter-spacing:.04em}
+.liq{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-2);
+  background:var(--surface-2);border-radius:8px;padding:0 7px;line-height:16px}
+.liq.slow{color:#92600A;background:#FEF3C7}
+.liq.lock{color:#9B1C1C;background:#FDE8E8}
+.flag{display:inline-block;font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:#92600A;background:#FEF3C7;border-radius:8px;padding:0 6px;line-height:15px;margin-left:6px;vertical-align:1px}
+.cat-tbl td.used.zero{color:#B45309;font-weight:700}
+.cat-tbl td.cat-empty{white-space:normal;padding:22px 16px;color:var(--ink-2);font-size:13.5px;position:static}
+.pinbox{appearance:none;width:14px;height:14px;border:1px solid var(--line-strong);border-radius:3px;background:var(--surface);
+  cursor:pointer;padding:0;display:block;position:relative}
+.pinbox.on{background:var(--accent);border-color:var(--accent)}
+.pinbox.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.pinbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* the tray, in the footer */
+.repo-f.cat-f{padding:8px 16px;gap:12px}
+.cat-tray{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.cat-tray .ttl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink)}
+.cat-tray .pins{display:flex;gap:6px;flex-wrap:wrap}
+.cat-tray .pn{appearance:none;border:1px solid #B9CDF0;background:#E3EBFA;color:#1E4FA3;border-radius:4px;padding:2px 8px;
+  font-family:var(--f-num);font-size:11.5px;font-weight:700;cursor:pointer}
+.cat-tray .pn:hover{background:#D3DFF7}
+.cat-tray .none{font-size:12.5px;color:var(--ink-3)}
+.cat-tray .none kbd{font-family:var(--f-num);font-size:10.5px;border:1px solid var(--line-strong);border-radius:3px;padding:0 4px}
+.cat-tray .cnt{font-family:var(--f-num);font-size:12px;color:var(--ink-3);white-space:nowrap}
+.cat-tray .spacer{flex:1}
+.cat-src{white-space:nowrap}
+/* the comparison, in the table's place */
+.cat-cmpwrap{overflow:auto;min-height:0;padding:14px 18px}
+.cat-cmp{border-collapse:collapse;font-size:12.5px;min-width:520px}
+.cat-cmp th{font-family:var(--f-num);font-size:11px;letter-spacing:.04em;color:var(--ink);padding:8px 12px;text-align:right;
+  border-bottom:1px solid var(--line-strong);vertical-align:bottom;position:relative;min-width:120px}
+.cat-cmp th:first-child{text-align:left;min-width:150px}
+.cat-cmp th .t{display:block;font-size:12.5px;font-weight:700}
+.cat-cmp th small{display:block;font-weight:400;color:var(--ink-3);font-size:10.5px;white-space:normal;max-width:160px;margin-left:auto}
+.cat-unpin{position:absolute;top:2px;right:2px;appearance:none;border:0;background:none;color:var(--ink-3);font-size:14px;cursor:pointer;line-height:1}
+.cat-unpin:hover{color:#9B1C1C}
+.cat-cmp td{padding:6px 12px;border-bottom:1px solid var(--line);text-align:right;font-family:var(--f-num);
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.cat-cmp td:first-child{text-align:left;font-family:var(--f-body);color:var(--ink-2);font-size:12px}
+.cat-cmp td.best{font-weight:700;color:#1E4FA3;background:#F0F4FB}
+.cat-cmp tr.sec td{background:var(--surface-2);font-family:var(--f-num);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);padding-top:9px;text-align:left}
+.cat-cmp-key{margin:12px 0 0;font-size:12px;color:var(--ink-3);max-width:70ch}
+.cat-cmp-empty{padding:30px 20px;color:var(--ink-3);font-size:13.5px}
+/* the panel: over the right edge, not in the layout */
+.cat-detail{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--surface);border-left:1px solid var(--line-strong);
+  box-shadow:-12px 0 30px rgba(12,24,44,.14);padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:12.5px;
+  overflow:auto;z-index:4}
+.cat-detail .dlg-close{top:8px;right:10px}
+.cat-detail .eyeb{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.cat-detail h4{margin:0;font-size:16px;font-weight:600;line-height:1.25;color:var(--ink);padding-right:28px}
+.cat-detail .tk{font-family:var(--f-num);font-size:12px;color:var(--ink-2);word-break:break-all}
+.cat-mg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.cat-mg .m{border:1px solid var(--line);border-radius:5px;padding:7px 9px}
+.cat-mg .m small{display:block;font-family:var(--f-num);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.cat-mg .m b{font-family:var(--f-num);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+.cat-dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12.5px;margin:0}
+.cat-dl dt{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding-top:1px}
+.cat-dl dd{margin:0;color:var(--ink)}
+.cat-usedin{border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.cat-usedin .h{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);padding:7px 10px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+.cat-usedin .r{display:grid;gap:2px;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+.cat-usedin .r:last-child{border-bottom:0}
+.cat-usedin .r b{font-weight:500;color:var(--ink)}
+.cat-usedin .r small{font-family:var(--f-num);font-size:11.5px;color:var(--ink-2)}
+.cat-usedin .r.none{color:var(--ink-3)}
+.cat-link{appearance:none;background:none;border:0;padding:0;font-family:var(--f-num);font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;color:#1E4FA3;cursor:pointer;text-align:left;justify-self:start}
+.cat-link:hover{text-decoration:underline}
+.cat-detail .acts{display:flex;gap:8px;margin-top:auto;padding-top:6px;flex-wrap:wrap}
+@media (max-width:1320px){
+  .repo-h .repo-src{display:none}
+}
+@media (max-width:900px){
+  .repo-b{grid-template-columns:180px 220px minmax(0,1fr)}
+  .cat-b{grid-template-columns:180px minmax(0,1fr)}
+}
 
 .tbl thead th{border-bottom:1px solid var(--ink)}tr.band th{border-top:1px solid var(--accent);letter-spacing:.2em}.tblwrap{background:var(--surface);border:1px solid var(--line-strong)}tr.cat th,tr.cat td{border-top:none;border-bottom:1px solid var(--line-strong)}tr.total th,tr.total td{background:#F0F2F5}h2{color:#16243A}.base-tag{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0;border-radius:9px;font-size:11.5px;font-weight:700;padding:1px 7px;letter-spacing:.03em}.rail-brand{border-bottom:1px solid #233754}.rail-brand>b{font-family:var(--f-num);font-weight:500;letter-spacing:.005em}.rail .grp-idx{letter-spacing:.18em}.rail .ta-hint{color:#7E90A8}.rail .is-disabled{opacity:.42}.bdg{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}.b-ok{background:#E7F4EC;color:#176A33;border:1px solid #B7E0C5}.b-warn{background:#FEF3C7;color:#B45309;border:1px solid #F3D48A}.b-breach{background:#FDE8E8;color:#9B1C1C;border:1px solid #F1B8B2}.b-bind{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}.b-slack{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}.notices{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:0 0 clamp(20px,3vw,30px)}.spec{margin:8px 0 0;background:#FFFBEB;border:1.5px dashed #D4A017;border-radius:6px;padding:13px 18px 15px;font-size:15px;color:#4A3B10}.spec h4{margin:0 0 8px;font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:#92600A;font-family:var(--f-num);font-weight:700}.spec p{margin:0 0 9px;line-height:1.5}.spec p:last-child{margin-bottom:0}.spec .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0 0}.spec .legend span.lbl{font-size:13px;color:#6B5716}.pos{color:#1A7F37}.neg{color:#B42318}.rail .is-disabled .field-note{color:#E0B25C}

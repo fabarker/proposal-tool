@@ -401,6 +401,7 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
 from themes import THEMES, DEFAULTS
 from pickers import SHARED_CSS, CORE_JS, OPT_JS, PICKERS
 from implementation import IMPL_CSS, IMPL_JS
+from repository import REPO_CSS, REPO_JS
 
 # ── state chrome: loading, empty, error and responsive additions ─────────────
 # The surfaces the HTTP flip introduced (spec 10): skeleton cells, the failed
@@ -639,13 +640,15 @@ RAIL_CSS = """
   background:var(--rail-bg);z-index:2}
 .rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
-/* The product line under the group name is the one place the rail carries a
-   colour of its own: the full #F3C46B, the same gold the placeholder-rates
-   flag carries. Chosen deliberately - the two are far apart in the rail and
-   read as one house accent rather than as a shared signal. 9.7:1 on the navy.
-   Its own token, so moving one does not move the other. */
-.rail-brand>span{display:block;font-family:var(--f-body);margin-top:4px;font-size:11.5px;letter-spacing:.15em;
-  text-transform:uppercase;color:var(--rail-eyebrow,var(--rail-ink-3))}
+/* The product line under the group name is styled to match the
+   placeholder-rates flag exactly, on request: the same 12px semibold gold at
+   the same line height, sentence case and unspaced, inheriting the body face
+   as the flag does. It mirrors .fee-flag in implementation.py, and the values
+   are repeated rather than shared so that restyling the warning does not
+   silently restyle the brand. display:block is the one addition, and is
+   structural - .fee-flag is a <p>, this a <span>. */
+.rail-brand>span{display:block;margin:2px 0 0;font-size:12px;font-weight:600;
+  color:var(--rail-eyebrow,#F3C46B);line-height:1.4}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--rail-ink-3);font-weight:700;margin:0 0 4px}
@@ -706,6 +709,24 @@ PAGE_SHELL = """<!doctype html>
 <!-- Live regions: present from first paint, or they are never announced. -->
 <div id="live-polite" class="sr-only" aria-live="polite"></div>
 <div id="live-assertive" class="sr-only" aria-live="assertive"></div>
+<!-- Admin glyphs (D62). One copy each, referenced with <use> so the navy
+     rail and the white landing page share them and take their colour from
+     currentColor. Two glyphs do not justify an icon font or a sprite fetch. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <defs>
+    <g id="i-sleeves" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 2.2 17.5 6 10 9.8 2.5 6z"/><path d="M2.5 10 10 13.8 17.5 10"/>
+      <path d="M2.5 14 10 17.8 17.5 14"/>
+    </g>
+    <g id="i-catalogue" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.5" y="3" width="15" height="14" rx="2"/>
+      <path d="M2.5 7.6h15M8 7.6V17M2.5 12.3h15"/>
+    </g>
+  </defs>
+</svg>
+
 <aside class="rail" aria-label="Scenario">
   <div class="rail-brand">
     <b>Portfolio Management Group</b>
@@ -720,6 +741,19 @@ PAGE_SHELL = """<!doctype html>
     <div class="tier" id="tier-base"></div>
 
     <div class="tier" id="tier-sleeves" hidden></div>
+  </div>
+
+  <!-- Administration (D62): outside the masthead, which fades on collapse, and
+       sticky to the foot so a long rail cannot scroll it away. Collapsed, the
+       caption goes and the two glyphs stack - which is what a 48px rail is for. -->
+  <div class="rail-admin-bar" id="railadmin" hidden>
+    <span class="rail-admin-cap">Admin</span>
+    <a href="#repository" class="rail-admin-btn" id="repolink"
+       aria-label="Sleeve repository" title="Sleeve repository">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><use href="#i-sleeves"/></svg></a>
+    <a href="#catalogue" class="rail-admin-btn" id="catlink"
+       aria-label="Product catalogue" title="Product catalogue">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><use href="#i-catalogue"/></svg></a>
   </div>
 </aside>
 
@@ -850,6 +884,8 @@ PAGE_SHELL = """<!doctype html>
      implementation layers attach to it. -->
 <!-- Mandate dialog, rendered on demand. -->
 <div id="mandateDialog" hidden></div>
+<div id="feeDialog" hidden></div>
+<div id="repoDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>
 </body>
@@ -944,12 +980,14 @@ def build_assets(th):
         vars_css(th["v"]), BASE_CSS, RAIL_CSS, SHARED_CSS, STATE_CSS,
         picker.get("css", ""),
         IMPL_CSS if th.get("implementation") else "",
+        REPO_CSS if th.get("implementation") else "",
         th["extra"],
     ])
     js = "\n".join([
         HOST_PRELUDE, CORE_JS, OPT_JS,
         picker.get("js", ""),
         IMPL_JS if th.get("implementation") else "",
+        REPO_JS if th.get("implementation") else "",
         BOOT_JS,
     ])
     html = PAGE_SHELL.format(

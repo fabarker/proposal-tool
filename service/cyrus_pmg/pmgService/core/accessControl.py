@@ -91,3 +91,34 @@ def requireEditor(request: Request) -> str:
     """FastAPI dependency for writes. One role today, so this is requireAuth;
     it exists so every write endpoint already carries the host's seam."""
     return requireAuth(request)
+
+
+# ---- the admin role (D57) ----------------------------------------------------
+# A third list beside the access list. Admins maintain the sleeve repository -
+# the library every PWA picks from - so the list is expected to be a handful
+# of names, and an empty list means nobody: the console simply does not
+# appear. In the host this reads whatever source the other allowlist reads.
+
+def getAdminAllowlist():
+    """Return the set of admin kerberos ids from PMG_ADMIN_KERBEROS."""
+    raw = os.getenv('PMG_ADMIN_KERBEROS', '')
+    return {item.strip() for item in raw.split(',') if item.strip()}
+
+
+def isAdmin(kerberos):
+    """True when *kerberos* may maintain the sleeve repository. An admin is
+    also on the access list - the console lives inside the tool."""
+    return isAllowed(kerberos) and kerberos in getAdminAllowlist()
+
+
+def requireAdmin(request: Request) -> str:
+    """FastAPI dependency for repository writes and reads: an authenticated,
+    allowlisted caller who is also an admin. 403 otherwise, in the same body
+    shape as the access-list refusal."""
+    kerberos = requireAuth(request)
+    if not isAdmin(kerberos):
+        raise HTTPException(
+            status_code=403,
+            detail={'error': 'User {} is not a sleeve repository admin.'.format(kerberos)},
+        )
+    return kerberos

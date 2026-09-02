@@ -1,9 +1,16 @@
 """Offline bake: precompute every portfolio the tool can ever be asked for.
 
 The Proposal Tool is a lookup, not a solve (DECISIONS Q2). Its input space is
-closed and small: the 68 UI-available combinations per currency x 4 hedging
-policies. Nothing a PWA selects is unknown in advance, so the analytics can be
-computed once per data version and served from disk.
+closed: every portfolio the supplying database offers (the strategic universe,
+D54) x 4 hedging policies. Nothing a PWA selects is unknown in advance, so the
+analytics can be computed once per data version and served from disk.
+
+Three steps, in cost order. ENUMERATE reads the extract and parses every name
+into a key - cheap, and alone enough to populate the selectors; a name that
+does not parse is recorded, not fatal. WEIGHTS is a read of the same extract.
+ANALYTICS is the expensive step, one resolve per key x hedging, resumable and
+recorded per key. The manifest carries the derived facets and the source's
+provenance, so a service can answer "what may I offer?" from one file.
 
 Layout under the store directory (SCENARIO_BAKED_DIR):
 
@@ -44,7 +51,7 @@ import sys
 import tempfile
 import time
 
-from . import rules
+from . import fees, rules, saaKeys, universe
 from .types import BasisInput, PortfolioKey
 
 DEFAULT_STORE = os.path.join(
@@ -95,14 +102,42 @@ def updateManifest(directory: str, currency: str, hedging: str, entry: dict) -> 
     manifest['portfoliosBaked'] = covered
     manifest['currencies'] = sorted({
         name.split('_')[0] for name, s in manifest['slices'].items() if s.get('baked')})
+    # what the bake was enumerated from, and what the selectors may offer -
+    # derived from the key set, so a service reads them here rather than
+    # recomputing them from a weights table (D54)
+    manifest['source'] = universe.describeSource()
+    manifest['vocabulary'] = {
+        'currencies': list(saaKeys.CURRENCIES),
+        'riskLevels': list(saaKeys.RISK_LEVELS),
+        'allocationTypes': list(saaKeys.ALLOCATION_TYPES),
+    }
+    manifest['facets'] = universe.facets()
+    manifest['unparsedNames'] = [{'name': n, 'reason': r} for n, r in universe.failures()]
+    manifest['feeCard'] = fees.deliveryInfo()      # the other input a store depends on (D55)
+    substituted = {name.split('_')[0]: s['analyticsCurrency']
+                   for name, s in manifest['slices'].items() if s.get('currencySubstituted')}
+    if substituted:
+        manifest['currencySubstitutions'] = substituted
     writeJsonAtomic(path, manifest)
 
 
 def bakeSlice(port, currency: str, hedging: str, directory: str,
               resume: bool = True, limit: int = None, flushEvery: int = 10,
-              verbose: bool = True) -> dict:
-    """Bake every available portfolio for one (currency, hedging)."""
+              verbose: bool = True, analyticsCurrency: str = None) -> dict:
+    """Bake every available portfolio for one (currency, hedging).
+
+    *analyticsCurrency* runs the analytics in a currency other than the
+    portfolio's own - the database carries a config for USD and GBP only, so
+    a CHF or EUR book otherwise fails outright. The portfolio keeps its own
+    currency everywhere it is identified: the key, the slice, the name, the
+    column header. Only the context the numbers were computed in changes, and
+    that is recorded on every payload it touched (``analyticsCurrency``) and
+    in the manifest, because a GBP book priced in a USD context is not GBP
+    analytics and nothing downstream should be able to forget it.
+    """
     basis = BasisInput(currency=currency, hedging=hedging)
+    context = BasisInput(currency=analyticsCurrency or currency, hedging=hedging)
+    substituted = context.currency != currency
     # No mandate filter: the bake covers everything the schema can offer at
     # any mandate size, so the $20m rule stays a UI-time concern.
     keys = rules.availability(basis, None)
@@ -124,6 +159,8 @@ def bakeSlice(port, currency: str, hedging: str, directory: str,
             'resumedWith': already,
             'failures': failures,
             'complete': complete,
+            'analyticsCurrency': context.currency,
+            'currencySubstituted': substituted,
             'seconds': round(time.time() - started, 1),
             'describe': port.describe(),
             'bakedAt': datetime.datetime.now().isoformat(timespec='seconds'),
@@ -135,7 +172,11 @@ def bakeSlice(port, currency: str, hedging: str, directory: str,
         key = PortfolioKey.fromStr(keyStr)
         t0 = time.time()
         try:
-            payloads[keyStr] = port.resolve_portfolio(basis, key)
+            payload = port.resolve_portfolio(context, key)
+            if substituted:
+                # the caveat travels with the numbers, not beside them
+                payload = dict(payload, analyticsCurrency=context.currency)
+            payloads[keyStr] = payload
             if verbose:
                 print('  [{}/{}] {:<28} {:6.1f}s'.format(
                     index, len(keys), keyStr, time.time() - t0), flush=True)
@@ -160,6 +201,29 @@ def bakeSlice(port, currency: str, hedging: str, directory: str,
     return entry
 
 
+def census() -> int:
+    """The enumeration step on its own: what the extract holds, before any
+    analytics are run against it. This is the dry run to trust a parser by."""
+    source = universe.describeSource()
+    facets = universe.facets()
+    print('source     {}'.format(source['path']))
+    print('modified   {}'.format(source['modified']))
+    print('portfolios {}   holdings {}   unknown tickers {}'.format(
+        source['portfolios'], source['holdings'], source['unknownTickers'] or 'none'))
+    print('currencies {}'.format(', '.join(facets['currencies'])))
+    print('risk       {}'.format(', '.join(facets['riskLevels'])))
+    for risk in facets['riskLevels']:
+        offered = facets['allocationTypes'].get(risk) or []
+        print('  {:<13} {}'.format(risk, ', '.join(offered) or 'no allocation type'))
+    print('ex-RAs     {}'.format(', '.join(
+        t for t, offered in facets['exclusionOffered'].items() if offered) or 'none'))
+    failures = universe.failures()
+    print('unparsed   {}'.format(len(failures)))
+    for name, reason in failures:
+        print('  REJECTED {!r}: {}'.format(name, reason))
+    return 1 if failures else 0
+
+
 def _makePort(adapter: str):
     if adapter == 'fixtures':
         from .fixturesAdapter import FixturesScenarioPort
@@ -172,10 +236,12 @@ def _bakeOneInProcess(args_tuple):
     """Worker entry point: one process per slice keeps the analytics
     library's process-level caches (factor windows, betas) warm for the
     whole slice."""
-    adapter, currency, hedging, directory, resume, limit, flushEvery = args_tuple
+    (adapter, currency, hedging, directory, resume, limit, flushEvery,
+     analyticsCurrency) = args_tuple
     port = _makePort(adapter)
     return bakeSlice(port, currency, hedging, directory, resume=resume,
-                     limit=limit, flushEvery=flushEvery, verbose=True)
+                     limit=limit, flushEvery=flushEvery, verbose=True,
+                     analyticsCurrency=analyticsCurrency)
 
 
 def main(argv=None) -> int:
@@ -195,7 +261,19 @@ def main(argv=None) -> int:
                         help='bake at most N portfolios per slice (smoke test)')
     parser.add_argument('--flush-every', type=int, default=10, dest='flushEvery')
     parser.add_argument('--no-resume', action='store_true')
+    parser.add_argument('--analytics-currency', dest='analyticsCurrency', default=None,
+                        help='run the analytics in this currency whatever the '
+                             'portfolio says (the database carries USD and GBP '
+                             'configs only). The portfolio keeps its own currency '
+                             'in its key, slice and name; the substitution is '
+                             'recorded on every payload and in the manifest.')
+    parser.add_argument('--census', action='store_true',
+                        help='enumerate only: report the source, the facets and '
+                             'every name that did not parse, then exit')
     args = parser.parse_args(argv)
+
+    if args.census:
+        return census()
 
     currencies = args.currency or (rules.CURRENCIES if args.all else ['USD'])
     hedgings = args.hedging or (rules.HEDGING_POLICIES if args.all else ['Hedged'])
@@ -203,10 +281,16 @@ def main(argv=None) -> int:
     os.makedirs(directory, exist_ok=True)
 
     slices = [(args.adapter, c, h, directory, not args.no_resume, args.limit,
-               args.flushEvery)
+               args.flushEvery, args.analyticsCurrency)
               for c in currencies for h in hedgings]
     print('baking {} slice(s) into {} with the {} adapter'.format(
         len(slices), directory, args.adapter), flush=True)
+    if args.analyticsCurrency:
+        substituted = [c for c in currencies if c != args.analyticsCurrency]
+        print('analytics run in {} for {} - those payloads are marked, and are '
+              'NOT {} analytics'.format(args.analyticsCurrency,
+                                        ', '.join(substituted) or 'nothing',
+                                        '/'.join(substituted) or '-'), flush=True)
 
     started = time.time()
     if args.workers > 1 and len(slices) > 1:
@@ -215,6 +299,12 @@ def main(argv=None) -> int:
             entries = pool.map(_bakeOneInProcess, slices)
     else:
         entries = [_bakeOneInProcess(item) for item in slices]
+
+    # The workers' own manifest writes are progress reporting, and with several
+    # of them a read-modify-write can drop a sibling's slice. The parent's pass
+    # here is the authoritative one: every entry merged in, in order.
+    for entry in entries:
+        updateManifest(directory, entry['currency'], entry['hedging'], entry)
 
     baked = sum(e['baked'] for e in entries)
     failed = sum(len(e['failures']) for e in entries)

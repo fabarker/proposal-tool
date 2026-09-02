@@ -33,16 +33,16 @@ def store(tmp_path_factory):
 def test_slice_covers_the_whole_availability_set(store):
     payloads = json.load(open(bake.slicePath(store, 'USD', 'Hedged')))
     expected = rules.availability(BASIS, None)
-    assert len(expected) == 34
+    assert len(expected) == 43
     assert sorted(payloads) == sorted(expected)
 
 
 def test_manifest_records_provenance_and_coverage(store):
     manifest = json.load(open(os.path.join(store, 'manifest.json')))
-    assert manifest['portfoliosBaked'] == 34
+    assert manifest['portfoliosBaked'] == 43
     assert manifest['currencies'] == ['USD']
     entry = manifest['slices']['USD_Hedged.json']
-    assert entry['available'] == 34 and entry['baked'] == 34
+    assert entry['available'] == 43 and entry['baked'] == 43
     assert entry['failures'] == {}
     assert entry['describe']['adapter'] == 'fixtures'
 
@@ -85,13 +85,13 @@ def test_miss_without_delegate_raises_analytics_error(store):
     port = BakedScenarioPort(storeDirectory=store)
     with pytest.raises(AnalyticsError):
         port.resolve_portfolio(BasisInput(currency='USD', hedging='Unhedged'),
-                               PortfolioKey('Core', True, True, 'Mod'))
+                               PortfolioKey('USD', 'Moderate', 'Core', False))
 
 
 def test_miss_falls_through_to_the_delegate(store):
     port = BakedScenarioPort(storeDirectory=store, delegate=FixturesScenarioPort())
     unbaked = BasisInput(currency='USD', hedging='Unhedged')
-    key = PortfolioKey('Core', True, True, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = port.resolve_portfolio(unbaked, key)
     # against the naming rule, not a frozen string: the point of this test is
     # that the miss reached the delegate, not what the delegate calls things
@@ -101,10 +101,10 @@ def test_miss_falls_through_to_the_delegate(store):
 def test_schema_and_library_need_no_analytics(store):
     port = BakedScenarioPort(storeDirectory=store)
     schema = port.get_schema(BASIS, MandateInput(48.5e6, 26e6, 'M. Aldridge — Zurich'))
-    assert len(schema['availability']) == 34
+    assert len(schema['availability']) == 43
     assert schema['categories'][0] == 'Investment Grade Fixed Income'
     assert schema['dataInfo']['adapter'] == 'baked'
-    assert '34 portfolios baked' in schema['dataInfo']['dataversion']
+    assert '43 portfolios baked' in schema['dataInfo']['dataversion']
     from cyrus_pmg.pmgService.scenario.sleeves import VARIANTS
     assert port.list_sleeves('Public Equity', BASIS, VARIANTS[0])
     assert port.search_advisors('ald')
@@ -113,7 +113,7 @@ def test_schema_and_library_need_no_analytics(store):
 def test_export_without_a_delegate_uses_the_payload_writer(store, tmp_path):
     from openpyxl import load_workbook
     port = BakedScenarioPort(storeDirectory=store)
-    key = PortfolioKey('Core', True, True, 'Mod')
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = port.resolve_portfolio(BASIS, key)
     from cyrus_pmg.pmgService.scenario.sleeves import VARIANTS, listSleeves
     chosen = {c['name']: listSleeves(c['name'], VARIANTS[0])[0]['name']

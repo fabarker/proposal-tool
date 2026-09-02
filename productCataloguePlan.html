@@ -1,0 +1,325 @@
+<meta charset="utf-8">
+<title>Product Catalogue</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 80px}
+h1,h2,h3{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:52px 0 14px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h3{font-size:16px;font-weight:700;margin:22px 0 8px}
+p{margin:0 0 12px;max-width:72ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:70ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:14px 0 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:3px}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0 6px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-num);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+td:first-child{white-space:nowrap}
+.tbl-wrap{overflow-x:auto}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:72ch}
+li{margin:0 0 5px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:16px 18px}
+.card h3{margin-top:0}
+.pill{display:inline-block;font-family:var(--f-num);font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-mute{background:var(--surface-2);color:var(--ink-2)} .p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;margin:14px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)}
+.callout p:last-child{margin-bottom:0}
+.size{font-family:var(--f-num);font-weight:700;color:var(--ink-2)}
+.rec{color:var(--accent-ink);font-weight:500}
+.q .item{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.q .item:last-child{border-bottom:0}
+.q .item .num{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:1px}
+.q .item b{display:block;margin-bottom:3px}
+.q .item p{margin:0;font-size:14px}
+.step-list li{margin-bottom:9px}
+
+/* ── the mockup, in the app's literal colours ── */
+.mock-wrap{overflow-x:auto;margin:14px 0 6px;border:1px solid var(--line-strong);border-radius:8px;background:#DDE3EA}
+.mock{width:1180px;height:760px;position:relative;font-family:var(--f-body);color:#1C2733;background:#F6F7F9;overflow:hidden}
+.mock *{box-sizing:border-box}
+.mock .bg-rail{position:absolute;left:0;top:0;bottom:0;width:230px;background:#12233F;opacity:.55}
+.mock .scrim{position:absolute;inset:0;background:rgba(18,35,63,.42)}
+.dlg{position:absolute;left:40px;top:34px;width:1100px;height:692px;background:#fff;border-radius:8px;
+  box-shadow:0 24px 60px rgba(12,24,44,.35);display:grid;grid-template-rows:56px 50px 1fr 46px;overflow:hidden}
+.dlg-h{display:flex;align-items:center;gap:18px;padding:0 16px 0 20px;border-bottom:1px solid #D4DAE2}
+.dlg-h .ttl{font-family:var(--f-num);font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.seg{display:flex;border:1px solid #C7D0DB;border-radius:4px;overflow:hidden;font-size:13px}
+.seg span{padding:6px 14px;border-left:1px solid #C7D0DB;color:#5B6B7C;background:#fff}
+.seg span:first-child{border-left:0}
+.seg span.on{background:#16243A;color:#fff;font-weight:600}
+.dlg-h .src{margin-left:auto;font-family:var(--f-num);font-size:12.5px;color:#5B6B7C}
+.dlg-h .x{width:28px;height:28px;border:1px solid #C7D0DB;border-radius:4px;display:grid;place-items:center;color:#5B6B7C;font-size:16px}
+.tools{display:flex;align-items:center;gap:8px;padding:0 20px;border-bottom:1px solid #E3E7EC;background:#F6F7F9}
+.tools .search{display:flex;align-items:center;gap:8px;border:1px solid #C7D0DB;border-radius:4px;background:#fff;padding:5px 10px;width:260px;font-size:13px;color:#7E8A99}
+.tools .search b{color:#1C2733;font-weight:400}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #C7D0DB;border-radius:14px;background:#fff;padding:3px 10px;font-family:var(--f-num);font-size:12px;color:#5B6B7C;white-space:nowrap}
+.chip.on{background:#E3EBFA;border-color:#B9CDF0;color:#1E4FA3;font-weight:700}
+.chip .v{color:#1C2733;font-weight:700}
+.chip .car{font-size:9px;color:#7E8A99}
+.tools .cnt{margin-left:auto;font-family:var(--f-num);font-size:12px;color:#7E8A99;white-space:nowrap}
+.body{display:grid;grid-template-columns:minmax(0,1fr) 330px;min-height:0}
+.tblwrap{overflow:auto;min-height:0}
+.ct{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;margin:0}
+.ct th{position:sticky;top:0;background:#F6F7F9;border-bottom:1px solid #D4DAE2;font-family:var(--f-num);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;font-weight:700;padding:9px 10px;white-space:nowrap;z-index:2}
+.ct th.sort{color:#1E4FA3}
+.ct th.sort::after{content:" ▲";font-size:8px}
+.ct td{padding:7px 10px;border-bottom:1px solid #EEF1F4;white-space:nowrap;vertical-align:middle;color:#1C2733}
+.ct td.num,.ct th.num{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.ct td.nm{white-space:normal;min-width:190px}
+.ct td.nm b{font-weight:500;display:block;line-height:1.2}
+.ct td.nm small{font-family:var(--f-num);font-size:11.5px;color:#5B6B7C}
+.ct td.mute{color:#5B6B7C}
+.ct tr.on td{background:#E3EBFA}
+.ct tr.on td:first-child{box-shadow:inset 3px 0 0 #1F5FBF}
+.ct tr.unplaced td{color:#7E8A99}
+.ct tr.unplaced td.nm b{color:#5B6B7C}
+.ct .grp{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;color:#1E4FA3;background:#E3EBFA;border-radius:9px;padding:0 7px;line-height:17px}
+.ct .used{font-family:var(--f-num);font-size:12px;color:#1C2733}
+.ct .used.zero{color:#B45309;font-weight:700}
+.drawer{border-left:1px solid #E3E7EC;padding:16px 18px;overflow:auto;display:flex;flex-direction:column;gap:12px;background:#fff}
+.drawer .eyeb{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#7E8A99}
+.drawer h4{margin:0;font-size:16px;font-weight:600;line-height:1.25}
+.drawer .tk{font-family:var(--f-num);font-size:12.5px;color:#5B6B7C}
+.dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12.5px;margin:0}
+.dl dt{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7E8A99;padding-top:1px}
+.dl dd{margin:0;color:#1C2733}
+.usedin{border:1px solid #E3E7EC;border-radius:6px;overflow:hidden}
+.usedin .h{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;padding:7px 10px;background:#F6F7F9;border-bottom:1px solid #E3E7EC}
+.usedin .r{display:grid;gap:1px;padding:8px 10px;border-bottom:1px solid #EEF1F4;font-size:12.5px}
+.usedin .r:last-child{border-bottom:0}
+.usedin .r b{font-weight:500}
+.usedin .r small{font-family:var(--f-num);font-size:11.5px;color:#5B6B7C}
+.usedin .r a{color:#1E4FA3;font-family:var(--f-num);font-size:11px;letter-spacing:.06em;text-transform:uppercase;text-decoration:none}
+.btn{display:inline-block;font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:6px 11px;border-radius:4px;border:1px solid #C7D0DB;color:#1C2733;background:#fff;white-space:nowrap}
+.btn.pri{background:#1F5FBF;border-color:#1F5FBF;color:#fff}
+.drawer .acts{display:flex;gap:8px;margin-top:auto}
+.dlg-f{display:flex;align-items:center;gap:14px;padding:0 20px;border-top:1px solid #D4DAE2;background:#F6F7F9;font-family:var(--f-num);font-size:12px;color:#7E8A99}
+.dlg-f .ro{margin-left:auto;color:#5B6B7C}
+
+/* smaller state mocks */
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:14px 0 0}
+.state{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:12px 14px}
+.state .cap{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 8px;font-weight:700}
+.state .shot{background:#fff;color:#1C2733;border:1px solid #D4DAE2;border-radius:4px;padding:10px 12px;font-size:13px}
+.state .shot .note{font-size:12px;color:#5B6B7C;margin-top:6px}
+.state .shot .warnbar{background:#FEF3C7;color:#7A4A0A;border:1px solid #F3D48A;border-radius:4px;padding:7px 10px;font-size:12.5px}
+.state .shot .errbar{background:#FDE8E8;color:#9B1C1C;border:1px solid #F1B8B2;border-radius:4px;padding:7px 10px;font-size:12.5px}
+.state .shot .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #EEF1F4;font-size:12.5px}
+.state .shot .row b{font-weight:500}
+.state .shot .row small{display:block;font-family:var(--f-num);color:#5B6B7C;font-size:11.5px}
+.state .shot .row .zero{font-family:var(--f-num);color:#B45309;font-weight:700;font-size:12px}
+.entry{background:#12233F;color:#fff;border-radius:6px;padding:14px 16px;font-size:13px}
+.entry b{display:block;font-size:15px;font-weight:500}
+.entry .sub{color:#F2B25C;font-size:12px;font-weight:700;margin-bottom:8px}
+.entry a{color:#8FB3F2;font-family:var(--f-num);font-size:12px;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;border-bottom:1px solid rgba(143,179,242,.4);margin-right:14px}
+.hdr-mock{background:#fff;color:#1C2733;border:1px solid #D4DAE2;border-radius:6px;padding:12px 16px;display:flex;align-items:center;gap:16px}
+.hdr-mock .ttl{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="page">
+  <p class="eyebrow">Proposal Tool · design note</p>
+  <h1>Product Catalogue</h1>
+  <p class="lede">A view-only window onto the delivered product table for admins: browse, search, filter and sort every product the sleeve repository can select from, see where each one is used, and see where the table came from — without a way to change any of it.</p>
+  <div class="meta"><span>2 September 2026</span><span>Status: built 2 September 2026, as specified below</span><span>Recorded as D58 in DEVIATIONS.md</span></div>
+
+  <h2>What is being asked</h2>
+  <ul>
+    <li><b>A PMG product catalogue in the UI</b> — the whole table, not just the slice a picker shows.</li>
+    <li><b>View only.</b> The catalogue is delivered (D56); it changes by delivery, never through the app. Nothing here writes.</li>
+    <li><b>Admin only.</b> The same role that maintains sleeves; nobody else sees the entry.</li>
+  </ul>
+
+  <h2>Where things stand today</h2>
+  <p>Since D56 the products live in a one-table extract — 73 rows, eleven columns, <code>ProductId</code> the key — read by <code>products.py</code> and joined into sleeves when they are served. The only place an admin currently <em>sees</em> products is the picker inside the sleeve editor, and a picker is built to answer one question ("which product goes here?") rather than the ones a catalogue answers: what do we have, what does it cost, which fee group is it in, where is it already used, and is this the delivery we think it is.</p>
+  <p>Two facts shape the design. The console already fetches the whole catalogue and every sleeve in one call (<code>GET /scenario/repository</code>), so "where is this product used" is a join the page can do for free. And the attribute columns are closed vocabularies in practice — five vehicles, two styles, two sources, four liquidities, four exposure currencies, five fee groups in the stand-in — so the filters can be derived from the data rather than hardcoded, the way every other selector in the tool is (spec 4.3).</p>
+
+  <h2>Design</h2>
+
+  <h3>1 · Where it lives: a second view of the admin console</h3>
+  <p>Not a new overlay. The Sleeve Repository console gains a view switch in its header — <b>Sleeves · Catalogue</b> — and the catalogue is the second view: same fetch, same admin gate, same dialog chrome, same Escape and focus behaviour. Deep links <code>#repository</code> and <code>#catalogue</code>; the admin entry links on the landing page and in the rail's brand block become two, <em>Sleeve repository</em> and <em>Product catalogue</em>, both hidden unless <code>capabilities.canAdmin</code>. The implementation-type control belongs to the sleeve view only: a catalogue is type-independent, so on the catalogue view that space carries the toolbar instead.</p>
+
+  <h3>2 · The table</h3>
+  <p>A catalogue is a table, so it is shown as one — the same reading as the implementation table, at the same 13px, digits tabular and right-aligned:</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Column</th><th>What it shows</th></tr>
+    <tr><td>Product</td><td>Name on one line, ticker and asset class beneath it in the condensed face. The sticky first column when the table scrolls sideways.</td></tr>
+    <tr><td>Style · Vehicle · Source · Liquidity · Exposure</td><td>The attribute columns as the implementation table shows them.</td></tr>
+    <tr><td>Cost %</td><td><code>ProductCost</code>, two places.</td></tr>
+    <tr><td>Fee group</td><td>As a pill, the same treatment the picker gives it.</td></tr>
+    <tr><td>Used in</td><td>How many sleeves hold the product, across every implementation type. <b>0</b> is amber: a product delivered but not yet placed anywhere is exactly what an admin building sleeves wants to find.</td></tr>
+  </table></div>
+  <p>Every column sorts on click; the default order is the <b>delivery's own</b>, since the team that authored the extract grouped it deliberately. The toolbar carries a search box (name, ticker, asset class, vehicle, source, fee group — the same fields the picker matches) and one filter chip per attribute vocabulary, each listing the values found in the data with counts; a chip in force is shown filled. A three-way toggle narrows to <em>placed</em> / <em>not yet placed</em> / all. The count on the right always says what is showing out of what exists.</p>
+
+  <h3>3 · The detail drawer</h3>
+  <p>Selecting a row opens a drawer on the right rather than a modal on the modal: every field laid out in full, then <b>Used in</b> — one entry per sleeve holding the product, as <em>type · category · sleeve · weight</em>, each with <em>Open</em>, which switches to the sleeve view with that sleeve selected. That cross-link is the point of putting the catalogue inside the console: an admin goes from "what is this product" to "fix the sleeve it is in" without leaving. A <em>View fee card</em> action opens the existing card viewer (D55) pivoted to the product's fee group, because the rate is the one thing about a product that lives elsewhere.</p>
+
+  <h3>4 · Provenance and honesty</h3>
+  <p>The footer names the catalogue file, its modified time and its row count — the same line the sleeve view carries — and the legend states what the fee card's does: <em>the catalogue is delivered and read only; it changes by delivery, not here.</em> A stand-in catalogue (the packaged one) is flagged as such, the way placeholder fee rates are.</p>
+  <p>One warning belongs at the top of this view because this is where it is answerable. If a sleeve references a product the catalogue no longer carries — a new delivery dropped it — that sleeve is broken and withheld from the pickers (D57). The catalogue view lists those <b>orphaned references</b> in a notice: <em>2 products referenced by sleeves are not in this catalogue</em>, naming them and the sleeves they break, with <em>Open</em> to each. The server derives the list (a small <code>orphanProducts()</code> in the repository, also added to <code>sleeveTools --census</code>), so the console and the command line agree.</p>
+
+  <h2>The console, catalogue view</h2>
+  <div class="mock-wrap"><div class="mock" aria-label="Mockup of the Product Catalogue view">
+    <div class="bg-rail"></div><div class="scrim"></div>
+    <div class="dlg" role="img">
+      <div class="dlg-h">
+        <span class="ttl">Sleeve Repository</span>
+        <div class="seg"><span>Sleeves</span><span class="on">Catalogue</span></div>
+        <span class="src">Catalogue · products.csv · 73 products · delivered 2 Sep 2026 · stand-in</span>
+        <span class="x">×</span>
+      </div>
+      <div class="tools">
+        <span class="search"><span>⌕</span><b>credit</b></span>
+        <span class="chip">Fee group <span class="car">▼</span></span>
+        <span class="chip on">Vehicle <span class="v">Mutual Fund, SMA</span> <span class="car">▼</span></span>
+        <span class="chip">Style <span class="car">▼</span></span>
+        <span class="chip">Source <span class="car">▼</span></span>
+        <span class="chip">Liquidity <span class="car">▼</span></span>
+        <span class="chip">Exposure <span class="car">▼</span></span>
+        <span class="chip">Placed · all <span class="car">▼</span></span>
+        <span class="cnt">Showing 8 of 73</span>
+      </div>
+      <div class="body">
+        <div class="tblwrap"><table class="ct">
+          <thead><tr><th class="sort">Product</th><th>Style</th><th>Vehicle</th><th>Source</th><th>Liquidity</th><th>Exposure</th><th class="num">Cost %</th><th>Fee group</th><th class="num">Used in</th></tr></thead>
+          <tbody>
+            <tr><td class="nm"><b>Ashfield Global Credit Fund</b><small>AGCIX · IG Corporate</small></td><td>Active</td><td>Mutual Fund</td><td>External</td><td>Daily</td><td>Local</td><td class="num">0.55</td><td><span class="grp">Core Active</span></td><td class="num used">2</td></tr>
+            <tr><td class="nm"><b>Ashfield Social Impact Bond</b><small>ASIBX · Social Bonds</small></td><td>Active</td><td>Mutual Fund</td><td>External</td><td>Daily</td><td>Local</td><td class="num">0.62</td><td><span class="grp">Specialist Active</span></td><td class="num used">1</td></tr>
+            <tr><td class="nm"><b>Calderwood Local EM Debt</b><small>CLEDX · EM Debt</small></td><td>Active</td><td>Mutual Fund</td><td>External</td><td>Daily</td><td>Local</td><td class="num">0.91</td><td><span class="grp">Specialist Active</span></td><td class="num used">1</td></tr>
+            <tr><td class="nm"><b>GS Green Bond Fund</b><small>GSGBX · Green Bonds</small></td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td>USD</td><td class="num">0.48</td><td><span class="grp">Specialist Active</span></td><td class="num used">1</td></tr>
+            <tr class="on"><td class="nm"><b>GS US Corporate Bond Fund</b><small>GSUCX · IG Corporate</small></td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td>USD</td><td class="num">0.42</td><td><span class="grp">Core Active</span></td><td class="num used">2</td></tr>
+            <tr><td class="nm"><b>GS ESG US Corporate Bond Fund</b><small>GSECX · IG Corporate</small></td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td>USD</td><td class="num">0.44</td><td><span class="grp">Core Active</span></td><td class="num used">1</td></tr>
+            <tr><td class="nm"><b>GSAM Intermediate Credit SMA</b><small>— · IG Corporate</small></td><td>Active</td><td>SMA</td><td>Internal</td><td>Daily</td><td>USD</td><td class="num">0.28</td><td><span class="grp">Core Active</span></td><td class="num used">2</td></tr>
+            <tr class="unplaced"><td class="nm"><b>GSAM Private Credit SMA</b><small>— · Private Credit</small></td><td>Active</td><td>SMA</td><td>Internal</td><td>Drawdown</td><td>USD</td><td class="num">1.10</td><td><span class="grp">Alternatives</span></td><td class="num used zero">0</td></tr>
+          </tbody>
+        </table></div>
+        <div class="drawer">
+          <span class="eyeb">Product</span>
+          <h4>GS US Corporate Bond Fund</h4>
+          <span class="tk">GSUCX · IG Corporate · gs-us-corporate-bond-fund</span>
+          <dl class="dl">
+            <dt>Style</dt><dd>Active</dd>
+            <dt>Vehicle</dt><dd>Mutual Fund</dd>
+            <dt>Source</dt><dd>Internal</dd>
+            <dt>Liquidity</dt><dd>Daily</dd>
+            <dt>Exposure</dt><dd>USD</dd>
+            <dt>Cost</dt><dd>0.42%</dd>
+            <dt>Fee group</dt><dd>Core Active</dd>
+          </dl>
+          <div class="usedin">
+            <div class="h">Used in · 2 sleeves</div>
+            <div class="r"><b>Funds Only · 45%</b><small>PMG Multi-Asset Portfolio · Investment Grade Fixed Income</small><a>Open in repository →</a></div>
+            <div class="r"><b>Funds Only · 45%</b><small>US Onshore · Investment Grade Fixed Income</small><a>Open in repository →</a></div>
+          </div>
+          <div class="acts"><span class="btn">View fee card · Core Active</span></div>
+        </div>
+      </div>
+      <div class="dlg-f">
+        <span>Catalogue · productSource/products.csv · modified 2 Sep 2026 17:17 · 73 products</span>
+        <span class="ro">Delivered and read only — it changes by delivery, not here.</span>
+      </div>
+    </div>
+  </div></div>
+  <p style="font-size:13px;color:var(--ink-3);margin-top:6px">Shown mid-use: a search for "credit" narrowed by a Vehicle filter, one row selected with its drawer open. The last row illustrates the not-yet-placed state, which the stand-in catalogue has none of — every one of its 73 products came out of a sleeve — but a real delivery will.</p>
+
+  <h3>The states it has to carry</h3>
+  <div class="states">
+    <div class="state"><p class="cap">Orphaned references</p><div class="shot">
+      <div class="warnbar">2 products referenced by sleeves are not in this catalogue: <b>ashfield-social-impact-bond</b> (Green &amp; Social Bonds, PMG ESG), <b>gs-esg-equity-ucits</b> (ESG Core Equity, Irish Onshore). Those sleeves are withheld from the pickers.</div>
+      <div class="note">Shown at the top of the catalogue view and in <code>sleeveTools --census</code>. Each names the sleeve it breaks, with a link to it.</div></div></div>
+    <div class="state"><p class="cap">Not yet placed</p><div class="shot">
+      <div class="row"><div><b>GSAM Private Credit SMA</b><small>— · Private Credit · Alternatives</small></div><span class="zero">0</span></div>
+      <div class="note">A delivered product no sleeve holds. Amber in the Used-in column, and one click away through the <em>Placed · not yet</em> filter, so an admin can see what the delivery added.</div></div></div>
+    <div class="state"><p class="cap">Nothing matches</p><div class="shot">
+      <div style="font-size:13px;color:#5B6B7C;padding:10px 0">No product matches <b>"treasury"</b> with Vehicle = SMA. <a style="color:#1E4FA3">Clear the filters</a> · 73 in the catalogue.</div>
+      <div class="note">The count and the filters in force are always stated, so an empty table never reads as an empty catalogue.</div></div></div>
+    <div class="state"><p class="cap">Catalogue cannot be read</p><div class="shot">
+      <div class="errbar">The product catalogue could not be read: products.csv: gs-x-fund fee group 'Bespoke' is not one of Alternatives, Asset Allocation, Core Active, Passive, Specialist Active.</div>
+      <div class="note">The reader's own message, verbatim — the same 502 the sleeve view shows. Nothing is served from a bad delivery, so the fix is the file, not the app.</div></div></div>
+  </div>
+
+  <h3>Where an admin gets in</h3>
+  <div class="grid2">
+    <div>
+      <div class="hdr-mock"><span class="ttl">Sleeve Repository</span><div class="seg"><span class="on">Sleeves</span><span>Catalogue</span></div></div>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:8px">A view switch in the console header. The implementation-type control shows on the sleeve view only.</p>
+    </div>
+    <div>
+      <div class="entry"><b>Portfolio Management Group</b><div class="sub">Proposal Tool</div><a>Sleeve repository ↗</a><a>Product catalogue ↗</a></div>
+      <p style="font-size:13px;color:var(--ink-3);margin-top:8px">Two links in the rail's brand block and on the landing page, admin-only, opening the console on the named view. <code>#catalogue</code> deep-links.</p>
+    </div>
+  </div>
+
+  <h2>Behaviour and rules</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Rule</th><th>Where</th><th>Note</th></tr>
+    <tr><td>Nothing writes</td><td>Everywhere</td><td>No input takes a value that is sent anywhere. The API stays <code>GET</code> for the catalogue; the three repository writes touch sleeves only.</td></tr>
+    <tr><td>Admin only</td><td><code>requireAdmin</code> on the fetch; <code>canAdmin</code> for the entry</td><td>As asked. Because the view writes nothing, opening it to editors later is a one-line change of gate, if wanted.</td></tr>
+    <tr><td>Filters are derived from the data</td><td>Console</td><td>Each chip lists the values present, with counts. A vocabulary the delivery adds appears without a code change (spec 4.3).</td></tr>
+    <tr><td>Used-in is a client join</td><td>Console</td><td>Products × sleeves from the one fetch; no new endpoint. Counts and the drawer list agree by construction.</td></tr>
+    <tr><td>Orphans are server-derived</td><td><code>sleeveRepo.orphanProducts()</code>, in the payload and in <code>--census</code></td><td>The console and the command line must not disagree about what is broken.</td></tr>
+    <tr><td>Default order is the delivery's</td><td>Console</td><td>Sorting any column is one click; sorting back is another. The file's own order is a fact about the delivery worth being able to see.</td></tr>
+    <tr><td>The view survives a save on the other view</td><td>Console</td><td>Saving a sleeve updates the in-memory sleeve list the join reads, so Used-in is current without a refetch.</td></tr>
+  </table></div>
+
+  <h2>API</h2>
+  <p>No new route. <code>GET /scenario/repository</code> already returns <code>products</code> and <code>catalogue</code>; it gains one field, <code>orphans</code> — <code>[{productId, sleeves: [{id, variant, category, name}]}]</code>. The fee card viewer's existing fetch serves the drawer's action.</p>
+
+  <h2>Work plan</h2>
+  <ol class="step-list">
+    <li><b>View switch</b> <span class="size">S</span> — header segmented control, <code>#catalogue</code> route, second entry link on landing and rail, the type control scoped to the sleeve view.</li>
+    <li><b>Table</b> <span class="size">M</span> — render, sort, search, facet chips derived from the data with counts, placed/unplaced toggle, sticky header and first column, the count line, the empty state.</li>
+    <li><b>Drawer</b> <span class="size">S</span> — fields, Used-in from the join, <em>Open in repository</em> switching view and selection, <em>View fee card</em> into the existing viewer at the product's group.</li>
+    <li><b>Orphans</b> <span class="size">S</span> — <code>orphanProducts()</code> in the repository, in the payload and in <code>--census</code>; the notice with links.</li>
+    <li><b>Tests</b> <span class="size">S</span> — <code>orphanProducts()</code> (none in the seed; some after a catalogue with a product removed), the payload field, the view's pure helpers (facet derivation, the used-in join, the filter predicate) run through <code>node</code> the way the rounding and tilt mirrors are.</li>
+    <li><b>Docs</b> <span class="size">S</span> — D58; TRANSPLANT's console paragraph; the two-link entry in PORTING.</li>
+  </ol>
+  <p>Roughly 600 lines, almost all in <code>repository.js</code> and its stylesheet. The server change is one function and one payload field.</p>
+
+  <h2>Decisions I would make, and the ones that are yours</h2>
+  <div class="q">
+    <div class="item"><span class="num">1</span><div><b>Inside the console, as a second view.</b><p>One fetch, one gate, one dialog, and the cross-link from a product to the sleeve that holds it is the feature. A separate overlay would duplicate the chrome and lose that link. <span class="rec">Recommended: second view.</span></p></div></div>
+    <div class="item"><span class="num">2</span><div><b>Admin only, as asked.</b><p>A read-only catalogue would be safe for editors too, and a PWA choosing a sleeve might well want to see what is in it. Not proposed here; noted because the gate is one line if that changes. <span class="rec">Assumed: admin only.</span></p></div></div>
+    <div class="item"><span class="num">3</span><div><b>Delivery order by default, every column sortable.</b><p>Name A–Z is the obvious alternative and is one click away. <span class="rec">Recommended: delivery order.</span></p></div></div>
+    <div class="item"><span class="num">4</span><div><b>Rates stay in the fee card.</b><p>A product's management fee depends on the schedule, the account-size tier and the level, none of which a catalogue knows. The drawer links to the card at the product's group rather than guessing a rate. <span class="rec">Recommended: link, don't show.</span></p></div></div>
+    <div class="item"><span class="num">5</span><div><b>No download.</b><p>A <em>Download CSV</em> of the catalogue is read-only and cheap, but the delivery already exists as a file where it was delivered; adding a second copy that leaves the app is a choice about data handling rather than UI. <span class="rec">Left out unless wanted.</span></p></div></div>
+  </div>
+
+  <div class="callout warn">
+    <p><b>Data caveat, unchanged.</b> The stand-in catalogue is the 73 products the authored sleeve library carried, with slug ids and rule-of-thumb fee groups. The view shows whatever the delivery says; it does not make it true.</p>
+  </div>
+</div>
