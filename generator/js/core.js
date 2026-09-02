@@ -28,9 +28,17 @@ var state = {
      A portfolio that cannot fund it renders the toggle off and disabled,
      and tiltCategories no-ops, so this one default covers both (D50). */
   tacticalTilt: true,
-  /* The strategic volatility premium (D53): a product a PWA adds, so off by
-     default, and forbidden outside the currencies the schema names. */
-  volPremium: false,
+  /* The strategic volatility premium (D53): held by default wherever the
+     currency allows it, like the tilt, and forbidden outside the currencies
+     the schema names - App.volPremium() applies that gate on read. */
+  volPremium: true,
+  /* The base portfolio tier rolls up on the implementation step: those
+     settings are answered by then, and the rail is long. Auto on every step
+     change, so the chevron's override lasts as long as the step does;
+     baseRoll is the one-shot that tells the renderer to animate rather than
+     to paint the new state flat. */
+  baseCollapsed: false,
+  baseRoll: null,                   /* null | 'up' | 'down' */
   /* Whether the proposal shows fees at all (D52). Off to begin with: a fee is
      a conversation a PWA opens deliberately, and until they do, the pricing
      controls and the three fee columns are not in the page. */
@@ -870,7 +878,7 @@ async function commitMandate() {
       /* the server sets the prescribed fee level on a new scenario, and
          leaves fees excluded until they are asked for (D52) */
       state.includeFees = !!(created.scenario && created.scenario.includeFees);
-      state.volPremium = !!(created.scenario && created.scenario.volPremium);
+      state.volPremium = !(created.scenario && created.scenario.volPremium === false);
       state.feeSchedule = (created.scenario && created.scenario.feeSchedule) || null;
       state.feeLevel = (created.scenario && created.scenario.feeLevel) || null;
       try {
@@ -937,9 +945,10 @@ async function boot() {
       /* absent means a scenario stored before the field existed, which
          takes the default; only an explicit false turns it off */
       state.tacticalTilt = stored.tacticalTilt !== false;
-      /* off unless it was explicitly turned on, and never carried into a
-         currency that cannot hold it */
-      state.volPremium = !!stored.volPremium;
+      /* absent means a scenario stored before the field existed, which takes
+         the default; only an explicit false turns it off. Never carried into
+         a currency that cannot hold it - App.volPremium() sees to that. */
+      state.volPremium = stored.volPremium !== false;
       state.feeSchedule = stored.feeSchedule || null;
       state.feeLevel = stored.feeLevel || null;
       /* A scenario stored before the toggle existed has no includeFees, and
@@ -1045,11 +1054,50 @@ function renderBasis() {
       + '<p>Rebuild ' + count + ' portfolio' + (count === 1 ? '' : 's') + ' ' + what + '?</p>'
       + '<div><button type="button" class="btn btn-primary" id="basis-apply">Rebuild</button>'
       + '<button type="button" class="btn btn-ghost" id="basis-cancel">Cancel</button></div></div>';
-  } else {
-    html += '<p class="field-note" style="margin-top:8px">Fixed across every column. Changing '
-      + 'either rebuilds all portfolios.</p>';
   }
   el.innerHTML = html;
+}
+
+/* Collapsing the base tier. *quiet* is a step change, which already refreshes;
+   a chevron click refreshes too, so both arrive at applyBaseRoll below. */
+function setBaseCollapsed(on, quiet) {
+  on = !!on;
+  if (on === state.baseCollapsed) return;
+  state.baseCollapsed = on;
+  state.baseRoll = on ? 'up' : 'down';
+  if (!quiet) {
+    announce('polite', on ? 'Base portfolio settings hidden.'
+                          : 'Base portfolio settings shown.');
+  }
+}
+
+/* The roll itself. renderBase replaces the tier's innerHTML, so the body is a
+   brand-new node in its final state and a CSS transition would have nothing to
+   move from. So paint the OLD state first, force the layout, then flip on the
+   next frame - the transition then runs from a real starting height. Without a
+   pending roll the state is simply painted, which is what a re-render for any
+   other reason should do. */
+function applyBaseRoll() {
+  var el = document.getElementById('tier-base'); if (!el) return;
+  var body = el.querySelector('.tier-body');
+  var roll = state.baseRoll;
+  state.baseRoll = null;
+  if (!body || !roll || prefersReducedMotion()) {
+    el.classList.toggle('is-rolled', state.baseCollapsed);
+    return;
+  }
+  body.classList.add('no-roll');                 /* suppress the transition */
+  el.classList.toggle('is-rolled', roll === 'down');
+  void body.offsetHeight;                        /* commit that as the start */
+  body.classList.remove('no-roll');
+  window.requestAnimationFrame(function () {
+    el.classList.toggle('is-rolled', roll === 'up');
+  });
+}
+
+function prefersReducedMotion() {
+  return !!(window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 function renderBase() {
@@ -1107,7 +1155,18 @@ function renderBase() {
   el.className = 'tier' + ring;
   /* Allocation, then risk level, then the two exclusions: the selects are the
      choice, the tick boxes narrow what it produced. */
-  el.innerHTML = '<div class="tier-h"><h3>Base portfolio</h3></div>'
+  /* The heading carries the chevron, so the tier can be reopened wherever it
+     was rolled up; the controls go in .tier-body, which is the thing that
+     rolls. aria-expanded and aria-controls carry the state to a reader. */
+  el.innerHTML = '<div class="tier-h"><h3 id="basetitle">Base portfolio</h3>'
+    + '<button type="button" class="tier-roll" id="baseroll"'
+    + ' aria-expanded="' + (state.baseCollapsed ? 'false' : 'true') + '"'
+    + ' aria-controls="basebody" aria-label="'
+    + (state.baseCollapsed ? 'Show' : 'Hide') + ' the base portfolio settings"'
+    + ' title="' + (state.baseCollapsed ? 'Show' : 'Hide')
+    + ' the base portfolio settings"><span aria-hidden="true">&#8250;</span>'
+    + '</button></div>'
+    + '<div class="tier-body" id="basebody">'
     + '<div class="basis" style="grid-template-columns:1fr">'
     + '<div class="field"><label for="bpv">Implementation Variant</label>'
     + '<select id="bpv"' + disabled + '>' + variantOptions + '</select></div>'
@@ -1129,7 +1188,8 @@ function renderBase() {
           + ' holds no real estate.</p>'
         : (allocation && forceExRE)
         ? '<p class="chk-note" id="bprenote">Required by ' + esc(variant) + '.</p>' : '')
-    + '</div>';
+    + '</div></div>';
+  applyBaseRoll();
 }
 
 function renderBuilt() {
@@ -2412,6 +2472,8 @@ document.addEventListener('click', function (e) {
   }
   var toggle = e.target.closest ? e.target.closest('#railtoggle') : null;
   if (toggle) { toggleRail(); return; }
+  var roll = e.target.closest ? e.target.closest('#baseroll') : null;
+  if (roll) { setBaseCollapsed(!state.baseCollapsed, false); refresh(); return; }
   var columnRemove = e.target.closest ? e.target.closest('.col-rm') : null;
   if (columnRemove) { removeComparison(+columnRemove.dataset.remove); return; }
   var retry = e.target.closest ? e.target.closest('.col-retry') : null;
@@ -2605,9 +2667,18 @@ return {
   step: function () { return state.step; },
   implSeen: function () { return state.implSeen; },
   setStep: function (s) {
+    var wasStep = state.step;
     state.step = s;
     if (s === 'impl') state.implSeen = true;   /* stop beckoning once opened */
+    /* The base tier follows the step: rolled up while the implementation is
+       being built, open again on the allocation step where it is the work. */
+    if (s !== wasStep) setBaseCollapsed(s === 'impl', true);
     announce('polite', s === 'impl' ? 'Implementation step.' : 'Asset allocation step.');
+    refresh();
+  },
+  baseCollapsed: function () { return state.baseCollapsed; },
+  toggleBaseCollapsed: function () {
+    setBaseCollapsed(!state.baseCollapsed, false);
     refresh();
   },
   schema: function () { return state.schema; },

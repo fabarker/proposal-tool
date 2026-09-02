@@ -89,7 +89,7 @@ def _scenarioPayload(state: dict) -> dict:
         'comparisons': state['comparisons'],
         'variant': state.get('variant'),
         'tacticalTilt': bool(state.get('tacticalTilt', True)),
-        'volPremium': bool(state.get('volPremium', False)),
+        'volPremium': bool(state.get('volPremium', True)),
         'sleeves': state['sleeves'],
         'includeFees': _includeFees(state),
         'feeSchedule': state.get('feeSchedule'),
@@ -359,7 +359,7 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
         content = port.build_export(basis, mandate, results,
                                     {'sleeves': sleeves, 'variant': variant,
                                      'tacticalTilt': bool(state.get('tacticalTilt', True)),
-                                     'volPremium': bool(state.get('volPremium', False)),
+                                     'volPremium': bool(state.get('volPremium', True)),
                                      'includeFees': includeFees,
                                      'feeSchedule': feeSchedule, 'feeLevel': feeLevel})
         filename = exportFilename(basis)

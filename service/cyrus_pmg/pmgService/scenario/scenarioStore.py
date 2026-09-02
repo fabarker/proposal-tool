@@ -95,10 +95,11 @@ def createScenario(mandate: MandateInput, basis: BasisInput) -> dict:
             # it off, and tiltedCategories no-ops, on a portfolio that
             # cannot fund it, so one default serves both cases
             'tacticalTilt': True,
-            # The strategic volatility premium is a product a PWA adds, not
-            # house practice to be defaulted in (D53); a EUR or CHF book
-            # cannot hold it at all.
-            'volPremium': False,
+            # On by default wherever the book may hold it, the same shape as
+            # the tilt above: canHoldVolPremium no-ops it in a currency that
+            # may not, and the client renders the toggle off and disabled
+            # there, so one default serves every currency (D53).
+            'volPremium': True,
             'sleeves': {},
             # a proposal shows no fees until a PWA asks for them (D52); the
             # schedule is then a choice with no default, like the variant,

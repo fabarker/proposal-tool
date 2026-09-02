@@ -19,6 +19,31 @@ SHARED_CSS = r"""
   text-transform:uppercase;color:var(--rail-ink-3);font-weight:700}
 .tier-count{font-family:var(--f-num);font-size:11.5px;letter-spacing:.08em;color:var(--rail-ink-2);
   font-weight:700}
+/* ── rolling a tier up ──
+   The base portfolio's settings are answered by the time step 2 opens, so the
+   tier rolls up there and the chevron reopens it. max-height is the animatable
+   stand-in for auto height; 520px clears the tier at its tallest (variant,
+   allocation, risk, the exclusion and its note). visibility follows on a delay
+   so the controls leave the tab order once they are out of sight, and arrives
+   immediately on the way back in. */
+.tier-roll{appearance:none;background:none;border:0;padding:0;margin:0 0 0 auto;
+  width:22px;height:22px;display:grid;place-items:center;cursor:pointer;align-self:center;
+  color:var(--rail-ink-3);font-size:15px;line-height:1;border-radius:4px;
+  transform:rotate(90deg);transition:transform 320ms cubic-bezier(.4,0,.2,1),
+  color 150ms linear}
+.tier-roll:hover{color:var(--rail-ink)}
+.tier-roll:focus-visible{outline:2px solid var(--rail-focus);outline-offset:2px}
+.tier.is-rolled .tier-roll{transform:rotate(0deg)}
+.tier-body{overflow:hidden;max-height:520px;opacity:1;visibility:visible;
+  transition:max-height 420ms cubic-bezier(.4,0,.2,1),opacity 240ms linear 60ms,
+  visibility 0s linear 0s}
+.tier.is-rolled .tier-body{max-height:0;opacity:0;visibility:hidden;
+  transition:max-height 420ms cubic-bezier(.4,0,.2,1),opacity 200ms linear,
+  visibility 0s linear 420ms}
+/* the frame in which the renderer paints the outgoing state, before it flips */
+.tier-body.no-roll{transition:none}
+@media (prefers-reduced-motion:reduce){
+  .tier-roll,.tier-body,.tier.is-rolled .tier-body{transition:none}}
 .tier-edit{background:none;border:0;padding:0;font:inherit;font-size:12px;letter-spacing:.06em;
   text-transform:uppercase;color:var(--rail-accent);cursor:pointer;font-weight:700}
 .tier-edit:hover{text-decoration:underline}

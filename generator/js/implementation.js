@@ -294,16 +294,6 @@ function totals(groups) {
    is built, not after (D49). What remains here is the answer, shown because
    every sleeve below is scoped by it and a PWA arriving at step 2 needs to
    see which book they are implementing. */
-function variantSummary() {
-  var chosen = App.variant();
-  if (!chosen) return '';
-  return '<div class="vr-field done">'
-    + '<label>Implementation Variant</label>'
-    + '<p class="vr-value">' + App.esc(chosen) + '</p>'
-    + '<p class="vr-note">Set with the base portfolio. Sleeves below are those '
-    + App.esc(chosen) + ' can hold.</p></div>';
-}
-
 /* ---- the tactical tilt toggle (D50) -------------------------------------
    Offered disabled, with the reason, where the strategic portfolio cannot
    fund it - every All Equity book holds no investment grade fixed income at
@@ -423,7 +413,10 @@ function scrollFeeGroupIntoView(smooth) {
 /* Strip the one-shot classes once they have played, so nothing is left
    holding an overflow or an animation the next render would replay - and
    correct the scroll once the block has its full height, since until then
-   the rail had less to scroll through than the target asked for. */
+   the rail had less to scroll through than the target asked for. That
+   correction is smooth too: an instant one on top of the smooth scroll that
+   is still running is exactly the jump it exists to avoid, and where the
+   first scroll already arrived it is a no-op. */
 function settleFeeReveal() {
   var played = document.querySelectorAll('.fee-body.unravel, .tbl.impl.fees-in');
   Array.prototype.forEach.call(played, function (node) {
@@ -431,7 +424,7 @@ function settleFeeReveal() {
       node.removeEventListener('animationend', handler);
       node.classList.remove('unravel');
       node.classList.remove('fees-in');
-      if (node.classList.contains('fee-body')) scrollFeeGroupIntoView(false);
+      if (node.classList.contains('fee-body')) scrollFeeGroupIntoView(true);
     });
   });
 }
@@ -542,7 +535,7 @@ function renderRail() {
   var head = '<div class="tier-h"><h3>Sleeves</h3>'
     + (chosenVariant && base && base.status === 'ready'
         ? '<span class="tier-count">' + counts.filled + ' of ' + counts.total + '</span>'
-        : '') + '</div>' + variantSummary() + tacticalTiltField() + volPremiumField();
+        : '') + '</div>' + tacticalTiltField() + volPremiumField();
 
   /* Pricing closes the tier on every path, including the ones that never draw
      a picker: the schedule and the level are scenario state, answerable while
@@ -608,18 +601,6 @@ function renderRail() {
   html += '</div><p class="sl-progress">' + counts.filled + ' of ' + counts.total
     + ' categories have a sleeve.'
     + '<span class="sl-bar"><i style="width:' + progressPct + '%"></i></span></p>';
-  /* Both overlays introduce an auto-attached category, so the note names the
-     ones actually present rather than the first in the list (D53). */
-  var autos = baseCategories().filter(function (c) { return isAuto(c.name); })
-    .map(function (c) { return c.name; });
-  if (autos.length) {
-    html += '<p class="field-note">'
-      + App.esc(autos.length > 1
-          ? autos.slice(0, -1).join(', ') + ' and ' + autos[autos.length - 1]
-          : autos[0])
-      + (autos.length > 1 ? ' are' : ' is')
-      + ' attached automatically by the toggles above.</p>';
-  }
   html += feeFields();
   el.innerHTML = html;
 }

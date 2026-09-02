@@ -68,19 +68,9 @@ IMPL_CSS = r"""
   .step-label small{display:none}
 }
 
-/* ── implementation variant: the first field of step 2 (D29) ──
-   Separated from the sleeve list by a rule rather than a heading: it gates
-   the list below it, so it reads as its precondition rather than as another
-   item in it. */
-.vr-field{display:grid;gap:5px;margin:0 0 14px;padding:0 0 14px;
-  border-bottom:1px solid var(--rail-line)}
-.vr-field label{font-size:13px;font-weight:600;color:var(--rail-ink-2);line-height:1.3}
-.vr-field.done label{color:var(--rail-ink)}
-.vr-field select{width:100%}
-/* the answered variant, read-only: it is chosen with the base portfolio on
-   step 1, so step 2 shows the value rather than a second control (D49) */
-.vr-field .vr-value{margin:0;font-size:14px;font-weight:600;color:var(--rail-ink);
-  line-height:1.35}
+/* The note under a segmented control or a level grid. It outlived the
+   read-only variant summary this file used to open with: the variant is
+   chosen with the base portfolio and step 2 no longer restates it. */
 .vr-note{margin:1px 0 0;font-size:12.5px;color:var(--rail-ink-3);line-height:1.45}
 /* the tactical tilt toggle: an implementation choice, so it sits with the
    sleeves rather than in the strategic tier (D50) */
