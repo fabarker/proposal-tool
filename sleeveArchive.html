@@ -1,0 +1,588 @@
+<meta charset="utf-8">
+<title>Sleeve Archive</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:58px 0 8px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h3{font-size:17px;font-weight:700;margin:26px 0 6px}
+h4{font-size:14px;font-weight:700;margin:0 0 4px}
+p{margin:0 0 12px;max-width:78ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:74ch}
+.sub{color:var(--ink-2);margin:0 0 14px;max-width:80ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:16px 0 0}
+.meta b{color:var(--ink-2);font-weight:700}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--surface-2);padding:1px 5px;border-radius:3px;white-space:nowrap}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:78ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:13.5px;margin:0;background:var(--surface)}
+table.doc th,table.doc td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc thead th{font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-strong);background:var(--surface-2)}
+table.doc tbody tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:500}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:7px;margin:12px 0 16px}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.04em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:13px 17px;margin:18px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)} .callout.ok{border-color:var(--ok)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media (max-width:980px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:15px 17px}
+.card p,.card li{font-size:13.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card .hd{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 7px}
+.q{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)}
+.q:last-child{border-bottom:0}
+.q .n{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:2px}
+.q b{display:block;margin-bottom:3px}
+.q p{margin:0;font-size:14px}
+
+/* option frames */
+.option{margin:26px 0 0;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;overflow:hidden}
+.option.rec{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.option-h{padding:16px 20px 14px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:20px;border-bottom:1px solid var(--line)}
+@media (max-width:1000px){.option-h{grid-template-columns:1fr}}
+.option-h .lbl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+.option-h h3{margin:0 0 6px;font-size:19px}
+.option-h .tag{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.option-h p,.option-h li{font-size:13.5px;margin:0 0 6px}
+.option-h ul{padding-left:18px;margin:0;max-width:none}
+.assump{padding:12px 20px 15px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2);background:var(--surface-2)}
+.assump b{color:var(--ink)}
+.assump p{margin:0;max-width:none}
+
+/* the console mock */
+.mock-wrap{background:#DDE3EA;padding:22px;overflow-x:auto}
+.mock{width:1040px;background:#F6F7F9;border-radius:8px;box-shadow:0 10px 30px rgba(12,24,44,.25);
+  overflow:hidden;font-family:var(--f-body);color:#1C2733;font-size:13px;line-height:1.45}
+.mock *{box-sizing:border-box}
+.m-h{display:flex;align-items:center;gap:10px;padding:11px 16px;background:#FFFFFF;border-bottom:1px solid #E3E7EC}
+.m-title{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#1C2733}
+.m-seg{display:flex;background:#EEF1F4;border-radius:5px;padding:2px}
+.m-seg span{padding:4px 11px;border-radius:4px;font-size:12px;color:#5B6B7C;white-space:nowrap}
+.m-seg span.on{background:#1C2733;color:#FFFFFF;font-weight:600}
+.m-seg.lt span.on{background:#FFFFFF;color:#1C2733;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.m-src{margin-left:auto;font-family:var(--f-num);font-size:11px;color:#7E8A99}
+.m-b{display:grid;grid-template-columns:200px 250px minmax(0,1fr);min-height:400px;background:#FFFFFF}
+.m-b.two{grid-template-columns:200px minmax(0,1fr)}
+.m-b.one{grid-template-columns:minmax(0,1fr)}
+.m-pane{border-right:1px solid #E3E7EC;display:flex;flex-direction:column;min-width:0}
+.m-pane:last-child{border-right:0}
+.m-ph{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:#7E8A99;padding:10px 14px 8px;border-bottom:1px solid #E3E7EC;display:flex;align-items:center;gap:6px}
+.m-ph .btn{margin-left:auto;background:#EEF1F4;border-radius:4px;padding:3px 8px;font-size:10px;color:#1C2733;letter-spacing:0;text-transform:none;font-weight:600}
+.m-cat{display:flex;align-items:center;gap:6px;padding:8px 14px 8px 11px;border-left:3px solid transparent;font-size:12.5px;color:#1C2733}
+.m-cat .n{margin-left:auto;font-family:var(--f-num);font-size:11.5px;color:#7E8A99}
+.m-cat.on{background:#E3EBFA;border-left-color:#1F5FBF;color:#1E4FA3;font-weight:600}
+.m-cat.on .n{color:#1E4FA3}
+.m-cat.gone.on{background:#EEF1F4;border-left-color:#7E8A99;color:#1C2733}
+.m-cat.mute{color:#5B6B7C}
+.m-sep{height:1px;background:#E3E7EC;margin:7px 11px}
+.m-row{padding:9px 14px;border-bottom:1px solid #E3E7EC;display:grid;gap:2px}
+.m-row b{font-size:12.5px;font-weight:600}
+.m-row small{font-size:11px;color:#5B6B7C}
+.m-row.on{background:#F0F4FB;box-shadow:inset 3px 0 0 #1F5FBF}
+.m-row.gone b{color:#5B6B7C}
+.m-row.gone.on{background:#EEF1F4;box-shadow:inset 3px 0 0 #7E8A99}
+.m-ed{padding:14px 18px;display:grid;gap:11px;align-content:start}
+.m-lbl{font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7E8A99;margin-bottom:4px}
+.m-fld{border:1px solid #D4DAE2;border-radius:5px;padding:7px 10px;font-size:12.5px;background:#FFFFFF;color:#1C2733}
+.m-fld.ro{background:#F6F7F9;color:#5B6B7C}
+.m-search{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid #E3E7EC;background:#FAFBFC}
+.m-search .box{flex:1;border:1px solid #D4DAE2;border-radius:5px;padding:5px 9px;font-size:12px;color:#7E8A99;background:#FFFFFF}
+.m-chip{font-family:var(--f-num);font-size:11px;font-weight:600;background:#EEF1F4;color:#1C2733;border-radius:11px;padding:2px 9px;white-space:nowrap}
+.m-chip.on{background:#E3EBFA;color:#1E4FA3}
+.m-chip.gh{background:#FFFFFF;border:1px solid #D4DAE2;color:#5B6B7C;font-weight:400}
+.m-btn{background:#FFFFFF;border:1px solid #D4DAE2;border-radius:5px;padding:5px 11px;font-size:11.5px;font-weight:600;color:#1C2733;white-space:nowrap}
+.m-btn.pri{background:#1F5FBF;border-color:#1F5FBF;color:#FFFFFF}
+.m-btn.dan{border-color:#E0B4B4;color:#9B1C1C}
+.m-btn.gh{background:none;border-color:transparent;color:#1F5FBF}
+.m-f{display:flex;align-items:center;gap:9px;padding:10px 16px;background:#FFFFFF;border-top:1px solid #E3E7EC}
+.m-f .sp{margin-left:auto}
+.m-note{font-family:var(--f-num);font-size:11px;color:#7E8A99}
+.m-tbl{width:100%;border-collapse:collapse;font-size:12px;background:#FFFFFF;color:#1C2733}
+.m-tbl th{font-family:var(--f-num);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;
+  text-align:left;padding:7px 12px;border-bottom:1px solid #D4DAE2;background:#F6F7F9;font-weight:700}
+.m-tbl td{padding:8px 12px;border-bottom:1px solid #E3E7EC;color:#1C2733;vertical-align:top}
+.m-tbl tr.on td{background:#F0F4FB}
+.m-tbl .num{font-family:var(--f-num);text-align:right;color:#5B6B7C}
+.m-tbl .mut{color:#7E8A99}
+.m-badge{font-family:var(--f-num);font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  border-radius:8px;padding:1px 6px;white-space:nowrap}
+.b-gone{background:#FDE8E8;color:#9B1C1C} .b-live{background:#E7F4EC;color:#176A33}
+.b-edit{background:#E3EBFA;color:#1E4FA3} .b-new{background:#EEF1F4;color:#5B6B7C}
+.b-back{background:#FEF3C7;color:#7A4A0A}
+/* timeline */
+.m-feed{padding:4px 0}
+.m-day{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:#7E8A99;padding:12px 16px 6px;background:#FAFBFC;border-bottom:1px solid #E3E7EC}
+.m-ev{display:grid;grid-template-columns:80px 1fr auto;gap:12px;padding:9px 16px;border-bottom:1px solid #E3E7EC;align-items:baseline}
+.m-ev .t{font-family:var(--f-num);font-size:11px;color:#7E8A99}
+.m-ev .w b{font-weight:600}
+.m-ev .w small{display:block;font-size:11px;color:#5B6B7C;margin-top:1px}
+/* scrubber */
+.m-scrub{padding:12px 16px;background:#FAFBFC;border-bottom:1px solid #E3E7EC;display:flex;align-items:center;gap:12px}
+.m-track{flex:1;height:4px;background:#D4DAE2;border-radius:2px;position:relative}
+.m-track .fill{position:absolute;left:0;top:0;bottom:0;width:62%;background:#1F5FBF;border-radius:2px}
+.m-track .dot{position:absolute;left:62%;top:-5px;width:14px;height:14px;border-radius:50%;background:#FFFFFF;border:3px solid #1F5FBF;transform:translateX(-50%)}
+.m-track .tick{position:absolute;top:-3px;width:2px;height:10px;background:#A9B4C4;border-radius:1px}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-strong);font-size:13px;color:var(--ink-3)}
+</style>
+<div class="page">
+
+<p class="eyebrow">Proposal Tool · sleeve repository · design exploration</p>
+<h1>Viewing archived sleeves</h1>
+<p class="lede">A minimal version of this shipped with the history work: a <b>Removed</b> entry in the category rail listing what has been taken out of the library. This is about what it should actually be — five ways to build the archive, what each one is good at, and the four decisions that pick between them.</p>
+<div class="meta">
+  <span><b>Builds on</b> D65 — the history table and the soft delete</span>
+  <span><b>Scope</b> the admin console only</span>
+  <span><b>Status</b> A and C built (D66) · D held as a phase of its own</span>
+</div>
+
+<h2>What exists today, honestly</h2>
+<p class="sub">Worth being precise about the baseline, because two of the five options below are extensions of it rather than replacements.</p>
+<div class="grid2">
+  <div class="card">
+    <p class="hd">Shipped · the Removed view</p>
+    <p>A <b>Removed</b> entry appears at the foot of the category rail when anything has been taken out. It lists every removed sleeve across all four books — name, category, implementation type, who removed it and when, how many versions are kept — and opening one shows what it held when it went, with <em>Put back in the library</em>.</p>
+    <p><b>It is a flat, unsorted list with no search.</b> Fine for the one or two removals a quarter that the library sees today. Useless at fifty.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Shipped · the History drawer</p>
+    <p>Under the editor for a live sleeve: every revision newest first, what moved in each, the whole composition one click further, and <em>Put this version back</em> on anything not in force.</p>
+    <p><b>It is per-sleeve and closed by default.</b> You have to already know which sleeve you are asking about, and be looking at it.</p>
+  </div>
+</div>
+
+<h3>The four questions neither can answer</h3>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:34%">Question</th><th style="width:20%">Answerable today?</th><th>Why not</th></tr></thead>
+<tbody>
+<tr><td>"We used to offer a gilts sleeve — what was in it?"</td><td><span class="pill p-warn">only by scrolling</span></td><td>No search. You read the whole removed list until you spot it.</td></tr>
+<tr><td>"What changed in the library last month?"</td><td><span class="pill p-bad">no</span></td><td>History is per-sleeve. There is no view that crosses sleeves, so answering it means opening 101 drawers.</td></tr>
+<tr><td>"Show me the library as it stood when this proposal was written."</td><td><span class="pill p-bad">no</span></td><td>Nothing reads the record at a date. See the note below — this one matters more than it looks.</td></tr>
+<tr><td>"Put back the six sleeves we retired in the ESG rebuild."</td><td><span class="pill p-warn">one at a time</span></td><td>Restore is per-sleeve, and there is no way to select the six as a group.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <h4>The thing that makes this more than housekeeping</h4>
+  <p><b>A proposal pins a sleeve's name, not its version.</b> The scenario store keeps <code>{category: sleeve name}</code> — so a proposal written in June against <em>SMA Only</em> at 45/35/20 will, reopened today, show whatever <em>SMA Only</em> holds now. The numbers on the page will have moved and nothing will say so.</p>
+  <p>The record to answer "what did this proposal actually propose?" now exists — it is in <code>sleeveHistory</code>. Nothing reads it that way yet. <b>Whether the archive is built to answer that question is the single biggest decision here</b>, because it is the difference between a convenience for admins and a control the business relies on.</p>
+</div>
+
+<h2>The questions an archive gets asked</h2>
+<p class="sub">Every option below is judged against these. They are not equally important, and they do not all pull in the same direction — which is why there is more than one sensible answer.</p>
+<div class="card" style="padding:4px 17px">
+  <div class="q"><span class="n">1</span><div><b>Find one thing I half-remember.</b><p>A name, or part of one. The commonest use by far, and the one the current view is worst at.</p></div></div>
+  <div class="q"><span class="n">2</span><div><b>What happened to this sleeve?</b><p>Per-sleeve history. Already answered well by the drawer.</p></div></div>
+  <div class="q"><span class="n">3</span><div><b>What happened to the library?</b><p>Across all sleeves, over a period. Nothing answers this today.</p></div></div>
+  <div class="q"><span class="n">4</span><div><b>What did we offer on a given date?</b><p>The point-in-time question. Needed to read an old proposal honestly, and the one an auditor asks.</p></div></div>
+  <div class="q"><span class="n">5</span><div><b>Undo something.</b><p>One sleeve, or a batch. Per-sleeve is solved; batches are not.</p></div></div>
+  <div class="q"><span class="n">6</span><div><b>Prove it to somebody else.</b><p>An export of the record, not a screen. Compliance, an audit, a handover.</p></div></div>
+</div>
+
+<h2>The decisions that shape it</h2>
+<div class="grid4">
+  <div class="card"><p class="hd">Decision 1</p><h4>Place, state, or feed?</h4><p>Is the archive somewhere you <em>go</em> (a tab), something the library can be <em>shown as</em> (a toggle), or a <em>stream</em> of what happened? Each is a different mental model and they do not combine for free.</p></div>
+  <div class="card"><p class="hd">Decision 2</p><h4>Sleeve or change?</h4><p>Is a row in the archive a sleeve that is gone, or an edit that happened? Question 1 wants sleeves. Question 3 wants changes. This is the fork.</p></div>
+  <div class="card"><p class="hd">Decision 3</p><h4>Removed only, or superseded too?</h4><p>Today "archived" means removed. But a sleeve edited nine times has eight archived <em>versions</em> that are just as gone. Including them multiplies the archive by roughly ten.</p></div>
+  <div class="card"><p class="hd">Decision 4</p><h4>What is it called?</h4><p>The code says <em>deleted</em>, the console says <em>removed</em>, you said <em>archived</em>. Three words for one thing is how a feature gets explained twice. Pick one now.</p></div>
+</div>
+
+<h2>Option A · Archive as a third tab</h2>
+<div class="option rec">
+  <div class="option-h">
+    <div>
+      <p class="lbl">Option A <span class="tag">· recommended, with C</span></p>
+      <h3>A place you go, with a proper search over it</h3>
+      <p>The archive leaves the category rail and becomes a peer of Sleeves and Catalogue. One searchable, sortable table of everything removed, filtered by book, category, who and when. Selecting a row shows what it held, its whole history, and restores it.</p>
+    </div>
+    <div>
+      <p class="lbl">Answers</p>
+      <ul><li><b>1</b> — search, properly</li><li><b>5</b> — multi-select restores a batch</li><li><b>6</b> — the table exports as it stands</li><li><b>2</b> — the drawer comes with it</li></ul>
+    </div>
+    <div>
+      <p class="lbl">Does not answer</p>
+      <ul><li><b>3</b> — still sleeve-shaped, not change-shaped</li><li><b>4</b> — no notion of a date to stand at</li></ul>
+      <p class="lbl" style="margin-top:10px">Cost</p><p>Moderate. Reuses the catalogue's table, facets and search wholesale.</p>
+    </div>
+  </div>
+  <div class="mock-wrap"><div class="mock">
+    <div class="m-h">
+      <span class="m-title">Sleeve Repository</span>
+      <span class="m-seg lt"><span>Sleeves</span><span>Catalogue</span><span class="on">Archive</span></span>
+      <span class="m-src">101 live · 38 archived · 412 versions on record</span>
+    </div>
+    <div class="m-search">
+      <span class="box">gilts</span>
+      <span class="m-chip on">PMG ESG ×</span>
+      <span class="m-chip on">removed by fbarker ×</span>
+      <span class="m-chip gh">Any category ▾</span>
+      <span class="m-chip gh">Any time ▾</span>
+      <span class="m-btn gh">Clear</span>
+      <span style="margin-left:auto" class="m-btn">Export ▾</span>
+    </div>
+    <table class="m-tbl">
+      <thead><tr><th style="width:22%">Sleeve</th><th style="width:20%">Category</th><th style="width:16%">Book</th><th style="width:9%">Held</th><th style="width:16%">Archived</th><th style="width:9%">Versions</th><th></th></tr></thead>
+      <tbody>
+        <tr class="on"><td><b>SMA: Gilts Only</b></td><td>Investment Grade Fixed Income</td><td>PMG ESG</td><td class="num">2</td><td>12 Aug 2026 · fbarker</td><td class="num">7</td><td><span class="m-badge b-gone">archived</span></td></tr>
+        <tr><td><b>SMA Sov. Agency</b></td><td>Investment Grade Fixed Income</td><td>PMG ESG</td><td class="num">2</td><td>12 Aug 2026 · fbarker</td><td class="num">3</td><td><span class="m-badge b-gone">archived</span></td></tr>
+        <tr><td><b>Gilts &amp; Linkers</b></td><td>Other Fixed Income</td><td>PMG ESG</td><td class="num">4</td><td>3 Jul 2026 · a.mehta</td><td class="num">11</td><td><span class="m-badge b-gone">archived</span></td></tr>
+        <tr><td class="mut"><b>SMA: Gilts Only</b></td><td class="mut">Investment Grade Fixed Income</td><td class="mut">US Onshore</td><td class="num">2</td><td class="mut">still in the library</td><td class="num">4</td><td><span class="m-badge b-live">live</span></td></tr>
+      </tbody>
+    </table>
+    <div style="padding:12px 16px;border-top:1px solid #E3E7EC;background:#FAFBFC">
+      <div class="m-lbl">SMA: Gilts Only · what it held when it was archived</div>
+      <table class="m-tbl" style="margin-top:6px">
+        <tbody>
+          <tr><td style="width:70px" class="num">60.00%</td><td>GSAM UK Gilt SMA</td><td class="mut">SMA · Internal · Daily</td></tr>
+          <tr><td class="num">40.00%</td><td>GS Access Gilt 0-5 ETF</td><td class="mut">ETF · Internal · Daily</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="m-f">
+      <span class="m-note">2 selected</span>
+      <span class="m-btn">History</span>
+      <span class="m-btn">Compare with the live one</span>
+      <span class="sp"></span>
+      <span class="m-btn pri">Restore 2 sleeves</span>
+    </div>
+  </div></div>
+  <div class="assump">
+    <p><b>Why a tab and not a rail entry.</b> The rail is the category list, and an archive is not a category — putting it there was always a compromise that worked only because the count was one. As a peer of Catalogue it inherits everything that view already solved: search, facet chips with counts, a sortable dense table, and column choice. <b>The one genuinely new idea is the fourth row</b> — showing that the same sleeve name is still live under another book, which is the question you actually have when you find an archived sleeve.</p>
+  </div>
+</div>
+
+<h2>Option B · A toggle over the library</h2>
+<div class="option">
+  <div class="option-h">
+    <div>
+      <p class="lbl">Option B</p>
+      <h3>The archive as a state of the thing you are already looking at</h3>
+      <p>No new place. A <em>Show archived</em> switch folds removed sleeves back into their own category, greyed and badged, in their real position. The category counts show both numbers. You browse the library as it is, or as it has ever been, without going anywhere.</p>
+    </div>
+    <div>
+      <p class="lbl">Answers</p>
+      <ul><li><b>1</b> — if you know the category</li><li><b>5</b> — restore in place, in context</li><li>Strongest at "what else was in this category?"</li></ul>
+    </div>
+    <div>
+      <p class="lbl">Does not answer</p>
+      <ul><li><b>3</b>, <b>4</b>, <b>6</b> — none of them</li><li><b>1</b> when you have forgotten the category</li></ul>
+      <p class="lbl" style="margin-top:10px">Cost</p><p>Small. One flag, one filter, some styling. The cheapest thing here by a distance.</p>
+    </div>
+  </div>
+  <div class="mock-wrap"><div class="mock">
+    <div class="m-h">
+      <span class="m-title">Sleeve Repository</span>
+      <span class="m-seg lt"><span class="on">Sleeves</span><span>Catalogue</span></span>
+      <span class="m-seg"><span class="on">PMG ESG</span><span>PMG Multi-Asset</span><span>US Onshore</span><span>Irish Onshore</span></span>
+      <span class="m-src">Catalogue · 73 products</span>
+    </div>
+    <div class="m-b">
+      <div class="m-pane">
+        <div class="m-ph">Categories</div>
+        <div class="m-cat on">Investment Grade Fixed Income <span class="n">8 <span style="color:#9B1C1C">+3</span></span></div>
+        <div class="m-cat">Hybrid Fixed Income <span class="n">1</span></div>
+        <div class="m-cat">Other Fixed Income <span class="n">2 <span style="color:#9B1C1C">+1</span></span></div>
+        <div class="m-cat">Public Equity <span class="n">14</span></div>
+        <div class="m-cat">Hedge Funds <span class="n">5</span></div>
+        <div class="m-cat">Private Equity &amp; Other Private Assets <span class="n">2</span></div>
+        <div class="m-cat">Asset Allocation Strategies <span class="n">1</span></div>
+        <div class="m-sep"></div>
+        <div style="padding:8px 14px;display:flex;align-items:center;gap:8px">
+          <span style="width:30px;height:17px;border-radius:9px;background:#1F5FBF;position:relative;flex:none">
+            <span style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#FFF"></span>
+          </span>
+          <span style="font-size:12px">Show archived</span>
+        </div>
+      </div>
+      <div class="m-pane">
+        <div class="m-ph">Investment Grade Fixed Income <span class="btn">+ New sleeve</span></div>
+        <div class="m-row"><b>SMA Only</b><small>3 products · SMA · saved 3 Sept by fbarker</small></div>
+        <div class="m-row"><b>SMA &amp; ETFs</b><small>3 products · SMA, ETF · saved 2 Sept</small></div>
+        <div class="m-row gone on"><b>SMA: Gilts Only</b> <span class="m-badge b-gone">archived</span><small>2 products · SMA, UCITS</small><small>archived 12 Aug 2026 by fbarker</small></div>
+        <div class="m-row"><b>ETFs Only</b><small>2 products · ETF · saved 2 Sept</small></div>
+        <div class="m-row gone"><b>SMA Sov. Agency</b> <span class="m-badge b-gone">archived</span><small>2 products · SMA, ETF</small><small>archived 12 Aug 2026 by fbarker</small></div>
+        <div class="m-row"><b>SMA ESG</b><small>4 products · SMA · saved 2 Sept</small></div>
+      </div>
+      <div class="m-pane m-ed">
+        <div>
+          <div style="display:flex;align-items:baseline;gap:9px"><h3 style="font-size:16px;margin:0">SMA: Gilts Only</h3><span class="m-badge b-gone">archived</span></div>
+          <p style="margin:3px 0 0;font-size:12px;color:#5B6B7C">Investment Grade Fixed Income · PMG ESG</p>
+          <p style="margin:5px 0 0;font-family:var(--f-num);font-size:11px;color:#7E8A99">Archived 12 Aug 2026 by fbarker · created 2 Sept 2025 by a.mehta · 7 versions kept</p>
+        </div>
+        <div><div class="m-lbl">What it held when it was archived</div>
+          <div class="m-fld ro">60.00%&nbsp;&nbsp;GSAM UK Gilt SMA</div>
+          <div class="m-fld ro" style="margin-top:5px">40.00%&nbsp;&nbsp;GS Access Gilt 0-5 ETF</div>
+        </div>
+        <div style="display:flex;gap:8px"><span class="m-btn pri">Restore to the library</span><span class="m-btn">History (7)</span></div>
+      </div>
+    </div>
+    <div class="m-f"><span class="m-btn" style="background:#176A33;border-color:#176A33;color:#FFF">+ Create sleeve</span>
+      <span class="m-note">Library · 101 sleeves · 38 archived · 412 versions on record</span><span class="sp"></span></div>
+  </div></div>
+  <div class="assump">
+    <p><b>The argument for it.</b> It is the only option where an archived sleeve appears <em>next to the thing that replaced it</em>, which is the comparison you usually want. It is also by far the cheapest, and it removes the awkward rail entry rather than adding to it. <b>The argument against:</b> it scales exactly as badly as today. At 38 archived sleeves the ESG book's fixed-income category shows eleven rows where three are real, and the toggle becomes something people leave off — at which point the archive is invisible again.</p>
+  </div>
+</div>
+
+<h2>Option C · The activity timeline</h2>
+<div class="option rec">
+  <div class="option-h">
+    <div>
+      <p class="lbl">Option C <span class="tag">· recommended, with A</span></p>
+      <h3>The unit is the change, not the sleeve</h3>
+      <p>One reverse-chronological feed of every revision across the whole library, grouped by day, filterable by book, category, person and action. Each row says what happened in a sentence and opens into the version it produced. This is the record read as a story rather than as a filing cabinet.</p>
+    </div>
+    <div>
+      <p class="lbl">Answers</p>
+      <ul><li><b>3</b> — the only option that does</li><li><b>6</b> — an audit trail, exportable</li><li><b>5</b> — "undo everything from Tuesday" becomes selectable</li></ul>
+    </div>
+    <div>
+      <p class="lbl">Does not answer</p>
+      <ul><li><b>1</b> — finding one sleeve in a feed is the wrong shape</li><li><b>4</b> — adjacent to it, but not it</li></ul>
+      <p class="lbl" style="margin-top:10px">Cost</p><p>Moderate. One new query over <code>sleeveHistory</code>; the data is already there and indexed.</p>
+    </div>
+  </div>
+  <div class="mock-wrap"><div class="mock">
+    <div class="m-h">
+      <span class="m-title">Sleeve Repository</span>
+      <span class="m-seg lt"><span>Sleeves</span><span>Catalogue</span><span>Archive</span><span class="on">Activity</span></span>
+      <span class="m-src">412 changes on record · since 2 Sept 2025</span>
+    </div>
+    <div class="m-search">
+      <span class="box">Search sleeves, products or people</span>
+      <span class="m-chip on">Archived ×</span>
+      <span class="m-chip on">Edited ×</span>
+      <span class="m-chip gh">Anyone ▾</span>
+      <span class="m-chip gh">Last 30 days ▾</span>
+      <span class="m-chip gh">All books ▾</span>
+      <span style="margin-left:auto" class="m-btn">Export ▾</span>
+    </div>
+    <div class="m-feed">
+      <div class="m-day">Today · 3 September 2026</div>
+      <div class="m-ev"><span class="t">14:22</span>
+        <span class="w"><b>SMA Only</b> <span class="m-badge b-edit">edited</span> by fbarker
+          <small>GSAM Core Municipal SMA 45% → 55% · GSAM Intermediate Credit SMA 35% → 25%</small></span>
+        <span class="m-btn gh">View r2</span></div>
+      <div class="m-ev"><span class="t">14:25</span>
+        <span class="w"><b>SMA Only</b> <span class="m-badge b-back">reverted to r1</span> by fbarker
+          <small>Restored the composition of 2 Sept · 3 products</small></span>
+        <span class="m-btn gh">View r3</span></div>
+      <div class="m-day">Wednesday · 12 August 2026</div>
+      <div class="m-ev"><span class="t">09:41</span>
+        <span class="w"><b>SMA: Gilts Only</b> <span class="m-badge b-gone">archived</span> by fbarker
+          <small>Investment Grade Fixed Income · PMG ESG · held 2 products</small></span>
+        <span class="m-btn gh">Restore</span></div>
+      <div class="m-ev"><span class="t">09:41</span>
+        <span class="w"><b>SMA Sov. Agency</b> <span class="m-badge b-gone">archived</span> by fbarker
+          <small>Investment Grade Fixed Income · PMG ESG · held 2 products</small></span>
+        <span class="m-btn gh">Restore</span></div>
+      <div class="m-ev"><span class="t">09:38</span>
+        <span class="w"><b>SMA Sov. Agency ESG</b> <span class="m-badge b-new">created</span> by fbarker
+          <small>Investment Grade Fixed Income · PMG ESG · 3 products</small></span>
+        <span class="m-btn gh">View r1</span></div>
+      <div class="m-ev"><span class="t">09:12</span>
+        <span class="w"><b>Tactical Tilt Overlay Portfolio</b> <span class="m-badge b-edit">edited</span> by a.mehta
+          <small>Added GS Tactical Tilt Fund at 12% · GSAM Global Macro 40% → 28%</small></span>
+        <span class="m-btn gh">View r9</span></div>
+    </div>
+    <div class="m-f"><span class="m-note">6 of 412 changes · 3 people · 2 books</span><span class="sp"></span>
+      <span class="m-btn">Select a day</span><span class="m-btn pri">Restore selected</span></div>
+  </div></div>
+  <div class="assump">
+    <p><b>Why this earns its place beside A rather than instead of it.</b> A filing cabinet and a story answer different questions and neither substitutes for the other. The feed is what you open on a Monday to see what moved; the archive table is what you open when you are hunting one thing. <b>The feed is also the honest home of the governance case</b> — it is the view that reads as an audit trail, and the operations framework's weekly sleeve check becomes a thirty-second scroll rather than a CLI census.</p>
+  </div>
+</div>
+
+<h2>Option D · The library as at a date</h2>
+<div class="option">
+  <div class="option-h">
+    <div>
+      <p class="lbl">Option D</p>
+      <h3>Stand at a moment and look at the whole library</h3>
+      <p>A date control over the Sleeves view. Move it and the entire console reconstructs the library as it stood then — every sleeve that existed, holding what it held. Read-only in the past, with a way to bring one forward. Ticks on the track mark days something changed.</p>
+    </div>
+    <div>
+      <p class="lbl">Answers</p>
+      <ul><li><b>4</b> — the only option that does</li><li><b>6</b> — the strongest possible proof</li><li>Reads an old proposal honestly</li></ul>
+    </div>
+    <div>
+      <p class="lbl">Does not answer</p>
+      <ul><li><b>1</b>, <b>3</b> — not what it is for</li><li><b>5</b> — bringing a whole day forward is a bigger idea than it looks</li></ul>
+      <p class="lbl" style="margin-top:10px">Cost</p><p><b>Large.</b> Every read in the repository needs an "as at" parameter. The most work here by some way.</p>
+    </div>
+  </div>
+  <div class="mock-wrap"><div class="mock">
+    <div class="m-h">
+      <span class="m-title">Sleeve Repository</span>
+      <span class="m-seg lt"><span class="on">Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span></span>
+      <span class="m-src">Reading the library as it stood</span>
+    </div>
+    <div class="m-scrub">
+      <span class="m-btn">◀</span>
+      <span class="m-track"><span class="fill"></span>
+        <span class="tick" style="left:14%"></span><span class="tick" style="left:31%"></span>
+        <span class="tick" style="left:47%"></span><span class="tick" style="left:62%"></span>
+        <span class="tick" style="left:79%"></span><span class="tick" style="left:96%"></span>
+        <span class="dot"></span></span>
+      <span class="m-btn">▶</span>
+      <span class="m-chip on">12 August 2026</span>
+      <span class="m-btn gh">Back to today</span>
+    </div>
+    <div style="padding:8px 16px;background:#FEF3C7;color:#7A4A0A;font-size:12px;border-bottom:1px solid #F3D48A">
+      Viewing the library as it stood on <b>12 August 2026</b>. Nothing here can be edited. 104 sleeves, 3 of which are not in today's library.
+    </div>
+    <div class="m-b">
+      <div class="m-pane">
+        <div class="m-ph">Categories · 12 Aug</div>
+        <div class="m-cat on">Investment Grade Fixed Income <span class="n">11</span></div>
+        <div class="m-cat">Hybrid Fixed Income <span class="n">1</span></div>
+        <div class="m-cat">Other Fixed Income <span class="n">3</span></div>
+        <div class="m-cat">Public Equity <span class="n">14</span></div>
+        <div class="m-cat">Hedge Funds <span class="n">5</span></div>
+        <div class="m-cat">Private Equity &amp; Other Private Assets <span class="n">2</span></div>
+        <div class="m-cat">Asset Allocation Strategies <span class="n">1</span></div>
+      </div>
+      <div class="m-pane">
+        <div class="m-ph">Investment Grade Fixed Income</div>
+        <div class="m-row on"><b>SMA Only</b><small>3 products · as at 12 Aug (r1)</small><small style="color:#7A4A0A">differs from today</small></div>
+        <div class="m-row"><b>SMA &amp; ETFs</b><small>3 products · unchanged since</small></div>
+        <div class="m-row"><b>SMA: Gilts Only</b><small>2 products · archived later that day</small></div>
+        <div class="m-row"><b>SMA Sov. Agency</b><small>2 products · archived later that day</small></div>
+        <div class="m-row"><b>ETFs Only</b><small>2 products · unchanged since</small></div>
+      </div>
+      <div class="m-pane m-ed">
+        <div>
+          <div style="display:flex;align-items:baseline;gap:9px"><h3 style="font-size:16px;margin:0">SMA Only</h3><span class="m-badge b-new">r1 · as at 12 Aug</span></div>
+          <p style="margin:3px 0 0;font-size:12px;color:#5B6B7C">Investment Grade Fixed Income · PMG Multi-Asset Portfolio</p>
+        </div>
+        <div><div class="m-lbl">Held on 12 August</div>
+          <div class="m-fld ro">45.00%&nbsp;&nbsp;GSAM Core Municipal SMA</div>
+          <div class="m-fld ro" style="margin-top:5px">35.00%&nbsp;&nbsp;GSAM Intermediate Credit SMA</div>
+          <div class="m-fld ro" style="margin-top:5px">20.00%&nbsp;&nbsp;GSAM Short Duration SMA</div>
+        </div>
+        <div style="background:#FEF3C7;border-radius:5px;padding:9px 11px;font-size:12px;color:#7A4A0A">
+          <b>Today it holds</b> 55 / 25 / 20. Changed 3 Sept by fbarker.
+        </div>
+        <div style="display:flex;gap:8px"><span class="m-btn">Put this version back</span><span class="m-btn gh">Open in Activity</span></div>
+      </div>
+    </div>
+    <div class="m-f"><span class="m-note">As at 12 Aug 2026 · read only · 3 sleeves shown that are no longer in the library</span><span class="sp"></span>
+      <span class="m-btn pri">Back to today</span></div>
+  </div></div>
+  <div class="assump">
+    <p><b>The most valuable and the most expensive.</b> It is the only thing that answers the proposal question, and it is the answer an auditor would actually accept. But "as at" has to reach every read in the repository, the console has to be visibly and safely read-only in the past, and the date control has to be honest about a library that changes several times a day. <b>The honest sequencing is that D is a phase two</b> — and A and C are worth building whether or not D ever happens, because D needs somewhere to send you when you click through.</p>
+  </div>
+</div>
+
+<h2>Option E · Just fix what is there</h2>
+<div class="option">
+  <div class="option-h">
+    <div>
+      <p class="lbl">Option E</p>
+      <h3>Keep the rail entry; give it a search box and a sort</h3>
+      <p>The Removed view stays where it is and gains the three things it lacks: a search over name, category and product; a sort by date or name; and a date-range chip. Nothing moves, nothing new is learned.</p>
+    </div>
+    <div>
+      <p class="lbl">Answers</p>
+      <ul><li><b>1</b> — adequately</li><li>Nothing else changes</li></ul>
+    </div>
+    <div>
+      <p class="lbl">Does not answer</p>
+      <ul><li><b>3</b>, <b>4</b>, <b>5</b>, <b>6</b></li></ul>
+      <p class="lbl" style="margin-top:10px">Cost</p><p>An afternoon.</p>
+    </div>
+  </div>
+  <div class="assump">
+    <p><b>The case for it.</b> The library has 101 sleeves and nothing archived. Every option above is sized for a problem that does not exist yet, and this one buys eighteen months of headroom for an afternoon's work. <b>The case against:</b> the rail entry is in the wrong place conceptually — an archive is not a category — so this is money spent on a shape that will be thrown away. Worth taking only as a deliberate holding position while A and C are decided.</p>
+  </div>
+</div>
+
+<h2>How they compare</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr>
+  <th style="width:20%">Option</th><th>1 · Find</th><th>2 · Sleeve</th><th>3 · Library</th><th>4 · At a date</th><th>5 · Undo</th><th>6 · Prove</th><th style="width:13%">Cost</th>
+</tr></thead>
+<tbody>
+<tr><td><b>Today</b></td><td><span class="pill p-warn">poor</span></td><td><span class="pill p-ok">good</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-warn">one at a time</span></td><td><span class="pill p-warn">CLI only</span></td><td>—</td></tr>
+<tr><td><b>A</b> · Archive tab</td><td><span class="pill p-ok">strong</span></td><td><span class="pill p-ok">good</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-ok">batch</span></td><td><span class="pill p-ok">export</span></td><td>Moderate</td></tr>
+<tr><td><b>B</b> · Show archived</td><td><span class="pill p-warn">in context only</span></td><td><span class="pill p-ok">good</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-warn">one at a time</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-ok">Small</span></td></tr>
+<tr><td><b>C</b> · Activity feed</td><td><span class="pill p-warn">wrong shape</span></td><td><span class="pill p-ok">good</span></td><td><span class="pill p-ok">strong</span></td><td><span class="pill p-warn">adjacent</span></td><td><span class="pill p-ok">by day</span></td><td><span class="pill p-ok">strong</span></td><td>Moderate</td></tr>
+<tr><td><b>D</b> · As at a date</td><td><span class="pill p-bad">no</span></td><td><span class="pill p-ok">good</span></td><td><span class="pill p-warn">indirectly</span></td><td><span class="pill p-ok">only one</span></td><td><span class="pill p-warn">big idea</span></td><td><span class="pill p-ok">strongest</span></td><td><span class="pill p-bad">Large</span></td></tr>
+<tr><td><b>E</b> · Fix what is there</td><td><span class="pill p-ok">adequate</span></td><td><span class="pill p-ok">good</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-warn">one at a time</span></td><td><span class="pill p-bad">no</span></td><td><span class="pill p-ok">Tiny</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>What I would build</h2>
+<div class="callout ok">
+  <h4>Recommendation</h4>
+  <p><b>A and C together, as one piece of work, with D held as a second phase.</b></p>
+  <p>They cost about the same as each other and they cover five of the six questions between them, because they answer along different axes — A files sleeves, C narrates changes. Building only one leaves an obvious hole: A alone still cannot say what happened last week, and C alone makes finding one old gilts sleeve a scroll through 412 events. Both reuse machinery the catalogue view already has, so the marginal cost of the second is much less than the first.</p>
+  <p><b>D is the one with the real business case</b> — the proposal question and the audit question are the same question — but it is also the one that touches every read in the repository. It deserves its own decision rather than being smuggled in, and it lands better once A and C exist to click through to.</p>
+  <p><b>B is what I would not build.</b> It is the cheapest and the most immediately pleasant, and it degrades fastest: it is the only option that gets actively worse as the archive grows, which is the one thing an archive is guaranteed to do.</p>
+</div>
+
+<h3>A sensible sequence</h3>
+<div class="grid3">
+  <div class="card"><p class="hd">First</p><h4>The Archive tab and the Activity feed</h4><p>Retire the rail entry. One new endpoint each over <code>sleeveHistory</code>, both views built on the catalogue's table and facet machinery. Batch restore and CSV export fall out of the table almost free.</p></div>
+  <div class="card"><p class="hd">Then</p><h4>Settle the vocabulary and the scope</h4><p>One word everywhere, and a decision on whether superseded versions appear in the Archive alongside removed sleeves, or stay only in Activity and the drawer.</p></div>
+  <div class="card"><p class="hd">Later, deliberately</p><h4>As at a date</h4><p>Only if the proposal-reading or audit case is real. It is a phase of its own, and it is the one that makes the record load-bearing rather than merely available.</p></div>
+</div>
+
+<h2>What I would need from you</h2>
+<div class="card" style="padding:4px 17px">
+  <div class="q"><span class="n">1</span><div><b>Is the point-in-time question real?</b><p>Does anyone need to read an old proposal against the library it was written against, or show an auditor what was offered on a date? A yes makes D worth planning for now, and changes how A and C are built. A no takes the largest piece of work off the table entirely.</p></div></div>
+  <div class="q"><span class="n">2</span><div><b>Archived, removed, or retired?</b><p>One word, used in the code, the console and the CLI. I would take <em>archived</em>, since that is the word you reached for.</p></div></div>
+  <div class="q"><span class="n">3</span><div><b>Does the Archive hold superseded versions too, or only removed sleeves?</b><p>Today's answer is removed sleeves only. Including versions makes it roughly ten times larger and much more useful for question 3 — but Activity may be the better home for those.</p></div></div>
+  <div class="q"><span class="n">4</span><div><b>Who sees it?</b><p>Everything here is behind <code>requireAdmin</code>, like the rest of the repository. Should a PWA be able to see that a sleeve their proposal names has changed since? That is a different feature, and worth knowing now if the answer is yes.</p></div></div>
+  <div class="q"><span class="n">5</span><div><b>Does anything ever leave the record?</b><p>The history has no pruning and none is proposed — a few hundred bytes per revision makes this a decade-scale question. But if there is a retention policy the record has to obey, it needs saying before the archive is built on the assumption of permanence.</p></div></div>
+</div>
+
+<p class="foot">Grounded in the shipped D65 record: <code>sleeveHistory</code> holding one append-only row per revision, soft-deleted sleeves, and <code>sleeveTools --history</code> / <code>--deleted</code>. The library today holds 101 sleeves, 101 revisions and nothing archived — every option is drawn against the library it will be at 400 revisions, not the one it is at 101.</p>
+
+</div>

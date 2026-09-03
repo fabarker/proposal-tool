@@ -3557,7 +3557,15 @@ function rows() {
       item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
     });
   }
-  return groups;
+  /* Nothing that prints as zero earns a line (D68). Dropped after the
+     rounding, so the column still closes on 100.00 exactly - a row worth
+     0.00 adds nothing to that sum. A category keeps its row while it has
+     weight: an unimplemented one with an allocation is precisely what this
+     page is asking a PWA to fix. Mirrors buildImplementationRows. */
+  groups.forEach(function (group) {
+    group.items = group.items.filter(function (item) { return item.weight !== 0; });
+  });
+  return groups.filter(function (group) { return group.weightPct !== 0; });
 }
 
 /* Weight and notional always add up; the fee adds up only once every row
@@ -4737,7 +4745,13 @@ var repo = {
   leaving: null,               /* { to, variant, category, fresh } | { close } while unsaved changes block a move */
   menu: null,                  /* { id, x, y } while a sleeve's context menu is open */
   trigger: null,
-  bootChecked: false
+  bootChecked: false,
+  /* the record (D65): the open sleeve's revisions, fetched on demand because
+     most visits never ask for them */
+  history: null,               /* { sleeveId, entries } */
+  historyOpen: false,
+  historyBusy: false,
+  openRevision: null           /* the revision whose composition is expanded */
 };
 
 /* The catalogue view's own state (D63). It survives a switch to the other
@@ -4753,6 +4767,34 @@ var cat = {
   compare: false,                    /* the pinned products, lined up */
   openChip: null                     /* 'cols' while the column picker is open */
 };
+
+/* The archive (D66, option A): the sleeves taken out of the library, as a
+   searchable table. Its own state, URL-encoded like the catalogue's. */
+var arc = {
+  query: '', filters: {},                   /* variant | category | archivedBy -> value */
+  sort: { key: 'archivedAt', dir: 'desc' },
+  selected: [],                             /* sleeve ids ticked for a batch restore */
+  detail: null                              /* the archived sleeve open below the table */
+};
+var ARC_COLUMNS = [
+  { key: 'name', label: 'Sleeve' },
+  { key: 'category', label: 'Category' },
+  { key: 'variant', label: 'Book' },
+  { key: 'held', label: 'Held', num: true },
+  { key: 'archivedAt', label: 'Archived' },
+  { key: 'revisions', label: 'Versions', num: true }
+];
+
+/* The activity feed (D66, option C): the record as a story. The page holds
+   only what the server handed back; every filter change is a fresh read. */
+var act = {
+  query: '', actions: [], actor: '', variant: '', range: '30d',
+  entries: [], next: null, total: 0, facets: null, earliest: '',
+  busy: false, loaded: false, error: null
+};
+var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'restored', 'imported'];
+var ACT_RANGES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['all', 'All time']];
+var actTimer = null;
 
 /* The facet rail, in order. A facet is a field of the product, or one of the
    two joins the repository already gives: which categories' sleeves hold it,
@@ -4797,6 +4839,11 @@ function sleevesIn(variant, category) {
     return s.variant === variant && s.category === category;
   });
 }
+function archivedSleeves() { return (repo.data && repo.data.archived) || []; }
+function archivedById(id) {
+  return archivedSleeves().filter(function (s) { return s.id === id; })[0] || null;
+}
+function anySleeveById(id) { return sleeveById(id) || archivedById(id); }
 function sleeveById(id) {
   return (repo.data && repo.data.sleeves || []).filter(function (s) { return s.id === id; })[0] || null;
 }
@@ -5047,7 +5094,52 @@ function catFromHash(hash) {
   cat.pins = (q.get('pins') || '').split(',').filter(Boolean);
   cat.compare = q.get('cmp') === '1';
 }
-function hashFor(view) { return view === 'catalogue' ? catHash() : '#repository'; }
+function arcHash() {
+  var q = new URLSearchParams();
+  if (arc.query.trim()) q.set('q', arc.query.trim());
+  Object.keys(arc.filters).forEach(function (f) { if (arc.filters[f]) q.set('f.' + f, arc.filters[f]); });
+  if (!(arc.sort.key === 'archivedAt' && arc.sort.dir === 'desc')) q.set('sort', arc.sort.key + ':' + arc.sort.dir);
+  if (arc.detail != null) q.set('open', String(arc.detail));
+  var str = q.toString();
+  return '#archive' + (str ? '?' + str : '');
+}
+function arcFromHash(hash) {
+  var at = hash.indexOf('?'); if (at === -1) return;
+  var q = new URLSearchParams(hash.slice(at + 1));
+  arc.query = q.get('q') || '';
+  arc.filters = {};
+  q.forEach(function (v, k) { if (k.indexOf('f.') === 0 && v) arc.filters[k.slice(2)] = v; });
+  var sort = q.get('sort');
+  if (sort && sort.indexOf(':') !== -1) arc.sort = { key: sort.split(':')[0], dir: sort.split(':')[1] === 'desc' ? 'desc' : 'asc' };
+  var open = parseInt(q.get('open') || '', 10);
+  arc.detail = isFinite(open) ? open : null;
+}
+function actHash() {
+  var q = new URLSearchParams();
+  if (act.query.trim()) q.set('q', act.query.trim());
+  if (act.actions.length) q.set('a', act.actions.join(','));
+  if (act.actor) q.set('who', act.actor);
+  if (act.variant) q.set('book', act.variant);
+  if (act.range !== '30d') q.set('range', act.range);
+  var str = q.toString();
+  return '#activity' + (str ? '?' + str : '');
+}
+function actFromHash(hash) {
+  var at = hash.indexOf('?'); if (at === -1) return;
+  var q = new URLSearchParams(hash.slice(at + 1));
+  act.query = q.get('q') || '';
+  act.actions = (q.get('a') || '').split(',').filter(function (a) { return ACT_ACTIONS.indexOf(a) !== -1; });
+  act.actor = q.get('who') || '';
+  act.variant = q.get('book') || '';
+  var range = q.get('range');
+  act.range = ACT_RANGES.some(function (r) { return r[0] === range; }) ? range : '30d';
+}
+function hashFor(view) {
+  if (view === 'catalogue') return catHash();
+  if (view === 'archive') return arcHash();
+  if (view === 'activity') return actHash();
+  return '#repository';
+}
 function syncHash() {
   if (!repo.open) return;
   try { window.history.replaceState(null, '', hashFor(repo.view)); } catch (e) { /* file: */ }
@@ -5056,7 +5148,7 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = view === 'catalogue' ? 'catalogue' : 'sleeves';
+  repo.view = ['catalogue', 'archive', 'activity'].indexOf(view) !== -1 ? view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -5066,8 +5158,11 @@ function openRepository(trigger, view, at) {
 
 function switchView(view) {
   if (view === repo.view) return;
+  if (repo.dirty && repo.view === 'sleeves') { repo.leaving = { view: view }; render(); return; }
   repo.view = view; cat.openChip = null; cat.detail = null;
+  repo.historyOpen = false; repo.history = null; repo.openRevision = null;
   render();
+  if (view === 'activity' && !act.loaded) loadActivity(true);
 }
 
 async function api(method, path, body) {
@@ -5092,6 +5187,7 @@ async function loadRepository() {
     repo.data = r.body; forgetJoins();
     chooseDefaults();
     repo.error = null;
+    if (repo.view === 'activity' && !act.loaded) loadActivity(true);
   } catch (err) { repo.error = err.message; }
   repo.busy = false;
   render();
@@ -5130,7 +5226,7 @@ function closeRepository(force) {
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (window.location.hash.indexOf('#repository') === 0 || window.location.hash.indexOf('#catalogue') === 0) {
+  if (/^#(repository|catalogue|archive|activity)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -5146,9 +5242,21 @@ function goTo(target) {
   applyTarget(target);
 }
 function applyTarget(t) {
+  if (t.view) {
+    /* a move to another view, held back by an unsaved draft and now released */
+    repo.dirty = false;
+    if (t.detail != null) arc.detail = t.detail;
+    switchView(t.view);
+    if (t.then) t.then();
+    return;
+  }
   if (t.variant) repo.variant = t.variant;
   if (t.category) repo.category = t.category;
   repo.view = 'sleeves';
+  /* the history belongs to the sleeve that was open, not to the next one */
+  if (t.to == null || (repo.history && repo.history.sleeveId !== t.to)) {
+    repo.historyOpen = false; repo.history = null; repo.openRevision = null;
+  }
   try { window.history.replaceState(null, '', hashFor('sleeves')); } catch (e) { /* file: */ }
   if (t.fresh) { loadDraft(null, t.create); }
   else if (t.to != null) { loadDraft(t.to); }
@@ -5161,6 +5269,25 @@ function selectSleeve(id) {
   if (id === repo.sleeveId && repo.draft && repo.draft.id === id) return;
   goTo({ to: id });
 }
+
+/* From the feed to the thing it names: a live sleeve opens in the editor with
+   that revision unfolded; an archived one opens in the Archive the same way.
+   Either way the history drawer is open on arrival, because arriving from a
+   revision and then hunting for it would be absurd. */
+function openRevisionFrom(sleeveId, revisionNumber, archived) {
+  var land = function () {
+    repo.historyOpen = true; repo.openRevision = revisionNumber;
+    if (!(repo.history && repo.history.sleeveId === sleeveId)) loadHistory(sleeveId);
+    else render();
+  };
+  if (archived) {
+    if (repo.dirty) { repo.leaving = { view: 'archive', detail: sleeveId, then: land }; render(); return; }
+    arc.detail = sleeveId; switchView('archive'); land(); return;
+  }
+  var entry = sleeveById(sleeveId); if (!entry) return;
+  goTo({ variant: entry.variant, category: entry.category, to: sleeveId, then: land });
+}
+
 function resolveLeaving(discard) {
   var leaving = repo.leaving; repo.leaving = null;
   if (!discard || !leaving) { render(); return; }
@@ -5205,11 +5332,21 @@ async function saveDraft() {
         if (s.category === last.category && s.name === last.name) s.offeredUnder = last.offeredUnder;
       });
       catRowCache = null;                   /* the catalogue's joins read the same list */
+      if (repo.data.store) {
+        /* every sleeve written appended one revision (D65) */
+        repo.data.store.revisions = (repo.data.store.revisions || 0) + madeAll.length;
+        if (!d.id) repo.data.store.sleeves = (repo.data.store.sleeves || 0) + madeAll.length;
+      }
       /* land on the one in the book being looked at, if it is among them */
       var here = madeAll.filter(function (m) { return m.variant === repo.variant; })[0] || madeAll[0];
       repo.category = here.category; repo.variant = here.variant;
+      var trailOpen = repo.historyOpen && repo.history && repo.history.sleeveId === here.id;
       loadDraft(here.id);
       forgetLibrary(last.category);
+      /* a trail left open across a save would be one revision behind, which is
+         the one revision the person looking at it just made */
+      if (trailOpen) { repo.historyOpen = true; repo.openRevision = null; loadHistory(here.id); }
+      if (act.loaded) act.loaded = false;
       App.announce('polite', madeAll.length > 1
         ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types.'
         : 'Saved ' + last.name + '.');
@@ -5229,12 +5366,28 @@ async function deleteCurrent() {
       repo.error = r.body.error || ('Could not delete (' + r.status + ')');
     } else {
       var gone = r.body.deleted;
+      var kept = repo.data.sleeves.filter(function (s) { return s.id === gone.id; })[0];
       repo.data.sleeves = repo.data.sleeves.filter(function (s) { return s.id !== gone.id; });
+      if (kept) {
+        /* out of the library, into the archive - the console shows what the
+           store did rather than pretending the sleeve stopped existing */
+        kept.archived = true;
+        kept.archivedAt = gone.archivedAt; kept.archivedBy = gone.archivedBy;
+        kept.revisions = (kept.revisions || 0) + 1;
+        repo.data.archived = [kept].concat(archivedSleeves());
+      }
+      if (repo.data.store) {
+        repo.data.store.sleeves = Math.max(0, (repo.data.store.sleeves || 1) - 1);
+        repo.data.store.archived = (repo.data.store.archived || 0) + 1;
+        repo.data.store.revisions = (repo.data.store.revisions || 0) + 1;
+      }
       catRowCache = null;
+      repo.historyOpen = false; repo.history = null;
+      if (act.loaded) act.loaded = false;        /* the feed is a page behind now */
       var left = sleevesIn(repo.variant, repo.category);
       loadDraft(left[0] ? left[0].id : null);
       forgetLibrary(gone.category);
-      App.announce('polite', 'Deleted ' + gone.name + '.');
+      App.announce('polite', gone.name + ' archived. It keeps its history and can be restored from the Archive.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; repo.confirmDelete = false; render();
@@ -5488,7 +5641,155 @@ function editorHtml() {
     + '<button type="button" class="btn repo-add" data-repoadd' + (repo.picker ? ' disabled' : '') + '>+ Add product</button></div>'
     + (problems.length && repo.dirty
         ? '<p class="repo-problems">' + problems.map(esc).join(' ') + '</p>' : '')
-    + '<p class="repo-prov">' + prov + '</p>';
+    + '<p class="repo-prov">' + prov + '</p>'
+    + (entry ? historyPanelHtml(entry.id, entry.revisions) : '');
+}
+
+/* ---- the record: history and the removed sleeves (D65) ------------------
+   A sleeve's earlier versions are kept for ever, and a delete takes a sleeve
+   out of the library without taking it off the record. Both are read here.
+   The history is fetched only when someone asks for it: most visits to a
+   sleeve are to edit it, and a trail that grows for the life of the library
+   has no business riding along in the console's first payload. */
+
+var ACTION_WORDS = {
+  baseline: 'history begins', created: 'created', updated: 'edited',
+  reverted: 'put an earlier version back', deleted: 'archived',
+  restored: 'restored to the library', imported: 'loaded from a file',
+  seeded: 'loaded with the library'
+};
+var ACTION_LABELS = {
+  created: 'Created', updated: 'Edited', reverted: 'Reverted', deleted: 'Archived',
+  restored: 'Restored', imported: 'Imported', seeded: 'Seeded', baseline: 'Baseline'
+};
+
+function revisionHtml(entry) {
+  var open = repo.openRevision === entry.revision;
+  var products = entry.products.map(function (row) {
+    var label = row.product ? esc(row.product.name)
+      : esc(row.productId) + ' <span class="warn">not in the catalogue</span>';
+    return '<li><span class="w">' + money2(row.weight * 100) + '%</span><span>' + label + '</span></li>';
+  }).join('');
+  var changes = entry.changes.length
+    ? '<ul class="rev-changes">' + entry.changes.map(function (c) {
+        return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>'
+    : '';
+  return '<div class="rev' + (entry.current ? ' now' : '') + (open ? ' open' : '') + '">'
+    + '<button type="button" class="rev-h" data-reporev="' + entry.revision + '"'
+    + ' aria-expanded="' + (open ? 'true' : 'false') + '">'
+    + '<span class="rev-n">r' + entry.revision + '</span>'
+    + '<span class="rev-what"><b>' + esc(ACTION_WORDS[entry.action] || entry.action) + '</b>'
+    + '<small>' + esc(shortDate(entry.at)) + (entry.actor ? ' · ' + esc(entry.actor) : '') + '</small></span>'
+    + (entry.current ? '<span class="rev-now">in force</span>' : '')
+    + '<span class="rev-caret" aria-hidden="true">›</span>'
+    + '</button>'
+    + changes
+    + (open ? '<div class="rev-b"><p class="rev-name">' + esc(entry.name)
+        + (entry.note ? ' <small>' + esc(entry.note) + '</small>' : '') + '</p>'
+        + '<ul class="rev-products">' + products + '</ul>'
+        + (entry.current ? ''
+            : '<button type="button" class="btn rev-put" data-reporevert="' + entry.revision + '"'
+              + (repo.saving ? ' disabled' : '') + '>Put this version back</button>')
+        + '</div>' : '')
+    + '</div>';
+}
+
+function historyPanelHtml(sleeveId, count) {
+  var head = '<button type="button" class="repo-histh" data-repohistory="' + sleeveId + '"'
+    + ' aria-expanded="' + (repo.historyOpen ? 'true' : 'false') + '">'
+    + '<span>History</span><span class="n">' + (count || 0) + ' version'
+    + (count === 1 ? '' : 's') + '</span>'
+    + '<span class="rev-caret" aria-hidden="true">›</span></button>';
+  if (!repo.historyOpen) return '<div class="repo-hist">' + head + '</div>';
+  var body;
+  if (repo.historyBusy) {
+    body = '<p class="repo-none">Reading the record…</p>';
+  } else if (!repo.history || repo.history.sleeveId !== sleeveId) {
+    body = '<p class="repo-none">No record for this sleeve.</p>';
+  } else if (!repo.history.entries.length) {
+    body = '<p class="repo-none">Nothing recorded yet.</p>';
+  } else {
+    body = repo.history.entries.map(revisionHtml).join('');
+  }
+  return '<div class="repo-hist open">' + head + '<div class="repo-hist-b">' + body + '</div></div>';
+}
+
+async function loadHistory(sleeveId) {
+  repo.historyBusy = true; render();
+  try {
+    var r = await api('GET', '/scenario/repository/sleeves/' + sleeveId + '/history');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not read the history (' + r.status + ')'));
+    repo.history = { sleeveId: sleeveId, entries: r.body.history || [] };
+    repo.error = null;
+  } catch (err) { repo.error = err.message; }
+  repo.historyBusy = false; render();
+}
+
+function toggleHistory(sleeveId) {
+  repo.historyOpen = !repo.historyOpen;
+  repo.openRevision = null;
+  if (!repo.historyOpen) { render(); return; }
+  if (repo.history && repo.history.sleeveId === sleeveId) { render(); return; }
+  loadHistory(sleeveId);
+}
+
+/* Both of these change the library, so both re-read it rather than patching
+   the copy in hand: a restore can change what a fixed category holds and a
+   revert can change what the pickers offer, and guessing at either from the
+   response is how the console and the store drift apart. */
+async function restoreArchived(ids) {
+  ids = (ids || []).filter(function (id) { return archivedById(id); });
+  if (!ids.length || repo.saving) return;
+  repo.saving = true; repo.error = null; render();
+  try {
+    var r = await api('POST', '/scenario/repository/sleeves/restore', { ids: ids });
+    if (!r) return;
+    if (!r.ok) {
+      repo.error = r.body.error || ('Could not restore (' + r.status + ')');
+    } else {
+      var back = r.body.sleeves || [];
+      App.announce('polite', back.length === 1
+        ? back[0].name + ' is back in the library.'
+        : back.length + ' sleeves are back in the library.');
+      repo.saving = false;
+      repo.historyOpen = false; repo.history = null;
+      arc.selected = arc.selected.filter(function (id) { return ids.indexOf(id) === -1; });
+      if (arc.detail != null && ids.indexOf(arc.detail) !== -1) arc.detail = null;
+      back.forEach(function (b) { forgetLibrary(b.category); });
+      await loadRepository();
+      if (act.loaded) loadActivity(true);
+      if (back.length === 1 && repo.view !== 'activity') {
+        applyTarget({ variant: back[0].variant, category: back[0].category, to: back[0].id });
+      }
+      return;
+    }
+  } catch (err) { repo.error = err.message; }
+  repo.saving = false; render();
+}
+
+async function revertTo(revisionNumber) {
+  var id = repo.history && repo.history.sleeveId; if (!id) return;
+  repo.saving = true; repo.error = null; render();
+  try {
+    var r = await api('POST', '/scenario/repository/sleeves/' + id + '/revert',
+                      { revision: revisionNumber });
+    if (!r) return;
+    if (!r.ok) {
+      repo.error = r.body.error || ('Could not put that version back (' + r.status + ')');
+    } else {
+      var sleeve = r.body.sleeve;
+      App.announce('polite', 'r' + revisionNumber + ' is in force again for ' + sleeve.name + '.');
+      repo.saving = false;
+      forgetLibrary(sleeve.category);
+      await loadRepository();
+      await loadHistory(id);
+      if (act.loaded) loadActivity(true);
+      applyTarget({ variant: sleeve.variant, category: sleeve.category, to: sleeve.id });
+      return;
+    }
+  } catch (err) { repo.error = err.message; }
+  repo.saving = false; render();
 }
 
 /* The context menu on a sleeve: the two things worth doing to one from the
@@ -5517,7 +5818,7 @@ function sleeveMenuHtml() {
     + '<p class="sep"></p>'
     + '<button type="button" class="repo-mi danger" data-reporemove="' + entry.id + '"'
     + (entry.fixed ? ' disabled title="A fixed category always holds one sleeve"' : '')
-    + '>Remove from ' + esc(entry.category) + '</button>'
+    + '>Archive from ' + esc(entry.category) + '</button>'
     + '</div>';
 }
 
@@ -5553,6 +5854,322 @@ function sleevesViewHtml() {
     + list + '</div>'
     + '<div class="repo-pane repo-ed">' + editorHtml() + '</div>'
     + '</div>' + sleeveMenuHtml();
+}
+
+/* ---- rendering: the archive (D66, option A) -----------------------------
+   The sleeves taken out of the library, as one searchable table across every
+   book. Built on the catalogue's chrome - the same search, chips, sortable
+   head and dense rows - because an admin who has learned one should not have
+   to learn the other. Ticking rows collects a batch; opening one shows what
+   it held, its history, and the way back. */
+function arcRows() {
+  return archivedSleeves().map(function (s) {
+    var live = (s.offeredUnder || []).filter(function (v) { return v !== s.variant; });
+    return { s: s, held: s.products.length, liveElsewhere: live,
+             hay: (s.name + ' ' + s.category + ' ' + s.variant + ' ' + (s.archivedBy || '') + ' '
+               + s.products.map(function (r) { return r.product ? r.product.name : r.productId; }).join(' ')).toLowerCase() };
+  });
+}
+function arcPasses(row, except) {
+  var q = arc.query.trim().toLowerCase();
+  if (q && row.hay.indexOf(q) === -1) return false;
+  for (var f in arc.filters) {
+    if (f === except || !arc.filters[f]) continue;
+    if (String(row.s[f] || '') !== arc.filters[f]) return false;
+  }
+  return true;
+}
+function arcVisible() {
+  var rows = arcRows().filter(function (r) { return arcPasses(r); });
+  var key = arc.sort.key, dir = arc.sort.dir === 'desc' ? -1 : 1;
+  rows.sort(function (a, b) {
+    var x = key === 'held' ? a.held : (key === 'revisions' ? a.s.revisions : String(a.s[key] || '').toLowerCase());
+    var y = key === 'held' ? b.held : (key === 'revisions' ? b.s.revisions : String(b.s[key] || '').toLowerCase());
+    if (x < y) return -dir; if (x > y) return dir;
+    return a.s.id - b.s.id;
+  });
+  return rows;
+}
+function arcFacet(field, order) {
+  var counts = {};
+  arcRows().forEach(function (r) { if (arcPasses(r, field)) { var v = r.s[field] || ''; counts[v] = (counts[v] || 0) + 1; } });
+  var values = Object.keys(counts);
+  if (order) values.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
+  else values.sort();
+  return values.map(function (v) { return { value: v, count: counts[v] }; });
+}
+function arcSelect(field, label, order) {
+  var chosen = arc.filters[field] || '';
+  var values = arcFacet(field, order);
+  return '<label class="arc-sel' + (chosen ? ' on' : '') + '"><span>' + esc(label) + '</span>'
+    + '<select data-arcfilter="' + field + '">'
+    + '<option value="">' + (chosen ? 'Any' : 'Any') + '</option>'
+    + values.map(function (v) {
+        return '<option value="' + esc(v.value) + '"' + (v.value === chosen ? ' selected' : '') + '>'
+          + esc(v.value) + ' (' + v.count + ')</option>';
+      }).join('')
+    + '</select></label>';
+}
+function arcFiltersInForce() {
+  var n = arc.query.trim() ? 1 : 0;
+  for (var f in arc.filters) if (arc.filters[f]) n += 1;
+  return n;
+}
+function arcToolbarHtml() {
+  return '<div class="cat-tools arc-tools">'
+    + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
+    + '<input type="search" id="arcSearch" placeholder="Search sleeve, product, who…" value="' + esc(arc.query) + '"'
+    + ' aria-label="Search the archive"><kbd aria-hidden="true">/</kbd></label>'
+    + arcSelect('variant', 'Book', repo.data.variants)
+    + arcSelect('category', 'Category', repo.data.categories)
+    + arcSelect('archivedBy', 'Archived by')
+    + (arcFiltersInForce() ? '<button type="button" class="cat-clear" data-arcclear>Clear</button>' : '')
+    + '<span class="cat-count" id="arcCount">' + arcCountText() + '</span>'
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/archive.csv') + '" download>Export CSV</a>'
+    + '</div>';
+}
+function arcCountText() {
+  var all = archivedSleeves().length, shown = arcVisible().length;
+  if (!all) return 'Nothing archived';
+  return (shown === all ? all : shown + ' of ' + all) + ' archived sleeve' + (all === 1 ? '' : 's');
+}
+function arcHeadHtml() {
+  var visible = arcVisible();
+  var allOn = visible.length > 0 && visible.every(function (r) { return arc.selected.indexOf(r.s.id) !== -1; });
+  return '<tr><th class="pinc"><input type="checkbox" data-arcselall aria-label="Select every shown sleeve"' + (allOn ? ' checked' : '') + (visible.length ? '' : ' disabled') + '></th>'
+    + ARC_COLUMNS.map(function (c) {
+        var sorted = arc.sort.key === c.key;
+        return '<th' + (c.num ? ' class="num"' : '') + ' aria-sort="' + (sorted ? (arc.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
+          + '<button type="button" class="cat-sort' + (sorted ? ' on' : '') + '" data-arcsort="' + c.key + '">' + esc(c.label)
+          + (sorted ? (arc.sort.dir === 'desc' ? ' ▼' : ' ▲') : '') + '</button></th>';
+      }).join('') + '<th></th></tr>';
+}
+function arcBodyHtml() {
+  var rows = arcVisible();
+  if (!rows.length) {
+    return '<tr><td colspan="' + (ARC_COLUMNS.length + 2) + '" class="cat-empty">'
+      + (archivedSleeves().length
+          ? 'No archived sleeve matches' + (arc.query.trim() ? ' <b>“' + esc(arc.query.trim()) + '”</b>' : '') + ' with the filters in force. '
+            + '<button type="button" class="cat-clear" data-arcclear>Clear the filters</button>'
+          : 'Nothing has been archived. A sleeve archived from the editor keeps its history and appears here.')
+      + '</td></tr>';
+  }
+  return rows.map(function (r) {
+    var s = r.s, on = arc.selected.indexOf(s.id) !== -1, open = arc.detail === s.id;
+    return '<tr data-arcrow="' + s.id + '" class="' + (on ? 'pin' : '') + (open ? ' on' : '') + '" aria-selected="' + open + '">'
+      + '<td class="pinc"><input type="checkbox" data-arcsel="' + s.id + '" aria-label="Select ' + esc(s.name) + '"' + (on ? ' checked' : '') + '></td>'
+      + '<td><b>' + esc(s.name) + '</b>' + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem' + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</td>'
+      + '<td>' + esc(s.category) + '</td>'
+      + '<td>' + esc(s.variant) + '</td>'
+      + '<td class="num">' + r.held + '</td>'
+      + '<td>' + esc(shortDate(s.archivedAt)) + (s.archivedBy ? ' <span class="mut">· ' + esc(s.archivedBy) + '</span>' : '') + '</td>'
+      + '<td class="num">' + s.revisions + '</td>'
+      + '<td class="arc-status">' + (r.liveElsewhere.length
+          ? '<span class="arc-badge live" title="A sleeve of this name is in the library under ' + esc(r.liveElsewhere.join(', ')) + '">live under ' + esc(r.liveElsewhere.join(', ')) + '</span>'
+          : '<span class="arc-badge gone">archived</span>') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+function arcDetailHtml() {
+  var entry = arc.detail != null ? archivedById(arc.detail) : null;
+  if (!entry) return '';
+  var blocked = sleevesIn(entry.variant, entry.category).some(function (x) {
+    return x.name.trim().toLowerCase() === entry.name.trim().toLowerCase();
+  });
+  var full = entry.fixed && sleevesIn(entry.variant, entry.category).length >= 1;
+  var why = blocked ? 'A sleeve of that name is in the library again — rename or archive it first.'
+    : (full ? entry.category + ' already holds its one sleeve here.' : '');
+  var products = entry.products.map(function (row) {
+    var label = row.product ? esc(row.product.name) + ' <span class="mut">' + esc(productMeta(row.product)) + '</span>'
+      : esc(row.productId) + ' <span class="warn">not in the catalogue</span>';
+    return '<li><span class="w">' + money2(row.weight * 100) + '%</span><span>' + label + '</span></li>';
+  }).join('');
+  return '<div class="arc-detail" id="arcDetail">'
+    + '<div class="arc-dh"><div><h3>' + esc(entry.name) + '</h3>'
+    + '<p>' + esc(entry.category) + ' · ' + esc(entry.variant) + '</p>'
+    + '<p class="repo-prov">Archived ' + esc(shortDate(entry.archivedAt)) + (entry.archivedBy ? ' by ' + esc(entry.archivedBy) : '')
+    + ' · created ' + esc(shortDate(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
+    + (entry.note ? ' · “' + esc(entry.note) + '”' : '') + '</p></div>'
+    + '<div class="arc-dact">'
+    + (why ? '<span class="repo-problems">' + esc(why) + '</span>' : '')
+    + '<button type="button" class="btn btn-primary" data-arcrestore="' + entry.id + '"' + (why || repo.saving ? ' disabled' : '') + '>Restore to the library</button>'
+    + '<button type="button" class="dlg-close arc-dclose" data-arcdetailclose aria-label="Close">×</button>'
+    + '</div></div>'
+    + '<div class="arc-db"><div><p class="m-lbl repo-pane-h arc-lbl">What it held when it was archived</p>'
+    + '<ul class="rev-products big">' + products + '</ul></div>'
+    + '<div>' + historyPanelHtml(entry.id, entry.revisions) + '</div></div>'
+    + '</div>';
+}
+function archiveViewHtml() {
+  return arcToolbarHtml()
+    + '<div class="arc-b">'
+    + '<div class="cat-tblwrap arc-tblwrap" tabindex="0" aria-label="Archived sleeves, scrolls">'
+    + '<table class="cat-tbl dense arc-tbl"><thead id="arcHead">' + arcHeadHtml() + '</thead>'
+    + '<tbody id="arcBody">' + arcBodyHtml() + '</tbody></table></div>'
+    + arcDetailHtml()
+    + '</div>';
+}
+function updateArchive() {
+  var head = document.getElementById('arcHead'); if (head) head.innerHTML = arcHeadHtml();
+  var body = document.getElementById('arcBody'); if (body) body.innerHTML = arcBodyHtml();
+  var count = document.getElementById('arcCount'); if (count) count.innerHTML = arcCountText();
+  var foot = document.getElementById('arcFoot'); if (foot) foot.outerHTML = arcFooterHtml();
+  syncHash();
+}
+function arcFooterHtml() {
+  var n = arc.selected.length;
+  var d = repo.data;
+  return '<div class="repo-f arc-f" id="arcFoot">'
+    + '<span class="repo-src">Archive · ' + archivedSleeves().length + ' sleeve' + (archivedSleeves().length === 1 ? '' : 's')
+    + ' · ' + (d.store.revisions || 0) + ' versions on record</span>'
+    + '<span class="spacer"></span>'
+    + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
+    + (n ? '<span class="repo-src">' + n + ' selected</span>'
+         + '<button type="button" class="btn" data-arcclearsel>Clear</button>'
+         + '<button type="button" class="btn btn-primary" data-arcrestoresel' + (repo.saving ? ' disabled' : '') + '>'
+         + (repo.saving ? 'Restoring…' : 'Restore ' + n + ' sleeve' + (n === 1 ? '' : 's')) + '</button>'
+       : '<span class="repo-src">Tick sleeves to restore several at once</span>')
+    + '</div>';
+}
+
+/* ---- rendering: the activity feed (D66, option C) ------------------------
+   The record read as a story: every revision across every sleeve, newest
+   first, grouped by day. What happened is a sentence, what moved is the line
+   under it, and the version it produced is one click away. The page is what
+   the server handed back - a filter change is a fresh read, not a sift. */
+function actParams(before) {
+  var q = new URLSearchParams();
+  if (act.actions.length) q.set('actions', act.actions.join(','));
+  if (act.actor) q.set('actor', act.actor);
+  if (act.variant) q.set('variant', act.variant);
+  if (act.query.trim()) q.set('q', act.query.trim());
+  if (act.range !== 'all') {
+    var days = parseInt(act.range, 10) || 30;
+    var since = new Date(Date.now() - days * 86400000);
+    q.set('since', since.toISOString().slice(0, 10));
+  }
+  q.set('limit', '60');
+  if (before) q.set('before', before);
+  return q.toString();
+}
+async function loadActivity(reset) {
+  if (act.busy) return;
+  act.busy = true; act.error = null;
+  if (reset) { act.entries = []; act.next = null; }
+  render();
+  try {
+    var r = await api('GET', '/scenario/repository/activity?' + actParams(reset ? null : act.next));
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not read the record (' + r.status + ')'));
+    act.entries = reset ? r.body.entries : act.entries.concat(r.body.entries);
+    act.next = r.body.next; act.total = r.body.total; act.facets = r.body.facets;
+    act.earliest = r.body.earliest || '';
+    act.loaded = true;
+  } catch (err) { act.error = err.message; }
+  act.busy = false; render();
+}
+function actRefresh() {
+  /* the search box is live; the rest is one read per change */
+  if (actTimer) clearTimeout(actTimer);
+  actTimer = setTimeout(function () { actTimer = null; loadActivity(true); }, 220);
+}
+function actSelect(name, attr, label, values, chosen) {
+  return '<label class="arc-sel' + (chosen ? ' on' : '') + '"><span>' + esc(label) + '</span>'
+    + '<select data-' + attr + '>' + values.map(function (v) {
+        return '<option value="' + esc(v[0]) + '"' + (v[0] === chosen ? ' selected' : '') + '>' + esc(v[1]) + '</option>';
+      }).join('') + '</select></label>';
+}
+function actToolbarHtml() {
+  var facets = act.facets || { action: {}, actor: {}, variant: {} };
+  var chips = ACT_ACTIONS.map(function (a) {
+    var on = act.actions.indexOf(a) !== -1, n = facets.action[a] || 0;
+    return '<button type="button" class="act-chip' + (on ? ' on' : '') + (!on && !n ? ' off' : '') + '" data-acttoggle="' + a + '" aria-pressed="' + on + '">'
+      + esc(ACTION_LABELS[a]) + '<span class="n">' + n + '</span></button>';
+  }).join('');
+  var people = [['', 'Anyone']].concat(Object.keys(facets.actor).map(function (k) { return [k, k + ' (' + facets.actor[k] + ')']; }));
+  if (act.actor && !facets.actor[act.actor]) people.push([act.actor, act.actor + ' (0)']);
+  var books = [['', 'All books']].concat((repo.data.variants || []).map(function (v) { return [v, v + ' (' + (facets.variant[v] || 0) + ')']; }));
+  return '<div class="cat-tools act-tools">'
+    + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
+    + '<input type="search" id="actSearch" placeholder="Search sleeve, product, who, what changed…" value="' + esc(act.query) + '"'
+    + ' aria-label="Search the record"><kbd aria-hidden="true">/</kbd></label>'
+    + '<span class="act-chips" role="group" aria-label="Actions">' + chips + '</span>'
+    + actSelect('who', 'actwho', 'Who', people, act.actor)
+    + actSelect('book', 'actbook', 'Book', books, act.variant)
+    + actSelect('range', 'actrange', 'When', ACT_RANGES, act.range)
+    + ((act.query.trim() || act.actions.length || act.actor || act.variant || act.range !== '30d')
+        ? '<button type="button" class="cat-clear" data-actclear>Clear</button>' : '')
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/activity.csv?' + actParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
+    + '</div>';
+}
+function actSentence(e) {
+  var what = ACTION_WORDS[e.action] || e.action;
+  return '<b>' + esc(e.name) + '</b> <span class="act-badge ' + esc(e.action) + '">' + esc(ACTION_LABELS[e.action] || e.action) + '</span>'
+    + ' <span class="mut">' + esc(what) + (e.actor ? ' by ' + esc(e.actor) : '') + '</span>';
+}
+function actFeedHtml() {
+  if (!act.loaded && act.busy) return '<p class="repo-loading">Reading the record…</p>';
+  if (act.error && !act.entries.length) return '<p class="repo-loading md-err">' + esc(act.error) + '</p>';
+  if (!act.entries.length) {
+    return '<p class="repo-none act-none">Nothing on record'
+      + (act.range !== 'all' ? ' in the last ' + esc(act.range.replace('d', ' days')) : '')
+      + ' with the filters in force.'
+      + (act.range !== 'all' ? ' <button type="button" class="cat-clear" data-actrange="all">Show all time</button>' : '') + '</p>';
+  }
+  var out = [], day = null;
+  act.entries.forEach(function (e) {
+    var d = (e.at || '').slice(0, 10);
+    if (d !== day) {
+      day = d;
+      out.push('<p class="act-day">' + esc(longDate(e.at)) + '</p>');
+    }
+    var sub = esc(e.category) + ' · ' + esc(e.variant) + ' · r' + e.revision
+      + (e.action === 'baseline' ? ' · history begins here' : '')
+      + (e.products.length ? ' · ' + e.products.length + ' product' + (e.products.length === 1 ? '' : 's') : '');
+    var changes = e.changes.length ? '<ul class="rev-changes act-changes">' + e.changes.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '';
+    var action;
+    if (e.sleeveArchived) {
+      action = '<button type="button" class="btn act-btn" data-actview="' + e.sleeveId + '" data-actrev="' + e.revision + '" data-actarchived="1">Open in Archive</button>'
+        + (e.action === 'deleted' && e.current ? '<button type="button" class="btn act-btn" data-actrestore="' + e.sleeveId + '"' + (repo.saving ? ' disabled' : '') + '>Restore</button>' : '');
+    } else {
+      action = '<button type="button" class="btn act-btn" data-actview="' + e.sleeveId + '" data-actrev="' + e.revision + '">'
+        + (e.current ? 'Open sleeve' : 'View r' + e.revision) + '</button>';
+    }
+    out.push('<div class="act-ev' + (e.current ? ' now' : '') + '">'
+      + '<span class="t">' + esc((e.at || '').slice(11, 16)) + '</span>'
+      + '<div class="w"><p>' + actSentence(e) + '</p><small>' + sub + '</small>' + changes + '</div>'
+      + '<span class="a">' + action + '</span></div>');
+  });
+  if (act.next) {
+    out.push('<div class="act-more"><button type="button" class="btn" data-actmore' + (act.busy ? ' disabled' : '') + '>'
+      + (act.busy ? 'Reading…' : 'Earlier changes') + '</button></div>');
+  }
+  return out.join('');
+}
+function longDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso); if (isNaN(d)) return iso.slice(0, 10);
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var that = new Date(d); that.setHours(0, 0, 0, 0);
+  var diff = Math.round((today - that) / 86400000);
+  var label = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  if (diff === 0) return 'Today · ' + label;
+  if (diff === 1) return 'Yesterday · ' + label;
+  return label;
+}
+function activityViewHtml() {
+  return actToolbarHtml() + '<div class="act-b" id="actBody">' + actFeedHtml() + '</div>';
+}
+function actFooterHtml() {
+  var shown = act.entries.length;
+  return '<div class="repo-f act-f">'
+    + '<span class="repo-src">' + (act.loaded
+        ? (shown === act.total ? shown : shown + ' of ' + act.total) + ' change' + (act.total === 1 ? '' : 's')
+          + (act.earliest ? ' · on record since ' + esc(shortDate(act.earliest)) : '')
+        : 'Reading the record…') + '</span>'
+    + '<span class="spacer"></span>'
+    + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
+    + '</div>';
 }
 
 /* ---- rendering: the catalogue view (D58; laid out as the terminal, D63) ----
@@ -5851,13 +6468,18 @@ function render() {
   var focused = document.activeElement && document.activeElement.id;
   var d = repo.data;
   var onCatalogue = repo.view === 'catalogue';
+  var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity;
 
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Sleeve Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
-    + '<button type="button" role="tab" data-repoview="sleeves" aria-selected="' + (!onCatalogue ? 'true' : 'false') + '">Sleeves</button>'
-    + '<button type="button" role="tab" data-repoview="catalogue" aria-selected="' + (onCatalogue ? 'true' : 'false') + '">Catalogue</button>'
+    + '<button type="button" role="tab" data-repoview="sleeves" aria-selected="' + onSleeves + '">Sleeves</button>'
+    + '<button type="button" role="tab" data-repoview="catalogue" aria-selected="' + onCatalogue + '">Catalogue</button>'
+    + '<button type="button" role="tab" data-repoview="archive" aria-selected="' + onArchive + '">Archive'
+    + (d && archivedSleeves().length ? '<span class="n">' + archivedSleeves().length + '</span>' : '') + '</button>'
+    + '<button type="button" role="tab" data-repoview="activity" aria-selected="' + onActivity + '">Activity</button>'
     + '</div>';
-  if (d && !onCatalogue) {
+  if (d && onSleeves) {
     header += '<div class="repo-seg" role="tablist" aria-label="Implementation type">'
       + d.variants.map(function (v) {
           return '<button type="button" role="tab" data-repovariant="' + esc(v) + '"'
@@ -5875,6 +6497,10 @@ function render() {
     body = '<div class="repo-b"><p class="repo-loading">' + (repo.error ? '' : 'Loading the repository…') + '</p></div>';
   } else if (onCatalogue) {
     body = catalogueViewHtml();
+  } else if (onArchive) {
+    body = archiveViewHtml();
+  } else if (onActivity) {
+    body = activityViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -5888,34 +6514,42 @@ function render() {
   }
 
   var footer;
-  if (onCatalogue && d) {
+  if (onArchive && d) {
+    footer = arcFooterHtml();
+  } else if (onActivity && d) {
+    footer = actFooterHtml();
+  } else if (onCatalogue && d) {
     footer = '<div class="repo-f cat-f">' + catTrayHtml()
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
       + '<span class="repo-src cat-src">' + esc(d.catalogue.path.replace(/^.*\/(productSource\/)/, '$1')) + ' · '
       + esc(shortDate(d.catalogue.modified)) + ' · read only</span>'
       + '</div>';
   } else {
-    var canSave = !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
+    var onRemoved = false;
+    var canSave = !onRemoved && !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
     footer = '<div class="repo-f">'
       + (d ? '<button type="button" class="btn btn-create" data-repocreate'
           + (repo.saving ? ' disabled' : '') + '>+ Create sleeve</button>' : '')
       + (d ? '<span class="repo-src">Library · ' + esc(d.store.path.split('/').pop()) + ' · ' + d.store.sleeves
-          + ' sleeves' + (d.store.seededAt ? ' · seeded ' + esc(shortDate(d.store.seededAt)) : '') + '</span>' : '')
+          + ' sleeves · ' + (d.store.revisions || 0) + ' versions on record'
+          + (d.store.archived ? ' · ' + d.store.archived + ' archived' : '') + '</span>' : '')
       + '<span class="spacer"></span>'
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
-      + (repo.draft && repo.draft.id && !isFixed(repo.category)
+      + (!onRemoved && repo.draft && repo.draft.id && !isFixed(repo.category)
           ? (repo.confirmDelete
-              ? '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
-                + '<button type="button" class="btn btn-danger" data-repodelete>Confirm delete</button>'
-              : '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>Delete sleeve</button>')
+              ? '<span class="repo-src">It keeps its history and can be restored from the Archive.</span>'
+                + '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
+                + '<button type="button" class="btn btn-danger" data-repodelete>Confirm archive</button>'
+              : '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>Archive sleeve</button>')
           : '')
-      + '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
-      + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve' : 'Save sleeve')) + '</button>'
+      + (onRemoved ? ''
+          : '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
+            + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve' : 'Save sleeve')) + '</button>')
       + '</div>';
   }
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
-    + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
+    + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
 
@@ -5923,7 +6557,7 @@ function render() {
     var again = document.getElementById(focused);
     if (again && again.focus) {
       again.focus();
-      if ((again.id === 'repoSearch' || again.id === 'catSearch') && again.setSelectionRange && again.type !== 'search') {
+      if ((again.id === 'repoSearch' || again.id === 'catSearch' || again.id === 'arcSearch' || again.id === 'actSearch') && again.setSelectionRange && again.type !== 'search') {
         var end = again.value.length; again.setSelectionRange(end, end);
       }
     }
@@ -5971,6 +6605,14 @@ function renderEntryLinks() {
       catFromHash(window.location.hash);
       openRepository(null, 'catalogue');
     }
+    if (show && window.location.hash.indexOf('#archive') === 0) {
+      arcFromHash(window.location.hash);
+      openRepository(null, 'archive');
+    }
+    if (show && window.location.hash.indexOf('#activity') === 0) {
+      actFromHash(window.location.hash);
+      openRepository(null, 'activity');
+    }
   }
 }
 
@@ -6001,7 +6643,10 @@ document.addEventListener('click', function (e) {
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
     + '[data-catrow],[data-catopen],[data-catfee],'
-    + '[data-repocreate],[data-repocopy],[data-reporemove]') : null;
+    + '[data-repocreate],[data-repocopy],[data-reporemove],'
+    + '[data-repohistory],[data-reporev],[data-reporevert],'
+    + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
+    + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange]') : null;
   if (!el) {
     /* a click anywhere else closes an open picker, chip menu or context menu */
     if (repo.picker && !e.target.closest('.repo-menu, #repoSearch')) closePicker();
@@ -6021,6 +6666,44 @@ document.addEventListener('click', function (e) {
   if (ds.repocreate !== undefined) { goTo({ fresh: true, create: true }); return; }
   if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
   if (ds.reporemove !== undefined) { removeFromCategory(parseInt(ds.reporemove, 10)); return; }
+  /* the record (D65) */
+  if (ds.repohistory !== undefined) { toggleHistory(parseInt(ds.repohistory, 10)); return; }
+  if (ds.reporev !== undefined) {
+    var n = parseInt(ds.reporev, 10);
+    repo.openRevision = repo.openRevision === n ? null : n;
+    render(); return;
+  }
+  if (ds.reporevert !== undefined) { revertTo(parseInt(ds.reporevert, 10)); return; }
+  /* the archive (D66) */
+  if (ds.arcsort !== undefined) {
+    if (arc.sort.key === ds.arcsort) arc.sort.dir = arc.sort.dir === 'asc' ? 'desc' : 'asc';
+    else arc.sort = { key: ds.arcsort, dir: ds.arcsort === 'archivedAt' || ds.arcsort === 'revisions' ? 'desc' : 'asc' };
+    updateArchive(); return;
+  }
+  if (ds.arcrow !== undefined) {
+    if (e.target.closest('input')) return;                 /* the tick box has its own handler */
+    var id = parseInt(ds.arcrow, 10);
+    var same = arc.detail === id;
+    arc.detail = same ? null : id;
+    repo.historyOpen = false; repo.history = null; repo.openRevision = null;
+    render(); return;
+  }
+  if (ds.arcdetailclose !== undefined) { arc.detail = null; repo.historyOpen = false; render(); return; }
+  if (ds.arcclear !== undefined) { arc.query = ''; arc.filters = {}; render(); return; }
+  if (ds.arcclearsel !== undefined) { arc.selected = []; updateArchive(); return; }
+  if (ds.arcrestore !== undefined) { restoreArchived([parseInt(ds.arcrestore, 10)]); return; }
+  if (ds.arcrestoresel !== undefined) { restoreArchived(arc.selected.slice()); return; }
+  /* the feed (D66) */
+  if (ds.acttoggle !== undefined) {
+    var at = act.actions.indexOf(ds.acttoggle);
+    if (at === -1) act.actions.push(ds.acttoggle); else act.actions.splice(at, 1);
+    loadActivity(true); return;
+  }
+  if (ds.actrange !== undefined) { act.range = ds.actrange; loadActivity(true); return; }
+  if (ds.actclear !== undefined) { act.query = ''; act.actions = []; act.actor = ''; act.variant = ''; act.range = '30d'; loadActivity(true); return; }
+  if (ds.actmore !== undefined) { loadActivity(false); return; }
+  if (ds.actview !== undefined) { openRevisionFrom(parseInt(ds.actview, 10), parseInt(ds.actrev, 10), ds.actarchived === '1'); return; }
+  if (ds.actrestore !== undefined) { restoreArchived([parseInt(ds.actrestore, 10)]); return; }
   if (ds.repoadd !== undefined) { addRow(); return; }
   if (ds.reporm !== undefined) { removeRow(parseInt(ds.reporm, 10)); return; }
   if (ds.repopick !== undefined) { openPicker(parseInt(ds.repopick, 10)); return; }
@@ -6077,6 +6760,25 @@ document.addEventListener('change', function (e) {
     if (!e.target.checked) hidden.push(ds.catcol);
     cat.hidden = hidden; render(); return;
   }
+  /* the archive's filters and tick boxes (D66) */
+  if (ds.arcfilter !== undefined) { arc.filters[ds.arcfilter] = e.target.value; render(); return; }
+  if (ds.arcsel !== undefined) {
+    var sid = parseInt(ds.arcsel, 10);
+    arc.selected = arc.selected.filter(function (x) { return x !== sid; });
+    if (e.target.checked) arc.selected.push(sid);
+    updateArchive(); return;
+  }
+  if (ds.arcselall !== undefined) {
+    var shown = arcVisible().map(function (r) { return r.s.id; });
+    arc.selected = e.target.checked
+      ? arc.selected.concat(shown.filter(function (id) { return arc.selected.indexOf(id) === -1; }))
+      : arc.selected.filter(function (id) { return shown.indexOf(id) === -1; });
+    updateArchive(); return;
+  }
+  /* the feed's selects (D66) */
+  if (ds.actwho !== undefined) { act.actor = e.target.value; loadActivity(true); return; }
+  if (ds.actbook !== undefined) { act.variant = e.target.value; loadActivity(true); return; }
+  if (ds.actrange !== undefined) { act.range = e.target.value; loadActivity(true); return; }
 });
 
 document.addEventListener('contextmenu', function (e) {
@@ -6127,6 +6829,8 @@ document.addEventListener('input', function (e) {
   if (!repo.open) return;
   var el = e.target;
   if (el.id === 'catSearch') { cat.query = el.value; updateCatalogue(); return; }
+  if (el.id === 'arcSearch') { arc.query = el.value; updateArchive(); return; }
+  if (el.id === 'actSearch') { act.query = el.value; syncHash(); actRefresh(); return; }
   if (!repo.draft) return;
   if (el.id === 'repoName') { repo.draft.name = el.value; repo.dirty = true; updateTotals(); return; }
   if (el.id === 'repoNote') { repo.draft.note = el.value; repo.dirty = true; updateTotals(); return; }
@@ -6153,6 +6857,22 @@ document.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowUp') { e.preventDefault(); repo.picker.index = Math.max(repo.picker.index - 1, 0); updatePickerList(); return; }
     if (e.key === 'Enter') { e.preventDefault(); if (hits[repo.picker.index]) choose(hits[repo.picker.index].productId); return; }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePicker(); return; }
+    return;
+  }
+  if (repo.view === 'archive' || repo.view === 'activity') {
+    var box2 = document.getElementById(repo.view === 'archive' ? 'arcSearch' : 'actSearch');
+    var inField2 = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA');
+    if (e.key === '/' && !inField2) { e.preventDefault(); if (box2) { box2.focus(); box2.select(); } return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (box2 && e.target === box2) {
+        if (box2.value) { box2.value = ''; if (repo.view === 'archive') { arc.query = ''; updateArchive(); } else { act.query = ''; loadActivity(true); } }
+        else box2.blur();
+        return;
+      }
+      if (repo.view === 'archive' && arc.detail != null) { arc.detail = null; repo.historyOpen = false; render(); return; }
+      closeRepository(false); return;
+    }
     return;
   }
   if (repo.view === 'catalogue') {

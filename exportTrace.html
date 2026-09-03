@@ -1,0 +1,356 @@
+<meta charset="utf-8">
+<title>Export Trace</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --code-bg:#F1F4F8; --code-ink:#1C2733; --code-line:#DDE3EA;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+    --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+  --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:58px 0 8px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h2 .n{font-family:var(--f-num);color:var(--accent);margin-right:10px}
+h3{font-size:17px;font-weight:700;margin:28px 0 6px}
+h4{font-size:14px;font-weight:700;margin:0 0 4px}
+p{margin:0 0 12px;max-width:80ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:76ch}
+.sub{color:var(--ink-2);margin:0 0 14px;max-width:82ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:16px 0 0}
+.meta b{color:var(--ink-2);font-weight:700}
+code{font-family:var(--f-mono);font-size:.87em;background:var(--surface-2);padding:1px 5px;border-radius:3px;white-space:nowrap}
+pre{font-family:var(--f-mono);font-size:12.5px;line-height:1.6;background:var(--code-bg);color:var(--code-ink);border:1px solid var(--code-line);border-radius:6px;padding:12px 14px;margin:10px 0 14px;overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit;white-space:pre}
+pre .c{color:var(--ink-3)}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:80ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:13.5px;margin:0;background:var(--surface)}
+table.doc th,table.doc td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc thead th{font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-strong);background:var(--surface-2)}
+table.doc tbody tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:500}
+table.doc td.num{font-family:var(--f-num);text-align:right;white-space:nowrap}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:7px;margin:12px 0 16px}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.04em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:13px 17px;margin:18px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)} .callout.bad{border-color:var(--bad)} .callout.ok{border-color:var(--ok)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:980px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:15px 17px}
+.card p,.card li{font-size:13.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card .hd{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 7px}
+
+/* the chain */
+.chain{margin:18px 0 6px}
+.step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:16px;position:relative;padding-bottom:16px}
+.step:not(:last-child)::before{content:"";position:absolute;left:21px;top:34px;bottom:0;width:2px;background:var(--line-strong)}
+.step .dot{width:44px;height:30px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--f-num);font-size:12px;font-weight:700;color:#FFF;background:var(--accent);
+  border-radius:15px;z-index:1;position:relative}
+.step.eng .dot{background:var(--bad)}
+.step.opt .dot{background:var(--ink-3)}
+.step .body{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:12px 16px;min-width:0}
+.step h4{font-size:15px;margin:0 0 2px}
+.step .where{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);margin:0 0 8px;word-break:break-all}
+.step p{font-size:13.5px;margin:0 0 8px}
+.step p:last-child,.step pre:last-child{margin-bottom:0}
+.step pre{margin:8px 0 0;font-size:12px}
+.tag{display:inline-block;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;border-radius:8px;padding:1px 7px;line-height:16px;vertical-align:middle;margin-left:6px}
+.t-browser{background:var(--accent-soft);color:var(--accent-ink)}
+.t-flask{background:var(--surface-2);color:var(--ink-2)}
+.t-api{background:#E7F4EC;color:#176A33}
+.t-eng{background:var(--bad-soft);color:var(--bad)}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-strong);font-size:13px;color:var(--ink-3)}
+</style>
+<div class="page">
+
+<p class="eyebrow">Proposal Tool · code trace</p>
+<h1>What happens when you press Download Excel</h1>
+<p class="lede">The whole path, from the button to the bytes: every function called, every file it opens, and exactly where the analytics library enters. Traced through the code and then measured against the running service, because the interesting part of this answer is a number.</p>
+<div class="meta">
+  <span><b>Traced</b> 3 September 2026</span>
+  <span><b>Adapter in force</b> <code>baked (live fallback)</code></span>
+  <span><b>Measured</b> against localhost:8001, a real export</span>
+  <span><b>Superseded</b> by D67 &mdash; the engine is out of this path; see exportPortingPlan.html</span>
+</div>
+
+<div class="callout ok">
+  <h4>Since this was written</h4>
+  <p>The dependency described below has been removed (D67). The workbook is now written from the payloads by the tool itself, in <b>~0.13 s</b>, with four sheets rather than three &mdash; the <code>assumptions</code> sheet that step 6a used to throw away is kept. What follows is the trace of the path as it stood, and remains the record of why the change was worth making.</p>
+</div>
+
+<div class="callout warn">
+  <h4>The short answer, and the surprise in it <span class="pill p-mute">as at 3 Sept, before D67</span></h4>
+  <p>The button posts a <b>scenario id</b> — nothing else. The server rebuilds the whole workbook from state it already holds, re-validating and re-resolving rather than trusting anything the page sends.</p>
+  <p>On the configuration running today that export <b>calls the real <code>epsilonPhi</code> engine and takes about 24 seconds warm, 75 seconds cold</b> — even though the same service answers a portfolio request from the baked store in <b>4 milliseconds</b>. <b>The bake does not cover exports.</b> Section 5 is why.</p>
+</div>
+
+<h2><span class="n">1</span>The chain, step by step</h2>
+<p class="sub">Each step names the file and the function. Steps 6a–6c are the fork: which one runs depends on <code>SCENARIO_ADAPTER</code> and <code>SCENARIO_BAKED_FALLBACK</code>.</p>
+
+<div class="chain">
+
+  <div class="step">
+    <span class="dot">1</span>
+    <div class="body">
+      <h4>The button, and what gates it<span class="tag t-browser">browser</span></h4>
+      <p class="where">generator/js/implementation.js — the export card, ~line 1248</p>
+      <p>The card is rendered disabled with a reason until five conditions hold. The server re-checks all of them, so this is convenience, not security:</p>
+      <pre><code>if (!App.canExport())   reason = 'Export is not available for your role.';
+else if (!App.variant()) reason = 'Choose an implementation variant first.';
+else if (fees &amp;&amp; !schedule) reason = 'Choose a fee schedule in the rail first.';
+else if (!done)          reason = 'Attach a sleeve to every category…';
+else if (columnsBusy)    reason = 'Wait for every portfolio column to finish…';</code></pre>
+      <p><code>canExport()</code> is the D64 service-state gate: a service known to be down disables the button before it can fail.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="dot">2</span>
+    <div class="body">
+      <h4><code>exportWorkbook()</code> — one POST, then a blob<span class="tag t-browser">browser</span></h4>
+      <p class="where">generator/js/implementation.js:1303</p>
+      <p>The request body is <b>empty</b>. The scenario id in the path is the entire input.</p>
+      <pre><code>var resp = await fetch(window.API_BASE + '/scenario/'
+    + encodeURIComponent(App.scenarioId()) + '/export',
+  { method: 'POST', credentials: 'same-origin' });
+<span class="c">// …then: resp.blob() → URL.createObjectURL → a synthetic
+// &lt;a download&gt; click → revokeObjectURL after 4s</span></code></pre>
+      <p>The filename is read from <code>Content-Disposition</code>, falling back to <code>PMG_Scenario.xlsx</code>. A non-OK response is parsed as JSON for an <code>error</code> field, and a <code>loginUrl</code> in the body redirects instead of erroring.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="dot">3</span>
+    <div class="body">
+      <h4><code>proxy_api()</code> — Flask forwards it to FastAPI<span class="tag t-flask">flask · 8001</span></h4>
+      <p class="where">service/cyrus_pmg/dashboard/dashboardFrontend.py:184</p>
+      <p><code>/api/&lt;x&gt;</code> becomes <code>/api/v1/&lt;x&gt;</code> on the backend, with cookies and headers forwarded and redirects left for the browser to see.</p>
+      <pre><code>resp = requests.request(method=…, url=backend_url, data=request.get_data(),
+                        headers=…, cookies=request.cookies,
+                        timeout=300, allow_redirects=False)</code></pre>
+      <p><b><code>timeout=300</code> is the real ceiling on an export.</b> A <code>ConnectionError</code> becomes a 502 and a <code>Timeout</code> a 504, each with a small JSON body.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="dot">4</span>
+    <div class="body">
+      <h4><code>exportScenario()</code> — the endpoint<span class="tag t-api">fastapi · 8002</span></h4>
+      <p class="where">service/cyrus_pmg/pmgService/dashboardRouter.py:545</p>
+      <p>Guarded by <code>Depends(requireEditor)</code>, which today is <code>requireAuth</code> — the kerberos cookie against <code>PMG_ALLOWED_KERBEROS</code>. It then reads the scenario off disk and re-enforces every gate the page applied:</p>
+      <pre><code>state = scenarioStore.getScenario(scenarioId)   <span class="c"># JSON under SCENARIO_STORE_DIR</span>
+if not state['base']: raise ValidationError('base', …)
+validateVariant(variant)
+if includeFees:                                  <span class="c"># D52</span>
+    validateFeeSchedule(feeSchedule); validateFeeLevel(feeLevel)</code></pre>
+      <p>Then it checks that every non-auto category has a sleeve, mapping through <code>rules.sleeveCategory</code> so the grouped Private Equity / Other Private Assets pair counts once (D60). Anything missing is a <b>422</b> naming the categories.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="dot">5</span>
+    <div class="body">
+      <h4>Re-resolve every column<span class="tag t-api">fastapi</span></h4>
+      <p class="where">dashboardRouter.py:576</p>
+      <pre><code>keys = [state['base']] + list(state['comparisons'])
+results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k)) for k in keys]</code></pre>
+      <p>The server does not trust the numbers on screen — it asks the port again. Cheap when the caches are warm (or when the answers come off the baked store), and correct when they are not.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="dot">6</span>
+    <div class="body">
+      <h4><code>port.build_export(...)</code> — the fork<span class="tag t-api">fastapi</span></h4>
+      <p class="where">dashboardRouter.py:597 · the <code>ScenarioPort</code> protocol</p>
+      <p>One call, one dict of implementation state, three possible implementations behind it:</p>
+      <pre><code>content = port.build_export(basis, mandate, results, {
+    'sleeves': sleeves, 'variant': variant,
+    'tacticalTilt': …, 'volPremium': …,
+    'includeFees': …, 'feeSchedule': …, 'feeLevel': …})</code></pre>
+    </div>
+  </div>
+
+  <div class="step eng">
+    <span class="dot">6a</span>
+    <div class="body">
+      <h4><code>LiveScenarioPort.build_export</code> — the engine path<span class="tag t-eng">epsilonPhi</span></h4>
+      <p class="where">scenario/liveAdapter.py — <b>this is what runs today</b></p>
+      <p>Four engine touches, all under one coarse lock because the library's caches and its mutable <code>SAAPortfolio</code> are not demonstrably thread-safe:</p>
+      <pre><code>from .engine import Reporting          <span class="c"># lazy import, resolved on first use</span>
+self._ensureReady()                    <span class="c"># CAppConfig.setup(): db + factor models</span>
+built = pw.get_portfolio(basis.currency, universe.weightMap(key),
+                         hedging_option=basis.hedging)   <span class="c"># SAAPortfolio</span>
+copy = built.deepcopy(); copy.name = result['name']      <span class="c"># cached instance is shared</span>
+
+with tempfile.TemporaryDirectory() as tmpdir:
+    report = Reporting(tmpdir, 'proposal')
+    report.add_portfolios(copies)
+    report.generate_report(include_wealth_simulations=False)
+    book = load_workbook(report.output_path)             <span class="c"># openpyxl reopens it</span>
+    book.remove(book['assumptions'])                     <span class="c"># open item 6</span>
+    writeImplementationSheet(book, …)                    <span class="c"># the third sheet</span>
+    book.save(buffer); return buffer.getvalue()</code></pre>
+      <p>The engine writes a workbook to a temp directory; the service reads it back with openpyxl, drops the <code>assumptions</code> sheet, appends its own Implementation sheet and returns the bytes. Any exception that is not already an <code>AnalyticsError</code> is wrapped as one, which the router turns into a 502.</p>
+    </div>
+  </div>
+
+  <div class="step opt">
+    <span class="dot">6b</span>
+    <div class="body">
+      <h4><code>BakedScenarioPort.build_export</code> — delegate, or fall back to the writer</h4>
+      <p class="where">scenario/bakedAdapter.py:143</p>
+      <pre><code>if self._delegate is not None:
+    return self._delegate.build_export(…)      <span class="c"># → 6a, the engine</span>
+return writeFixturesWorkbook(…)                <span class="c"># → 6c, no engine</span></code></pre>
+      <p>The delegate is a <code>LiveScenarioPort</code>, constructed by <code>registry.py</code> whenever <code>SCENARIO_BAKED_FALLBACK</code> is not <code>0</code>. Constructed, not connected — every engine symbol resolves lazily, so a fully baked service never touches the database until something asks it to. <b>An export is that something.</b></p>
+    </div>
+  </div>
+
+  <div class="step opt">
+    <span class="dot">6c</span>
+    <div class="body">
+      <h4><code>writeFixturesWorkbook</code> — the engine-free writer</h4>
+      <p class="where">scenario/workbook.py:321</p>
+      <p>Builds all three sheets from the resolved payloads with openpyxl alone — Portfolios and Risk Dashboard laid out to match the house report (spec 14.3), then the same <code>writeImplementationSheet</code>. Used by the fixtures adapter, and by the baked adapter when the fallback is off. <b>No <code>epsilonPhi</code> import occurs on this path at all</b> — verified.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <span class="dot">7</span>
+    <div class="body">
+      <h4>The response<span class="tag t-api">fastapi</span></h4>
+      <p class="where">dashboardRouter.py:603 · <code>rules.exportFilename</code></p>
+      <pre><code>filename = exportFilename(basis)   <span class="c"># PMG_Scenario_USD_Hedged_2026-09-03.xlsx</span>
+Response(content=content,
+         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+         headers={'Content-Disposition': 'attachment; filename="…"'})</code></pre>
+      <p>Bytes travel back through the Flask proxy unchanged, minus the hop-by-hop headers.</p>
+    </div>
+  </div>
+
+</div>
+
+<h2><span class="n">2</span>What the workbook contains, and who builds each sheet</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:20%">Sheet</th><th style="width:26%">Built by</th><th style="width:14%">epsilonPhi?</th><th>Contents</th></tr></thead>
+<tbody>
+<tr><td><code>portfolios</code></td><td><code>Reporting.generate_report()</code></td><td><span class="pill p-bad">yes</span></td><td>Category and asset weights per column. 33 rows for a single-column proposal.</td></tr>
+<tr><td><code>risk_dashboard</code></td><td><code>Reporting.generate_report()</code></td><td><span class="pill p-bad">yes</span></td><td>The risk sheet — weights plus the engine's risk output. 39 rows.</td></tr>
+<tr><td><code>Implementation</code></td><td><code>writeImplementationSheet</code></td><td><span class="pill p-ok">no</span></td><td>The implemented model: sleeves, products, printed weights, fees, notional.</td></tr>
+<tr><td><s><code>assumptions</code></s></td><td>emitted by <code>Reporting</code>, then <b>removed</b></td><td>—</td><td>Deliberately dropped to honour open item 6's "three tables and nothing else".</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>The Implementation sheet is the tool's own work</h3>
+<p class="sub">It is the one sheet the analytics library has nothing to do with — and the one with the most dependencies of its own. <code>buildImplementationRows</code> (workbook.py:68) is the single Python source of those numbers, and the test suite checks it against the page's JavaScript mirror by running the extracted JS through node.</p>
+<div class="grid3">
+  <div class="card"><p class="hd">Reads</p><h4>The sleeve library</h4><p><code>sleeves.listSleeves</code> → <code>sleeveRepo</code> → the SQLite store at <code>SCENARIO_SLEEVES_DB</code>. Auto-attached categories take their single library sleeve without a choice.</p></div>
+  <div class="card"><p class="hd">Reads</p><h4>The product catalogue</h4><p>Every line item's ticker, style, vehicle, source, liquidity, currency, cost and fee group comes from <code>products.py</code> reading <code>SCENARIO_PRODUCTS_SOURCE</code>.</p></div>
+  <div class="card"><p class="hd">Reads</p><h4>The fee card</h4><p><code>fees.tierFor(topAccountSize)</code> and <code>fees.managementFee(...)</code> price each product from the schedule, tier, level and fee group (D51). <code>fees.deliveryInfo()</code> stamps the card's provenance into the sheet.</p></div>
+</div>
+<p style="margin-top:14px"><b>Rounding is the sheet's own rule.</b> Weights are rounded to 2dp by largest remainder across the whole table so the column sums to exactly 100.00, and notional and weighted fee derive from that <em>printed</em> weight — so the workbook hand-reconciles against the screen (spec 8.4).</p>
+<p><b>Fees change its shape.</b> With fees off the sheet has <b>11 columns</b> and no fee preamble; with them on, <b>14</b> — Fee group, Mgmt fee, Wtd fee (bp) — plus four preamble rows naming the schedule, level and account-size tier (D52). Measured: 11,816 bytes against 12,592.</p>
+
+<h2><span class="n">3</span>The epsilonPhi dependency, exactly</h2>
+<p class="sub">One module names the library and nothing else imports it: <code>scenario/engine.py</code>. The root package is <code>os.getenv('SAA_ENGINE_PACKAGE', 'epsilonPhi')</code>, and every symbol resolves on first attribute access via PEP 562 <code>__getattr__</code> — so <code>from .engine import Reporting</code> inside a function imports nothing until that line runs.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:22%">Symbol</th><th style="width:30%">Module</th><th style="width:14%">Used by the export?</th><th>What for</th></tr></thead>
+<tbody>
+<tr><td><code>CAppConfig</code></td><td><code>core.config.appConfig</code></td><td><span class="pill p-bad">yes</span></td><td><code>_ensureReady()</code> calls <code>setup()</code> once per process — database and factor models, ~12–14s.</td></tr>
+<tr><td><code>ContextCreator</code></td><td><code>core.schema.Schema</code></td><td><span class="pill p-bad">yes</span></td><td>Via <code>pw.get_context(currency)</code> — the estimation context over 30-Nov-1983 to 31-Dec-2022. Cached per currency.</td></tr>
+<tr><td><code>SAAPortfolio</code></td><td><code>core.portfolio.SAAPortfolio</code></td><td><span class="pill p-bad">yes</span></td><td>Via <code>pw.get_portfolio()</code> → <code>_build_portfolio()</code> → <code>SAAPortfolio.from_dict()</code>, then <code>set_hedging_ratios</code> and <code>set_reporting_info</code> per asset.</td></tr>
+<tr><td><code>Reporting</code></td><td><code>core.reporting.Reporting</code></td><td><span class="pill p-bad">yes</span></td><td><b>The export is the only thing in the whole service that uses it.</b> Every on-screen figure is read off the portfolio object instead.</td></tr>
+<tr><td><code>AssetReturnEstimator</code></td><td><code>core.estimator.assetReturnEstimator</code></td><td><span class="pill p-mute">indirectly</span></td><td>Inside the context; not called by name on this path.</td></tr>
+<tr><td><code>DATAVERSION</code></td><td><code>core.env.Env</code></td><td><span class="pill p-mute">no</span></td><td>Stamped onto <code>describe()</code>, not into the workbook.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout">
+  <h4>Everything else the export needs is ordinary Python</h4>
+  <p><code>openpyxl</code> 3.0.10 is the only hard third-party dependency on <em>every</em> path — it writes the fixtures workbook, and on the engine path it reopens what <code>Reporting</code> wrote. <code>requests</code> carries the proxy hop. Nothing else.</p>
+</div>
+
+<h2><span class="n">4</span>Measured, against the running service</h2>
+<p class="sub">A real proposal: USD Moderate Full, one column, $50m mandate, five sleeves attached, PMG Multi-Asset Portfolio. Same scenario, same machine, three configurations.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:26%">Configuration</th><th style="width:15%">Resolve a column</th><th style="width:15%">Export</th><th style="width:12%">Bytes</th><th style="width:12%">epsilonPhi</th><th>What ran</th></tr></thead>
+<tbody>
+<tr><td><b>baked + fallback</b> <span class="pill p-acc">today's default</span></td><td class="num">4.2 ms</td><td class="num"><b>75.3 s</b> cold</td><td class="num">11,816</td><td><span class="pill p-bad">yes</span></td><td>First export in the process: <code>CAppConfig.setup()</code> + context + portfolio + <code>Reporting</code></td></tr>
+<tr><td>baked + fallback, warm</td><td class="num">4.2 ms</td><td class="num"><b>23.9 s</b></td><td class="num">11,816</td><td><span class="pill p-bad">yes</span></td><td>Engine already set up, portfolio cached — this is <code>generate_report()</code> itself</td></tr>
+<tr><td>baked, <code>FALLBACK=0</code></td><td class="num">4.2 ms</td><td class="num"><b>0.063 s</b></td><td class="num">11,951</td><td><span class="pill p-ok">never imported</span></td><td><code>writeFixturesWorkbook</code> — openpyxl only</td></tr>
+</tbody>
+</table>
+</div>
+<p>The service log during the slow export shows the engine at work — <code>Calculating forward prices for EMMUSD</code>, <code>Already downloaded 2026-Apr WEO dataset</code>. That IMF fetch is the one the live adapter's docstring warns lives inside a cold path.</p>
+
+<h2><span class="n">5</span>The thing worth acting on</h2>
+<div class="callout bad">
+  <h4>The bake covers reads, not exports</h4>
+  <p>The whole point of the baked store is that a cold process answers a portfolio request in milliseconds without importing the analytics library. It does: <b>4.2 ms</b>. But <code>BakedScenarioPort.build_export</code> has no baked workbook to serve, so with the fallback on it hands the job to the live adapter — and the first export of a process pays the <b>full engine setup</b> the bake exists to avoid.</p>
+  <p>So the service has two very different performance characters depending on which button you press, and nothing on screen says so. The user sees columns appear instantly, presses Download Excel, and waits 25 seconds — or 75 on a service that has just restarted.</p>
+</div>
+<h3>Three ways out, in ascending order of work</h3>
+<div class="grid3">
+  <div class="card"><p class="hd">Cheapest</p><h4>Warm the engine at start-up</h4><p>Call <code>_ensureReady()</code> on boot when the fallback is on. Turns the 75-second first export into a 24-second one and moves the cost somewhere nobody is waiting. Does not help the steady state.</p></div>
+  <div class="card"><p class="hd">Moderate</p><h4>Tell the user</h4><p>The button says <em>Preparing…</em> with no sense of scale. A 25-second wait needs either a progress affordance or a plain warning. Cheap, and it is the difference between slow and broken-feeling.</p></div>
+  <div class="card"><p class="hd">The real fix</p><h4>Decide what the export is for</h4><p>If <code>Reporting</code>'s two sheets must be the engine's own output, 24 seconds is the price and it should be made visible. If they need only <em>match</em> it, <code>writeFixturesWorkbook</code> already produces all three sheets in 63 ms — and the question becomes whether its Portfolios and Risk Dashboard are close enough to ship.</p></div>
+</div>
+
+<h2><span class="n">6</span>Smaller things found while tracing</h2>
+<div class="grid2">
+  <div class="card"><h4>The export bypasses the service-health layer</h4><p><code>exportWorkbook()</code> calls <code>fetch</code> directly, not <code>apiFetch</code> — so a failed export never reaches <code>App.noteService()</code> and cannot mark the service down. The button is <em>gated</em> by <code>canExport()</code> but does not <em>feed</em> it. A one-line change if that asymmetry matters.</p></div>
+  <div class="card"><h4>The 300-second proxy timeout is the ceiling</h4><p>Not a configuration knob on the export itself. A four-column proposal in a cold process is the case to watch: the first column resolve alone can take minutes on the live adapter, and the export's own budget sits inside the same 300 seconds.</p></div>
+  <div class="card"><h4>Exports serialise</h4><p>One coarse lock guards the engine, so two people exporting at once queue rather than overlap. Correct, given the library's thread-safety, but it means the second person waits 50 seconds, not 25.</p></div>
+  <div class="card"><h4>The server re-does the client's work deliberately</h4><p>Every gate the page applies is re-enforced, and every column is re-resolved. The body of the POST is empty by design — the scenario on disk is the only input, so a stale or tampered page cannot change what is exported.</p></div>
+  <div class="card"><h4>The fee level has a vocabulary</h4><p>Six values: <code>Management</code> or <code>PMG</code>, each × <code>Floor</code> / <code>Target</code> / <code>Ceiling</code>. Plain <code>Target</code> is rejected — worth knowing when scripting against the API.</p></div>
+  <div class="card"><h4>The workbook is built twice on the engine path</h4><p><code>Reporting</code> writes to a temp directory, then openpyxl reopens it, edits it and re-serialises to a buffer. Unavoidable while <code>Reporting</code>'s only output is a file, but it is two full workbook serialisations per download.</p></div>
+</div>
+
+<p class="foot">Traced through <code>generator/js/implementation.js</code>, <code>dashboardFrontend.py</code>, <code>dashboardRouter.py</code>, <code>liveAdapter.py</code>, <code>bakedAdapter.py</code>, <code>fixturesAdapter.py</code>, <code>workbook.py</code>, <code>engine.py</code> and <code>portfolio_weights.py</code>, then verified by driving a real scenario through the running service over HTTP and reading the workbook back with openpyxl. The trace scenario has been deleted from the store.</p>
+
+</div>

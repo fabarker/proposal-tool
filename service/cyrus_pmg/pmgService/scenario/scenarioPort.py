@@ -90,8 +90,11 @@ class ScenarioPort(Protocol):
         portfolios: "Sequence[PortfolioResult]",
         implementation: "Implementation | None",
     ) -> bytes:
-        """Return an .xlsx byte stream. The reference adapter calls
-        Reporting.generate_report(include_wealth_simulations=False).
+        """Return an .xlsx byte stream. Every adapter writes it with the same
+        function - ``workbook.writeWorkbook`` - from the resolved payloads
+        alone, so no configuration can change what a proposal looks like and
+        no analytics library is needed to produce one (D67). Four sheets:
+        portfolios, risk_dashboard, assumptions, Implementation.
 
         *implementation* carries ``sleeves``, ``variant``, ``tacticalTilt``,
         ``volPremium``, ``includeFees``, ``feeSchedule`` and ``feeLevel``; the fee tier comes

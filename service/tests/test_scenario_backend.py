@@ -9,6 +9,7 @@ section 15.8, because reconciliation tests pass happily on nonsense.
 Run:  cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
 """
 
+import io
 import json
 import math
 import os
@@ -396,7 +397,7 @@ def test_js_rounding_mirror_agrees_with_python():
 
 # ----------------------------------------------------------- workbook -------
 
-def test_fixtures_workbook_reconciles_and_has_three_sheets(tmp_path):
+def test_fixtures_workbook_reconciles_and_has_four_sheets(tmp_path):
     from openpyxl import load_workbook
     key = PortfolioKey('USD', 'Moderate', 'Core', False)
     result = PORT.resolve_portfolio(BASIS, key)
@@ -409,7 +410,8 @@ def test_fixtures_workbook_reconciles_and_has_three_sheets(tmp_path):
     path = tmp_path / 'wb.xlsx'
     path.write_bytes(payload)
     book = load_workbook(path)
-    assert book.sheetnames == ['Portfolios', 'Risk Dashboard', 'Implementation']
+    assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
+                               'Implementation']
     sheet = book['Implementation']
     rows_ = list(sheet.iter_rows(values_only=True))
     assert rows_[0][0] == 'Implementation Type'
@@ -1354,3 +1356,466 @@ def test_risk_level_labels_cover_every_value_and_leave_keys_alone():
     key = PortfolioKey('USD', 'ModAgg', 'Core', False)
     assert key.toStr() == 'USD|ModAgg|Core|0'
     assert 'Moderate-Aggressive' not in key.toStr()
+
+
+# --------------------------------------------------------------------------
+# The export against the engine's own workbook (D67)
+#
+# The analytics library used to lay out three of the four sheets. It cannot be
+# ported into the host, so the workbook is written here instead - and these
+# tests hold that writing to a reference the library itself produced, captured
+# while it was still available. tests/golden/README.md says why it can never
+# be regenerated.
+# --------------------------------------------------------------------------
+
+GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'golden')
+
+
+def _goldenCase():
+    import json
+    with open(os.path.join(GOLDEN, 'engine_USD_Hedged_2col.results.json'),
+              encoding='utf-8') as handle:
+        results = json.load(handle)
+    with open(os.path.join(GOLDEN, 'engine_USD_Hedged_2col.impl.json'),
+              encoding='utf-8') as handle:
+        implementation = json.load(handle)
+    return results, implementation
+
+
+def _cellSignature(cell):
+    def rgb(colour):
+        value = getattr(colour, 'rgb', None)
+        if not isinstance(value, str):
+            return None
+        return value[2:] if len(value) == 8 else value      # 00FFFFFF == FFFFFFFF
+
+    fill = rgb(cell.fill.fgColor) if cell.fill and cell.fill.patternType else None
+    return {
+        'value': cell.value,
+        'format': cell.number_format,
+        'font': (cell.font.name, cell.font.size, bool(cell.font.bold),
+                 rgb(cell.font.color)),
+        'fill': fill,
+        'alignment': (cell.alignment.horizontal, cell.alignment.vertical,
+                      bool(cell.alignment.wrap_text), cell.alignment.indent),
+        'border': (getattr(cell.border.bottom, 'style', None),
+                   getattr(cell.border.top, 'style', None)),
+    }
+
+
+def compareSheets(golden, built, name):
+    """Every difference between two sheets, as a list. A list, not a boolean:
+    when this fails the diff IS the review."""
+    out = []
+    if (golden.max_row, golden.max_column) != (built.max_row, built.max_column):
+        out.append('{}: {}x{} vs {}x{}'.format(name, golden.max_row, golden.max_column,
+                                               built.max_row, built.max_column))
+    goldMerges = {str(r) for r in golden.merged_cells.ranges}
+    builtMerges = {str(r) for r in built.merged_cells.ranges}
+    if goldMerges != builtMerges:
+        out.append('{}: merges differ, only-golden={} only-built={}'.format(
+            name, sorted(goldMerges - builtMerges), sorted(builtMerges - goldMerges)))
+    for row in range(1, max(golden.max_row, built.max_row) + 1):
+        if golden.row_dimensions[row].height != built.row_dimensions[row].height:
+            out.append('{} row {}: height {} vs {}'.format(
+                name, row, golden.row_dimensions[row].height,
+                built.row_dimensions[row].height))
+        for column in range(1, max(golden.max_column, built.max_column) + 1):
+            want = _cellSignature(golden.cell(row=row, column=column))
+            got = _cellSignature(built.cell(row=row, column=column))
+            for field in want:
+                a, b = want[field], got[field]
+                if field == 'value' and isinstance(a, float) and isinstance(b, float):
+                    if abs(a - b) > 1e-9:
+                        out.append('{} {}{} value: {!r} vs {!r}'.format(
+                            name, get_column_letter(column), row, a, b))
+                elif a != b:
+                    out.append('{} {}{} {}: {!r} vs {!r}'.format(
+                        name, get_column_letter(column), row, field, a, b))
+    goldWidths = {k: v.width for k, v in golden.column_dimensions.items() if v.width}
+    builtWidths = {k: v.width for k, v in built.column_dimensions.items() if v.width}
+    if goldWidths != builtWidths:
+        out.append('{}: widths {} vs {}'.format(name, goldWidths, builtWidths))
+    goldRules = sorted(str(r.sqref) for r in golden.conditional_formatting)
+    builtRules = sorted(str(r.sqref) for r in built.conditional_formatting)
+    if goldRules != builtRules:
+        out.append('{}: conditional ranges {} vs {}'.format(name, goldRules, builtRules))
+    return out
+
+
+def test_the_export_reproduces_the_engines_workbook_cell_for_cell():
+    """The whole point of D67: the same three sheets, without the library."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+
+    results, implementation = _goldenCase()
+    basis = BasisInput(currency='USD', hedging='Hedged')
+    mandate = MandateInput(topAccountSize=50_000_000.0, mandateSize=50_000_000.0,
+                           primaryPwa='A. Castellanos — Madrid')
+    content = writeWorkbook(
+        basis, mandate, results, implementation['sleeves'],
+        rules.AUTO_SLEEVE_CATEGORIES, implementation['variant'],
+        implementation['tacticalTilt'], implementation['feeSchedule'],
+        implementation['feeLevel'], implementation['includeFees'],
+        implementation['volPremium'],
+        assets=assetEstimates.forSlice('USD', 'Hedged'),
+        # the library padded every portfolio to the whole universe before
+        # reporting on it, so its workbook carries rows no book holds. This
+        # flag restores them, which is what makes a cell-for-cell comparison
+        # meaningful; production drops them (D68).
+        engineParity=True)
+
+    golden = load_workbook(os.path.join(GOLDEN, 'engine_USD_Hedged_2col.xlsx'))
+    built = load_workbook(io.BytesIO(content))
+    differences = []
+    for name in ('portfolios', 'risk_dashboard', 'assumptions'):
+        assert name in built.sheetnames, '{} is missing from the export'.format(name)
+        differences.extend(compareSheets(golden[name], built[name], name))
+    assert differences == [], '\n'.join(differences[:40])
+
+
+def test_the_export_carries_four_sheets_and_keeps_the_assumptions():
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+    content = writeWorkbook(
+        BasisInput(currency='USD', hedging='Hedged'),
+        MandateInput(topAccountSize=50_000_000.0, mandateSize=50_000_000.0,
+                     primaryPwa='x'),
+        results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'],
+        implementation['includeFees'], implementation['volPremium'],
+        assets=assetEstimates.forSlice('USD', 'Hedged'))
+    book = load_workbook(io.BytesIO(content))
+    assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
+                               'Implementation']
+    assumptions = book['assumptions']
+    assert assumptions['A1'].value is None and assumptions['B1'].value == 'Long-Term Estimates'
+    # two header rows, then the rows the strategic sheets kept: six categories
+    # and eighteen assets for this lineup (D68)
+    assert assumptions.max_row == 26
+
+
+def test_an_export_imports_no_part_of_the_analytics_library():
+    """The property the port depends on. Run in a subprocess so this process's
+    own imports cannot mask it."""
+    import subprocess
+    import sys
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    script = (
+        'import json, sys\n'
+        'from cyrus_pmg.pmgService.scenario import assetEstimates, rules\n'
+        'from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput\n'
+        'from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook\n'
+        'g = {!r}\n'
+        'results = json.load(open(g + "/engine_USD_Hedged_2col.results.json"))\n'
+        'impl = json.load(open(g + "/engine_USD_Hedged_2col.impl.json"))\n'
+        'data = writeWorkbook(BasisInput(currency="USD", hedging="Hedged"),\n'
+        '    MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa="x"),\n'
+        '    results, impl["sleeves"], rules.AUTO_SLEEVE_CATEGORIES,\n'
+        '    impl["variant"], impl["tacticalTilt"], impl["feeSchedule"],\n'
+        '    impl["feeLevel"], impl["includeFees"], impl["volPremium"],\n'
+        '    assets=assetEstimates.forSlice("USD", "Hedged"))\n'
+        'leaked = [m for m in sys.modules if m.split(".")[0] == "epsilonPhi"]\n'
+        'print("BYTES", len(data))\n'
+        'print("LEAKED", leaked)\n'
+    ).format(GOLDEN)
+    environment = dict(os.environ, PYTHONPATH=os.path.abspath(here))
+    finished = subprocess.run([sys.executable, '-c', script], cwd=here,
+                              capture_output=True, text=True, env=environment)
+    assert finished.returncode == 0, finished.stderr[-2000:]
+    assert 'LEAKED []' in finished.stdout, finished.stdout
+    assert int(finished.stdout.split('BYTES')[1].split()[0]) > 10000
+
+
+def test_the_asset_estimates_cover_every_basis_the_bake_does():
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    for currency in rules.CURRENCIES:
+        for hedging in rules.HEDGING_POLICIES:
+            rows = assetEstimates.forSlice(currency, hedging)
+            assert len(rows) == 19, '{} {} has {} assets'.format(currency, hedging, len(rows))
+            assert assetEstimates.analyticsCurrencyFor(currency, hedging)
+            first = rows[0]
+            for field in ('reportingName', 'category', 'lower', 'mean', 'upper',
+                          'volatility', 'sharpe', 'totalReturn', 'hedgingRatio',
+                          'from', 'to'):
+                assert field in first
+            assert first['lower'] <= first['mean'] <= first['upper']
+
+
+def test_a_missing_estimate_block_still_produces_the_sheet():
+    """Four sheets always. A proposal with three where there should be four is
+    harder to notice than a sheet that explains itself."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+    content = writeWorkbook(
+        BasisInput(currency='USD', hedging='Hedged'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'],
+        implementation['includeFees'], implementation['volPremium'],
+        assets=[])
+    book = load_workbook(io.BytesIO(content))
+    assert 'assumptions' in book.sheetnames
+    assert 'not in the baked store' in book['assumptions']['A3'].value
+
+
+def test_the_strategic_sheets_carry_no_category_nobody_holds():
+    """D68. The tactical tilt fund is in the asset universe so the tilt has
+    somewhere to live, and it is an IMPLEMENTATION choice: the supplied
+    extract names it nowhere and no strategic portfolio holds it. A row
+    reading 'Asset Allocation Strategies 0.0%' on the strategic sheets claims
+    a nil allocation to something that was never in the model."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+    content = writeWorkbook(
+        BasisInput(currency='USD', hedging='Hedged'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'],
+        implementation['includeFees'], implementation['volPremium'],
+        assets=assetEstimates.forSlice('USD', 'Hedged'))
+    book = load_workbook(io.BytesIO(content))
+
+    held = {c['name'] for r in results for c in r['categories']}
+    assert 'Asset Allocation Strategies' not in held, 'the fixture must not hold it'
+    for name in ('portfolios', 'risk_dashboard'):
+        labels = [book[name].cell(row=r, column=1).value
+                  for r in range(1, book[name].max_row + 1)]
+        labels = [str(x).strip() for x in labels if x]
+        assert 'Asset Allocation Strategies' not in labels, name
+        assert 'Tactical Tilt Fund' not in labels, name
+
+    # ...but a category ONE column holds still prints a zero in the other, so
+    # the columns stay comparable row for row
+    thin = [dict(results[0])]
+    thin[0] = dict(results[0])
+    thin[0]['categories'] = [c for c in results[0]['categories']
+                             if c['name'] != 'Hedge Funds']
+    twoColumn = writeWorkbook(
+        BasisInput(currency='USD', hedging='Hedged'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        [thin[0], results[1]], implementation['sleeves'],
+        rules.AUTO_SLEEVE_CATEGORIES, implementation['variant'],
+        implementation['tacticalTilt'], implementation['feeSchedule'],
+        implementation['feeLevel'], implementation['includeFees'],
+        implementation['volPremium'],
+        assets=assetEstimates.forSlice('USD', 'Hedged'))
+    sheet = load_workbook(io.BytesIO(twoColumn))['portfolios']
+    rows = {sheet.cell(row=r, column=1).value: r for r in range(1, sheet.max_row + 1)}
+    assert 'Hedge Funds' in rows, 'the column that holds it keeps the row'
+    assert sheet.cell(row=rows['Hedge Funds'], column=2).value == 0.0
+    assert sheet.cell(row=rows['Hedge Funds'], column=3).value > 0
+
+
+def test_the_supplied_extract_names_no_tactical_tilt_holding():
+    """The data behind D68: if this ever fails, a strategic portfolio has
+    started carrying the tilt fund and the sheets should show it again."""
+    import csv
+    here = os.path.dirname(os.path.abspath(__file__))
+    extract = os.path.join(here, '..', '..', 'saaSource', 'saaPortfolios.csv')
+    with open(extract, newline='', encoding='utf-8') as handle:
+        rows = list(csv.DictReader(handle))
+    from cyrus_pmg.pmgService.scenario import portfolio_weights as pw
+    assert not [r for r in rows if r['AssetTicker'] == pw.TACTICAL_TILT_CODE]
+
+
+def test_the_strategic_sheets_drop_a_line_item_zero_in_every_column():
+    """D68 for line items. An ex-RAs book keeps Other Private Assets - it
+    still holds Private Credit - but nothing holds Core Real Estate, so that
+    row goes. A book that DOES hold it keeps it, and the book that does not
+    then prints the zero, because that is the alignment worth having."""
+    import copy
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+
+    exRAs = copy.deepcopy(results[0])
+    for category in exRAs['categories']:
+        if category['name'] == 'Other Private Assets':
+            category['assets'] = [a for a in category['assets']
+                                  if a['reportingName'] != 'Core Real Estate']
+    assert any(c['name'] == 'Other Private Assets' for c in exRAs['categories'])
+
+    def labels(lineup):
+        content = writeWorkbook(
+            BasisInput(currency='USD', hedging='Hedged'),
+            MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+            lineup, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+            implementation['variant'], implementation['tacticalTilt'],
+            implementation['feeSchedule'], implementation['feeLevel'],
+            implementation['includeFees'], implementation['volPremium'],
+            assets=assetEstimates.forSlice('USD', 'Hedged'))
+        sheet = load_workbook(io.BytesIO(content))['portfolios']
+        return {str(sheet.cell(row=r, column=1).value).strip(): r
+                for r in range(1, sheet.max_row + 1)
+                if sheet.cell(row=r, column=1).value}, sheet
+
+    alone, _ = labels([exRAs])
+    assert 'Other Private Assets' in alone, 'the category still holds Private Credit'
+    assert 'Private Credit' in alone
+    assert 'Core Real Estate' not in alone, 'no column holds it, so it has no row'
+
+    beside, sheet = labels([exRAs, results[1]])
+    assert 'Core Real Estate' in beside, 'the second column holds it, so the row returns'
+    row = beside['Core Real Estate']
+    assert sheet.cell(row=row, column=2).value == 0.0, 'the book without it prints the zero'
+    assert sheet.cell(row=row, column=3).value > 0
+
+
+def test_the_implementation_sheet_drops_a_product_that_rounds_to_nothing():
+    """A category too small for any of its products to reach 0.01% prints no
+    products. The column must still close on 100.00 exactly - the filter runs
+    after the largest-remainder pass, and a row worth 0.00 adds nothing."""
+    import copy
+    from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
+    results, implementation = _goldenCase()
+    base = copy.deepcopy(results[0])
+
+    moved = 0.0
+    for category in base['categories']:
+        if category['name'] == 'Hedge Funds':
+            moved = category['weightPct'] - 0.004
+            category['weightPct'] = 0.004
+            share = 0.004 / len(category['assets'])
+            for asset in category['assets']:
+                asset['weightPct'] = share
+    for category in base['categories']:
+        if category['name'] == 'Public Equity':
+            category['weightPct'] += moved
+            category['assets'][0]['weightPct'] += moved
+    assert abs(sum(c['weightPct'] for c in base['categories']) - 100.0) < 1e-9
+
+    model = buildImplementationRows(
+        base, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES, 50e6,
+        implementation['variant'], False, implementation['feeSchedule'],
+        implementation['feeLevel'], 50e6, True, 'USD')
+
+    printed = [(g['category'], i['printedPct'])
+               for g in model['groups'] for i in g['items']]
+    assert all(weight != 0 for _, weight in printed), 'no 0.00 line survives'
+    assert abs(model['total']['weightPct'] - 100.0) < 1e-9, 'the column still closes'
+
+    hedge = [g for g in model['groups'] if g['category'] == 'Hedge Funds']
+    assert hedge, 'the category keeps its row: it has an allocation, however small'
+    assert hedge[0]['items'] == [], 'but nothing in it reaches a printable weight'
+
+
+def test_an_unimplemented_category_keeps_its_row():
+    """The filter must not hide the thing the page exists to prompt: a
+    category with an allocation and no sleeve yet."""
+    from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
+    results, implementation = _goldenCase()
+    partial = dict(implementation['sleeves'])
+    partial.pop('Public Equity', None)
+    model = buildImplementationRows(
+        results[0], partial, rules.AUTO_SLEEVE_CATEGORIES, 50e6,
+        implementation['variant'], False, implementation['feeSchedule'],
+        implementation['feeLevel'], 50e6, True, 'USD')
+    equity = [g for g in model['groups'] if g['category'] == 'Public Equity']
+    assert equity and equity[0]['sleeve'] is None
+    assert equity[0]['weightPct'] > 0
+    assert model['complete'] is False
+
+
+def _builtWorkbook():
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+    return writeWorkbook(
+        BasisInput(currency='USD', hedging='Hedged'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'],
+        implementation['includeFees'], implementation['volPremium'],
+        assets=assetEstimates.forSlice('USD', 'Hedged'))
+
+
+def test_the_risk_dashboard_has_no_unlabelled_rows():
+    """The library left four rows carrying a 0 with a percent format and no
+    label, so they printed as '0.0%' against nothing. They are gone (D68); the
+    dotted rule above Estimated Mean Return does the separating."""
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    blanks = [r for r in range(2, sheet.max_row + 1)
+              if sheet.cell(row=r, column=1).value in (None, '')
+              and sheet.cell(row=r, column=2).value is not None]
+    assert blanks == [], 'rows with a value and no label: {}'.format(blanks)
+
+    labels = {str(sheet.cell(row=r, column=1).value).strip(): r
+              for r in range(1, sheet.max_row + 1)
+              if sheet.cell(row=r, column=1).value}
+    # the metrics follow the categories directly, and the rule marks the join
+    assert labels['Estimated Mean Return'] == labels['Other Private Assets'] + 1
+    assert labels['Sharpe Ratio'] == labels['Estimated Mean Return'] + 1
+    assert labels['Volatility'] == labels['Sharpe Ratio'] + 1
+    assert sheet.cell(row=labels['Estimated Mean Return'],
+                      column=2).border.top.style == 'dotted'
+
+
+def test_the_implementation_total_is_ruled_above_and_below():
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
+    row = sheet.max_row
+    assert sheet.cell(row=row, column=1).value == 'Total'
+    for column in range(1, sheet.max_column + 1):
+        border = sheet.cell(row=row, column=column).border
+        assert getattr(border.top, 'style', None) == 'dotted', column
+        assert getattr(border.bottom, 'style', None) == 'dotted', column
+
+
+def test_the_assumptions_sheet_explains_only_what_the_proposal_holds():
+    """D68. The estimates exist for the whole universe; this sheet is here to
+    explain THIS proposal. Its rows are exactly the rows the strategic sheets
+    show - so the tactical tilt fund, which no strategic portfolio holds, is
+    not on it."""
+    from openpyxl import load_workbook
+    book = load_workbook(io.BytesIO(_builtWorkbook()))
+    assumptions, portfolios = book['assumptions'], book['portfolios']
+
+    metrics = {'TOTAL', 'Estimated Mean Return', 'Sharpe Ratio', 'Volatility'}
+    strategic = [str(portfolios.cell(row=r, column=1).value).strip()
+                 for r in range(2, portfolios.max_row + 1)
+                 if portfolios.cell(row=r, column=1).value
+                 and str(portfolios.cell(row=r, column=1).value).strip() not in metrics]
+    explained = [str(assumptions.cell(row=r, column=1).value).strip()
+                 for r in range(3, assumptions.max_row + 1)
+                 if assumptions.cell(row=r, column=1).value]
+
+    assert explained == strategic, 'the two sheets must list the same rows in the same order'
+    assert 'Tactical Tilt Fund' not in explained
+    assert 'Asset Allocation Strategies' not in explained
+    # ...but a legitimately held asset with a similar name stays
+    assert 'Tactical Trading' in explained, 'a Hedge Funds asset, and genuinely held'
+
+
+def test_engine_parity_restores_the_whole_universe_on_the_assumptions_sheet():
+    """The golden comparison depends on this: with parity on, every asset the
+    library reported on comes back."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+    content = writeWorkbook(
+        BasisInput(currency='USD', hedging='Hedged'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'],
+        implementation['includeFees'], implementation['volPremium'],
+        assets=assetEstimates.forSlice('USD', 'Hedged'), engineParity=True)
+    sheet = load_workbook(io.BytesIO(content))['assumptions']
+    labels = [str(sheet.cell(row=r, column=1).value).strip()
+              for r in range(3, sheet.max_row + 1) if sheet.cell(row=r, column=1).value]
+    assert sheet.max_row == 28, 'seven categories and nineteen assets'
+    assert 'Tactical Tilt Fund' in labels and 'Asset Allocation Strategies' in labels

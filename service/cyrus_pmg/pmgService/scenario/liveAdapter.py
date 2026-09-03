@@ -8,9 +8,9 @@ path of a baked or fixtures-configured service.
 The chain is spec 4.5's: the supplied loader selects the stored weights, the
 memoised ``get_portfolio`` builds the ``SAAPortfolio`` against the cached
 per-currency context, and every figure on screen is read off that portfolio
-object - never off ``Reporting``'s table builders, which exist to lay out a
-workbook. ``Reporting.generate_report(include_wealth_simulations=False)`` is
-used exactly once, for the export.
+object. The workbook is written by ``workbook.py`` from those same payloads
+(D67): nothing in this package uses the library's reporting object any more,
+and an export imports no part of the analytics library at all.
 
 Operational choices (the brief leaves these to the adapter):
 
@@ -37,16 +37,14 @@ Operational choices (the brief leaves these to the adapter):
 from __future__ import annotations
 
 import datetime
-import io
 import os
-import tempfile
 import threading
 
-from . import advisors, rules, sleeves, universe
+from . import advisors, assetEstimates, rules, sleeves, universe
 from . import portfolio_weights as pw
 from .payloads import categoryRows, portfolioResult
 from .types import AnalyticsError, BasisInput, MandateInput, PortfolioKey
-from .workbook import writeImplementationSheet
+from .workbook import writeWorkbook
 
 # Horizon wording follows the existing report's var/pol table, which
 # labels its rows "Over 1 Month" and so on beneath the measure title.
@@ -157,59 +155,25 @@ class LiveScenarioPort:
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:
-        """The workbook: Reporting's portfolios + risk sheets, the
-        implementation sheet appended (spec 14.4), the assumptions sheet
-        Reporting always emits removed to honour open item 6's "three tables
-        and nothing else"."""
-        from .engine import Reporting
-        from openpyxl import load_workbook
+        """The workbook, written from the payloads (D67).
 
-        results = list(portfolios)
-        self._ensureReady()
-        with self._lock:
-            try:
-                copies = []
-                for result in results:
-                    key = PortfolioKey.fromDict(result['key'])
-                    # the same zero-padded map resolve_portfolio builds from:
-                    # every portfolio carries an identical asset set, which is
-                    # what lets Reporting union portfolios with different
-                    # holdings instead of tripping over their row indexes.
-                    built = pw.get_portfolio(basis.currency,
-                                             universe.weightMap(key),
-                                             hedging_option=basis.hedging)
-                    # the cached instance is shared - name the deepcopy only
-                    copy = built.deepcopy()
-                    copy.name = result['name']
-                    copies.append(copy)
-
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    report = Reporting(tmpdir, 'proposal')
-                    report.add_portfolios(copies)
-                    report.generate_report(include_wealth_simulations=False)
-                    book = load_workbook(report.output_path)
-                    if 'assumptions' in book.sheetnames:
-                        book.remove(book['assumptions'])
-                    implementation = implementation or {}
-                    writeImplementationSheet(
-                        book, results[0], implementation.get('sleeves', {}),
-                        rules.AUTO_SLEEVE_CATEGORIES, mandate.mandateSize,
-                        implementation.get('variant'),
-                        bool(implementation.get('tacticalTilt')),
-                        implementation.get('feeSchedule'),
-                        implementation.get('feeLevel'),
-                        mandate.topAccountSize,
-                        implementation.get('includeFees', True),
-                        bool(implementation.get('volPremium')),
-                        basis.currency)
-                    buffer = io.BytesIO()
-                    book.save(buffer)
-                    return buffer.getvalue()
-            except AnalyticsError:
-                raise
-            except Exception as exc:
-                raise AnalyticsError('The export could not be produced: {}: {}'.format(
-                    type(exc).__name__, exc))
+        This used to drive ``Reporting``: build a portfolio per column, let
+        the library lay out two sheets into a temp file, reopen it, throw the
+        assumptions sheet away and append the implementation. It no longer
+        does, and the library no longer needs to exist for an export to work.
+        The same writer serves every adapter, so the three of them cannot
+        disagree about what a proposal looks like."""
+        implementation = implementation or {}
+        return writeWorkbook(basis, mandate, list(portfolios),
+                             implementation.get('sleeves', {}),
+                             rules.AUTO_SLEEVE_CATEGORIES,
+                             implementation.get('variant'),
+                             bool(implementation.get('tacticalTilt')),
+                             implementation.get('feeSchedule'),
+                             implementation.get('feeLevel'),
+                             implementation.get('includeFees', True),
+                             bool(implementation.get('volPremium')),
+                             assets=assetEstimates.forSlice(basis.currency, basis.hedging))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

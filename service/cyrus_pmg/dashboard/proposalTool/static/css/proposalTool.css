@@ -226,6 +226,12 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
 /* The risk table sizes its own columns through <col> (sizeRiskColumns), so
    it must not also carry the shrink-to-content width the allocation table
    uses - the two disagree and fixed layout picks the cell. */
+/* The strategic allocation table reads a shade smaller and tighter than the
+   others: it is the longest table on the page and the one most often read as
+   a whole. Scoped to .alloc so the risk dashboard and the implementation
+   table keep the shared 15px and the theme's own cell padding. */
+.tbl.alloc{font-size:14px}
+.tbl.alloc th,.tbl.alloc td{padding-top:2px;padding-bottom:2px}
 .tbl.alloc .rowhead,.tbl.alloc tbody th{width:1%}
 /* Every portfolio column exactly the same width, whatever the column count
    and however long the derived names are - a comparison table whose columns
@@ -341,7 +347,7 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
   display:flex;flex-direction:column}
 .rail-brand{padding:18px 20px 14px;border-bottom:1px solid var(--rail-line);position:sticky;top:0;
   background:var(--rail-bg);z-index:2}
-.rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
+.rail-brand>b{display:block;font-family:var(--f-num);font-size:22px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
 /* The product line under the group name is styled to match the
    placeholder-rates flag exactly, on request: the same 12px semibold gold at
@@ -350,7 +356,7 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
    are repeated rather than shared so that restyling the warning does not
    silently restyle the brand. display:block is the one addition, and is
    structural - .fee-flag is a <p>, this a <span>. */
-.rail-brand>span{display:block;margin:2px 0 0;font-size:12px;font-weight:600;
+.rail-brand>span{display:block;margin:2px 0 0;font-size:15px;font-weight:600;
   color:var(--rail-eyebrow,#F3C46B);line-height:1.4}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
@@ -1352,7 +1358,7 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
    A three-pane overlay on the dialog base: categories, the sleeves in one,
    the editor for one. Sized to the viewport rather than to its content so
    the panes scroll independently and the footer stays put. */
-.dialog.repo{width:min(1180px,calc(100vw - 32px));height:min(780px,calc(100vh - 32px));
+.dialog.repo{width:min(1280px,calc(100vw - 32px));height:min(780px,calc(100vh - 32px));
   padding:0;display:flex;flex-direction:column;overflow:hidden}
 /* A column of fixed bands around one band that takes the rest. Flex rather
    than a grid template because two of the bands - the unsaved-changes notice,
@@ -1496,6 +1502,143 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .repo-mi.danger{color:#9B1C1C}
 .repo-mi.danger:hover:not(:disabled){background:#FDE8E8;color:#9B1C1C}
 .repo-mi:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* ── the record: history and removed sleeves (D65) ──
+   The history sits under the editor as a closed drawer, because most visits
+   are to change a sleeve rather than to read what it was. Open, it is a
+   ladder of revisions newest first: the change summary always visible, the
+   whole composition one click further. The version in force is marked, and
+   only the others offer to be put back - restoring what is already there is
+   not an action, it is a no-op with a button. */
+.repo-hist{margin:10px 0 0;border-top:1px solid var(--line)}
+.repo-histh{display:flex;align-items:center;gap:8px;width:100%;appearance:none;background:none;
+  border:0;font:inherit;font-family:var(--f-num);font-size:12px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  padding:10px 0 9px;cursor:pointer;text-align:left}
+.repo-histh:hover{color:var(--accent)}
+.repo-histh .n{margin-left:auto;letter-spacing:0;text-transform:none;font-weight:400;
+  font-size:12px;color:var(--ink-3)}
+.repo-histh .rev-caret{transition:transform .15s ease}
+.repo-hist.open .repo-histh .rev-caret{transform:rotate(90deg)}
+.repo-hist.open .repo-histh{color:var(--ink-2)}
+.repo-hist-b{max-height:260px;overflow-y:auto;margin:0 -20px;padding:0 20px 8px;
+  border-top:1px solid var(--line)}
+.rev{border-bottom:1px solid var(--line)}
+.rev:last-child{border-bottom:0}
+.rev-h{display:flex;align-items:center;gap:10px;width:100%;appearance:none;background:none;
+  border:0;font:inherit;color:var(--ink);padding:9px 0;cursor:pointer;text-align:left}
+.rev-h:hover{color:var(--accent)}
+.rev-n{font-family:var(--f-num);font-size:11.5px;font-weight:700;color:var(--ink-3);
+  background:var(--surface-2);border-radius:9px;padding:1px 7px;line-height:16px;flex:none}
+.rev.now .rev-n{background:#E3EBFA;color:#1E4FA3}
+.rev-what{display:grid;gap:1px;min-width:0}
+.rev-what b{font-size:13px;font-weight:600}
+.rev-what small{font-family:var(--f-num);font-size:11.5px;color:var(--ink-3)}
+.rev-now{margin-left:auto;font-family:var(--f-num);font-size:10.5px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:#176A33;background:#E7F4EC;
+  border-radius:8px;padding:0 6px;line-height:16px;flex:none}
+.rev-caret{margin-left:auto;color:var(--ink-3);font-size:15px;line-height:1;flex:none}
+.rev-now + .rev-caret{margin-left:8px}
+.rev.open .rev-caret{transform:rotate(90deg)}
+.rev-changes{margin:0 0 8px;padding:0 0 0 32px;list-style:none;display:grid;gap:2px}
+.rev-changes li{font-size:12px;color:var(--ink-2);line-height:1.4;position:relative}
+.rev-changes li::before{content:"";position:absolute;left:-11px;top:7px;width:4px;height:4px;
+  border-radius:50%;background:var(--line-strong)}
+.rev-b{padding:0 0 10px 32px}
+.rev-name{margin:0 0 6px;font-size:13px;font-weight:600}
+.rev-name small{font-weight:400;color:var(--ink-3);font-size:12px}
+.rev-products{margin:0;padding:0;list-style:none;display:grid;gap:3px}
+.rev-products li{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;
+  font-size:12.5px;line-height:1.4}
+.rev-products .w{font-family:var(--f-num);font-weight:700;text-align:right;color:var(--ink-2)}
+.rev-products .warn{color:#B45309;font-weight:600}
+.rev-products.big li{font-size:13.5px;padding:3px 0;border-bottom:1px solid var(--line)}
+.rev-products.big li:last-child{border-bottom:0}
+.rev-put{margin-top:10px;padding:5px 11px;font-size:11.5px}
+/* ── the archive and the activity feed (D66) ──
+   Two more views on the same dialog, both wearing the catalogue's chrome so
+   that one set of habits serves all three tables. The archive is a filing
+   cabinet: a searchable table of what left the library, a batch tick, and a
+   drawer for one sleeve with its history and the way back. The feed is a
+   story: the record newest first, a day at a time, a sentence per change. */
+.repo-seg [role="tab"] .n{margin-left:6px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  background:var(--surface-2);color:var(--ink-2);border-radius:8px;padding:0 6px;line-height:16px;
+  display:inline-block;vertical-align:middle}
+.repo-seg [role="tab"][aria-selected="true"] .n{background:rgba(255,255,255,.22);color:#FFF}
+
+.arc-tools .cat-search,.act-tools .cat-search{flex:0 1 300px;min-width:200px}
+.arc-sel{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-num);font-size:12px;
+  color:var(--ink-2);background:var(--surface);border:1px solid var(--line-strong);border-radius:14px;
+  padding:0 4px 0 10px;height:28px}
+.arc-sel>span{white-space:nowrap}
+.arc-sel.on{border-color:var(--accent);background:#E3EBFA;color:#1E4FA3}
+.arc-sel select{appearance:none;-webkit-appearance:none;border:0;background:transparent;font:inherit;
+  font-size:12px;font-weight:700;color:inherit;padding:0 18px 0 2px;height:26px;cursor:pointer;
+  max-width:190px;text-overflow:ellipsis;
+  background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);
+  background-position:calc(100% - 10px) 11px,calc(100% - 6px) 11px;background-size:4px 4px,4px 4px;background-repeat:no-repeat}
+.arc-sel select:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:12px}
+.arc-export{margin-left:4px;padding:5px 10px;font-size:11px;text-decoration:none}
+.arc-b{display:flex;flex-direction:column;min-height:0;flex:1}
+.arc-tblwrap{flex:1;min-height:180px}
+.arc-tbl td b{font-weight:600}
+.arc-tbl td .mut,.arc-tbl td.mut{color:var(--ink-3)}
+.arc-tbl .pinc input{width:14px;height:14px;margin:0;vertical-align:middle;cursor:pointer;accent-color:var(--accent)}
+.arc-tbl tr.pin td{background:#F0F4FB}
+.arc-tbl tr.on td{background:#E3EBFA}
+.arc-tbl tr[data-arcrow]{cursor:pointer}
+.arc-status{white-space:nowrap}
+.arc-badge{font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  border-radius:8px;padding:1px 7px;line-height:16px;display:inline-block}
+.arc-badge.gone{background:#FDE8E8;color:#9B1C1C}
+.arc-badge.live{background:#E7F4EC;color:#176A33}
+.arc-detail{border-top:1px solid var(--line-strong);background:var(--surface);padding:14px 20px 12px;
+  max-height:44%;overflow-y:auto;flex:none}
+.arc-dh{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.arc-dh h3{margin:0;font-size:17px;font-weight:700}
+.arc-dh p{margin:2px 0 0;font-size:13px;color:var(--ink-2)}
+.arc-dh .repo-prov{margin:5px 0 0}
+.arc-dact{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.arc-dact .repo-problems{max-width:34ch;text-align:right}
+.arc-dclose{position:static;margin-left:4px}
+.arc-db{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:0 28px;margin-top:12px}
+.arc-db .repo-hist{margin-top:0;border-top:0}
+.arc-db .repo-hist-b{margin:0;padding:0 0 4px;max-height:220px}
+.arc-lbl{padding:0 0 6px;border-bottom:0}
+.arc-f .repo-src + .spacer{flex:1}
+/* the feed */
+.act-chips{display:inline-flex;gap:4px;flex-wrap:wrap}
+.act-chip{appearance:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:14px;
+  font:inherit;font-family:var(--f-num);font-size:12px;font-weight:700;color:var(--ink-2);padding:0 9px;
+  height:28px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.act-chip .n{font-weight:400;color:var(--ink-3)}
+.act-chip.on{background:#E3EBFA;border-color:var(--accent);color:#1E4FA3}
+.act-chip.on .n{color:#1E4FA3}
+.act-chip.off{opacity:.5}
+.act-chip:hover:not(.off){border-color:var(--accent)}
+.act-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.act-b{flex:1;overflow-y:auto;min-height:200px;background:var(--surface)}
+.act-day{position:sticky;top:0;z-index:1;margin:0;padding:11px 20px 6px;font-family:var(--f-num);font-size:11px;
+  font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);background:var(--surface-2);
+  border-bottom:1px solid var(--line)}
+.act-ev{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;padding:10px 20px;
+  border-bottom:1px solid var(--line);align-items:start}
+.act-ev .t{font-family:var(--f-num);font-size:12px;color:var(--ink-3);padding-top:2px}
+.act-ev .w p{margin:0;font-size:13.5px}
+.act-ev .w p b{font-weight:600}
+.act-ev .w .mut{color:var(--ink-2)}
+.act-ev .w small{display:block;font-family:var(--f-num);font-size:11.5px;color:var(--ink-3);margin-top:1px}
+.act-changes{margin:5px 0 0;padding-left:14px}
+.act-changes li::before{left:-10px}
+.act-ev .a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.act-btn{padding:4px 9px;font-size:11px}
+.act-badge{font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  border-radius:8px;padding:1px 7px;line-height:16px;display:inline-block;vertical-align:middle;margin:0 2px}
+.act-badge.created,.act-badge.imported,.act-badge.seeded,.act-badge.baseline{background:var(--surface-2);color:var(--ink-2)}
+.act-badge.updated{background:#E3EBFA;color:#1E4FA3}
+.act-badge.reverted,.act-badge.restored{background:#FEF3C7;color:#7A4A0A}
+.act-badge.deleted{background:#FDE8E8;color:#9B1C1C}
+.act-none{padding:24px 20px;margin:0}
+.act-more{padding:14px 20px 18px;text-align:center}
 /* ── the admin entry points (D62) ──
    Two glyphs, three places, one job each: the rail's utility bar is where the
    tools LIVE, the icon on the sleeve tier is the shortcut from the thing that

@@ -288,6 +288,12 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
 /* The risk table sizes its own columns through <col> (sizeRiskColumns), so
    it must not also carry the shrink-to-content width the allocation table
    uses - the two disagree and fixed layout picks the cell. */
+/* The strategic allocation table reads a shade smaller and tighter than the
+   others: it is the longest table on the page and the one most often read as
+   a whole. Scoped to .alloc so the risk dashboard and the implementation
+   table keep the shared 15px and the theme's own cell padding. */
+.tbl.alloc{font-size:14px}
+.tbl.alloc th,.tbl.alloc td{padding-top:2px;padding-bottom:2px}
 .tbl.alloc .rowhead,.tbl.alloc tbody th{width:1%}
 /* Every portfolio column exactly the same width, whatever the column count
    and however long the derived names are - a comparison table whose columns
@@ -679,7 +685,7 @@ RAIL_CSS = """
   display:flex;flex-direction:column}
 .rail-brand{padding:18px 20px 14px;border-bottom:1px solid var(--rail-line);position:sticky;top:0;
   background:var(--rail-bg);z-index:2}
-.rail-brand>b{display:block;font-family:var(--f-num);font-size:17px;color:var(--rail-ink);
+.rail-brand>b{display:block;font-family:var(--f-num);font-size:22px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
 /* The product line under the group name is styled to match the
    placeholder-rates flag exactly, on request: the same 12px semibold gold at
@@ -688,7 +694,7 @@ RAIL_CSS = """
    are repeated rather than shared so that restyling the warning does not
    silently restyle the brand. display:block is the one addition, and is
    structural - .fee-flag is a <p>, this a <span>. */
-.rail-brand>span{display:block;margin:2px 0 0;font-size:12px;font-weight:600;
+.rail-brand>span{display:block;margin:2px 0 0;font-size:15px;font-weight:600;
   color:var(--rail-eyebrow,#F3C46B);line-height:1.4}
 .rail-body{padding:16px 20px 30px;flex:1}
 .rail-grp{font-family:var(--f-num);font-size:11px;letter-spacing:.16em;text-transform:uppercase;

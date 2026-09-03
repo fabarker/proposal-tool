@@ -1,0 +1,496 @@
+[
+ {
+  "key": {
+   "currency": "USD",
+   "riskLevel": "Moderate",
+   "allocationType": "Full",
+   "excludeRealAssets": false
+  },
+  "keyStr": "USD|Moderate|Full|0",
+  "name": "USD Moderate Full",
+  "header": "Moderate Full",
+  "categories": [
+   {
+    "name": "Investment Grade Fixed Income",
+    "weightPct": 34.0,
+    "assets": [
+     {
+      "reportingName": "US Dollar Debt",
+      "weightPct": 34.0
+     }
+    ]
+   },
+   {
+    "name": "Other Fixed Income",
+    "weightPct": 9.0,
+    "assets": [
+     {
+      "reportingName": "US High Yield",
+      "weightPct": 9.0
+     }
+    ]
+   },
+   {
+    "name": "Public Equity",
+    "weightPct": 38.0,
+    "assets": [
+     {
+      "reportingName": "US Large Cap Growth Equity",
+      "weightPct": 8.36
+     },
+     {
+      "reportingName": "US Large Cap Value Equity",
+      "weightPct": 8.36
+     },
+     {
+      "reportingName": "US Small Cap Equity",
+      "weightPct": 3.04
+     },
+     {
+      "reportingName": "Europe ex-UK Equity",
+      "weightPct": 5.319999999999999
+     },
+     {
+      "reportingName": "UK Equity",
+      "weightPct": 1.9
+     },
+     {
+      "reportingName": "Japanese Equity",
+      "weightPct": 2.6599999999999997
+     },
+     {
+      "reportingName": "Asia-Pacific Equity",
+      "weightPct": 2.6599999999999997
+     },
+     {
+      "reportingName": "Emerging Market Equity",
+      "weightPct": 5.7
+     }
+    ]
+   },
+   {
+    "name": "Hedge Funds",
+    "weightPct": 10.0,
+    "assets": [
+     {
+      "reportingName": "Event Driven",
+      "weightPct": 3.5000000000000004
+     },
+     {
+      "reportingName": "Equity Long/Short",
+      "weightPct": 4.0
+     },
+     {
+      "reportingName": "Tactical Trading",
+      "weightPct": 2.5
+     }
+    ]
+   },
+   {
+    "name": "Private Equity",
+    "weightPct": 5.0,
+    "assets": [
+     {
+      "reportingName": "Buyout",
+      "weightPct": 2.75
+     },
+     {
+      "reportingName": "Growth",
+      "weightPct": 1.5
+     },
+     {
+      "reportingName": "Venture",
+      "weightPct": 0.75
+     }
+    ]
+   },
+   {
+    "name": "Other Private Assets",
+    "weightPct": 4.0,
+    "assets": [
+     {
+      "reportingName": "Private Credit",
+      "weightPct": 2.4
+     },
+     {
+      "reportingName": "Core Real Estate",
+      "weightPct": 1.6
+     }
+    ]
+   }
+  ],
+  "metrics": {
+   "estimatedReturnPct": 5.95744798006653,
+   "volatilityPct": 7.27033667088531,
+   "sharpe": 0.4755554160115003
+  },
+  "stress": [
+   {
+    "period": "Oil Embargo",
+    "nominalPct": -17.68307796756425,
+    "realPct": -30.046758236625937
+   },
+   {
+    "period": "US Inflation / Iranian Revolution",
+    "nominalPct": 10.697835636027243,
+    "realPct": -6.716052039033027
+   },
+   {
+    "period": "US Stagflation",
+    "nominalPct": 1.5427494635463335,
+    "realPct": -10.851148494864093
+   },
+   {
+    "period": "Black Monday",
+    "nominalPct": -8.73635070709291,
+    "realPct": -8.975179235223186
+   },
+   {
+    "period": "Bond Crisis",
+    "nominalPct": -2.4433207038791815,
+    "realPct": -4.722748734367077
+   },
+   {
+    "period": "Russian Default / LTCM Collapse",
+    "nominalPct": -7.351544212778249,
+    "realPct": -7.46530219287147
+   },
+   {
+    "period": "Tech Meltdown",
+    "nominalPct": -18.227868901389364,
+    "realPct": -22.660352975799935
+   },
+   {
+    "period": "Financial Crisis",
+    "nominalPct": -27.679639281642054,
+    "realPct": -28.8748823327713
+   },
+   {
+    "period": "Covid-19",
+    "nominalPct": -9.226193141953987,
+    "realPct": -8.904860430373418
+   }
+  ],
+  "premia": [
+   {
+    "group": "Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Month",
+    "label": "Value at Risk with 99% Confidence \u00b7 Over 1 Month",
+    "nominalPct": -5.4553843803080255,
+    "realPct": -5.637766799969679,
+    "kind": "loss"
+   },
+   {
+    "group": "Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Year",
+    "label": "Value at Risk with 99% Confidence \u00b7 Over 1 Year",
+    "nominalPct": -17.426839312346555,
+    "realPct": -19.420886091412537,
+    "kind": "loss"
+   },
+   {
+    "group": "Value at Risk with 99% Confidence",
+    "horizon": "Over 3 Years",
+    "label": "Value at Risk with 99% Confidence \u00b7 Over 3 Years",
+    "nominalPct": -18.22626592500245,
+    "realPct": -23.2756900951272,
+    "kind": "loss"
+   },
+   {
+    "group": "Conditional Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Month",
+    "label": "Conditional Value at Risk with 99% Confidence \u00b7 Over 1 Month",
+    "nominalPct": -7.3250136040222795,
+    "realPct": -7.503789393105809,
+    "kind": "loss"
+   },
+   {
+    "group": "Conditional Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Year",
+    "label": "Conditional Value at Risk with 99% Confidence \u00b7 Over 1 Year",
+    "nominalPct": -20.815062010852525,
+    "realPct": -22.677751568850567,
+    "kind": "loss"
+   },
+   {
+    "group": "Conditional Value at Risk with 99% Confidence",
+    "horizon": "Over 3 Years",
+    "label": "Conditional Value at Risk with 99% Confidence \u00b7 Over 3 Years",
+    "nominalPct": -23.004343048306673,
+    "realPct": -27.73345847887717,
+    "kind": "loss"
+   },
+   {
+    "group": "Probability of Loss",
+    "horizon": "Over 1 Month",
+    "label": "Probability of Loss \u00b7 Over 1 Month",
+    "nominalPct": 31.5,
+    "realPct": 35.160000000000004,
+    "kind": "probability"
+   },
+   {
+    "group": "Probability of Loss",
+    "horizon": "Over 1 Year",
+    "label": "Probability of Loss \u00b7 Over 1 Year",
+    "nominalPct": 16.86,
+    "realPct": 23.705000000000002,
+    "kind": "probability"
+   },
+   {
+    "group": "Probability of Loss",
+    "horizon": "Over 3 Years",
+    "label": "Probability of Loss \u00b7 Over 3 Years",
+    "nominalPct": 9.49,
+    "realPct": 16.485,
+    "kind": "probability"
+   }
+  ]
+ },
+ {
+  "key": {
+   "currency": "USD",
+   "riskLevel": "Conservative",
+   "allocationType": "Full",
+   "excludeRealAssets": false
+  },
+  "keyStr": "USD|Conservative|Full|0",
+  "name": "USD Conservative Full",
+  "header": "Conservative Full",
+  "categories": [
+   {
+    "name": "Investment Grade Fixed Income",
+    "weightPct": 50.0,
+    "assets": [
+     {
+      "reportingName": "US Dollar Debt",
+      "weightPct": 50.0
+     }
+    ]
+   },
+   {
+    "name": "Other Fixed Income",
+    "weightPct": 10.0,
+    "assets": [
+     {
+      "reportingName": "US High Yield",
+      "weightPct": 10.0
+     }
+    ]
+   },
+   {
+    "name": "Public Equity",
+    "weightPct": 24.0,
+    "assets": [
+     {
+      "reportingName": "US Large Cap Growth Equity",
+      "weightPct": 5.28
+     },
+     {
+      "reportingName": "US Large Cap Value Equity",
+      "weightPct": 5.28
+     },
+     {
+      "reportingName": "US Small Cap Equity",
+      "weightPct": 1.92
+     },
+     {
+      "reportingName": "Europe ex-UK Equity",
+      "weightPct": 3.36
+     },
+     {
+      "reportingName": "UK Equity",
+      "weightPct": 1.2
+     },
+     {
+      "reportingName": "Japanese Equity",
+      "weightPct": 1.68
+     },
+     {
+      "reportingName": "Asia-Pacific Equity",
+      "weightPct": 1.68
+     },
+     {
+      "reportingName": "Emerging Market Equity",
+      "weightPct": 3.5999999999999996
+     }
+    ]
+   },
+   {
+    "name": "Hedge Funds",
+    "weightPct": 9.0,
+    "assets": [
+     {
+      "reportingName": "Event Driven",
+      "weightPct": 3.15
+     },
+     {
+      "reportingName": "Equity Long/Short",
+      "weightPct": 3.5999999999999996
+     },
+     {
+      "reportingName": "Tactical Trading",
+      "weightPct": 2.25
+     }
+    ]
+   },
+   {
+    "name": "Private Equity",
+    "weightPct": 3.9999999999999996,
+    "assets": [
+     {
+      "reportingName": "Buyout",
+      "weightPct": 2.1999999999999997
+     },
+     {
+      "reportingName": "Growth",
+      "weightPct": 1.2
+     },
+     {
+      "reportingName": "Venture",
+      "weightPct": 0.6
+     }
+    ]
+   },
+   {
+    "name": "Other Private Assets",
+    "weightPct": 3.0,
+    "assets": [
+     {
+      "reportingName": "Private Credit",
+      "weightPct": 1.7999999999999998
+     },
+     {
+      "reportingName": "Core Real Estate",
+      "weightPct": 1.2
+     }
+    ]
+   }
+  ],
+  "metrics": {
+   "estimatedReturnPct": 5.264525745797018,
+   "volatilityPct": 5.23863686427965,
+   "sharpe": 0.5277185301098666
+  },
+  "stress": [
+   {
+    "period": "Oil Embargo",
+    "nominalPct": -10.574181788042548,
+    "realPct": -24.005590505392526
+   },
+   {
+    "period": "US Inflation / Iranian Revolution",
+    "nominalPct": 8.531786310002577,
+    "realPct": -8.541359927383585
+   },
+   {
+    "period": "US Stagflation",
+    "nominalPct": 9.236411011150182,
+    "realPct": -4.096544207885078
+   },
+   {
+    "period": "Black Monday",
+    "nominalPct": -5.10822758760181,
+    "realPct": -5.356550578327191
+   },
+   {
+    "period": "Bond Crisis",
+    "nominalPct": -2.2658388862886625,
+    "realPct": -4.549413808950808
+   },
+   {
+    "period": "Russian Default / LTCM Collapse",
+    "nominalPct": -4.644464650740165,
+    "realPct": -4.761546506016334
+   },
+   {
+    "period": "Tech Meltdown",
+    "nominalPct": -8.004738708960291,
+    "realPct": -12.991370769485144
+   },
+   {
+    "period": "Financial Crisis",
+    "nominalPct": -18.068578032016923,
+    "realPct": -19.422663683742847
+   },
+   {
+    "period": "Covid-19",
+    "nominalPct": -5.8377678167003015,
+    "realPct": -5.504440324516857
+   }
+  ],
+  "premia": [
+   {
+    "group": "Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Month",
+    "label": "Value at Risk with 99% Confidence \u00b7 Over 1 Month",
+    "nominalPct": -3.7855100642393835,
+    "realPct": -3.971113774889412,
+    "kind": "loss"
+   },
+   {
+    "group": "Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Year",
+    "label": "Value at Risk with 99% Confidence \u00b7 Over 1 Year",
+    "nominalPct": -10.734815319521019,
+    "realPct": -12.947808331201205,
+    "kind": "loss"
+   },
+   {
+    "group": "Value at Risk with 99% Confidence",
+    "horizon": "Over 3 Years",
+    "label": "Value at Risk with 99% Confidence \u00b7 Over 3 Years",
+    "nominalPct": -9.583027125836097,
+    "realPct": -15.199015087813983,
+    "kind": "loss"
+   },
+   {
+    "group": "Conditional Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Month",
+    "label": "Conditional Value at Risk with 99% Confidence \u00b7 Over 1 Month",
+    "nominalPct": -4.89025759826699,
+    "realPct": -5.073730182495373,
+    "kind": "loss"
+   },
+   {
+    "group": "Conditional Value at Risk with 99% Confidence",
+    "horizon": "Over 1 Year",
+    "label": "Conditional Value at Risk with 99% Confidence \u00b7 Over 1 Year",
+    "nominalPct": -13.313472514290437,
+    "realPct": -15.349644245952188,
+    "kind": "loss"
+   },
+   {
+    "group": "Conditional Value at Risk with 99% Confidence",
+    "horizon": "Over 3 Years",
+    "label": "Conditional Value at Risk with 99% Confidence \u00b7 Over 3 Years",
+    "nominalPct": -13.616893645119122,
+    "realPct": -18.93696587242044,
+    "kind": "loss"
+   },
+   {
+    "group": "Probability of Loss",
+    "horizon": "Over 1 Month",
+    "label": "Probability of Loss \u00b7 Over 1 Month",
+    "nominalPct": 29.04,
+    "realPct": 33.575,
+    "kind": "probability"
+   },
+   {
+    "group": "Probability of Loss",
+    "horizon": "Over 1 Year",
+    "label": "Probability of Loss \u00b7 Over 1 Year",
+    "nominalPct": 12.425,
+    "realPct": 20.03,
+    "kind": "probability"
+   },
+   {
+    "group": "Probability of Loss",
+    "horizon": "Over 3 Years",
+    "label": "Probability of Loss \u00b7 Over 3 Years",
+    "nominalPct": 5.645,
+    "realPct": 12.934999999999999,
+    "kind": "probability"
+   }
+  ]
+ }
+]

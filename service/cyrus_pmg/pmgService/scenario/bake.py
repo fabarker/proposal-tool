@@ -244,6 +244,66 @@ def _bakeOneInProcess(args_tuple):
                      analyticsCurrency=analyticsCurrency)
 
 
+def assetBlock(currency: str, hedging: str, analyticsCurrency: str = None) -> list:
+    """The per-asset long-term estimates for one slice, read off a portfolio
+    built in that basis. Every portfolio in a slice carries the whole padded
+    universe, so any one of them answers for all of them."""
+    from . import portfolio_weights as pw
+    keys = [k for k in universe.keyStrs() if k.startswith(currency + '|')]
+    if not keys:
+        return []
+    key = PortfolioKey.fromStr(keys[0])
+    portfolio = pw.get_portfolio(analyticsCurrency or currency,
+                                 universe.weightMap(key), hedging_option=hedging)
+    rows = []
+    for asset in portfolio.get_assets():
+        premia = float(asset.get_risk_premia())
+        uncertainty = float(asset.get_uncertainty())
+        rows.append({
+            'reportingName': asset.reporting_name,
+            'category': asset.category,
+            'lower': premia - uncertainty,
+            'mean': premia,
+            'upper': premia + uncertainty,
+            'volatility': float(asset.get_volatility()),
+            'sharpe': float(asset.get_sharpe_ratio()),
+            'totalReturn': float(asset.get_total_return()),
+            'hedgingRatio': float(asset.hedging_ratio),
+            'from': str(asset.index.min())[:10],
+            'to': str(asset.index.max())[:10],
+        })
+    return rows
+
+
+def writeAssetEstimates(directory: str, entries) -> str:
+    """Write ``assetEstimates.json`` beside the slices, one block per basis.
+
+    A block records the currency its analytics actually ran in, because a
+    substituted slice carries the substitute's estimates and the sheet should
+    not pretend otherwise. A slice that could not be built is left out rather
+    than filled with something plausible."""
+    path = os.path.join(directory, 'assetEstimates.json')
+    out = {'_note': ('Per-asset long-term estimates behind the export\'s assumptions '
+                     'sheet, recorded once per (currency, hedging) slice.'),
+           'updatedAt': datetime.datetime.now().isoformat(timespec='seconds'),
+           'slices': {}}
+    for entry in entries:
+        currency, hedging = entry['currency'], entry['hedging']
+        analytics = entry.get('analyticsCurrency') or currency
+        try:
+            rows = assetBlock(currency, hedging, analytics)
+        except Exception as exc:                       # noqa: BLE001 - reported, not raised
+            print('  asset estimates for {} {} unavailable: {}: {}'.format(
+                currency, hedging, type(exc).__name__, exc), flush=True)
+            continue
+        if rows:
+            out['slices']['{}|{}'.format(currency, hedging)] = {
+                'analyticsCurrency': analytics, 'assets': rows}
+    writeJsonAtomic(path, out)
+    print('asset estimates: {} slice(s) -> {}'.format(len(out['slices']), path), flush=True)
+    return path
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--currency', action='append', default=None,
@@ -305,6 +365,12 @@ def main(argv=None) -> int:
     # here is the authoritative one: every entry merged in, in order.
     for entry in entries:
         updateManifest(directory, entry['currency'], entry['hedging'], entry)
+
+    # The assumptions sheet reports what the library assumes about each ASSET
+    # rather than about any portfolio, so it is recorded once per slice here
+    # rather than on all 43 payloads of one. Without this the export's fourth
+    # sheet has nothing to say (D67).
+    writeAssetEstimates(directory, entries)
 
     baked = sum(e['baked'] for e in entries)
     failed = sum(len(e['failures']) for e in entries)

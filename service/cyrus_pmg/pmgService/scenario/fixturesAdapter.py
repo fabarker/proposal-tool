@@ -30,10 +30,10 @@ import datetime
 import os
 import time
 
-from . import advisors, rules, sleeves
+from . import advisors, assetEstimates, rules, sleeves
 from .payloads import categoryRows, portfolioResult
 from .types import AnalyticsError, BasisInput, MandateInput, PortfolioKey
-from .workbook import writeFixturesWorkbook
+from .workbook import writeWorkbook
 
 # Deterministic per-category coefficients, keyed by name - the fixtures'
 # stand-in for the estimation engine. Percent-weight x coefficient.
@@ -160,15 +160,16 @@ class FixturesScenarioPort:
         if _knob('SCENARIO_FIXTURES_FAIL_EXPORT') == '1':
             raise AnalyticsError('Fixture failure: export unavailable.')
         implementation = implementation or {}
-        return writeFixturesWorkbook(basis, mandate, list(portfolios),
-                                     implementation.get('sleeves', {}),
-                                     rules.AUTO_SLEEVE_CATEGORIES,
-                                     implementation.get('variant'),
-                                     bool(implementation.get('tacticalTilt')),
-                                     implementation.get('feeSchedule'),
-                                     implementation.get('feeLevel'),
-                                     implementation.get('includeFees', True),
-                                     bool(implementation.get('volPremium')))
+        return writeWorkbook(basis, mandate, list(portfolios),
+                             implementation.get('sleeves', {}),
+                             rules.AUTO_SLEEVE_CATEGORIES,
+                             implementation.get('variant'),
+                             bool(implementation.get('tacticalTilt')),
+                             implementation.get('feeSchedule'),
+                             implementation.get('feeLevel'),
+                             implementation.get('includeFees', True),
+                             bool(implementation.get('volPremium')),
+                             assets=assetEstimates.forSlice(basis.currency, basis.hedging))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

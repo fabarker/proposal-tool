@@ -124,7 +124,9 @@ def test_export_without_a_delegate_uses_the_payload_writer(store, tmp_path):
     path.write_bytes(port.build_export(
         BASIS, mandate, [result], {'sleeves': chosen, 'variant': VARIANTS[0]}))
     book = load_workbook(path)
-    assert book.sheetnames == ['Portfolios', 'Risk Dashboard', 'Implementation']
+    # four sheets now, and none of them needed the analytics library (D67)
+    assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
+                               'Implementation']
     rows = list(book['Implementation'].iter_rows(values_only=True))
     weights = [r[2] for r in rows
                if r[2] is not None and r[0] and str(r[0]).startswith('  ')]

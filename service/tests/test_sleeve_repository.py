@@ -227,7 +227,11 @@ def test_create_update_delete_round_trip_with_provenance():
         gone = sleeveRepo.deleteSleeve(made['id'], user='alice')
     assert gone['name'] == 'Round Trip 2'
     assert [s['name'] for s in sleeves.listSleeves(category, variant)] == before
-    assert sleeveRepo.getSleeve(made['id']) is None
+    # out of the library, still on the record (D65)
+    kept = sleeveRepo.getSleeve(made['id'])
+    assert kept is not None and kept['archived'] is True and kept['archivedBy'] == 'alice'
+    assert made['id'] not in [e['id'] for e in sleeveRepo.listAll()]
+    assert made['id'] in [e['id'] for e in sleeveRepo.listArchived()]
 
 
 @pytest.mark.parametrize('field, kwargs', [
@@ -385,6 +389,13 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/sleeves', ('POST',)),
         ('/scenario/repository/sleeves/{sleeveId}', ('PUT',)),
         ('/scenario/repository/sleeves/{sleeveId}', ('DELETE',)),
+        ('/scenario/repository/sleeves/{sleeveId}/history', ('GET',)),
+        ('/scenario/repository/sleeves/{sleeveId}/restore', ('POST',)),
+        ('/scenario/repository/sleeves/{sleeveId}/revert', ('POST',)),
+        ('/scenario/repository/sleeves/restore', ('POST',)),
+        ('/scenario/repository/activity', ('GET',)),
+        ('/scenario/repository/archive.csv', ('GET',)),
+        ('/scenario/repository/activity.csv', ('GET',)),
     }
     for key, names in found.items():
         assert 'requireAdmin' in names, key
@@ -652,6 +663,11 @@ def test_the_built_stylesheet_still_carries_every_console_section():
                                '.cat-link{'],
         'admin entry points': ['.rail-admin-bar{', '.rail-admin-btn{', 'body.rail-collapsed .rail-admin-bar{',
                                '.tier-admin{'],
+        'the record (D65)':   ['.repo-hist{', '.repo-histh{', '.rev-h{', '.rev.now .rev-n{', '.rev-changes{',
+                               '.rev-products{', '.rev-put{'],
+        'archive and feed':   ['.arc-sel{', '.arc-sel select{', '.arc-tbl tr.pin td{', '.arc-badge.gone{',
+                               '.arc-detail{', '.arc-db{', '.act-chip.on{', '.act-day{', '.act-ev{',
+                               '.act-badge.deleted{', '.act-more{'],
         'fee card':           ['.dialog.rc{', '.rc-seg button[aria-selected="true"]', '.rate-grid .rc-grp{',
                                '.rate-grid td.ring{', '.rc-legend i.k-ring{'],
     }
@@ -741,3 +757,324 @@ def test_read_only_is_one_gate_not_many():
     # and recovery must not leave the restored columns beside their refetch
     assert 'state.columns = [];' in source[source.index('async function recover()'):
                                            source.index('async function recover()') + 600]
+
+
+# --------------------------------------------------------------------------
+# The running history (D65)
+#
+# The rule the whole table exists to keep: a sleeve's earlier versions are
+# readable for ever, and a delete takes a sleeve out of the LIBRARY without
+# taking it off the record. Everything below is a way of trying to break that.
+# --------------------------------------------------------------------------
+
+def _sleeve(name='History Test', products_=None, **kw):
+    return sleeveRepo.createSleeve(
+        kw.pop('variant', 'PMG ESG'), kw.pop('category', 'Public Equity'), name,
+        products_ or [{'productId': A_PRODUCT, 'weight': 0.6},
+                      {'productId': ANOTHER, 'weight': 0.4}],
+        user=kw.pop('user', 'alice'), **kw)
+
+
+def test_every_seeded_sleeve_starts_with_a_baseline_revision():
+    entry = sleeveRepo.listAll()[0]
+    trail = sleeveRepo.history(entry['id'])
+    assert trail, 'a seeded sleeve has a history from the first connection'
+    assert trail[-1]['revision'] == 1
+    assert trail[-1]['action'] in ('baseline', 'seeded')
+    assert trail[-1]['changes'] == [], 'the first revision has nothing to compare against'
+
+
+def test_an_edit_keeps_the_version_it_replaced():
+    made = _sleeve('Keeps What It Replaced')
+    try:
+        sleeveRepo.updateSleeve(made['id'], 'Renamed',
+                                [{'productId': A_PRODUCT, 'weight': 1.0}], user='bob')
+        trail = sleeveRepo.history(made['id'])
+        assert [e['revision'] for e in trail] == [2, 1], 'newest first'
+
+        was, now = trail[1], trail[0]
+        assert was['name'] == 'Keeps What It Replaced' and now['name'] == 'Renamed'
+        assert [p['productId'] for p in was['products']] == [A_PRODUCT, ANOTHER]
+        assert [p['productId'] for p in now['products']] == [A_PRODUCT]
+        assert was['products'][0]['weight'] == 0.6, 'the earlier weights survive the edit'
+        assert now['actor'] == 'bob' and was['actor'] == 'alice'
+        assert now['current'] is True and was['current'] is False
+    finally:
+        sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_the_history_says_what_moved():
+    made = _sleeve('Says What Moved')
+    try:
+        sleeveRepo.updateSleeve(made['id'], 'Says What Moved',
+                                [{'productId': A_PRODUCT, 'weight': 0.75},
+                                 {'productId': ANOTHER, 'weight': 0.25}], user='bob')
+        changes = sleeveRepo.history(made['id'])[0]['changes']
+        assert any('60% to 75%' in c for c in changes), changes
+        assert any('40% to 25%' in c for c in changes), changes
+        assert all('gs-us-corporate' not in c for c in changes), 'products read by name'
+
+        sleeveRepo.updateSleeve(made['id'], 'Third Name',
+                                [{'productId': A_PRODUCT, 'weight': 1.0}], user='bob')
+        changes = sleeveRepo.history(made['id'])[0]['changes']
+        assert 'Renamed from Says What Moved' in changes
+        assert any(c.startswith('Removed ') for c in changes), changes
+    finally:
+        sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_a_delete_leaves_the_library_but_not_the_record():
+    made = _sleeve('Leaves The Library')
+    sleeveRepo.deleteSleeve(made['id'], user='dave')
+
+    assert made['id'] not in [e['id'] for e in sleeveRepo.listAll()]
+    assert 'Leaves The Library' not in [
+        s['name'] for s in sleeves.listSleeves('Public Equity', 'PMG ESG')]
+
+    gone = [e for e in sleeveRepo.listArchived() if e['id'] == made['id']]
+    assert len(gone) == 1 and gone[0]['archivedBy'] == 'dave'
+    assert gone[0]['archived'] is True
+
+    trail = sleeveRepo.history(made['id'])
+    assert [e['action'] for e in trail] == ['deleted', 'created']
+    assert [p['productId'] for p in trail[0]['products']] == [A_PRODUCT, ANOTHER], \
+        'the deleting revision holds what the sleeve looked like when it went'
+
+
+def test_a_deleted_sleeve_frees_its_name_and_can_still_come_back():
+    first = _sleeve('Freed Name')
+    sleeveRepo.deleteSleeve(first['id'], user='dave')
+
+    second = _sleeve('Freed Name')                       # the name is available again
+    assert second['id'] != first['id']
+    with pytest.raises(ValidationError):
+        sleeveRepo.restoreSleeve(first['id'], user='dave')   # ...so the restore is refused
+
+    sleeveRepo.deleteSleeve(second['id'], user='dave')
+    back = sleeveRepo.restoreSleeve(first['id'], user='dave')
+    try:
+        assert back['archived'] is False and back['id'] == first['id']
+        assert [e['action'] for e in sleeveRepo.history(first['id'])] == \
+            ['restored', 'deleted', 'created']
+        assert 'Freed Name' in [s['name'] for s in sleeves.listSleeves('Public Equity', 'PMG ESG')]
+    finally:
+        sleeveRepo.deleteSleeve(first['id'], user='dave')
+
+
+def test_a_deleted_sleeve_cannot_be_edited_or_deleted_twice():
+    made = _sleeve('Not Editable Once Gone')
+    sleeveRepo.deleteSleeve(made['id'], user='dave')
+    with pytest.raises(ValidationError):
+        sleeveRepo.updateSleeve(made['id'], 'Nope',
+                                [{'productId': A_PRODUCT, 'weight': 1.0}], user='dave')
+    with pytest.raises(ValidationError):
+        sleeveRepo.deleteSleeve(made['id'], user='dave')
+
+
+def test_a_revert_puts_a_version_back_without_rewinding_the_record():
+    made = _sleeve('Reverts Cleanly')
+    try:
+        sleeveRepo.updateSleeve(made['id'], 'Reverts Cleanly',
+                                [{'productId': A_PRODUCT, 'weight': 1.0}], user='bob')
+        back = sleeveRepo.revertSleeve(made['id'], 1, user='carol')
+
+        assert [(p['productId'], p['weight']) for p in back['products']] == \
+            [(A_PRODUCT, 0.6), (ANOTHER, 0.4)], 'the original composition is in force again'
+
+        trail = sleeveRepo.history(made['id'])
+        assert [e['revision'] for e in trail] == [3, 2, 1]
+        assert trail[0]['action'] == 'reverted' and trail[0]['actor'] == 'carol'
+        assert trail[1]['action'] == 'updated', 'the revision it replaced is still there'
+        assert len(trail[1]['products']) == 1
+    finally:
+        sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_a_revert_is_validated_like_any_other_save():
+    made = _sleeve('Validated Revert')
+    try:
+        with pytest.raises(ValidationError):
+            sleeveRepo.revertSleeve(made['id'], 99, user='carol')
+    finally:
+        sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_history_is_append_only_across_a_whole_life():
+    """The property that matters: no operation ever shortens the trail."""
+    made = _sleeve('Append Only')
+    depth = len(sleeveRepo.history(made['id']))
+    for step in (lambda: sleeveRepo.updateSleeve(
+                     made['id'], 'Append Only', [{'productId': A_PRODUCT, 'weight': 1.0}],
+                     user='bob'),
+                 lambda: sleeveRepo.revertSleeve(made['id'], 1, user='carol'),
+                 lambda: sleeveRepo.deleteSleeve(made['id'], user='dave'),
+                 lambda: sleeveRepo.restoreSleeve(made['id'], user='dave')):
+        step()
+        grown = len(sleeveRepo.history(made['id']))
+        assert grown == depth + 1, 'every write appends exactly one revision'
+        depth = grown
+    revisions = [e['revision'] for e in sleeveRepo.history(made['id'])]
+    assert revisions == sorted(revisions, reverse=True)
+    assert len(set(revisions)) == len(revisions), 'revision numbers are unique and dense'
+    sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_the_console_payload_and_the_endpoints_carry_the_record(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    made = _sleeve('Reaches The Console')
+    sleeveRepo.updateSleeve(made['id'], 'Reaches The Console',
+                            [{'productId': A_PRODUCT, 'weight': 1.0}], user='alice')
+
+    body = dashboardRouter.getRepository(user='alice')
+    assert 'archived' in body and isinstance(body['archived'], list)
+    mine = [s for s in body['sleeves'] if s['id'] == made['id']][0]
+    assert mine['revisions'] == 2
+
+    trail = dashboardRouter.getRepositorySleeveHistory(made['id'], user='alice')
+    assert trail['sleeveId'] == made['id'] and len(trail['history']) == 2
+
+    dashboardRouter.deleteRepositorySleeve(made['id'], user='alice')
+    after = dashboardRouter.getRepository(user='alice')
+    assert made['id'] in [s['id'] for s in after['archived']]
+    assert made['id'] not in [s['id'] for s in after['sleeves']]
+    assert len(dashboardRouter.getRepositorySleeveHistory(made['id'], user='alice')['history']) == 3
+
+    restored = dashboardRouter.restoreRepositorySleeve(made['id'], user='alice')
+    assert restored['sleeve']['archived'] is False
+    reverted = dashboardRouter.revertRepositorySleeve(
+        made['id'], {'revision': 1}, user='alice')
+    assert len(reverted['sleeve']['products']) == 2
+    sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_a_replacing_import_retires_the_library_rather_than_erasing_it():
+    before = {e['id'] for e in sleeveRepo.listAll()}
+    rows = [('PMG ESG', 'Public Equity', 'Only Survivor', A_PRODUCT, 1.0)]
+    sleeveRepo.importRows(rows, replace=True, user='importer')
+    try:
+        assert len(sleeveRepo.listAll()) == 1
+        retired = {e['id'] for e in sleeveRepo.listArchived()}
+        assert before <= retired, 'every retired sleeve is still on the record'
+        one = sorted(before)[0]
+        assert sleeveRepo.history(one)[0]['action'] == 'deleted'
+        assert sleeveRepo.history(one)[0]['actor'] == 'importer'
+    finally:
+        # put the library back the way the rest of the session expects it
+        sleeveRepo.importRows(_seedRows(), replace=True, user='seed')
+
+
+# --------------------------------------------------------------------------
+# The archive and the feed (D66)
+# --------------------------------------------------------------------------
+
+def test_the_feed_is_the_whole_record_newest_first_and_pages_without_overlap():
+    made = _sleeve('Feed Subject')
+    sleeveRepo.updateSleeve(made['id'], 'Feed Subject',
+                            [{'productId': A_PRODUCT, 'weight': 1.0}], user='bob')
+    sleeveRepo.deleteSleeve(made['id'], user='dave')
+
+    page = sleeveRepo.activity(limit=2)
+    assert [e['action'] for e in page['entries']] == ['deleted', 'updated']
+    assert page['entries'][0]['sleeveId'] == made['id']
+    assert page['entries'][0]['sleeveArchived'] is True
+    assert page['next'], 'more than two rows on record'
+
+    rest = sleeveRepo.activity(limit=500, before=page['next'])
+    seen = {e['cursor'] for e in page['entries']}
+    assert not (seen & {e['cursor'] for e in rest['entries']}), 'no row appears on two pages'
+    assert page['total'] == len(page['entries']) + len(rest['entries']) + (1 if rest['next'] else 0) \
+        or page['total'] >= len(page['entries']) + len(rest['entries'])
+
+
+def test_the_feed_filters_and_its_facets_count_what_the_other_filters_leave():
+    made = _sleeve('Feed Filter', user='zed')
+    sleeveRepo.deleteSleeve(made['id'], user='zed')
+    only = sleeveRepo.activity(actions=['deleted'], actor='zed')
+    assert all(e['action'] == 'deleted' and e['actor'] == 'zed' for e in only['entries'])
+    assert only['entries'] and only['entries'][0]['sleeveId'] == made['id']
+    # the action facet is counted with the action filter left out, so the
+    # other actions zed performed are still offered from here
+    assert 'created' in only['facets']['action']
+    # and the actor facet, with the actor left out, still offers everyone
+    assert 'alice' in only['facets']['actor']
+
+
+def test_the_feed_text_query_reaches_product_names_and_change_lines():
+    made = _sleeve('Feed Query Target')
+    sleeveRepo.updateSleeve(made['id'], 'Feed Query Target',
+                            [{'productId': A_PRODUCT, 'weight': 1.0}], user='bob')
+    byProduct = sleeveRepo.activity(query='corporate bond', limit=500)
+    assert made['id'] in {e['sleeveId'] for e in byProduct['entries']}
+    byChange = sleeveRepo.activity(query='Removed', actions=['updated'], limit=500)
+    assert any(e['sleeveId'] == made['id'] for e in byChange['entries'])
+    nothing = sleeveRepo.activity(query='zzz-no-such-thing-zzz')
+    assert nothing['entries'] == [] and nothing['next'] is None
+    sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_a_batch_restore_is_all_or_nothing_and_checks_itself():
+    a = _sleeve('Batch A'); b = _sleeve('Batch B')
+    sleeveRepo.deleteSleeve(a['id'], user='dave'); sleeveRepo.deleteSleeve(b['id'], user='dave')
+    # a live sleeve now takes B's name, so the batch cannot come back clean
+    blocker = _sleeve('Batch B')
+    with pytest.raises(ValidationError):
+        sleeveRepo.restoreSleeves([a['id'], b['id']], user='dave')
+    assert a['id'] in [e['id'] for e in sleeveRepo.listArchived()], 'A was not restored alone'
+    sleeveRepo.deleteSleeve(blocker['id'], user='dave')
+
+    back = sleeveRepo.restoreSleeves([a['id'], b['id']], user='dave')
+    assert sorted(e['name'] for e in back) == ['Batch A', 'Batch B']
+    assert all(e['archived'] is False for e in back)
+    for sleeveId in (a['id'], b['id']):
+        assert sleeveRepo.history(sleeveId)[0]['action'] == 'restored'
+        sleeveRepo.deleteSleeve(sleeveId, user='alice')
+
+
+def test_a_batch_restore_refuses_two_sleeves_that_would_collide_with_each_other():
+    a = _sleeve('Same Name')
+    sleeveRepo.deleteSleeve(a['id'], user='dave')
+    b = _sleeve('Same Name')                       # the name is free again
+    sleeveRepo.deleteSleeve(b['id'], user='dave')
+    with pytest.raises(ValidationError):
+        sleeveRepo.restoreSleeves([a['id'], b['id']], user='dave')
+    assert {a['id'], b['id']} <= {e['id'] for e in sleeveRepo.listArchived()}
+    with pytest.raises(ValidationError):
+        sleeveRepo.restoreSleeves([], user='dave')
+
+
+def test_the_exports_carry_the_archive_and_the_feed_as_tables():
+    made = _sleeve('Exported')
+    sleeveRepo.deleteSleeve(made['id'], user='dave')
+    archive = sleeveRepo.archiveRows()
+    row = [r for r in archive if r[0] == made['id']][0]
+    assert dict(zip(sleeveRepo.ARCHIVE_COLUMNS, row))['Sleeve'] == 'Exported'
+    assert 'gs-us-corporate-bond-fund 60.00%' in row[-1]
+    feed = sleeveRepo.activityRows(actions=['deleted'], actor='dave')
+    assert feed and all(r[1] == 'deleted' and r[2] == 'dave' for r in feed)
+    assert len(feed) == sleeveRepo.activity(actions=['deleted'], actor='dave')['total']
+
+
+def test_the_feed_and_export_endpoints_answer_as_the_console_expects(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    made = _sleeve('Endpoint Feed')
+    sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+    page = dashboardRouter.getRepositoryActivity(actions='deleted,created', actor='alice',
+                                                 limit=5, user='alice')
+    assert page['entries'] and set(e['action'] for e in page['entries']) <= {'deleted', 'created'}
+    assert 'facets' in page and 'total' in page
+
+    csv_ = dashboardRouter.exportRepositoryArchive(user='alice')
+    assert csv_.media_type.startswith('text/csv')
+    body = csv_.body.decode('utf-8')
+    assert body.splitlines()[0] == ','.join(sleeveRepo.ARCHIVE_COLUMNS)
+    assert 'Endpoint Feed' in body
+
+    feedCsv = dashboardRouter.exportRepositoryActivity(actions='deleted', user='alice')
+    assert 'Endpoint Feed' in feedCsv.body.decode('utf-8')
+
+    back = dashboardRouter.restoreRepositorySleeves({'ids': [made['id']]}, user='alice')
+    assert back['sleeves'][0]['archived'] is False
+    sleeveRepo.deleteSleeve(made['id'], user='alice')

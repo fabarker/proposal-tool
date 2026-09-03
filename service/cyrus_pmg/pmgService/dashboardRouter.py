@@ -207,14 +207,17 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
 def getRepository(user: str = Depends(requireAdmin)):
     """Everything the console needs in one fetch: the types, the
     categories, every sleeve (broken ones included, with their problems
-    and provenance), the whole catalogue, the products sleeves reference
-    that the catalogue no longer carries (D58), and where both came from."""
+    and provenance), the sleeves that have been archived out of the library
+    but kept on the record (D65), the whole catalogue, the products sleeves
+    reference that the catalogue no longer carries (D58), and where both
+    came from."""
     try:
         return {
             'variants': list(sleeveRepo.VARIANTS),
             'categories': sleeveRepo.categories(),
             'fixedCategories': sleeveRepo.fixedCategories(),
             'sleeves': sleeveRepo.listAll(),
+            'archived': sleeveRepo.listArchived(),
             'orphans': sleeveRepo.orphanProducts(),
             'products': products.all(),
             'catalogue': products.describeSource(),
@@ -266,13 +269,118 @@ def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
 
 @router.delete('/scenario/repository/sleeves/{sleeveId}')
 def deleteRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
-    """Retire a sleeve. Refused for a fixed category, which always holds one.
+    """Archive a sleeve out of the library. Refused for a fixed category,
+    which always holds one. The sleeve is not destroyed (D65): it keeps its
+    whole history, appears under the console's Archive, and can be restored.
     A scenario still naming it keeps the name and shows the picker's
     'no longer offered' state until a PWA re-picks - never a substitution."""
     try:
         return {'deleted': sleeveRepo.deleteSleeve(sleeveId, user=user)}
     except ValidationError as exc:
         return _validationError(exc)
+
+
+@router.get('/scenario/repository/sleeves/{sleeveId}/history')
+def getRepositorySleeveHistory(sleeveId: int, user: str = Depends(requireAdmin)):
+    """Every revision of one sleeve, newest first, each carrying the whole
+    sleeve as it stood plus what moved since the one before it (D65).
+
+    Answers for a removed sleeve exactly as for a live one - an empty list
+    means no such sleeve, not a sleeve with nothing to show."""
+    return {'sleeveId': sleeveId, 'history': sleeveRepo.history(sleeveId)}
+
+
+@router.post('/scenario/repository/sleeves/restore')
+def restoreRepositorySleeves(payload: dict = Body(...), user: str = Depends(requireAdmin)):
+    """Put several archived sleeves back at once: {ids: [...]}. All or
+    nothing, and checked against itself as well as the library (D66)."""
+    try:
+        made = sleeveRepo.restoreSleeves(payload.get('ids') or [], user=user)
+        return {'sleeves': made}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+def _feedFilters(actions: str = '', variant: str = '', category: str = '', actor: str = '',
+                 since: str = '', until: str = '', q: str = '') -> dict:
+    """The feed's query string, as the repository's keyword arguments. Actions
+    arrive comma-joined because a chip set is one parameter, not a list."""
+    return {
+        'actions': [a for a in (actions or '').split(',') if a],
+        'variant': variant or None, 'category': category or None, 'actor': actor or None,
+        'since': since or None, 'until': until or None, 'query': q or '',
+    }
+
+
+@router.get('/scenario/repository/activity')
+def getRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
+                          actor: str = '', since: str = '', until: str = '', q: str = '',
+                          limit: int = 100, before: str = '',
+                          user: str = Depends(requireAdmin)):
+    """A page of the record as a feed (D66): every revision across every
+    sleeve, newest first, with the counts that frame it. `before` is the
+    cursor a previous page handed back as `next`."""
+    filters = _feedFilters(actions, variant, category, actor, since, until, q)
+    return sleeveRepo.activity(limit=limit, before=before or None, **filters)
+
+
+def _csv(columns, rows, filename: str) -> Response:
+    import csv
+    import io as _io
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    writer.writerows(rows)
+    return Response(content=buf.getvalue(), media_type='text/csv; charset=utf-8',
+                    headers={'Content-Disposition': 'attachment; filename="{}"'.format(filename)})
+
+
+@router.get('/scenario/repository/archive.csv')
+def exportRepositoryArchive(user: str = Depends(requireAdmin)):
+    """The archive as a table: one row per archived sleeve, what it held."""
+    return _csv(sleeveRepo.ARCHIVE_COLUMNS, sleeveRepo.archiveRows(), 'sleeve-archive.csv')
+
+
+@router.get('/scenario/repository/activity.csv')
+def exportRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
+                             actor: str = '', since: str = '', until: str = '', q: str = '',
+                             user: str = Depends(requireAdmin)):
+    """The feed under the same filters, every page of it, as a table."""
+    filters = _feedFilters(actions, variant, category, actor, since, until, q)
+    return _csv(sleeveRepo.ACTIVITY_COLUMNS, sleeveRepo.activityRows(**filters),
+                'sleeve-activity.csv')
+
+
+@router.post('/scenario/repository/sleeves/{sleeveId}/restore')
+def restoreRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
+    """Put a removed sleeve back. Re-validated on the way in: the name may
+    have been taken since, and a product it holds may have left the
+    catalogue."""
+    try:
+        return {'sleeve': sleeveRepo.restoreSleeve(sleeveId, user=user)}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.post('/scenario/repository/sleeves/{sleeveId}/revert')
+def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
+                           user: str = Depends(requireAdmin)):
+    """Put an earlier revision back in force: {revision}. Appends a new
+    revision rather than rewinding - the revert is itself on the record."""
+    try:
+        number = int(payload.get('revision', 0))
+    except (TypeError, ValueError):
+        return _validationError(ValidationError('revision', 'Choose a revision to restore.'))
+    try:
+        return {'sleeve': sleeveRepo.revertSleeve(sleeveId, number, user=user)}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
 
 
 @router.get('/scenario/{scenarioId}')

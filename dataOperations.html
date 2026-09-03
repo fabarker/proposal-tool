@@ -211,7 +211,7 @@ ol.steps > li p:last-child{margin:0}
       <p class="lbl">Blast radius</p>
       <p>What an adviser can select. Changes take effect immediately, with no release at all.</p>
       <p class="lbl">Release path</p>
-      <p>None — admins edit in-app. Governed by <em>who</em> is an admin, and by a periodic census.</p>
+      <p>None — admins edit in-app. Governed by <em>who</em> is an admin, by a periodic census, and by a history that keeps every version.</p>
     </div>
   </div>
   <div class="cls">
@@ -251,7 +251,7 @@ ol.steps > li p:last-child{margin:0}
 <tr><td>Fee card</td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-ok">feeTools</span></td><td><span class="pill p-ok">feeTools</span></td><td><span class="pill p-ok">feeTools</span> stamps</td><td>restart</td><td><span class="pill p-ok">census</span></td></tr>
 <tr><td>SAA extract</td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-ok">bake --census</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-warn">file copy</span></td><td>rebake</td><td><span class="pill p-ok">manifest</span></td></tr>
 <tr><td>Products</td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-warn">via sleeveTools</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-warn">file copy</span></td><td>auto-reload</td><td><span class="pill p-ok">census</span></td></tr>
-<tr><td>Sleeves</td><td colspan="2"><span class="pill p-acc">in-app, class C</span></td><td><span class="pill p-ok">sleeveTools</span></td><td><span class="pill p-ok">--import</span></td><td>immediate</td><td><span class="pill p-ok">census</span></td></tr>
+<tr><td>Sleeves</td><td colspan="2"><span class="pill p-acc">in-app, class C</span></td><td><span class="pill p-ok">--history</span></td><td><span class="pill p-ok">--import</span></td><td>immediate</td><td><span class="pill p-ok">census</span></td></tr>
 <tr><td>Advisors</td><td><span class="pill p-warn">no fixed path</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-bad">hand copy</span></td><td>restart</td><td><span class="pill p-bad">by eye</span></td></tr>
 <tr><td>Policy constants</td><td colspan="4"><span class="pill p-acc">code review — class D</span></td><td>deploy</td><td><span class="pill p-ok">193 tests</span></td></tr>
 </tbody>
@@ -365,7 +365,12 @@ cp cyrus_pmg/pmgService/scenario/feeRates.csv \
 
 <div class="rb-h"><h3>D. Sleeve library</h3><span class="pill p-acc">class C</span><span class="pill p-ok">fully tooled</span></div>
 <ol class="steps">
-  <li><b>Day to day: in the app</b><p>Admins create, copy, remove and re-apply sleeves in the sleeve repository. There is no release and no operator involvement. The control is <em>who holds <code>PMG_ADMIN_KERBEROS</code></em>.</p></li>
+  <li><b>Day to day: in the app</b><p>Admins create, copy, remove and re-apply sleeves in the sleeve repository. There is no release and no operator involvement. The control is <em>who holds <code>PMG_ADMIN_KERBEROS</code></em> — and, since D65, a record that makes every change reversible.</p></li>
+  <li><b>Every version is kept, and a delete is recoverable</b>
+<pre><code>PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --history 42
+PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --archived
+PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --activity 40</code></pre>
+<p>Every write appends a revision holding the whole sleeve, with who did it and when. Archiving takes a sleeve out of the <em>library</em>, not off the record. <b>An admin mistake no longer needs you:</b> the console's History drawer puts any earlier version back, its <b>Archive</b> tab restores archived sleeves singly or as a batch, and its <b>Activity</b> tab shows every change across the library newest first (D66). Escalation is for a mistake nobody noticed until the whole library moved on.</p></li>
   <li><b>Health check on a schedule</b>
 <pre><code>PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --census</code></pre>
 <p>Reports what the store and catalogue hold, every broken sleeve and why, every orphaned product, and any fixed category not holding exactly one sleeve. <b>Run it weekly.</b></p></li>
@@ -405,7 +410,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
 <tbody>
 <tr><td>Test suite</td><td><code>PYTHONPATH=. python3 -m pytest tests -q</code></td><td>193 passed, 4 skipped</td></tr>
 <tr><td>Extract parses</td><td><code>bake --census</code></td><td>0 unparsed names, 0 unknown tickers</td></tr>
-<tr><td>Sleeves intact</td><td><code>sleeveTools --census</code></td><td>No broken sleeves, no orphaned products, each fixed category holding exactly one sleeve</td></tr>
+<tr><td>Sleeves intact</td><td><code>sleeveTools --census</code>, or the console's Activity tab</td><td>No broken sleeves, no orphaned products, each fixed category holding exactly one sleeve, and the archive holding only what you expect</td></tr>
 <tr><td>Fee card identity</td><td><code>feeTools --census</code></td><td>The version and as-of you accepted; placeholder cleared</td></tr>
 <tr><td>Store freshness</td><td>Manifest <code>source.modified</code> vs the extract on disk</td><td>Identical. If they differ, the service is serving stale analytics <span class="pill p-warn">manual today — see G1</span></td></tr>
 <tr><td>What the app says</td><td>The provenance line in the running UI</td><td>Adapter, data version, portfolios baked and bake date all match what you just built</td></tr>
@@ -425,7 +430,8 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
 <tr><td>Baked analytics</td><td>Rename <code>var/baked.bak</code> back into place, restart</td><td><span class="pill p-ok">seconds</span></td><td>The previous store was kept — it is today</td></tr>
 <tr><td>Fee card</td><td><code>feeTools --accept</code> the previous CSV with its original version</td><td><span class="pill p-warn">minutes</span></td><td><b>You kept a copy.</b> Accept keeps none <span class="pill p-bad">G4</span></td></tr>
 <tr><td>Products</td><td>Restore the previous file; it reloads on its own</td><td><span class="pill p-ok">seconds</span></td><td>You kept a copy</td></tr>
-<tr><td>Sleeves</td><td><code>sleeveTools --import previous.csv --replace</code></td><td><span class="pill p-warn">minutes</span></td><td><b>A dated export exists.</b> Nothing takes one automatically <span class="pill p-bad">G3</span></td></tr>
+<tr><td>Sleeves — one or several</td><td>The console's History drawer, or a batch restore from its Archive tab</td><td><span class="pill p-ok">seconds</span></td><td>None. Every version is kept and archiving is reversible <span class="pill p-ok">D65 · D66</span></td></tr>
+<tr><td>Sleeves — the whole library</td><td><code>sleeveTools --import previous.csv --replace</code></td><td><span class="pill p-warn">minutes</span></td><td><b>A dated export exists.</b> Nothing takes one automatically <span class="pill p-warn">G3</span></td></tr>
 <tr><td>Advisors</td><td>Restore the workbook, restart</td><td><span class="pill p-warn">minutes</span></td><td>You kept a copy</td></tr>
 <tr><td>Policy constants</td><td>Revert the commit, redeploy</td><td><span class="pill p-warn">a deploy</span></td><td>Version control — always available</td></tr>
 <tr><td>Scenario state</td><td>None, by design — 24h retention</td><td><span class="pill p-mute">n/a</span></td><td>Users re-enter. Acceptable</td></tr>
@@ -438,6 +444,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
   <div class="card"><h4>Numbers changed and nobody expected it</h4><p>A rebake ran, or the analytics library moved data version under you. Check the manifest date and the provenance line first, before looking at any weights.</p></div>
   <div class="card"><h4>The product catalogue is empty or erroring</h4><p>The whole extract was rejected — almost always one bad row: a duplicate id, an empty name, a non-numeric cost, or a fee group the card does not price. The reader is all-or-nothing by design.</p></div>
   <div class="card"><h4>A sleeve shows missing products</h4><p>A product extract dropped an id a sleeve still references. <code>sleeveTools --census</code> names it exactly. An admin repairs the sleeve; no release needed.</p></div>
+  <div class="card"><h4>A sleeve changed and nobody knows why</h4><p>It does know. The console's Activity tab, filtered to the sleeve or the person, or <code>sleeveTools --history &lt;id&gt;</code>, gives every version with who saved it, when, and what moved. Put any of them back in one click.</p></div>
   <div class="card"><h4>Portfolios missing after an extract update</h4><p>Names that did not parse were rejected, not guessed. <code>bake --census</code> lists them. This is the closed vocabulary working as intended.</p></div>
   <div class="card"><h4>Fees look wrong across the board</h4><p>Check whether the card still reports itself as a placeholder. Until a real card is accepted, every fee figure on screen is invented.</p></div>
   <div class="card"><h4>A change was made but nothing moved</h4><p>The service was not restarted. Only products self-reload; the fee card, the advisor directory and the SAA universe are all read once at import.</p></div>
@@ -445,7 +452,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
 
 <h2 id="p9"><span class="n">9</span>Operating rhythm</h2>
 <dl class="rhythm">
-  <dt>Weekly</dt><dd><code>sleeveTools --census</code> — the only class-C dataset with no release gate, so a periodic look is the control. Take a dated sleeve export at the same time.</dd>
+  <dt>Weekly</dt><dd>The console's Activity tab on <em>Last 7 days</em> — the only class-C dataset with no release gate, so a periodic look is the control, and the feed is that look in thirty seconds. <code>sleeveTools --census</code> for the structural checks. Take a dated sleeve export and a copy of the <code>.db</code> at the same time.</dd>
   <dt>Monthly</dt><dd>Product extract refresh, followed by a census. Confirm the fee card's version is still the one you expect. Review who is on the two access lists.</dd>
   <dt>Quarterly</dt><dd>SAA extract refresh and full rebake, on the supplying database's schedule. Full verification checklist. Confirm the analytics library's data version has not moved without notice.</dd>
   <dt>Annually</dt><dd>Class D review: mandate floor, private-assets minimum, tactical tilt, volatility premium, hedge ratios, context window. Each one re-approved or changed, with the decision recorded.</dd>
@@ -461,7 +468,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
 <tbody>
 <tr><td><b>G1</b></td><td>No staleness check between the baked store and the SAA extract</td><td>Silently serving analytics built from a superseded extract. Detectable today only if someone looks at the manifest.</td><td>Compare the manifest's recorded <code>source.modified</code> against the file at start-up; log loudly, and surface it in the provenance line</td><td><span class="pill p-ok">small</span></td></tr>
 <tr><td><b>G2</b></td><td>No <code>productTools</code> to match <code>feeTools</code></td><td>A product delivery going in unreviewed. There is no way to answer "what changed?" for the catalogue.</td><td><code>--census</code>, <code>--diff</code>, <code>--accept</code> for the catalogue, on the fee card's pattern</td><td><span class="pill p-warn">medium</span></td></tr>
-<tr><td><b>G3</b></td><td>No automatic sleeve backup</td><td>Losing the one dataset the tool owns outright. An admin mistake is currently unrecoverable unless someone happened to export.</td><td>Scheduled <code>sleeveTools --export</code> to a dated file, retained</td><td><span class="pill p-ok">small</span></td></tr>
+<tr><td><b>G3</b></td><td>No automatic whole-store backup <span class="pill p-warn">narrowed</span></td><td>Losing the database file itself — disk, corruption, a bad <code>--import --replace</code>. <b>Individual sleeve mistakes are no longer in scope:</b> D65 keeps every version and D66's Archive restores singly or in batches from the console.</td><td>Scheduled <code>sleeveTools --export</code> to a dated file, retained. Copy the <code>.db</code> too — the export carries the live library, not the history</td><td><span class="pill p-ok">small</span></td></tr>
 <tr><td><b>G4</b></td><td><code>feeTools --accept</code> keeps no copy of the card it replaces</td><td>Being unable to roll back a fee delivery. The command overwrites in place.</td><td>Copy the outgoing card to a dated backup inside <code>accept</code></td><td><span class="pill p-ok">small</span></td></tr>
 <tr><td><b>G5</b></td><td>The advisor workbook has no override and no census</td><td>An uncontrolled hand copy into a package directory being the way a directory gets updated.</td><td>Add <code>SCENARIO_ADVISORS_SOURCE</code>; a census with counts</td><td><span class="pill p-ok">small</span></td></tr>
 <tr><td><b>G6</b></td><td>The scenario store defaults into the system temp directory</td><td>Losing in-flight proposals to a reboot or a temp sweep.</td><td>Set <code>SCENARIO_STORE_DIR</code> explicitly in every deployed environment</td><td><span class="pill p-ok">config</span></td></tr>

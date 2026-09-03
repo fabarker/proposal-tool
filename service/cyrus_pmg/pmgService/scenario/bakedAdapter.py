@@ -14,10 +14,10 @@ correctness never depends on the bake being complete. With no delegate the
 service runs entirely without a database and a miss raises AnalyticsError,
 which the UI already renders as a column error with Retry.
 
-Exports: with a delegate, ``build_export`` is delegated so the workbook stays
-the one ``Reporting.generate_report`` produces (spec 14.3). Database-free,
-the workbook is written from the baked payloads instead - same three sheets,
-same figures, this package's own writer.
+Exports: never delegated (D67). The workbook is written from the payloads
+this adapter just served, plus the per-asset estimates recorded beside the
+slices, so an export costs milliseconds and imports nothing - the same four
+sheets whatever the fallback is set to.
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ from __future__ import annotations
 import os
 import threading
 
-from . import advisors, bake, rules, sleeves
+from . import advisors, assetEstimates, bake, rules, sleeves
 from .types import AnalyticsError, BasisInput, MandateInput, PortfolioKey
-from .workbook import writeFixturesWorkbook
+from .workbook import writeWorkbook
 
 
 class BakedScenarioPort:
@@ -142,18 +142,23 @@ class BakedScenarioPort:
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:
-        if self._delegate is not None:
-            return self._delegate.build_export(basis, mandate, portfolios, implementation)
+        """The workbook, written here rather than by the analytics library.
+
+        There is no delegate path any more (D67): every figure the export
+        needs is in the payloads this adapter just served, and the per-asset
+        estimates the assumptions sheet reports are recorded beside them. An
+        export therefore costs milliseconds and imports nothing."""
         implementation = implementation or {}
-        return writeFixturesWorkbook(basis, mandate, list(portfolios),
-                                     implementation.get('sleeves', {}),
-                                     rules.AUTO_SLEEVE_CATEGORIES,
-                                     implementation.get('variant'),
-                                     bool(implementation.get('tacticalTilt')),
-                                     implementation.get('feeSchedule'),
-                                     implementation.get('feeLevel'),
-                                     implementation.get('includeFees', True),
-                                     bool(implementation.get('volPremium')))
+        return writeWorkbook(basis, mandate, list(portfolios),
+                             implementation.get('sleeves', {}),
+                             rules.AUTO_SLEEVE_CATEGORIES,
+                             implementation.get('variant'),
+                             bool(implementation.get('tacticalTilt')),
+                             implementation.get('feeSchedule'),
+                             implementation.get('feeLevel'),
+                             implementation.get('includeFees', True),
+                             bool(implementation.get('volPremium')),
+                             assets=assetEstimates.forSlice(basis.currency, basis.hedging))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

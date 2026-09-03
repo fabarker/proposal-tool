@@ -1,6 +1,13 @@
-"""Excel writers.
+"""Excel writers - the whole workbook, with no analytics library behind it.
 
-Two jobs live here:
+Four sheets, and none of them needs ``Reporting`` or a ``SAAPortfolio``
+(D67). Every figure on ``portfolios`` and ``risk_dashboard`` was already
+carried by the resolved payloads the export passes in; ``assumptions`` reads
+the per-asset estimates the bake now records beside them; ``Implementation``
+was always the tool's own work. That is what lets the service be ported
+somewhere the analytics library cannot go.
+
+Three jobs live here:
 
 * ``buildImplementationRows`` + ``writeImplementationSheet`` - the
   implementation model as a sheet (spec 14.4), with the rounding rule of spec
@@ -10,22 +17,33 @@ Two jobs live here:
   the real adapter and the fixtures adapter both use it, and the test suite
   checks it against the page's JavaScript mirror.
 
-* ``writeFixturesWorkbook`` - a complete workbook for the fixtures adapter,
-  which has no ``Reporting`` behind it. Sheet layout and formats follow the
-  house report (spec 14.3): asset rows carry weights x100 with number format
-  ``0.0`` while category and total rows carry fractions with ``0.0%`` - that
-  asymmetry is the report's own convention and is preserved deliberately.
+* ``writePortfoliosSheet`` / ``writeRiskDashboardSheet`` /
+  ``writeAssumptionsSheet`` - the three sheets the analytics library used to
+  lay out, reproduced from the payloads cell for cell. Layout, fonts, fills,
+  number formats, merges, row heights and the one conditional-formatting rule
+  are the house report's own (spec 14.3), taken from a captured reference
+  workbook rather than guessed at. Two conventions are deliberate and easy to
+  break: asset rows carry weights x100 with format ``0.0`` while category and
+  total rows carry fractions with ``0.0%``; and VaR and CVaR are stored
+  NEGATED in the payload (the screen reads them as losses) but printed
+  positive here.
+
+* ``writeWorkbook`` - the four sheets in order, the only export path.
 """
 
 from __future__ import annotations
 
+import datetime
 import io
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from openpyxl.formatting.rule import CellIsRule
+
 from . import fees, rules
+from . import portfolio_weights as pw
 from .payloads import roundWeightsLargestRemainder
 from .rules import sleeveCategory
 from .sleeves import listSleeves
@@ -34,8 +52,20 @@ from .sleeves import listSleeves
 # design - open item 2 keeps each surface on its own until the theme decision.
 _NAVY = '0F243E'
 _HEADER_NAVY = '092532'
+_SUBHEAD_NAVY = '092539'          # the bold section labels on the risk sheet
 _BAND = 'D3DDEA'
+_WHITE = 'FFFFFF'
+_PREMIA_LOW = 'C00000'            # assumptions: the low end of a range, red
+_PREMIA_HIGH = '039644'           # ...and the high end, green
 _DOTTED = Side(style='dotted', color='A9A9A9')
+_THIN = Side(style='thin')
+_HAIR = Side(style='hair')
+_WHITE_FILL = PatternFill('solid', fgColor=_WHITE)
+
+# The nine stress periods and three horizons arrive in the payload in the
+# order the engine produced them; the sheet prints them in that same order.
+_ASSUMPTION_WIDTHS = [('A', 40), ('B', 7), ('C', 7), ('D', 7), ('E', 12),
+                      ('F', 14.5), ('G', 26), ('H', 16.5), ('I', 11), ('J', 11)]
 
 # The thirteen columns of spec 9.3 plus 'Fee group' (D51): the management fee
 # is resolved from the fee schedule and the product's group, and a sheet that
@@ -160,6 +190,18 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         'wtdFeeBp': sum(i.get('wtdFeeBp') or 0.0 for i in lineItems) if priced else None,
         'notional': sum(i.get('notional', 0.0) for i in lineItems),
     }
+
+    # Nothing that prints as zero earns a line (D68). Dropped AFTER the
+    # rounding, so the largest-remainder pass still closes the column on
+    # 100.00 exactly - a row worth 0.00 contributes nothing to that sum and
+    # taking it out cannot move it. A category keeps its row while it has
+    # weight, sleeve or no sleeve: an unimplemented category with an
+    # allocation is the thing the page is asking a PWA to fix.
+    for group in groups:
+        group['items'] = [item for item in group['items']
+                          if item.get('printedPct', 0.0) != 0]
+    groups = [group for group in groups if group['weightPct'] != 0]
+
     return {'groups': groups, 'total': total, 'complete': complete,
             'priced': priced, 'tier': tier}
 
@@ -300,7 +342,9 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     for column in range(1, len(columns) + 1):
         cell = sheet.cell(row=row, column=column)
         cell.font = boldFont
-        cell.border = Border(top=_DOTTED)
+        # ruled above and below: the total closes the table, and a single
+        # line above it reads as just another separator between groups
+        cell.border = Border(top=_DOTTED, bottom=_DOTTED)
     _weightCell(sheet.cell(row=row, column=3), model['total']['weightPct'])
     _bpAt(row, model['total']['wtdFeeBp'])
     notional = sheet.cell(row=row, column=at['Notional'])
@@ -318,194 +362,534 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
             row_cells[at['Fee group'] - 1].alignment = Alignment(horizontal='left')
 
 
-def writeFixturesWorkbook(basis, mandate, results, sleevesMap, autoCategories,
-                          variant: str = None, tacticalTilt: bool = False,
-                          feeSchedule: str = None, feeLevel: str = None,
-                          includeFees: bool = True,
-                          volPremium: bool = False) -> bytes:
-    """A complete workbook from fixture payloads: Portfolios, Risk Dashboard
-    and Implementation sheets, styled after the house report (spec 14.3)."""
-    book = Workbook()
+# --------------------------------------------------------------------- #
+# The three sheets the analytics library used to lay out (D67).
+#
+# Each is written from the resolved payloads alone. The layout is not
+# invented: it was read cell by cell off a workbook the engine produced, and
+# the test suite compares what these functions emit against captured golden
+# files so a change here cannot drift away from the house report unnoticed.
+# --------------------------------------------------------------------- #
 
-    # ---- Portfolios sheet -------------------------------------------------
-    sheet = book.active
-    sheet.title = 'Portfolios'
-    light = Font(name='Calibri Light', size=12.5)
-    lightBold = Font(name='Calibri Light', size=12.5, bold=True)
-    white = Font(name='Calibri Light', size=12.5, color='FFFFFF')
-    bandFill = PatternFill('solid', fgColor=_BAND)
-    navyFill = PatternFill('solid', fgColor=_NAVY)
+def _categoryOrder(results, engineParity: bool = False):
+    """Every category and asset in the SUPPLIED UNIVERSE'S order, unioned with
+    anything the payloads add.
 
-    names = [result['name'] for result in results]
-    sheet.append([''] + names)
-    for cell in sheet[1]:
-        cell.font = lightBold
-        cell.border = Border(bottom=_DOTTED)
-    sheet.row_dimensions[1].height = 37
-    sheet.freeze_panes = 'B2'
+    The universe leads rather than the payloads so that columns line up: a
+    category one book holds and another does not still gets its row, and the
+    book without it prints a zero against the book with it. That is the
+    report's zero-fill convention (D13) and it is what makes two portfolios
+    comparable row by row.
 
-    categoryOrder = []
-    assetOrder = {}
+    A category no column holds AT ALL is a different thing, and it is dropped
+    (D68). It aligns nothing - there is nothing to align it with - and on the
+    strategic sheets it is actively wrong: Asset Allocation Strategies exists
+    in the asset universe only so that the tactical tilt has somewhere to
+    live, and the tilt is an IMPLEMENTATION choice. No strategic portfolio
+    carries it, the supplied extract names it nowhere, and a row reading
+    "Asset Allocation Strategies 0.0%" says the strategic model has a nil
+    allocation to something that was never part of it.
+
+    *engineParity* keeps the empty rows, which is how the analytics library
+    laid the sheet out: it padded every portfolio to the whole universe before
+    reporting on it, so its workbook shows the tilt fund at zero. The golden
+    test uses it to prove this writer can still reproduce that output exactly.
+    Nothing else should.
+    """
+    order, assets = [], {}
+    for _, reportingName, category in pw.ASSET_METADATA:
+        if category not in order:
+            order.append(category)
+            assets[category] = []
+        if reportingName not in assets[category]:
+            assets[category].append(reportingName)
     for result in results:
         for category in result['categories']:
-            if category['name'] not in categoryOrder:
-                categoryOrder.append(category['name'])
-                assetOrder[category['name']] = []
+            if category['name'] not in order:
+                order.append(category['name'])
+                assets[category['name']] = []
             for asset in category['assets']:
-                if asset['reportingName'] not in assetOrder[category['name']]:
-                    assetOrder[category['name']].append(asset['reportingName'])
+                if asset['reportingName'] not in assets[category['name']]:
+                    assets[category['name']].append(asset['reportingName'])
+    if engineParity:
+        return order, assets
 
-    def _lookup(result, categoryName, assetName=None):
-        for category in result['categories']:
-            if category['name'] != categoryName:
-                continue
-            if assetName is None:
-                return category['weightPct']
-            for asset in category['assets']:
-                if asset['reportingName'] == assetName:
-                    return asset['weightPct']
-            return 0.0        # category held, asset not: the report's zero-fill
-        return None           # variant does not have the category
+    # Keep a row only where SOME column carries weight. A category one book
+    # holds and another does not keeps its row and the other book prints the
+    # zero - that is the alignment the zero-fill exists for. A row that is
+    # zero the whole way across aligns nothing, and says the model has a nil
+    # allocation to something that is not in it (D68).
+    kept, keptAssets = [], {}
+    for category in order:
+        live = [name for name in assets[category]
+                if any(_weight(result, category, name) for result in results)]
+        if not live and not any(_weight(result, category) for result in results):
+            continue
+        kept.append(category)
+        keptAssets[category] = live
+    return kept, keptAssets
 
-    for categoryName in categoryOrder:
-        sheet.append([categoryName] +
-                     [None if (w := _lookup(r, categoryName)) is None else w / 100.0
-                      for r in results])
-        row = sheet.max_row
-        sheet.row_dimensions[row].height = 17
-        for cell in sheet[row]:
-            cell.font = lightBold
-            cell.fill = bandFill
-            if cell.column > 1:
-                cell.number_format = '0.0%'
-        for assetName in assetOrder[categoryName]:
-            sheet.append(['  ' + assetName] +
-                         [None if (w := _lookup(r, categoryName, assetName)) is None else w
-                          for r in results])
-            for cell in sheet[sheet.max_row]:
-                cell.font = light
-                if cell.column > 1:
-                    cell.number_format = '0.0'
-    sheet.append(['TOTAL'] + [1.0 for _ in results])
-    row = sheet.max_row
-    sheet.row_dimensions[row].height = 23
-    for cell in sheet[row]:
-        cell.font = lightBold
-        cell.border = Border(top=_DOTTED)
-        if cell.column > 1:
-            cell.number_format = '0.0%'
-    for label, field, fmt in (
-            ('Estimated Mean Return', 'estimatedReturnPct', '0.0%'),
-            ('Sharpe Ratio', 'sharpe', '0.00'),
-            ('Volatility', 'volatilityPct', '0.0%')):
-        sheet.append([label] +
-                     [r['metrics'][field] / (100.0 if fmt == '0.0%' else 1.0)
-                      for r in results])
-        row = sheet.max_row
-        sheet.row_dimensions[row].height = 23
-        for cell in sheet[row]:
-            cell.fill = navyFill
-            cell.font = Font(name='Calibri Light', size=12.5, color='FFFFFF')
-            if cell.column > 1:
-                cell.number_format = fmt
+
+def _weight(result, categoryName, assetName=None):
+    """The weight a column carries. Absent means zero, not blank: the whole
+    asset set is padded, which is what lets columns with different holdings
+    line up row for row (D13)."""
+    for category in result['categories']:
+        if category['name'] != categoryName:
+            continue
+        if assetName is None:
+            return category['weightPct']
+        for asset in category['assets']:
+            if asset['reportingName'] == assetName:
+                return asset['weightPct']
+        return 0.0
+    return 0.0
+
+
+def writePortfoliosSheet(book, results, engineParity: bool = False):
+    """The strategic allocation, one column per portfolio.
+
+    Note the scale asymmetry, which is the report's own: a CATEGORY row is a
+    fraction formatted ``0.0%``, an ASSET row is already x100 and formatted
+    ``0.0``. They print identically and store differently."""
+    sheet = book.create_sheet('portfolios')
+    light = Font(name='Calibri Light', size=12.5)
+    spacerFont = Font(name='Arial', size=12.5)
+    metricFont = Font(name='Calibri', size=12.5, color=_WHITE)
+    band = PatternFill('solid', fgColor=_BAND)
+    navy = PatternFill('solid', fgColor=_NAVY)
+    right = Alignment(horizontal='right', vertical='center', indent=4)
+    columns = len(results)
+
+    def style(row, font, fill=_WHITE_FILL, fmt=None, border=None, height=None,
+              labelAlign='left', vertical='center', labelFmt=False):
+        if height is not None:
+            sheet.row_dimensions[row].height = height
+        for index in range(1, columns + 2):
+            cell = sheet.cell(row=row, column=index)
+            cell.font = font
+            cell.fill = fill
+            if border is not None:
+                cell.border = border
+            if index == 1:
+                cell.alignment = Alignment(horizontal=labelAlign, vertical=vertical)
+                if labelFmt and fmt:
+                    cell.number_format = fmt
+            else:
+                cell.alignment = (right if vertical
+                                  else Alignment(horizontal='right', indent=4))
+                if fmt:
+                    cell.number_format = fmt
+
+    sheet.append([None] + [r['name'] for r in results])
+    style(1, light, border=Border(bottom=_DOTTED), height=37, labelAlign=None)
+    for index in range(2, columns + 2):
+        sheet.cell(row=1, column=index).alignment = Alignment(
+            horizontal='center', vertical='center')
+
+    order, assets = _categoryOrder(results, engineParity)
+    for categoryName in order:
+        sheet.append([categoryName] + [
+            None if (w := _weight(r, categoryName)) is None else w / 100.0
+            for r in results])
+        style(sheet.max_row, light, band, '0.0%', height=17)
+        for assetName in assets[categoryName]:
+            sheet.append(['  ' + assetName] + [
+                None if (w := _weight(r, categoryName, assetName)) is None else w
+                for r in results])
+            style(sheet.max_row, light, fmt='0.0', height=17)
+
+    sheet.append(['TOTAL'] + [1.0] * columns)
+    style(sheet.max_row, light, fmt='0.0%', border=Border(top=_DOTTED),
+          height=23, labelAlign=None, vertical=None)
+
+    for label, field, fmt in (('Estimated Mean Return', 'estimatedReturnPct', '0.0%'),
+                              ('Sharpe Ratio', 'sharpe', '0.00'),
+                              ('Volatility', 'volatilityPct', '0.0%')):
+        if label != 'Sharpe Ratio':
+            # a hairline spacer above each block, exactly as the report has it
+            sheet.append([None] + [0] * columns)
+            style(sheet.max_row, spacerFont, height=3, labelAlign=None, vertical=None)
+            for index in range(2, columns + 2):
+                sheet.cell(row=sheet.max_row, column=index).alignment = Alignment()
+                sheet.cell(row=sheet.max_row, column=index).number_format = 'General'
+        scale = 100.0 if fmt == '0.0%' else 1.0
+        sheet.append([label] + [r['metrics'][field] / scale for r in results])
+        style(sheet.max_row, metricFont, navy, fmt, height=23, labelAlign=None)
+        sheet.cell(row=sheet.max_row, column=1).number_format = '0.0%'
+
     sheet.column_dimensions['A'].width = 40
-    for index in range(2, len(results) + 2):
+    for index in range(2, columns + 2):
         sheet.column_dimensions[get_column_letter(index)].width = 18
-        for rowCells in sheet.iter_rows(min_col=index, max_col=index):
-            for cell in rowCells:
-                cell.alignment = Alignment(horizontal='right', indent=4)
+    sheet.freeze_panes = 'B2'                                  # enhancement
+    return sheet
 
-    # ---- Risk sheet -------------------------------------------------------
-    risk = book.create_sheet('Risk Dashboard')
+
+def writeRiskDashboardSheet(book, results, engineParity: bool = False):
+    """Risk, one PAIR of columns per portfolio - nominal and real.
+
+    The pair is merged on the summary rows and split from the stress block
+    down. VaR and CVaR are printed POSITIVE: the payload stores them negated
+    because the screen reads them as losses, and the sheet does not."""
+    sheet = book.create_sheet('risk_dashboard')
     narrow = Font(name='Aptos Narrow', size=12)
-    narrowBold = Font(name='Aptos Narrow', size=12, bold=True, color=_HEADER_NAVY)
-    headFill = PatternFill('solid', fgColor=_HEADER_NAVY)
+    onNavy = Font(name='Aptos Narrow', size=12, color=_WHITE)
+    section = Font(name='Aptos Narrow', size=12, bold=True, color=_SUBHEAD_NAVY)
+    navy = PatternFill('solid', fgColor=_HEADER_NAVY)
+    centre = Alignment(horizontal='center')
+    columns = len(results)
+    span = columns * 2
 
-    risk.append([''] + sum([[name, ''] for name in names], []))
-    risk.append([''] + ['Nominal', 'Real'] * len(results))
-    for rowIndex in (1, 2):
-        risk.row_dimensions[rowIndex].height = 20
-        for cell in risk[rowIndex]:
-            cell.fill = headFill
-            cell.font = Font(name='Aptos Narrow', size=12, color='FFFFFF')
-            cell.alignment = Alignment(horizontal='center')
-    for column in range(len(results)):
-        first = 2 + column * 2
-        risk.merge_cells(start_row=1, start_column=first, end_row=1, end_column=first + 1)
-    risk.freeze_panes = 'B3'
+    def paint(row, font, fill=_WHITE_FILL, fmt=None, height=16, labelAlign=None,
+              border=None, vertical=None, indent=0):
+        sheet.row_dimensions[row].height = height
+        for index in range(1, span + 2):
+            cell = sheet.cell(row=row, column=index)
+            cell.font = font
+            cell.fill = fill
+            if border is not None:
+                cell.border = border
+            if index == 1:
+                cell.alignment = Alignment(horizontal=labelAlign, vertical=vertical,
+                                           indent=indent)
+            else:
+                cell.alignment = (Alignment(horizontal='center', vertical=vertical)
+                                  if vertical else centre)
+                if fmt:
+                    cell.number_format = fmt
 
-    def _band(title):
-        risk.append([title])
-        for cell in risk[risk.max_row]:
-            cell.font = Font(name='Aptos Narrow', size=12, bold=True, color=_HEADER_NAVY)
-            cell.border = Border(top=_DOTTED)
+    def merge(row):
+        for column in range(columns):
+            first = 2 + column * 2
+            sheet.merge_cells(start_row=row, start_column=first,
+                              end_row=row, end_column=first + 1)
 
-    _band('Factor Based Risk Analytics')
-    for categoryName in categoryOrder:
+    sheet.append([None] + sum([[r['name'], None] for r in results], []))
+    paint(1, onNavy, navy, height=35, vertical='center')
+    merge(1)
+
+    order, _ = _categoryOrder(results, engineParity)
+    for categoryName in order:
         values = []
         for result in results:
-            weight = _lookup(result, categoryName)
-            pair = [None, None] if weight is None else [weight / 100.0, None]
-            values.extend(pair)
-        risk.append([categoryName] + values)
-        for cell in risk[risk.max_row]:
+            weight = _weight(result, categoryName)
+            values.extend([None if weight is None else weight / 100.0, None])
+        sheet.append([categoryName] + values)
+        paint(sheet.max_row, narrow, fmt='0.0%',
+              height=20 if sheet.max_row == 2 else 16)
+        merge(sheet.max_row)
+
+    # The library left four unlabelled rows in here - two before the metrics
+    # and two before the volatility. They are not spacers: they carry a 0 with
+    # a percent format, so they PRINT as "0.0%" against a blank label. They go
+    # (D68); the dotted rule above Estimated Mean Return already separates the
+    # metrics from the categories. engineParity restores them for the golden
+    # comparison and nothing else.
+    metrics = [('Estimated Mean Return', 'estimatedReturnPct', '0.0%'),
+               ('Sharpe Ratio', 'sharpe', '0.00'),
+               ('Volatility', 'volatilityPct', '0.0%')]
+    if engineParity:
+        metrics = ([(None, None, None)] * 2 + metrics[:2]
+                   + [(None, None, None)] * 2 + metrics[2:])
+    for label, field, fmt in metrics:
+        if label is None:
+            sheet.append([None] + [0, None] * columns)
+            paint(sheet.max_row, narrow, fmt='0.0%')
+        else:
+            scale = 100.0 if fmt == '0.0%' else 1.0
+            values = []
+            for result in results:
+                values.extend([result['metrics'][field] / scale, None])
+            sheet.append([label] + values)
+            paint(sheet.max_row, narrow, fmt=fmt,
+                  border=Border(top=_DOTTED) if field == 'estimatedReturnPct' else None)
+        merge(sheet.max_row)
+
+    def band(title):
+        sheet.append([title])
+        paint(sheet.max_row, onNavy, navy, vertical='center')
+
+    def subhead(title, heads=False):
+        sheet.append([title] + (['Nominal', 'Real'] * columns if heads else []))
+        paint(sheet.max_row, section, border=Border(top=_DOTTED))
+        for index in range(2, span + 2):
+            cell = sheet.cell(row=sheet.max_row, column=index)
             cell.font = narrow
-            if cell.column > 1:
-                cell.number_format = '0.0%'
-                cell.alignment = Alignment(horizontal='center')
-    for label, field, scale in (('Estimated Mean Return', 'estimatedReturnPct', 100.0),
-                                ('Sharpe Ratio', 'sharpe', 1.0),
-                                ('Volatility', 'volatilityPct', 100.0)):
-        values = []
-        for result in results:
-            values.extend([result['metrics'][field] / scale, None])
-        risk.append([label] + values)
-        for cell in risk[risk.max_row]:
-            cell.font = narrowBold
-            if cell.column > 1:
-                cell.number_format = '0.0%' if scale == 100.0 else '0.00'
-                cell.alignment = Alignment(horizontal='center')
 
-    _band('Predicted Performance Over Stress Periods')
-    stressPeriods = results[0]['stress'] if results else []
-    for index in range(len(stressPeriods)):
-        label = stressPeriods[index]['period']
-        values = []
-        for result in results:
-            entry = result['stress'][index]
-            values.extend([entry['nominalPct'] / 100.0, entry['realPct'] / 100.0])
-        risk.append([label] + values)
-        for cell in risk[risk.max_row]:
-            cell.font = narrow
-            if cell.column > 1:
-                cell.number_format = '0.0%'
-                cell.alignment = Alignment(horizontal='center')
+    def rows(entries, read, indent='  '):
+        for entry in entries:
+            values = []
+            for result in results:
+                nominal, real = read(result, entry)
+                values.extend([nominal, real])
+            sheet.append([indent + entry] + values)
+            # the report gives the first stress row a taller band and the rest
+            # a plain one; nothing else on the sheet varies
+            paint(sheet.max_row, narrow, fmt='0.0%', labelAlign='left', indent=1,
+                  height=20 if sheet.max_row == 18 else 16)
 
-    _band('Portfolio Risk Premia')
-    premiaRows = results[0]['premia'] if results else []
-    for index in range(len(premiaRows)):
-        label = premiaRows[index]['label']
-        values = []
-        for result in results:
-            entry = result['premia'][index]
-            values.extend([entry['nominalPct'] / 100.0, entry['realPct'] / 100.0])
-        risk.append([label] + values)
-        for cell in risk[risk.max_row]:
-            cell.font = narrow
-            if cell.column > 1:
-                cell.number_format = '0.0%'
-                cell.alignment = Alignment(horizontal='center')
+    band('Factor Based Risk Analytics')
+    subhead('Predicted Performance Over Stress Periods', heads=True)
+    stressStart = sheet.max_row + 1
+    periods = [s['period'] for s in (results[0]['stress'] if results else [])]
 
-    risk.column_dimensions['A'].width = 40
-    for index in range(2, 2 + len(results) * 2):
-        risk.column_dimensions[get_column_letter(index)].width = 15
+    def readStress(result, period):
+        for entry in result['stress']:
+            if entry['period'] == period:
+                return entry['nominalPct'] / 100.0, entry['realPct'] / 100.0
+        return None, None
+    rows(periods, readStress)
+    stressEnd = sheet.max_row
 
-    # ---- Implementation sheet --------------------------------------------
+    horizons = ['Over 1 Month', 'Over 1 Year', 'Over 3 Years']
+    for group in ('Value at Risk with 99% Confidence',
+                  'Conditional Value at Risk with 99% Confidence',
+                  'Probability of Loss'):
+        subhead(group)
+
+        def readPremia(result, horizon, group=group):
+            for entry in result['premia']:
+                if entry['group'] == group and entry['horizon'] == horizon:
+                    # stored negated for the screen; printed positive here
+                    sign = -1.0 if entry.get('kind') == 'loss' else 1.0
+                    return (sign * entry['nominalPct'] / 100.0,
+                            sign * entry['realPct'] / 100.0)
+            return None, None
+        rows(horizons, readPremia)
+    band('Portfolio Risk Premia')
+
+    # red below zero, green above - the report's own rule over the stress block
+    sheet.conditional_formatting.add(
+        '{}:{}'.format('B%d' % stressStart, '%s%d' % (get_column_letter(span + 1), stressEnd)),
+        CellIsRule(operator='lessThan', formula=['0'],
+                   font=Font(color='9C0006')))
+    sheet.conditional_formatting.add(
+        '{}:{}'.format('B%d' % stressStart, '%s%d' % (get_column_letter(span + 1), stressEnd)),
+        CellIsRule(operator='greaterThan', formula=['0'],
+                   font=Font(color='006100')))
+
+    sheet.column_dimensions['A'].width = 40
+    for index in range(2, span + 2):
+        sheet.column_dimensions[get_column_letter(index)].width = 15
+    sheet.freeze_panes = 'B2'                                  # enhancement
+    return sheet
+
+
+def _asDate(value):
+    """An ISO date string as a datetime, so ``mmm-yy`` has something to format."""
+    if isinstance(value, datetime.datetime):
+        return value
+    try:
+        return datetime.datetime.strptime(str(value)[:10], '%Y-%m-%d')
+    except (TypeError, ValueError):
+        return None
+
+
+#: the assumptions sheet's columns: (header, key, number format, alignment,
+#: font colour). The two range ends are coloured because the sheet is read as
+#: "low - mid - high" across, and the colour is what makes that legible.
+_ASSUMPTION_COLUMNS = [
+    ('Risk Premia\n with Estimated Range', 'lower', '0.0%', 'right', _PREMIA_LOW),
+    ('Mean', 'mean', '0.0%', 'center', None),
+    ('Upper Range', 'upper', '0.0%', 'left', _PREMIA_HIGH),
+    ('Volatility', 'volatility', '0.0%', 'center', None),
+    ('Sharpe Ratio', 'sharpe', '0.00', 'center', None),
+    ('Estimated Mean Return\n(2.5% Risk Free Rate)', 'totalReturn', '0.0%', 'center', None),
+    ('Hedging Ratio', 'hedgingRatio', '0%', 'center', None),
+    ('From', 'from', 'mmm-yy', 'center', None),
+    ('To', 'to', 'mmm-yy', 'center', None),
+]
+
+
+def writeAssumptionsSheet(book, assets, results=None, engineParity: bool = False):
+    """The long-term estimates behind the analytics, one row per asset (D67).
+
+    The engine used to emit this and the export used to throw it away. It is
+    kept now, as the fourth sheet, and it is the one sheet whose numbers are
+    a property of the ASSET UNIVERSE rather than of any portfolio - which is
+    why the bake records it once per (currency, hedging) slice rather than on
+    every payload.
+
+    *assets* is that recorded block: a list of dicts in the universe's own
+    order. Given none, the sheet still appears and says why it is empty,
+    because a proposal with three sheets where there should be four is a
+    harder thing to notice than a sheet that explains itself.
+
+    It is filtered to the rows the strategic sheets show (D68). The estimates
+    exist for the whole universe, but this sheet is here to explain THIS
+    proposal: an assumption printed against an asset no portfolio in the
+    lineup holds explains nothing, and the tactical tilt fund - which no
+    strategic portfolio holds at all - has no business on it.
+    """
+    sheet = book.create_sheet('assumptions')
+    body = Font(name='Grotesque', size=11)
+    plain = Font(name='Calibri', size=11)
+    heading = Font(name='Grotesque', size=11, bold=True, color=_NAVY)
+    thinBottom = Border(bottom=_THIN)
+    centred = Alignment(horizontal='center', vertical='center')
+
+    # ---- the two header rows ------------------------------------------
+    sheet.cell(row=1, column=1).value = None
+    sheet.cell(row=1, column=2).value = 'Long-Term Estimates'
+    sheet.cell(row=1, column=9).value = 'Modelling Dates'
+    sheet.merge_cells(start_row=1, start_column=2, end_row=1, end_column=7)
+    sheet.merge_cells(start_row=1, start_column=9, end_row=1, end_column=10)
+    for index in range(1, 11):
+        cell = sheet.cell(row=1, column=index)
+        letter = get_column_letter(index)
+        cell.font = plain if letter in ('C', 'D', 'E', 'F', 'G', 'J') else body
+        if letter not in ('C', 'D', 'E', 'F', 'G', 'J'):
+            cell.fill = _WHITE_FILL
+        cell.alignment = centred if index > 1 else Alignment(vertical='center')
+        if letter not in ('A', 'H'):
+            cell.border = thinBottom
+    sheet.row_dimensions[1].height = 20
+
+    sheet.cell(row=2, column=1).value = None
+    sheet.merge_cells(start_row=2, start_column=2, end_row=2, end_column=4)
+    for offset, (header, _, _, _, _) in enumerate(_ASSUMPTION_COLUMNS):
+        if offset in (1, 2):
+            continue                       # inside the merged range-of-three
+        column = 2 + offset
+        sheet.cell(row=2, column=column).value = header
+    sheet.cell(row=2, column=2).value = _ASSUMPTION_COLUMNS[0][0]
+    for index in range(1, 11):
+        cell = sheet.cell(row=2, column=index)
+        cell.font = body
+        cell.fill = _WHITE_FILL
+        cell.border = thinBottom
+        wrap = index in (2, 7)
+        cell.alignment = (Alignment(horizontal='center', vertical='center', wrap_text=True)
+                          if wrap else (centred if index > 1 else Alignment(vertical='center')))
+    sheet.row_dimensions[2].height = 49
+
+    # ---- the body -----------------------------------------------------
+    # the same rows the strategic sheets kept, in the same order
+    if results and not engineParity:
+        order, keptAssets = _categoryOrder(results)
+        allowed = {(category, name)
+                   for category in order for name in keptAssets[category]}
+        assets = [entry for entry in (assets or [])
+                  if (entry.get('category'), entry.get('reportingName')) in allowed]
+
+    row = 3
+    if not assets:
+        sheet.cell(row=row, column=1).value = (
+            'The asset estimates for this basis are not in the baked store. '
+            'Re-run the bake to record them.')
+        sheet.cell(row=row, column=1).font = heading
+        sheet.row_dimensions[row].height = 17
+    else:
+        firstCategory = True
+        seen = set()
+        for entry in assets:
+            category = entry.get('category') or ''
+            if category and category not in seen:
+                seen.add(category)
+                sheet.cell(row=row, column=1).value = category
+                for index in range(1, 11):
+                    cell = sheet.cell(row=row, column=index)
+                    cell.fill = _WHITE_FILL
+                    if not firstCategory:
+                        cell.border = Border(top=_HAIR)
+                    if index == 1:
+                        cell.font = heading
+                        continue
+                    _, _, fmt, align, colour = _ASSUMPTION_COLUMNS[index - 2]
+                    # a category header is bold, and keeps the column's own
+                    # colour where it has one: the range ends stay red and
+                    # green all the way down the sheet
+                    # bold navy, except the upper end of the range which keeps
+                    # its green from the second header down
+                    keepsGreen = colour == _PREMIA_HIGH and not firstCategory
+                    cell.font = Font(name='Grotesque', size=11, bold=True,
+                                     color=_PREMIA_HIGH if keepsGreen else _NAVY)
+                    if firstCategory:
+                        # the first header row sits directly under the column
+                        # heads and takes their plain treatment - bar the
+                        # Sharpe column, which keeps its format throughout
+                        cell.number_format = fmt if fmt == '0.00' else 'General'
+                        cell.alignment = Alignment(horizontal='center')
+                    else:
+                        cell.number_format = fmt
+                        cell.alignment = Alignment(horizontal=align)
+                sheet.row_dimensions[row].height = 17
+                firstCategory = False
+                row += 1
+            sheet.cell(row=row, column=1).value = '    ' + str(entry.get('reportingName', ''))
+            sheet.cell(row=row, column=1).font = body
+            sheet.cell(row=row, column=1).fill = _WHITE_FILL
+            for offset, (_, key, fmt, align, colour) in enumerate(_ASSUMPTION_COLUMNS):
+                cell = sheet.cell(row=row, column=2 + offset)
+                value = entry.get(key)
+                cell.value = _asDate(value) if fmt == 'mmm-yy' else value
+                cell.font = Font(name='Grotesque', size=11, color=colour) if colour else body
+                cell.fill = _WHITE_FILL
+                cell.number_format = fmt
+                cell.alignment = Alignment(horizontal=align)
+            sheet.row_dimensions[row].height = 17
+            row += 1
+
+    if row > 3:
+        # a closing rule under the table, as the report has it
+        for index in range(1, 11):
+            sheet.cell(row=row - 1, column=index).border = Border(bottom=_THIN)
+    for letter, width in _ASSUMPTION_WIDTHS:
+        sheet.column_dimensions[letter].width = width
+    sheet.freeze_panes = 'A3'                                  # enhancement
+    return sheet
+
+
+def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
+                  variant: str = None, tacticalTilt: bool = False,
+                  feeSchedule: str = None, feeLevel: str = None,
+                  includeFees: bool = True, volPremium: bool = False,
+                  assets=None, engineParity: bool = False) -> bytes:
+    """The proposal workbook: four sheets, no analytics library (D67).
+
+    ``portfolios``, ``risk_dashboard`` and ``assumptions`` reproduce what the
+    engine's reporting object used to lay out; ``Implementation`` is the
+    tool's own and is unchanged. *assets* is the per-asset estimate block for
+    this basis, which the adapter supplies.
+
+    *engineParity* restores the empty universe rows the library used to print
+    (see ``_categoryOrder``). It exists for the golden test and should not be
+    set by a caller producing a proposal.
+    """
+    book = Workbook()
+    book.remove(book.active)                      # the writers name their own
+
+    writePortfoliosSheet(book, results, engineParity)
+    writeRiskDashboardSheet(book, results, engineParity)
+    writeAssumptionsSheet(book, assets, results, engineParity)
     writeImplementationSheet(book, results[0], sleevesMap, autoCategories,
                              mandate.mandateSize, variant, tacticalTilt,
                              feeSchedule, feeLevel, mandate.topAccountSize,
                              includeFees, volPremium, basis.currency)
 
+    # Enhancements that add nothing to the grid and cost nothing to read: a
+    # coloured tab per sheet, a sensible print setup, and the proposal's own
+    # identity in the file's properties.
+    for name in book.sheetnames:
+        sheet = book[name]
+        sheet.sheet_properties.tabColor = _NAVY
+        sheet.page_setup.orientation = 'landscape'
+        sheet.page_setup.fitToWidth = 1
+        sheet.page_setup.fitToHeight = 0
+        sheet.sheet_properties.pageSetUpPr.fitToPage = True
+        sheet.print_title_rows = '1:1'
+    book.properties.title = 'PMG Proposal - {} {}'.format(basis.currency, basis.hedging)
+    book.properties.creator = 'PMG Proposal Tool'
+    book.properties.description = (
+        'Strategic allocation, risk dashboard, long-term estimates and the '
+        'implemented model.')
+
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
+
+
+#: The name this had while it was only the fixtures adapter's writer. It is
+#: every adapter's writer now; the old name stays so nothing has to change at
+#: once.
+writeFixturesWorkbook = writeWorkbook

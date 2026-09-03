@@ -139,6 +139,7 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
 <tr><td>&nbsp;↳ the engine behind it</td><td><code>epsilonPhi</code> library, resolved in <code>scenario/engine.py</code></td><td><code>SAA_ENGINE_PACKAGE</code></td><td>4</td><td><span class="pill p-ok">real</span></td><td>Unchanged — the host's installed library at its <code>DATAVERSION</code>.</td></tr>
 <tr><td>Products</td><td><code>productSource/products.csv</code><br>73 products, 13 columns</td><td><code>SCENARIO_PRODUCTS_SOURCE</code></td><td>1</td><td><span class="pill p-warn">stub</span></td><td>The product database, one row per product, one column per field.</td></tr>
 <tr><td>Sleeves &amp; their contents</td><td><code>service/var/sleeves.db</code> (SQLite), seeded once from <code>sleeveSource/sleeves.csv</code></td><td><code>SCENARIO_SLEEVES_DB</code><br><code>SCENARIO_SLEEVES_SEED</code></td><td>2</td><td><span class="pill p-ok">real</span> names<br><span class="pill p-warn">stub</span> contents</td><td>The tool's own database, unchanged. Admins maintain it in-app.</td></tr>
+<tr><td>&nbsp;↳ sleeve history</td><td><code>sleeveHistory</code> in the same file — one append-only row per revision</td><td>(the same)</td><td>2</td><td><span class="pill p-acc">the record</span></td><td>Unchanged. Grows for the life of the library and is never pruned.</td></tr>
 <tr><td>Fee rates</td><td><code>scenario/feeRates.csv</code> — 180 cells</td><td><code>SCENARIO_FEES_SOURCE</code></td><td>1</td><td><span class="pill p-bad">placeholder</span></td><td>The delivered fee card, same long-CSV shape.</td></tr>
 <tr><td>Fee card structure</td><td><code>scenario/fees.json</code> — schedules, sources, points, delivery stamp</td><td>—</td><td>3</td><td><span class="pill p-bad">placeholder</span></td><td>Edited to match the real card's schedules and stamped with its version.</td></tr>
 <tr><td>Advisor directory</td><td><code>scenario/advisors.xlsx</code> — 24 rows, <code>name</code> + <code>office</code></td><td>—</td><td>1</td><td><span class="pill p-warn">stub</span></td><td>The Primary PWA table, behind the same two functions.</td></tr>
@@ -247,11 +248,12 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
   <div class="ds-h"><h3>The sleeve database</h3><span class="pill p-ok">the authority</span></div>
   <div class="ds-b">
     <dl class="kv">
-      <dt>Location</dt><dd><code>service/var/sleeves.db</code> — SQLite, 92&nbsp;KB. Tables <code>sleeves</code>, <code>sleeveProducts</code>, <code>meta</code>.</dd>
+      <dt>Location</dt><dd><code>service/var/sleeves.db</code> — SQLite, schema version 2. Four tables: <code>sleeves</code>, <code>sleeveProducts</code>, <code>sleeveHistory</code>, <code>meta</code>.</dd>
       <dt>Override</dt><dd><code>SCENARIO_SLEEVES_DB</code>.</dd>
-      <dt>Contents now</dt><dd>101 sleeves, 258 product rows. <code>meta</code> records the seed: <code>seededAt 2026-09-02T17:47:03</code>, <code>seededFrom …/sleeveSource/sleeves.csv</code>.</dd>
+      <dt>Contents now</dt><dd>101 sleeves, 258 product rows, 101 revisions on record, 0 archived. <code>meta</code> records the seed: <code>seededAt 2026-09-02T17:47:03</code>, <code>seededFrom …/sleeveSource/sleeves.csv</code>.</dd>
       <dt>Who writes it</dt><dd>Admins, through the sleeve repository in the app — create, copy, remove, add to another implementation type. This is <b>the</b> source of sleeve data at runtime; <code>scenario/sleeves.py</code> is only a facade over it.</dd>
-      <dt>Production</dt><dd>Unchanged in kind. The database is the tool's own and stays so; only its location moves to durable storage.</dd>
+      <dt>The record</dt><dd><b>Nothing is destroyed (D65).</b> Every write appends a revision holding the whole sleeve as it stood — name, note and the complete product set — with the actor and the timestamp. Archiving removes a sleeve from the <em>library</em> only: the row stays, marked with who archived it and when, withheld from every read that serves sleeves, and restorable. So <b>every earlier version of every sleeve is readable, and an archived sleeve is still on the record.</b> The console reads it two ways (D66): the <b>Archive</b> tab, a searchable table of what left the library with batch restore and CSV export; and the <b>Activity</b> tab, every change across the library newest first, filtered and exportable.</dd>
+      <dt>Production</dt><dd>Unchanged in kind. The database is the tool's own and stays so; only its location moves to durable storage. The history table grows for the life of the library and has no pruning — a few hundred bytes per revision, so this is a decade-scale question, not a near one.</dd>
     </dl>
   </div>
 </div>
@@ -308,13 +310,17 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
         <tr><td><code>SAAPortfolio</code></td><td><code>core.portfolio.SAAPortfolio</code></td><td>The portfolio object. Return, risk, Sharpe, factor stress tests and the VaR policy are all read off it directly — never off the reporting table builders, which exist to lay out a workbook.</td></tr>
         <tr><td><code>ContextCreator</code></td><td><code>core.schema.Schema</code></td><td>The estimation context over the configured date window.</td></tr>
         <tr><td><code>AssetReturnEstimator</code></td><td><code>core.estimator.assetReturnEstimator</code></td><td>The return estimates behind every figure.</td></tr>
-        <tr><td><code>Reporting</code></td><td><code>core.reporting.Reporting</code></td><td>The Excel export — portfolios and risk sheets.</td></tr>
+        <tr><td><s><code>Reporting</code></s></td><td><code>core.reporting.Reporting</code></td><td><b>Removed (D67).</b> The export used to drive it; the workbook is now written from the payloads.</td></tr>
         <tr><td><code>DATAVERSION</code></td><td><code>core.env.Env</code></td><td>Stamped onto results so a number can be traced to the data behind it.</td></tr>
         <tr><td><code>CAppConfig</code></td><td><code>core.config.appConfig</code></td><td>Library configuration.</td></tr>
       </tbody>
     </table>
     </div>
     <p>The library is not thread-safe in the way the service needs, so live resolution runs under a lock and the results are memoised per basis and key.</p>
+    <div class="callout ok" style="margin-bottom:0">
+      <h4>Since D67: the library no longer serves, it only bakes</h4>
+      <p><code>Reporting</code> has been removed from this seam entirely. The Excel export is written by the tool from the payloads, so the only reason the service ever reaches the library is to <em>compute</em> analytics into the bake — never to lay them out. On a store with full coverage, nothing at request time imports it at all.</p>
+    </div>
   </div>
 </div>
 
@@ -323,6 +329,7 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
 <div class="f"><div class="id">F1</div><div>
   <b>The sleeve database has drifted from its seed file.</b>
   <p>The database holds <b>101 sleeves / 258 rows</b>; <code>sleeveSource/sleeves.csv</code> holds <b>102 / 260</b>. The seed is read once, when the database is empty — it was read at 17:47 on 2 September, and the CSV was edited at 19:17 that evening. The database is the runtime authority and is correct; the CSV is now a stale snapshot of it. Either re-export the CSV from the database, or treat it purely as a first-run seed and stop reading it as documentation.</p>
+  <p><span class="pill p-ok">since documented</span> The seed file now says so in its own README, and the database records its schema version and revision count so the two can be told apart at a glance.</p>
 </div></div>
 <div class="f"><div class="id">F2</div><div>
   <b>The fee card is a placeholder, and everything downstream knows it.</b>
@@ -338,7 +345,7 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
 </div></div>
 <div class="f"><div class="id">F5</div><div>
   <b>Under the baked adapter, exports may not come from the analytics library.</b>
-  <p>If a live delegate is available the export is built by <code>Reporting</code>. If it is not, <code>build_export</code> falls back to the <b>fixtures workbook writer</b> — a real file, but not the library's output. <code>SCENARIO_BAKED_FALLBACK</code> is on by default, so today the delegate exists; the fallback path is worth knowing about before it is relied on.</p>
+  <p><span class="pill p-ok">resolved by D67</span> There is no longer a fork. Every adapter builds the export with the same writer, from the payloads, so no configuration can change what a workbook contains. The finding stood until the writer was proved cell-for-cell identical against a captured reference; the golden comparison in the test suite is what keeps it resolved.</p>
 </div></div>
 <div class="f"><div class="id">F6</div><div>
   <b>Both access lists default to a single developer.</b>

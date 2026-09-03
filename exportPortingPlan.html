@@ -1,0 +1,330 @@
+<meta charset="utf-8">
+<title>Cutting epsilonPhi</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --code-bg:#F1F4F8; --code-ink:#1C2733; --code-line:#DDE3EA;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+    --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+  --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:58px 0 8px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h2 .n{font-family:var(--f-num);color:var(--accent);margin-right:10px}
+h3{font-size:17px;font-weight:700;margin:28px 0 6px}
+h4{font-size:14px;font-weight:700;margin:0 0 4px}
+p{margin:0 0 12px;max-width:80ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:76ch}
+.sub{color:var(--ink-2);margin:0 0 14px;max-width:82ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:16px 0 0}
+.meta b{color:var(--ink-2);font-weight:700}
+code{font-family:var(--f-mono);font-size:.87em;background:var(--surface-2);padding:1px 5px;border-radius:3px;white-space:nowrap}
+pre{font-family:var(--f-mono);font-size:12.5px;line-height:1.6;background:var(--code-bg);color:var(--code-ink);border:1px solid var(--code-line);border-radius:6px;padding:12px 14px;margin:10px 0 14px;overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit;white-space:pre}
+pre .c{color:var(--ink-3)}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:80ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:13.5px;margin:0;background:var(--surface)}
+table.doc th,table.doc td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc thead th{font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-strong);background:var(--surface-2)}
+table.doc tbody tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:500}
+table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;white-space:nowrap}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:7px;margin:12px 0 16px}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.04em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:13px 17px;margin:18px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)} .callout.bad{border-color:var(--bad)} .callout.ok{border-color:var(--ok)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:980px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:15px 17px}
+.card p,.card li{font-size:13.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card .hd{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 7px}
+.big{display:flex;gap:26px;flex-wrap:wrap;margin:16px 0 4px}
+.big div{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:14px 20px;min-width:150px}
+.big b{display:block;font-family:var(--f-num);font-size:30px;font-weight:700;line-height:1;color:var(--accent)}
+.big.ok b{color:var(--ok)}
+.big span{font-size:12.5px;color:var(--ink-2);display:block;margin-top:5px}
+/* phases */
+.phase{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;margin:20px 0;overflow:hidden}
+.phase.crit{border-color:var(--warn);box-shadow:0 0 0 3px var(--warn-soft)}
+.phase-h{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:14px 20px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.phase-h .num{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#FFF;background:var(--accent);border-radius:11px;padding:2px 11px}
+.phase.crit .phase-h .num{background:var(--warn)}
+.phase-h h3{margin:0;font-size:18px}
+.phase-h .cost{margin-left:auto;font-family:var(--f-num);font-size:12.5px;color:var(--ink-3)}
+.phase-b{padding:15px 20px 17px}
+.phase-b > p:last-child,.phase-b > ol:last-child,.phase-b > ul:last-child{margin-bottom:0}
+.gate{background:var(--ok-soft);border-left:3px solid var(--ok);border-radius:0 5px 5px 0;padding:9px 13px;margin:12px 0 0;font-size:13.5px}
+.gate b{color:var(--ok)}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-strong);font-size:13px;color:var(--ink-3)}
+</style>
+<div class="page">
+
+<p class="eyebrow">Proposal Tool · porting plan</p>
+<h1>Cutting <code style="font-size:.72em">epsilonPhi</code> out of the Excel export</h1>
+<p class="lede">A plan to remove <code>Reporting</code> and <code>SAAPortfolio</code> from workbook generation so the service can be ported into cyrus, while the output stays exactly what it is today. Written after tracing the export end to end and comparing both writers cell by cell against a real two-column proposal.</p>
+<div class="meta">
+  <span><b>Written</b> 3 September 2026</span>
+  <span><b>Companion to</b> exportTrace.html</span>
+  <span><b>Verdict</b> feasible, and smaller than it looks</span>
+  <span><b>Status</b> <b style="color:var(--ok)">built (D67)</b> &mdash; zero cell differences, assumptions kept as a fourth sheet</span>
+</div>
+
+<div class="callout ok">
+  <h4>Outcome</h4>
+  <p><b>Built, and the comparison comes out at zero.</b> All three engine-laid sheets are reproduced cell for cell &mdash; values, number formats, fonts, fills, borders, alignment, all thirty merges, row heights, column widths and the conditional rule. The <code>assumptions</code> sheet is no longer discarded: it is the fourth sheet, fed by per-asset estimates the bake now records once per slice.</p>
+  <p>An export takes <b>~0.13 s</b> where it took 23.9 s warm and 75 s cold, and imports no part of the analytics library. Phase 0's golden workbook is committed under <code>tests/golden/</code> with the comparison wired into the suite, so this cannot drift.</p>
+</div>
+<h2><span class="n">1</span>The finding that decides this</h2>
+<p class="sub">Before proposing anything I generated the same export twice — once through the engine, once through the engine-free writer — and compared every cell of the two engine-built sheets against the numbers already sitting in the baked payloads.</p>
+
+<div class="big ok">
+  <div><b>90 / 90</b><span><code>risk_dashboard</code> numbers already in the payload, exact to full double precision</span></div>
+  <div><b>48 / 48</b><span><code>portfolios</code> weight cells, likewise</span></div>
+  <div><b>0</b><span>numbers the engine puts in the workbook that the service does not already hold</span></div>
+  <div><b>0</b><span>charts, images, pivot tables or formulas anywhere in the workbook</span></div>
+</div>
+
+<div class="callout ok">
+  <h4>The whole plan rests on this</h4>
+  <p><b><code>Reporting</code> contributes no information — only layout.</b> Every figure on both engine-built sheets is already carried by the baked payloads: category and asset weights, the three metrics, nine stress periods with nominal and real, and nine risk-premia rows across VaR, CVaR and probability of loss. The workbook is pure cells and styles; there is nothing in it that needs a live analytics object to exist.</p>
+  <p>So this is not "reimplement the analytics". It is <b>"write 72 known numbers into a known layout"</b> — and the service already writes a very similar layout in 63 milliseconds.</p>
+</div>
+
+<p>Two supporting observations from the run:</p>
+<ul>
+  <li><b>The engine does far more work than the workbook shows.</b> The log records factor stress losses computed for reference portfolios at 0.2, 0.3, 0.5, 0.7 and 0.8 equity — <em>none of which reach either sheet</em>. Roughly 97 seconds of computation for two columns, and the sheets keep 90 numbers of it.</li>
+  <li><b>The bake already covers everything.</b> 43 portfolios per currency × 4 currencies × 4 hedging policies = <b>688 payloads, no gaps</b>. Every portfolio a user can select already has its analytics on disk.</li>
+</ul>
+
+<h2><span class="n">2</span>What has to be reproduced, precisely</h2>
+<p class="sub">Both sheets are fully specified below. This is the entire surface area of the job — there is nothing else in the file.</p>
+
+<h3>Sheet 1 — <code>portfolios</code>, 33 rows × (1 + N) columns</h3>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:12%">Rows</th><th style="width:26%">Content</th><th style="width:20%">Number format</th><th>Style</th></tr></thead>
+<tbody>
+<tr><td class="mono">1</td><td>Blank + portfolio names</td><td class="mono">General</td><td>Height 37, dotted bottom border</td></tr>
+<tr><td class="mono">2–26</td><td>Each category (fraction) followed by its assets (× 100)</td><td class="mono">0.0%</td><td>Category rows filled <code>D3DDEA</code>; height 17</td></tr>
+<tr><td class="mono">"</td><td>Asset rows, label indented two spaces</td><td class="mono">0.0</td><td>No fill — <b>note the report's own asymmetry</b>: categories are fractions, assets are ×100</td></tr>
+<tr><td class="mono">27</td><td><code>TOTAL</code> = 1</td><td class="mono">0.0%</td><td>—</td></tr>
+<tr><td class="mono">28</td><td>blank</td><td>—</td><td>Height 23</td></tr>
+<tr><td class="mono">29</td><td>Estimated Mean Return</td><td class="mono">0.0%</td><td>Height 23</td></tr>
+<tr><td class="mono">30</td><td>Sharpe Ratio</td><td class="mono">0.00</td><td>Height 23</td></tr>
+<tr><td class="mono">31</td><td>blank</td><td>—</td><td>Height 3</td></tr>
+<tr><td class="mono">32</td><td>Volatility</td><td class="mono">0.0%</td><td>Height 23</td></tr>
+</tbody>
+</table>
+</div>
+<p>Font is <b>Calibri Light 12.5, not bold</b>, throughout. Column A width 40, every other column 18. No freeze panes.</p>
+
+<h3>Sheet 2 — <code>risk_dashboard</code>, 39 rows × (1 + 2N) columns</h3>
+<p class="sub">Each portfolio occupies a <b>pair</b> of columns — Nominal and Real. On rows 1–15 the pair is merged.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:12%">Rows</th><th style="width:34%">Content</th><th style="width:16%">Format</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="mono">1</td><td>Portfolio names</td><td class="mono">General</td><td>Navy <code>092532</code> fill, white Aptos Narrow 12, <b>merged pairs</b>, height 35</td></tr>
+<tr><td class="mono">2–8</td><td>The seven categories</td><td class="mono">0.0%</td><td>Merged pairs. <b>Includes zero-weight categories</b></td></tr>
+<tr><td class="mono">9–10</td><td>blank</td><td class="mono">0.0%</td><td>Merged</td></tr>
+<tr><td class="mono">11</td><td>Estimated Mean Return</td><td class="mono">0.0%</td><td>Merged</td></tr>
+<tr><td class="mono">12</td><td>Sharpe Ratio</td><td class="mono">0.00</td><td>Merged</td></tr>
+<tr><td class="mono">13–14</td><td>blank</td><td class="mono">0.0%</td><td>Merged</td></tr>
+<tr><td class="mono">15</td><td>Volatility</td><td class="mono">0.0%</td><td>Merged — last merged row</td></tr>
+<tr><td class="mono">16</td><td><code>Factor Based Risk Analytics</code></td><td>—</td><td>Navy section header, no values</td></tr>
+<tr><td class="mono">17</td><td><code>Predicted Performance Over Stress Periods</code> + <code>Nominal</code> / <code>Real</code> heads</td><td>—</td><td>Bold navy <code>092539</code> text on white, height 20</td></tr>
+<tr><td class="mono">18–26</td><td>The nine stress periods, labels indented two spaces</td><td class="mono">0.0%</td><td><b>Conditional formatting on B18:E26</b> — red <code>9C0006</code> if &lt; 0, green <code>006100</code> if &gt; 0</td></tr>
+<tr><td class="mono">27 / 31 / 35</td><td>Section headers: VaR / CVaR / Probability of Loss, each at 99% confidence</td><td>—</td><td>No values</td></tr>
+<tr><td class="mono">28–30, 32–34, 36–38</td><td>Three horizons each: Over 1 Month / 1 Year / 3 Years, indented</td><td class="mono">0.0%</td><td>Nominal and Real in the pair</td></tr>
+<tr><td class="mono">39</td><td><code>Portfolio Risk Premia</code></td><td>—</td><td>A trailing section header with nothing under it — reproduce it, it is in the original</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Where every number comes from</h3>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:30%">Cell</th><th style="width:34%">Payload field</th><th>Conversion</th></tr></thead>
+<tbody>
+<tr><td>Category weight</td><td class="mono">categories[].weightPct</td><td>÷ 100 &nbsp;<span class="pill p-mute">fraction</span></td></tr>
+<tr><td>Asset weight (<code>portfolios</code>)</td><td class="mono">categories[].assets[].weightPct</td><td>as-is &nbsp;<span class="pill p-warn">already ×100</span></td></tr>
+<tr><td>Estimated Mean Return</td><td class="mono">metrics.estimatedReturnPct</td><td>÷ 100</td></tr>
+<tr><td>Sharpe Ratio</td><td class="mono">metrics.sharpe</td><td>as-is</td></tr>
+<tr><td>Volatility</td><td class="mono">metrics.volatilityPct</td><td>÷ 100</td></tr>
+<tr><td>Stress, Nominal / Real</td><td class="mono">stress[].nominalPct / .realPct</td><td>÷ 100</td></tr>
+<tr><td>VaR &amp; CVaR</td><td class="mono">premia[] where kind == 'loss'</td><td>÷ 100 then <b>× −1</b> &nbsp;<span class="pill p-bad">sign flip</span></td></tr>
+<tr><td>Probability of Loss</td><td class="mono">premia[] where kind == 'probability'</td><td>÷ 100</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout warn">
+  <h4>The two conversions that will bite</h4>
+  <p><b>The sign flip.</b> <code>liveAdapter</code> stores VaR and CVaR already negated (<code>sign = -1.0</code>) because the screen shows them as losses. The sheet shows them <b>positive</b>. Anything reading <code>premia</code> for the workbook must flip them back — and only for <code>kind == 'loss'</code>, never for the probability rows.</p>
+  <p><b>The scale asymmetry.</b> On the <code>portfolios</code> sheet, category rows are fractions with <code>0.0%</code> and asset rows are ×100 with <code>0.0</code>. That is the house report's own convention, already preserved deliberately in <code>workbook.py</code>, and it must survive.</p>
+</div>
+
+<h2><span class="n">3</span>How far the existing writer already is</h2>
+<p class="sub"><code>writeFixturesWorkbook</code> produces all three sheets from payloads today, in 63 ms, with no engine import at all. It is close — the differences are enumerable, and this list is the actual work.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:5%">#</th><th style="width:24%">Difference</th><th style="width:26%">Engine</th><th style="width:26%">Writer today</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="mono">1</td><td>Sheet names</td><td class="mono">portfolios · risk_dashboard</td><td class="mono">Portfolios · Risk Dashboard</td><td>Rename</td></tr>
+<tr><td class="mono">2</td><td>Zero-weight categories</td><td>Included — <code>Asset Allocation Strategies</code> and its <code>Tactical Tilt Fund</code></td><td>Omitted</td><td>Stop filtering; emit the full category order</td></tr>
+<tr><td class="mono">3</td><td>Row counts</td><td class="mono">33 / 39</td><td class="mono">29 / 32</td><td>Falls out of #2 and #7</td></tr>
+<tr><td class="mono">4</td><td>Sub-row labels</td><td>Indented two spaces</td><td>Flush left</td><td>Prefix</td></tr>
+<tr><td class="mono">5</td><td>Header and band weight</td><td>Not bold</td><td>Bold</td><td>Drop the bold</td></tr>
+<tr><td class="mono">6</td><td>Navy band extent</td><td>Row 1 only; rows 2+ white</td><td>Navy continues past row 1</td><td>Confine the fill</td></tr>
+<tr><td class="mono">7</td><td>Merged cells</td><td>30 merges — the Nominal/Real pair on rows 1–15</td><td>None</td><td>Add merges</td></tr>
+<tr><td class="mono">8</td><td>Conditional formatting</td><td>One rule on B18:E26, red/green by sign</td><td>None</td><td>Add the rule</td></tr>
+<tr><td class="mono">9</td><td>Freeze panes</td><td>None</td><td class="mono">B2</td><td>Remove</td></tr>
+<tr><td class="mono">10</td><td>Row heights</td><td>Specific per row (37/17/23/3 · 35/20/16)</td><td>Partly set</td><td>Set them all</td></tr>
+<tr><td class="mono">11</td><td>Sharpe number format</td><td class="mono">0.00</td><td>Check</td><td>Align</td></tr>
+</tbody>
+</table>
+</div>
+<p><b>Column widths already match exactly</b> (A = 40, others 18), as do the font family, size and the dotted header border. The writer was built from the same spec — it simply drifted, because nothing ever compared the two.</p>
+
+<h2><span class="n">4</span>The plan</h2>
+
+<div class="phase crit">
+  <div class="phase-h"><span class="num">Phase 0</span><h3>Capture golden files while epsilonPhi is still reachable</h3><span class="cost">~half a day · do this first</span></div>
+  <div class="phase-b">
+    <p><b>This is the phase that makes the rest safe, and the only one with a deadline.</b> Once the package is in cyrus, the reference output can never be regenerated. Capture it now, commit it, and every later change is checkable against it.</p>
+    <ol>
+      <li>Pick a matrix of scenarios that exercises the shape of the workbook, not the space of the analytics: <b>1 / 2 / 4 columns</b>; fees on and off; tactical tilt on and off; volatility premium on and off; a currency with a substitution (GBP) and one without (USD); an all-equity book (no allocation type) and a book with an excluded category. Roughly <b>16 cases</b>.</li>
+      <li>Generate each through <code>LiveScenarioPort.build_export</code> and commit the <code>.xlsx</code> files alongside the resolved payloads that produced them.</li>
+      <li>Write the comparator: opens two workbooks and asserts <b>every cell's value, number format, font, fill, border, merge, row height, column width and conditional-formatting rule</b>. Report differences as a list, not a boolean.</li>
+    </ol>
+    <div class="gate"><b>Gate:</b> the comparator passes when a golden file is compared with itself, and reports a precise diff when compared with today's writer output — the eleven differences in section 3 should be exactly what it prints.</div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-h"><span class="num">Phase 1</span><h3>Bring the writer to parity</h3><span class="cost">~2–3 days</span></div>
+  <div class="phase-b">
+    <p>Work the comparator's diff list down to zero. Split <code>writeFixturesWorkbook</code> into three functions with one job each — <code>writePortfoliosSheet</code>, <code>writeRiskDashboardSheet</code>, and the existing <code>writeImplementationSheet</code> — so the two reproduced sheets can be tested in isolation.</p>
+    <p>Nothing about the analytics changes. The input is the same list of resolved payloads the export already passes in.</p>
+    <div class="gate"><b>Gate:</b> all 16 golden cases match cell-for-cell and style-for-style. Add the comparison to the test suite so a future edit to the stylesheet cannot silently move the workbook.</div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-h"><span class="num">Phase 2</span><h3>Make the writer the only export path</h3><span class="cost">~half a day</span></div>
+  <div class="phase-b">
+    <p>Once parity is proved, the fork disappears:</p>
+    <ul>
+      <li><code>BakedScenarioPort.build_export</code> stops delegating and always calls the writer.</li>
+      <li><code>LiveScenarioPort.build_export</code> is deleted, taking with it the <code>Reporting</code> import, the <code>deepcopy</code>, the temp directory and the second workbook serialisation.</li>
+      <li><code>Reporting</code> comes out of <code>_SYMBOLS</code> in <code>engine.py</code>.</li>
+    </ul>
+    <p>Immediate effect, before any porting: <b>the export drops from ~24 seconds to ~60 milliseconds</b>, and the cold-start 75-second case disappears entirely.</p>
+    <div class="gate"><b>Gate:</b> the export produces byte-comparable output with <code>SCENARIO_BAKED_FALLBACK=0</code> and no <code>epsilonPhi</code> module in <code>sys.modules</code> — assert that in the test.</div>
+  </div>
+</div>
+
+<div class="phase">
+  <div class="phase-h"><span class="num">Phase 3</span><h3>Close the remaining runtime paths to the engine</h3><span class="cost">~1–2 days</span></div>
+  <div class="phase-b">
+    <p>The export is only one of two doors. <code>resolve_portfolio</code> is the other, and the baked adapter still falls through to the live one on a miss. For a cyrus deployment that fallback cannot exist, so it must become impossible rather than merely switched off:</p>
+    <ul>
+      <li>Add an explicit <b>engine-free mode</b> — a single setting under which <code>registry.py</code> never constructs a <code>LiveScenarioPort</code> at all, so nothing can lazily resolve an engine symbol.</li>
+      <li>Make an unbaked key a clear, actionable error rather than a silent fallback. It already is when the fallback is off; keep that message and make sure the UI shows it well.</li>
+      <li>Move <code>bake.py</code>, <code>liveAdapter.py</code>, <code>engine.py</code> and the engine-touching parts of <code>portfolio_weights.py</code> behind a boundary that the cyrus port simply does not carry — <b>a build-time package, not a runtime one</b>.</li>
+    </ul>
+    <div class="gate"><b>Gate:</b> a test that imports the whole service in engine-free mode, exercises schema, resolve, sleeves and export, and asserts no module beginning <code>epsilonPhi</code> was ever imported.</div>
+  </div>
+</div>
+
+<h2><span class="n">5</span>The honest limit of this</h2>
+<div class="callout bad">
+  <h4>The dependency moves; it does not vanish</h4>
+  <p>Removing <code>Reporting</code> and <code>SAAPortfolio</code> from the service is achievable and the output can be identical. But <b>the numbers in the baked store were computed by <code>epsilonPhi</code></b>, and refreshing them still needs it.</p>
+  <p>So the shape after this work is: <b>cyrus runs a service with no analytics library at all</b>, serving a baked store; and the bake is produced <em>here</em>, on a machine that has <code>epsilonPhi</code>, and shipped to cyrus as data. The dependency moves from <b>runtime</b> to <b>build time</b> — which is exactly what makes the port possible, but it is a supply chain, not an elimination.</p>
+</div>
+<p>Two consequences worth deciding on now:</p>
+<div class="grid2">
+  <div class="card"><p class="hd">Consequence 1</p><h4>The store becomes a delivery</h4><p>The baked directory stops being a cache and becomes a versioned artefact with an owner, a cadence and a hand-off — the same treatment the fee card gets. The manifest already records what it was built from, so most of the machinery exists.</p></div>
+  <div class="card"><p class="hd">Consequence 2</p><h4>The service can no longer compute anything new</h4><p>A portfolio outside the bake cannot be answered at all. Today that is fine — coverage is complete, all 688. It stops being fine the moment the SAA extract gains a portfolio and the bake has not been re-run, so the staleness check already recommended (G1) stops being a nicety.</p></div>
+</div>
+
+<h2><span class="n">6</span>Risks, and what handles each</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:26%">Risk</th><th style="width:12%">Likelihood</th><th>Handled by</th></tr></thead>
+<tbody>
+<tr><td>A styling detail is missed and the workbook looks subtly wrong</td><td><span class="pill p-warn">medium</span></td><td>The Phase 0 comparator checks style, not just values — fonts, fills, borders, merges, heights, widths, conditional rules. This is precisely why it is built before anything changes.</td></tr>
+<tr><td>The reference output is lost before it is captured</td><td><span class="pill p-bad">fatal if it happens</span></td><td>Phase 0 first, committed to the repo. Nothing else starts until the golden files exist.</td></tr>
+<tr><td>A scenario shape nobody thought of renders differently</td><td><span class="pill p-warn">medium</span></td><td>The 16-case matrix is chosen for workbook <em>shape</em> — column count, fee state, tilt, premium, all-equity, excluded categories — rather than for analytic variety.</td></tr>
+<tr><td>The sign flip or the scale asymmetry is applied wrongly</td><td><span class="pill p-warn">medium</span></td><td>Both are named explicitly in section 2 and both are caught by an exact-value comparison against golden files.</td></tr>
+<tr><td><code>Reporting</code> changes upstream and the golden files go stale</td><td><span class="pill p-mute">low</span></td><td>Accepted. After this work the tool's output is defined by the tool, not by the library — which is the point of doing it.</td></tr>
+<tr><td>A user selects an unbaked portfolio in cyrus</td><td><span class="pill p-mute">low today</span></td><td>Complete coverage today; the start-up staleness check (G1) and a clear error keep it that way.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2><span class="n">7</span>What you get</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:30%"></th><th style="width:22%">Today</th><th style="width:22%">After</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Export, warm</td><td class="num">23.9 s</td><td class="num">~0.06 s</td><td>Measured on the existing writer</td></tr>
+<tr><td>Export, first of a process</td><td class="num">75–97 s</td><td class="num">~0.06 s</td><td>No <code>CAppConfig.setup()</code> to pay for</td></tr>
+<tr><td>Concurrent exports</td><td>Serialised behind one lock</td><td>Parallel</td><td>The lock exists only for the engine</td></tr>
+<tr><td>Runtime dependency on epsilonPhi</td><td><span class="pill p-bad">yes</span></td><td><span class="pill p-ok">none</span></td><td>Build-time only</td></tr>
+<tr><td>Third-party runtime deps for export</td><td><code>openpyxl</code> + the library</td><td><code>openpyxl</code> alone</td><td>Already the case on the writer path</td></tr>
+<tr><td>Workbook contents</td><td>Three sheets</td><td>Identical, cell for cell</td><td>Enforced by the comparator in CI</td></tr>
+</tbody>
+</table>
+</div>
+<p><b>Total: roughly four to six days</b>, and phases 0–2 deliver the speed improvement and the test harness whether or not the cyrus port ever happens. Phase 3 is the part that is specifically about porting.</p>
+
+<h2><span class="n">8</span>What I would want from you before starting</h2>
+<div class="grid3">
+  <div class="card"><p class="hd">Decision 1</p><h4>Is "exactly" exact?</h4><p>The plan assumes cell-for-cell and style-for-style identity, including reproducing the empty <code>Portfolio Risk Premia</code> header and the lowercase sheet names. If some of that is incidental rather than required, the comparator can be relaxed and Phase 1 gets shorter.</p></div>
+  <div class="card"><p class="hd">Decision 2</p><h4>Who owns the bake after the port?</h4><p>It becomes a delivery into cyrus. Someone has to produce it, version it and hand it over on a cadence — and that is a different job from running the service.</p></div>
+  <div class="card"><p class="hd">Decision 3</p><h4>Does the live adapter survive at all?</h4><p>It could stay here as the bake's engine and never ship to cyrus, or be retired entirely in favour of the bake being the only way analytics ever enter. The first is less disruptive; the second is a cleaner boundary.</p></div>
+</div>
+
+<p class="foot">Evidence gathered by building the same two-column export (USD Moderate Full and USD Conservative Full, $50m, five sleeves, fees on) through both paths and comparing them programmatically: 90 of 90 risk-dashboard cells and 48 of 48 portfolio weight cells matched the baked payloads exactly; the workbook was confirmed to contain no charts, images, pivot tables or formulas; and the eleven presentation differences in section 3 were enumerated from the two files directly.</p>
+
+</div>

@@ -1,0 +1,15 @@
+{
+ "sleeves": {
+  "Investment Grade Fixed Income": "SMA Only",
+  "Other Fixed Income": "Mutual Funds",
+  "Public Equity": "Passive",
+  "Hedge Funds": "HFM & ART",
+  "Private Equity & Other Private Assets": "Private Equity Managers"
+ },
+ "variant": "PMG Multi-Asset Portfolio",
+ "tacticalTilt": true,
+ "volPremium": true,
+ "includeFees": true,
+ "feeSchedule": "CASP",
+ "feeLevel": "PMG Target"
+}

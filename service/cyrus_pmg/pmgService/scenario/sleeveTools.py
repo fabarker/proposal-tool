@@ -15,8 +15,21 @@ between environments, and reviewing it as a table:
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --import in.csv [--replace]
         Load a library through the same validation a save gets. Sleeves of
-        the same name are overwritten; --replace clears the store first.
-        A single failing sleeve aborts the whole load.
+        the same name are overwritten; --replace retires the ones already
+        there rather than erasing them. A single failing sleeve aborts the
+        whole load.
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --history 42
+        Every revision of one sleeve, oldest first: what it was called, what
+        it held, who changed it and what moved. Works for a sleeve that has
+        been removed from the library - that is the point of keeping it.
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --archived
+        The sleeves archived out of the library, with who did it and when.
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --activity [N]
+        The last N changes across the whole library, newest first (D66):
+        who did what to which sleeve, and what moved. Default 40.
 
 The store is SCENARIO_SLEEVES_DB, the catalogue SCENARIO_PRODUCTS_SOURCE;
 a store that does not exist yet is created and seeded from
@@ -40,6 +53,8 @@ def _census() -> int:
     print('store      {}'.format(store['path']))
     print('           {} sleeves, seeded {} from {}'.format(
         store['sleeves'], store['seededAt'] or 'never', store['seededFrom'] or 'nothing'))
+    print('           schema v{} · {} revisions on record · {} sleeve(s) archived'.format(
+        store.get('schemaVersion', 1), store.get('revisions', 0), store.get('archived', 0)))
     print('catalogue  {}'.format(cat['path']))
     print('           {} products, modified {}'.format(cat['products'], cat['modified']))
     print('types')
@@ -66,7 +81,73 @@ def _census() -> int:
         print('\nFIXED CATEGORIES:')
         for line in c['fixedCategoryProblems']:
             print('  {}'.format(line))
+    if c.get('archived'):
+        # not a problem, so not counted as one - an archived sleeve is a normal
+        # thing for a library to hold, and the census is where you see it
+        print('\nARCHIVED ({}):'.format(len(c['archived'])))
+        for e in c['archived']:
+            print('  [{}] {} / {} / {}   by {} on {}'.format(
+                e['id'], e['variant'], e['category'], e['name'],
+                e['archivedBy'] or 'unknown', (e['archivedAt'] or '')[:10]))
     return 1 if (c['broken'] or c['fixedCategoryProblems']) else 0
+
+
+def _history(sleeveId: int) -> int:
+    trail = sleeveRepo.history(sleeveId)
+    if not trail:
+        print('no sleeve {} on record'.format(sleeveId))
+        return 2
+    top = trail[0]
+    print('sleeve {}  {} / {} / {}'.format(
+        sleeveId, top['variant'], top['category'], top['name']))
+    print('{} revision(s), oldest first\n'.format(len(trail)))
+    for entry in reversed(trail):
+        print('  r{:<3} {:<9} {:<19} {}{}'.format(
+            entry['revision'], entry['action'], entry['at'],
+            entry['actor'] or 'unknown', '   <- in force' if entry['current'] else ''))
+        print('       {}'.format(entry['name']))
+        for row in entry['products']:
+            label = row['product']['name'] if row['product'] else row['productId'] + '  (not in the catalogue)'
+            print('         {:>6.2f}%  {}'.format(row['weight'] * 100.0, label))
+        for change in entry['changes']:
+            print('       - {}'.format(change))
+        print('')
+    return 0
+
+
+def _archived() -> int:
+    rows = sleeveRepo.listArchived()
+    if not rows:
+        print('nothing is archived')
+        return 0
+    print('{} sleeve(s) archived, still on the record:\n'.format(len(rows)))
+    for e in rows:
+        print('  [{}] {:<28} {:<32} {}'.format(e['id'], e['variant'], e['category'], e['name']))
+        print('       archived by {} on {} · {} revision(s)'.format(
+            e['archivedBy'] or 'unknown', (e['archivedAt'] or '')[:19], e['revisions']))
+    print('\nrestore from the console\'s Archive, or with --import after an --export edit')
+    return 0
+
+
+def _activity(limit: int) -> int:
+    page = sleeveRepo.activity(limit=limit)
+    if not page['entries']:
+        print('nothing on record')
+        return 0
+    print('{} of {} change(s), newest first\n'.format(len(page['entries']), page['total']))
+    day = None
+    for e in page['entries']:
+        if e['at'][:10] != day:
+            day = e['at'][:10]
+            print('  {}'.format(day))
+        print('    {}  {:<9} {:<14} {} / {} / {}  r{}'.format(
+            e['at'][11:16], e['action'], (e['actor'] or 'unknown')[:14],
+            e['variant'], e['category'], e['name'], e['revision']))
+        for change in e['changes']:
+            print('             - {}'.format(change))
+    if page['next']:
+        print('\n(more: raise the limit)')
+    return 0
 
 
 def _export(path: str) -> int:
@@ -103,7 +184,16 @@ def main(argv=None) -> int:
     ap.add_argument('--export', metavar='CSV')
     ap.add_argument('--import', metavar='CSV', dest='importPath')
     ap.add_argument('--replace', action='store_true')
+    ap.add_argument('--history', metavar='SLEEVEID', type=int)
+    ap.add_argument('--archived', '--deleted', action='store_true', dest='archived')
+    ap.add_argument('--activity', metavar='N', type=int, nargs='?', const=40)
     args = ap.parse_args(argv)
+    if args.history is not None:
+        return _history(args.history)
+    if args.archived:
+        return _archived()
+    if args.activity is not None:
+        return _activity(args.activity)
     if args.export:
         return _export(args.export)
     if args.importPath:

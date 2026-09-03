@@ -35,3 +35,32 @@ carry the single category `Private Equity & Other Private Assets`.
 A name that says which book it belongs to (`Funds Irish`, `US Onshore ETFs`,
 anything marked ESG) is offered under that book only. The rest are offered
 under all four, so every book can be completed in every category.
+
+## This file is a seed, not a source
+
+It is read **once**, when the database is empty, and never again. The database
+is the authority from that moment on, and it will drift from this file the
+first time an admin saves a sleeve — so do not read this as documentation of
+what the tool currently holds. `sleeveTools --export` writes the current
+library in this same shape; take a dated export rather than trusting this.
+
+## Nothing is destroyed (D65)
+
+Every write to a sleeve appends a revision to `sleeveHistory` holding the whole
+sleeve as it stood, with who did it and when. A delete removes a sleeve from
+the **library**, not from the record: the row stays, marked with who removed it
+and when, and can be put back. So the interchange shape here — which carries
+only the live library — is a snapshot of one moment, and the database holds
+more than it can express. Read the record with:
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --history <sleeveId>
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --archived
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --activity [N]
+
+In the console the same record is the **Archive** tab (what left the library,
+searchable, restorable singly or as a batch, exportable) and the **Activity**
+tab (every change across the library, newest first, filtered and exportable)
+(D66).
+
+A **replacing import** (`--import x.csv --replace`) retires the sleeves already
+there the same way a hand delete does. It does not erase them.

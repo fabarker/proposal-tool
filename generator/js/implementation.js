@@ -305,7 +305,15 @@ function rows() {
       item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
     });
   }
-  return groups;
+  /* Nothing that prints as zero earns a line (D68). Dropped after the
+     rounding, so the column still closes on 100.00 exactly - a row worth
+     0.00 adds nothing to that sum. A category keeps its row while it has
+     weight: an unimplemented one with an allocation is precisely what this
+     page is asking a PWA to fix. Mirrors buildImplementationRows. */
+  groups.forEach(function (group) {
+    group.items = group.items.filter(function (item) { return item.weight !== 0; });
+  });
+  return groups.filter(function (group) { return group.weightPct !== 0; });
 }
 
 /* Weight and notional always add up; the fee adds up only once every row

@@ -37,10 +37,13 @@ _PACKAGE = os.getenv('SAA_ENGINE_PACKAGE', 'epsilonPhi')
 
 #: Public name -> (module path beneath the root package, attribute).
 #: The whole dependency surface: six symbols, five of them types.
+# ``Reporting`` used to be here. The export no longer uses it (D67): the
+# workbook is written from the resolved payloads, so the only reason this
+# package ever reaches the library is to COMPUTE analytics, never to lay
+# them out.
 _SYMBOLS = {
     'CAppConfig': ('core.config.appConfig', 'CAppConfig'),
     'DATAVERSION': ('core.env.Env', 'DATAVERSION'),
-    'Reporting': ('core.reporting.Reporting', 'Reporting'),
     'ContextCreator': ('core.schema.Schema', 'ContextCreator'),
     'SAAPortfolio': ('core.portfolio.SAAPortfolio', 'SAAPortfolio'),
     'AssetReturnEstimator': ('core.estimator.assetReturnEstimator',
