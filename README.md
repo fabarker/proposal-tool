@@ -52,7 +52,7 @@ A client-facing page for the **Portfolio Management Group (PMG)** at Goldman Sac
 
 It is built and run in **`epsilon-phi`**, but written to be **transplanted into
 `isg-cyrus-pmg/src/cyrus_pmg`** — so the back end follows that codebase's design rather than a
-convenient local one. `BRIEF.md` and `HOST_AUDIT.md` cover what that means in practice.
+convenient local one. `archive/BRIEF.md` and `HOST_AUDIT.md` cover what that means in practice.
 
 | Step | What the PWA does | Output |
 |---|---|---|
@@ -69,7 +69,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 | # | File | Why |
 |---|---|---|
 | — | **`PROMPT.md`** | The kickoff instruction, for whoever hands this to a developer or an agent. Not part of the build. |
-| 0 | **`BRIEF.md`** | What you are being asked to do, in what order, and what is non-negotiable. Read it before anything else. |
+| 0 | **`archive/BRIEF.md`** | What you are being asked to do, in what order, and what is non-negotiable. Read it before anything else. |
 | 0.5 | **`HOST_AUDIT.md`** | How `cyrus_pmg.dashboard` is built. The back end must follow its design, because this gets transplanted there. §11, §12 and §13 are the working sections. |
 | 1 | **`spec.html`** | The complete build reference. Open in a browser. 16 sections; start with §1 Purpose, §2 Domain model, §5 Front-end architecture. |
 | 2 | **`proposalTool/proposalTool.html`** | The page. Generated — never hand-edited. Run it through `service/` rather than opening it from disk: it now fetches its data over HTTP. |

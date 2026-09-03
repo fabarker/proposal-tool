@@ -2,12 +2,12 @@
 
 > **Status: built (31 Aug 2026).** This brief is kept as issued — it records what was asked
 > and in what order, and the phasing below is what was followed. For what now exists, read
-> `service/README.md`; for how it departs from this package, `service/DEVIATIONS.md`; for the
+> `../service/README.md`; for how it departs from this package, `../service/DEVIATIONS.md`; for the
 > analytics work the brief could only ask for ("measure it and record the number"),
-> `service/PERFORMANCE.md`.
+> `../service/PERFORMANCE.md`.
 
 **To:** the engineer building this, working independently
-**With:** this directory. Everything you need is in it. Start at `README.md`, then read this.
+**With:** this directory. Everything you need is in it. Start at `../../../README.md`, then read this.
 
 ---
 
@@ -45,19 +45,19 @@ is not optional. Budget real time for it.
 
 | Order | Read | What you are extracting |
 |---|---|---|
-| 1 | **`HOST_AUDIT.md`** §11 Conventions, §12 Recipe, §13 Gotchas | How Cyrus does it. §12 is a literal add-a-page recipe — your work is that recipe, at scale. |
-| 2 | **`spec.html`** §1–§5 | What you are building and the architecture it must have. §4.3 is the sharpest page in the document: it draws the line between what must be server-supplied and what may be hardcoded. |
-| 3 | **`proposalTool/proposalTool.html`** | Open it. Click every control, resize it, tab through it. It is the behavioural reference — faster than reading §7–§9 cold. |
-| 4 | **`spec.html`** §6–§14 | The detail. §10 is exhaustive on states; §13 is the accessibility standard. |
-| 5 | **`backend/scenario_port.py`** and **`portfolio_weights.py`** | The eight methods, and the supplied weights behind `resolve_portfolio` (spec §4.5). Read §16 items 3 and 12–14 before building the allocation table — the supplied weights contradict the spec in three places, left unreconciled on purpose. |
-| 6 | **`DECISIONS.md`** | Q1–Q50. Read when you disagree with something — nearly every rule traces to a numbered exchange with the reasoning. |
+| 1 | **`../HOST_AUDIT.md`** §11 Conventions, §12 Recipe, §13 Gotchas | How Cyrus does it. §12 is a literal add-a-page recipe — your work is that recipe, at scale. |
+| 2 | **`../spec.html`** §1–§5 | What you are building and the architecture it must have. §4.3 is the sharpest page in the document: it draws the line between what must be server-supplied and what may be hardcoded. |
+| 3 | **`../proposalTool/proposalTool.html`** | Open it. Click every control, resize it, tab through it. It is the behavioural reference — faster than reading §7–§9 cold. |
+| 4 | **`../spec.html`** §6–§14 | The detail. §10 is exhaustive on states; §13 is the accessibility standard. |
+| 5 | **`../backend/scenario_port.py`** and **`portfolio_weights.py`** | The eight methods, and the supplied weights behind `resolve_portfolio` (spec §4.5). Read §16 items 3 and 12–14 before building the allocation table — the supplied weights contradict the spec in three places, left unreconciled on purpose. |
+| 6 | **`../DECISIONS.md`** | Q1–Q50. Read when you disagree with something — nearly every rule traces to a numbered exchange with the reasoning. |
 
 ---
 
 ## Mirror the host topology in `epsilon-phi`
 
 Do not invent a development architecture. Reproduce Cyrus's, so the code is already in its final
-shape. From `HOST_AUDIT.md` §4 and spec §3.1, that is:
+shape. From `../HOST_AUDIT.md` §4 and spec §3.1, that is:
 
 **A Flask static server** in the shape of `dashboardFrontend.py` — one hand-written `@app.route`
 per page folder, served with `send_from_directory`, view functions in `snake_case` each carrying a
@@ -92,7 +92,7 @@ Cyrus needs it.
 |---|---|---|
 | Kerberos allowlist | An env-var list, as local Cyrus dev already does (`PMG_ALLOWED_KERBEROS`) | The `before_request` gate, its position in the stack, the 403 card, the `/api/whoami` probe |
 | GitLab CI / `gns` distribution | Nothing. Out of scope | — |
-| Stored model allocations | **Nothing — these are supplied.** `backend/portfolio_weights.py`, 272 portfolios, spec §4.5 | Drive `get_schema`'s availability from its `ui_available` column, not a second list |
+| Stored model allocations | **Nothing — these are supplied.** `../backend/portfolio_weights.py`, 272 portfolios, spec §4.5 | Drive `get_schema`'s availability from its `ui_available` column, not a second list |
 | PMG sleeve library | Same | Same |
 | Advisor directory | Excel file, as the reference adapter does | `search_advisors` signature and its 2-character threshold behaviour |
 
@@ -150,7 +150,7 @@ file and module organisation on the Python side, and how you stub what cannot ex
 
 **Follow the package; deviate only with a written reason:** the HTTP surface (§3.4), the error
 contract (§3.5), the eight-method port, the server-supplied/hardcodable split (§4.3), the host
-conventions in `HOST_AUDIT.md` §11.
+conventions in `../HOST_AUDIT.md` §11.
 
 **Do not deviate without stopping to think hard:** no framework, no bundler, no module system; one
 page folder and one route; the landing as a *phase* not a route (§7.1); WCAG 2.2 AA (§13); fonts
