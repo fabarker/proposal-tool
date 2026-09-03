@@ -36,8 +36,20 @@ function clearAlert() {
 async function apiFetch(path, opts) {
     // read off window rather than the bare global: identical in a browser,
     // and it does not depend on window === globalThis
-    var resp = await fetch(window.API_BASE + path,
+    var resp;
+    try {
+        resp = await fetch(window.API_BASE + path,
                            Object.assign({credentials: 'same-origin'}, opts || {}));
+    } catch (transport) {
+        // the frontend itself is unreachable - no response at all (D64)
+        if (window.App && App.noteService) App.noteService(false, 0);
+        var dead = new Error('The Proposal Tool could not reach its service.');
+        dead.status = 0;
+        throw dead;
+    }
+    // One place learns whether the service is answering: the proxy turns an
+    // unreachable backend into 502 and a slow one into 504 (D64).
+    if (window.App && App.noteService) App.noteService(resp.status !== 502 && resp.status !== 504, resp.status);
     if (!resp.ok) {
         var msg = 'Request failed (' + resp.status + ')';
         var body = null;
@@ -75,6 +87,16 @@ var state = {
   schema: null,
   schemaStatus: 'idle',             /* 'idle'|'loading'|'ready'|'error' */
   schemaError: null,
+  /* Whether the scenario service is answering (D64). 'down' is set by
+     apiFetch the moment the proxy reports the backend unreachable (502),
+     timed out (504) or the fetch itself fails, and cleared by the next call
+     that succeeds. It gates every write through canEdit, so one flag turns
+     the whole page read only. */
+  service: 'up',                    /* 'up' | 'down' */
+  serviceSince: null,               /* when it went down, for the message */
+  fromCache: false,                 /* this workspace was restored, not fetched */
+  retryAt: null,                    /* epoch ms of the next automatic attempt */
+  retryStep: 0,
   step: 'aa',                       /* 'aa' | 'impl' */
   columns: [],                      /* index 0 is always the base; see makeColumn */
   basisChosen: false,               /* the PWA has answered currency + hedging */
@@ -220,8 +242,12 @@ function buildKey(allocationType, excludeRealAssets, riskLevel) {
   return { currency: currency, riskLevel: riskLevel, allocationType: allocationType,
            excludeRealAssets: reAllowed(allocationType) ? !!excludeRealAssets : false };
 }
-function canEdit() { return opt('capabilities.canEdit', true); }
-function canExport() { return opt('capabilities.canExport', true); }
+/* Read only while the service is down (D64). Every control in the rail, the
+   pickers and the dialogs already asks this before enabling itself, so this
+   one line is what makes degraded mode safe: nothing can be changed that
+   could not be saved. */
+function canEdit() { return state.service !== 'down' && opt('capabilities.canEdit', true); }
+function canExport() { return state.service !== 'down' && opt('capabilities.canExport', true); }
 function autoSleeveCategories() { return opt('rules.autoSleeveCategories', []); }
 
 /* The display name for a risk level. The value stays what the schema sent -
@@ -336,8 +362,12 @@ async function fetchSchema() {
         + '; management fees re-priced.');
     }
   } catch (err) {
-    state.schemaStatus = 'error';
     state.schemaError = err.message || String(err);
+    /* A schema already in hand is not thrown away because a later fetch
+       failed (D64). The page keeps rendering what it has, read only, and the
+       banner says why; only a page that never had a schema has nothing to
+       show and falls through to the full-page state. */
+    state.schemaStatus = state.schema ? 'ready' : 'error';
   }
   refresh();
 }
@@ -1025,8 +1055,19 @@ async function boot() {
     state.schema = await apiFetch('/scenario/schema' + schemaQuery());
     state.schemaStatus = 'ready';
   } catch (err) {
-    state.schemaStatus = 'error';
     state.schemaError = err.message || String(err);
+    /* The service is not answering. If the last good render of the proposal
+       being asked for is cached, show it read only rather than showing
+       nothing (D64, option F); with nothing cached there is no proposal to
+       fall back to and the page says so instead (option G). */
+    var snap = (state.service === 'down') ? loadSnapshot(wanted) : null;
+    if (snap) {
+      restoreSnapshot(snap);
+      announce('polite', 'Showing the last version loaded. The page is read only '
+        + 'until the scenario service is back.');
+    } else {
+      state.schemaStatus = 'error';
+    }
     refresh();
     return;
   }
@@ -1090,7 +1131,10 @@ function renderPhase() {
   var aa = document.getElementById('view-aa');
   var impl = document.getElementById('view-impl-wrap');
   var steps = document.getElementById('steps');
-  var broken = (state.schemaStatus === 'error');
+  /* Nothing to show at all - not merely a failed call. With a schema in hand
+     the workspace or the landing stays up and the degraded banner carries the
+     message instead (D64). */
+  var broken = (state.schemaStatus === 'error') && !state.schema;
   if (schemaError) {
     schemaError.hidden = !broken;
     var reason = document.getElementById('schema-error-reason');
@@ -2519,8 +2563,166 @@ function setBackgroundInert(on) {
   });
 }
 
+/* ---- the service, and surviving it (D64) ---------------------------------
+   apiFetch calls noteService on every request. Going down starts a backing-off
+   poll of the schema endpoint - the frontend's own /health cannot be used: it
+   returns {status:'ok'} unconditionally and never touches the backend, so it
+   answers happily throughout an outage. Coming back re-boots in place. */
+var RETRY_STEPS = [3, 5, 8, 13, 21, 30];      /* seconds, then the last repeats */
+var retryTimer = null;
+
+function retryDelay(step) {
+  return RETRY_STEPS[Math.min(step, RETRY_STEPS.length - 1)] * 1000;
+}
+
+function noteService(ok, status) {
+  if (ok) {
+    if (state.service === 'down') {
+      /* it answered: stop polling, and reload what the outage may have missed */
+      state.service = 'up'; state.serviceSince = null; state.retryAt = null; state.retryStep = 0;
+      stopRetry();
+      announce('polite', 'The scenario service is back.');
+      recover();
+    }
+    return;
+  }
+  if (state.service === 'down') return;        /* already known, keep the timer */
+  state.service = 'down';
+  state.serviceSince = Date.now();
+  state.retryStep = 0;
+  scheduleRetry();
+  announce('assertive', 'The scenario service is not responding. The page is read only.');
+  refresh();
+}
+
+function scheduleRetry() {
+  stopRetry();
+  var wait = retryDelay(state.retryStep);
+  state.retryAt = Date.now() + wait;
+  retryTimer = window.setTimeout(function () {
+    state.retryStep += 1;
+    attemptRecovery();
+  }, wait);
+  tickRetry();
+}
+function stopRetry() {
+  if (retryTimer) { window.clearTimeout(retryTimer); retryTimer = null; }
+  if (tickTimer) { window.clearInterval(tickTimer); tickTimer = null; }
+}
+var tickTimer = null;
+function tickRetry() {
+  if (tickTimer) window.clearInterval(tickTimer);
+  tickTimer = window.setInterval(renderService, 1000);
+}
+
+/* One real request, not a health probe. Success flows back through apiFetch
+   into noteService, which is what actually clears the state. */
+async function attemptRecovery() {
+  try { await apiFetch('/scenario/schema' + schemaQuery()); }
+  catch (err) { if (state.service === 'down') scheduleRetry(); }
+}
+
+/* The service answered again. Re-fetch what the page is showing so a cached
+   render is replaced by a live one; boot() covers both the workspace and the
+   landing, and reads the scenario id back out of the URL. */
+async function recover() {
+  /* boot() rebuilds the workspace from the server and appends the columns it
+     finds, so the restored ones have to go first or every column arrives
+     twice - the cached copy beside its own refetch (D64). */
+  state.fromCache = false;
+  state.columns = [];
+  state.schemaStatus = 'idle';
+  try { await boot(); } catch (e) { /* boot reports its own failure */ }
+  refresh();
+}
+
+/* ---- the cache that makes read-only possible ----------------------------
+   The last good workspace, kept per scenario so a service that dies while a
+   proposal is open leaves the proposal on screen. It holds only what the page
+   needs to render: no more than the API already sent it. */
+function snapshotKey(id) { return 'pt.snapshot.' + id; }
+
+function saveSnapshot() {
+  if (!state.scenarioId || state.phase !== 'workspace' || state.service === 'down') return;
+  if (!state.columns.length || !state.columns.some(function (c) { return c.status === 'ready'; })) return;
+  try {
+    window.localStorage.setItem(snapshotKey(state.scenarioId), JSON.stringify({
+      at: Date.now(),
+      schema: state.schema,
+      scenarioId: state.scenarioId,
+      mandate: state.mandate, basis: state.basis, variant: state.variant,
+      step: state.step, basisChosen: state.basisChosen, implSeen: state.implSeen,
+      tacticalTilt: state.tacticalTilt, volPremium: state.volPremium,
+      includeFees: state.includeFees, feeSchedule: state.feeSchedule, feeLevel: state.feeLevel,
+      sleeves: state.sleeves,
+      columns: state.columns.filter(function (c) { return c.status === 'ready'; })
+    }));
+  } catch (e) { /* private mode, or full: the page simply has no fallback */ }
+}
+
+function loadSnapshot(id) {
+  if (!id) return null;
+  try {
+    var raw = window.localStorage.getItem(snapshotKey(id));
+    if (!raw) return null;
+    var snap = JSON.parse(raw);
+    return (snap && snap.schema && (snap.columns || []).length) ? snap : null;
+  } catch (e) { return null; }
+}
+
+/* Put a snapshot on screen and mark everything it implies: the workspace is
+   real but read only, and says so. */
+function restoreSnapshot(snap) {
+  state.schema = snap.schema; state.schemaStatus = 'ready';
+  state.scenarioId = snap.scenarioId;
+  state.mandate = snap.mandate; state.basis = snap.basis; state.variant = snap.variant;
+  state.step = snap.step || 'aa'; state.basisChosen = !!snap.basisChosen;
+  state.implSeen = !!snap.implSeen;
+  state.tacticalTilt = snap.tacticalTilt !== false;
+  state.volPremium = snap.volPremium !== false;
+  state.includeFees = !!snap.includeFees;
+  state.feeSchedule = snap.feeSchedule || null; state.feeLevel = snap.feeLevel || null;
+  state.sleeves = snap.sleeves || {};
+  state.columns = snap.columns || [];
+  state.phase = 'workspace';
+  state.fromCache = true;
+}
+
+/* what the two surfaces say about the wait */
+function retrySeconds() {
+  if (!state.retryAt) return null;
+  return Math.max(0, Math.round((state.retryAt - Date.now()) / 1000));
+}
+
+function renderService() {
+  var down = state.service === 'down';
+  var secs = retrySeconds();
+  var wait = secs === null ? '' : (secs > 0 ? 'Trying again in ' + secs + 's' : 'Trying again…');
+
+  var banner = document.getElementById('degraded');
+  if (banner) {
+    /* the banner is for a page that survived - workspace or landing; with
+       nothing at all to show the full page takes over instead */
+    banner.hidden = !(down && !!state.schema);
+    var r = document.getElementById('degraded-retry');
+    if (r) r.textContent = wait;
+  }
+  var retry = document.getElementById('down-retry');
+  if (retry) retry.textContent = secs === null ? 'Trying again automatically…' : wait;
+  var safe = document.getElementById('down-safe');
+  if (safe) {
+    var id = state.scenarioId;
+    safe.hidden = !id;
+    if (id) safe.textContent = 'Your proposal is saved. It is kept for 24 hours '
+      + 'and will be exactly as you left it.';
+  }
+  var reason = document.getElementById('schema-error-reason');
+  if (reason) reason.textContent = state.schemaError || '';
+}
+
 /* ---- refresh ------------------------------------------------------------ */
 function refresh() {
+  saveSnapshot();                        /* the last good render is the fallback */
   preserveFocus(function () {
     renderRailToggle();
     renderPhase();
@@ -2535,6 +2737,7 @@ function refresh() {
     renderRisk();
     renderCharts();
     renderStageChrome();
+    renderService();
     renderResolving();
     renderFooter();
     extras.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } });
@@ -2568,7 +2771,18 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'startbtn' || e.target.id === 'mdedit') {
     openMandateDialog(e.target); return;
   }
-  if (e.target.id === 'schema-retry') { boot(); return; }
+  if (e.target.id === 'schema-retry' || e.target.id === 'degraded-now') {
+    state.retryStep = 0;
+    stopRetry();
+    attemptRecovery();
+    renderService();
+    return;
+  }
+  if (e.target.id === 'down-more') {
+    var reason = document.getElementById('schema-error-reason');
+    if (reason) reason.hidden = !reason.hidden;
+    return;
+  }
   if (e.target.id === 'dlgsave') { commitMandate(); return; }
   if (e.target.id === 'dlgcancel' || e.target.id === 'dlgclose') {
     closeMandateDialog(); return;
@@ -2790,6 +3004,11 @@ return {
   },
   schema: function () { return state.schema; },
   schemaReady: schemaReady,
+  /* apiFetch reports transport health here; the rest is read by the page */
+  noteService: noteService,
+  serviceUp: function () { return state.service !== 'down'; },
+  fromCache: function () { return state.fromCache; },
+  retryDelay: retryDelay,
   opt: opt,
   canEdit: canEdit,
   canExport: canExport,

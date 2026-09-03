@@ -67,17 +67,55 @@
 </aside>
 
 <main class="shell" id="main">
+  <!-- Degraded (D64, option F): the service is not answering but the last
+       good render is cached, so the proposal stays on screen, read only.
+       Announced politely rather than assertively - nothing has gone wrong
+       with what is displayed, only with what can be done to it. -->
+  <div class="degraded" id="degraded" role="status" hidden>
+    <span class="st"><span class="dot" aria-hidden="true"></span>Read only</span>
+    <span class="degraded-txt"><b>Saving and export are unavailable</b> — the scenario
+      service is not responding. What you can see is the last version loaded and is safe to show.</span>
+    <span class="degraded-sp"></span>
+    <span class="degraded-retry" id="degraded-retry"></span>
+    <button type="button" class="degraded-now" id="degraded-now">Try now</button>
+  </div>
+
   <!-- Host convention: every page surfaces API errors here. -->
   <div id="alertArea"></div>
 
   <!-- Schema failure: the page cannot render without field options, so this
        replaces everything until Retry succeeds (spec 10.3). -->
+  <!-- The service is not answering and there is nothing cached to show, so
+       there is no proposal to fall back to (D64, option G). Warm by choice:
+       the two facts a PWA needs - that their work is safe, and that the page
+       is trying again by itself - are kept inside the friendlier frame
+       rather than dropped, because an error page that cannot be acted on is
+       just a picture. -->
   <section id="view-schema-error" hidden>
-    <div class="doc-empty">
-      <h3>The Proposal Tool could not load</h3>
-      <p>The scenario schema is unavailable, and every control depends on it.</p>
-      <p class="doc-empty-detail" id="schema-error-reason"></p>
-      <button type="button" class="btn btn-primary" id="schema-retry">Retry</button>
+    <div class="down">
+      <div class="down-art" aria-hidden="true">
+        <svg viewBox="0 0 96 72" width="96" height="72" role="img">
+          <ellipse cx="48" cy="64" rx="30" ry="4" fill="#E3E7EC"/>
+          <path d="M26 26h36a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H26a6 6 0 0 1-6-6V32a6 6 0 0 1 6-6z"
+                fill="#fff" stroke="#C7D0DB" stroke-width="2.5"/>
+          <path d="M68 36h4a7 7 0 0 1 0 14h-4" fill="none" stroke="#C7D0DB" stroke-width="2.5"/>
+          <path d="M32 20c0-4 3-6 5-4M42 17c0-5 4-7 6-4M52 20c0-4 3-6 5-4"
+                fill="none" stroke="#B9CDF0" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="38" cy="42" r="2.6" fill="#5B6B7C"/><circle cx="54" cy="42" r="2.6" fill="#5B6B7C"/>
+          <path d="M39 52c3-3 12-3 15 0" fill="none" stroke="#5B6B7C" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>We can’t reach the Proposal Tool right now</h2>
+      <p class="down-sub">Sorry — this one is on us, not on you. The service that
+        builds portfolios isn’t answering, so nothing can be resolved, priced
+        or exported until it’s back.</p>
+      <p class="down-safe" id="down-safe" hidden></p>
+      <p class="down-retry" id="down-retry">Trying again automatically…</p>
+      <div class="down-actions">
+        <button type="button" class="btn btn-primary" id="schema-retry">Try now</button>
+      </div>
+      <p class="down-detail"><button type="button" class="down-toggle" id="down-more">Technical detail</button>
+        <span class="down-reason" id="schema-error-reason" hidden></span></p>
     </div>
   </section>
 

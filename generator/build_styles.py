@@ -424,6 +424,47 @@ main{display:block}
 @keyframes skel-blink{0%{opacity:.2}50%{opacity:1}100%{opacity:.2}}
 @media (prefers-reduced-motion:reduce){.col-ellipsis{animation:none}}
 
+/* ── the service being down (D64) ──
+   Two surfaces. The banner is for a workspace that survived on its cache -
+   the proposal is intact, only the writes are gone - so it is a quiet strip
+   in the warning colour, not a takeover. The page below it is for a cold
+   landing with nothing cached: warm by choice, and still carrying the two
+   things that make an error page usable - that the work is safe, and that
+   the page is trying again by itself. */
+.degraded{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:#FEF3C7;border-bottom:1px solid #F3D48A;color:#7A4A0A;
+  padding:9px 20px;font-size:13px;position:sticky;top:0;z-index:60}
+.degraded .st{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.72);
+  border-radius:10px;padding:2px 9px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+.degraded .st .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.degraded-txt b{font-weight:700}
+.degraded-sp{flex:1}
+.degraded-retry{font-family:var(--f-num);font-size:12px;color:#92600A;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.degraded-now{appearance:none;border:1px solid #E0B25C;background:rgba(255,255,255,.7);color:#7A4A0A;
+  border-radius:4px;padding:4px 10px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.degraded-now:hover{background:#fff}
+.degraded-now:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* the cold-landing page */
+.down{max-width:520px;margin:0 auto;padding:56px 20px 64px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:14px}
+.down-art{line-height:0}
+.down h2{margin:0;font-size:25px;font-weight:700;letter-spacing:-.01em;color:var(--ink);text-wrap:balance}
+.down-sub{margin:0;font-size:15px;color:var(--ink-2);max-width:44ch;line-height:1.55}
+.down-safe{margin:0;font-size:13.5px;color:var(--ok);background:var(--ok-soft,#E7F4EC);
+  border-radius:5px;padding:8px 14px;max-width:44ch}
+.down-retry{margin:0;font-family:var(--f-num);font-size:13px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.down-actions{display:flex;gap:9px;margin-top:2px}
+.down-detail{margin:8px 0 0;font-size:12px}
+.down-toggle{appearance:none;background:none;border:0;padding:0;font-family:var(--f-num);font-size:12px;
+  letter-spacing:.05em;color:var(--ink-3);cursor:pointer;text-decoration:underline}
+.down-toggle:hover{color:var(--ink-2)}
+.down-reason{display:block;margin-top:7px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11.5px;color:var(--ink-3);word-break:break-word}
+@media (prefers-reduced-motion:reduce){.degraded{transition:none}}
 /* the failed column (spec 10.3): Failed chip in the header, Retry beneath it */
 .tbl thead th .bdg{margin-left:7px;vertical-align:middle}
 .col-retry{display:block;margin:4px 0 0 auto;font:inherit;font-family:var(--f-num);
@@ -758,17 +799,55 @@ PAGE_SHELL = """<!doctype html>
 </aside>
 
 <main class="shell" id="main">
+  <!-- Degraded (D64, option F): the service is not answering but the last
+       good render is cached, so the proposal stays on screen, read only.
+       Announced politely rather than assertively - nothing has gone wrong
+       with what is displayed, only with what can be done to it. -->
+  <div class="degraded" id="degraded" role="status" hidden>
+    <span class="st"><span class="dot" aria-hidden="true"></span>Read only</span>
+    <span class="degraded-txt"><b>Saving and export are unavailable</b> — the scenario
+      service is not responding. What you can see is the last version loaded and is safe to show.</span>
+    <span class="degraded-sp"></span>
+    <span class="degraded-retry" id="degraded-retry"></span>
+    <button type="button" class="degraded-now" id="degraded-now">Try now</button>
+  </div>
+
   <!-- Host convention: every page surfaces API errors here. -->
   <div id="alertArea"></div>
 
   <!-- Schema failure: the page cannot render without field options, so this
        replaces everything until Retry succeeds (spec 10.3). -->
+  <!-- The service is not answering and there is nothing cached to show, so
+       there is no proposal to fall back to (D64, option G). Warm by choice:
+       the two facts a PWA needs - that their work is safe, and that the page
+       is trying again by itself - are kept inside the friendlier frame
+       rather than dropped, because an error page that cannot be acted on is
+       just a picture. -->
   <section id="view-schema-error" hidden>
-    <div class="doc-empty">
-      <h3>The Proposal Tool could not load</h3>
-      <p>The scenario schema is unavailable, and every control depends on it.</p>
-      <p class="doc-empty-detail" id="schema-error-reason"></p>
-      <button type="button" class="btn btn-primary" id="schema-retry">Retry</button>
+    <div class="down">
+      <div class="down-art" aria-hidden="true">
+        <svg viewBox="0 0 96 72" width="96" height="72" role="img">
+          <ellipse cx="48" cy="64" rx="30" ry="4" fill="#E3E7EC"/>
+          <path d="M26 26h36a6 6 0 0 1 6 6v20a6 6 0 0 1-6 6H26a6 6 0 0 1-6-6V32a6 6 0 0 1 6-6z"
+                fill="#fff" stroke="#C7D0DB" stroke-width="2.5"/>
+          <path d="M68 36h4a7 7 0 0 1 0 14h-4" fill="none" stroke="#C7D0DB" stroke-width="2.5"/>
+          <path d="M32 20c0-4 3-6 5-4M42 17c0-5 4-7 6-4M52 20c0-4 3-6 5-4"
+                fill="none" stroke="#B9CDF0" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="38" cy="42" r="2.6" fill="#5B6B7C"/><circle cx="54" cy="42" r="2.6" fill="#5B6B7C"/>
+          <path d="M39 52c3-3 12-3 15 0" fill="none" stroke="#5B6B7C" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h2>We can’t reach the Proposal Tool right now</h2>
+      <p class="down-sub">Sorry — this one is on us, not on you. The service that
+        builds portfolios isn’t answering, so nothing can be resolved, priced
+        or exported until it’s back.</p>
+      <p class="down-safe" id="down-safe" hidden></p>
+      <p class="down-retry" id="down-retry">Trying again automatically…</p>
+      <div class="down-actions">
+        <button type="button" class="btn btn-primary" id="schema-retry">Try now</button>
+      </div>
+      <p class="down-detail"><button type="button" class="down-toggle" id="down-more">Technical detail</button>
+        <span class="down-reason" id="schema-error-reason" hidden></span></p>
     </div>
   </section>
 
@@ -931,8 +1010,20 @@ function clearAlert() {
 async function apiFetch(path, opts) {
     // read off window rather than the bare global: identical in a browser,
     // and it does not depend on window === globalThis
-    var resp = await fetch(window.API_BASE + path,
+    var resp;
+    try {
+        resp = await fetch(window.API_BASE + path,
                            Object.assign({credentials: 'same-origin'}, opts || {}));
+    } catch (transport) {
+        // the frontend itself is unreachable - no response at all (D64)
+        if (window.App && App.noteService) App.noteService(false, 0);
+        var dead = new Error('The Proposal Tool could not reach its service.');
+        dead.status = 0;
+        throw dead;
+    }
+    // One place learns whether the service is answering: the proxy turns an
+    // unreachable backend into 502 and a slow one into 504 (D64).
+    if (window.App && App.noteService) App.noteService(resp.status !== 502 && resp.status !== 504, resp.status);
     if (!resp.ok) {
         var msg = 'Request failed (' + resp.status + ')';
         var body = null;

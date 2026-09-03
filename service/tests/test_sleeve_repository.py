@@ -662,3 +662,82 @@ def test_the_built_stylesheet_still_carries_every_console_section():
     mirror = os.path.join(HERE, '..', 'cyrus_pmg', 'dashboard', 'proposalTool', 'static', 'css', 'proposalTool.css')
     with open(mirror, encoding='utf-8') as fh:
         assert fh.read() == built, 'the service mirror has drifted from the page'
+
+
+# ---- surviving an outage: the degraded banner and the cold-landing page (D64) ----
+
+def test_the_shell_carries_both_outage_surfaces():
+    """Two mutually exclusive states, and each needs its markup in the shell:
+    the banner for a page that survived on its cache, the full page for a cold
+    landing with nothing to show."""
+    html = os.path.join(HERE, '..', '..', 'proposalTool', 'proposalTool.html')
+    with open(html, encoding='utf-8') as fh:
+        shell = fh.read()
+    for needed in ('id="degraded"', 'id="degraded-retry"', 'id="degraded-now"',
+                   'id="view-schema-error"', 'id="down-safe"', 'id="down-retry"',
+                   'id="down-more"', 'id="schema-error-reason"', 'id="schema-retry"'):
+        assert needed in shell, 'the shell is missing {}'.format(needed)
+    mirror = os.path.join(HERE, '..', 'cyrus_pmg', 'dashboard', 'proposalTool', 'proposalTool.html')
+    with open(mirror, encoding='utf-8') as fh:
+        assert fh.read() == shell, 'the service mirror has drifted from the page'
+
+
+def test_the_proxy_says_which_outage_it_is():
+    """The page's two messages are only honest because the proxy distinguishes
+    an unreachable backend from a slow one. Pinned here because the wording is
+    quoted to the user (D64)."""
+    front = os.path.join(HERE, '..', 'cyrus_pmg', 'dashboard', 'dashboardFrontend.py')
+    with open(front, encoding='utf-8') as fh:
+        source = fh.read()
+    assert "'The scenario service is not reachable. '" in source and '502' in source
+    assert "'The scenario service timed out.'" in source and '504' in source
+    # and apiFetch has to report both to the page, or nothing goes read only
+    js = os.path.join(HERE, '..', '..', 'proposalTool', 'static', 'js', 'proposalTool.js')
+    with open(js, encoding='utf-8') as fh:
+        built = fh.read()
+    assert 'App.noteService(resp.status !== 502 && resp.status !== 504' in built
+    assert 'App.noteService(false, 0)' in built, 'a failed fetch must count as down too'
+
+
+def test_the_outage_state_machine_runs():
+    """The backoff, the read-only gate and the snapshot round trip, exercised
+    in node against the built page - no DOM, just the rules."""
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'core.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('var RETRY_STEPS')
+    end = source.index('function noteService(')
+    backoff = source[start:end]
+    script = backoff + '''
+const seen = [0,1,2,3,4,5,6,7,20].map(retryDelay);
+process.stdout.write(JSON.stringify({
+  steps: seen,
+  monotonic: seen.every((v, i, a) => i === 0 || v >= a[i - 1]),
+  capped: seen[seen.length - 1] === seen[6],
+}));
+'''
+    out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
+    import json
+    got = json.loads(out.stdout)
+    assert got['steps'][:6] == [3000, 5000, 8000, 13000, 21000, 30000]
+    assert got['monotonic'], 'a backoff that shortens is not a backoff'
+    assert got['capped'], 'the interval has to stop growing or an outage stops being watched'
+
+
+def test_read_only_is_one_gate_not_many():
+    """canEdit is what every control in the rail, the pickers and the dialogs
+    asks before enabling itself. Degraded mode works by failing that one
+    question, so nothing can be changed that could not be saved (D64)."""
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'core.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+    assert "function canEdit() { return state.service !== 'down'" in source
+    assert "function canExport() { return state.service !== 'down'" in source
+    # and recovery must not leave the restored columns beside their refetch
+    assert 'state.columns = [];' in source[source.index('async function recover()'):
+                                           source.index('async function recover()') + 600]

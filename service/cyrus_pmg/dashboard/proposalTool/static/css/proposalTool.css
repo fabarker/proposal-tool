@@ -671,6 +671,47 @@ main{display:block}
 @keyframes skel-blink{0%{opacity:.2}50%{opacity:1}100%{opacity:.2}}
 @media (prefers-reduced-motion:reduce){.col-ellipsis{animation:none}}
 
+/* ── the service being down (D64) ──
+   Two surfaces. The banner is for a workspace that survived on its cache -
+   the proposal is intact, only the writes are gone - so it is a quiet strip
+   in the warning colour, not a takeover. The page below it is for a cold
+   landing with nothing cached: warm by choice, and still carrying the two
+   things that make an error page usable - that the work is safe, and that
+   the page is trying again by itself. */
+.degraded{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:#FEF3C7;border-bottom:1px solid #F3D48A;color:#7A4A0A;
+  padding:9px 20px;font-size:13px;position:sticky;top:0;z-index:60}
+.degraded .st{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.72);
+  border-radius:10px;padding:2px 9px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+.degraded .st .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.degraded-txt b{font-weight:700}
+.degraded-sp{flex:1}
+.degraded-retry{font-family:var(--f-num);font-size:12px;color:#92600A;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.degraded-now{appearance:none;border:1px solid #E0B25C;background:rgba(255,255,255,.7);color:#7A4A0A;
+  border-radius:4px;padding:4px 10px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.degraded-now:hover{background:#fff}
+.degraded-now:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* the cold-landing page */
+.down{max-width:520px;margin:0 auto;padding:56px 20px 64px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:14px}
+.down-art{line-height:0}
+.down h2{margin:0;font-size:25px;font-weight:700;letter-spacing:-.01em;color:var(--ink);text-wrap:balance}
+.down-sub{margin:0;font-size:15px;color:var(--ink-2);max-width:44ch;line-height:1.55}
+.down-safe{margin:0;font-size:13.5px;color:var(--ok);background:var(--ok-soft,#E7F4EC);
+  border-radius:5px;padding:8px 14px;max-width:44ch}
+.down-retry{margin:0;font-family:var(--f-num);font-size:13px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.down-actions{display:flex;gap:9px;margin-top:2px}
+.down-detail{margin:8px 0 0;font-size:12px}
+.down-toggle{appearance:none;background:none;border:0;padding:0;font-family:var(--f-num);font-size:12px;
+  letter-spacing:.05em;color:var(--ink-3);cursor:pointer;text-decoration:underline}
+.down-toggle:hover{color:var(--ink-2)}
+.down-reason{display:block;margin-top:7px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11.5px;color:var(--ink-3);word-break:break-word}
+@media (prefers-reduced-motion:reduce){.degraded{transition:none}}
 /* the failed column (spec 10.3): Failed chip in the header, Retry beneath it */
 .tbl thead th .bdg{margin-left:7px;vertical-align:middle}
 .col-retry{display:block;margin:4px 0 0 auto;font:inherit;font-family:var(--f-num);

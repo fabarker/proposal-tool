@@ -1,0 +1,441 @@
+<meta charset="utf-8">
+<title>Service Down Pages</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 80px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:54px 0 14px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h3{font-size:17px;font-weight:700;margin:0 0 6px}
+p{margin:0 0 12px;max-width:74ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:72ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:14px 0 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:3px}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:74ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+table.doc th,table.doc td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc th{font-family:var(--f-num);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.tbl-wrap{overflow-x:auto}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)}
+.callout p:last-child{margin-bottom:0}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:900px){.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:16px 18px}
+.card h3,.card h4{margin-top:0}
+.card p,.card li{font-size:14px}
+.q .item{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.q .item:last-child{border-bottom:0}
+.q .item .num{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:1px}
+.q .item b{display:block;margin-bottom:3px}
+.q .item p{margin:0;font-size:14px}
+
+/* option frames */
+.option{margin:24px 0 0;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;overflow:hidden}
+.option.rec{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.option-h{padding:16px 20px 13px;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);gap:18px;border-bottom:1px solid var(--line)}
+@media (max-width:1000px){.option-h{grid-template-columns:1fr}}
+.option-h .lbl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+.option-h h3{margin:0 0 6px;font-size:19px}
+.option-h p,.option-h li{font-size:13.5px;margin:0 0 6px}
+.option-h ul{padding-left:18px;margin:0}
+.mock-wrap{background:#DDE3EA;padding:20px;overflow-x:auto}
+.mock{width:1100px;min-height:430px;background:#F6F7F9;border-radius:6px;box-shadow:0 10px 30px rgba(12,24,44,.25);
+  overflow:hidden;font-family:var(--f-body);color:#1C2733;display:flex;flex-direction:column}
+.mock *{box-sizing:border-box}
+.assump{padding:12px 20px 15px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2);background:var(--surface-2)}
+.assump b{color:var(--ink)}
+
+/* ── the app's own chrome, literal colours ── */
+.hdr{border-top:3px solid #16243A;padding:20px 40px 0;background:#fff}
+.hdr .kicker{font-family:var(--f-num);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:#7E8A99}
+.hdr .brand{font-size:26px;font-weight:700;letter-spacing:-.01em;line-height:1.1;margin:6px 0 0}
+.hdr .brand span{color:#4E7FD4}
+.hdr .rule{display:flex;gap:3px;margin:14px 0 0}
+.hdr .rule i{height:7px;flex:1;border-radius:1px}
+.chip{position:absolute;top:14px;right:20px;background:#E7F4EC;color:#176A33;border-radius:12px;padding:2px 10px;
+  font-size:12px;font-family:var(--f-num)}
+.body{flex:1;padding:34px 40px 30px;display:flex;flex-direction:column;gap:18px}
+.body.center{align-items:flex-start;justify-content:center}
+.st{display:inline-flex;align-items:center;gap:8px;font-family:var(--f-num);font-size:11px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;padding:3px 10px;border-radius:10px}
+.st.bad{background:#FDE8E8;color:#9B1C1C}
+.st.warn{background:#FEF3C7;color:#92600A}
+.st.ok{background:#E7F4EC;color:#176A33}
+.st .dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block}
+.h2{font-size:23px;font-weight:700;margin:0;letter-spacing:-.01em}
+.sub{font-size:15px;color:#5B6B7C;max-width:64ch;margin:0}
+.btnrow{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--f-num);font-size:12px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;padding:9px 16px;border-radius:4px;border:1px solid #C7D0DB;
+  color:#1C2733;background:#fff;white-space:nowrap}
+.btn.pri{background:#1F5FBF;border-color:#1F5FBF;color:#fff}
+.btn.ghost{border-color:transparent;color:#5B6B7C;padding-left:4px}
+.small{font-family:var(--f-num);font-size:12px;color:#7E8A99}
+.det{border:1px solid #E3E7EC;border-radius:6px;background:#fff;overflow:hidden;max-width:640px}
+.det .dh{padding:8px 13px;background:#F6F7F9;border-bottom:1px solid #E3E7EC;font-family:var(--f-num);
+  font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7E8A99;display:flex;gap:10px;align-items:center}
+.det .dh .cp{margin-left:auto;color:#1E4FA3;text-transform:none;letter-spacing:.04em;font-size:11px}
+.det dl{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0;padding:11px 13px;font-size:12.5px}
+.det dt{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#7E8A99}
+.det dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#1C2733}
+/* component list */
+.comps{border:1px solid #E3E7EC;border-radius:6px;background:#fff;max-width:640px;overflow:hidden}
+.comps .r{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid #F1F3F6;font-size:13.5px}
+.comps .r:last-child{border-bottom:0}
+.comps .r b{font-weight:500}
+.comps .r small{display:block;font-family:var(--f-num);font-size:11.5px;color:#7E8A99}
+.comps .r .s{margin-left:auto}
+.led{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.led.up{background:#2E9E5B}.led.down{background:#D9534F}.led.deg{background:#E2A03A}.led.na{background:#C7D0DB}
+/* countdown */
+.cd{display:flex;align-items:center;gap:11px;border:1px solid #C7D0DB;border-radius:6px;background:#fff;
+  padding:10px 14px;max-width:460px}
+.cd .ring{width:26px;height:26px;border-radius:50%;border:2.5px solid #E3E7EC;border-top-color:#1F5FBF;flex:0 0 auto}
+.cd .t{font-size:13px;color:#1C2733}
+.cd .t b{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.cd .t small{display:block;font-family:var(--f-num);font-size:11.5px;color:#7E8A99}
+/* work-safe strip */
+.safe{display:flex;align-items:flex-start;gap:11px;border-left:3px solid #176A33;background:#F2F9F4;padding:11px 14px;
+  border-radius:0 5px 5px 0;max-width:640px;font-size:13.5px}
+.safe b{display:block}
+.safe small{font-family:var(--f-num);font-size:12px;color:#5B6B7C}
+/* maintenance clock */
+.win{display:flex;gap:0;border:1px solid #C7D0DB;border-radius:6px;overflow:hidden;background:#fff;max-width:520px}
+.win div{flex:1;padding:11px 14px;border-left:1px solid #E3E7EC;text-align:center}
+.win div:first-child{border-left:0}
+.win small{display:block;font-family:var(--f-num);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99}
+.win b{font-family:var(--f-num);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+/* degraded banner (option F) */
+.banner{display:flex;align-items:center;gap:12px;background:#FEF3C7;border-bottom:1px solid #F3D48A;padding:9px 20px;font-size:13px;color:#7A4A0A}
+.banner .st{background:rgba(255,255,255,.65)}
+.banner .sp{flex:1}
+.banner .x{color:#92600A;font-size:15px}
+.mini-rail{width:250px;background:#12233F;flex:0 0 auto;padding:16px 18px;color:#fff}
+.mini-rail b{display:block;font-family:var(--f-num);font-size:15px;font-weight:700}
+.mini-rail span.s{display:block;font-size:11px;font-weight:600;color:#F3C46B;margin-top:2px}
+.mini-rail .grp{margin-top:16px;font-family:var(--f-num);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#7E90A8}
+.mini-rail .fld{margin-top:6px;background:#1D2F4B;border:1px solid #52739C;border-radius:4px;padding:5px 9px;font-size:12.5px}
+.mini-rail .fld.off{opacity:.42}
+.mini-tbl{flex:1;padding:16px 20px;background:#F6F7F9}
+/* Explicit colours, not inherited: opened as a local file this page is in
+   quirks mode, where a table takes its colour from the root rather than its
+   nearest ancestor - so a mock's table would otherwise use the document's
+   dark-mode ink instead of the mock's own light palette. */
+.mini-tbl table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid #D4DAE2;color:#1C2733}
+.mini-tbl th{font-family:var(--f-num);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;
+  text-align:left;padding:7px 10px;border-bottom:1px solid #D4DAE2;background:#F6F7F9}
+.mini-tbl td{padding:7px 10px;border-bottom:1px solid #EEF1F4;color:#1C2733}
+.mini-tbl td.n{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+/* the "wrong for this audience" contrast */
+.warmshot{align-items:center;justify-content:center;text-align:center;gap:14px;padding:44px 40px}
+.warmshot .art{font-size:64px;line-height:1}
+.warmshot h2{font-size:27px;margin:0}
+.warmshot p{max-width:46ch;margin:0 auto;color:#5B6B7C}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="page">
+  <p class="eyebrow">Proposal Tool · design options</p>
+  <h1>Service Down Pages</h1>
+  <p class="lede">Seven treatments for what a PWA sees when the scenario service is not answering — built against what actually fails in this stack, not a generic 500 page.</p>
+  <div class="meta"><span>3 September 2026</span><span>Status: F and G built — 3 September 2026 (D64)</span><span>Behaviour verified against dashboardFrontend.py</span><span>Audience: internal, professional, in a hurry</span></div>
+
+  <h2>What actually fails, and what the user sees today</h2>
+  <p>Three distinct outages, and only one of them is a page you can design:</p>
+  <div class="tbl-wrap"><table class="doc">
+    <tr><th style="width:210px">What is down</th><th>What happens now</th><th>Can a page help?</th></tr>
+    <tr><td><b>The scenario service</b><br><small>FastAPI, port 8002</small></td>
+        <td>The Flask frontend still serves the page. Every <code>/api</code> call returns <b>502</b> with <code>{"error": "The scenario service is not reachable. Start it and try again."}</code>. The page shows a bare panel: <em>“The Proposal Tool could not load”</em> with a Retry button.</td>
+        <td><b>Yes — this is the one.</b> Everything below is a treatment of this state.</td></tr>
+    <tr><td><b>The service is slow</b><br><small>past the 300s proxy timeout</small></td>
+        <td><b>504</b>, same panel, same wording. A five-minute wait then a generic failure.</td>
+        <td>Yes, and it deserves different words from “not running”.</td></tr>
+    <tr><td><b>The frontend itself</b><br><small>Flask, port 8001</small></td>
+        <td>Nothing serves. The browser shows its own connection error.</td>
+        <td>Only from a load balancer or reverse proxy in front of it — a static file the host serves, not something this app can render. Option E is written to be exactly that file.</td></tr>
+  </table></div>
+  <p>So today's answer is a single grey panel that says the same thing whichever of the first two happened, offers one button, and tells the user nothing about whether their work survived.</p>
+
+  <h2>What a good one has to do</h2>
+  <div class="grid3">
+    <div class="card"><h4>Say whose fault it is</h4><p>The first question a professional asks is “is it me?”. The page must answer that in its first line, so nobody wastes two minutes clearing cookies.</p></div>
+    <div class="card"><h4>Say whether the work is safe</h4><p>Scenarios live server-side for 24 hours, keyed by an id in the URL. Nothing typed is lost when the service drops — but only this page can say so, and it is the thing the user most wants to know.</p></div>
+    <div class="card"><h4>Recover without being asked</h4><p><code>/health</code> is cheap and public. A page that polls it and comes back by itself turns an outage into a pause. A Retry button that must be clicked turns it into a chore.</p></div>
+    <div class="card"><h4>Give something to report</h4><p>Internal users escalate. A timestamp, the failing endpoint, the status code and a copy button save a round of “what did it say exactly?”.</p></div>
+    <div class="card"><h4>Distinguish down from degraded</h4><p>The tool can serve every portfolio from the bake with no database at all. A partial outage should not present as a total one — that is Option F.</p></div>
+    <div class="card"><h4>Stay in the tool's own voice</h4><p>Same masthead, same type, same restraint. An error page in a different visual language reads as a different system, which is its own small alarm.</p></div>
+  </div>
+
+  <h2>Seven options</h2>
+
+  <!-- A -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option A</p><h3>The notice</h3>
+        <p>The current panel, written properly. Masthead kept, one status pill, one sentence of cause, one of consequence, a Retry and a way back. No diagnostics, no polling.</p></div>
+      <div><p class="lbl">Optimises for</p><ul><li>The smallest possible change — this is a rewrite of one existing block.</li><li>Calm. Nothing moves, nothing counts down.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul><li>The user must act to find out whether it is back.</li><li>Nothing to report with.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="hdr" style="position:relative"><span class="chip">fbarker</span>
+        <p class="kicker">Goldman Sachs · Private Wealth Management</p>
+        <p class="brand">Portfolio Management Group <span>Proposal Tool</span></p>
+        <div class="rule"><i style="background:#4E7FD4"></i><i style="background:#D9713C"></i><i style="background:#4CAE83"></i><i style="background:#E2A93A"></i><i style="background:#DE8CA6"></i><i style="background:#3B3F8F"></i><i style="background:#C9453C"></i></div>
+      </div>
+      <div class="body center">
+        <span class="st bad"><span class="dot"></span>Service unavailable</span>
+        <h2 class="h2">The Proposal Tool is not able to reach its scenario service</h2>
+        <p class="sub">This is not a problem with your machine or your access. The service that builds portfolios is not responding, so nothing can be resolved, priced or exported until it is back.</p>
+        <div class="btnrow"><span class="btn pri">Try again</span><span class="btn">Open the dashboard</span></div>
+        <p class="small">Checked at 09:14:22 · 3 September 2026</p>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumption.</b> “Open the dashboard” goes to the host's own index, which is served by the same Flask process and will still be up in this scenario.</div>
+  </div>
+
+  <!-- B -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option B</p><h3>The diagnostic</h3>
+        <p>Everything in A, plus a details block carrying the endpoint, the status, the reason the proxy gave, the time and a reference — with a copy button, so an escalation is a paste rather than a description.</p></div>
+      <div><p class="lbl">Optimises for</p><ul><li>Escalation. The first reply to any internal outage report is “what exactly did it say?”, and this answers it.</li><li>Trust: showing the real error reads as candour, not noise, to this audience.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul><li>Raw text on a client-facing surface — fine internally, wrong if a client ever sees the screen.</li><li>Still needs a human to click.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="hdr" style="position:relative"><span class="chip">fbarker</span>
+        <p class="kicker">Goldman Sachs · Private Wealth Management</p>
+        <p class="brand">Portfolio Management Group <span>Proposal Tool</span></p>
+        <div class="rule"><i style="background:#4E7FD4"></i><i style="background:#D9713C"></i><i style="background:#4CAE83"></i><i style="background:#E2A93A"></i><i style="background:#DE8CA6"></i><i style="background:#3B3F8F"></i><i style="background:#C9453C"></i></div>
+      </div>
+      <div class="body">
+        <span class="st bad"><span class="dot"></span>Service unavailable · 502</span>
+        <h2 class="h2">The scenario service is not responding</h2>
+        <p class="sub">The page loaded, so your access and your network are fine. The service behind it is not answering, and every portfolio, price and export depends on it.</p>
+        <div class="det">
+          <div class="dh">For an incident report<span class="cp">Copy ⧉</span></div>
+          <dl>
+            <dt>Endpoint</dt><dd>GET /api/scenario/schema</dd>
+            <dt>Status</dt><dd>502 Bad Gateway</dd>
+            <dt>Reason</dt><dd>The scenario service is not reachable.</dd>
+            <dt>Time</dt><dd>2026-09-03T09:14:22+01:00</dd>
+            <dt>Reference</dt><dd>pt-4f9c21ab</dd>
+          </dl>
+        </div>
+        <div class="btnrow"><span class="btn pri">Try again</span><span class="btn">Report to PMG Engineering</span></div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumptions.</b> The <em>Reference</em> is generated client-side per failure — nothing correlates it to a server log today, so it identifies the report, not the request; making it a real correlation id means the proxy returning one. “Report to…” is a <code>mailto:</code> with the block pre-filled, unless there is a ticketing endpoint to point at.</div>
+  </div>
+
+  <!-- C -->
+  <div class="option rec">
+    <div class="option-h">
+      <div><p class="lbl">Option C <span class="pill p-ok">recommended</span></p><h3>The self-healing wait</h3>
+        <p>The page polls <code>/health</code> on a backing-off interval, shows what it is doing and when it will next try, and reloads itself the moment the service answers — landing the user back on the scenario they had open. The details block from B sits behind a disclosure for when someone needs it.</p></div>
+      <div><p class="lbl">Optimises for</p><ul>
+        <li>The common case, which is a restart or a deploy lasting a minute or two: the user reads a sentence, and the tool comes back on its own.</li>
+        <li>Answering “is it back yet?” without anyone clicking.</li>
+        <li>Saying the one thing that matters most — the work is safe — where it is impossible to miss.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul>
+        <li>Polling from every open tab. Needs a backoff and a ceiling, or an outage becomes a small load test.</li>
+        <li>Motion on an error page has to be restrained, and must respect <code>prefers-reduced-motion</code>.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="hdr" style="position:relative"><span class="chip">fbarker</span>
+        <p class="kicker">Goldman Sachs · Private Wealth Management</p>
+        <p class="brand">Portfolio Management Group <span>Proposal Tool</span></p>
+        <div class="rule"><i style="background:#4E7FD4"></i><i style="background:#D9713C"></i><i style="background:#4CAE83"></i><i style="background:#E2A93A"></i><i style="background:#DE8CA6"></i><i style="background:#3B3F8F"></i><i style="background:#C9453C"></i></div>
+      </div>
+      <div class="body">
+        <span class="st warn"><span class="dot"></span>Waiting for the service</span>
+        <h2 class="h2">The scenario service is not answering yet</h2>
+        <p class="sub">Nothing is wrong with your machine or your access. This page is watching for the service and will pick up where you left off as soon as it answers.</p>
+        <div class="cd"><span class="ring"></span><span class="t"><b>Next check in 8s</b><small>Attempt 4 · watching since 09:14:22</small></span></div>
+        <div class="safe"><span style="color:#176A33;font-size:15px">✓</span><span><b>Your proposal is safe.</b><small>USD Moderate Full, three columns, saved server-side. It is kept for 24 hours and will be exactly as you left it.</small></span></div>
+        <div class="btnrow"><span class="btn pri">Check now</span><span class="btn ghost">Show technical detail ▾</span></div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumptions, and one confirmed defect.</b> <code>/health</code> on the frontend is public and cheap to poll &mdash; but it is <code>return jsonify({'status': 'ok'})</code> and <b>never touches the backend</b>, so it answers “ok” throughout an outage. Polling it as it stands would never recover. This option needs either a health route that proxies the backend's own, or a poll against a real endpoint such as <code>/api/scenario/schema</code>. The named proposal comes from the scenario id already in the URL, cached in <code>localStorage</code> at the last successful render — without that cache the strip says “Any proposal you had open is saved server-side” instead. Suggested backoff: 3s, 5s, 8s, 13s, 21s, then every 30s to a ceiling of 15 minutes, then stop and offer the button.</div>
+  </div>
+
+  <!-- D -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option D</p><h3>The status board</h3>
+        <p>A component list with a state each: the page, the scenario service, the analytics library, the delivered data. Tells the user which part is down and therefore what still works.</p></div>
+      <div><p class="lbl">Optimises for</p><ul><li>Partial outages, which are the common real ones: the bake is fine but the database is not, or the analytics library will not import.</li><li>Being the page that also serves engineering during an incident.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul><li>Every light needs something to read it from. Today only two of these four can be known from the browser; the rest need a health endpoint that reports components.</li><li>A board of red lights is more alarming than one sentence, and usually less useful to a PWA.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="hdr" style="position:relative"><span class="chip">fbarker</span>
+        <p class="kicker">Goldman Sachs · Private Wealth Management</p>
+        <p class="brand">Portfolio Management Group <span>Proposal Tool</span></p>
+        <div class="rule"><i style="background:#4E7FD4"></i><i style="background:#D9713C"></i><i style="background:#4CAE83"></i><i style="background:#E2A93A"></i><i style="background:#DE8CA6"></i><i style="background:#3B3F8F"></i><i style="background:#C9453C"></i></div>
+      </div>
+      <div class="body">
+        <span class="st bad"><span class="dot"></span>One component down</span>
+        <h2 class="h2">The Proposal Tool is partly unavailable</h2>
+        <p class="sub">The page and its data are fine. The service that resolves portfolios is not answering, so nothing can be built or exported until it returns.</p>
+        <div class="comps">
+          <div class="r"><span class="led up"></span><span><b>This page</b><small>Served, and your session is valid</small></span><span class="s"><span class="st ok" style="padding:1px 8px">Up</span></span></div>
+          <div class="r"><span class="led down"></span><span><b>Scenario service</b><small>Resolves portfolios, prices fees, builds the workbook</small></span><span class="s"><span class="st bad" style="padding:1px 8px">Not responding</span></span></div>
+          <div class="r"><span class="led na"></span><span><b>Analytics library</b><small>Only used for live resolves</small></span><span class="s"><span class="st" style="padding:1px 8px;background:#EEF1F4;color:#5B6B7C">Unknown</span></span></div>
+          <div class="r"><span class="led up"></span><span><b>Delivered data</b><small>Portfolios, products, sleeves, rate card</small></span><span class="s"><span class="st ok" style="padding:1px 8px">Up</span></span></div>
+        </div>
+        <div class="btnrow"><span class="btn pri">Check again</span><span class="small" style="margin-left:2px">Last checked 09:14:22 · rechecking every 30s</span></div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumption, and it is a large one.</b> Only <em>This page</em> and <em>Scenario service</em> are knowable today. The other two would need <code>/health</code> to return a component map — which is worth having anyway, but this option is not buildable honestly without it. Showing a light that is always green because nothing checks it is worse than showing no light.</div>
+  </div>
+
+  <!-- E -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option E</p><h3>The planned window</h3>
+        <p>A different page for a different event: maintenance that somebody scheduled. Named window, live countdown to the return, and what to do meanwhile. Served as a static file by whatever sits in front, so it works even when nothing else is running.</p></div>
+      <div><p class="lbl">Optimises for</p><ul><li>Deploys and data refreshes, where the end time is known — which converts an outage from alarming to merely inconvenient.</li><li>The only option that also covers the frontend itself being down.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul><li>Needs somewhere to put it and something to switch it on: a proxy rule, or a flag file the frontend checks.</li><li>Wrong and slightly insulting for an unplanned outage — it must never be the default.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock">
+      <div class="hdr"><p class="kicker">Goldman Sachs · Private Wealth Management</p>
+        <p class="brand">Portfolio Management Group <span>Proposal Tool</span></p>
+        <div class="rule"><i style="background:#4E7FD4"></i><i style="background:#D9713C"></i><i style="background:#4CAE83"></i><i style="background:#E2A93A"></i><i style="background:#DE8CA6"></i><i style="background:#3B3F8F"></i><i style="background:#C9453C"></i></div>
+      </div>
+      <div class="body">
+        <span class="st warn"><span class="dot"></span>Planned maintenance</span>
+        <h2 class="h2">The Proposal Tool is unavailable until 07:00</h2>
+        <p class="sub">A scheduled data refresh is running: the strategic portfolio set and the rate card are being re-baked. Proposals already saved are untouched and will open normally afterwards.</p>
+        <div class="win">
+          <div><small>Started</small><b>05:30</b></div>
+          <div><small>Expected back</small><b>07:00</b></div>
+          <div><small>Remaining</small><b>1h 46m</b></div>
+        </div>
+        <p class="small">This page refreshes itself when the window closes. Nothing needs to be done.</p>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumptions.</b> Times are the user's local clock, with the window's own timezone stated on hover — a London-scheduled window seen from Zurich is a real trap. No user chip and no “try again”: during a planned window there is nothing for the user to do, and a button that cannot help is worse than none.</div>
+  </div>
+
+  <!-- F -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option F <span class="pill p-ok">recommended alongside C</span></p><h3>The degraded banner — not a page at all</h3>
+        <p>For the outage this tool is uniquely able to survive. Every portfolio can be served from the bake with no database; what fails is live resolution, export and saving. So the tool opens, in read-only, with a bar saying exactly what is not available.</p></div>
+      <div><p class="lbl">Optimises for</p><ul>
+        <li>Getting work done during an outage instead of waiting it out — a PWA can still show a client a proposal.</li>
+        <li>Honesty at the point of use: the disabled control explains itself where it is, not on a page the user has left.</li></ul></div>
+      <div><p class="lbl">Costs</p><ul>
+        <li>The most work of any option here: every write path needs a disabled state and a reason.</li>
+        <li>Read-only that is not obviously read-only is dangerous — a PWA must never believe a change was saved.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock" style="min-height:400px">
+      <div class="banner"><span class="st warn" style="padding:2px 9px"><span class="dot"></span>Read only</span>
+        <span><b>Saving and export are unavailable</b> — the scenario service is not responding. Portfolios below are served from the last bake and are safe to show.</span>
+        <span class="sp"></span><span class="small" style="color:#92600A">Retrying · 12s</span><span class="x">×</span></div>
+      <div style="display:flex;flex:1">
+        <div class="mini-rail"><b>Portfolio Management Group</b><span class="s">Proposal Tool</span>
+          <p class="grp">Scenario basis</p><div class="fld">USD · Hedged</div>
+          <p class="grp">Base portfolio</p><div class="fld">Moderate · Full</div>
+          <p class="grp">Sleeves</p><div class="fld off">Select a sleeve… <span style="float:right">🔒</span></div>
+          <div class="fld off" style="margin-top:5px">Select a sleeve… <span style="float:right">🔒</span></div>
+        </div>
+        <div class="mini-tbl">
+          <table>
+            <tr><th>Asset class</th><th style="text-align:right">Proposed</th><th style="text-align:right">Alt. 1</th></tr>
+            <tr><td>Investment Grade Fixed Income</td><td class="n">24.1%</td><td class="n">31.4%</td></tr>
+            <tr><td>Other Fixed Income</td><td class="n">9.0%</td><td class="n">11.1%</td></tr>
+            <tr><td>Public Equity</td><td class="n">38.0%</td><td class="n">46.9%</td></tr>
+            <tr><td>Hedge Funds</td><td class="n">10.0%</td><td class="n">—</td></tr>
+            <tr><td>Private Equity</td><td class="n">5.0%</td><td class="n">—</td></tr>
+            <tr><td><b>Total</b></td><td class="n"><b>100.0%</b></td><td class="n"><b>100.0%</b></td></tr>
+          </table>
+          <p class="small" style="margin-top:10px">Baked 2 Sept 2026 · 688 portfolios · analytics run in USD</p>
+        </div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Assumptions.</b> This only works where the frontend can read the bake without the scenario service — today it cannot: the bake is behind the same API. Making it real means either serving baked payloads from the Flask process or giving the page a cache of what it has already loaded. The second is much cheaper and covers the common case (the service dies while a proposal is open) but not a cold landing.</div>
+  </div>
+
+  <!-- G -->
+  <div class="option">
+    <div class="option-h">
+      <div><p class="lbl">Option G <span class="pill p-bad">shown to be rejected</span></p><h3>The friendly apology</h3>
+        <p>Big illustration, an apology, a light joke. The default of most public products, included here so the contrast is explicit rather than assumed.</p></div>
+      <div><p class="lbl">Argues for itself</p><ul><li>Warm, and unmistakably an error rather than a broken render.</li></ul></div>
+      <div><p class="lbl">Why not here</p><ul>
+        <li>It answers none of the six questions above: not whose fault, not whether the work is safe, not when it is back, not what to report.</li>
+        <li>An apology to an internal colleague who has a client waiting reads as a stall.</li>
+        <li>The illustration occupies the space the status would.</li></ul></div>
+    </div>
+    <div class="mock-wrap"><div class="mock" style="min-height:340px">
+      <div class="body warmshot">
+        <div class="art">☕</div>
+        <h2>Oops — something went wrong!</h2>
+        <p>We're sorry for the inconvenience. Our team has been notified and is working hard to fix it. Please try again in a little while.</p>
+        <div class="btnrow" style="justify-content:center"><span class="btn pri">Refresh the page</span></div>
+      </div>
+    </div></div>
+    <div class="assump"><b>Included deliberately.</b> If the reaction to this one is “that's fine, actually”, that is a real signal about who you expect to see this screen — and it would change the recommendation.</div>
+  </div>
+
+  <h2>Where the options differ</h2>
+  <div class="tbl-wrap"><table class="doc">
+    <tr><th>Question the user has</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th></tr>
+    <tr><td>Is it me?</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Is my work safe?</td><td>—</td><td>—</td><td><b>Yes, prominently</b></td><td>Implied</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>When is it back?</td><td>—</td><td>—</td><td>It tells you by coming back</td><td>Rechecks</td><td><b>Exact time</b></td><td>Retrying inline</td></tr>
+    <tr><td>What can I still do?</td><td>Nothing</td><td>Nothing</td><td>Nothing</td><td>Says which parts work</td><td>Nothing</td><td><b>Read and show</b></td></tr>
+    <tr><td>What do I report?</td><td>—</td><td><b>Copyable block</b></td><td>Behind a disclosure</td><td>Component states</td><td>—</td><td>—</td></tr>
+    <tr><td>Build cost</td><td>XS</td><td>S</td><td>S</td><td>M + a health endpoint</td><td>S + a proxy rule</td><td>L</td></tr>
+  </table></div>
+
+  <h3>Recommendation</h3>
+  <p><b>Option C, with B's detail behind its disclosure, and Option E as a separate static file for planned windows.</b> C answers the two questions that actually matter to someone with a client on the phone — <em>is my work safe</em> and <em>is it back</em> — and answers the second by simply coming back. B's diagnostics are worth having but not worth leading with; a disclosure costs nothing and keeps the page calm. E is a different event and deserves a different page, and it is the only one that survives the frontend itself being down.</p>
+  <p><b>F is the ambitious one and I would keep it on the list rather than in this piece of work.</b> Serving a proposal read-only from the bake during an outage is a genuinely valuable thing for this tool specifically — but it is a change to how the page gets its data, not an error page, and it should be scoped on its own.</p>
+  <p><b>D I would not build as drawn</b>, because three of its four lights have nothing to read from. The component health endpoint behind it is worth building; the board can follow it.</p>
+
+  <h2>What I would need before building one</h2>
+  <div class="q">
+    <div class="item"><span class="num">1</span><div><b>Does <code>/health</code> on the frontend reflect the backend?</b><p><b>It does not — I checked.</b> <code>dashboardFrontend.health()</code> is an unconditional <code>{'status': 'ok'}</code>, so it reports Flask and nothing else. Option C therefore needs one of: a frontend health route that proxies the backend's, a new backend-aware probe, or polling a real API endpoint and treating 502/504 as “still down”. The last needs no server change and is what I would do first, but it costs an authenticated round trip per poll. This is the single most important dependency in this document.</p></div></div>
+    <div class="item"><span class="num">2</span><div><b>Who does a PWA contact, and how?</b><p>A mailbox, a channel, a ticket queue? Options B and D both want a real destination; “Report to PMG Engineering” is a placeholder I invented.</p></div></div>
+    <div class="item"><span class="num">3</span><div><b>Is a raw error string acceptable on this screen?</b><p>Internal-only says yes. If a PWA might have this on screen in front of a client, B's block goes behind the disclosure permanently and the reference becomes the only visible artefact.</p></div></div>
+    <div class="item"><span class="num">4</span><div><b>How are planned windows announced today?</b><p>Option E needs a switch — a proxy rule, a flag file, or a config value with start and end times — and someone whose job it is to set it.</p></div></div>
+    <div class="item"><span class="num">5</span><div><b>Is the 300s proxy timeout right?</b><p>Five minutes of a spinner before a 504 is a long time to learn nothing. If the intent is that a slow resolve can legitimately take that long, the page should say so while it waits rather than appearing hung — which is a different design job worth doing at the same time.</p></div></div>
+    <div class="item"><span class="num">6</span><div><b>Should the page name the proposal?</b><p>C's reassurance is much stronger when it says <em>USD Moderate Full, three columns</em> rather than “your work”. That needs the last render cached client-side. Confirm that caching a scenario's name and shape in <code>localStorage</code> is acceptable.</p></div></div>
+  </div>
+</div>

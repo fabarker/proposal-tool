@@ -204,7 +204,7 @@ The interface moved on from the specification in a number of places while it was
 — the topbar is gone, the base column is headed "Proposed Portfolio", the risk dashboard's
 premia are banded by measure, and the tables size their own columns.
 **`spec.html` revision 6 describes what is there now**, and its §1.5 maps every changed
-section to the entry in **`service/DEVIATIONS.md`** (D20–D63) that explains it. Thirteen matter
+section to the entry in **`service/DEVIATIONS.md`** (D20–D64) that explains it. Fourteen matter
 for a port:
 
 - **D29/D49**, implementation types — one of four product universes, chosen in the base
@@ -242,6 +242,11 @@ for a port:
   stored under; the rail, the scenario store, the export gate, the workbook and the
   repository all key by it, and the page reads the grouping from the schema. Adding or
   removing a group is one entry in that list.
+- **D64**, surviving the service &mdash; `apiFetch` marks the service down on 502/504 or a
+  failed fetch, `canEdit`/`canExport` gate on it, and the page either stays up read-only
+  from a `localStorage` snapshot or shows the outage page. The retry re-requests the
+  schema because the frontend's `/health` never touches the backend. A host with its own
+  health contract should point the retry at that instead.
 - **D56**, the product catalogue — products are a delivered one-table extract
   (`SCENARIO_PRODUCTS_SOURCE`, one row per product, `ProductId` the key) read by
   `products.py` and joined into sleeves when they are served. Read only; a bad extract is
@@ -314,6 +319,6 @@ Things a porter will meet that are not defects in the port itself:
 |---|---|
 | `service/README.md` | running it, the wire contract, the three adapters, baking |
 | `service/TRANSPLANT.md` | the porting list, file by file |
-| `service/DEVIATIONS.md` | every departure from the package, D1–D63, the adapter-side decisions, and the spec gaps found (G1–G8) |
+| `service/DEVIATIONS.md` | every departure from the package, D1–D64, the adapter-side decisions, and the spec gaps found (G1–G8) |
 | `service/PERFORMANCE.md` | the analytics profile, its causes, and the measurements |
 | `spec.html` | revision 6 — what the tool does, §1.5 mapping the changes |

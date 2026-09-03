@@ -1,0 +1,505 @@
+<meta charset="utf-8">
+<title>Data Operating Model</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --code-bg:#F1F4F8; --code-ink:#1C2733; --code-line:#DDE3EA;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+    --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+  --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:58px 0 6px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h2 .n{font-family:var(--f-num);color:var(--accent);margin-right:10px}
+h3{font-size:17px;font-weight:700;margin:28px 0 6px}
+h4{font-size:14px;font-weight:700;margin:0 0 4px}
+p{margin:0 0 12px;max-width:78ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:74ch}
+.sub{color:var(--ink-2);margin:0 0 14px;max-width:78ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:16px 0 0}
+.meta b{color:var(--ink-2);font-weight:700}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--surface-2);padding:1px 5px;border-radius:3px;white-space:nowrap}
+pre{font-family:var(--f-mono);font-size:12.5px;line-height:1.6;background:var(--code-bg);color:var(--code-ink);border:1px solid var(--code-line);border-radius:6px;padding:12px 14px;margin:10px 0 14px;overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit;white-space:pre}
+pre .c{color:var(--ink-3)}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:78ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:13.5px;margin:0;background:var(--surface)}
+table.doc th,table.doc td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc thead th{font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-strong);background:var(--surface-2)}
+table.doc tbody tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:500}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:7px;margin:12px 0 16px}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.04em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:13px 17px;margin:18px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)} .callout.bad{border-color:var(--bad)} .callout.ok{border-color:var(--ok)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media (max-width:980px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:15px 17px}
+.card p,.card li{font-size:13.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card .hd{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 7px}
+
+/* class cards */
+.cls{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+.cls .top{padding:12px 16px 11px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:baseline}
+.cls .letter{font-family:var(--f-num);font-size:24px;font-weight:700;color:var(--accent);line-height:1}
+.cls .top h4{font-size:15px;margin:0}
+.cls .body{padding:12px 16px 14px}
+.cls .body p{font-size:13.5px;margin:0 0 9px}
+.cls .body p:last-child{margin:0}
+.cls .body .lbl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:16px 0 6px}
+@media (max-width:1000px){.pipe{grid-template-columns:repeat(2,1fr)}}
+.stage{background:var(--surface);border:1px solid var(--line-strong);border-top:3px solid var(--accent);border-radius:6px;padding:12px 13px}
+.stage .s{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 4px}
+.stage h4{font-size:14px;margin:0 0 5px}
+.stage p{font-size:12.5px;margin:0;color:var(--ink-2)}
+.stage.gate{border-top-color:var(--warn)}
+.stage.rb{border-top-color:var(--bad)}
+
+/* dependency chain */
+.dep{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:18px 20px;margin:14px 0}
+.dep-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;font-family:var(--f-num);font-size:13px}
+.dep-row:last-child{margin:0}
+.node{background:var(--surface-2);border:1px solid var(--line-strong);border-radius:5px;padding:5px 11px;font-weight:700;color:var(--ink);white-space:nowrap}
+.node.src{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+.node.store{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.node.out{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.arw{color:var(--accent);font-weight:700;font-size:15px}
+.dep-note{font-size:12.5px;color:var(--ink-3);font-family:var(--f-body);margin-left:2px}
+
+/* runbook */
+.rb-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:30px 0 2px;padding-top:16px;border-top:1px solid var(--line)}
+.rb-h h3{margin:0}
+ol.steps{counter-reset:s;list-style:none;padding-left:0;margin:10px 0 0;max-width:none}
+ol.steps > li{counter-increment:s;position:relative;padding:0 0 4px 34px;margin:0 0 14px}
+ol.steps > li::before{content:counter(s);position:absolute;left:0;top:1px;width:23px;height:23px;border-radius:50%;
+  background:var(--accent-soft);color:var(--accent-ink);font-family:var(--f-num);font-weight:700;font-size:12.5px;
+  display:flex;align-items:center;justify-content:center}
+ol.steps > li > b{display:block;margin-bottom:4px}
+ol.steps > li p{margin:0 0 6px;font-size:14px}
+ol.steps > li p:last-child{margin:0}
+.rhythm{display:grid;grid-template-columns:130px 1fr;gap:0 16px;font-size:14px}
+@media (max-width:700px){.rhythm{grid-template-columns:1fr}}
+.rhythm dt{font-family:var(--f-num);font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:11px 0 0;border-top:1px solid var(--line)}
+.rhythm dd{margin:0;padding:10px 0 12px;border-top:1px solid var(--line)}
+@media (max-width:700px){.rhythm dd{border-top:0;padding-top:0}}
+.rhythm dt:first-of-type,.rhythm dt:first-of-type + dd{border-top:0}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-strong);font-size:13px;color:var(--ink-3)}
+.tocs{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:14px 18px;margin:26px 0 0}
+.tocs ol{columns:2;column-gap:34px;margin:0;padding-left:20px;font-size:13.5px}
+@media (max-width:760px){.tocs ol{columns:1}}
+.tocs a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line-strong)}
+.tocs a:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+<div class="page">
+
+<p class="eyebrow">Proposal Tool · data operating model</p>
+<h1>Managing the data that feeds the service</h1>
+<p class="lede">A working framework for the datasets the Proposal Tool consumes: who owns each one, how a change gets in, what has to pass before it is trusted, and how to get back if it is wrong. Built on the tooling that already exists in the repository, with the missing pieces named rather than assumed.</p>
+<div class="meta">
+  <span><b>Companion to</b> dataSources.html (the provenance review)</span>
+  <span><b>Audience</b> whoever owns the running service</span>
+  <span><b>Status</b> proposed framework, for adoption</span>
+</div>
+
+<div class="tocs">
+<ol>
+  <li><a href="#p1">The four questions every dataset must answer</a></li>
+  <li><a href="#p2">Classification — what decides the process</a></li>
+  <li><a href="#p3">The pipeline: one road in</a></li>
+  <li><a href="#p4">The ownership map</a></li>
+  <li><a href="#p5">Dependencies and order of operations</a></li>
+  <li><a href="#p6">Runbooks</a></li>
+  <li><a href="#p7">The verification checklist</a></li>
+  <li><a href="#p8">Rollback and incidents</a></li>
+  <li><a href="#p9">Operating rhythm</a></li>
+  <li><a href="#p10">Control gaps, prioritised</a></li>
+  <li><a href="#p11">What you need to decide</a></li>
+</ol>
+</div>
+
+<h2 id="p1"><span class="n">1</span>The four questions every dataset must answer</h2>
+<p class="sub">The framework is small on purpose. A dataset is under control when all four have a named answer; anything without one is where the next incident comes from.</p>
+<div class="grid4">
+  <div class="card"><p class="hd">Question one</p><h4>Who owns it?</h4><p>A named team that can be asked "is this right?" and answer. Not the team that stores it — the team accountable for its content.</p></div>
+  <div class="card"><p class="hd">Question two</p><h4>How often does it change?</h4><p>A cadence, or an explicit "on delivery, unpredictably". This decides whether you poll, subscribe, or wait to be told.</p></div>
+  <div class="card"><p class="hd">Question three</p><h4>What must pass before it counts?</h4><p>A gate that can fail. If a bad version of this dataset cannot be automatically rejected, it is not controlled — it is merely watched.</p></div>
+  <div class="card"><p class="hd">Question four</p><h4>How do you undo it?</h4><p>A rollback that has been performed at least once, not one that is theoretically available.</p></div>
+</div>
+<div class="callout">
+  <h4>The organising fact</h4>
+  <p>The Proposal Tool <b>owns almost none of its data</b>. It owns the sleeve library and the scenarios users create. Everything else is somebody else's data, borrowed — which means the operating model is mostly about <b>receiving</b> well, not about editing well.</p>
+</div>
+
+<h2 id="p2"><span class="n">2</span>Classification — what decides the process</h2>
+<p class="sub">Two questions sort every dataset into one of four classes, and the class determines everything that follows: the gate, the release path, the blast radius and the rollback.</p>
+<div class="grid2" style="margin-bottom:16px">
+  <div class="card"><p class="hd">Axis one</p><h4>Who changes it?</h4><p>An outside team delivering a file · an admin working inside the app · a developer editing code.</p></div>
+  <div class="card"><p class="hd">Axis two</p><h4>Does it invalidate the bake?</h4><p>688 precomputed payloads sit between the source data and the screen. Some changes make them wrong; most do not. This is the single biggest operational distinction in the system.</p></div>
+</div>
+
+<div class="grid4">
+  <div class="cls">
+    <div class="top"><span class="letter">A</span><h4>Rebake-triggering</h4></div>
+    <div class="body">
+      <p class="lbl">Datasets</p>
+      <p>SAA extract · analytics library version · hedge ratios · context window</p>
+      <p class="lbl">Blast radius</p>
+      <p>Every number on every screen. A change here silently invalidates all 688 baked payloads.</p>
+      <p class="lbl">Release path</p>
+      <p>Census → bake to a new directory → verify → swap. Never in place.</p>
+    </div>
+  </div>
+  <div class="cls">
+    <div class="top"><span class="letter">B</span><h4>Delivered, live-read</h4></div>
+    <div class="body">
+      <p class="lbl">Datasets</p>
+      <p>Fee card · products · advisor directory</p>
+      <p class="lbl">Blast radius</p>
+      <p>Presentation and implementation, not analytics. No rebake needed.</p>
+      <p class="lbl">Release path</p>
+      <p>Diff against what is live → accept → restart → verify. Products alone reload on their own.</p>
+    </div>
+  </div>
+  <div class="cls">
+    <div class="top"><span class="letter">C</span><h4>Tool-owned, continuous</h4></div>
+    <div class="body">
+      <p class="lbl">Datasets</p>
+      <p>Sleeve library · scenario state</p>
+      <p class="lbl">Blast radius</p>
+      <p>What an adviser can select. Changes take effect immediately, with no release at all.</p>
+      <p class="lbl">Release path</p>
+      <p>None — admins edit in-app. Governed by <em>who</em> is an admin, and by a periodic census.</p>
+    </div>
+  </div>
+  <div class="cls">
+    <div class="top"><span class="letter">D</span><h4>Policy constants</h4></div>
+    <div class="body">
+      <p class="lbl">Datasets</p>
+      <p>Mandate floors · tilt % · volatility premium · risk labels · sleeve grouping</p>
+      <p class="lbl">Blast radius</p>
+      <p>What the tool will let a user do, and what it recommends. The highest-consequence, lowest-visibility data in the estate.</p>
+      <p class="lbl">Release path</p>
+      <p>Code change, tests, review, deploy. Needs sign-off, not a swap.</p>
+    </div>
+  </div>
+</div>
+
+<div class="callout warn">
+  <h4>The class-D problem</h4>
+  <p>Class D has <b>no owning system and no delivery</b>. A $5m mandate floor, an 8% tactical tilt and a 7.5% volatility premium are business decisions living as Python constants. They are the only datasets where "who approved this number, and when?" currently has no answer outside the git log. <b>Give class D a named approver and an annual review</b> — that is the single highest-value governance change available here.</p>
+</div>
+
+<h2 id="p3"><span class="n">3</span>The pipeline: one road in</h2>
+<p class="sub">Every delivered dataset (classes A and B) should travel the same six stages. The value is that each stage can fail, and failing early is cheap. The repository already implements this end to end for the fee card; the others implement part of it.</p>
+
+<div class="pipe">
+  <div class="stage"><p class="s">Stage 1</p><h4>Land</h4><p>The delivery arrives as a file, in a known place, untouched. Never edited by hand.</p></div>
+  <div class="stage gate"><p class="s">Stage 2 · gate</p><h4>Census</h4><p>What does this file contain? Counts, coverage, anything unparseable. Read-only.</p></div>
+  <div class="stage gate"><p class="s">Stage 3 · gate</p><h4>Diff</h4><p>What changed against what is live? Cell by cell. This is the stage that catches a bad delivery.</p></div>
+  <div class="stage"><p class="s">Stage 4</p><h4>Accept</h4><p>Copy into place and <b>stamp the provenance</b> — version, source, as-of. The only sanctioned way in.</p></div>
+  <div class="stage rb"><p class="s">Stage 5</p><h4>Rebuild</h4><p>Class A only: rebake into a <em>new</em> directory, then swap. Class B: restart.</p></div>
+  <div class="stage gate"><p class="s">Stage 6 · gate</p><h4>Verify</h4><p>Tests, censuses, and the provenance line on screen. Only now is the change real.</p></div>
+</div>
+
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:16%">Dataset</th><th style="width:12%">Land</th><th style="width:16%">Census</th><th style="width:16%">Diff</th><th style="width:16%">Accept</th><th style="width:12%">Rebuild</th><th>Verify</th></tr></thead>
+<tbody>
+<tr><td>Fee card</td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-ok">feeTools</span></td><td><span class="pill p-ok">feeTools</span></td><td><span class="pill p-ok">feeTools</span> stamps</td><td>restart</td><td><span class="pill p-ok">census</span></td></tr>
+<tr><td>SAA extract</td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-ok">bake --census</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-warn">file copy</span></td><td>rebake</td><td><span class="pill p-ok">manifest</span></td></tr>
+<tr><td>Products</td><td><span class="pill p-ok">yes</span></td><td><span class="pill p-warn">via sleeveTools</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-warn">file copy</span></td><td>auto-reload</td><td><span class="pill p-ok">census</span></td></tr>
+<tr><td>Sleeves</td><td colspan="2"><span class="pill p-acc">in-app, class C</span></td><td><span class="pill p-ok">sleeveTools</span></td><td><span class="pill p-ok">--import</span></td><td>immediate</td><td><span class="pill p-ok">census</span></td></tr>
+<tr><td>Advisors</td><td><span class="pill p-warn">no fixed path</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-bad">none</span></td><td><span class="pill p-bad">hand copy</span></td><td>restart</td><td><span class="pill p-bad">by eye</span></td></tr>
+<tr><td>Policy constants</td><td colspan="4"><span class="pill p-acc">code review — class D</span></td><td>deploy</td><td><span class="pill p-ok">193 tests</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout ok">
+  <h4>The fee card is the pattern to copy</h4>
+  <p><code>feeTools</code> does the whole road: <code>--census</code> says what a file holds, <code>--diff</code> reports <em>"these eleven cells moved"</em> before anything is touched, and <code>--accept</code> refuses a card the framework cannot price from — a gap, disagreeing tier edges, a crossed band — so a bad delivery fails at the desk rather than at the next service start. <b>Every other delivered dataset should be brought up to this standard.</b> The two missing are products and advisors.</p>
+</div>
+
+<h2 id="p4"><span class="n">4</span>The ownership map</h2>
+<p class="sub">The system of record and the operator are facts about the code. The <b>data owner</b> and <b>approver</b> columns are the ones you need to fill in with real names — they are currently unassigned, and that is the gap this table exists to close.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:15%">Dataset</th><th style="width:8%">Class</th><th style="width:19%">System of record</th><th style="width:15%">Data owner <span style="color:var(--warn)">(to assign)</span></th><th style="width:15%">Operator</th><th style="width:14%">Approves a change</th><th>Cadence</th></tr></thead>
+<tbody>
+<tr><td>Strategic portfolios &amp; weights</td><td><span class="pill p-bad">A</span></td><td>Downstream SAA database</td><td>SAA / portfolio construction</td><td>Service operator</td><td>Data owner + investment sign-off</td><td>Quarterly, or on rebalance</td></tr>
+<tr><td>Analytics library</td><td><span class="pill p-bad">A</span></td><td><code>epsilonPhi</code>, host-installed</td><td>Quant / analytics platform</td><td>Host platform team</td><td>Platform, with notice to you</td><td>On their release schedule</td></tr>
+<tr><td>Hedge ratios · context window</td><td><span class="pill p-bad">A</span></td><td><code>portfolio_weights.py</code></td><td>Investment / quant</td><td>Maintainer</td><td>Investment sign-off</td><td>Annual review</td></tr>
+<tr><td>Fee card</td><td><span class="pill p-warn">B</span></td><td>Delivered CSV from pricing</td><td>PMG pricing desk</td><td>Service operator</td><td>Pricing desk (versioned)</td><td>On delivery — expect a few a year</td></tr>
+<tr><td>Products</td><td><span class="pill p-warn">B</span></td><td>Product database</td><td>Product / due diligence</td><td>Service operator</td><td>Data owner</td><td>Monthly, plus ad-hoc additions</td></tr>
+<tr><td>Advisor directory</td><td><span class="pill p-warn">B</span></td><td>Primary PWA directory</td><td>PWA operations</td><td>Maintainer (code today)</td><td>Data owner</td><td>Continuous — joiners and movers</td></tr>
+<tr><td>Sleeve library</td><td><span class="pill p-acc">C</span></td><td><b>This tool's own database</b></td><td><b>PMG — you</b></td><td>PMG admins, in-app</td><td>Admin, self-service</td><td>Continuous</td></tr>
+<tr><td>Scenario state</td><td><span class="pill p-acc">C</span></td><td>This tool's store</td><td>n/a — user-created</td><td>Automatic, 24h expiry</td><td>n/a</td><td>Continuous</td></tr>
+<tr><td>Policy constants</td><td><span class="pill p-mute">D</span></td><td><code>scenario/rules.py</code></td><td><b>Unassigned — assign this</b></td><td>Maintainer</td><td>Business sign-off</td><td>Annual review</td></tr>
+<tr><td>Access lists</td><td><span class="pill p-mute">D</span></td><td>Environment variables</td><td>Service owner</td><td>Host platform team</td><td>Service owner</td><td>On joiners and leavers</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="p5"><span class="n">5</span>Dependencies and order of operations</h2>
+<p class="sub">Three datasets have hard dependencies on each other. Updating them out of order produces failures that look like unrelated bugs, so the order is not a preference.</p>
+
+<div class="dep">
+  <div class="dep-row">
+    <span class="node src">Fee card</span><span class="arw">→</span><span class="node src">Products</span><span class="arw">→</span><span class="node store">Sleeves</span>
+    <span class="dep-note">Every product's <code>FeeGroup</code> must be priced by the card, and every sleeve references products by <code>ProductId</code>.</span>
+  </div>
+  <div class="dep-row">
+    <span class="node src">SAA extract</span><span class="arw">→</span><span class="node">bake</span><span class="arw">→</span><span class="node store">baked store</span><span class="arw">→</span><span class="node out">every figure on screen</span>
+    <span class="dep-note">Plus the analytics library and the class-A constants, which feed the bake directly.</span>
+  </div>
+  <div class="dep-row">
+    <span class="node">Asset metadata</span><span class="arw">→</span><span class="node src">SAA extract</span>
+    <span class="dep-note">The 19 tickers are a closed set; an extract naming anything else is rejected at census.</span>
+  </div>
+</div>
+
+<h3>The three failure modes this prevents</h3>
+<ul>
+  <li><b>A new product with an unpriced fee group.</b> The catalogue reader refuses the whole file, so the product catalogue and sleeve repository both fail — not just the new product. <b>Update the fee card first.</b></li>
+  <li><b>A product dropped from the catalogue while sleeves still reference it.</b> Sleeves become broken and the failure surfaces to advisers, not to you. <b>Run <code>sleeveTools --census</code> immediately after any product update</b> — it reports exactly this as orphaned products.</li>
+  <li><b>A renamed portfolio in the SAA extract.</b> The name is the only key, and the vocabularies are closed, so the name is rejected rather than guessed. <b>Run <code>bake --census</code> before baking</b>; it lists every name that did not parse and exits without writing anything.</li>
+</ul>
+
+<h2 id="p6"><span class="n">6</span>Runbooks</h2>
+<p class="sub">The actual commands, from <code>proposal-tool/service</code> with <code>PYTHONPATH=.</code> set. These are the tools that exist today; where one does not exist, the runbook says so rather than pretending.</p>
+
+<div class="rb-h"><h3>A. New fee card delivered</h3><span class="pill p-warn">class B</span><span class="pill p-ok">fully tooled</span></div>
+<ol class="steps">
+  <li><b>Land it unedited</b><p>Put the delivered CSV somewhere outside the package. Do not open it in Excel and re-save — that is how a long CSV acquires a changed encoding or a lost leading zero.</p></li>
+  <li><b>Census, then diff</b>
+<pre><code>PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.feeTools --census
+PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.feeTools --diff /path/new.csv</code></pre>
+<p>The diff prints every moved cell with its before, after and delta, plus anything added or removed. <b>This is the review.</b> Send it to the pricing desk and get the changes confirmed before going further.</p></li>
+  <li><b>Take your own backup first</b>
+<pre><code><span class="c"># accept overwrites feeRates.csv in place and keeps no copy</span>
+cp cyrus_pmg/pmgService/scenario/feeRates.csv \
+   ~/fee-backups/feeRates.$(date +%Y%m%d).csv</code></pre>
+<p>See gap G4 — this step should not be manual, but until it is automated, it is the only rollback you have.</p></li>
+  <li><b>Accept with the real provenance</b>
+<pre><code>PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.feeTools \
+    --accept /path/new.csv --version 2026.3 \
+    --source "PMG pricing desk" --as-of 2026-09-01</code></pre>
+<p>Accept refuses a card the framework cannot price from, so a bad delivery fails here. On success it stamps <code>version</code>, <code>source</code> and <code>asOf</code> into <code>fees.json</code> and <b>clears the placeholder flag</b>.</p></li>
+  <li><b>Restart and verify</b><p>The delivery is read at import, so a restart is required. Then re-run <code>--census</code> and confirm the version and as-of date are the ones you accepted, and that the app no longer reports a placeholder card.</p></li>
+</ol>
+
+<div class="rb-h"><h3>B. New SAA extract</h3><span class="pill p-bad">class A</span><span class="pill p-warn">rebake required</span></div>
+<ol class="steps">
+  <li><b>Census the extract before trusting it</b>
+<pre><code>SCENARIO_SAA_SOURCE=/path/new.csv PYTHONPATH=. \
+  python3 -m cyrus_pmg.pmgService.scenario.bake --census</code></pre>
+<p>Enumerate only — it reports the source, the derived facets and <b>every name that did not parse</b>, then exits. Zero unparsed names and zero unknown tickers is the pass condition. Anything else is a conversation with the SAA team, not a fix on your side.</p></li>
+  <li><b>Bake into a new directory — never over the live one</b>
+<pre><code>SCENARIO_SAA_SOURCE=/path/new.csv PYTHONPATH=. \
+  python3 -m cyrus_pmg.pmgService.scenario.bake \
+    --all --workers 4 --out var/baked.new \
+    --analytics-currency USD</code></pre>
+<p>Roughly 688 payloads across 16 slices. The bake resumes by default, so an interruption is recoverable — but note that the authoritative manifest is written by the parent process <em>after</em> all workers finish. If a run is interrupted, <b>the slice files on disk are the truth and the manifest under-counts</b>; simply re-run to repair it.</p>
+<p>Drop <code>--analytics-currency</code> once the library carries native configs for GBP, CHF and EUR — see decision D2.</p></li>
+  <li><b>Verify the new store before it is live</b><p>Check the manifest: portfolios baked, currencies, the recorded source path and modification time, zero unparsed. Spot-check two or three portfolios against the previous store and satisfy yourself the movements are explicable.</p></li>
+  <li><b>Swap, keeping the old one</b>
+<pre><code>mv var/baked var/baked.bak && mv var/baked.new var/baked
+./stop_dashboard.sh && ./start_dashboard.sh</code></pre>
+<p>The previous store stays as <code>var/baked.bak</code>. That is the rollback, and it is a directory rename — seconds, not a rebuild.</p></li>
+  <li><b>Confirm on screen</b><p>The app reports its own provenance: adapter, data version, portfolios baked, currencies and the bake date. If that line does not show what you just built, the service is serving the old store.</p></li>
+</ol>
+
+<div class="rb-h"><h3>C. New product extract</h3><span class="pill p-warn">class B</span><span class="pill p-warn">partly tooled</span></div>
+<ol class="steps">
+  <li><b>Validate before swapping</b>
+<pre><code>SCENARIO_PRODUCTS_SOURCE=/path/new.csv PYTHONPATH=. \
+  python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --census</code></pre>
+<p>Pointing the census at the <em>candidate</em> catalogue is the closest thing to a dry run available today. It reads the new file through the validating reader and reports every sleeve that would break and every product the sleeves reference that the new catalogue no longer carries. <b>Do this before the file goes into place, not after.</b></p></li>
+  <li><b>Check the fee groups are priced</b><p>The reader rejects the entire catalogue if any row carries a fee group the fee card does not price. If the delivery introduces a new group, the fee card update has to land first (see runbook A).</p></li>
+  <li><b>Swap the file</b><p>Products are cached on path and modification time, so <b>the service picks up a changed file on its own</b> — no restart. This is convenient and it is also a risk: a product change can go live without anyone deciding it should. Treat the file itself as the control point.</p></li>
+  <li><b>Re-census and repair</b><p>Run <code>sleeveTools --census</code> again against the live store. Any orphaned products must be resolved by an admin editing the affected sleeves before an adviser meets them.</p></li>
+</ol>
+
+<div class="rb-h"><h3>D. Sleeve library</h3><span class="pill p-acc">class C</span><span class="pill p-ok">fully tooled</span></div>
+<ol class="steps">
+  <li><b>Day to day: in the app</b><p>Admins create, copy, remove and re-apply sleeves in the sleeve repository. There is no release and no operator involvement. The control is <em>who holds <code>PMG_ADMIN_KERBEROS</code></em>.</p></li>
+  <li><b>Health check on a schedule</b>
+<pre><code>PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --census</code></pre>
+<p>Reports what the store and catalogue hold, every broken sleeve and why, every orphaned product, and any fixed category not holding exactly one sleeve. <b>Run it weekly.</b></p></li>
+  <li><b>Promotion between environments, and backup</b>
+<pre><code><span class="c"># take a dated export — this is your sleeve backup</span>
+PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
+    --export ~/sleeve-backups/sleeves.$(date +%Y%m%d).csv
+
+<span class="c"># load into another environment through the same validation a save gets</span>
+PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
+    --import sleeves.20260903.csv --replace</code></pre>
+<p>Same-named sleeves are overwritten; <code>--replace</code> clears the store first; a single failing sleeve aborts the whole load. <b>The export is the only backup of a class-C dataset, so schedule it.</b></p></li>
+  <li><b>Retire the seed file</b><p><code>sleeveSource/sleeves.csv</code> is read once, when the database is empty, and it has already drifted from the live store. Either re-export over it after any significant change, or delete it and keep dated exports instead. Do not read it as documentation of what the tool holds.</p></li>
+</ol>
+
+<div class="rb-h"><h3>E. Advisor directory</h3><span class="pill p-warn">class B</span><span class="pill p-bad">not tooled</span></div>
+<ol class="steps">
+  <li><b>Today: replace the workbook and restart</b><p><code>advisors.xlsx</code> sits inside the package with no environment override and no census. Replace it, restart, and search for two or three known names to confirm.</p></li>
+  <li><b>Fix the shape first</b><p>This is the least controlled dataset in the estate — a hand copy into a package directory with no validation and no provenance. Gap G2 makes it match the others; do that before the directory becomes a live dependency.</p></li>
+</ol>
+
+<div class="rb-h"><h3>F. Policy constants</h3><span class="pill p-mute">class D</span></div>
+<ol class="steps">
+  <li><b>Treat the change as a data change, not a code change</b><p>Raising the mandate floor or moving the tactical tilt is a business decision that happens to be expressed in Python. Record who asked, who approved and why, in the commit message — that is the only audit trail these have.</p></li>
+  <li><b>Run the suite</b>
+<pre><code>cd proposal-tool/service &amp;&amp; PYTHONPATH=. python3 -m pytest tests -q
+<span class="c"># expected: 193 passed, 4 skipped</span></code></pre>
+<p>The suite covers the rules, the sleeve repository, the baked adapter and the Python/JavaScript mirror pairs. A green run is the gate.</p></li>
+  <li><b>Rebake if the constant is class A</b><p>Hedge ratios and the context window feed the analytics. Changing them without rebaking leaves the store describing a model that no longer exists.</p></li>
+</ol>
+
+<h2 id="p7"><span class="n">7</span>The verification checklist</h2>
+<p class="sub">Run after any data change, whatever the class. Six checks, about five minutes.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:22%">Check</th><th style="width:38%">How</th><th>Pass condition</th></tr></thead>
+<tbody>
+<tr><td>Test suite</td><td><code>PYTHONPATH=. python3 -m pytest tests -q</code></td><td>193 passed, 4 skipped</td></tr>
+<tr><td>Extract parses</td><td><code>bake --census</code></td><td>0 unparsed names, 0 unknown tickers</td></tr>
+<tr><td>Sleeves intact</td><td><code>sleeveTools --census</code></td><td>No broken sleeves, no orphaned products, each fixed category holding exactly one sleeve</td></tr>
+<tr><td>Fee card identity</td><td><code>feeTools --census</code></td><td>The version and as-of you accepted; placeholder cleared</td></tr>
+<tr><td>Store freshness</td><td>Manifest <code>source.modified</code> vs the extract on disk</td><td>Identical. If they differ, the service is serving stale analytics <span class="pill p-warn">manual today — see G1</span></td></tr>
+<tr><td>What the app says</td><td>The provenance line in the running UI</td><td>Adapter, data version, portfolios baked and bake date all match what you just built</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout">
+  <h4>Why the last check matters most</h4>
+  <p>Every other check inspects a file. This one inspects <b>what a user would actually see</b>. Most data incidents in a system like this are not corrupt data — they are correct data that never reached the running process, because a restart was missed or a directory was not swapped. The provenance line catches exactly that class of failure and nothing else does.</p>
+</div>
+
+<h2 id="p8"><span class="n">8</span>Rollback and incidents</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:16%">Dataset</th><th style="width:30%">Rollback</th><th style="width:14%">Time to restore</th><th>Precondition</th></tr></thead>
+<tbody>
+<tr><td>Baked analytics</td><td>Rename <code>var/baked.bak</code> back into place, restart</td><td><span class="pill p-ok">seconds</span></td><td>The previous store was kept — it is today</td></tr>
+<tr><td>Fee card</td><td><code>feeTools --accept</code> the previous CSV with its original version</td><td><span class="pill p-warn">minutes</span></td><td><b>You kept a copy.</b> Accept keeps none <span class="pill p-bad">G4</span></td></tr>
+<tr><td>Products</td><td>Restore the previous file; it reloads on its own</td><td><span class="pill p-ok">seconds</span></td><td>You kept a copy</td></tr>
+<tr><td>Sleeves</td><td><code>sleeveTools --import previous.csv --replace</code></td><td><span class="pill p-warn">minutes</span></td><td><b>A dated export exists.</b> Nothing takes one automatically <span class="pill p-bad">G3</span></td></tr>
+<tr><td>Advisors</td><td>Restore the workbook, restart</td><td><span class="pill p-warn">minutes</span></td><td>You kept a copy</td></tr>
+<tr><td>Policy constants</td><td>Revert the commit, redeploy</td><td><span class="pill p-warn">a deploy</span></td><td>Version control — always available</td></tr>
+<tr><td>Scenario state</td><td>None, by design — 24h retention</td><td><span class="pill p-mute">n/a</span></td><td>Users re-enter. Acceptable</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Symptom → likely cause</h3>
+<div class="grid3">
+  <div class="card"><h4>Numbers changed and nobody expected it</h4><p>A rebake ran, or the analytics library moved data version under you. Check the manifest date and the provenance line first, before looking at any weights.</p></div>
+  <div class="card"><h4>The product catalogue is empty or erroring</h4><p>The whole extract was rejected — almost always one bad row: a duplicate id, an empty name, a non-numeric cost, or a fee group the card does not price. The reader is all-or-nothing by design.</p></div>
+  <div class="card"><h4>A sleeve shows missing products</h4><p>A product extract dropped an id a sleeve still references. <code>sleeveTools --census</code> names it exactly. An admin repairs the sleeve; no release needed.</p></div>
+  <div class="card"><h4>Portfolios missing after an extract update</h4><p>Names that did not parse were rejected, not guessed. <code>bake --census</code> lists them. This is the closed vocabulary working as intended.</p></div>
+  <div class="card"><h4>Fees look wrong across the board</h4><p>Check whether the card still reports itself as a placeholder. Until a real card is accepted, every fee figure on screen is invented.</p></div>
+  <div class="card"><h4>A change was made but nothing moved</h4><p>The service was not restarted. Only products self-reload; the fee card, the advisor directory and the SAA universe are all read once at import.</p></div>
+</div>
+
+<h2 id="p9"><span class="n">9</span>Operating rhythm</h2>
+<dl class="rhythm">
+  <dt>Weekly</dt><dd><code>sleeveTools --census</code> — the only class-C dataset with no release gate, so a periodic look is the control. Take a dated sleeve export at the same time.</dd>
+  <dt>Monthly</dt><dd>Product extract refresh, followed by a census. Confirm the fee card's version is still the one you expect. Review who is on the two access lists.</dd>
+  <dt>Quarterly</dt><dd>SAA extract refresh and full rebake, on the supplying database's schedule. Full verification checklist. Confirm the analytics library's data version has not moved without notice.</dd>
+  <dt>Annually</dt><dd>Class D review: mandate floor, private-assets minimum, tactical tilt, volatility premium, hedge ratios, context window. Each one re-approved or changed, with the decision recorded.</dd>
+  <dt>On delivery</dt><dd>Fee card — unpredictable, a few times a year. Runbook A, in full, every time.</dd>
+  <dt>On demand</dt><dd>Sleeve changes by admins, continuously. No involvement needed, by design.</dd>
+</dl>
+
+<h2 id="p10"><span class="n">10</span>Control gaps, prioritised</h2>
+<p class="sub">Each of these turns a manual habit into something the system enforces. Ordered by what they prevent, not by effort.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:6%">#</th><th style="width:24%">Gap</th><th style="width:34%">What it prevents</th><th style="width:20%">Change</th><th>Effort</th></tr></thead>
+<tbody>
+<tr><td><b>G1</b></td><td>No staleness check between the baked store and the SAA extract</td><td>Silently serving analytics built from a superseded extract. Detectable today only if someone looks at the manifest.</td><td>Compare the manifest's recorded <code>source.modified</code> against the file at start-up; log loudly, and surface it in the provenance line</td><td><span class="pill p-ok">small</span></td></tr>
+<tr><td><b>G2</b></td><td>No <code>productTools</code> to match <code>feeTools</code></td><td>A product delivery going in unreviewed. There is no way to answer "what changed?" for the catalogue.</td><td><code>--census</code>, <code>--diff</code>, <code>--accept</code> for the catalogue, on the fee card's pattern</td><td><span class="pill p-warn">medium</span></td></tr>
+<tr><td><b>G3</b></td><td>No automatic sleeve backup</td><td>Losing the one dataset the tool owns outright. An admin mistake is currently unrecoverable unless someone happened to export.</td><td>Scheduled <code>sleeveTools --export</code> to a dated file, retained</td><td><span class="pill p-ok">small</span></td></tr>
+<tr><td><b>G4</b></td><td><code>feeTools --accept</code> keeps no copy of the card it replaces</td><td>Being unable to roll back a fee delivery. The command overwrites in place.</td><td>Copy the outgoing card to a dated backup inside <code>accept</code></td><td><span class="pill p-ok">small</span></td></tr>
+<tr><td><b>G5</b></td><td>The advisor workbook has no override and no census</td><td>An uncontrolled hand copy into a package directory being the way a directory gets updated.</td><td>Add <code>SCENARIO_ADVISORS_SOURCE</code>; a census with counts</td><td><span class="pill p-ok">small</span></td></tr>
+<tr><td><b>G6</b></td><td>The scenario store defaults into the system temp directory</td><td>Losing in-flight proposals to a reboot or a temp sweep.</td><td>Set <code>SCENARIO_STORE_DIR</code> explicitly in every deployed environment</td><td><span class="pill p-ok">config</span></td></tr>
+<tr><td><b>G7</b></td><td><code>sleeveSource/sleeves.csv</code> has drifted from the live database</td><td>Someone reading a stale file as the definition of the sleeve library. It is 102 sleeves; the database holds 101.</td><td>Re-export over it, or delete it and rely on dated exports</td><td><span class="pill p-ok">minutes</span></td></tr>
+<tr><td><b>G8</b></td><td>Access lists are environment variables holding individuals</td><td>Access outliving a leaver, and no record of who granted it.</td><td>Back both lists with host group membership</td><td><span class="pill p-warn">platform</span></td></tr>
+<tr><td><b>G9</b></td><td>Class D has no owner and no review</td><td>Business rules changing with no approval trail outside the git log.</td><td>Name an approver; put the annual review in the calendar</td><td><span class="pill p-ok">governance</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="p11"><span class="n">11</span>What you need to decide</h2>
+<div class="grid2">
+  <div class="card">
+    <p class="hd">Decision 1</p><h4>Who owns each dataset?</h4>
+    <p>The ownership map has a column deliberately left blank. Until a named team sits in it for the fee card, the products, the advisor directory and the SAA extract, every runbook here has an unresolved dependency at its first step.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Decision 2</p><h4>Do non-USD portfolios stay on USD analytics?</h4>
+    <p>GBP, CHF and EUR are currently baked in a USD context because the library carries USD and GBP configs. It is recorded and stamped, but it is a live analytical caveat. Either accept it explicitly and say so on screen, or get native configs and drop the substitution.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Decision 3</p><h4>What cadence does the SAA extract actually have?</h4>
+    <p>The rebake schedule should follow the supplying database, not a guess. Quarterly is assumed here. If it is monthly, the bake wants automating rather than running by hand.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Decision 4</p><h4>Who is a PMG admin?</h4>
+    <p>Sleeve data has no release gate — the admin list <em>is</em> the control. It currently holds one developer. Deciding this list is deciding who can change what advisers see, with no review step.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Decision 5</p><h4>Is the fee card blocking?</h4>
+    <p>Every fee on screen is a placeholder, and the tool says so honestly at every layer. Whether that blocks any client-facing use is a business call, and it should be made explicitly rather than discovered.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Decision 6</p><h4>Where does the class-D review sit?</h4>
+    <p>Floors, tilt, premium, hedge ratios and the context window need an annual owner. Investment committee, product governance, or you — but named, and calendared.</p>
+  </div>
+</div>
+
+<p class="foot">Framework grounded in the tooling present in <code>proposal-tool</code> as at 3 September 2026: <code>feeTools</code> (census · diff · accept), <code>sleeveTools</code> (census · export · import), <code>bake</code> (census · resume · slice), and a 193-test suite. Gap numbers G1–G9 correspond to findings F1–F8 in the provenance review. Nothing in this document requires a change to the system before it can be adopted.</p>
+
+</div>

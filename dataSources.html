@@ -1,0 +1,383 @@
+<meta charset="utf-8">
+<title>Data Sources</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:56px 0 14px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h3{font-size:17px;font-weight:700;margin:26px 0 6px}
+h4{font-size:14px;font-weight:700;margin:0 0 4px}
+p{margin:0 0 12px;max-width:78ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:74ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:16px 0 0}
+.meta b{color:var(--ink-2);font-weight:700}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;background:var(--surface-2);padding:1px 5px;border-radius:3px;white-space:nowrap}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:78ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:13.5px;margin:10px 0;background:var(--surface)}
+table.doc th,table.doc td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc thead th{font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-strong);background:var(--surface-2)}
+table.doc tbody tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:500}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:7px}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.04em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:13px 17px;margin:18px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)} .callout.bad{border-color:var(--bad)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:20px 0 4px}
+@media (max-width:980px){.grid2,.grid4{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:15px 17px}
+.card p,.card li{font-size:13.5px}
+.card p:last-child{margin-bottom:0}
+.tier{display:flex;align-items:baseline;gap:10px;margin:0 0 6px}
+.tier .n{font-family:var(--f-num);font-size:26px;font-weight:700;color:var(--accent);line-height:1}
+.tier h4{font-size:15px}
+.ds{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:0;margin:18px 0;overflow:hidden}
+.ds-h{padding:14px 18px 12px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.ds-h h3{margin:0;font-size:17px}
+.ds-b{padding:14px 18px 16px}
+.ds-b p:last-child{margin-bottom:0}
+dl.kv{margin:0 0 12px;display:grid;grid-template-columns:170px 1fr;gap:0 14px;font-size:13.5px}
+@media (max-width:700px){dl.kv{grid-template-columns:1fr}}
+dl.kv dt{font-family:var(--f-num);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:6px 0 0;border-top:1px solid var(--line)}
+dl.kv dd{margin:0;padding:5px 0 7px;border-top:1px solid var(--line)}
+@media (max-width:700px){dl.kv dd{border-top:0;padding-top:0}}
+dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
+.chain{font-family:var(--f-num);font-size:13px;color:var(--ink-2);background:var(--surface-2);border-radius:5px;padding:9px 12px;margin:2px 0 12px;overflow-x:auto;white-space:nowrap}
+.chain b{color:var(--ink);font-weight:700}
+.chain .arw{color:var(--accent);padding:0 6px;font-weight:700}
+.f{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.f:last-child{border-bottom:0}
+.f .id{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:2px}
+.f b{display:block;margin-bottom:3px}
+.f p{margin:0 0 6px;font-size:14px}
+.f p:last-child{margin-bottom:0}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-strong);font-size:13px;color:var(--ink-3)}
+</style>
+<div class="page">
+
+<p class="eyebrow">Proposal Tool · provenance review</p>
+<h1>Where every number in the service comes from</h1>
+<p class="lede">A walk through <code>epsilon-phi-core/proposal-tool</code> naming the origin of every dataset the running service reads — portfolios and weights, analytics, products, sleeves, fees, and the several smaller sets that are easy to forget. For each one: the file or store it is read from, the environment variable that repoints it, whether the contents are real or a stand-in, and what production is expected to put in its place.</p>
+<div class="meta">
+  <span><b>Reviewed</b> 3 September 2026</span>
+  <span><b>Adapter in force</b> <code>baked</code></span>
+  <span><b>Scope</b> proposal-tool/ in full</span>
+  <span><b>Method</b> every <code>open()</code>, <code>load_workbook</code>, <code>connect</code> and <code>getenv</code> in the package</span>
+</div>
+
+<h2>The shape of it</h2>
+<p>Nothing in this repository holds market data. No price, no return series, no covariance. Every risk and return figure the tool shows is produced by the <b>epsilonPhi analytics library</b>, which brings its own data version. Everything else divides cleanly into four tiers.</p>
+
+<div class="grid4">
+  <div class="card">
+    <div class="tier"><span class="n">1</span><h4>Stand-in extracts</h4></div>
+    <p>Flat files in the repo standing in for databases owned downstream. Each is repointed by one environment variable. <b>Five of them.</b></p>
+  </div>
+  <div class="card">
+    <div class="tier"><span class="n">2</span><h4>Stores the tool owns</h4></div>
+    <p>Data the Proposal Tool itself writes and is the authority for. <b>Three:</b> the sleeve database, the scenario store, the baked analytics store.</p>
+  </div>
+  <div class="card">
+    <div class="tier"><span class="n">3</span><h4>Constants in code</h4></div>
+    <p>Numbers that are policy or model decisions, living in <code>.py</code> files rather than any database. <b>Easy to overlook, and the least governed.</b></p>
+  </div>
+  <div class="card">
+    <div class="tier"><span class="n">4</span><h4>The analytics library</h4></div>
+    <p>epsilonPhi, resolved lazily through one seam. The only source of return, risk, stress and VaR — and the only place market data enters.</p>
+  </div>
+</div>
+
+<h2>Every dataset at a glance</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr>
+  <th style="width:15%">Dataset</th><th style="width:22%">Read from today</th><th style="width:15%">Repointed by</th>
+  <th style="width:9%">Tier</th><th style="width:11%">Contents</th><th style="width:28%">Production source</th>
+</tr></thead>
+<tbody>
+<tr><td>Strategic portfolios &amp; weights</td><td><code>saaSource/saaPortfolios.csv</code><br>172 portfolios, 2,468 rows</td><td><code>SCENARIO_SAA_SOURCE</code></td><td>1</td><td><span class="pill p-warn">invented</span> weights<br><span class="pill p-ok">real</span> tickers</td><td>The downstream SAA database, as the same three-column extract.</td></tr>
+<tr><td>Asset universe &amp; metadata</td><td><code>scenario/portfolio_weights.py</code> → <code>ASSET_METADATA</code>, 19 assets</td><td>—</td><td>3</td><td><span class="pill p-ok">real</span></td><td>The supplied asset table; belongs beside the SAA extract.</td></tr>
+<tr><td>Portfolio analytics</td><td><code>service/var/baked/</code> — 16 slices, 688 payloads, 2.8&nbsp;MB</td><td><code>SCENARIO_BAKED_DIR</code></td><td>2</td><td><span class="pill p-acc">computed</span></td><td>Same store, rebaked on the supplying database's schedule.</td></tr>
+<tr><td>&nbsp;↳ the engine behind it</td><td><code>epsilonPhi</code> library, resolved in <code>scenario/engine.py</code></td><td><code>SAA_ENGINE_PACKAGE</code></td><td>4</td><td><span class="pill p-ok">real</span></td><td>Unchanged — the host's installed library at its <code>DATAVERSION</code>.</td></tr>
+<tr><td>Products</td><td><code>productSource/products.csv</code><br>73 products, 13 columns</td><td><code>SCENARIO_PRODUCTS_SOURCE</code></td><td>1</td><td><span class="pill p-warn">stub</span></td><td>The product database, one row per product, one column per field.</td></tr>
+<tr><td>Sleeves &amp; their contents</td><td><code>service/var/sleeves.db</code> (SQLite), seeded once from <code>sleeveSource/sleeves.csv</code></td><td><code>SCENARIO_SLEEVES_DB</code><br><code>SCENARIO_SLEEVES_SEED</code></td><td>2</td><td><span class="pill p-ok">real</span> names<br><span class="pill p-warn">stub</span> contents</td><td>The tool's own database, unchanged. Admins maintain it in-app.</td></tr>
+<tr><td>Fee rates</td><td><code>scenario/feeRates.csv</code> — 180 cells</td><td><code>SCENARIO_FEES_SOURCE</code></td><td>1</td><td><span class="pill p-bad">placeholder</span></td><td>The delivered fee card, same long-CSV shape.</td></tr>
+<tr><td>Fee card structure</td><td><code>scenario/fees.json</code> — schedules, sources, points, delivery stamp</td><td>—</td><td>3</td><td><span class="pill p-bad">placeholder</span></td><td>Edited to match the real card's schedules and stamped with its version.</td></tr>
+<tr><td>Advisor directory</td><td><code>scenario/advisors.xlsx</code> — 24 rows, <code>name</code> + <code>office</code></td><td>—</td><td>1</td><td><span class="pill p-warn">stub</span></td><td>The Primary PWA table, behind the same two functions.</td></tr>
+<tr><td>Hedge ratios</td><td><code>portfolio_weights.py</code> → <code>HEDGE_RATIOS_BY_OPTION</code>, 4 policies</td><td>—</td><td>3</td><td><span class="pill p-warn">assumed</span></td><td>Approved hedging assumptions (deviation D3).</td></tr>
+<tr><td>Analytics context window</td><td><code>portfolio_weights.py</code> → 30-Nov-1983 to 31-Dec-2022</td><td>—</td><td>3</td><td><span class="pill p-warn">assumed</span></td><td>Whatever window the library and the business agree on.</td></tr>
+<tr><td>Construction rules &amp; limits</td><td><code>scenario/rules.py</code> — floors, tilt %, vol premium, risk labels</td><td>—</td><td>3</td><td><span class="pill p-warn">assumed</span></td><td>Signed-off policy. Nothing here is derived; all of it was chosen.</td></tr>
+<tr><td>Sleeve grouping</td><td><code>rules.py</code> → <code>SLEEVE_GROUPS</code></td><td>—</td><td>3</td><td><span class="pill p-ok">real</span></td><td>PMG's rule that private equity and private assets share one sleeve.</td></tr>
+<tr><td>Scenario state</td><td>JSON files under the store directory, 24h retention</td><td><code>SCENARIO_STORE_DIR</code><br><code>SCENARIO_RETENTION_HOURS</code></td><td>2</td><td><span class="pill p-acc">user-created</span></td><td>Unchanged, on durable storage rather than <code>/tmp</code>.</td></tr>
+<tr><td>Identity &amp; access</td><td><code>PMG_ALLOWED_KERBEROS</code>, <code>PMG_ADMIN_KERBEROS</code> — both default <code>fbarker</code></td><td>the vars themselves</td><td>3</td><td><span class="pill p-warn">dev</span></td><td>GSSSO for identity; the host's group membership for the two lists.</td></tr>
+<tr><td>Fixtures analytics</td><td>synthesised in <code>scenario/fixturesAdapter.py</code> from the weights</td><td><code>SCENARIO_ADAPTER=fixtures</code></td><td>3</td><td><span class="pill p-bad">synthetic</span></td><td>Stays. It is how the UI is demonstrated with nothing else running.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Tier 1 — the stand-in extracts</h2>
+<p>These five files are the seam with systems the Proposal Tool does not own. Each was authored to the exact shape the supplying system is expected to hand over, so that swapping in the real thing is a change of path, not of code.</p>
+
+<div class="ds">
+  <div class="ds-h"><h3>Strategic portfolios and weights</h3><span class="pill p-warn">weights invented</span><span class="pill p-ok">tickers real</span></div>
+  <div class="ds-b">
+    <div class="chain"><b>saaSource/saaPortfolios.csv</b><span class="arw">→</span>universe.py<span class="arw">→</span>saaKeys.py (name parse)<span class="arw">→</span>PortfolioKey<span class="arw">→</span>weightMap()<span class="arw">→</span>the adapter</div>
+    <dl class="kv">
+      <dt>File</dt><dd><code>proposal-tool/saaSource/saaPortfolios.csv</code> — and the same rows as <code>saaPortfolios.xlsx</code>, for diffing in review.</dd>
+      <dt>Shape</dt><dd>Three columns: <code>PortfolioName</code>, <code>AssetTicker</code>, <code>Weight</code>. One row per holding. 172 portfolios across 2,468 rows.</dd>
+      <dt>Override</dt><dd><code>SCENARIO_SAA_SOURCE</code> (CSV or XLSX).</dd>
+      <dt>The key</dt><dd>The portfolio <em>name</em> is the only key, and it carries currency, risk level and allocation type. <code>saaKeys.py</code> matches longest-token-first against closed vocabularies — 72 of the 172 names cannot be split on whitespace. Hedging is not in the name; it joins the key only when the analytics run.</dd>
+      <dt>Real?</dt><dd><b>The weights are fictitious.</b> The tickers are the real ones the tool carries. The allocations across them were generated by <code>buildSaaSource.py</code> to be plausible and internally consistent. Nothing from this file reaches a client.</dd>
+      <dt>Production</dt><dd>The downstream SAA database, exporting the same three columns. The parse runs offline in the bake, never at request time, so a rename is caught before it can reach a user.</dd>
+    </dl>
+    <p><b>Where the weight model originally came from.</b> Before deviation D54, portfolios were <em>constructed</em> in <code>portfolio_weights.py</code> from four product-level anchors — Low Volatility, Conservative, Moderate, Aggressive — transcribed by hand into <code>_ANCHOR_INPUTS</code> from <b>Core Portfolios.xlsx</b>, with the intermediate risk levels interpolated and All Equity extrapolated. That workbook is in this repository, but outside the Proposal Tool: <code>src/Scripts/Case Studies/1. Portfolio Analysis/Core Portfolios.xlsx</code>. The construction code still exists and still runs as a CLI, but the service no longer uses it for weights — the extract does.</p>
+  </div>
+</div>
+
+<div class="ds">
+  <div class="ds-h"><h3>Products</h3><span class="pill p-warn">stub data</span></div>
+  <div class="ds-b">
+    <div class="chain"><b>productSource/products.csv</b><span class="arw">→</span>scenario/products.py (validating reader)<span class="arw">→</span>sleeve repository + product catalogue</div>
+    <dl class="kv">
+      <dt>File</dt><dd><code>proposal-tool/productSource/products.csv</code>, with <code>products.xlsx</code> alongside so the workbook path of the reader is exercised too.</dd>
+      <dt>Shape</dt><dd>73 products, thirteen columns — one row per product, one column per field: <code>ProductId</code>, <code>Name</code>, <code>Ticker</code>, <code>AssetClass</code>, <code>Style</code>, <code>Vehicle</code>, <code>Source</code>, <code>Liquidity</code>, <code>ExposureCurrency</code>, <code>ProductCost</code>, <code>FeeGroup</code>, <code>DistributionYield</code>, <code>MinimumInvestment</code>.</dd>
+      <dt>Override</dt><dd><code>SCENARIO_PRODUCTS_SOURCE</code> (CSV or XLSX).</dd>
+      <dt>Validation</dt><dd>The reader refuses an extract with a missing column, a duplicate id, an empty name, a non-numeric cost, a negative figure, or a fee group the fee card does not price. The last of those ties this file to <code>feeRates.csv</code>.</dd>
+      <dt>Real?</dt><dd>The products are the ones the authored sleeve library carried. The ids are slugs of the names — a real catalogue brings its own. <code>DistributionYield</code> and <code>MinimumInvestment</code> are <b>placeholders throughout</b>. 38 of the 73 have no ticker at all, by design: the SMAs and the private-market programmes do not have one.</dd>
+      <dt>Production</dt><dd>The product database, exported as the same one-table extract.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="ds">
+  <div class="ds-h"><h3>Fee rates and the fee card</h3><span class="pill p-bad">placeholder — and says so</span></div>
+  <div class="ds-b">
+    <div class="chain"><b>scenario/feeRates.csv</b> (the rates)<span class="arw">+</span><b>scenario/fees.json</b> (the structure)<span class="arw">→</span>scenario/fees.py<span class="arw">→</span>schema<span class="arw">→</span>fee card</div>
+    <dl class="kv">
+      <dt>Rates</dt><dd><code>scenario/feeRates.csv</code> — one row per cell, 180 cells: <code>schedule, feeGroup, tier, tierMin, tierMax, source, point, rate</code>. Two schedules (CASP, RDR), two sources (Management, PMG), three points (Floor, Target, Ceiling).</dd>
+      <dt>Structure</dt><dd><code>scenario/fees.json</code> — the schedule list and their order, which schedules price by fee group, the default level, the points, and the <b>delivery stamp</b>. A row cannot supply ordering, so it lives here.</dd>
+      <dt>Override</dt><dd><code>SCENARIO_FEES_SOURCE</code> repoints the rates. The structure file is not overridable; it is edited when the real card arrives.</dd>
+      <dt>Real?</dt><dd><b>No.</b> The card declares itself: <code>placeholder: true</code>, version <code>0.0-placeholder</code>, source <em>"placeholder card generated in-repo, not a delivery"</em>. That stamp travels into the schema, into the export, and into the bake manifest, so no consumer can mistake it for a delivered card.</dd>
+      <dt>Production</dt><dd>The delivered fee card in the same long-CSV shape, with <code>fees.json</code> updated to its schedules and stamped with its real version and as-of date.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="ds">
+  <div class="ds-h"><h3>Advisor directory</h3><span class="pill p-warn">stub data</span></div>
+  <div class="ds-b">
+    <dl class="kv">
+      <dt>File</dt><dd><code>scenario/advisors.xlsx</code>, sitting beside the module that reads it. One sheet, two columns — <code>name</code>, <code>office</code> — 24 rows.</dd>
+      <dt>Read by</dt><dd><code>scenario/advisors.py</code>, loaded once and cached. Search returns nothing below two characters, mirroring the UI hint rather than dumping the directory.</dd>
+      <dt>Override</dt><dd><b>None.</b> The path is fixed to the module directory. This is the only tier-1 extract with no environment override.</dd>
+      <dt>Production</dt><dd>The Primary PWA table, swapped in behind the same two functions. Excel-backed here is deliberate — spec 4.2 item 7.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="ds">
+  <div class="ds-h"><h3>Sleeve seed</h3><span class="pill p-ok">real names</span><span class="pill p-warn">stub contents</span></div>
+  <div class="ds-b">
+    <dl class="kv">
+      <dt>File</dt><dd><code>proposal-tool/sleeveSource/sleeves.csv</code> — <code>Variant, Category, Sleeve, ProductId, Weight</code>. 102 sleeves across 260 rows, plus <code>sleeves.xlsx</code>.</dd>
+      <dt>Override</dt><dd><code>SCENARIO_SLEEVES_SEED</code>.</dd>
+      <dt>Validation</dt><dd><code>buildSleeveSource.py</code> checks every product against the catalogue, refuses a product listed twice in one sleeve, and requires weights to sum to 1.</dd>
+      <dt>Real?</dt><dd>The <b>sleeve names are PMG's own</b>, supplied for each category. The products inside them and their weights are placeholders.</dd>
+      <dt>Important</dt><dd>This file is a <b>seed, not a source</b>. It is read exactly once, when the database is empty. See finding F1.</dd>
+    </dl>
+  </div>
+</div>
+
+<h2>Tier 2 — the stores the tool owns</h2>
+
+<div class="ds">
+  <div class="ds-h"><h3>Baked portfolio analytics</h3><span class="pill p-acc">computed</span><span class="pill p-warn">a frozen snapshot</span></div>
+  <div class="ds-b">
+    <div class="chain">saaPortfolios.csv<span class="arw">→</span>bake.py<span class="arw">→</span>epsilonPhi<span class="arw">→</span><b>service/var/baked/{ccy}_{hedging}.json</b> + manifest.json<span class="arw">→</span>bakedAdapter</div>
+    <p>This is what the service is serving right now. The store answers a portfolio request from disk without importing the analytics library at all — roughly 3&nbsp;ms cold.</p>
+    <dl class="kv">
+      <dt>Location</dt><dd><code>service/var/baked/</code> — 16 slice files (one per currency × hedging policy), 688 payloads, 2.8&nbsp;MB, plus <code>manifest.json</code>.</dd>
+      <dt>Override</dt><dd><code>SCENARIO_BAKED_DIR</code>; <code>SCENARIO_BAKED_FALLBACK=1</code> lets a miss fall through to live analytics.</dd>
+      <dt>Built</dt><dd>2 September 2026, 15:34:35 — from <code>saaPortfolios.csv</code> as modified that morning at 10:59. Both facts are recorded in the manifest, along with the fee card stamp, the derived facets, and the parse result (172 portfolios, 2,468 holdings, 0 unparsed, no unknown tickers).</dd>
+      <dt>Currencies</dt><dd>USD, GBP, CHF, EUR × four hedging policies. <b>GBP, CHF and EUR were analysed in a USD context</b> and the manifest records it as <code>currencySubstitutions</code>; each payload is stamped with its <code>analyticsCurrency</code>. See finding F4.</dd>
+      <dt>What is in a payload</dt><dd>Category rows, three headline metrics (estimated return, volatility, Sharpe), factor stress tests by period, and the VaR / CVaR / probability-of-loss block at 99% confidence across the horizon set.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="ds">
+  <div class="ds-h"><h3>The sleeve database</h3><span class="pill p-ok">the authority</span></div>
+  <div class="ds-b">
+    <dl class="kv">
+      <dt>Location</dt><dd><code>service/var/sleeves.db</code> — SQLite, 92&nbsp;KB. Tables <code>sleeves</code>, <code>sleeveProducts</code>, <code>meta</code>.</dd>
+      <dt>Override</dt><dd><code>SCENARIO_SLEEVES_DB</code>.</dd>
+      <dt>Contents now</dt><dd>101 sleeves, 258 product rows. <code>meta</code> records the seed: <code>seededAt 2026-09-02T17:47:03</code>, <code>seededFrom …/sleeveSource/sleeves.csv</code>.</dd>
+      <dt>Who writes it</dt><dd>Admins, through the sleeve repository in the app — create, copy, remove, add to another implementation type. This is <b>the</b> source of sleeve data at runtime; <code>scenario/sleeves.py</code> is only a facade over it.</dd>
+      <dt>Production</dt><dd>Unchanged in kind. The database is the tool's own and stays so; only its location moves to durable storage.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="ds">
+  <div class="ds-h"><h3>Scenario state</h3><span class="pill p-acc">user-created</span></div>
+  <div class="ds-b">
+    <dl class="kv">
+      <dt>Location</dt><dd><code>SCENARIO_STORE_DIR</code>, defaulting to <code>{tmpdir}/pmg_proposal_scenarios</code>. One JSON file per scenario, written atomically via a temp file and rename.</dd>
+      <dt>Contents</dt><dd>The mandate and basis a user entered — nothing sourced from anywhere else. Expires untouched after <code>SCENARIO_RETENTION_HOURS</code> (24 by default).</dd>
+      <dt>Note</dt><dd>The default lands in the system temp directory, so a reboot or a temp sweep drops in-flight scenarios. Set the variable for anything but development.</dd>
+    </dl>
+  </div>
+</div>
+
+<h2>Tier 3 — data that lives in code</h2>
+<p>These are the numbers with no file and no database behind them. They were chosen, not derived, and they are the least visible part of the data estate — which is exactly why they are worth listing.</p>
+
+<div class="grid2">
+  <div class="card">
+    <h4>Asset universe — <code>portfolio_weights.ASSET_METADATA</code></h4>
+    <p>19 assets as <code>(ticker, reporting name, category)</code>, in the supplied table's order. It is the authority for three things at once: which tickers exist, what they are called on screen, and which of the seven categories each belongs to. The zero-padding that gives every portfolio an identical asset set is driven off it.</p>
+  </div>
+  <div class="card">
+    <h4>Hedge ratios — <code>HEDGE_RATIOS_BY_OPTION</code></h4>
+    <p>Four policies: Hedged, Unhedged, Equity Not Hedged, ISG Hedged. Recorded as deviation D3. Assumed, not delivered.</p>
+  </div>
+  <div class="card">
+    <h4>Analytics context — <code>CONTEXT_START_DATE</code> / <code>CONTEXT_END_DATE</code></h4>
+    <p>30-Nov-1983 to 31-Dec-2022. Every figure the tool reports is estimated over this window, and it is reported alongside the library's <code>DATAVERSION</code>.</p>
+  </div>
+  <div class="card">
+    <h4>Construction rules — <code>scenario/rules.py</code></h4>
+    <p>Mandate floor $5m; private-assets minimum $20m; at most four portfolios; the tactical tilt at 8% into <code>LHUT1T3</code>; the strategic volatility premium at 7.5%, offered in USD and GBP only; risk-level labels; which implementation types exclude real estate. All policy.</p>
+  </div>
+  <div class="card">
+    <h4>Sleeve grouping — <code>SLEEVE_GROUPS</code></h4>
+    <p>Private Equity and Other Private Assets are one group with one sleeve and one selector. A genuine PMG rule, expressed as data on the schema so the UI reads it rather than hard-coding it.</p>
+  </div>
+  <div class="card">
+    <h4>Fixtures analytics — <code>fixturesAdapter.py</code></h4>
+    <p>Per-category coefficients that synthesise return, risk and stress deterministically from the weights. The weights and availability are the real universe; only the numbers are invented. Permanent by design (spec 4.4), and the only way to reach every error and timeout state.</p>
+  </div>
+</div>
+
+<h2>Tier 4 — the analytics library</h2>
+<div class="ds">
+  <div class="ds-b">
+    <p><b>Every risk and return number the tool shows originates outside this repository.</b> <code>scenario/engine.py</code> is the single seam: a lazy resolver over six symbols, with the root package read from <code>SAA_ENGINE_PACKAGE</code> (default <code>epsilonPhi</code>), so a rename or a layout change in the host library is a one-line edit rather than a search.</p>
+    <div class="tbl-wrap">
+    <table class="doc">
+      <thead><tr><th style="width:26%">Symbol</th><th style="width:34%">Module</th><th>What the tool takes from it</th></tr></thead>
+      <tbody>
+        <tr><td><code>SAAPortfolio</code></td><td><code>core.portfolio.SAAPortfolio</code></td><td>The portfolio object. Return, risk, Sharpe, factor stress tests and the VaR policy are all read off it directly — never off the reporting table builders, which exist to lay out a workbook.</td></tr>
+        <tr><td><code>ContextCreator</code></td><td><code>core.schema.Schema</code></td><td>The estimation context over the configured date window.</td></tr>
+        <tr><td><code>AssetReturnEstimator</code></td><td><code>core.estimator.assetReturnEstimator</code></td><td>The return estimates behind every figure.</td></tr>
+        <tr><td><code>Reporting</code></td><td><code>core.reporting.Reporting</code></td><td>The Excel export — portfolios and risk sheets.</td></tr>
+        <tr><td><code>DATAVERSION</code></td><td><code>core.env.Env</code></td><td>Stamped onto results so a number can be traced to the data behind it.</td></tr>
+        <tr><td><code>CAppConfig</code></td><td><code>core.config.appConfig</code></td><td>Library configuration.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The library is not thread-safe in the way the service needs, so live resolution runs under a lock and the results are memoised per basis and key.</p>
+  </div>
+</div>
+
+<h2>Findings worth your attention</h2>
+<div class="callout warn" style="padding:4px 17px 8px">
+<div class="f"><div class="id">F1</div><div>
+  <b>The sleeve database has drifted from its seed file.</b>
+  <p>The database holds <b>101 sleeves / 258 rows</b>; <code>sleeveSource/sleeves.csv</code> holds <b>102 / 260</b>. The seed is read once, when the database is empty — it was read at 17:47 on 2 September, and the CSV was edited at 19:17 that evening. The database is the runtime authority and is correct; the CSV is now a stale snapshot of it. Either re-export the CSV from the database, or treat it purely as a first-run seed and stop reading it as documentation.</p>
+</div></div>
+<div class="f"><div class="id">F2</div><div>
+  <b>The fee card is a placeholder, and everything downstream knows it.</b>
+  <p><code>fees.json</code> carries <code>placeholder: true</code> and version <code>0.0-placeholder</code>, and that stamp reaches the schema, the export and the bake manifest. This is working as intended — but it does mean <b>every fee figure currently on screen is invented</b>, and the real card is a genuine dependency before anything client-facing.</p>
+</div></div>
+<div class="f"><div class="id">F3</div><div>
+  <b>The baked store is a snapshot with no staleness check at request time.</b>
+  <p>It records the SAA extract's path and modification time, so drift is <em>detectable</em> — but nothing detects it automatically. Change <code>saaPortfolios.csv</code> and the service keeps serving the old analytics until someone rebakes. A start-up comparison of the recorded <code>source.modified</code> against the file on disk would turn a silent problem into a loud one.</p>
+</div></div>
+<div class="f"><div class="id">F4</div><div>
+  <b>Non-USD portfolios in the baked store carry USD-context analytics.</b>
+  <p>GBP, CHF and EUR were baked with the analytics context forced to USD; the portfolio keeps its own currency in its tag. The manifest records this as <code>currencySubstitutions</code> and each payload is stamped with its <code>analyticsCurrency</code>, so it is honest and traceable — but the numbers under a GBP tag are not GBP-context numbers, and that has to be understood before anyone reads them as such.</p>
+</div></div>
+<div class="f"><div class="id">F5</div><div>
+  <b>Under the baked adapter, exports may not come from the analytics library.</b>
+  <p>If a live delegate is available the export is built by <code>Reporting</code>. If it is not, <code>build_export</code> falls back to the <b>fixtures workbook writer</b> — a real file, but not the library's output. <code>SCENARIO_BAKED_FALLBACK</code> is on by default, so today the delegate exists; the fallback path is worth knowing about before it is relied on.</p>
+</div></div>
+<div class="f"><div class="id">F6</div><div>
+  <b>Both access lists default to a single developer.</b>
+  <p><code>PMG_ALLOWED_KERBEROS</code> and <code>PMG_ADMIN_KERBEROS</code> both default to <code>fbarker</code>, and identity comes from a <code>kerberos</code> cookie set by the <code>/_dev_login</code> stub standing in for GSSSO. Correct for development; both are deployment inputs, not data the tool owns.</p>
+</div></div>
+<div class="f"><div class="id">F7</div><div>
+  <b>The advisor workbook has no environment override.</b>
+  <p>Every other extract can be repointed without a code change. <code>advisors.xlsx</code> is pinned to the module directory, so pointing it at a real directory means editing <code>advisors.py</code>. A <code>SCENARIO_ADVISORS_SOURCE</code> variable would make the set uniform.</p>
+</div></div>
+<div class="f"><div class="id">F8</div><div>
+  <b>The scenario store defaults into the system temp directory.</b>
+  <p>Fine for development, lossy anywhere else. <code>SCENARIO_STORE_DIR</code> should be set explicitly in any deployed environment.</p>
+</div></div>
+</div>
+
+<h2>What a production cutover actually needs</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:22%">Dataset</th><th style="width:30%">How it is swapped</th><th>Anything more than a path change?</th></tr></thead>
+<tbody>
+<tr><td>Strategic portfolios</td><td>Point <code>SCENARIO_SAA_SOURCE</code> at the real extract, rebake.</td><td>The name vocabularies in <code>saaKeys.py</code> are closed — any name the real database uses that is not in them is rejected, deliberately, at bake time.</td></tr>
+<tr><td>Products</td><td>Point <code>SCENARIO_PRODUCTS_SOURCE</code> at the real extract.</td><td>Every <code>FeeGroup</code> must be priced by the fee card, and sleeves reference products by <code>ProductId</code> — new ids mean the sleeve library is rebuilt against them.</td></tr>
+<tr><td>Fee card</td><td>Point <code>SCENARIO_FEES_SOURCE</code> at the delivery.</td><td>Yes — <code>fees.json</code> must be edited to the real schedules and stamped, and the placeholder flag cleared.</td></tr>
+<tr><td>Advisors</td><td>Replace the workbook read with a table read.</td><td>Yes — a small code change, or add the missing override first (F7).</td></tr>
+<tr><td>Sleeves</td><td>Nothing. The database is the tool's own.</td><td>Contents need filling with real products; the names are already PMG's.</td></tr>
+<tr><td>Analytics</td><td>Nothing, if the host installs <code>epsilonPhi</code>. Otherwise set <code>SAA_ENGINE_PACKAGE</code>.</td><td>Rebake once the real extract is in, and re-check the currency substitutions (F4).</td></tr>
+<tr><td>Rules &amp; assumptions</td><td>Edit <code>rules.py</code> and <code>portfolio_weights.py</code>.</td><td>Yes — these need sign-off rather than a swap. They are the only datasets with no owning system.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>What is <em>not</em> in the picture</h2>
+<ul>
+  <li><b>No market data of any kind</b> lives in this repository — no prices, returns, covariances or factor histories. All of it is inside the analytics library, at its own <code>DATAVERSION</code>.</li>
+  <li><b>No client data.</b> The only thing a user contributes is the mandate and basis they type, and that lives in the scenario store for 24 hours.</li>
+  <li><b>No realised fund metrics.</b> The product catalogue deliberately carries none — no return, volatility or drawdown. Cost, distribution yield and minimum investment are the only figures, and the last two are placeholders.</li>
+  <li><b><code>Core Portfolios.xlsx</code> is not read by the service.</b> Its four anchor columns were transcribed into <code>_ANCHOR_INPUTS</code> once. The workbook itself sits outside the Proposal Tool, in <code>src/Scripts/Case Studies/</code>.</li>
+</ul>
+
+<p class="foot">Compiled from a sweep of every <code>open()</code>, <code>load_workbook()</code>, <code>sqlite3.connect()</code> and <code>os.getenv()</code> in <code>proposal-tool/service/cyrus_pmg</code>, cross-checked against the source READMEs and the live baked manifest and sleeve database. Seventeen data and deployment variables read, plus five fixtures failure knobs; five extract files; three stores; one external library.</p>
+
+</div>
