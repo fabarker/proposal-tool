@@ -396,6 +396,10 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/activity', ('GET',)),
         ('/scenario/repository/archive.csv', ('GET',)),
         ('/scenario/repository/activity.csv', ('GET',)),
+        ('/scenario/repository/proposals', ('GET',)),
+        ('/scenario/repository/proposals.csv', ('GET',)),
+        ('/scenario/repository/proposals/{proposalId}', ('GET',)),
+        ('/scenario/repository/proposals/{proposalId}/workbook', ('GET',)),
     }
     for key, names in found.items():
         assert 'requireAdmin' in names, key
@@ -668,6 +672,8 @@ def test_the_built_stylesheet_still_carries_every_console_section():
         'archive and feed':   ['.arc-sel{', '.arc-sel select{', '.arc-tbl tr.pin td{', '.arc-badge.gone{',
                                '.arc-detail{', '.arc-db{', '.act-chip.on{', '.act-day{', '.act-ev{',
                                '.act-badge.deleted{', '.act-more{'],
+        'proposal register':  ['.dialog.repo.register{', '.reg-tbl tr[data-regrow]{', '.arc-badge.warn{',
+                               '.reg-detail{', '.reg-pic tr.grp td{', '.reg-pic td.sub{'],
         'fee card':           ['.dialog.rc{', '.rc-seg button[aria-selected="true"]', '.rate-grid .rc-grp{',
                                '.rate-grid td.ring{', '.rc-legend i.k-ring{'],
     }

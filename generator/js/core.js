@@ -1087,9 +1087,11 @@ function renderMandate() {
   if (!state.mandate) { el.innerHTML = ''; return; }
   el.innerHTML = '<div class="tier-h"><h3>Mandate</h3>'
     + '<button type="button" class="tier-edit" id="mdedit"' + (canEdit() ? '' : ' disabled') + '>Edit</button></div>'
-    + '<p class="summary">Top account ' + money(state.mandate.topAccountSize)
-    + '<span>Mandate ' + money(state.mandate.mandateSize) + '</span>'
-    + '<span>' + esc(state.mandate.primaryPwa) + '</span></p>';
+    + '<dl class="summary md-kv">'
+    + '<dt>Top Account:</dt><dd>' + money(state.mandate.topAccountSize) + '</dd>'
+    + '<dt>Mandate Size:</dt><dd>' + money(state.mandate.mandateSize) + '</dd>'
+    + '<dt>Primary PWA:</dt><dd>' + esc(state.mandate.primaryPwa) + '</dd>'
+    + '</dl>';
 }
 
 function renderBasis() {
@@ -1302,41 +1304,10 @@ function renderBuilt() {
   }
 }
 
-/* The strip is exception-only: it says something when something is wrong or
-   in flight, and nothing at all when the answer is simply "fine" (D34). The
-   settled "Lookup matched" chip is gone - a table full of resolved figures
-   already says the lookup matched - as is the portfolio count, which the
-   rail's Comparisons tier carries. What remains is what has no other surface:
-   a failure aggregate, and the whole-page rebuild of spec 10.1. */
-function lookupStatus() {
-  if (!state.columns.length) return null;
-  var failed = state.columns.filter(function (c) { return c.status === 'error'; }).length;
-  var loading = state.columns.filter(function (c) { return c.status === 'loading'; }).length;
-  if (failed) return { cls: 'b-breach', text: failed + ' column' + (failed === 1 ? '' : 's') + ' failed' };
-  /* Waiting is the spinner's job now, not a pill. A pill for a transient state
-     grew the notices strip and shifted the document under the reader; a
-     failure is persistent and worth the space, so it stays. */
-  return null;
-}
-
-function renderNotices() {
-  var el = document.getElementById('notices'); if (!el) return;
-  if (state.phase !== 'workspace' || !state.columns.length) {
-    el.hidden = true; el.innerHTML = ''; return;
-  }
-  var pieces = [];
-  var status = lookupStatus();
-  if (status) pieces.push('<span class="bdg ' + status.cls + '">' + esc(status.text) + '</span>');
-  var base = state.columns[0];
-  if (base && base.key.allocationType && !reAllowed(base.key.allocationType)) {
-    pieces.push('<span class="bdg b-warn">No real assets — Allocation is '
-      + esc(base.key.allocationType) + '</span>');
-  }
-  /* Nothing to say: the strip takes no room rather than sitting there empty. */
-  if (!pieces.length) { el.hidden = true; el.innerHTML = ''; return; }
-  el.hidden = false;
-  el.innerHTML = pieces.join('\n');
-}
+/* Nothing renders above the allocation table. The strip that used to carry
+   the "No real assets" tablet and the column-failure aggregate is gone: a
+   failed column already says so on the column itself, and the allocation the
+   user chose is the allocation the rail shows. */
 
 /* ---- table scaffolding -------------------------------------------------- */
 function readyColumns() {
@@ -2664,7 +2635,6 @@ function refresh() {
     renderBase();
     if (picker && picker.render) picker.render();
     renderBuilt();
-    renderNotices();
     renderAlloc();
     renderRisk();
     renderCharts();

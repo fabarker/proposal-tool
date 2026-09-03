@@ -76,14 +76,19 @@ def _sweepExpired() -> None:
         pass
 
 
-def createScenario(mandate: MandateInput, basis: BasisInput) -> dict:
-    """Create and persist a new scenario; returns its state."""
+def createScenario(mandate: MandateInput, basis: BasisInput, createdBy: str = '') -> dict:
+    """Create and persist a new scenario; returns its state.
+
+    *createdBy* is the caller's kerberos. It was never written down before
+    the register needed it (D69): a scenario expires in a day, but the
+    proposal it produces is kept for ever and should say who began it."""
     with _lock:
         _sweepExpired()
         scenarioId = 'sc_' + secrets.token_hex(6)
         now = time.time()
         state = {
             'id': scenarioId,
+            'createdBy': createdBy or '',
             'createdAt': now,
             'updatedAt': now,
             'mandate': mandate.toDict(),

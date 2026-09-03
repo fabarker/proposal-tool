@@ -1,0 +1,491 @@
+<meta charset="utf-8">
+<title>Proposal Register</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Condensed:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EEF1F4;
+  --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#7E8A99;
+  --line:#E3E7EC; --line-strong:#D4DAE2;
+  --accent:#1F5FBF; --accent-soft:#E3EBFA; --accent-ink:#1E4FA3;
+  --ok:#176A33; --ok-soft:#E7F4EC; --warn:#B45309; --warn-soft:#FEF3C7;
+  --bad:#9B1C1C; --bad-soft:#FDE8E8;
+  --code-bg:#F1F4F8; --code-ink:#1C2733; --code-line:#DDE3EA;
+  --f-body:'Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'Roboto Condensed','Roboto',system-ui,sans-serif;
+  --f-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+    --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+    --line:#26313F; --line-strong:#33404F;
+    --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+    --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+    --bad:#F08A8A; --bad-soft:#3B1B1B;
+    --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1520; --surface:#161E2C; --surface-2:#1E2838;
+  --ink:#E6EBF2; --ink-2:#A9B4C4; --ink-3:#7F8CA0;
+  --line:#26313F; --line-strong:#33404F;
+  --accent:#6FA0F0; --accent-soft:#1E2F4A; --accent-ink:#A9C6F6;
+  --ok:#7AD39A; --ok-soft:#173224; --warn:#F2B25C; --warn-soft:#3A2A0F;
+  --bad:#F08A8A; --bad-soft:#3B1B1B;
+  --code-bg:#0C121C; --code-ink:#D6DEEA; --code-line:#26313F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.page{max-width:1240px;margin:0 auto;padding:40px 28px 90px}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:700;margin:58px 0 8px;padding-top:22px;border-top:1px solid var(--line-strong)}
+h2 .n{font-family:var(--f-num);color:var(--accent);margin-right:10px}
+h3{font-size:17px;font-weight:700;margin:28px 0 6px}
+h4{font-size:14px;font-weight:700;margin:0 0 4px}
+p{margin:0 0 12px;max-width:80ch}
+.lede{font-size:17px;color:var(--ink-2);max-width:76ch}
+.sub{color:var(--ink-2);margin:0 0 14px;max-width:82ch}
+.eyebrow{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--f-num);font-size:13px;color:var(--ink-3);margin:16px 0 0}
+.meta b{color:var(--ink-2);font-weight:700}
+code{font-family:var(--f-mono);font-size:.87em;background:var(--surface-2);padding:1px 5px;border-radius:3px;white-space:nowrap}
+pre{font-family:var(--f-mono);font-size:12.5px;line-height:1.6;background:var(--code-bg);color:var(--code-ink);border:1px solid var(--code-line);border-radius:6px;padding:12px 14px;margin:10px 0 14px;overflow-x:auto}
+pre code{background:none;padding:0;font-size:inherit;white-space:pre}
+pre .c{color:var(--ink-3)}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:80ch}
+li{margin:0 0 6px}
+table.doc{border-collapse:collapse;width:100%;font-size:13.5px;margin:0;background:var(--surface)}
+table.doc th,table.doc td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+table.doc thead th{font-family:var(--f-num);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:700;border-bottom:1px solid var(--line-strong);background:var(--surface-2)}
+table.doc tbody tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:500}
+table.doc td.mono{font-family:var(--f-mono);font-size:12px}
+table.doc td.num{font-family:var(--f-num);text-align:right;white-space:nowrap}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line-strong);border-radius:7px;margin:12px 0 16px}
+.pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.04em;white-space:nowrap;vertical-align:middle}
+.p-ok{background:var(--ok-soft);color:var(--ok)} .p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)} .p-mute{background:var(--surface-2);color:var(--ink-2)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:13px 17px;margin:18px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn)} .callout.bad{border-color:var(--bad)} .callout.ok{border-color:var(--ok)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{font-family:var(--f-num);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:980px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;padding:15px 17px}
+.card p,.card li{font-size:13.5px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card .hd{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 7px}
+.big{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0 4px}
+.big div{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:14px 20px;min-width:140px}
+.big b{display:block;font-family:var(--f-num);font-size:28px;font-weight:700;line-height:1;color:var(--accent)}
+.big.warn b{color:var(--warn)}
+.big span{font-size:12.5px;color:var(--ink-2);display:block;margin-top:5px}
+.q{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:13px 0;border-bottom:1px solid var(--line)}
+.q:last-child{border-bottom:0}
+.q .n{font-family:var(--f-num);font-weight:700;color:var(--accent);font-size:14px;padding-top:2px}
+.q b{display:block;margin-bottom:3px}
+.q p{margin:0;font-size:14px}
+/* option frames */
+.option{margin:22px 0 0;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;overflow:hidden}
+.option.rec{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.option-h{padding:15px 20px 13px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:20px;border-bottom:1px solid var(--line)}
+@media (max-width:1000px){.option-h{grid-template-columns:1fr}}
+.option-h .lbl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+.option-h h3{margin:0 0 6px;font-size:18px}
+.option-h p,.option-h li{font-size:13.5px;margin:0 0 6px}
+.option-h ul{padding-left:18px;margin:0;max-width:none}
+.assump{padding:12px 20px 14px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2);background:var(--surface-2)}
+.assump p{margin:0;max-width:none}
+/* console mock */
+.mock-wrap{background:#DDE3EA;padding:22px;overflow-x:auto}
+.mock{width:1120px;background:#F6F7F9;border-radius:8px;box-shadow:0 10px 30px rgba(12,24,44,.25);
+  overflow:hidden;font-family:var(--f-body);color:#1C2733;font-size:13px;line-height:1.45}
+.mock *{box-sizing:border-box}
+.m-h{display:flex;align-items:center;gap:10px;padding:11px 16px;background:#FFFFFF;border-bottom:1px solid #E3E7EC}
+.m-title{font-family:var(--f-num);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#1C2733}
+.m-seg{display:flex;background:#EEF1F4;border-radius:5px;padding:2px}
+.m-seg span{padding:4px 11px;border-radius:4px;font-size:12px;color:#5B6B7C;white-space:nowrap}
+.m-seg span.on{background:#FFFFFF;color:#1C2733;box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+.m-src{margin-left:auto;font-family:var(--f-num);font-size:11px;color:#7E8A99}
+.m-search{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid #E3E7EC;background:#FAFBFC}
+.m-search .box{flex:1;border:1px solid #D4DAE2;border-radius:5px;padding:5px 9px;font-size:12px;color:#7E8A99;background:#FFFFFF}
+.m-chip{font-family:var(--f-num);font-size:11px;font-weight:600;background:#EEF1F4;color:#1C2733;border-radius:11px;padding:2px 9px;white-space:nowrap}
+.m-chip.on{background:#E3EBFA;color:#1E4FA3}
+.m-chip.gh{background:#FFFFFF;border:1px solid #D4DAE2;color:#5B6B7C;font-weight:400}
+.m-btn{background:#FFFFFF;border:1px solid #D4DAE2;border-radius:5px;padding:5px 11px;font-size:11.5px;font-weight:600;color:#1C2733;white-space:nowrap}
+.m-btn.pri{background:#1F5FBF;border-color:#1F5FBF;color:#FFFFFF}
+.m-btn.gh{background:none;border-color:transparent;color:#1F5FBF}
+.m-tbl{width:100%;border-collapse:collapse;font-size:12px;background:#FFFFFF;color:#1C2733}
+.m-tbl th{font-family:var(--f-num);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#7E8A99;
+  text-align:left;padding:7px 11px;border-bottom:1px solid #D4DAE2;background:#F6F7F9;font-weight:700}
+.m-tbl td{padding:8px 11px;border-bottom:1px solid #E3E7EC;color:#1C2733;vertical-align:top}
+.m-tbl td.num{font-family:var(--f-num);text-align:right;color:#5B6B7C;white-space:nowrap}
+.m-tbl tr.on td{background:#F0F4FB}
+.m-badge{font-family:var(--f-num);font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  border-radius:8px;padding:1px 6px;white-space:nowrap}
+.b-ok{background:#E7F4EC;color:#176A33} .b-warn{background:#FEF3C7;color:#7A4A0A}
+.b-mute{background:#EEF1F4;color:#5B6B7C} .b-acc{background:#E3EBFA;color:#1E4FA3}
+.m-f{display:flex;align-items:center;gap:9px;padding:10px 16px;background:#FFFFFF;border-top:1px solid #E3E7EC}
+.m-f .sp{margin-left:auto}
+.m-note{font-family:var(--f-num);font-size:11px;color:#7E8A99}
+.m-detail{border-top:1px solid #D4DAE2;background:#FFFFFF;padding:13px 18px}
+.m-dh{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.m-dh h3{margin:0;font-size:15px}
+.m-dh p{margin:0;font-size:12px;color:#5B6B7C}
+.m-dg{display:grid;grid-template-columns:repeat(4,1fr);gap:0 22px}
+.m-lbl{font-family:var(--f-num);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#7E8A99;margin:0 0 3px}
+.m-dg>div{border-top:1px solid #E3E7EC;padding:8px 0 0}
+.m-dg p{margin:0 0 5px;font-size:12px}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line-strong);font-size:13px;color:var(--ink-3)}
+</style>
+<div class="page">
+
+<p class="eyebrow">Proposal Tool · design proposal · revision 2</p>
+<h1>A permanent register of every proposal delivered</h1>
+<p class="lede">Persist every completed proposal so three things can always be read back: <b>the strategic allocation proposed</b>, <b>the implemented model it became once sleeves were attached</b>, and <b>the workbook exactly as it was delivered</b>, downloadable again on demand. Analytics and pricing are not recorded as fields — but they are inside the file, and this revision is explicit about what that means.</p>
+<div class="meta">
+  <span><b>Revised</b> 3 September 2026</span>
+  <span><b>Change</b> the workbook is kept, and re-downloadable</span>
+  <span><b>Status</b> <b style="color:var(--ok)">built (D69)</b> — record-first, plan name as a column, workbook kept</span>
+</div>
+
+<div class="callout warn">
+  <h4>Keeping the file draws the line somewhere new — worth reading first</h4>
+  <p>The workbook is not a neutral container. Its <code>risk_dashboard</code> holds 34 rows of return, volatility, stress and VaR; its <code>assumptions</code> sheet holds 26 rows of per-asset estimates; and its Implementation sheet prints, in plain text on rows 2 to 5:</p>
+  <pre style="margin:8px 0"><code>Fee Schedule        CASP
+Fee Level           PMG Target
+Account Size Tier   T4 ($50m – $100m)
+Fee Card            0.0-placeholder · placeholder</code></pre>
+  <p>So <b>the analytics and the pricing are retained</b> once the file is kept. What the earlier instruction still achieves — and it is a real and common distinction — is that they are <b>not structured, not queryable and not indexed</b>. The register can hand you the document a client received; it cannot tell you which proposals quoted above 60 bp, or what the average Sharpe was last quarter, and it never will.</p>
+  <p><b>The line is now: queryable data versus the delivered artefact.</b> That is the sentence to agree or reject, because everything below follows from it.</p>
+</div>
+
+<h2><span class="n">1</span>What is kept, and how</h2>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:22%">Group</th><th style="width:38%">Fields</th><th>How it is held</th></tr></thead>
+<tbody>
+<tr><td><b>Identity</b></td><td class="mono">proposalId · scenarioId · sequence · exportedAt</td><td><span class="pill p-ok">column</span></td></tr>
+<tr><td><b>Who</b></td><td class="mono">exportedBy · createdBy (kerberos)</td><td><span class="pill p-ok">column</span> <span class="pill p-bad">not stored today</span></td></tr>
+<tr><td><b>Mandate</b></td><td class="mono">topAccountSize · mandateSize · primaryPwa</td><td><span class="pill p-ok">column</span></td></tr>
+<tr><td><b>Basis</b></td><td class="mono">currency · hedging</td><td><span class="pill p-ok">column</span></td></tr>
+<tr><td><b>Model switches</b></td><td class="mono">variant · tacticalTilt · volPremium</td><td><span class="pill p-ok">column</span> — they change the allocation itself</td></tr>
+<tr><td><b>Picture one · the SAA</b></td><td class="mono">the proposal portfolio only: keyStr, name, categories[] → assets[] → weightPct</td><td><span class="pill p-acc">JSON</span> — the base column; the comparisons are analysis and are not kept</td></tr>
+<tr><td><b>Picture two · the implemented model</b></td><td class="mono">category → sleeve → products[] with printed weight and notional</td><td><span class="pill p-acc">JSON</span></td></tr>
+<tr><td><b>Sleeve pinning</b></td><td class="mono">category → (sleeveId, revision, name)</td><td><span class="pill p-ok">table</span> — see §3</td></tr>
+<tr><td><b>The workbook</b></td><td class="mono">bytes · filename · sha256 · byteCount</td><td><span class="pill p-warn">blob</span> — opaque, never parsed</td></tr>
+<tr><td><b>Analytics</b></td><td class="mono">metrics · stress · premia · dataversion · bakedAt</td><td><span class="pill p-bad">no column</span> — present inside the blob</td></tr>
+<tr><td><b>Pricing</b></td><td class="mono">feeSchedule · feeLevel · tier · mgmt fee · wtd bp</td><td><span class="pill p-bad">no column</span> — present inside the blob</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout">
+  <h4>One inconsistency to resolve deliberately</h4>
+  <p>The register would refuse a <code>feeSchedule</code> column while storing a file whose second row reads <b>Fee Schedule: CASP</b>. The information is retained either way; the only question is whether it can be searched.</p>
+  <p><b>I would keep the plan name as a column</b> — schedule and level, no rates, no tier — so an admin can answer "which proposals went out on RDR?" without opening 400 files. If the intent is that pricing must not be <em>queryable</em> at all, then the column stays out and that is coherent too; but it should be the intent, not an accident of two instructions arriving in sequence. This is question 2 in §9.</p>
+</div>
+
+<h2><span class="n">2</span>The two pictures, and the file</h2>
+<div class="grid3">
+  <div class="card">
+    <p class="hd">Picture one · queryable</p><h4>The proposal portfolio</h4>
+    <p><b>One portfolio</b> — the base column, the one the implementation is built on — with its category and asset weights exactly as they printed. The columns it was compared against on screen were analysis, not the proposal, and are not recorded.</p>
+    <pre style="margin:8px 0 0"><code>{"keyStr": "USD|Moderate|Full|0",
+ "name": "USD Moderate Full",
+ "categories": [
+   {"name": "Public Equity", "weightPct": 38.0,
+    "assets": [{"reportingName": "UK Equity",
+                "weightPct": 1.9}]}, ...]}</code></pre>
+  </div>
+  <div class="card">
+    <p class="hd">Picture two · queryable</p><h4>The implemented model</h4>
+    <p>The same allocation with sleeves attached, at the <b>printed</b> weights — the largest-remainder figures that closed the column on 100.00.</p>
+    <pre style="margin:8px 0 0"><code>{"category": "Public Equity",
+ "sleeveId": 42, "revision": 7, "sleeve": "Passive",
+ "weightPct": 38.0,
+ "items": [{"productId": "gs-us-large-cap-etf",
+            "name": "GS US Large Cap ETF",
+            "ticker": "GSUS", "vehicle": "ETF",
+            "printedPct": 8.36,
+            "notional": 4180000}, ...]}</code></pre>
+  </div>
+  <div class="card">
+    <p class="hd">The artefact · opaque</p><h4>The workbook</h4>
+    <p>17 KB of xlsx, stored byte for byte with a SHA-256 beside it. Never parsed, never indexed, handed back whole.</p>
+    <p>It is <b>already a zip</b> — compressing it again saves 5%, so it goes in as it comes out.</p>
+    <p>The hash is what makes "this is the file they received" a checkable claim rather than an assurance.</p>
+  </div>
+</div>
+<div class="callout ok">
+  <h4>Store the resolved names in the JSON anyway</h4>
+  <p>Even with the file kept, the two pictures should carry product names, tickers and vehicles inline rather than bare ids. A blob answers "show me the document"; it cannot answer "which proposals used this product" without opening every one. The pictures are what make the register queryable, and they are only worth having if they stand alone.</p>
+</div>
+
+<h2><span class="n">3</span>Why the sleeve revision still matters</h2>
+<p>A scenario stores sleeves as <b>names</b> — <code>{"Public Equity": "Passive"}</code> — resolved against a database admins edit daily. Recording <b><code>(sleeveId, revision)</code></b> makes the implemented picture immutable and makes drift visible: the register can show a proposal used <code>r7</code> while the library is now at <code>r9</code>. Possible only because D65 made revisions permanent, and it costs one join.</p>
+<p>The file does not replace this. A workbook shows what the sleeve <em>held</em>; the revision says <em>which version</em> it was, which is the thing you need to compare against today without diffing spreadsheets.</p>
+
+<h2><span class="n">4</span>What the register can and cannot answer</h2>
+<p class="sub">Three tiers now, because the file changes the middle one.</p>
+<div class="grid3">
+  <div class="card">
+    <p class="hd" style="color:var(--ok)">By query</p>
+    <ul>
+      <li>What allocation went to this PWA, and when</li>
+      <li>Which products implemented it, at what weights</li>
+      <li>Which sleeve version, and has it moved since</li>
+      <li>Who produced it, who started it</li>
+      <li>Volumes by person, PWA, currency, book, period</li>
+      <li>Whether the tilt or premium was applied</li>
+    </ul>
+  </div>
+  <div class="card">
+    <p class="hd" style="color:var(--warn)">By opening the file</p>
+    <ul>
+      <li>The return, volatility and Sharpe shown</li>
+      <li>The stress and VaR figures</li>
+      <li>The fees quoted, and on which schedule</li>
+      <li>The per-asset estimates behind it all</li>
+      <li>Exactly what the client saw</li>
+    </ul>
+    <p style="margin-top:8px"><b>One proposal at a time</b>, by a person, not a query.</p>
+  </div>
+  <div class="card">
+    <p class="hd" style="color:var(--bad)">Not at all</p>
+    <ul>
+      <li>Aggregates over anything in the file — average fee, fee distribution, risk profile of the book</li>
+      <li>"Find every proposal quoting over 60 bp"</li>
+      <li>Whether the analytics have been rebaked under a proposal since</li>
+    </ul>
+    <p style="margin-top:8px">These need columns, and columns are what was excluded.</p>
+  </div>
+</div>
+
+<h2><span class="n">5</span>How big this gets</h2>
+<div class="big">
+  <div><b>13 KB</b><span>the two pictures</span></div>
+  <div><b>17 KB</b><span>the workbook</span></div>
+  <div><b>~30 KB</b><span>a four-column proposal</span></div>
+  <div><b>5%</b><span>all further compression would save</span></div>
+</div>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:26%">Proposals</th><th style="width:22%">Pictures only</th><th style="width:22%">With the workbook</th><th>Comment</th></tr></thead>
+<tbody>
+<tr><td>2,000</td><td class="num">27 MB</td><td class="num">61 MB</td><td>Nothing</td></tr>
+<tr><td>10,000</td><td class="num">135 MB</td><td class="num">307 MB</td><td>Comfortable</td></tr>
+<tr><td>50,000</td><td class="num">673 MB</td><td class="num">1.5 GB</td><td>Within SQLite's comfort, and a decade away</td></tr>
+</tbody>
+</table>
+</div>
+<p><b>A 17 KB blob belongs in the database, not beside it.</b> SQLite reads blobs of this size faster than the filesystem does, and keeping them in the row makes the write atomic — a proposal cannot end up recorded with its file missing, or filed with no record. One file to back up rather than a table and a directory that can drift apart.</p>
+
+<h2><span class="n">6</span>Downloading one, measured</h2>
+<p class="sub">You asked what this costs at scale, so I built the register at 100, 1,000 and 10,000 proposals with real 17&nbsp;KB workbooks in it and timed a single download. The short answer is that <b>the database is not the part you will wait for</b>.</p>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:26%">Register size</th><th style="width:16%">File on disk</th><th style="width:20%">Download one, warm</th><th style="width:20%">A 50-row page</th><th>Change</th></tr></thead>
+<tbody>
+<tr><td>100 proposals</td><td class="num">2.9 MB</td><td class="num">0.02 ms</td><td class="num">0.14 ms</td><td>—</td></tr>
+<tr><td>1,000 proposals</td><td class="num">28.8 MB</td><td class="num">0.02 ms</td><td class="num">0.14 ms</td><td>none</td></tr>
+<tr><td>10,000 proposals</td><td class="num">287.4 MB</td><td class="num">0.03 ms</td><td class="num">0.15 ms</td><td>none</td></tr>
+</tbody>
+</table>
+</div>
+<p><b>Flat, because the work does not grow.</b> Fetching a workbook is a primary-key lookup in a B-tree — thirteen comparisons at ten thousand rows against seven at a hundred — followed by reading about five 4&nbsp;KB pages. A hundredfold more proposals changes neither number meaningfully.</p>
+
+<h3>The honest case: nothing cached</h3>
+<div class="tbl-wrap">
+<table class="doc">
+<thead><tr><th style="width:40%">Condition</th><th style="width:24%">Fetch one workbook</th><th>What is included</th></tr></thead>
+<tbody>
+<tr><td>Warm — the service has been running</td><td class="num">0.03 ms</td><td>The index lookup and five page reads</td></tr>
+<tr><td>Cold connection, fresh process</td><td class="num">1.1 ms</td><td>Opening the database as well</td></tr>
+<tr><td><b>Cold, OS page cache flushed</b></td><td class="num"><b>2.5 ms</b></td><td>Everything, from an unread 287&nbsp;MB file</td></tr>
+</tbody>
+</table>
+</div>
+<p>Two and a half milliseconds is the worst case I could construct, on a 287&nbsp;MB register with the operating system's cache deliberately evicted. In practice the service is warm and it is thirty microseconds.</p>
+
+<h3>What you will actually wait for</h3>
+<div class="big">
+  <div><b>2.5 ms</b><span>the database, worst case</span></div>
+  <div><b>5.3 ms</b><span>an HTTP round trip through the proxy</span></div>
+  <div><b>~8 ms</b><span>a download from the register, end to end</span></div>
+  <div class="warn"><b>97 ms</b><span>generating the same file fresh, today</span></div>
+</div>
+<div class="callout ok">
+  <h4>Serving a stored workbook is about twelve times faster than making one</h4>
+  <p>The export endpoint takes ~97&nbsp;ms today, almost all of it building the workbook. Handing back a stored one skips that entirely: the request is dominated by the Flask-to-FastAPI hop, which is 5&nbsp;ms whatever the response contains. <b>A download from the register will feel instant, and will keep feeling instant.</b></p>
+</div>
+
+<h3>The two ways to get this wrong</h3>
+<p class="sub">Both are avoidable, and both are worth writing down because they are the only ways the numbers above stop being true.</p>
+<div class="grid2">
+  <div class="card">
+    <p class="hd">Mistake one</p><h4><code>SELECT *</code> on the list</h4>
+    <p>A 50-row page costs <b>0.14 ms</b> with named columns and <b>0.67 ms</b> with <code>SELECT *</code>, because the blobs get dragged through for rows nobody asked to download. Five times slower, still fast — but the multiplier grows with the page, and it is free to avoid.</p>
+    <p><b>The panel names its columns.</b> The blob is fetched only when someone clicks download.</p>
+  </div>
+  <div class="card">
+    <p class="hd">Mistake two</p><h4>No indexes on the filters</h4>
+    <p>This, not the blob, is the real cost. Unindexed, grouping by person over 10,000 proposals takes <b>16 ms</b> and filtering by PWA and date <b>6.2 ms</b> — both full scans.</p>
+    <p>Five composite indexes, built in 132&nbsp;ms and costing <b>no measurable space</b> against the blobs, take those to <b>0.56 ms</b> and <b>0.13 ms</b>. Twenty-nine and forty-eight times faster.</p>
+  </div>
+</div>
+<div class="callout">
+  <h4>And a layout question that turned out not to matter</h4>
+  <p>I tested the workbook inline in <code>proposals</code> against a separate <code>proposalWorkbooks</code> table. With named columns the page query is <b>0.14 ms either way</b> and the download is identical. The split only helps the query you should not be running.</p>
+  <p>So the blob stays inline, which is the simpler schema and makes the write atomic — a proposal cannot be recorded with its file missing, or filed with no record.</p>
+</div>
+
+<h2><span class="n">7</span>The store and the schema</h2>
+<p class="sub">A second SQLite database the tool owns, on the <code>sleeveRepo</code> pattern — schema version in <code>meta</code>, migration on connect, an environment override for the host — behind a five-function module so the storage can move to a host table later without touching the endpoint or the panel.</p>
+<pre><code>proposals                     <span class="c">-- one row per delivered proposal, never updated</span>
+  proposalId    TEXT PRIMARY KEY      <span class="c">-- pr_xxxxxxxxxxxx</span>
+  scenarioId    TEXT NOT NULL
+  sequence      INTEGER NOT NULL      <span class="c">-- 1, 2, 3... within that scenario</span>
+  exportedAt    TEXT NOT NULL
+  exportedBy    TEXT NOT NULL         <span class="c">-- kerberos</span>
+  createdBy     TEXT NOT NULL
+  primaryPwa    TEXT NOT NULL
+  topAccountSize REAL NOT NULL
+  mandateSize   REAL NOT NULL
+  currency      TEXT NOT NULL
+  hedging       TEXT NOT NULL
+  variant       TEXT NOT NULL
+  baseKey       TEXT NOT NULL         <span class="c">-- the proposal portfolio; comparisons not kept</span>
+  tacticalTilt  INTEGER NOT NULL
+  volPremium    INTEGER NOT NULL
+  allocation    TEXT NOT NULL         <span class="c">-- JSON: picture one, the base portfolio</span>
+  implemented   TEXT NOT NULL         <span class="c">-- JSON: picture two, sleeves and products</span>
+  workbook      BLOB NOT NULL         <span class="c">-- the delivered .xlsx, byte for byte</span>
+  workbookName  TEXT NOT NULL
+  workbookSha   TEXT NOT NULL
+  workbookBytes INTEGER NOT NULL
+  UNIQUE (scenarioId, sequence)
+                                      <span class="c">-- no analytics or pricing COLUMNS;</span>
+                                      <span class="c">-- both are inside the blob (see §1)</span>
+
+proposalSleeves               <span class="c">-- queryable without opening the JSON</span>
+  proposalId    TEXT NOT NULL
+  category      TEXT NOT NULL
+  sleeveId      INTEGER NOT NULL
+  revision      INTEGER NOT NULL
+  sleeveName    TEXT NOT NULL
+  PRIMARY KEY (proposalId, category)
+
+meta                          <span class="c">-- schemaVersion, as sleeveRepo has</span>
+
+<span class="c">-- the filters the panel offers, indexed. Built in 132ms over 10,000 rows</span>
+<span class="c">-- and costing no measurable space beside the blobs (see the section above).</span>
+CREATE INDEX p_at  ON proposals (exportedAt DESC)
+CREATE INDEX p_by  ON proposals (exportedBy, exportedAt DESC)
+CREATE INDEX p_pwa ON proposals (primaryPwa, exportedAt DESC)
+CREATE INDEX p_ccy ON proposals (currency,   exportedAt DESC)
+CREATE INDEX p_var ON proposals (variant,    exportedAt DESC)
+CREATE INDEX p_sc  ON proposals (scenarioId, sequence)</code></pre>
+<p><b>Reading a list must not drag the blobs along.</b> The panel's table selects named columns and never <code>SELECT *</code>; the file is fetched only when someone asks to download one. Worth stating because it is the one way this schema could be made slow.</p>
+
+<h3>The write path</h3>
+<pre><code>content = port.build_export(basis, mandate, results, implementation)
+<span class="c">+ register.record(scenarioId, user, basis, mandate, results,</span>
+<span class="c">+                 implementation, model, content, filename)</span>
+return Response(content=content, media_type=_XLSX, headers=...)</code></pre>
+<p>Two supporting changes come with it, both small:</p>
+<ul>
+  <li><code>scenarioStore.createScenario</code> gains a <code>createdBy</code>. The kerberos is already at the endpoint; it is simply never written down.</li>
+  <li>The implemented model is built inside the writer today. The register needs <em>that</em> model, not a recomputation of it, so <code>buildImplementationRows</code> should be called once in the endpoint and passed to both — otherwise the record is of a model built again, which is nearly the same thing and not the same thing.</li>
+</ul>
+<div class="callout bad">
+  <h4>The decision that has not changed: does a failed write block the download?</h4>
+  <p><b>I still recommend yes — record first, deliver second.</b> "Every single proposal is persisted" and "the download always works" cannot both be absolute, and a register with silent holes is worse than none because it will be trusted. The write is a single insert of ~30 KB into a local file, inside a request that already takes 130 ms.</p>
+  <p>Keeping the file strengthens this rather than weakening it: the whole point of storing the artefact is to be able to say <em>this is what was sent</em>, and that claim is worth nothing if the row is sometimes missing. The case against is unchanged — a PWA in front of a client should perhaps never be blocked by bookkeeping — and if it wins, the write moves to a background task with an alert, and the register is <em>best-effort</em>, said out loud.</p>
+</div>
+
+<h2><span class="n">8</span>The panel</h2>
+<p class="sub">A fifth tab in the admin console, beside Sleeves, Catalogue, Archive and Activity — already admin-gated, already carrying the search, chip-filter and dense-table machinery. The detail has two views over the pictures, and the download button is back.</p>
+<div class="option rec">
+  <div class="mock-wrap"><div class="mock">
+    <div class="m-h">
+      <span class="m-title">Sleeve Repository</span>
+      <span class="m-seg"><span>Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span class="on">Proposals</span></span>
+      <span class="m-src">1,284 delivered · 38 MB of workbooks · since 12 Jan 2026</span>
+    </div>
+    <div class="m-search">
+      <span class="box">Search PWA, person, sleeve, product or portfolio…</span>
+      <span class="m-chip on">Last 90 days ×</span>
+      <span class="m-chip gh">Anyone ▾</span>
+      <span class="m-chip gh">Any PWA ▾</span>
+      <span class="m-chip gh">Any currency ▾</span>
+      <span class="m-chip gh">Any book ▾</span>
+      <span style="margin-left:auto" class="m-btn">Export CSV</span>
+    </div>
+    <table class="m-tbl">
+      <thead><tr>
+        <th style="width:15%">Exported ▼</th><th style="width:10%">By</th><th style="width:18%">Primary PWA</th>
+        <th style="width:10%">Mandate</th><th style="width:12%">Basis</th><th style="width:16%">Book</th>
+        <th style="width:14%">Proposal portfolio</th><th></th>
+      </tr></thead>
+      <tbody>
+        <tr class="on"><td>3 Sep 2026 14:22</td><td>fbarker</td><td>A. Castellanos — Madrid</td>
+          <td class="num">$50.0m</td><td>USD · Hedged</td><td>PMG Multi-Asset</td><td>Moderate Full</td>
+          <td><span class="m-badge b-acc">#2 of 2</span></td></tr>
+        <tr><td>3 Sep 2026 11:04</td><td>fbarker</td><td>A. Castellanos — Madrid</td>
+          <td class="num">$50.0m</td><td>USD · Hedged</td><td>PMG Multi-Asset</td><td>Moderate Full</td>
+          <td><span class="m-badge b-mute">#1 of 2</span></td></tr>
+        <tr><td>2 Sep 2026 16:58</td><td>a.mehta</td><td>J. Okafor — Frankfurt</td>
+          <td class="num">$120.0m</td><td>GBP · Unhedged</td><td>PMG ESG</td><td>Agg ex-HFs</td>
+          <td><span class="m-badge b-warn">tilt on</span></td></tr>
+      </tbody>
+    </table>
+    <div class="m-detail">
+      <div class="m-dh">
+        <h3>A. Castellanos — Madrid · $50.0m</h3>
+        <p>pr_9f2c41a7b3de · exported 3 Sept 2026 14:22 by fbarker · started 09:12 by fbarker
+          · workbook 17 KB · sha 4f2c…9ab1</p>
+        <span style="margin-left:auto" class="m-btn pri">Download the workbook</span>
+        <span class="m-seg"><span class="on">Allocation</span><span>Implemented</span></span>
+      </div>
+      <table class="m-tbl" style="border:1px solid #E3E7EC">
+        <thead><tr><th style="width:38%">Category / Asset</th><th style="width:18%">Sleeve</th>
+          <th style="width:20%">Product</th><th style="width:12%">Weight</th><th>Notional</th></tr></thead>
+        <tbody>
+          <tr><td><b>Investment Grade Fixed Income</b></td><td>SMA Only <span class="m-badge b-mute">r3</span></td><td></td><td class="num">34.0%</td><td class="num">$17.0m</td></tr>
+          <tr><td style="padding-left:26px">GSAM Core Municipal SMA</td><td></td><td>SMA</td><td class="num">10.82%</td><td class="num">$5.41m</td></tr>
+          <tr><td style="padding-left:26px">GSAM Intermediate Credit SMA</td><td></td><td>SMA</td><td class="num">8.42%</td><td class="num">$4.21m</td></tr>
+          <tr><td><b>Public Equity</b></td><td>Passive <span class="m-badge b-warn">r7 · r9 now</span></td><td></td><td class="num">38.0%</td><td class="num">$19.0m</td></tr>
+          <tr><td style="padding-left:26px">GS US Large Cap ETF</td><td></td><td>GSUS · ETF</td><td class="num">8.36%</td><td class="num">$4.18m</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="m-f"><span class="m-note">3 of 1,284 shown · 2 people · 2 PWAs</span><span class="sp"></span>
+      <span class="m-btn">Earlier</span></div>
+  </div></div>
+  <div class="assump">
+    <p><b>Three ways into one record.</b> The list is queried; the two pictures are read on screen; the workbook is downloaded whole. Picture one is the proposal portfolio alone — the base, the one the implemented model is built on; what it was compared against on the way is analysis and is not kept. The <code>r7 · r9 now</code> badge is the one thing the register computes rather than stores — it answers "is what we proposed still what we would propose?" from a join, and it is the reason the sleeve revision is worth pinning. The header carries the file's size and hash so that <em>this is the document that was sent</em> is checkable, not merely asserted.</p>
+  </div>
+</div>
+
+<h2><span class="n">9</span>What I need from you</h2>
+<div class="card" style="padding:4px 17px">
+  <div class="q"><span class="n">1</span><div><b>Does a failed write block the download?</b><p>Still the only decision that cannot be deferred. My recommendation is that it blocks — the point of keeping the artefact is to say "this is what was sent", and that is worth nothing if rows are sometimes missing. The case against is a PWA sitting with a client.</p></div></div>
+  <div class="q"><span class="n">2</span><div><b>Does the pricing <em>plan</em> get a column?</b><p>Sharper now that the file is kept: the workbook prints <b>Fee Schedule: CASP</b> on row 2, so the information is retained either way. A column — schedule and level, no rates — makes it searchable. Leaving it out means pricing is deliberately un-queryable, which is coherent, but should be chosen rather than inherited.</p></div></div>
+  <div class="q"><span class="n">3</span><div><b>Is "not saved as fields, but present in the file" the line you want?</b><p>It is a normal and defensible one — the artefact is evidence, the columns are data. But it does mean the analytics and fee quotes are retained forever, and anyone assuming otherwise from the earlier instruction should be corrected now rather than later.</p></div></div>
+  <div class="q"><span class="n">4</span><div><b>SQLite here, or a table in the host?</b><p>The seam makes it reversible and need not block the build. Note the blob makes this slightly weightier — 1.5 GB at fifty thousand proposals — so if the host is the destination, its DBAs should hear the number early.</p></div></div>
+  <div class="q"><span class="n">5</span><div><b>Who can read it, and is "forever" literal?</b><p>Admin-only is assumed. There is no client name anywhere in the tool — the mandate is two amounts and a PWA — but an adviser's name against mandate sizes over time is a picture of their book, and the workbooks now carry fee quotes alongside it.</p></div></div>
+</div>
+
+<h2><span class="n">10</span>What I would build, in order</h2>
+<div class="grid3">
+  <div class="card"><p class="hd">First · ~2 days</p><h4>The register and the write</h4><p><code>proposalRegister.py</code> on the sleeveRepo pattern, <code>createdBy</code> added to the scenario store, the model built once and shared between writer and register, and two tests that matter: the stored workbook is byte-identical to the one delivered, and the stored implemented picture matches that workbook's Implementation sheet row for row.</p></div>
+  <div class="card"><p class="hd">Then · ~2 days</p><h4>The panel</h4><p>The fifth tab, its endpoints, filters, the two-view detail with the drift badge, workbook download, and CSV export. Reuses the catalogue's table and chip machinery.</p></div>
+  <div class="card"><p class="hd">Then · ~half a day</p><h4>The operational edges</h4><p>Backup guidance in the operations doc — this is the first store whose loss is unrecoverable — a size line in the census, and the register recorded in the provenance review as the tool's third owned store.</p></div>
+</div>
+
+<p class="foot">Revised twice: first to exclude analytics and pricing, then to keep the delivered workbook. Measured from a real two-column proposal: an allocation block is 1,555 bytes against a full payload's 4,639; an implemented model without fee fields is 6,334; the workbook is 17,216 and compresses by 5% because xlsx is already a zip. Grounded in the code as at 3 September 2026 — the mandate's three fields, the scenario store's 24-hour retention and its absence of any recorded user, and the sleeve revisions D65 made permanent.</p>
+
+</div>

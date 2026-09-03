@@ -218,6 +218,12 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
   position:sticky;top:0;z-index:2}
 .tbl thead th.sub{font-size:12px;letter-spacing:.11em;opacity:.78;border-bottom-width:1px;font-weight:600}
 .rowhead{text-align:left!important;position:sticky;left:0;z-index:3;background:var(--head-bg)}
+/* The pinned column's HEADER sits above the scrolling headers, which it did
+   not: `.tbl thead th` (0,1,2) outranks `.rowhead` (0,1,0), so the corner cell
+   was taking the scrolling headers' own z-index of 2 and losing to them on
+   document order as the table scrolled right. Specificity, not the value, was
+   the bug - and the background is already opaque. */
+.tbl thead th.rowhead{z-index:5}
 /* The row-header column sizes to its longest label - category names and
    indented reporting names - and the numeric columns share the rest. In an
    auto-layout table a small percentage width resolves to the content's
@@ -437,6 +443,13 @@ body.has-rail .shell{margin-left:var(--rail-w);max-width:1320px}
 .tier-edit:focus-visible{outline:2px solid var(--rail-focus);outline-offset:2px}
 .summary{font-size:14.5px;color:var(--rail-ink);line-height:1.5;margin:0}
 .summary span{display:block;color:var(--rail-ink-2);font-size:13px}
+/* The mandate as three labelled rows - label muted, value in the rail's ink -
+   so a PWA reads "Top Account: $30,000,000" rather than a figure they have to
+   name themselves. One grid, so the values line up whatever the label length. */
+dl.md-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;align-items:baseline;
+  font-size:13.5px;line-height:1.45}
+dl.md-kv dt{color:var(--rail-ink-2);white-space:nowrap}
+dl.md-kv dd{margin:0;color:var(--rail-ink);font-weight:500;overflow-wrap:anywhere}
 .basis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .basis .field label{font-size:12px}
 
@@ -1269,13 +1282,23 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .tbl.impl tr.asset.alt .prodcol{background:var(--surface)}
 .tbl.impl tr.cat .prodcol{background:#E9EDF2}
 .tbl.impl tr.grand .prodcol{background:#16243A}
-.tbl.impl tbody tr:hover .prodcol{background:var(--row-hover)}
+/* The total row keeps its navy on hover: the row-hover tint washed the
+   white text off it. Every other row still lights up. */
+.tbl.impl tbody tr:not(.grand):hover .prodcol{background:var(--row-hover)}
 .tbl.impl td.txt,.tbl.impl th.txt{text-align:left}
 .tbl.impl .tick{font-family:var(--f-num);color:var(--ink-2);letter-spacing:.02em}
 .tbl.impl tr.cat td.num{font-weight:700}
 .tbl.impl tr.grand th,.tbl.impl tr.grand td{background:#16243A;color:#fff;font-weight:700;
   border-top:2px solid #16243A}
 .tbl.impl tr.grand th{background:#16243A}
+.tbl.impl tbody tr.grand:hover th,.tbl.impl tbody tr.grand:hover td{background:#16243A;color:#fff}
+/* A position below its product's minimum: a hard block, so it reads as one
+   and the export says why. */
+.tbl.impl tr.below-min th,.tbl.impl tr.below-min td{background:#FDE8E8;color:#7A1D1D}
+.tbl.impl tr.below-min .prodcol{background:#FDE8E8}
+.tbl.impl tbody tr.below-min:hover th,.tbl.impl tbody tr.below-min:hover td,
+.tbl.impl tbody tr.below-min:hover .prodcol{background:#FBD9D9}
+.tbl.impl tr.below-min .bdg.b-breach{margin-left:8px;vertical-align:middle}
 .pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;
   letter-spacing:.04em;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .p-act{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}
@@ -1291,8 +1314,6 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 /* the fee group (D51): struck through, not removed, under a schedule that
    does not read it - the column still says what the product is */
 .p-grp{background:#EEF1F4;color:#3E4E60;border:1px solid #D8DEE6}
-.tbl.impl .fee-dead .p-grp{text-decoration:line-through;opacity:.55}
-.tbl.impl th.fee-dead{text-decoration:line-through;opacity:.7}
 /* ── the fee columns arriving and leaving (D52) ──
    A column has no width of its own: it takes it from the widest cell. So the
    animation runs on two things at once - the cell's side padding, and a span
@@ -1642,6 +1663,36 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .act-badge.deleted{background:#FDE8E8;color:#9B1C1C}
 .act-none{padding:24px 20px;margin:0}
 .act-more{padding:14px 20px 18px;text-align:center}
+/* ── the proposal register (D69) ──
+   A fifth table on the same dialog, in the catalogue's chrome. The list is
+   dense and named-column; the open proposal sits below it with its two
+   pictures behind a segmented toggle and the workbook one click away. The
+   pictures are indented tables in their own right, so a category reads as
+   a group head and its assets or products as the rows under it. */
+.dialog.repo.register{width:min(1400px,calc(100vw - 32px))}
+.reg-tools .cat-search{flex:0 1 280px;min-width:180px}
+.reg-tbl td b{font-weight:600}
+.reg-tbl td .mut,.reg-tbl .mut{color:var(--ink-3)}
+.reg-tbl tr[data-regrow]{cursor:pointer}
+.reg-tbl th.num,.reg-tbl td.num{padding-right:22px}
+.arc-badge.acc{background:#E3EBFA;color:#1E4FA3}
+.arc-badge.mute{background:var(--surface-2);color:var(--ink-2)}
+.arc-badge.warn{background:#FEF3C7;color:#7A4A0A}
+.reg-detail{max-height:52%}
+.reg-detail .arc-dact .repo-seg{margin-left:6px}
+.reg-detail .arc-dact .btn-primary{text-decoration:none}
+.reg-detail .repo-prov b.warn{color:#7A4A0A;font-weight:700}
+.reg-pic-wrap{margin-top:12px;overflow-x:auto}
+.reg-pic{width:100%}
+.reg-pic th{position:static}
+.reg-pic tr.grp td{background:var(--surface-2);font-weight:600}
+.reg-pic td.sub{padding-left:26px;color:var(--ink-2)}
+.reg-pic td.num{font-family:var(--f-num);text-align:right;white-space:nowrap}
+.reg-pic th.num{text-align:right}
+/* one portfolio, two columns: stretched to the drawer the weight sits a screen away
+   from its label. Outranks .cat-tbl's own width rule by specificity. */
+.reg-pic-wrap table.reg-pic-one{width:auto;min-width:480px;max-width:720px}
+.reg-f .repo-src + .spacer{flex:1}
 /* ── the admin entry points (D62) ──
    Two glyphs, three places, one job each: the rail's utility bar is where the
    tools LIVE, the icon on the sleeve tier is the shortcut from the thing that
@@ -1844,4 +1895,4 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
   .cat-b{grid-template-columns:180px minmax(0,1fr)}
 }
 
-.tbl thead th{border-bottom:1px solid var(--ink)}tr.band th{border-top:1px solid var(--accent);letter-spacing:.2em}.tblwrap{background:var(--surface);border:1px solid var(--line-strong)}tr.cat th,tr.cat td{border-top:none;border-bottom:1px solid var(--line-strong)}tr.total th,tr.total td{background:#F0F2F5}h2{color:#16243A}.base-tag{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0;border-radius:9px;font-size:11.5px;font-weight:700;padding:1px 7px;letter-spacing:.03em}.rail-brand{border-bottom:1px solid #233754}.rail-brand>b{font-family:var(--f-num);font-weight:500;letter-spacing:.005em}.rail .grp-idx{letter-spacing:.18em}.rail .ta-hint{color:#7E90A8}.rail .is-disabled{opacity:.42}.bdg{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}.b-ok{background:#E7F4EC;color:#176A33;border:1px solid #B7E0C5}.b-warn{background:#FEF3C7;color:#B45309;border:1px solid #F3D48A}.b-breach{background:#FDE8E8;color:#9B1C1C;border:1px solid #F1B8B2}.b-bind{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}.b-slack{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}.notices{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:0 0 clamp(20px,3vw,30px)}.spec{margin:8px 0 0;background:#FFFBEB;border:1.5px dashed #D4A017;border-radius:6px;padding:13px 18px 15px;font-size:15px;color:#4A3B10}.spec h4{margin:0 0 8px;font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:#92600A;font-family:var(--f-num);font-weight:700}.spec p{margin:0 0 9px;line-height:1.5}.spec p:last-child{margin-bottom:0}.spec .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0 0}.spec .legend span.lbl{font-size:13px;color:#6B5716}.pos{color:#1A7F37}.neg{color:#B42318}.rail .is-disabled .field-note{color:#E0B25C}
+.tbl thead th{border-bottom:1px solid var(--ink)}tr.band th{border-top:1px solid var(--accent);letter-spacing:.2em}.tblwrap{background:var(--surface);border:1px solid var(--line-strong)}tr.cat th,tr.cat td{border-top:none;border-bottom:1px solid var(--line-strong)}tr.total th,tr.total td{background:#F0F2F5}h2{color:#16243A}.base-tag{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0;border-radius:9px;font-size:11.5px;font-weight:700;padding:1px 7px;letter-spacing:.03em}.rail-brand{border-bottom:1px solid #233754}.rail-brand>b{font-family:var(--f-num);font-weight:500;letter-spacing:.005em}.rail .grp-idx{letter-spacing:.18em}.rail .ta-hint{color:#7E90A8}.rail .is-disabled{opacity:.42}.bdg{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.03em;white-space:nowrap}.b-ok{background:#E7F4EC;color:#176A33;border:1px solid #B7E0C5}.b-warn{background:#FEF3C7;color:#B45309;border:1px solid #F3D48A}.b-breach{background:#FDE8E8;color:#9B1C1C;border:1px solid #F1B8B2}.b-bind{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}.b-slack{background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}.spec{margin:8px 0 0;background:#FFFBEB;border:1.5px dashed #D4A017;border-radius:6px;padding:13px 18px 15px;font-size:15px;color:#4A3B10}.spec h4{margin:0 0 8px;font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;color:#92600A;font-family:var(--f-num);font-weight:700}.spec p{margin:0 0 9px;line-height:1.5}.spec p:last-child{margin-bottom:0}.spec .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0 0}.spec .legend span.lbl{font-size:13px;color:#6B5716}.pos{color:#1A7F37}.neg{color:#B42318}.rail .is-disabled .field-note{color:#E0B25C}

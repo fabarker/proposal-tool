@@ -169,7 +169,8 @@ class FixturesScenarioPort:
                              implementation.get('feeLevel'),
                              implementation.get('includeFees', True),
                              bool(implementation.get('volPremium')),
-                             assets=assetEstimates.forSlice(basis.currency, basis.hedging))
+                             assets=assetEstimates.forSlice(basis.currency, basis.hedging),
+                             model=implementation.get('model'))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

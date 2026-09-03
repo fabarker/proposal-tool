@@ -280,6 +280,12 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
   position:sticky;top:0;z-index:2}
 .tbl thead th.sub{font-size:12px;letter-spacing:.11em;opacity:.78;border-bottom-width:1px;font-weight:600}
 .rowhead{text-align:left!important;position:sticky;left:0;z-index:3;background:var(--head-bg)}
+/* The pinned column's HEADER sits above the scrolling headers, which it did
+   not: `.tbl thead th` (0,1,2) outranks `.rowhead` (0,1,0), so the corner cell
+   was taking the scrolling headers' own z-index of 2 and losing to them on
+   document order as the table scrolled right. Specificity, not the value, was
+   the bug - and the background is already opaque. */
+.tbl thead th.rowhead{z-index:5}
 /* The row-header column sizes to its longest label - category names and
    indented reporting names - and the numeric columns share the rest. In an
    auto-layout table a small percentage width resolves to the content's

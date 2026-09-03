@@ -335,13 +335,23 @@ IMPL_CSS = r"""
 .tbl.impl tr.asset.alt .prodcol{background:var(--surface)}
 .tbl.impl tr.cat .prodcol{background:#E9EDF2}
 .tbl.impl tr.grand .prodcol{background:#16243A}
-.tbl.impl tbody tr:hover .prodcol{background:var(--row-hover)}
+/* The total row keeps its navy on hover: the row-hover tint washed the
+   white text off it. Every other row still lights up. */
+.tbl.impl tbody tr:not(.grand):hover .prodcol{background:var(--row-hover)}
 .tbl.impl td.txt,.tbl.impl th.txt{text-align:left}
 .tbl.impl .tick{font-family:var(--f-num);color:var(--ink-2);letter-spacing:.02em}
 .tbl.impl tr.cat td.num{font-weight:700}
 .tbl.impl tr.grand th,.tbl.impl tr.grand td{background:#16243A;color:#fff;font-weight:700;
   border-top:2px solid #16243A}
 .tbl.impl tr.grand th{background:#16243A}
+.tbl.impl tbody tr.grand:hover th,.tbl.impl tbody tr.grand:hover td{background:#16243A;color:#fff}
+/* A position below its product's minimum: a hard block, so it reads as one
+   and the export says why. */
+.tbl.impl tr.below-min th,.tbl.impl tr.below-min td{background:#FDE8E8;color:#7A1D1D}
+.tbl.impl tr.below-min .prodcol{background:#FDE8E8}
+.tbl.impl tbody tr.below-min:hover th,.tbl.impl tbody tr.below-min:hover td,
+.tbl.impl tbody tr.below-min:hover .prodcol{background:#FBD9D9}
+.tbl.impl tr.below-min .bdg.b-breach{margin-left:8px;vertical-align:middle}
 .pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;
   letter-spacing:.04em;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .p-act{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}
@@ -357,8 +367,6 @@ IMPL_CSS = r"""
 /* the fee group (D51): struck through, not removed, under a schedule that
    does not read it - the column still says what the product is */
 .p-grp{background:#EEF1F4;color:#3E4E60;border:1px solid #D8DEE6}
-.tbl.impl .fee-dead .p-grp{text-decoration:line-through;opacity:.55}
-.tbl.impl th.fee-dead{text-decoration:line-through;opacity:.7}
 /* ── the fee columns arriving and leaving (D52) ──
    A column has no width of its own: it takes it from the widest cell. So the
    animation runs on two things at once - the cell's side padding, and a span

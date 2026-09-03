@@ -125,8 +125,10 @@ def test_export_without_a_delegate_uses_the_payload_writer(store, tmp_path):
         BASIS, mandate, [result], {'sleeves': chosen, 'variant': VARIANTS[0]}))
     book = load_workbook(path)
     # four sheets now, and none of them needed the analytics library (D67)
+    # chartData backs the composition doughnuts and is hidden (item 9)
     assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
-                               'Implementation']
+                               'Implementation', 'chartData']
+    assert book['chartData'].sheet_state == 'hidden'
     rows = list(book['Implementation'].iter_rows(values_only=True))
     weights = [r[2] for r in rows
                if r[2] is not None and r[0] and str(r[0]).startswith('  ')]

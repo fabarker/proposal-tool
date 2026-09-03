@@ -50,6 +50,13 @@ SHARED_CSS = r"""
 .tier-edit:focus-visible{outline:2px solid var(--rail-focus);outline-offset:2px}
 .summary{font-size:14.5px;color:var(--rail-ink);line-height:1.5;margin:0}
 .summary span{display:block;color:var(--rail-ink-2);font-size:13px}
+/* The mandate as three labelled rows - label muted, value in the rail's ink -
+   so a PWA reads "Top Account: $30,000,000" rather than a figure they have to
+   name themselves. One grid, so the values line up whatever the label length. */
+dl.md-kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;align-items:baseline;
+  font-size:13.5px;line-height:1.45}
+dl.md-kv dt{color:var(--rail-ink-2);white-space:nowrap}
+dl.md-kv dd{margin:0;color:var(--rail-ink);font-weight:500;overflow-wrap:anywhere}
 .basis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .basis .field label{font-size:12px}
 

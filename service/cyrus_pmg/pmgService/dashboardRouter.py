@@ -22,7 +22,8 @@ from fastapi.responses import JSONResponse
 
 from cyrus_pmg.pmgService.core.accessControl import (
     getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)
-from cyrus_pmg.pmgService.scenario import fees, products, scenarioStore, sleeveRepo
+from cyrus_pmg.pmgService.scenario import (fees, products, proposalRegister, scenarioStore,
+                                           sleeveRepo)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
     exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
@@ -222,6 +223,7 @@ def getRepository(user: str = Depends(requireAdmin)):
             'products': products.all(),
             'catalogue': products.describeSource(),
             'store': sleeveRepo.describe(),
+            'register': proposalRegister.describe(),
             'user': user,
         }
     except products.BadCatalogue as exc:
@@ -353,6 +355,57 @@ def exportRepositoryActivity(actions: str = '', variant: str = '', category: str
                 'sleeve-activity.csv')
 
 
+def _registerFilters(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
+                     variant: str = '', since: str = '', until: str = '', q: str = '') -> dict:
+    return {'exportedBy': exportedBy or None, 'primaryPwa': primaryPwa or None,
+            'currency': currency or None, 'variant': variant or None,
+            'since': since or None, 'until': until or None, 'query': q or ''}
+
+
+@router.get('/scenario/repository/proposals')
+def listRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
+                          variant: str = '', since: str = '', until: str = '', q: str = '',
+                          limit: int = 100, before: str = '',
+                          user: str = Depends(requireAdmin)):
+    """A page of the proposal register (D69): every delivered proposal, newest
+    first, with the counts that frame it. `before` is the cursor a previous
+    page handed back as `next`. No blob travels with a list."""
+    filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
+    return proposalRegister.listProposals(limit=limit, before=before or None, **filters)
+
+
+@router.get('/scenario/repository/proposals.csv')
+def exportRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
+                            variant: str = '', since: str = '', until: str = '', q: str = '',
+                            user: str = Depends(requireAdmin)):
+    """The register as a table under the same filters, every page of it."""
+    filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
+    return _csv(proposalRegister.EXPORT_COLUMNS, proposalRegister.exportRows(**filters),
+                'proposal-register.csv')
+
+
+@router.get('/scenario/repository/proposals/{proposalId}')
+def getRegisterProposal(proposalId: str, user: str = Depends(requireAdmin)):
+    """One proposal: both pictures, the sleeve pins with where the library is
+    now, and the workbook's name, size and hash - but not its bytes."""
+    entry = proposalRegister.getProposal(proposalId)
+    if entry is None:
+        return JSONResponse(status_code=404, content={'error': 'No proposal {}.'.format(proposalId)})
+    return {'proposal': entry}
+
+
+@router.get('/scenario/repository/proposals/{proposalId}/workbook')
+def downloadRegisterWorkbook(proposalId: str, user: str = Depends(requireAdmin)):
+    """The delivered workbook, byte for byte, with its hash in a header so
+    'this is the file they received' is checkable rather than asserted."""
+    found = proposalRegister.workbook(proposalId)
+    if found is None:
+        return JSONResponse(status_code=404, content={'error': 'No proposal {}.'.format(proposalId)})
+    return Response(content=found['bytes'], media_type=_XLSX,
+                    headers={'Content-Disposition': 'attachment; filename="{}"'.format(found['name']),
+                             'X-Workbook-SHA256': found['sha']})
+
+
 @router.post('/scenario/repository/sleeves/{sleeveId}/restore')
 def restoreRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
     """Put a removed sleeve back. Re-validated on the way in: the name may
@@ -403,7 +456,7 @@ def createScenario(payload: dict = Body(...), user: str = Depends(requireEditor)
         basis = BasisInput.fromDict(payload.get('basis') or {})
         validateBasis(basis)
         port.validate_mandate(mandate)
-        state = scenarioStore.createScenario(mandate, basis)
+        state = scenarioStore.createScenario(mandate, basis, createdBy=user)
         return {'id': state['id'], 'scenario': _scenarioPayload(state)}
     except ValidationError as exc:
         return _validationError(exc)
@@ -579,6 +632,7 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
 
         from cyrus_pmg.pmgService.scenario.rules import (
             AUTO_SLEEVE_CATEGORIES, sleeveCategory)
+        from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
         sleeves = state['sleeves'] or {}
         # one choice per sleeve category: grouped categories share theirs (D60)
         missing = []
@@ -594,13 +648,40 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
                 'Attach a sleeve to every category first - missing: {}.'.format(
                     ', '.join(missing)))
 
-        content = port.build_export(basis, mandate, results,
-                                    {'sleeves': sleeves, 'variant': variant,
-                                     'tacticalTilt': bool(state.get('tacticalTilt', True)),
-                                     'volPremium': bool(state.get('volPremium', True)),
-                                     'includeFees': includeFees,
-                                     'feeSchedule': feeSchedule, 'feeLevel': feeLevel})
+        implementation = {'sleeves': sleeves, 'variant': variant,
+                          'tacticalTilt': bool(state.get('tacticalTilt', True)),
+                          'volPremium': bool(state.get('volPremium', True)),
+                          'includeFees': includeFees,
+                          'feeSchedule': feeSchedule, 'feeLevel': feeLevel}
+        # The implemented model is built ONCE here and handed to both the
+        # writer and the register, so the sheet a client receives and the
+        # record kept of it are the same model rather than two builds (D69).
+        # An unpriced proposal is built unpriced whatever schedule the
+        # scenario happens to remember (D52) - the writer does the same.
+        model = buildImplementationRows(
+            results[0], sleeves, AUTO_SLEEVE_CATEGORIES, mandate.mandateSize, variant,
+            implementation['tacticalTilt'], feeSchedule if includeFees else None, feeLevel,
+            mandate.topAccountSize, implementation['volPremium'], basis.currency)
+        # A position smaller than the product will accept is not a position:
+        # the export refuses while any survives, so the UI's block cannot be
+        # walked past by calling the endpoint directly (item 3).
+        if model['breaches']:
+            raise ValidationError('minimumInvestment',
+                                  'Below mandate minimum: {}. Raise the mandate, change the '
+                                  'sleeve, or drop the product before exporting.'.format(
+                                      ', '.join('{} in {} (${:,.0f} against a ${:,.0f} minimum)'.format(
+                                          b['name'], b['category'], b['notional'],
+                                          b['minimumInvestment']) for b in model['breaches'][:4])
+                                      + ('' if len(model['breaches']) <= 4
+                                         else ', and {} more'.format(len(model['breaches']) - 4))))
+
+        content = port.build_export(basis, mandate, results, dict(implementation, model=model))
         filename = exportFilename(basis)
+        # Record first, deliver second. A proposal that could not be written
+        # down is not delivered - the register is worth nothing with holes in
+        # it, and this write is one insert of ~30 KB into a local file.
+        proposalRegister.record(scenarioId, user, state.get('createdBy', ''), basis, mandate,
+                                results, implementation, model, content, filename)
         return Response(
             content=content,
             media_type=_XLSX,

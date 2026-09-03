@@ -84,6 +84,21 @@ var act = {
   busy: false, loaded: false, error: null
 };
 var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'restored', 'imported'];
+
+/* The proposal register (D69): every delivered proposal, for ever. The page
+   holds what the server handed back; a filter change is a fresh read. The
+   open record is fetched on its own, and the workbook only on click. */
+var reg = {
+  query: '', exportedBy: '', primaryPwa: '', currency: '', variant: '', range: '90d',
+  entries: [], next: null, total: 0, facets: null,
+  busy: false, loaded: false, error: null,
+  detail: null,                /* proposalId open below the table */
+  record: null,                /* that proposal, fetched */
+  recordBusy: false,
+  picture: 'implemented'       /* 'allocation' | 'implemented' */
+};
+var REG_RANGES = [['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['365d', 'Last year'], ['all', 'All time']];
+var regTimer = null;
 var ACT_RANGES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['all', 'All time']];
 var actTimer = null;
 
@@ -425,10 +440,36 @@ function actFromHash(hash) {
   var range = q.get('range');
   act.range = ACT_RANGES.some(function (r) { return r[0] === range; }) ? range : '30d';
 }
+function regHash() {
+  var q = new URLSearchParams();
+  if (reg.query.trim()) q.set('q', reg.query.trim());
+  if (reg.exportedBy) q.set('who', reg.exportedBy);
+  if (reg.primaryPwa) q.set('pwa', reg.primaryPwa);
+  if (reg.currency) q.set('ccy', reg.currency);
+  if (reg.variant) q.set('book', reg.variant);
+  if (reg.range !== '90d') q.set('range', reg.range);
+  if (reg.detail) { q.set('open', reg.detail); if (reg.picture !== 'implemented') q.set('pic', reg.picture); }
+  var str = q.toString();
+  return '#proposals' + (str ? '?' + str : '');
+}
+function regFromHash(hash) {
+  var at = hash.indexOf('?'); if (at === -1) return;
+  var q = new URLSearchParams(hash.slice(at + 1));
+  reg.query = q.get('q') || '';
+  reg.exportedBy = q.get('who') || '';
+  reg.primaryPwa = q.get('pwa') || '';
+  reg.currency = q.get('ccy') || '';
+  reg.variant = q.get('book') || '';
+  var range = q.get('range');
+  reg.range = REG_RANGES.some(function (r) { return r[0] === range; }) ? range : '90d';
+  reg.detail = q.get('open') || null;
+  reg.picture = q.get('pic') === 'allocation' ? 'allocation' : 'implemented';
+}
 function hashFor(view) {
   if (view === 'catalogue') return catHash();
   if (view === 'archive') return arcHash();
   if (view === 'activity') return actHash();
+  if (view === 'proposals') return regHash();
   return '#repository';
 }
 function syncHash() {
@@ -439,7 +480,7 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = ['catalogue', 'archive', 'activity'].indexOf(view) !== -1 ? view : 'sleeves';
+  repo.view = ['catalogue', 'archive', 'activity', 'proposals'].indexOf(view) !== -1 ? view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -454,6 +495,10 @@ function switchView(view) {
   repo.historyOpen = false; repo.history = null; repo.openRevision = null;
   render();
   if (view === 'activity' && !act.loaded) loadActivity(true);
+  if (view === 'proposals') {
+    if (!reg.loaded) loadRegister(true);
+    if (reg.detail && !(reg.record && reg.record.proposalId === reg.detail)) loadProposal(reg.detail);
+  }
 }
 
 async function api(method, path, body) {
@@ -479,6 +524,10 @@ async function loadRepository() {
     chooseDefaults();
     repo.error = null;
     if (repo.view === 'activity' && !act.loaded) loadActivity(true);
+    if (repo.view === 'proposals') {
+      if (!reg.loaded) loadRegister(true);
+      if (reg.detail) loadProposal(reg.detail);
+    }
   } catch (err) { repo.error = err.message; }
   repo.busy = false;
   render();
@@ -517,7 +566,7 @@ function closeRepository(force) {
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (/^#(repository|catalogue|archive|activity)/.test(window.location.hash)) {
+  if (/^#(repository|catalogue|archive|activity|proposals)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -1463,6 +1512,225 @@ function actFooterHtml() {
     + '</div>';
 }
 
+/* ---- rendering: the proposal register (D69) -----------------------------
+   Every delivered proposal, newest first, as a table the admin can filter
+   and search; one open below it with its two pictures - the allocation as
+   proposed, and the same allocation with its sleeves opened into products -
+   and the delivered workbook one click away. The one thing the register
+   computes rather than stores is the drift badge on a sleeve: the revision
+   the proposal pinned, against where the library is now. */
+function regParams(before) {
+  var q = new URLSearchParams();
+  if (reg.exportedBy) q.set('exportedBy', reg.exportedBy);
+  if (reg.primaryPwa) q.set('primaryPwa', reg.primaryPwa);
+  if (reg.currency) q.set('currency', reg.currency);
+  if (reg.variant) q.set('variant', reg.variant);
+  if (reg.query.trim()) q.set('q', reg.query.trim());
+  if (reg.range !== 'all') {
+    var days = parseInt(reg.range, 10) || 90;
+    q.set('since', new Date(Date.now() - days * 86400000).toISOString().slice(0, 10));
+  }
+  q.set('limit', '60');
+  if (before) q.set('before', before);
+  return q.toString();
+}
+async function loadRegister(reset) {
+  if (reg.busy) return;
+  reg.busy = true; reg.error = null;
+  if (reset) { reg.entries = []; reg.next = null; }
+  render();
+  try {
+    var r = await api('GET', '/scenario/repository/proposals?' + regParams(reset ? null : reg.next));
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not read the register (' + r.status + ')'));
+    reg.entries = reset ? r.body.entries : reg.entries.concat(r.body.entries);
+    reg.next = r.body.next; reg.total = r.body.total; reg.facets = r.body.facets;
+    reg.loaded = true;
+  } catch (err) { reg.error = err.message; }
+  reg.busy = false; render();
+}
+async function loadProposal(proposalId) {
+  reg.recordBusy = true; render();
+  try {
+    var r = await api('GET', '/scenario/repository/proposals/' + encodeURIComponent(proposalId));
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not read the proposal (' + r.status + ')'));
+    reg.record = r.body.proposal;
+  } catch (err) { reg.error = err.message; reg.record = null; }
+  reg.recordBusy = false; render();
+}
+function regRefresh() {
+  if (regTimer) clearTimeout(regTimer);
+  regTimer = setTimeout(function () { regTimer = null; loadRegister(true); }, 220);
+}
+function regSelect(attr, label, values, chosen) {
+  return '<label class="arc-sel' + (chosen ? ' on' : '') + '"><span>' + esc(label) + '</span>'
+    + '<select data-' + attr + '>' + values.map(function (v) {
+        return '<option value="' + esc(v[0]) + '"' + (v[0] === chosen ? ' selected' : '') + '>' + esc(v[1]) + '</option>';
+      }).join('') + '</select></label>';
+}
+function regFacetOptions(facet, chosen, any) {
+  var counts = (reg.facets && reg.facets[facet]) || {};
+  var out = [['', any]].concat(Object.keys(counts).map(function (k) { return [k, k + ' (' + counts[k] + ')']; }));
+  if (chosen && !counts[chosen]) out.push([chosen, chosen + ' (0)']);
+  return out;
+}
+function regFiltersInForce() {
+  return !!(reg.query.trim() || reg.exportedBy || reg.primaryPwa || reg.currency || reg.variant || reg.range !== '90d');
+}
+function money(n) {
+  if (typeof n !== 'number') return '—';
+  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
+  if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
+  return '$' + Math.round(n);
+}
+function regToolbarHtml() {
+  return '<div class="cat-tools reg-tools">'
+    + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
+    + '<input type="search" id="regSearch" placeholder="Search PWA, person, sleeve or portfolio…" value="' + esc(reg.query) + '"'
+    + ' aria-label="Search the register"><kbd aria-hidden="true">/</kbd></label>'
+    + regSelect('regwho', 'By', regFacetOptions('exportedBy', reg.exportedBy, 'Anyone'), reg.exportedBy)
+    + regSelect('regpwa', 'PWA', regFacetOptions('primaryPwa', reg.primaryPwa, 'Any PWA'), reg.primaryPwa)
+    + regSelect('regccy', 'Currency', regFacetOptions('currency', reg.currency, 'Any'), reg.currency)
+    + regSelect('regbook', 'Book', regFacetOptions('variant', reg.variant, 'All books'), reg.variant)
+    + regSelect('regrange', 'When', REG_RANGES, reg.range)
+    + (regFiltersInForce() ? '<button type="button" class="cat-clear" data-regclear>Clear</button>' : '')
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/proposals.csv?' + regParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
+    + '</div>';
+}
+function regHeadHtml() {
+  return '<tr><th>Exported</th><th>By</th><th>Primary PWA</th><th class="num">Mandate</th>'
+    + '<th>Basis</th><th>Book</th><th>Proposal portfolio</th><th>Pricing</th><th></th></tr>';
+}
+function regBodyHtml() {
+  if (!reg.loaded && reg.busy) return '<tr><td colspan="9" class="cat-empty">Reading the register…</td></tr>';
+  if (reg.error && !reg.entries.length) return '<tr><td colspan="9" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
+  if (!reg.entries.length) {
+    return '<tr><td colspan="9" class="cat-empty">No proposal on record'
+      + (reg.range !== 'all' ? ' in the ' + esc(REG_RANGES.filter(function (r) { return r[0] === reg.range; })[0][1].toLowerCase()) : '')
+      + ' with the filters in force.'
+      + (regFiltersInForce() ? ' <button type="button" class="cat-clear" data-regclear>Clear the filters</button>' : '')
+      + '</td></tr>';
+  }
+  return reg.entries.map(function (e) {
+    var when = e.exportedAt ? shortDate(e.exportedAt) + ' ' + e.exportedAt.slice(11, 16) : '';
+    var pricing = e.includeFees ? esc((e.feeSchedule || '') + (e.feeLevel ? ' · ' + e.feeLevel.replace(/^PMG |^Management /, '') : '')) : '<span class="mut">no fees</span>';
+    var flags = [];
+    if (e.sequence > 1) flags.push('<span class="arc-badge acc">#' + e.sequence + '</span>');
+    if (e.tacticalTilt) flags.push('<span class="arc-badge mute">tilt</span>');
+    return '<tr data-regrow="' + esc(e.proposalId) + '" class="' + (reg.detail === e.proposalId ? 'on' : '') + '" aria-selected="' + (reg.detail === e.proposalId) + '">'
+      + '<td>' + esc(when) + '</td>'
+      + '<td>' + esc(e.exportedBy) + '</td>'
+      + '<td><b>' + esc(e.primaryPwa) + '</b></td>'
+      + '<td class="num">' + money(e.mandateSize) + '</td>'
+      + '<td>' + esc(e.currency) + ' · ' + esc(e.hedging) + '</td>'
+      + '<td>' + esc(e.variant) + '</td>'
+      + '<td>' + esc((e.baseKey || '').split('|').slice(1, 3).join(' ')) + '</td>'
+      + '<td>' + pricing + '</td>'
+      + '<td class="arc-status">' + flags.join(' ') + '</td>'
+      + '</tr>';
+  }).join('');
+}
+function regPinBadge(pin) {
+  if (pin.sleeveId == null || pin.revision == null) return '';
+  if (pin.archived) return ' <span class="arc-badge gone" title="This sleeve has since been archived">r' + pin.revision + ' · archived</span>';
+  if (pin.moved) return ' <span class="arc-badge warn" title="The library has moved on since this proposal">r' + pin.revision + ' · r' + pin.nowRevision + ' now</span>';
+  return ' <span class="arc-badge mute">r' + pin.revision + '</span>';
+}
+function regAllocationHtml(record) {
+  /* the proposal portfolio alone - the base column, the one the implemented
+     model is built on. The comparisons were analysis, and are not kept. */
+  var a = record.allocation || {};
+  if (!a.categories || !a.categories.length) return '<p class="repo-none">No allocation recorded.</p>';
+  var rows = '';
+  a.categories.forEach(function (cat) {
+    rows += '<tr class="grp"><td>' + esc(cat.name) + '</td><td class="num">' + money2(cat.weightPct) + '%</td></tr>';
+    (cat.assets || []).forEach(function (asset) {
+      rows += '<tr><td class="sub">' + esc(asset.reportingName) + '</td><td class="num">' + money2(asset.weightPct) + '%</td></tr>';
+    });
+  });
+  return '<table class="cat-tbl dense reg-pic reg-pic-one"><thead><tr><th>Category / asset</th>'
+    + '<th class="num">' + esc(a.name || a.keyStr || 'Proposal portfolio') + '</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>';
+}
+function regImplementedHtml(record) {
+  var groups = record.implemented || [];
+  if (!groups.length) return '<p class="repo-none">No implemented model recorded.</p>';
+  var pins = {};
+  (record.sleeves || []).forEach(function (p) { pins[p.category] = p; });
+  var rows = '';
+  groups.forEach(function (g) {
+    var pin = pins[g.category] || {sleeveId: g.sleeveId, revision: g.revision};
+    rows += '<tr class="grp"><td>' + esc(g.category) + '</td>'
+      + '<td>' + (g.sleeve ? esc(g.sleeve) + regPinBadge(pin) : '<span class="mut">no sleeve</span>') + '</td>'
+      + '<td></td><td class="num">' + money2(g.weightPct) + '%</td><td class="num"></td></tr>';
+    g.items.forEach(function (it) {
+      rows += '<tr><td class="sub">' + esc(it.name || it.productId) + '</td><td></td>'
+        + '<td class="mut">' + esc([it.ticker, it.vehicle].filter(Boolean).join(' · ') || '—') + '</td>'
+        + '<td class="num">' + money2(it.printedPct) + '%</td>'
+        + '<td class="num">' + money(it.notional) + '</td></tr>';
+    });
+  });
+  return '<table class="cat-tbl dense reg-pic"><thead><tr><th>Category / product</th><th>Sleeve</th>'
+    + '<th>Ticker · vehicle</th><th class="num">Weight</th><th class="num">Notional</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>';
+}
+function regDetailHtml() {
+  if (!reg.detail) return '';
+  var r = reg.record;
+  if (reg.recordBusy || !r || r.proposalId !== reg.detail) {
+    return '<div class="arc-detail reg-detail"><p class="repo-none">Reading the proposal…</p></div>';
+  }
+  var pins = r.sleeves || [];
+  var moved = pins.filter(function (p) { return p.moved || p.archived; }).length;
+  return '<div class="arc-detail reg-detail" id="regDetail">'
+    + '<div class="arc-dh"><div>'
+    + '<h3>' + esc(r.primaryPwa) + ' · ' + money(r.mandateSize) + '</h3>'
+    + '<p>' + esc(r.currency) + ' · ' + esc(r.hedging) + ' · ' + esc(r.variant)
+    + ' · ' + esc((r.baseKey || '').split('|').slice(1, 3).join(' '))
+    + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '')
+    + (r.includeFees ? ' · ' + esc((r.feeSchedule || '') + ' ' + (r.feeLevel || '')) : ' · no fees') + '</p>'
+    + '<p class="repo-prov">' + esc(r.proposalId) + ' · exported ' + esc(shortDate(r.exportedAt)) + ' ' + esc((r.exportedAt || '').slice(11, 16))
+    + ' by ' + esc(r.exportedBy) + (r.createdBy && r.createdBy !== r.exportedBy ? ' · started by ' + esc(r.createdBy) : '')
+    + ' · workbook ' + Math.round(r.workbookBytes / 1024) + ' KB · sha ' + esc((r.workbookSha || '').slice(0, 8)) + '…'
+    + (moved ? ' · <b class="warn">' + moved + ' sleeve' + (moved === 1 ? '' : 's') + ' moved since</b>' : '') + '</p>'
+    + '</div><div class="arc-dact">'
+    + '<a class="btn btn-primary" href="' + esc(window.API_BASE + '/scenario/repository/proposals/' + encodeURIComponent(r.proposalId) + '/workbook') + '" download>Download the workbook</a>'
+    + '<div class="repo-seg" role="tablist" aria-label="Picture">'
+    + '<button type="button" role="tab" data-regpic="allocation" aria-selected="' + (reg.picture === 'allocation') + '">Allocation</button>'
+    + '<button type="button" role="tab" data-regpic="implemented" aria-selected="' + (reg.picture === 'implemented') + '">Implemented</button>'
+    + '</div>'
+    + '<button type="button" class="dlg-close arc-dclose" data-regdetailclose aria-label="Close">×</button>'
+    + '</div></div>'
+    + '<div class="reg-pic-wrap">' + (reg.picture === 'allocation' ? regAllocationHtml(r) : regImplementedHtml(r)) + '</div>'
+    + '</div>';
+}
+function registerViewHtml() {
+  return regToolbarHtml()
+    + '<div class="arc-b">'
+    + '<div class="cat-tblwrap arc-tblwrap" tabindex="0" aria-label="Proposal register, scrolls">'
+    + '<table class="cat-tbl dense arc-tbl reg-tbl"><thead>' + regHeadHtml() + '</thead>'
+    + '<tbody id="regBody">' + regBodyHtml()
+    + (reg.next ? '<tr><td colspan="9" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
+    + '</tbody></table></div>'
+    + regDetailHtml()
+    + '</div>';
+}
+function regFooterHtml() {
+  var d = repo.data;
+  var shown = reg.entries.length;
+  var total = (d && d.register && d.register.proposals) || 0;
+  var bytes = (d && d.register && d.register.workbookBytes) || 0;
+  var size = bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+  return '<div class="repo-f reg-f">'
+    + '<span class="repo-src">Register · ' + total + ' proposal' + (total === 1 ? '' : 's') + ' · ' + size + ' of workbooks'
+    + (d && d.register && d.register.earliest ? ' · since ' + esc(shortDate(d.register.earliest)) : '') + '</span>'
+    + '<span class="spacer"></span>'
+    + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
+    + '<span class="repo-src">' + (reg.loaded ? (shown === reg.total ? shown : shown + ' of ' + reg.total) + ' shown' : '') + ' · append-only</span>'
+    + '</div>';
+}
+
 /* ---- rendering: the catalogue view (D58; laid out as the terminal, D63) ----
    A facet rail of every constraint with counts, a dense table of every field
    with the four figures on the right, a tray of pinned products that opens
@@ -1760,7 +2028,8 @@ function render() {
   var d = repo.data;
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity;
+  var onRegister = repo.view === 'proposals';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister;
 
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Sleeve Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
@@ -1769,6 +2038,8 @@ function render() {
     + '<button type="button" role="tab" data-repoview="archive" aria-selected="' + onArchive + '">Archive'
     + (d && archivedSleeves().length ? '<span class="n">' + archivedSleeves().length + '</span>' : '') + '</button>'
     + '<button type="button" role="tab" data-repoview="activity" aria-selected="' + onActivity + '">Activity</button>'
+    + '<button type="button" role="tab" data-repoview="proposals" aria-selected="' + onRegister + '">Proposals'
+    + (d && d.register && d.register.proposals ? '<span class="n">' + d.register.proposals + '</span>' : '') + '</button>'
     + '</div>';
   if (d && onSleeves) {
     header += '<div class="repo-seg" role="tablist" aria-label="Implementation type">'
@@ -1792,6 +2063,8 @@ function render() {
     body = archiveViewHtml();
   } else if (onActivity) {
     body = activityViewHtml();
+  } else if (onRegister) {
+    body = registerViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -1809,6 +2082,8 @@ function render() {
     footer = arcFooterHtml();
   } else if (onActivity && d) {
     footer = actFooterHtml();
+  } else if (onRegister && d) {
+    footer = regFooterHtml();
   } else if (onCatalogue && d) {
     footer = '<div class="repo-f cat-f">' + catTrayHtml()
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
@@ -1840,7 +2115,7 @@ function render() {
   }
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
-    + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
+    + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
 
@@ -1848,7 +2123,7 @@ function render() {
     var again = document.getElementById(focused);
     if (again && again.focus) {
       again.focus();
-      if ((again.id === 'repoSearch' || again.id === 'catSearch' || again.id === 'arcSearch' || again.id === 'actSearch') && again.setSelectionRange && again.type !== 'search') {
+      if ((again.id === 'repoSearch' || again.id === 'catSearch' || again.id === 'arcSearch' || again.id === 'actSearch' || again.id === 'regSearch') && again.setSelectionRange && again.type !== 'search') {
         var end = again.value.length; again.setSelectionRange(end, end);
       }
     }
@@ -1904,6 +2179,10 @@ function renderEntryLinks() {
       actFromHash(window.location.hash);
       openRepository(null, 'activity');
     }
+    if (show && window.location.hash.indexOf('#proposals') === 0) {
+      regFromHash(window.location.hash);
+      openRepository(null, 'proposals');
+    }
   }
 }
 
@@ -1937,7 +2216,8 @@ document.addEventListener('click', function (e) {
     + '[data-repocreate],[data-repocopy],[data-reporemove],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
-    + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange]') : null;
+    + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
+    + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose]') : null;
   if (!el) {
     /* a click anywhere else closes an open picker, chip menu or context menu */
     if (repo.picker && !e.target.closest('.repo-menu, #repoSearch')) closePicker();
@@ -1995,6 +2275,18 @@ document.addEventListener('click', function (e) {
   if (ds.actmore !== undefined) { loadActivity(false); return; }
   if (ds.actview !== undefined) { openRevisionFrom(parseInt(ds.actview, 10), parseInt(ds.actrev, 10), ds.actarchived === '1'); return; }
   if (ds.actrestore !== undefined) { restoreArchived([parseInt(ds.actrestore, 10)]); return; }
+  /* the register (D69) */
+  if (ds.regrow !== undefined) {
+    if (e.target.closest('a')) return;
+    var same = reg.detail === ds.regrow;
+    reg.detail = same ? null : ds.regrow;
+    if (!same) loadProposal(ds.regrow); else render();
+    return;
+  }
+  if (ds.regdetailclose !== undefined) { reg.detail = null; render(); return; }
+  if (ds.regpic !== undefined) { reg.picture = ds.regpic === 'allocation' ? 'allocation' : 'implemented'; render(); return; }
+  if (ds.regclear !== undefined) { reg.query = ''; reg.exportedBy = ''; reg.primaryPwa = ''; reg.currency = ''; reg.variant = ''; reg.range = '90d'; loadRegister(true); return; }
+  if (ds.regmore !== undefined) { loadRegister(false); return; }
   if (ds.repoadd !== undefined) { addRow(); return; }
   if (ds.reporm !== undefined) { removeRow(parseInt(ds.reporm, 10)); return; }
   if (ds.repopick !== undefined) { openPicker(parseInt(ds.repopick, 10)); return; }
@@ -2070,6 +2362,12 @@ document.addEventListener('change', function (e) {
   if (ds.actwho !== undefined) { act.actor = e.target.value; loadActivity(true); return; }
   if (ds.actbook !== undefined) { act.variant = e.target.value; loadActivity(true); return; }
   if (ds.actrange !== undefined) { act.range = e.target.value; loadActivity(true); return; }
+  /* the register's selects (D69) */
+  if (ds.regwho !== undefined) { reg.exportedBy = e.target.value; loadRegister(true); return; }
+  if (ds.regpwa !== undefined) { reg.primaryPwa = e.target.value; loadRegister(true); return; }
+  if (ds.regccy !== undefined) { reg.currency = e.target.value; loadRegister(true); return; }
+  if (ds.regbook !== undefined) { reg.variant = e.target.value; loadRegister(true); return; }
+  if (ds.regrange !== undefined) { reg.range = e.target.value; loadRegister(true); return; }
 });
 
 document.addEventListener('contextmenu', function (e) {
@@ -2122,6 +2420,7 @@ document.addEventListener('input', function (e) {
   if (el.id === 'catSearch') { cat.query = el.value; updateCatalogue(); return; }
   if (el.id === 'arcSearch') { arc.query = el.value; updateArchive(); return; }
   if (el.id === 'actSearch') { act.query = el.value; syncHash(); actRefresh(); return; }
+  if (el.id === 'regSearch') { reg.query = el.value; syncHash(); regRefresh(); return; }
   if (!repo.draft) return;
   if (el.id === 'repoName') { repo.draft.name = el.value; repo.dirty = true; updateTotals(); return; }
   if (el.id === 'repoNote') { repo.draft.note = el.value; repo.dirty = true; updateTotals(); return; }
@@ -2150,18 +2449,24 @@ document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePicker(); return; }
     return;
   }
-  if (repo.view === 'archive' || repo.view === 'activity') {
-    var box2 = document.getElementById(repo.view === 'archive' ? 'arcSearch' : 'actSearch');
+  if (repo.view === 'archive' || repo.view === 'activity' || repo.view === 'proposals') {
+    var box2 = document.getElementById(repo.view === 'archive' ? 'arcSearch' : repo.view === 'activity' ? 'actSearch' : 'regSearch');
     var inField2 = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA');
     if (e.key === '/' && !inField2) { e.preventDefault(); if (box2) { box2.focus(); box2.select(); } return; }
     if (e.key === 'Escape') {
       e.preventDefault();
       if (box2 && e.target === box2) {
-        if (box2.value) { box2.value = ''; if (repo.view === 'archive') { arc.query = ''; updateArchive(); } else { act.query = ''; loadActivity(true); } }
+        if (box2.value) {
+          box2.value = '';
+          if (repo.view === 'archive') { arc.query = ''; updateArchive(); }
+          else if (repo.view === 'activity') { act.query = ''; loadActivity(true); }
+          else { reg.query = ''; loadRegister(true); }
+        }
         else box2.blur();
         return;
       }
       if (repo.view === 'archive' && arc.detail != null) { arc.detail = null; repo.historyOpen = false; render(); return; }
+      if (repo.view === 'proposals' && reg.detail) { reg.detail = null; render(); return; }
       closeRepository(false); return;
     }
     return;

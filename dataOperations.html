@@ -277,6 +277,7 @@ ol.steps > li p:last-child{margin:0}
 <tr><td>Advisor directory</td><td><span class="pill p-warn">B</span></td><td>Primary PWA directory</td><td>PWA operations</td><td>Maintainer (code today)</td><td>Data owner</td><td>Continuous — joiners and movers</td></tr>
 <tr><td>Sleeve library</td><td><span class="pill p-acc">C</span></td><td><b>This tool's own database</b></td><td><b>PMG — you</b></td><td>PMG admins, in-app</td><td>Admin, self-service</td><td>Continuous</td></tr>
 <tr><td>Scenario state</td><td><span class="pill p-acc">C</span></td><td>This tool's store</td><td>n/a — user-created</td><td>Automatic, 24h expiry</td><td>n/a</td><td>Continuous</td></tr>
+<tr><td>Proposal register</td><td><span class="pill p-acc">C</span></td><td><b>This tool's own database</b> — append-only</td><td><b>PMG — you</b></td><td>Written by the export; read by admins</td><td>Nobody — nothing is ever changed</td><td>Every export</td></tr>
 <tr><td>Policy constants</td><td><span class="pill p-mute">D</span></td><td><code>scenario/rules.py</code></td><td><b>Unassigned — assign this</b></td><td>Maintainer</td><td>Business sign-off</td><td>Annual review</td></tr>
 <tr><td>Access lists</td><td><span class="pill p-mute">D</span></td><td>Environment variables</td><td>Service owner</td><td>Host platform team</td><td>Service owner</td><td>On joiners and leavers</td></tr>
 </tbody>
@@ -435,6 +436,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
 <tr><td>Advisors</td><td>Restore the workbook, restart</td><td><span class="pill p-warn">minutes</span></td><td>You kept a copy</td></tr>
 <tr><td>Policy constants</td><td>Revert the commit, redeploy</td><td><span class="pill p-warn">a deploy</span></td><td>Version control — always available</td></tr>
 <tr><td>Scenario state</td><td>None, by design — 24h retention</td><td><span class="pill p-mute">n/a</span></td><td>Users re-enter. Acceptable</td></tr>
+<tr><td>Proposal register</td><td><b>None.</b> Restore the file from backup</td><td><span class="pill p-bad">unrecoverable</span></td><td>A backup exists. <b>This is the one store whose loss cannot be undone</b> — it holds proposals already delivered to clients (D69)</td></tr>
 </tbody>
 </table>
 </div>
@@ -452,6 +454,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.sleeveTools \
 
 <h2 id="p9"><span class="n">9</span>Operating rhythm</h2>
 <dl class="rhythm">
+  <dt>Daily</dt><dd>Back up <code>var/proposals.db</code> — the register — off the host. It is append-only and kept for ever, and it is the only store here whose loss cannot be repaired by re-running anything (D69). A copy of a SQLite file is a valid backup; take it with the service quiet or use <code>sqlite3 .backup</code>.</dd>
   <dt>Weekly</dt><dd>The console's Activity tab on <em>Last 7 days</em> — the only class-C dataset with no release gate, so a periodic look is the control, and the feed is that look in thirty seconds. <code>sleeveTools --census</code> for the structural checks. Take a dated sleeve export and a copy of the <code>.db</code> at the same time.</dd>
   <dt>Monthly</dt><dd>Product extract refresh, followed by a census. Confirm the fee card's version is still the one you expect. Review who is on the two access lists.</dd>
   <dt>Quarterly</dt><dd>SAA extract refresh and full rebake, on the supplying database's schedule. Full verification checklist. Confirm the analytics library's data version has not moved without notice.</dd>

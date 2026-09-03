@@ -113,7 +113,7 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
   </div>
   <div class="card">
     <div class="tier"><span class="n">2</span><h4>Stores the tool owns</h4></div>
-    <p>Data the Proposal Tool itself writes and is the authority for. <b>Three:</b> the sleeve database, the scenario store, the baked analytics store.</p>
+    <p>Data the Proposal Tool itself writes and is the authority for. <b>Four:</b> the sleeve database, the scenario store, the baked analytics store, and — since D69 — the proposal register.</p>
   </div>
   <div class="card">
     <div class="tier"><span class="n">3</span><h4>Constants in code</h4></div>
@@ -147,6 +147,7 @@ dl.kv dt:first-of-type,dl.kv dt:first-of-type + dd{border-top:0}
 <tr><td>Analytics context window</td><td><code>portfolio_weights.py</code> → 30-Nov-1983 to 31-Dec-2022</td><td>—</td><td>3</td><td><span class="pill p-warn">assumed</span></td><td>Whatever window the library and the business agree on.</td></tr>
 <tr><td>Construction rules &amp; limits</td><td><code>scenario/rules.py</code> — floors, tilt %, vol premium, risk labels</td><td>—</td><td>3</td><td><span class="pill p-warn">assumed</span></td><td>Signed-off policy. Nothing here is derived; all of it was chosen.</td></tr>
 <tr><td>Sleeve grouping</td><td><code>rules.py</code> → <code>SLEEVE_GROUPS</code></td><td>—</td><td>3</td><td><span class="pill p-ok">real</span></td><td>PMG's rule that private equity and private assets share one sleeve.</td></tr>
+<tr><td>Proposal register</td><td><code>service/var/proposals.db</code> (SQLite) — one row per delivered proposal, workbook included</td><td><code>SCENARIO_REGISTER_DB</code></td><td>2</td><td><span class="pill p-acc">user-created</span></td><td>Unchanged in kind. <b>Append-only and kept for ever</b> — the first store whose loss is unrecoverable (D69).</td></tr>
 <tr><td>Scenario state</td><td>JSON files under the store directory, 24h retention</td><td><code>SCENARIO_STORE_DIR</code><br><code>SCENARIO_RETENTION_HOURS</code></td><td>2</td><td><span class="pill p-acc">user-created</span></td><td>Unchanged, on durable storage rather than <code>/tmp</code>.</td></tr>
 <tr><td>Identity &amp; access</td><td><code>PMG_ALLOWED_KERBEROS</code>, <code>PMG_ADMIN_KERBEROS</code> — both default <code>fbarker</code></td><td>the vars themselves</td><td>3</td><td><span class="pill p-warn">dev</span></td><td>GSSSO for identity; the host's group membership for the two lists.</td></tr>
 <tr><td>Fixtures analytics</td><td>synthesised in <code>scenario/fixturesAdapter.py</code> from the weights</td><td><code>SCENARIO_ADAPTER=fixtures</code></td><td>3</td><td><span class="pill p-bad">synthetic</span></td><td>Stays. It is how the UI is demonstrated with nothing else running.</td></tr>

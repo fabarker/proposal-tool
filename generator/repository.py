@@ -296,6 +296,36 @@ REPO_CSS = r"""
 .act-badge.deleted{background:#FDE8E8;color:#9B1C1C}
 .act-none{padding:24px 20px;margin:0}
 .act-more{padding:14px 20px 18px;text-align:center}
+/* ── the proposal register (D69) ──
+   A fifth table on the same dialog, in the catalogue's chrome. The list is
+   dense and named-column; the open proposal sits below it with its two
+   pictures behind a segmented toggle and the workbook one click away. The
+   pictures are indented tables in their own right, so a category reads as
+   a group head and its assets or products as the rows under it. */
+.dialog.repo.register{width:min(1400px,calc(100vw - 32px))}
+.reg-tools .cat-search{flex:0 1 280px;min-width:180px}
+.reg-tbl td b{font-weight:600}
+.reg-tbl td .mut,.reg-tbl .mut{color:var(--ink-3)}
+.reg-tbl tr[data-regrow]{cursor:pointer}
+.reg-tbl th.num,.reg-tbl td.num{padding-right:22px}
+.arc-badge.acc{background:#E3EBFA;color:#1E4FA3}
+.arc-badge.mute{background:var(--surface-2);color:var(--ink-2)}
+.arc-badge.warn{background:#FEF3C7;color:#7A4A0A}
+.reg-detail{max-height:52%}
+.reg-detail .arc-dact .repo-seg{margin-left:6px}
+.reg-detail .arc-dact .btn-primary{text-decoration:none}
+.reg-detail .repo-prov b.warn{color:#7A4A0A;font-weight:700}
+.reg-pic-wrap{margin-top:12px;overflow-x:auto}
+.reg-pic{width:100%}
+.reg-pic th{position:static}
+.reg-pic tr.grp td{background:var(--surface-2);font-weight:600}
+.reg-pic td.sub{padding-left:26px;color:var(--ink-2)}
+.reg-pic td.num{font-family:var(--f-num);text-align:right;white-space:nowrap}
+.reg-pic th.num{text-align:right}
+/* one portfolio, two columns: stretched to the drawer the weight sits a screen away
+   from its label. Outranks .cat-tbl's own width rule by specificity. */
+.reg-pic-wrap table.reg-pic-one{width:auto;min-width:480px;max-width:720px}
+.reg-f .repo-src + .spacer{flex:1}
 /* ── the admin entry points (D62) ──
    Two glyphs, three places, one job each: the rail's utility bar is where the
    tools LIVE, the icon on the sleeve tier is the shortcut from the thing that

@@ -103,18 +103,8 @@ function feeScheduleEntry() {
   return feeSchedules().filter(function (s) { return s.id === chosen; })[0] || null;
 }
 
-/* Whether the chosen schedule reads the fee group at all. */
-function feeByGroup() {
-  var entry = feeScheduleEntry();
-  return !!(entry && entry.byGroup);
-}
-
 function managementFee(feeGroup) {
   return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup);
-}
-
-function groupPill(name) {
-  return '<span class="pill p-grp">' + App.esc(name || '—') + '</span>';
 }
 
 function feeText(pct) { return pct === null ? '—' : App.num(pct, 2, '%'); }
@@ -269,7 +259,20 @@ function complete() {
 function rows() {
   var groups = [];
   var all = [];
+  /* Categories that share one sleeve share one LINE: Private Equity and Other
+     Private Assets are one choice in the rail (D60) and one sleeve in the
+     repository, so they are one row whose weight is the sum of theirs.
+     Mirrors buildImplementationRows. */
+  var combined = [], seen = {};
   baseCategories().forEach(function (category) {
+    var key = sleeveCategory(category.name);
+    if (seen[key] === undefined) {
+      seen[key] = combined.length;
+      combined.push({ name: key, weightPct: 0 });
+    }
+    combined[seen[key]].weightPct += category.weightPct;
+  });
+  combined.forEach(function (category) {
     var sleeve = sleeveFor(category.name);
     var items = [];
     if (sleeve) {
@@ -279,6 +282,7 @@ function rows() {
           style: product.style, vehicle: product.vehicle, source: product.source,
           liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
           cost: product.productCost, feeGroup: product.feeGroup,
+          minimumInvestment: product.minimumInvestment,
           mgmt: managementFee(product.feeGroup),
           exact: category.weightPct * product.weight
         };
@@ -303,6 +307,9 @@ function rows() {
       /* percent x percent = bp; null while the book is unpriced */
       item.wtdBp = item.mgmt === null ? null : (item.cost + item.mgmt) * item.weight;
       item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
+      /* A position smaller than the product will accept is not a position
+         (item 3). Mirrors buildImplementationRows. */
+      item.belowMinimum = !!item.minimumInvestment && item.notional < item.minimumInvestment;
     });
   }
   /* Nothing that prints as zero earns a line (D68). Dropped after the
@@ -314,6 +321,21 @@ function rows() {
     group.items = group.items.filter(function (item) { return item.weight !== 0; });
   });
   return groups.filter(function (group) { return group.weightPct !== 0; });
+}
+
+/* Every position that falls below its product's minimum (item 3). The export
+   is refused while this is non-empty, on the page and on the server. */
+function breaches(groups) {
+  var out = [];
+  groups.forEach(function (group) {
+    group.items.forEach(function (item) {
+      if (item.belowMinimum) {
+        out.push({ category: group.category, name: item.name,
+                   notional: item.notional, minimum: item.minimumInvestment });
+      }
+    });
+  });
+  return out;
 }
 
 /* Weight and notional always add up; the fee adds up only once every row
@@ -382,7 +404,7 @@ function volPremiumField() {
     note = 'Funded from ' + App.esc(from) + '; this portfolio holds none.';
   } else {
     note = App.esc((volPremiumShare() * 100).toFixed(1))
-      + '% of ' + App.esc(from) + ' after tilts, funded pro rata from it.';
+      + '% of ' + App.esc(from) + ' after tilts';
   }
   return '<div class="tilt-field' + (on ? ' done' : '') + '">'
     + '<div class="chk"><input type="checkbox" id="implvolprem" data-volprem="1"'
@@ -1132,14 +1154,8 @@ function renderView() {
   var done = complete();
   var columnsBusy = App.columns().some(function (c) { return c.status !== 'ready'; });
   var exporting = App.exporting();
-  /* the fee group is struck through, not hidden, under a schedule that
-     ignores it: the column still says what the product is */
   var schedule = App.feeSchedule();
-  var groupDead = !!schedule && !feeByGroup();
-  var groupCell = groupDead
-    ? '<td class="txt fee-col fee-dead" title="Not read under ' + App.esc(schedule) + '">'
-    : '<td class="txt fee-col">';
-  /* The three fee columns are in the table only while the proposal includes
+  /* The two fee columns are in the table only while the proposal includes
      fees (D52). Each fee cell wraps its content in a span, because a column
      takes its width from its content: animating the span is what makes the
      column itself open and close rather than appearing at full width. */
@@ -1181,14 +1197,13 @@ function renderView() {
     + '<th scope="col" class="txt">Vehicle</th>'
     + '<th scope="col" class="txt">Source</th>'
     + '<th scope="col" class="txt">Liquidity</th>'
-    + '<th scope="col" class="txt">Exposure ccy</th>'
-    + '<th scope="col" class="num">Cost</th>'
+    + '<th scope="col" class="txt">Exp ccy</th>'
+    + '<th scope="col" class="num">Prod cost</th>'
     + (fees
-        ? '<th scope="col" class="txt fee-col' + (groupDead ? ' fee-dead' : '')
-          + '"><span class="fcw">Fee group</span></th>'
-          + '<th scope="col" class="num fee-col"><span class="fcw">Mgmt fee</span></th>'
+        ? '<th scope="col" class="num fee-col"><span class="fcw">Mgmt fee</span></th>'
           + '<th scope="col" class="num fee-col"><span class="fcw">Wtd fee</span></th>'
         : '')
+    + '<th scope="col" class="num">Min Investment</th>'
     + '<th scope="col" class="num">Notional</th>'
     + '</tr></thead><tbody>';
 
@@ -1218,11 +1233,13 @@ function renderView() {
       + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
       + '<td colspan="6"></td>'
       + '<td class="num"></td>'
-      + feeCell('txt', '') + feeCell('num', '')
+      + feeCell('num', '')
       + feeCell('num', group.items.length ? bpText(groupBp) : '')
+      + '<td class="num"></td>'
       + '<td class="num">' + money(shownNotional) + '</td></tr>';
     group.items.forEach(function (item, ix) {
-      html += '<tr class="asset' + (ix % 2 ? ' alt' : '') + '"><th scope="row">'
+      html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
+        + (item.belowMinimum ? ' below-min' : '') + '"><th scope="row">'
         + App.esc(item.assetClass) + '</th>'
         + '<td class="txt prodcol">' + App.esc(item.name) + '</td>'
         + '<td class="num">' + App.num(item.weight, 2, '%') + '</td>'
@@ -1234,24 +1251,32 @@ function renderView() {
         + '<td class="txt tick">' + App.esc(item.exposureCurrency) + '</td>'
         + '<td class="num">' + App.num(item.cost, 2, '%') + '</td>'
         + (fees
-            ? groupCell + '<span class="fcw">' + groupPill(item.feeGroup) + '</span></td>'
-              + feeCell('num', feeText(item.mgmt))
-              + feeCell('num', bpText(item.wtdBp))
+            ? feeCell('num', feeText(item.mgmt)) + feeCell('num', bpText(item.wtdBp))
             : '')
-        + '<td class="num">' + money(item.notional) + '</td></tr>';
+        + '<td class="num">' + (typeof item.minimumInvestment === 'number'
+            ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>') + '</td>'
+        + '<td class="num">' + money(item.notional)
+        + (item.belowMinimum
+            ? ' <span class="bdg b-breach" title="' + App.esc(item.name)
+              + ' is below its ' + App.esc(money(item.minimumInvestment))
+              + ' minimum">below mandate minimum</span>' : '')
+        + '</td></tr>';
     });
   });
-  /* The filler spans Ticker through Mgmt fee, so it is two columns shorter
+  /* The filler spans Ticker through Mgmt fee, so it is one column shorter
      when the fee columns are not there. */
   html += '<tr class="grand"><th scope="row">Total</th>'
     + '<td class="prodcol"></td>'
     + '<td class="num">' + App.num(t.weight, 2, '%') + '</td>'
-    + '<td colspan="' + (fees ? 9 : 7) + '"></td>'
+    + '<td colspan="' + (fees ? 8 : 7) + '"></td>'
     + feeCell('num', bpText(t.bp))
+    + '<td class="num"></td>'
     + '<td class="num">' + money(t.notional) + '</td></tr>';
   html += '</tbody></table></div>';
   html += renderDonuts(groups, done);
 
+  var breached = breaches(groups);
+  var breachBlocked = false;
   var reason = null;
   if (!App.canExport()) reason = 'Export is not available for your role.';
   else if (!App.variant()) reason = 'Choose an implementation variant first.';
@@ -1260,6 +1285,19 @@ function renderView() {
   else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
   else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
+  /* A hard block: a position below the product's minimum cannot be bought,
+     so the materials cannot be produced. The server refuses it too. */
+  else if (breached.length) {
+    breachBlocked = true;
+    reason = breached.length === 1
+      ? breached[0].name + ' in ' + breached[0].category + ' is below mandate minimum ('
+        + money(breached[0].notional) + ' against a ' + money(breached[0].minimum)
+        + ' minimum). Raise the mandate, change the sleeve, or drop the product.'
+      : breached.length + ' positions are below mandate minimum: '
+        + breached.slice(0, 3).map(function (b) { return b.name; }).join(', ')
+        + (breached.length > 3 ? ' and ' + (breached.length - 3) + ' more' : '')
+        + '. Raise the mandate, change the sleeve, or drop the products.';
+  }
   var disabled = !!reason || exporting.status === 'working';
   /* v2's export card in place of the bare button. The gate keeps its three
      voices - working, blocked, failed - and stays wired to the button through
@@ -1272,7 +1310,7 @@ function renderView() {
     gateClass += ' error';
     gateText = exporting.error || 'Export failed.';
   } else if (reason) {
-    gateClass += ' blocked';
+    gateClass += breachBlocked ? ' error' : ' blocked';
     gateText = reason;
   } else {
     gateClass += ' ready';

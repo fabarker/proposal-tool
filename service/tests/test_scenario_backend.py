@@ -21,12 +21,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from cyrus_pmg.pmgService.scenario import fees, rules, sleeves
+from cyrus_pmg.pmgService.scenario import fees, products, rules, sleeves
 from cyrus_pmg.pmgService.scenario.fixturesAdapter import FixturesScenarioPort
 from cyrus_pmg.pmgService.scenario.payloads import roundWeightsLargestRemainder
 from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput, PortfolioKey, ValidationError
 from cyrus_pmg.pmgService.scenario.workbook import (
-    FEE_COLUMNS, IMPL_COLUMNS, buildImplementationRows, implColumns)
+    FEE_COLUMNS, IMPL_COLUMNS, buildImplementationRows, implColumns,
+    roundSharesOneDp)
 
 BASIS = BasisInput(currency='USD', hedging='Hedged')
 PORT = FixturesScenarioPort()
@@ -411,7 +412,7 @@ def test_fixtures_workbook_reconciles_and_has_four_sheets(tmp_path):
     path.write_bytes(payload)
     book = load_workbook(path)
     assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
-                               'Implementation']
+                               'Implementation', 'chartData']
     sheet = book['Implementation']
     rows_ = list(sheet.iter_rows(values_only=True))
     assert rows_[0][0] == 'Implementation Type'
@@ -779,14 +780,17 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
     assert fees.DELIVERY['version'] in rows[4][1] and 'placeholder' in rows[4][1]
     assert rows[5] == (None,) * len(IMPL_COLUMNS)
     assert rows[6] == tuple(IMPL_COLUMNS)
-    group, mgmt, bp = (IMPL_COLUMNS.index(c) for c in ('Fee group', 'Mgmt fee', 'Wtd fee (bp)'))
+    mgmt, bp = (IMPL_COLUMNS.index(c) for c in ('Mgmt fee', 'Wtd fee (bp)'))
+    cost = IMPL_COLUMNS.index('Product Cost')
     assets = _assetRows(rows)
     assert assets
+    # the fee group still prices the row; it is no longer a column of its own
+    # (item 1), so the expected fee is looked up from the catalogue
     for row in assets:
-        assert row[group] in fees.FEE_GROUPS
-        expected = fees.managementFee(schedule, TOP_ACCOUNT, 'PMG Floor', row[group])
+        product = next(p for p in products.all() if p['name'] == row[1])
+        expected = fees.managementFee(schedule, TOP_ACCOUNT, 'PMG Floor', product['feeGroup'])
         assert row[mgmt] == pytest.approx(expected / 100.0)
-        assert row[bp] == pytest.approx((row[9] * 100 + expected) * row[2] * 100)
+        assert row[bp] == pytest.approx((row[cost] * 100 + expected) * row[2] * 100)
 
 
 def test_unpriced_workbook_leaves_the_fee_cells_empty(tmp_path):
@@ -1220,14 +1224,14 @@ def _exported(tmp_path, implementation, mandate=None):
 
 
 def test_excluding_fees_takes_the_columns_off_the_sheet():
-    """The three fee columns are the only difference, and they leave in one
+    """The two fee columns are the only difference, and they leave in one
     piece: nothing else about the sheet's shape depends on the toggle."""
-    assert list(FEE_COLUMNS) == ['Fee group', 'Mgmt fee', 'Wtd fee (bp)']
+    assert list(FEE_COLUMNS) == ['Mgmt fee', 'Wtd fee (bp)']
     assert implColumns(True) == IMPL_COLUMNS
     assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS]
-    assert len(implColumns(False)) == len(IMPL_COLUMNS) - 3
+    assert len(implColumns(False)) == len(IMPL_COLUMNS) - 2
     # the columns that survive keep their order and their neighbours
-    assert implColumns(False)[-2:] == ['Cost', 'Notional']
+    assert implColumns(False)[-2:] == ['Minimum Investment', 'Notional']
 
 
 def test_an_excluded_workbook_carries_no_fee_column_and_no_fee_header(tmp_path):
@@ -1239,7 +1243,7 @@ def test_an_excluded_workbook_carries_no_fee_column_and_no_fee_header(tmp_path):
     assert rows[0][:2] == ('Implementation Type', sleeves.VARIANTS[0])
     assert rows[1] == (None,) * len(columns)          # no fee schedule/level/tier rows
     assert rows[2] == tuple(columns)
-    assert 'Fee group' not in rows[2] and 'Mgmt fee' not in rows[2]
+    assert 'Mgmt fee' not in rows[2] and 'Wtd fee (bp)' not in rows[2]
     assets = _assetRows(rows)
     assert assets
     for row in assets:
@@ -1491,7 +1495,8 @@ def test_the_export_carries_four_sheets_and_keeps_the_assumptions():
         assets=assetEstimates.forSlice('USD', 'Hedged'))
     book = load_workbook(io.BytesIO(content))
     assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
-                               'Implementation']
+                               'Implementation', 'chartData']
+    assert book['chartData'].sheet_state == 'hidden', 'the chart data is not for reading'
     assumptions = book['assumptions']
     assert assumptions['A1'].value is None and assumptions['B1'].value == 'Long-Term Estimates'
     # two header rows, then the rows the strategic sheets kept: six categories
@@ -1766,8 +1771,9 @@ def test_the_risk_dashboard_has_no_unlabelled_rows():
 def test_the_implementation_total_is_ruled_above_and_below():
     from openpyxl import load_workbook
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
-    row = sheet.max_row
-    assert sheet.cell(row=row, column=1).value == 'Total'
+    # the doughnut captions follow the table now (item 9), so find the total
+    row = next(r for r in range(1, sheet.max_row + 1)
+               if sheet.cell(row=r, column=1).value == 'Total')
     for column in range(1, sheet.max_column + 1):
         border = sheet.cell(row=row, column=column).border
         assert getattr(border.top, 'style', None) == 'dotted', column
@@ -1819,3 +1825,193 @@ def test_engine_parity_restores_the_whole_universe_on_the_assumptions_sheet():
               for r in range(3, sheet.max_row + 1) if sheet.cell(row=r, column=1).value]
     assert sheet.max_row == 28, 'seven categories and nineteen assets'
     assert 'Tactical Tilt Fund' in labels and 'Asset Allocation Strategies' in labels
+
+
+# --------------------------------------------------------------------------
+# The implementation table's columns and the minimum-investment block
+# --------------------------------------------------------------------------
+
+def test_the_fee_group_column_is_gone_but_still_prices_the_row():
+    """Item 1. The group is a lookup, not a column: the management fee is
+    still resolved from it, so removing the column changes no figure."""
+    assert 'Fee group' not in IMPL_COLUMNS
+    assert 'Fee group' not in FEE_COLUMNS
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
+                                    26e6, sleeves.VARIANTS[0], False, 'CASP',
+                                    'PMG Target', 48.5e6, False, 'USD')
+    items = [i for g in model['groups'] for i in g['items']]
+    assert items and all(item['feeGroup'] for item in items), 'the group still rides on the item'
+    assert all(item['managementFee'] is not None for item in items)
+
+
+def test_the_cost_column_is_named_product_cost():
+    """Item 2. Header text only - the field behind it is unchanged."""
+    assert 'Product Cost' in IMPL_COLUMNS and 'Cost' not in IMPL_COLUMNS
+    assert IMPL_COLUMNS.index('Product Cost') == 9
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
+                                    26e6, sleeves.VARIANTS[0], False, None, None,
+                                    48.5e6, False, 'USD')
+    items = [i for g in model['groups'] for i in g['items']]
+    assert all('productCost' in item for item in items)
+
+
+def test_a_position_below_its_products_minimum_is_flagged_and_listed():
+    """Item 3. Flagged on the line, and gathered for the gate."""
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
+                                    5e6, sleeves.VARIANTS[0], False, None, None,
+                                    5e6, False, 'USD')
+    items = [i for g in model['groups'] for i in g['items']]
+    for item in items:
+        minimum = item.get('minimumInvestment')
+        assert item['belowMinimum'] is (bool(minimum) and item['notional'] < float(minimum))
+    assert model['breaches'], 'a $5m mandate cannot meet the $5m product minimums'
+    for breach in model['breaches']:
+        assert breach['notional'] < breach['minimumInvestment']
+        assert breach['name'] and breach['category']
+    named = {(b['category'], b['name']) for b in model['breaches']}
+    flagged = {(g['category'], i['name']) for g in model['groups']
+               for i in g['items'] if i['belowMinimum']}
+    assert named == flagged
+
+
+def test_a_product_with_no_minimum_never_breaches():
+    """A blank minimum means there is none, not a minimum of nothing."""
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
+                                    5e6, sleeves.VARIANTS[0], False, None, None,
+                                    5e6, False, 'USD')
+    unbounded = [i for g in model['groups'] for i in g['items']
+                 if not i.get('minimumInvestment')]
+    assert all(item['belowMinimum'] is False for item in unbounded)
+
+
+def test_the_export_refuses_while_a_position_is_below_its_minimum(tmp_path):
+    """Item 3's hard block, enforced on the server so the UI cannot be
+    bypassed by calling the endpoint."""
+    from cyrus_pmg.pmgService.scenario import scenarioStore
+    from cyrus_pmg.pmgService import dashboardRouter
+    state = scenarioStore.createScenario(
+        MandateInput(topAccountSize=5e6, mandateSize=5e6, primaryPwa='A. Castellanos — Madrid'),
+        BASIS, createdBy='alice')
+    key = PortfolioKey('USD', 'Moderate', 'Full', False)
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    # the variant first: changing it clears the columns and the sleeve map
+    scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0])
+    scenarioStore.recordColumn(state['id'], key, 'base')
+    scenarioStore.updateScenario(state['id'], sleeves=chosen)
+    refused = dashboardRouter.exportScenario(state['id'], user='alice')
+    assert getattr(refused, 'status_code', 200) == 422
+    body = json.loads(refused.body.decode('utf-8'))
+    assert body['field'] == 'minimumInvestment'
+    assert 'below mandate minimum' in body['error'].lower()
+
+
+def test_private_equity_and_other_private_assets_are_one_line():
+    """Item 6. One sleeve (D60), so one row, and its weight is the sum."""
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
+    strategic = {c['name']: c['weightPct'] for c in result['categories']}
+    assert 'Private Equity' in strategic and 'Other Private Assets' in strategic
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
+                                    26e6, sleeves.VARIANTS[0], False, None, None,
+                                    48.5e6, False, 'USD')
+    names = [g['category'] for g in model['groups']]
+    assert 'Private Equity' not in names and 'Other Private Assets' not in names
+    combined = [g for g in model['groups'] if g['category'] == rules.SLEEVE_GROUPS[0]['name']]
+    assert len(combined) == 1, 'one row, not two'
+    assert combined[0]['weightPct'] == pytest.approx(
+        strategic['Private Equity'] + strategic['Other Private Assets'])
+    assert len(names) == len(set(names)), 'no category appears twice'
+    assert model['total']['weightPct'] == pytest.approx(100.0, abs=0.005)
+
+
+def test_the_workbook_carries_the_composition_doughnuts():
+    """Item 9. Five native charts under the table, their data on a hidden
+    sheet, in the page's own palette and order."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario.workbook import (
+        DONUT_DIMENSIONS, DONUT_PALETTE, donutBreakdown)
+    content = _builtWorkbook()
+    book = load_workbook(io.BytesIO(content))
+    sheet = book['Implementation']
+    charts = sheet._charts
+    assert len(charts) == len(DONUT_DIMENSIONS) == 5
+    titles = [c.title.tx.rich.p[0].r[0].t for c in charts]
+    assert titles == [label for _, label in DONUT_DIMENSIONS]
+    assert book['chartData'].sheet_state == 'hidden'
+
+    total = next(r for r in range(1, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'Total')
+    caption = next(r for r in range(total, sheet.max_row + 1)
+                   if sheet.cell(row=r, column=1).value == 'Composition of the Implemented Model')
+    assert caption > total, 'the charts sit below the table, as on the page'
+
+    # the slices carry the page's colours
+    data = book['chartData']
+    assert data.cell(row=1, column=1).value == DONUT_DIMENSIONS[0][1]
+    series = charts[0].series[0]
+    assert len(series.data_points) >= 1
+    assert all(point.graphicalProperties.solidFill.srgbClr in DONUT_PALETTE
+               for point in series.data_points)
+
+
+def test_the_donut_breakdown_mirrors_the_pages_rule():
+    """Colour by alphabetical rank, order by size - the page's two steps."""
+    from cyrus_pmg.pmgService.scenario.workbook import donutBreakdown, DONUT_PALETTE
+    items = [{'vehicle': 'SMA', 'printedPct': 10.0},
+             {'vehicle': 'ETF', 'printedPct': 30.0},
+             {'vehicle': 'SMA', 'printedPct': 5.0},
+             {'vehicle': None, 'printedPct': 55.0}]
+    slices = donutBreakdown(items, 'vehicle')
+    assert [s['name'] for s in slices] == ['—', 'ETF', 'SMA'], 'biggest first'
+    assert [round(s['share'], 4) for s in slices] == [0.55, 0.30, 0.15]
+    # colour follows the ALPHABETICAL rank, which puts the em dash last in
+    # Python and in the page's own sort alike
+    bySlot = {s['name']: s['slot'] for s in slices}
+    assert bySlot['ETF'] == 0 and bySlot['SMA'] == 1 and bySlot['—'] == 2
+    assert all(s['slot'] < len(DONUT_PALETTE) for s in slices)
+    # the printed labels close on 100.0, as the page's do
+    assert [s['pct'] for s in slices] == [55.0, 30.0, 15.0]
+
+
+def test_js_donut_share_rounding_mirror_agrees_with_python():
+    """The doughnut labels are printed twice - on the page in JavaScript and
+    in the workbook in Python. A share the export rounds differently would
+    contradict the screen it was exported from, so the two must agree."""
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    jsPath = os.path.join(os.path.dirname(__file__), '..', '..',
+                          'generator', 'js', 'implementation.js')
+    with open(jsPath, encoding='utf-8') as fh:
+        source = fh.read()
+    fn = source[source.index('function roundSharesOneDp('):
+                source.index('function breakdown(')]
+
+    cases = [[100.0],
+             [62.0, 38.0],
+             [100 / 3.0, 100 / 3.0, 100 / 3.0],       # the classic thirds
+             [39.08, 37.99, 22.93],                   # the vehicle doughnut
+             [85.02, 7.65, 7.33],                     # the liquidity doughnut
+             [1 / 7.0 * 100] * 7,                     # seven ties at once
+             [99.95, 0.05],
+             [50.05, 49.95],
+             [0.0, 100.0]]
+    script = fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \
+        + 'process.stdout.write(JSON.stringify(cases.map(roundSharesOneDp)));\n'
+    out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
+    jsResults = json.loads(out.stdout)
+
+    assert len(jsResults) == len(cases)
+    for case, js in zip(cases, jsResults):
+        py = roundSharesOneDp(case)
+        assert js == pytest.approx(py), case
+        assert sum(py) == pytest.approx(100.0), 'the labels must close on 100.0'

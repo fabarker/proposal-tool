@@ -40,6 +40,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from openpyxl.chart import DoughnutChart, Reference
+from openpyxl.chart.series import DataPoint
 from openpyxl.formatting.rule import CellIsRule
 
 from . import fees, rules
@@ -55,6 +57,8 @@ _HEADER_NAVY = '092532'
 _SUBHEAD_NAVY = '092539'          # the bold section labels on the risk sheet
 _BAND = 'D3DDEA'
 _WHITE = 'FFFFFF'
+_BREACH_FILL = 'FDE8E8'           # a position below its product's minimum
+_BREACH_INK = '9B1C1C'
 _PREMIA_LOW = 'C00000'            # assumptions: the low end of a range, red
 _PREMIA_HIGH = '039644'           # ...and the high end, green
 _DOTTED = Side(style='dotted', color='A9A9A9')
@@ -67,24 +71,37 @@ _WHITE_FILL = PatternFill('solid', fgColor=_WHITE)
 _ASSUMPTION_WIDTHS = [('A', 40), ('B', 7), ('C', 7), ('D', 7), ('E', 12),
                       ('F', 14.5), ('G', 26), ('H', 16.5), ('I', 11), ('J', 11)]
 
-# The thirteen columns of spec 9.3 plus 'Fee group' (D51): the management fee
-# is resolved from the fee schedule and the product's group, and a sheet that
-# shows the fee without the group it was priced from cannot be checked.
+# The composition doughnuts under the implementation table, and the palette
+# the page draws them in (--cat-1..7). A slice takes its colour from where its
+# name falls in the ALPHABETICAL order of that dimension's names, then the
+# slices are ordered biggest-first to read - the same two steps the page's
+# breakdown() does, so a chart in the workbook is the chart on the screen.
+DONUT_DIMENSIONS = [('style', 'Style'), ('vehicle', 'Vehicle'), ('source', 'Source'),
+                    ('liquidity', 'Liquidity'), ('exposureCurrency', 'Exposure currency')]
+DONUT_PALETTE = ['2A78D6', 'EB6834', '1BAF7A', 'EDA100', 'E87BA4', '4A3AA7', 'E34948']
+_CHART_SHEET = 'chartData'
+
+# The columns of spec 9.3, with 'Minimum Investment' beside the notional it
+# is checked against. The fee group is resolved from the product and still
+# prices the management fee; it is no longer a column of its own.
 IMPL_COLUMNS = [
     'Categories & Asset Classes', 'Products', 'Allocation (%)', 'Ticker',
-    'Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy', 'Cost',
-    'Fee group', 'Mgmt fee', 'Wtd fee (bp)', 'Notional',
+    'Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy', 'Product Cost',
+    'Mgmt fee', 'Wtd fee (bp)', 'Minimum Investment', 'Notional',
 ]
-# The three the sheet loses when the proposal excludes fees (D52). A proposal
-# that does not show fees must not ship a sheet with three empty columns and a
+# The two the sheet loses when the proposal excludes fees (D52). A proposal
+# that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
 # rows above the header.
-FEE_COLUMNS = ('Fee group', 'Mgmt fee', 'Wtd fee (bp)')
+FEE_COLUMNS = ('Mgmt fee', 'Wtd fee (bp)')
+# The minimum sits beside the notional it is compared against, not beside the
+# cost: a reader checking a position against its minimum reads the two
+# adjacent figures rather than looking across the sheet.
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
     'Ticker': 9, 'Style': 9, 'Vehicle': 12, 'Source': 10, 'Liquidity': 11,
-    'Exposure ccy': 12, 'Cost': 8, 'Fee group': 16, 'Mgmt fee': 10,
-    'Wtd fee (bp)': 12, 'Notional': 14,
+    'Exposure ccy': 12, 'Product Cost': 12, 'Mgmt fee': 10,
+    'Wtd fee (bp)': 12, 'Minimum Investment': 18, 'Notional': 14,
 }
 
 
@@ -135,6 +152,22 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     categories = rules.implementedCategories(baseResult['categories'],
                                              tacticalTilt, volPremium, currency)
 
+    # Categories that share one sleeve share one LINE. Private Equity and
+    # Other Private Assets are a single choice in the rail (D60) and a single
+    # sleeve in the repository; showing them as two rows against the same
+    # sleeve printed that sleeve twice and split a position that is bought
+    # once. The combined weight is the sum of theirs, and the row takes the
+    # group's own name. Driven off SLEEVE_GROUPS, so a second group needs no
+    # code here.
+    combined, order = {}, []
+    for category in categories:
+        key = sleeveCategory(category['name'])
+        if key not in combined:
+            combined[key] = {'name': key, 'weightPct': 0.0}
+            order.append(key)
+        combined[key]['weightPct'] += float(category['weightPct'])
+    categories = [combined[key] for key in order]
+
     for category in categories:
         name = category['name']
         catWeight = float(category['weightPct'])
@@ -184,6 +217,11 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             else:
                 item['managementFee'] = None
                 item['wtdFeeBp'] = None
+            # A position smaller than the product will accept is not a
+            # position (item 3). Flagged per line here; the export refuses
+            # while any survives, so the block cannot be walked past.
+            minimum = item.get('minimumInvestment')
+            item['belowMinimum'] = bool(minimum) and item['notional'] < float(minimum)
 
     total = {
         'weightPct': sum(i.get('printedPct', 0.0) for i in lineItems),
@@ -202,8 +240,107 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                           if item.get('printedPct', 0.0) != 0]
     groups = [group for group in groups if group['weightPct'] != 0]
 
+    breaches = [{'category': group['category'], 'name': item.get('name'),
+                 'productId': item.get('productId'), 'notional': item['notional'],
+                 'minimumInvestment': float(item['minimumInvestment'])}
+                for group in groups for item in group['items']
+                if item.get('belowMinimum')]
+
     return {'groups': groups, 'total': total, 'complete': complete,
-            'priced': priced, 'tier': tier}
+            'priced': priced, 'tier': tier, 'breaches': breaches}
+
+
+def roundSharesOneDp(exact) -> list:
+    """Round shares to 1dp so they sum to exactly 100.0. Mirrors the page's
+    roundSharesOneDp(); the two must agree or the export contradicts the UI."""
+    units = [int(share * 10 + 1e-9) for share in exact]
+    short = 1000 - sum(units)
+    order = sorted(range(len(exact)),
+                   key=lambda i: (-(exact[i] * 10 - units[i]), i))
+    for n in range(max(short, 0)):
+        if not order:
+            break
+        units[order[n % len(order)]] += 1
+    return [unit / 10.0 for unit in units]
+
+
+def donutBreakdown(items, key) -> list:
+    """One doughnut's slices: share of what is attached, biggest first, each
+    keeping the colour its name earns alphabetically. Mirrors the page's
+    breakdown() exactly - see DONUT_PALETTE."""
+    byValue, total = {}, 0.0
+    for item in items:
+        value = item.get(key)
+        if value is None or value == '':
+            value = '\u2014'
+        byValue[value] = byValue.get(value, 0.0) + float(item.get('printedPct') or 0.0)
+        total += float(item.get('printedPct') or 0.0)
+    names = sorted(byValue)
+    slot = {name: index % len(DONUT_PALETTE) for index, name in enumerate(names)}
+    slices = [{'name': name, 'weight': byValue[name], 'slot': slot[name],
+               'share': (byValue[name] / total) if total > 0 else 0.0}
+              for name in names]
+    slices.sort(key=lambda entry: (-entry['weight'], entry['name']))
+    # printed shares close on 100.0 exactly, the way the page prints them
+    printed = roundSharesOneDp([entry['share'] * 100 for entry in slices])
+    for entry, pct in zip(slices, printed):
+        entry['pct'] = pct
+    return slices
+
+
+def writeDonutCharts(book, sheet, model, firstRow: int) -> None:
+    """The five composition doughnuts, under the implementation table.
+
+    Native charts rather than pictures, so the figures stay live and the file
+    stays small. Excel charts must read from cells, and those cells have no
+    business on a sheet a client reads, so they go on a hidden sheet.
+    """
+    items = [item for group in model.get('groups', []) for item in group['items']]
+    if not items:
+        return
+    data = book.create_sheet(_CHART_SHEET)
+    data.sheet_state = 'hidden'
+
+    sheet.cell(row=firstRow, column=1).value = 'Composition of the Implemented Model'
+    sheet.cell(row=firstRow, column=1).font = Font(name='Calibri', size=12, bold=True,
+                                                   color=_NAVY)
+    sheet.cell(row=firstRow + 1, column=1).value = (
+        'Share of allocation by product attribute.')
+    sheet.cell(row=firstRow + 1, column=1).font = Font(name='Calibri', size=10,
+                                                       color='5B6B7C')
+
+    column = 1
+    for index, (key, label) in enumerate(DONUT_DIMENSIONS):
+        slices = donutBreakdown(items, key)
+        if not slices:
+            continue
+        data.cell(row=1, column=column).value = label
+        data.cell(row=1, column=column + 1).value = 'Share'
+        for offset, entry in enumerate(slices, start=1):
+            data.cell(row=1 + offset, column=column).value = entry['name']
+            share = data.cell(row=1 + offset, column=column + 1)
+            share.value = entry['pct'] / 100.0
+            share.number_format = '0.0%'
+
+        chart = DoughnutChart(holeSize=55)
+        chart.title = label
+        chart.height, chart.width = 7.4, 7.4
+        chart.add_data(Reference(data, min_col=column + 1, min_row=1,
+                                 max_row=1 + len(slices)), titles_from_data=True)
+        chart.set_categories(Reference(data, min_col=column, min_row=2,
+                                       max_row=1 + len(slices)))
+        # one point per slice, in the palette the page uses
+        series = chart.series[0]
+        for offset, entry in enumerate(slices):
+            point = DataPoint(idx=offset)
+            point.graphicalProperties.solidFill = DONUT_PALETTE[entry['slot']]
+            point.graphicalProperties.line.solidFill = 'FFFFFF'
+            series.data_points.append(point)
+        chart.dataLabels = None
+        # laid out across the sheet, in the order the page shows them
+        sheet.add_chart(chart, '{}{}'.format(
+            get_column_letter(1 + index * 4), firstRow + 3))
+        column += 2
 
 
 def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
@@ -214,7 +351,8 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                              topAccountSize: float = None,
                              includeFees: bool = True,
                              volPremium: bool = False,
-                             currency: str = None) -> None:
+                             currency: str = None,
+                             model: dict = None) -> None:
     """Append the implementation sheet: the columns of ``implColumns``, in
     order, grouped by category with subtotals and a grand total.
 
@@ -234,10 +372,14 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
         feeSchedule = None
     columns = implColumns(includeFees)
     at = {name: index for index, name in enumerate(columns, start=1)}
-    model = buildImplementationRows(baseResult, sleevesMap, autoCategories,
-                                    mandateSize, variant, tacticalTilt,
-                                    feeSchedule, feeLevel, topAccountSize,
-                                    volPremium, currency)
+    # A caller that has already built the model passes it in, so that what
+    # the sheet prints and what the register records are the SAME model
+    # rather than two builds a few microseconds apart (D69).
+    if model is None:
+        model = buildImplementationRows(baseResult, sleevesMap, autoCategories,
+                                        mandateSize, variant, tacticalTilt,
+                                        feeSchedule, feeLevel, topAccountSize,
+                                        volPremium, currency)
     sheet = book.create_sheet('Implementation')
     headFont = Font(name='Aptos Narrow', size=12, bold=True, color='FFFFFF')
     bodyFont = Font(name='Aptos Narrow', size=12)
@@ -323,19 +465,32 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                 item['exposureCurrency'], None,
             ]
             if includeFees:
-                line += [item['feeGroup'], None, None]
-            sheet.append(line + [None])
+                line += [None, None]
+            sheet.append(line + [None, None])
             row = sheet.max_row
             for column in range(1, len(columns) + 1):
                 sheet.cell(row=row, column=column).font = bodyFont
             _weightCell(sheet.cell(row=row, column=3), item['printedPct'])
-            _feeCell(sheet.cell(row=row, column=at['Cost']), float(item['productCost']))
+            _feeCell(sheet.cell(row=row, column=at['Product Cost']),
+                     float(item['productCost']))
             if includeFees:
                 _feeCell(sheet.cell(row=row, column=at['Mgmt fee']), item['managementFee'])
             _bpAt(row, item['wtdFeeBp'])
+            minimum = sheet.cell(row=row, column=at['Minimum Investment'])
+            if item.get('minimumInvestment') is not None:
+                minimum.value = float(item['minimumInvestment'])
+                minimum.number_format = '$#,##0'
             notional = sheet.cell(row=row, column=at['Notional'])
             notional.value = item['notional']
             notional.number_format = '$#,##0'
+            if item.get('belowMinimum'):
+                # the sheet says so too: a workbook read away from the page
+                # must not look clean when the page refused to export it
+                for column in (at['Minimum Investment'], at['Notional']):
+                    breached = sheet.cell(row=row, column=column)
+                    breached.font = Font(name='Calibri', size=11, bold=True,
+                                         color=_BREACH_INK)
+                    breached.fill = PatternFill('solid', fgColor=_BREACH_FILL)
 
     sheet.append(['Total'])
     row = sheet.max_row
@@ -351,6 +506,7 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     notional.value = model['total']['notional']
     notional.number_format = '$#,##0'
 
+    totalRow = row
     for index, name in enumerate(columns, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = _WIDTHS[name]
     for row_cells in sheet.iter_rows(min_row=headerRow + 1):
@@ -358,8 +514,10 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
             cell.alignment = Alignment(horizontal='right')
         for cell in row_cells[3:9]:
             cell.alignment = Alignment(horizontal='left')
-        if includeFees:
-            row_cells[at['Fee group'] - 1].alignment = Alignment(horizontal='left')
+
+    # the composition doughnuts, under the table the page draws them under
+    writeDonutCharts(book, sheet, model, totalRow + 3)
+
 
 
 # --------------------------------------------------------------------- #
@@ -844,7 +1002,7 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                   variant: str = None, tacticalTilt: bool = False,
                   feeSchedule: str = None, feeLevel: str = None,
                   includeFees: bool = True, volPremium: bool = False,
-                  assets=None, engineParity: bool = False) -> bytes:
+                  assets=None, engineParity: bool = False, model: dict = None) -> bytes:
     """The proposal workbook: four sheets, no analytics library (D67).
 
     ``portfolios``, ``risk_dashboard`` and ``assumptions`` reproduce what the
@@ -865,7 +1023,8 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
     writeImplementationSheet(book, results[0], sleevesMap, autoCategories,
                              mandate.mandateSize, variant, tacticalTilt,
                              feeSchedule, feeLevel, mandate.topAccountSize,
-                             includeFees, volPremium, basis.currency)
+                             includeFees, volPremium, basis.currency,
+                             model=model)
 
     # Enhancements that add nothing to the grid and cost nothing to read: a
     # coloured tab per sheet, a sensible print setup, and the proposal's own
