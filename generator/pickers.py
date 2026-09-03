@@ -138,6 +138,10 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 
 .lp-eyebrow{font-family:var(--f-num);font-size:11.5px;letter-spacing:.24em;
   text-transform:uppercase;color:#7C8B9C;margin:0 0 26px;font-weight:600}
+/* The host gets its name in the accent rather than the eyebrow's grey. It is
+   a credit, and a credit nobody reads is not one - this is the only word on
+   the line that has to carry. */
+.lp-eyebrow b{color:var(--accent);font-weight:700}
 .lp-title{font-family:'Goldman Sans','GS Sans','Roboto',system-ui,sans-serif;font-weight:400;
   font-size:clamp(53px,6vw,99px);line-height:.96;letter-spacing:-.045em;color:#152135;
   max-width:15ch;margin:0}
@@ -159,8 +163,15 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 
 .lp-grid{display:grid;gap:36px;grid-template-columns:1fr;margin-top:26px;padding-top:22px;
   border-top:1px solid var(--line-strong)}
-@media (min-width:900px){.lp-grid{grid-template-columns:1.4fr 1fr}}
 .lp-lede{font-size:16.5px;line-height:1.62;color:var(--ink-2);max-width:46ch;margin:0 0 34px}
+/* What the tool is for, in two lines. The marker is a square in the accent,
+   which is the same rectilinear language as the colour bars above it - a
+   round bullet would be the only curve on the page. */
+.lp-points{list-style:none;margin:0 0 34px;padding:0;display:grid;gap:15px;max-width:88ch}
+.lp-points li{position:relative;padding-left:24px;font-size:16.5px;line-height:1.5;
+  color:var(--ink-2)}
+.lp-points li::before{content:"";position:absolute;left:0;top:.55em;width:9px;height:9px;
+  background:var(--accent)}
 
 .lp-cta{font-size:16px;padding:16px 30px 16px 36px;border-radius:0;letter-spacing:.02em;
   position:relative;display:inline-flex;align-items:center;gap:14px;
@@ -173,16 +184,8 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
   pointer-events:none;opacity:0;animation:lp-halo 2.8s .9s ease-out infinite}
 .lp-cta:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
-.lp-need{list-style:none;margin:0;padding:0;display:grid;gap:14px;max-width:46ch;
-  align-content:start}
-.lp-need li{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:baseline;
-  font-size:14.5px;color:var(--ink-2);line-height:1.45}
-.lp-need b{font-family:var(--f-num);font-size:10.5px;letter-spacing:.14em;
-  text-transform:uppercase;color:#7C8B9C;font-weight:700}
-
 @media (max-width:560px){
   .lp-title{font-size:clamp(40px,11vw,55px);line-height:.98;max-width:100%}
-  .lp-need li{grid-template-columns:84px 1fr}
 }
 @keyframes lp-grow{from{transform:scaleX(0)}}
 @keyframes lp-rise{from{opacity:0;transform:translateY(14px)}}
