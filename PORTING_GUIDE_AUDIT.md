@@ -1,8 +1,12 @@
 # Porting-guide audit — the Proposal Tool against `PORTING.md`, `TRANSPLANT.md` and `HOST_AUDIT.md`
 
-Audit date 2026-09-03. Repository state: `datasource-dev` at `9f4dc50` (2026-09-03 20:45 +0100).
-This report is the evidence and reasoning behind the rewritten `PORTING.md`; it does not repeat the
-guide. Paths are relative to `epsilon-phi-core/proposal-tool/`.
+Audit date 2026-09-03, extended 2026-09-04. Repository state at the original pass:
+`datasource-dev` at `9f4dc50`. This report is the evidence and reasoning behind the rewritten
+`PORTING.md`; it does not repeat the guide. Paths are relative to `epsilon-phi-core/proposal-tool/`.
+
+**Second pass, 2026-09-04.** A structural note on Cyrus was supplied (§4.4), and the concurrency
+questions it raised were tested (§8.5). One defect was found in shipped code and fixed (§9.2) —
+so, unlike the first pass, this audit did change application code.
 
 ---
 
@@ -66,6 +70,7 @@ and two inserts" — hides the auth additions and the mandatory configuration.
 | Registers and studies | `service/DEVIATIONS.md` (D1–D74, adapter decisions, G1–G8), `service/PERFORMANCE.md`, `service/README.md`, `README.md`, `archive/BRIEF.md`, `archive/dataSources.html`, `archive/dataOperations.html`, `archive/exportPortingPlan.html`, `archive/exportTrace.html`, `spec.html` §3.4, §3.5, §16, the three `*Source/README.md` | read |
 | Git history | all 19 commits touching `proposal-tool` (`6d12d53` 2026-08-30 … `9f4dc50` 2026-09-03); per-file history of the three documents; diffs of the last guide commits; shortstats since each guide's last update | §6 |
 | Runtime | the mirror running from `service/start_dashboard.sh` (pids in `service/var/run/`), `SCENARIO_ADAPTER=baked`, fallback on; plus in-process probes with throwaway stores | §8 |
+| Cyrus structural note (second pass) | supplied 2026-09-04: transcribed screenshots of the `src/` tree, the PMG service's routes, its project structure, config and design principles. Parts marked truncated in the source | §4.4, §7 |
 
 ## 4. Current-state findings
 
@@ -116,6 +121,31 @@ router for 422/404/502, so independent of the app's exception handlers).
 | Theme is not a pure token swap | built CSS: 83 tokens, 755 `var()` uses, but 304 literal hex (77 distinct) and 26 `rgb()` outside `:root` | cost of a later change |
 | No logging in the package | no `logging` import in `scenario/` | acceptable; provenance surfaces instead |
 | Stale in-repo docs | `service/README.md` still describes `sleeves.py` as tables and `SCENARIO_ADAPTER` default `fixtures`; `scenario/__init__.py` docstring lists a `..core.accessControl` seam and omits eight modules; `README.md` cites D1–D46; `archive/dataOperations.html` expects 193 tests; `service/cyrus_pmg/pmgService/config.py` docstring says the transplant adds `SCENARIO_ADAPTER` to the host's config (it does not — `registry.py:32` reads the environment) | not in this audit's edit scope; noted |
+
+### 4.4 Second pass — what the Cyrus structural note changes
+
+Newer than `HOST_AUDIT.md` (2026-08-30) and contradicting it in four places. Treated as the better
+guess, not as proof: it is a transcription, parts are marked truncated, and its `core/` listing may
+be curated to the optimize-session workflow rather than complete.
+
+| | `HOST_AUDIT.md` | The note | Consequence |
+|---|---|---|---|
+| Auth module | `core/accessControl.py` (§9, §11) | `core/pmgEntitlement.py`, "Auth dependency (`requireAuth`)"; **no `accessControl.py` listed** | **Blocker.** The block's first import is `from …core.accessControl import …`, and it is appended to the host's own `dashboardRouter.py` — a failed import takes every existing dashboard endpoint with it, not just ours |
+| Roles | `requireAuth` + `requireEditor` (§9) | only `requireAuth` | Free to absorb: the mirror's `requireEditor` is `return requireAuth(request)` |
+| `PMG_SVC_PORT` | 8002 (§4) | 8088 | Cosmetic — the proxy reads the host's config |
+| `PMG_SVC_WORKERS` | 2 (§5.2) | 4 | Drove the concurrency testing in §8.5, which found a defect |
+
+New, and each now a §18 check in the guide: `core/exceptionHandlers.py` and `PmgAppException`
+("structured JSON error responses") sit directly on the contract the page depends on; handlers in
+`pmgService/handler/` are class-based, each owning its own `APIRouter`, though `dashboardRouter.py`
+still exists as a module beside `optimizeSessionRouter.py`; config is pydantic-settings under a
+`PMG_SVC_` prefix (no collision with `SCENARIO_*` or `PMG_ALLOWED_KERBEROS`); the service also
+serves `/pmg/*` and `/api/v1/optimize-session*`, neither colliding with `/api/v1/scenario/*`.
+
+Two signs the audit has aged beyond those points: `dashboard/` now lists `approvals/` and
+`progressTracking/` and no `modelPlayground/`; `pmgService/handler/` lists no `dashboardHandler.py`,
+which audit §8.6 put at the centre of the dashboard data flow. A `dashboard/DASHBOARD_AUDIT.md`
+exists in-tree and is probably the current version of the document this port was designed against.
 
 ## 5. Accuracy review of the old guide
 
@@ -361,7 +391,39 @@ payloads carry `analyticsCurrency 'USD'`.
   byte-identical.
 - Package: 25 modules, 7,732 lines, 856 KB with data files.
 
-### 8.5 Failures, limitations and skipped checks
+### 8.5 Concurrency, second pass (2026-09-04)
+
+Prompted by the worker count in §4.4, and by the question of whether the two SQLite stores are safe
+on a Linux host. Four processes released together on a shared wall-clock barrier, one fresh
+interpreter each.
+
+| Test | Before the fix | After |
+|---|---|---|
+| 100 concurrent register writes across 4 processes | 100/100, no `database is locked` | unchanged |
+| 4 processes against an existing sleeve database | all 4 fine | unchanged |
+| 4 processes cold-starting the register | all 4 fine | unchanged |
+| 4 processes cold-starting an **empty** sleeve database | **3 of 4 failed**: `OperationalError: table sleeves already exists` | all 4 fine, ×5 runs |
+| the same, with the check→seed window widened to 1 s | **1 failure + 306 history revisions where 102 are correct** | 102/260/102 exactly, ×3 runs |
+| 200 warm `_connect()` after the fix | — | 0.65 ms each |
+
+Two check-then-act races, both in `sleeveRepo`:
+
+1. `_migrate` did `if not _tableExists(conn, 'sleeves'): conn.executescript(_SLEEVES_TABLE…)`, and
+   `_SLEEVES_TABLE` was `CREATE TABLE {name}` with no `IF NOT EXISTS` — the only statement in the
+   module without it.
+2. `_connect` re-asked `count == 0 and seeded is None` outside any write transaction, so two
+   workers could both seed. The live-name partial index refuses the duplicate *sleeves*, which is
+   why the first race masked this one; `sleeveHistory` has no such index, so the record trebled.
+   The second race did not fire at natural speed — the four processes stagger themselves by their
+   own import time — which is precisely what would have let it reach the host.
+
+Platform findings that need no code change: `sqlite3` is stdlib and the stores use only
+`os.path.join` and `os.replace`, so nothing is macOS- or Linux-specific; the partial unique index
+sets a **SQLite ≥ 3.8.0** floor (RHEL 7 ships 3.7.17); journal mode is the default `delete`, not
+WAL, which is comfortable at this write volume; and SQLite locking is unreliable on NFS, which
+matters because four workers share one file — recorded as R15/R16 in §10.
+
+### 8.6 Failures, limitations and skipped checks
 
 | Check | Result | Reason | Limitation |
 |---|---|---|---|
@@ -378,6 +440,8 @@ store (24-hour retention); no register row was written; no sleeve was changed; n
 `proposal-tool/` other than the three documents was modified (§9).
 
 ## 9. Guide changes made
+
+### 9.1 First pass — the rewrite
 
 **`PORTING.md` — rewritten in full** (324 → 1,136 lines), restructured into the nineteen sections
 the brief asks for. Substantive changes:
@@ -420,9 +484,29 @@ section now lives.
 
 **`PORTING_GUIDE_AUDIT.md` — this report, new.**
 
-No other file was modified: `git status --porcelain -- epsilon-phi-core/proposal-tool` shows
-exactly these three paths as changed/added (plus two pre-existing untracked `.DS_Store` files that
-predate the audit).
+On the first pass no other file was modified. The second pass changed application code — see §9.2.
+
+### 9.2 Second pass — the code fix and the guide updates
+
+**Application code changed** (the first pass changed none; this is the exception, and it is a
+defect found by the audit's own testing rather than a porting convenience):
+
+- `service/cyrus_pmg/pmgService/scenario/sleeveRepo.py` — `_SLEEVES_TABLE` gains `IF NOT EXISTS`,
+  and the inline seed check in `_connect` becomes `_seedOnce`, which re-reads under
+  `BEGIN IMMEDIATE` and takes the write lock only when the library looks empty. Behaviour is
+  unchanged for every existing caller; what changes is that a concurrent cold start is now correct.
+- `service/tests/test_sleeve_repository.py` — one test added,
+  `test_four_workers_cold_starting_together_seed_the_library_once`, which forces the check→seed
+  window and asserts one `seeded` revision per sleeve. Verified to fail against the pre-fix module
+  (`table sleeves already exists`) and pass against the fix. Suite: **253 passed, 4 skipped**.
+
+**Guide updates**: a new §4.0 setting out where the two host sources disagree and which to believe;
+§9.2 rewritten to lead with the auth-module blocker and its blast radius; §11.3.1 (four workers,
+the measured table, the fix, and the seed-before-start deploy step) and §11.3.2 (network
+filesystems, the SQLite version floor, journal mode) added; §12 gains the `sqlite3` row; §13.3
+gains the `exceptionHandlers.py` instruction; §8 Step 2 reordered to settle the auth module before
+anything touches the host; the port (8088), worker count (4) and test count (253) corrected
+throughout; §17 and §18 extended with the five new risks and seven new checks.
 
 ## 10. Risk register
 
@@ -441,6 +525,11 @@ predate the audit).
 | R11 | Python < 3.8 on the host | Low | Low | `from __future__ import annotations` everywhere; proven only on 3.8.20 | §18 check | Yes |
 | R12 | Two workers, per-worker store paths | Low | Low | stores are files/SQLite by design (`scenarioStore.py` docstring) | Shared paths; §15 criterion 13 | Yes |
 | R13 | A future retheme is under-budgeted | Low | High | 304 literal colours outside `:root` | §10.5 measured cost | No |
+| R15 | Durable storage is an NFS mount; SQLite locking is unreliable there, with four workers on one file | High | Unknown — enterprise "durable shared storage" often is | §8.5; SQLite's own documented limitation | Establish local vs network (§18); register on local disk with backups shipped off | Yes |
+| R16 | Host SQLite older than 3.8.0 — the partial unique index will not compile | High | Low | §8.5; RHEL 7 ships 3.7.17 | One-line check in §11.3.2 | Yes |
+| R17 | Host auth module is `pmgEntitlement`, not `accessControl`; a failed import in the appended block breaks the host's whole dashboard router | High | Medium — the newer source says so | §4.4 | Settle in Step 2 before anything else; §9.2 | Yes |
+| R18 | `PmgAppException` wraps non-2xx bodies in an envelope, breaking the 401 redirect and inline field errors | Medium | Unknown | §4.4; `exceptionHandlers.py` named but not seen | Read it before Step 4; §13.3 | Yes |
+| R19 | `dashboardRouter.py` has been converted to the class-based handler pattern, so the block does not graft on | Medium | Low — the file still exists beside `optimizeSessionRouter.py` | §4.4 | §18 check | Yes |
 | R14 | Stale companion docs mislead a porter (`service/README.md`, `scenario/__init__.py`, `README.md`, `archive/dataOperations.html` counts, `config.py` docstring) | Low | Medium | §4.3 last row | `PORTING.md` Appendix B flags them; fix in a follow-up outside this audit's scope | No |
 
 ## 11. Outstanding decisions and recommended next steps

@@ -81,7 +81,7 @@ export is written by the tool in ~200 ms, and the analytics library is never imp
 browser ──► Flask :8001 (host: dashboardFrontend.py)
               ├─ /proposalTool/<file>     send_from_directory(dashboard/proposalTool)   ◄─ INSERT one route
               ├─ /static/js/accessGate.js, /static/js/globals.js   the host's own shared JS
-              └─ /api/<x>  ─proxy─►  FastAPI :8002 (host: isgPMGService.py)
+              └─ /api/<x>  ─proxy─►  FastAPI :8088 (host: isgPMGService.py, PMG_SVC_PORT)
                                         └─ /api/v1/…  dashboardRouter  ◄─ INSERT the endpoint block
                                               │  Depends(requireAuth | requireEditor | requireAdmin)
                                               ▼
@@ -221,7 +221,43 @@ without them — `universe.py` raises on a missing extract, `products.py` raises
 
 ---
 
-## 4. The Cyrus integration point (from `HOST_AUDIT.md`)
+## 4. The Cyrus integration point
+
+### 4.0 Two sources, and where they disagree
+
+`HOST_AUDIT.md` (2026-08-30) is the older description. A second-hand structural note supplied on
+2026-09-04 — screenshots of the Cyrus tree and the PMG service's own documentation, transcribed —
+is newer and contradicts it in four places. Where they differ, **treat the newer note as the
+better guess and the audit as stale, but confirm both against the checkout (§18)**; the note is a
+transcription, parts of it are marked truncated, and its `core/` listing may be curated rather
+than complete.
+
+| | `HOST_AUDIT.md` | The 2026-09-04 note | Effect on this port |
+|---|---|---|---|
+| Auth module | `pmgService/core/accessControl.py` | `pmgService/core/pmgEntitlement.py` — "Auth dependency (`requireAuth`)", and **no `accessControl.py` listed** | **Blocker.** §9.2 |
+| `PMG_SVC_PORT` | 8002 | **8088** | Cosmetic — the proxy reads the host's own config |
+| `PMG_SVC_WORKERS` | 2 | **4** | Store concurrency and cold start — §11.3 |
+| Roles | `requireAuth`, `requireEditor` | only `requireAuth` documented | §9.2 — aliasing is free |
+
+The note adds four things the audit does not have, each of which becomes a §18 check:
+
+- **`pmgService/core/exceptionHandlers.py` and `PmgAppException`**, giving "structured JSON error
+  responses" — directly on top of the contract the page depends on (§13.3).
+- **Class-based handlers** in `pmgService/handler/`, each owning its own `APIRouter`. But
+  `dashboardRouter.py` still exists as a module beside `optimizeSessionRouter.py`, so the block in
+  §9.1 probably still applies — confirm it still exposes a module-level `router`.
+- **Config is pydantic-settings under the `PMG_SVC_` prefix.** No collision with our `SCENARIO_*`
+  or `PMG_ALLOWED_KERBEROS` / `PMG_ADMIN_KERBEROS` names.
+- **The service also serves `/pmg/*`** (root, health, admin) and `/api/v1/optimize-session*`.
+  Our `/api/v1/scenario/*` collides with neither. `/health` is unauthenticated.
+
+Two signs the audit has aged generally: `dashboard/` now shows `approvals/` and `progressTracking/`
+and no `modelPlayground/`; `pmgService/handler/` shows no `dashboardHandler.py`, which
+`HOST_AUDIT.md` §8.6 put at the centre of the dashboard's data flow. There is also a `dashboard/DASHBOARD_AUDIT.md`
+in the tree — likely the current version of the document this section is built on, and worth
+reading before Step 1.
+
+### 4.1 What the audit establishes (unchanged by the above)
 
 Audit, unless marked otherwise:
 
@@ -240,8 +276,9 @@ Audit, unless marked otherwise:
 - Auth module: `pmgService/core/accessControl.py` with `getKerberosFromFlaskRequest`, `isAllowed`,
   `buildLoginUrl`, `requireAuth`, `requireEditor` (§9, §11) and the allowlist in
   `PMG_ALLOWED_KERBEROS` (Audit §5.5).
-- Ports: `FRONTEND_PORT` 8001, `PMG_SVC_PORT` 8002, `OPT_SVC_PORT` 8003; the launcher runs
-  `isgPMGService` with `--workers 2` (Audit §5.2).
+- Ports: `FRONTEND_PORT` 8001, `PMG_SVC_PORT` **8088** (Audit §5.2 said 8002; the newer note says
+  8088 — the proxy reads it from the host's config either way), `OPT_SVC_PORT` 8003; the launcher
+  runs `isgPMGService` with **`--workers 4`** (Audit §5.2 said 2).
 - Dependencies named: Flask 2.2.5, requests, FastAPI, uvicorn, pydantic-settings, sqlalchemy, the
   Sybase driver (Audit §5.1). **openpyxl and pandas are not named** (this guide, §12).
 - Deployment: GitLab CI zips `src/cyrus_pmg/**`, `scripts/**`, `resources/**`; distributed by the
@@ -265,7 +302,7 @@ cd proposal-tool
 python3 generator/build_styles.py
 diff -rq proposalTool service/cyrus_pmg/dashboard/proposalTool && echo IDENTICAL
 
-# 2. The suite is green (252 passed, 4 skipped at 9f4dc50; the 4 need a live database)
+# 2. The suite is green (253 passed, 4 skipped; the 4 need a live database)
 cd service && PYTHONPATH=. python3 -m pytest tests -q
 
 # 3. The extracts parse and the stores are consistent
@@ -365,10 +402,16 @@ running host against.
 **Step 1 — Dependencies.** Confirm or add `openpyxl` and `pandas` to the host's requirements
 (§12). Confirm the host's Python is ≥ 3.8 (the only version this code is proven on is 3.8.20).
 
-**Step 2 — Auth names.** Add `getKerberosFromFastApiRequest`, `isAdmin` and `requireAdmin` to the
-host's `accessControl.py` (§9.2). Check: `python -c "from cyrus_pmg.pmgService.core.accessControl
-import getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor"` succeeds
-in the host's virtualenv.
+**Step 2 — The auth module (do this before anything else touches the host).** Establish what
+`pmgService/core/` actually contains, then add `getKerberosFromFastApiRequest`, `isAdmin` and
+`requireAdmin` to it and point the block's import at the real module name (§9.2 — it may be
+`pmgEntitlement.py`, not `accessControl.py`). Check, in the host's virtualenv:
+
+```bash
+ls src/cyrus_pmg/pmgService/core/
+python -c "from cyrus_pmg.pmgService.core.<module> import (
+    getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)"
+```
 
 **Step 3 — Copy the package.**
 
@@ -445,11 +488,33 @@ asserts the admin set).
 isAdmin(getKerberosFromFastApiRequest(request))` onto the schema; that is the only place the
 router reads identity directly.
 
-### 9.2 `accessControl.py` — the three additions
+### 9.2 The auth module — a blocker to settle first, then three additions
 
-The host's module (Audit) already has `requireAuth`, `requireEditor`, `getKerberosFromFlaskRequest`,
-`isAllowed`, `buildLoginUrl`. The router needs three more. The mirror's implementation, to be
-adapted to the host's identity source:
+**Settle the module name and the symbols before anything else.** The router's first import is
+
+```python
+from cyrus_pmg.pmgService.core.accessControl import (
+    getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)
+```
+
+`HOST_AUDIT.md` §9/§11 names `core/accessControl.py`. The newer structural note (§4.0) lists
+`core/` as `exceptionHandlers.py`, `pmgEntitlement.py` ("Auth dependency (`requireAuth`)"),
+`portfolioValidator.py`, `retryUtils.py`, `tagsMapping.py` — **no `accessControl.py`**, and only
+`requireAuth` documented.
+
+This matters more than a rename because the block is appended to the host's *own*
+`dashboardRouter.py`: a failed import there takes every existing dashboard endpoint down with it,
+not just the Proposal Tool. Read the real module first (`ls src/cyrus_pmg/pmgService/core/`), then
+point the import at it. Usage in the block: `requireAuth` ×3, `requireEditor` ×7, `requireAdmin`
+×16, `isAdmin` ×2, `getKerberosFromFastApiRequest` ×2 — so the import line is the only edit if the
+names match, and a thin shim module otherwise.
+
+`requireEditor` costs nothing if the host lacks it: in the mirror it is literally
+`return requireAuth(request)` (one role today; the seam exists so every write endpoint already
+carries it). Alias it and move on.
+
+Whatever the module turns out to be called, the router needs three names it will not have. The
+mirror's implementation, to be adapted to the host's identity source:
 
 ```python
 def getKerberosFromFastApiRequest(request):
@@ -558,7 +623,7 @@ substitution. It is not part of this port.
 curl -s  http://localhost:8001/proposalTool/proposalTool.html | head -3
 curl -s  http://localhost:8001/proposalTool/static/js/proposalTool.js | head -1      # 'use strict';
 curl -sI http://localhost:8001/proposalTool/static/fonts/gs-sans-variable.woff2 | head -1
-curl -s  http://localhost:8002/health
+curl -s  http://localhost:8088/health        # the host's PMG_SVC_PORT
 ```
 
 Unauthenticated, the first two return the host's 302 to login (the mirror: `302 /_dev_login?next=…`).
@@ -641,9 +706,62 @@ time it opens; after that the seed is never read (Verified: `sleeveRepo._seed`, 
 Both SQLite stores create their schema on first open; no migration tooling is needed for a fresh
 host.
 
-The host launches `isgPMGService` with two uvicorn workers (Audit §5.2). All four stores are
-file- or SQLite-backed precisely so that is safe; the adapters' in-memory caches are per worker
-and recomputable.
+### 11.3.1 Four workers on one set of files
+
+The host launches `isgPMGService` with **four** uvicorn workers (§4.0). All four stores are file-
+or SQLite-backed precisely so that is safe; the adapters' in-memory caches are per worker and
+recomputable (the baked adapter holds at most the 16 slices it has been asked for, ~3 MB).
+
+Measured on this code with four processes released together (see
+`tests/test_sleeve_repository.py::test_four_workers_cold_starting_together_seed_the_library_once`):
+
+| | Result |
+|---|---|
+| 100 concurrent register writes across 4 processes | 100/100, no `database is locked` |
+| 4 processes against an existing sleeve database | all fine |
+| 4 processes cold-starting the register | all fine |
+| 4 processes cold-starting an **empty** sleeve database | **was broken; fixed at `7fe6463`+** |
+
+That last case was two check-then-act races in `sleeveRepo`, both closed: the `sleeves` table was
+created without `IF NOT EXISTS` behind an existence check (three workers in four failed with
+`table sleeves already exists`), and the seed itself re-asked "is the library empty?" outside a
+write transaction, so two workers could both fill it — the live-name index refused the duplicate
+sleeves, but `sleeveHistory` has no such index and ended up with one `seeded` revision per worker.
+`_seedOnce` now re-reads under `BEGIN IMMEDIATE`, taking the write lock only when the library looks
+empty, which is once in the life of a store.
+
+**Still do this on the host**: create and seed the sleeve database as a deploy step, *before* the
+service starts —
+
+```bash
+python -m cyrus_pmg.pmgService.scenario.sleeveTools --census
+```
+
+It is in §8 Step 5 already; treat it as load-bearing rather than a check. The fix makes a
+concurrent cold start correct, but seeding first means the race is never run at all.
+
+### 11.3.2 The filesystem under the SQLite files
+
+Nothing in either store is platform-specific — `sqlite3` is stdlib, paths go through
+`os.path.join`, and the scenario store's atomic write is `os.replace`, which is POSIX-native. Two
+properties of the *storage* matter more than the operating system:
+
+- **Network filesystems.** SQLite's locking is only as reliable as the filesystem's, and on NFS
+  POSIX advisory locking is not reliable — spurious `database is locked`, and corruption in the bad
+  case. Four workers sharing one file makes this live. If the durable path is an NFS mount, put the
+  proposal register on local disk and ship backups off it, rather than running it from the share.
+  If workers could ever be spread across hosts sharing that path, the same applies with more force.
+- **The directory must be writable, not just the file** — SQLite creates `-journal` files beside
+  the database. Journal mode is the default `delete`, not WAL; at this write volume (one insert per
+  export, occasional admin saves) that is comfortable, and WAL would not help on NFS anyway.
+
+**SQLite version floor: 3.8.0**, for the partial unique index (`… WHERE deletedAt = ''`). The
+v1→v2 migration also uses `PRAGMA legacy_alter_table`, which needs 3.25.0 — but a fresh host never
+runs that path. RHEL 7's system SQLite is 3.7.17 and would fail outright, so check it:
+
+```bash
+python -c "import sqlite3; print(sqlite3.sqlite_version)"   # >= 3.8.0
+```
 
 ### 11.4 Configuration — every variable the package reads
 
@@ -667,7 +785,7 @@ means the host must set it; "own" means the host already has its own value.
 | `PMG_ALLOWED_KERBEROS` | `accessControl.py` | `fbarker` in the mirror | own (Audit §5.5) |
 | `PMG_ADMIN_KERBEROS` | `accessControl.py` (mirror) | `fbarker` | **Required** — or the host's equivalent source in `isAdmin` |
 | `SAA_ENGINE_PACKAGE` | `engine.py` | `epsilonPhi` | bake machine only |
-| `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own |
+| `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are 8088 / 0.0.0.0 under its `PMG_SVC_` pydantic-settings prefix |
 | `FRONTEND_PORT`, `DASHBOARD_HOST` | `dashboardConfig.py` (mirror) | 8001 / 127.0.0.1 | own |
 | `PMG_SVC_WORKERS` | `start_dashboard.sh` (mirror) | 1 | own (the host runs 2) |
 | `SCENARIO_FIXTURES_LATENCY_MS`, `SCENARIO_FIXTURES_FAIL`, `SCENARIO_FIXTURES_FAIL_SCHEMA`, `SCENARIO_FIXTURES_FAIL_SLEEVES`, `SCENARIO_FIXTURES_FAIL_EXPORT` | `fixturesAdapter.py` | unset | never in production |
@@ -736,7 +854,8 @@ Measured on the epsilon-phi side (Python 3.8.20). The host's versions are Unveri
 | `openpyxl` | 3.0.10 | `workbook.py` — `Workbook`, styles, `get_column_letter`, `chart.DoughnutChart`, `chart.Reference`, `chart.series.DataPoint`, `formatting.rule.CellIsRule`; `advisors.py`; the tests | **not named — verify/install** |
 | `pandas` | 2.0.3 | `portfolio_weights.py` imports it at module level and builds two frames at import (lines 1257–1258); `universe.py`, `rules.py` and `workbook.py` import that module for `ASSET_METADATA`. Measured: pandas import 0.73 s, then the package 0.37 s | **not named — verify/install** |
 | `requests`, `flask` | 2.32.3 / 2.2.5 | the host's own proxy and gate, not the package | present |
-| `sqlite3`, `csv`, `json`, `secrets`, `hashlib`, `tempfile`, `threading` | stdlib | the stores and readers | — |
+| `sqlite3` | stdlib, **library ≥ 3.8.0** | the sleeve repository and the proposal register; the partial unique index needs 3.8.0 (§11.3.2) | verify — a stripped Python build without `_sqlite3`, or RHEL 7's 3.7.17, would fail |
+| `csv`, `json`, `secrets`, `hashlib`, `tempfile`, `threading` | stdlib | the stores and readers | — |
 | `epsilonPhi` (the analytics library), `numpy`, `sklearn`, the database driver | — | **only the bake** and `SCENARIO_BAKED_FALLBACK=1` | not needed on the host service |
 
 What a fully baked, no-fallback service actually imports across a complete cycle (schema, create,
@@ -773,6 +892,12 @@ The package never reads identity. The router gets it from `accessControl` (`Depe
 Whatever string the host's `accessControl` returns is what the register stores.
 
 ### 13.3 The error contract the host must already meet
+
+**Read `pmgService/core/exceptionHandlers.py` and `PmgAppException` before starting** (§4.0). The
+host has its own structured-JSON error handling, and the page needs the fields at the *top level*:
+a 401 must carry `loginUrl` (or the GSSSO redirect never happens), and a 422 must carry `error` and
+`field` (or every inline validation message is lost). An envelope such as `{"detail": …}` or
+`{"error": {"message": …}}` is an adaptation to design, not to discover.
 
 The mirror's `isgPMGService.py` maps `HTTPException` whose `detail` is a dict onto a top-level body
 (`{loginUrl}` on 401, `{error}` on 403), `RequestValidationError` onto 422 `{error: 'Malformed
@@ -811,13 +936,13 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 9f4dc50: 252 passed, 4 skipped in ~40s
+# 253 passed, 4 skipped in ~43s
 ```
 
 | File | Tests | Covers |
 |---|---:|---|
 | `tests/test_scenario_backend.py` | 97 defs (parametrised) | rules, availability, rounding, the workbook against the golden files, the JS mirrors (needs `node`), the implementation model, fees, the export path, the library-leak guard |
-| `tests/test_sleeve_repository.py` | 49 | the sleeve store, migration, history, archive/activity, the console routes, the admin gate on every `/scenario/repository…` route, `accessControl` semantics |
+| `tests/test_sleeve_repository.py` | 50 | the sleeve store, migration, history, archive/activity, the console routes, the admin gate on every `/scenario/repository…` route, `accessControl` semantics, and the four-worker cold start (§11.3.1) |
 | `tests/test_proposal_register.py` | 18 | the register end to end, byte-identity of the stored workbook, append-only, the panel's endpoints |
 | `tests/test_baked_adapter.py` | 10 | slice coverage, manifest provenance, no analytics on the read path, export without a delegate, resumable bake |
 | `tests/test_tier0_beta_equivalence.py` | 4 | the library-side Tier 0 optimisation; **skipped** unless `SAA_ENGINE_LIVE=1` and a database |
@@ -991,7 +1116,11 @@ reachable only by URL, which is a useful soak.
 | The host's error contract passes `{"detail": …}` through | medium — the page shows "Request failed (401)" instead of redirecting | §13.3 check; a test request without identity must return `{loginUrl}`. |
 | The stores land inside `src/` and get zipped or wiped by deployment | medium | Durable paths outside the tree; the reference block in §11.4. |
 | The extract and the bake drift apart (no staleness check at request time, finding F3) | medium | Deliver them together; compare `manifest.source.modified` to the extract on disk at each rollout. |
-| Two workers, one file store | low | Designed for it (§11.3); confirm the store directory is shared, not per-worker. |
+| Four workers, one set of file stores | low | Designed and now tested for it (§11.3.1); confirm the store paths are shared, not per-worker. |
+| The durable path is an NFS mount; SQLite locking is unreliable there | high if it happens | Establish local disk vs network mount (§11.3.2, §18). Register on local disk, backups shipped off. |
+| Host SQLite older than 3.8.0 | high | One-line check (§11.3.2); the partial unique index will not compile below it. |
+| The host's auth module is `pmgEntitlement`, not `accessControl`, and `requireEditor` may not exist | high | §9.2 — settle before Step 3; a failed import takes the host's whole dashboard router down. |
+| The host's `PmgAppException` handler wraps errors in its own envelope | medium | §13.3 — read it before Step 4. |
 | Python version older than 3.8 on the host | low | `from __future__ import annotations` needs 3.7+; f-strings and `secrets` need 3.6+; proven only on 3.8.20. |
 | Theme mismatch with OneGS | cosmetic | A separate change with a measured cost (§10.5). |
 | Retention default of 24 h lands scenarios in `$TMPDIR` | low | `SCENARIO_STORE_DIR` is required. |
@@ -1044,8 +1173,20 @@ repository. Tick each before Step 1.
 - [ ] `pandas` installed (2.0.3 proven).
 - [ ] FastAPI/Starlette/pydantic versions accept sync `def` handlers with `Body(...)`, `Depends`,
       path parameters typed `int`, and `{portfolioKey:path}` (0.122 / 0.44 / 2.5.3 proven).
-- [ ] The launcher's `--workers 2` for `isgPMGService`; the four store paths are shared by both
-      workers and writable by the service user.
+- [ ] The launcher's worker count for `isgPMGService` (the newer note says 4); the four store
+      paths are shared by every worker and writable by the service user.
+- [ ] `python -c "import sqlite3; print(sqlite3.sqlite_version)"` is ≥ 3.8.0 (§11.3.2).
+- [ ] **Whether the durable storage path is local disk or a network mount** (§11.3.2). If NFS,
+      decide where the proposal register lives before go-live.
+- [ ] `pmgService/core/` — the real auth module's filename, its symbols, `requireAuth`'s
+      signature, whether `requireEditor` exists, and how it reads identity from a FastAPI request
+      (§9.2). **Do this first.**
+- [ ] `pmgService/core/exceptionHandlers.py` / `PmgAppException` — the exact non-2xx body shape
+      (§13.3).
+- [ ] `pmgService/dashboardRouter.py` still exposes a module-level `router` rather than having
+      been converted to the class-based handler pattern used in `pmgService/handler/` (§4.0).
+- [ ] `dashboard/DASHBOARD_AUDIT.md` — read it; it is probably the current version of the document
+      §4 is built on, and the dashboard's page folders have already moved on.
 - [ ] Durable, writable, backed-up storage exists outside `src/cyrus_pmg/**` for the register,
       the sleeve database, the scenario store, the bake and the extracts; the `gns` deployment does
       not wipe it.

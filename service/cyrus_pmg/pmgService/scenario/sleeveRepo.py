@@ -91,7 +91,7 @@ ACTIONS = ['baseline', 'created', 'updated', 'reverted', 'deleted', 'restored',
            'imported', 'seeded']
 
 _SLEEVES_TABLE = """
-CREATE TABLE {name} (
+CREATE TABLE IF NOT EXISTS {name} (
     id        INTEGER PRIMARY KEY,
     variant   TEXT NOT NULL,
     category  TEXT NOT NULL,
@@ -215,12 +215,48 @@ def _connect() -> sqlite3.Connection:
     with _lock:
         _migrate(conn)
         conn.executescript(_SCHEMA)
-        count = conn.execute('SELECT COUNT(*) FROM sleeves').fetchone()[0]
-        seeded = conn.execute("SELECT value FROM meta WHERE key = 'seededAt'").fetchone()
-        if count == 0 and seeded is None:
-            _seed(conn)
+        _seedOnce(conn)
     conn.execute('PRAGMA foreign_keys = ON')
     return conn
+
+
+def _seedOnce(conn: sqlite3.Connection) -> None:
+    """Fill an empty library from the seed - once, whatever else is starting.
+
+    The host runs several service workers, so *is the library empty?* and
+    *fill it* are asked by several processes at once against one file, and a
+    plain check-then-act lets two of them both answer yes. Asking again inside
+    a write transaction is what makes the pair atomic: BEGIN IMMEDIATE takes
+    the reserved lock first (the connection's busy timeout covers the wait),
+    so a worker that loses the race re-reads under the lock, finds the library
+    filled, and does nothing.
+
+    Measured before it was written, with four workers on an empty file: the
+    sleeves themselves survive a double seed because the live-name index
+    refuses the duplicates, but ``sleeveHistory`` has no such index and ends
+    up with one *seeded* revision per worker - the record trebled, which is
+    the half that cannot be repaired by looking at it.
+
+    The lock is taken only when the library looks empty, which is once in the
+    life of a store; every other connection pays two indexed lookups.
+    """
+    if conn.execute('SELECT 1 FROM sleeves LIMIT 1').fetchone() is not None:
+        return
+    if conn.execute("SELECT 1 FROM meta WHERE key = 'seededAt'").fetchone() is not None:
+        return
+    conn.commit()                       # nothing open, so BEGIN is legal
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        empty = conn.execute('SELECT 1 FROM sleeves LIMIT 1').fetchone() is None
+        never = conn.execute(
+            "SELECT 1 FROM meta WHERE key = 'seededAt'").fetchone() is None
+        if not (empty and never):
+            conn.rollback()
+            return
+        _seed(conn)                     # commits the transaction on its way out
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _tableExists(conn, name) -> bool:

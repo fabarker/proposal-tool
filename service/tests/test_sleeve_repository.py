@@ -7,6 +7,7 @@ run would be. Tests that write clean up after themselves.
 
 import csv
 import os
+import sqlite3
 
 import pytest
 from starlette.requests import Request
@@ -1084,3 +1085,67 @@ def test_the_feed_and_export_endpoints_answer_as_the_console_expects(monkeypatch
     back = dashboardRouter.restoreRepositorySleeves({'ids': [made['id']]}, user='alice')
     assert back['sleeves'][0]['archived'] is False
     sleeveRepo.deleteSleeve(made['id'], user='alice')
+
+
+def test_four_workers_cold_starting_together_seed_the_library_once(tmp_path):
+    """The host runs several uvicorn workers against one store file, so the
+    first request after a deployment can find four processes creating and
+    seeding an empty database at the same moment.
+
+    Both halves of that were broken and are asserted here. The sleeves table
+    was created without IF NOT EXISTS behind a check-then-create, so three
+    workers in four failed outright; and the seed itself was a second
+    check-then-act, which let two workers both fill the library - the live-name
+    index refused the duplicate sleeves, but sleeveHistory has no such index
+    and ended up with one *seeded* revision per worker.
+
+    The window between the check and the seed is widened deliberately: at real
+    speed the four processes stagger themselves and the second race almost
+    never fires, which is exactly what would have let it reach the host.
+    """
+    import subprocess
+    import sys
+    import time
+
+    rows = list(sleeveRepo.readSeedRows(sleeveRepo.seedPath()))
+    wantedSleeves = len({(variant, category, name) for variant, category, name, _, _ in rows})
+    wantedProducts = len(rows)
+
+    database = tmp_path / 'cold.db'
+    worker = tmp_path / 'worker.py'
+    worker.write_text(
+        'import os, sys, time\n'
+        'os.environ["SCENARIO_SLEEVES_DB"] = sys.argv[1]\n'
+        'from cyrus_pmg.pmgService.scenario import sleeveRepo\n'
+        'realSeed = sleeveRepo._seed\n'
+        'def slowSeed(conn):\n'
+        '    time.sleep(1.0)\n'
+        '    return realSeed(conn)\n'
+        'sleeveRepo._seed = slowSeed\n'
+        'while time.time() < float(sys.argv[2]):\n'
+        '    pass\n'
+        'print(len(sleeveRepo.listAll()))\n')
+
+    environment = dict(os.environ, PYTHONPATH=os.path.abspath(os.path.join(HERE, '..')))
+    environment.pop('SCENARIO_SLEEVES_DB', None)
+    startAt = repr(time.time() + 3)
+    running = [subprocess.Popen([sys.executable, str(worker), str(database), startAt],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=environment)
+               for _ in range(4)]
+    finished = [(process, ) + process.communicate() for process in running]
+
+    for process, out, err in finished:
+        assert process.returncode == 0, err[-2000:]
+        assert int(out.strip()) == wantedSleeves
+
+    opened = sqlite3.connect(str(database))
+    try:
+        counted = lambda sql: opened.execute(sql).fetchone()[0]
+        assert counted('SELECT COUNT(*) FROM sleeves') == wantedSleeves
+        assert counted('SELECT COUNT(*) FROM sleeveProducts') == wantedProducts
+        # one 'seeded' revision per sleeve, not one per sleeve per worker
+        assert counted('SELECT COUNT(*) FROM sleeveHistory') == wantedSleeves
+        assert counted("SELECT COUNT(*) FROM meta WHERE key = 'seededAt'") == 1
+    finally:
+        opened.close()
