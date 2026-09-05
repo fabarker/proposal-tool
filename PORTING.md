@@ -273,11 +273,31 @@ dependencies return a `UserData` object where this block bound a string, and the
 `PmgAppException` puts the HTTP status phrase in `error` with the message in `detail`, the
 opposite way round from this block's own errors.
 
-**Still to confirm against the checkout** (§18): the router docstring says it is "mounted under
-`/api/v1/dashboard` by the optimizationService application", which contradicts the live proxy line
-building `/api/v1/{path}` — and the host's own pages would 404 if the docstring were current, so it
-reads as stale. Confirm before Step 4, because if the mount really is `/api/v1/dashboard` every
-path in §11.1 shifts.
+**The mount is `/api/v1`, and the docstring that says otherwise is stale.** It reads: "The router
+is mounted under `/api/v1/dashboard` by the optimizationService application, so every route path
+below maps 1-to-1 with the old Flask `/api/<path>` pattern" — dated 2026-04-29, at the migration.
+Both halves are wrong now, and the sentence contradicts itself: a `/dashboard` prefix is precisely
+what breaks the 1-to-1 mapping it claims to produce, putting every path one segment out. It also
+credits optimizationService, which runs on 8003 and which the proxy never contacts.
+
+Everything executable says `/api/v1`:
+
+| Source | Says |
+|---|---|
+| `dashboardFrontend.py:384` | `backend_url = f'{_get_backend_url()}/api/v1/{path}'` |
+| `dashboardFrontend.py:153-156` | `_get_backend_url()` reads **pmgService**'s config → 8002, not optimizationService's 8003 |
+| `dashboardFrontend.py:444` | the startup banner prints `Backend API : http://127.0.0.1:{port}/api/v1/` |
+| `HOST_AUDIT.md` §8.6 | traces a real endpoint end to end: `/api/preferred-product-lists` → **`/api/v1/preferred-product-lists` (dashboardRouter.py)** |
+| `HOST_AUDIT.md` §4 | the router is `include_router`-ed by **`isgPMGService.py`**, lines 30-34 |
+| `HOST_AUDIT.md` §13 | "the proxy converts `/api/<x>` to `/api/v1/<x>` … which is what `dashboardRouter` does" |
+
+And the arithmetic is decisive: the proxy builds exactly one URL, and a `/api/v1/dashboard` mount
+404s it — for the host's *own* endpoints, not only ours. That dashboard is in production use, so
+the mount cannot be `/api/v1/dashboard`.
+
+**So §11.1's twenty-five paths are correct as written** and nothing shifts. §18 keeps a one-line
+confirmation, because this is inference from the proxy plus the audit rather than from reading
+`isgPMGService.py`, which is the one host file still missing.
 
 ### 4.1 What the audit establishes (unchanged by the above)
 
@@ -1173,7 +1193,7 @@ reachable only by URL, which is a useful soak.
 | ~~`PmgAppException` wraps errors in its own envelope~~ | **closed** | It does; `apiFetch` now reads both shapes (§13.3). |
 | **In PROD, an allowlisted PWA with no PERMIT role can only read** | high | Get PWAs into `PMGEditor` before go-live — without it, creating a scenario, attaching a sleeve and exporting are all 403. |
 | Which role maintains the sleeve library is undecided | medium | `ISGAdmin` is the natural reading, but the policy gives `PMGEditor` strictly more (it alone has `post`). Confirm with PMG (§9.2). |
-| The router's docstring claims a `/api/v1/dashboard` mount | medium | Contradicted by the live proxy line and by the host's own pages working; confirm before Step 4 (§4.0). |
+| ~~The router's docstring claims a `/api/v1/dashboard` mount~~ | **closed** | Stale, dated 2026-04-29 and self-contradictory; every executable source says `/api/v1` and the host's own pages would 404 otherwise (§4.0). |
 | Python version older than 3.8 on the host | low | `from __future__ import annotations` needs 3.7+; f-strings and `secrets` need 3.6+; proven only on 3.8.20. |
 | Theme mismatch with OneGS | cosmetic | A separate change with a measured cost (§10.5). |
 | Retention default of 24 h lands scenarios in `$TMPDIR` | low | `SCENARIO_STORE_DIR` is required. |
@@ -1234,8 +1254,10 @@ repository. Tick each before Step 1.
       two modules, `requireAuth`/`requireEditor` present, `requireAdmin`/`isAdmin` to be written (§9.2).
 - [x] ~~`exceptionHandlers.py` / `PmgAppException` body shape~~ — **answered**; handled in `apiFetch` (§13.3).
 - [x] ~~`dashboardRouter.py` exposes a module-level `router`~~ — **confirmed**, byte-identical to this mirror's.
-- [ ] **Whether the router is mounted at `/api/v1` or `/api/v1/dashboard`.** Its docstring says the
-      latter; the live proxy builds the former and the host's own pages depend on it. Settle before Step 4 (§4.0).
+- [ ] *(formality — the answer is `/api/v1`, §4.0)* Confirm the mount while you are in the
+      checkout. Two lines: `grep -n "include_router" src/cyrus_pmg/pmgService/isgPMGService.py`
+      should show `prefix='/api/v1'`, and `grep -rn "dashboardRouter" src/cyrus_pmg/optimizationService/`
+      should return nothing.
 - [ ] `dashboard/DASHBOARD_AUDIT.md` — read it; it is probably the current version of the document
       §4 is built on, and the dashboard's page folders have already moved on.
 - [ ] Durable, writable, backed-up storage exists outside `src/cyrus_pmg/**` for the register,

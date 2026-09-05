@@ -187,9 +187,16 @@ kerberos `view + modify` in DEV/UAT-and-below but **`view` only in PROD**. A PWA
 `PMG_ALLOWED_KERBEROS` with no PERMIT role can read the tool in production and cannot create a
 scenario, attach a sleeve or export. Getting PWAs into `PMGEditor` is a prerequisite, not a detail.
 
-**Unresolved.** The router docstring says it is "mounted under `/api/v1/dashboard` by the
-optimizationService application", which the proxy line contradicts — and the host's own pages
-would 404 if the docstring were current, so it reads as stale. Confirm before the router insert.
+**The mount question, settled: `/api/v1`.** The router docstring claims "mounted under
+`/api/v1/dashboard` by the optimizationService application" — dated 2026-04-29 and wrong in both
+halves. It contradicts itself (a `/dashboard` prefix is what *breaks* the "1-to-1 with the old
+Flask `/api/<path>` pattern" it claims to produce) and it credits a service the proxy never
+contacts: `_get_backend_url()` reads pmgService's config, port 8002, not optimizationService's
+8003. Against it stand the proxy line building `/api/v1/{path}`, the startup banner printing
+`/api/v1/`, and `HOST_AUDIT.md` §8.6 tracing a real endpoint to `/api/v1/preferred-product-lists`.
+Demonstrated rather than argued: the proxy builds exactly one URL, and a `/api/v1/dashboard` mount
+404s it for the host's own endpoints as well as ours — and that dashboard is in production. The
+twenty-five paths of the guide's §11.1 are correct as written.
 
 ## 5. Accuracy review of the old guide
 
@@ -607,7 +614,7 @@ Suite after both: **254 passed, 4 skipped**.
 | ~~R19~~ | ~~`dashboardRouter.py` converted to class-based handlers~~ | **closed** | — | §4.5: module-level `router` confirmed, byte-identical to the mirror's | — | No |
 | R20 | **In PROD an allowlisted PWA with no PERMIT role can only read** — no scenario, no sleeve, no export | High | Certain unless PWAs are enrolled | §4.5, `pmgEntitlement._allowlistGrant()` | Enrol PWAs in `PMGEditor` before go-live | Partly — the enrolment itself |
 | R21 | Which role maintains the sleeve library is undecided; the policy gives PMGEditor strictly more than ISGAdmin | Medium | Certain | §4.5: `post` is PMGEditor-only | PMG decision, then `requireAdmin` (§9.2) | No |
-| R22 | The router may be mounted at `/api/v1/dashboard`, not `/api/v1` | Medium | Low — the docstring reads as stale | §4.5: proxy builds `/api/v1/{path}` | Confirm before the insert; every §11.1 path shifts if true | Yes |
+| ~~R22~~ | ~~The router may be mounted at `/api/v1/dashboard`~~ | **closed** | — | §4.5: the docstring is stale and self-contradictory; a `/dashboard` mount 404s the host's own production endpoints | — | A one-line formality only |
 | R14 | Stale companion docs mislead a porter (`service/README.md`, `scenario/__init__.py`, `README.md`, `archive/dataOperations.html` counts, `config.py` docstring) | Low | Medium | §4.3 last row | `PORTING.md` Appendix B flags them; fix in a follow-up outside this audit's scope | No |
 
 ## 11. Outstanding decisions and recommended next steps
