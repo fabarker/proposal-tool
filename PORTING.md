@@ -12,6 +12,79 @@ about the host carries one of three tags:
 - **Audit** — stated by `HOST_AUDIT.md` (2026-08-30) and not independently re-checked.
 - **Unverifiable** — needs the live Cyrus codebase; listed again in §18.
 
+Sources, newest first: the real host files at `../cyrus-files/` (2026-09-05, §4.0), then
+`HOST_AUDIT.md` (2026-08-30). Where they differ the files win.
+
+---
+
+## 0. Read this first — what you get on day one
+
+Following this guide end to end gets you a Proposal Tool that **appears in the Cyrus nav,
+authenticates, resolves portfolios in milliseconds, attaches sleeves and drives the whole flow.**
+It does not get you something a PWA can put in front of a client, and the gap is data rather than
+code. This section is the honest summary; §17 carries the detail.
+
+### One step that must not be skipped
+
+**§9.2 — write `requireAdmin`/`isAdmin` before Step 4.** Neither exists in the host. The endpoint
+block is appended *inside* the host's own `dashboardRouter.py`, so a missing name is not a broken
+Proposal Tool — it is
+
+```
+ImportError: cannot import name 'requireAdmin'
+```
+
+and the module fails to load, taking **all 50+ existing dashboard endpoints** with it. This is the
+only step in the guide that can break something that already works.
+
+### What works once the mechanical steps are done
+
+Steps 1–7: dependencies, the auth names, the package copy, the endpoint block, the data delivery,
+the page folder and route, the nav link. After those, everything on the page works — the mandate,
+the basis, the base portfolio and up to three comparisons, the risk dashboard, implementation
+types, sleeves, the tilt and volatility overlays, fees, the register and the admin console — with
+one exception below.
+
+### What does not work, and what unlocks each
+
+| Not working | Why | Unlocked by |
+|---|---|---|
+| **Downloading a proposal** | The stand-in catalogue carries a flat $5,000,000 minimum on every SMA and private-market product. Because a product receives only a fraction of its category's weight, the hard block (D70) refuses **every** export below roughly a $1bn mandate | Real `MinimumInvestment` values in the delivered catalogue. No code change |
+| Fees being real | The rate card is a placeholder and says so on the rail, in the workbook and in the bake manifest | The delivered card, through `feeTools --accept` |
+| Sleeve holdings being real | The sleeve *names* are PMG's; what each holds is illustrative (spec open item 18 — must not reach a client) | PMG's own holdings, maintained in the console or imported |
+| Strategic weights being real | Real tickers, invented allocations | The supplying database's extract, then a re-bake |
+| The advisor typeahead | A 24-row stub with no environment override | A code change in `advisors.py` (§6) |
+| GBP / CHF / EUR analytics | Baked in a USD context; honest and stamped, but not native | Currency configs in the library, then a re-bake |
+| Looking like Cyrus | Self-contained stylesheet, not OneGS | The retheme (§10.5) — a measured piece of work, not a token swap |
+
+Measured against the packaged catalogue, so you can see the shape of the export block:
+
+| Mandate | Line items | Below minimum | Export |
+|---|---:|---:|---|
+| $5m | 18 | 9 | refused (422) |
+| $50m | 18 | 8 | refused (422) |
+| $250m | 18 | 3 | refused (422) |
+| $1bn | 18 | 0 | allowed |
+
+### One gate that only bites in production
+
+In PROD, `PMG_ALLOWED_KERBEROS` alone grants `view`. A PWA not enrolled in `PMGEditor` can open the
+tool and cannot create a scenario, attach a sleeve or export. In DEV and UAT every caller is
+auto-granted `ISGAdmin`, **so this looks fine in testing and fails on release** (§4.0).
+
+### Two stages, then
+
+**Demo-ready** — `requireAdmin` written; the seven mandatory variables of §11.4; `openpyxl` and
+`pandas`; the three extracts and the 688-payload bake delivered; durable storage outside `src/`.
+Everything works except export, which needs an unrealistic mandate until minimums land.
+
+**Client-ready** — additionally: real minimums, the real fee card, real sleeve holdings, the real
+SAA extract, the advisor directory, PWAs enrolled in `PMGEditor`, and the retheme.
+
+Nothing in the first list is a decision; everything in the second belongs to PMG or to a
+delivering team. §17 names the owners, and §18's remaining checks are formalities against the live
+checkout.
+
 ---
 
 ## 1. Purpose, scope and non-goals
