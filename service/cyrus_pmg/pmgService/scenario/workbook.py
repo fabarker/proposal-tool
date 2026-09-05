@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import datetime
 import io
+import zipfile
+from xml.etree import ElementTree
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -352,7 +354,8 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                              includeFees: bool = True,
                              volPremium: bool = False,
                              currency: str = None,
-                             model: dict = None) -> None:
+                             model: dict = None,
+                             proposalId: str = None) -> None:
     """Append the implementation sheet: the columns of ``implColumns``, in
     order, grouped by category with subtotals and a grand total.
 
@@ -391,6 +394,11 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     # counted rather than measured.
     headerRow = 1
     preamble = []
+    # The UID first, at A1: the one place in the file a reader finds it
+    # without knowing where to look (D75). The other sheets carry it in their
+    # print header instead, since their cells are the engine's own layout.
+    if proposalId:
+        preamble.append(['Proposal UID', proposalId])
     if variant:
         preamble.append(['Implementation Type', variant])
     if model['priced']:
@@ -1002,7 +1010,8 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                   variant: str = None, tacticalTilt: bool = False,
                   feeSchedule: str = None, feeLevel: str = None,
                   includeFees: bool = True, volPremium: bool = False,
-                  assets=None, engineParity: bool = False, model: dict = None) -> bytes:
+                  assets=None, engineParity: bool = False, model: dict = None,
+                  proposalId: str = None) -> bytes:
     """The proposal workbook: four sheets, no analytics library (D67).
 
     ``portfolios``, ``risk_dashboard`` and ``assumptions`` reproduce what the
@@ -1013,6 +1022,12 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
     *engineParity* restores the empty universe rows the library used to print
     (see ``_categoryOrder``). It exists for the golden test and should not be
     set by a caller producing a proposal.
+
+    *proposalId* is the Proposal UID minted for this delivery (D75). It is
+    written where a reader looks first (the Implementation sheet's first row),
+    where a printed page shows it (every sheet's header) and where a program
+    reads it (``dc:identifier``, see ``stampedProposalId``). Absent for a
+    workbook that is not a delivery - the golden test, a unit test.
     """
     book = Workbook()
     book.remove(book.active)                      # the writers name their own
@@ -1024,7 +1039,7 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                              mandate.mandateSize, variant, tacticalTilt,
                              feeSchedule, feeLevel, mandate.topAccountSize,
                              includeFees, volPremium, basis.currency,
-                             model=model)
+                             model=model, proposalId=proposalId)
 
     # Enhancements that add nothing to the grid and cost nothing to read: a
     # coloured tab per sheet, a sensible print setup, and the proposal's own
@@ -1037,15 +1052,44 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
         sheet.page_setup.fitToHeight = 0
         sheet.sheet_properties.pageSetUpPr.fitToPage = True
         sheet.print_title_rows = '1:1'
+        if proposalId:
+            sheet.oddHeader.right.text = 'Proposal UID ' + proposalId
     book.properties.title = 'PMG Proposal - {} {}'.format(basis.currency, basis.hedging)
     book.properties.creator = 'PMG Proposal Tool'
     book.properties.description = (
         'Strategic allocation, risk dashboard, long-term estimates and the '
         'implemented model.')
+    if proposalId:
+        book.properties.title = 'PMG Proposal {} - {} {}'.format(
+            proposalId, basis.currency, basis.hedging)
+        book.properties.identifier = proposalId
+        book.properties.keywords = proposalId
 
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
+
+
+def stampedProposalId(content: bytes):
+    """The Proposal UID a workbook was written with, or None.
+
+    Read from the file's own properties (``dc:identifier``) without opening a
+    sheet, so it costs a zip entry rather than a load. None for bytes that are
+    not a workbook, or a workbook written with no UID. The register compares
+    this with the id it is about to record, and refuses a mismatch (D75).
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            core = archive.read('docProps/core.xml')
+    except (zipfile.BadZipFile, KeyError, ValueError):
+        return None
+    try:
+        root = ElementTree.fromstring(core)
+    except ElementTree.ParseError:
+        return None
+    node = root.find('{http://purl.org/dc/elements/1.1/}identifier')
+    text = (node.text or '').strip() if node is not None else ''
+    return text or None
 
 
 #: The name this had while it was only the fixtures adapter's writer. It is

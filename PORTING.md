@@ -226,6 +226,7 @@ imports.
 | `assetEstimates.py` | Per-asset long-term estimates for the assumptions sheet: store copy, else packaged, `SCENARIO_ASSET_ESTIMATES` overrides | yes |
 | `workbook.py` | The whole Excel proposal with openpyxl alone: `portfolios`, `risk_dashboard`, `assumptions`, `Implementation`, hidden `chartData`; `buildImplementationRows` | yes |
 | `proposalRegister.py` | Every delivered proposal, SQLite at `SCENARIO_REGISTER_DB`, schema v1, append-only, workbook bytes + SHA-256 | yes |
+| `accountRequests.py` | Account opening requests (D76): one per proposal, an `accountRequests` table in the register's own file, append-only; placeholder option lists | yes |
 | `bake.py` | Offline bake CLI and the store layout (`manifest.json`, `<CCY>_<Hedging>.json`, `assetEstimates.json`); `storeDir()` reads `SCENARIO_BAKED_DIR` | store layout at runtime; the CLI offline |
 | `__init__.py` | Package docstring (its module list is stale — ignore it) | — |
 
@@ -237,8 +238,9 @@ placeholder), `assetEstimates.json` (the packaged fallback for the assumptions s
 696 lines, entirely the block. Anatomy (line numbers as at `9f4dc50`):
 
 - lines 20–39: imports — `fastapi` (`APIRouter, Body, Depends, Request, Response`, `JSONResponse`),
-  `cyrus_pmg.pmgService.core.accessControl` (`getKerberosFromFastApiRequest, isAdmin, requireAdmin,
-  requireAuth, requireEditor`), and `cyrus_pmg.pmgService.scenario.*`;
+  `cyrus_pmg.pmgService.core.accessControl` (`isAdmin, requireAdmin, requireAuth, requireEditor`
+  — one line, retargeted at `pmgEntitlement` on the host, §9.2), and
+  `cyrus_pmg.pmgService.scenario.*`;
 - line 41: `router = APIRouter(dependencies=[Depends(requireAuth)])` — **the host already has this
   line; do not insert it**;
 - line 43: `_XLSX` media type; lines 51–54: `getScenarioPort()` warm-up at import, exceptions
@@ -454,7 +456,7 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 | The endpoint block of `service/cyrus_pmg/pmgService/dashboardRouter.py` (§9.1) | the host's `pmgService/dashboardRouter.py` |
 | `serve_proposal_tool` route (§10.2) | the host's `dashboard/dashboardFrontend.py` |
 | The nav link (§10.3) | the host's `dashboard/index.html` |
-| `getKerberosFromFastApiRequest`, `isAdmin`, `requireAdmin` (§9.2) | the host's `pmgService/core/accessControl.py` |
+| `isAdmin`, `requireAdmin` (§9.2) | the host's `pmgService/core/pmgEntitlement.py` |
 | The twenty settings of §11.4 | the host's `dashboard/dashboard.env.defaults` (or wherever it keeps them) |
 
 ### ADAPT (the host's own facility, exercised through an existing seam — no package edit)
@@ -492,7 +494,7 @@ Everything in §3.4 and §3.5; `service/var/log`, `service/var/run`, `service/va
 | `service/cyrus_pmg/pmgService/scenario/*.py` (25) | `src/cyrus_pmg/pmgService/scenario/` | COPY |
 | `service/cyrus_pmg/pmgService/scenario/{advisors.xlsx,fees.json,feeRates.csv,assetEstimates.json}` | same | COPY |
 | `service/cyrus_pmg/pmgService/dashboardRouter.py` lines 20–39 (imports, deduplicated), 43–54, 57–696 | appended to `src/cyrus_pmg/pmgService/dashboardRouter.py` | INSERT |
-| `service/cyrus_pmg/pmgService/core/accessControl.py` lines 96–124 (`getAdminAllowlist`, `isAdmin`, `requireAdmin`) and 64–69 (`getKerberosFromFastApiRequest`) | `src/cyrus_pmg/pmgService/core/accessControl.py` | INSERT, adapted to the host's identity source |
+| `isAdmin` / `requireAdmin` as written in §9.2 | `src/cyrus_pmg/pmgService/core/pmgEntitlement.py` | INSERT — the rest of the mirror's `accessControl.py` is a stand-in and is not copied |
 | `service/cyrus_pmg/dashboard/dashboardFrontend.py` lines 165–168 | `src/cyrus_pmg/dashboard/dashboardFrontend.py` | INSERT |
 | `service/cyrus_pmg/dashboard/index.html` lines 14–19 | `src/cyrus_pmg/dashboard/index.html` header block | INSERT |
 | `service/dashboard.env.defaults` (the `SCENARIO_*`, `PMG_ADMIN_KERBEROS` lines) | the host's `dashboard.env.defaults` | CONFIG |
@@ -518,14 +520,12 @@ running host against.
 (§12). Confirm the host's Python is ≥ 3.8 (the only version this code is proven on is 3.8.20).
 
 **Step 2 — The auth module (do this before anything else touches the host).** Establish what
-`pmgService/core/` actually contains, then add `getKerberosFromFastApiRequest`, `isAdmin` and
-`requireAdmin` to it and point the block's import at the real module name (§9.2 — it may be
-`pmgEntitlement.py`, not `accessControl.py`). Check, in the host's virtualenv:
+add `isAdmin` and `requireAdmin` to `pmgService/core/pmgEntitlement.py` (§9.2 gives the code)
+and retarget the block's one auth import at that module. Check, in the host's virtualenv:
 
 ```bash
-ls src/cyrus_pmg/pmgService/core/
-python -c "from cyrus_pmg.pmgService.core.<module> import (
-    getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)"
+python -c "from cyrus_pmg.pmgService.core.pmgEntitlement import (
+    isAdmin, requireAdmin, requireAuth, requireEditor); print('all four resolve')"
 ```
 
 **Step 3 — Copy the package.**
@@ -568,12 +568,12 @@ census, and decide who holds `PMG_ADMIN_KERBEROS` (§11.4).
 Append to the host's `pmgService/dashboardRouter.py`:
 
 1. The import lines of the mirror file (lines 20–39), **merging** with the host's existing
-   `fastapi` imports and **omitting** any name the host already imports from `accessControl`
-   (`requireAuth`, `requireEditor`). The new imports are:
+   `fastapi` imports and **omitting** any name the host's router already imports. Retarget the
+   auth line at `pmgEntitlement` (§9.2); the rest are new:
 
    ```python
-   from cyrus_pmg.pmgService.core.accessControl import (
-       getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)
+   from cyrus_pmg.pmgService.core.pmgEntitlement import (
+       isAdmin, requireAdmin, requireAuth, requireEditor)
    from cyrus_pmg.pmgService.scenario import (fees, products, proposalRegister, scenarioStore,
                                               sleeveRepo)
    from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
@@ -599,77 +599,89 @@ Route-level gates are already correct: reads inherit the router's `requireAuth`,
 (§11.1; `tests/test_sleeve_repository.py::test_every_repository_route_requires_the_admin_role`
 asserts the admin set).
 
-`getScenarioSchema` takes `request: Request` and stamps `capabilities.canAdmin =
-isAdmin(getKerberosFromFastApiRequest(request))` onto the schema; that is the only place the
-router reads identity directly.
+`getScenarioSchema` takes `caller=Depends(requireAuth)` and stamps
+`capabilities.canAdmin = isAdmin(caller)` onto the schema — reading the roles the dependency
+already resolved, rather than pulling the kerberos back out of the request and asking PERMIT
+again.
 
-### 9.2 The auth module — two imports, and one function to write
+### 9.2 The auth module — one import, and two functions to write
 
-Settled by `../cyrus-files/pmgEntitlement.py` and the host's own router. The block's single import
-line becomes two, because the names live in two modules:
+The block's dependencies now hand handlers a **`UserData`**, the shape
+`pmgEntitlement.requireCan` builds, in the mirror as well as on the host. So the whole auth
+import is one line from one module:
 
 ```python
-from cyrus_pmg.pmgService.core.accessControl import getKerberosFromFastApiRequest
-from cyrus_pmg.pmgService.core.pmgEntitlement import requireAuth, requireEditor
+from cyrus_pmg.pmgService.core.pmgEntitlement import (
+    isAdmin, requireAdmin, requireAuth, requireEditor)
 ```
 
 `requireAuth` (= `requirePmgApiView`) and `requireEditor` (= `requirePmgApiModify`) already exist
-as back-compat shims, so nothing needs aliasing. **Do not insert the mirror's
-`accessControl.py`** — the host's is richer and authoritative.
+as back-compat shims. **Do not insert the mirror's `accessControl.py`** — the host's is richer and
+authoritative, and the block no longer imports anything from it.
 
-**`requireAdmin` and `isAdmin` do not exist and must be written.** Because `post` is a
-PMGEditor-only privilege in the policy (ISGAdmin deliberately lacks it), no `resource:action`
-isolates an administrator; the test has to be role membership. Add to the host's
-`pmgEntitlement.py`, beside the other shims:
+**`requireAdmin` and `isAdmin` must be written.** Because `post` is a PMGEditor-only privilege in
+the policy and ISGAdmin deliberately lacks it, no `resource:action` isolates an administrator; the
+test has to be role membership. Add to `pmgEntitlement.py`, after the back-compat shims — it needs
+no new imports, since `HTTPStatus`, `Depends`, `logger`, `ROLE_ADMIN`, `hasRole`, `requireAuth`,
+`UserData` and `PmgAppException` are all already in that module:
 
 ```python
-def isAdmin(userData) -> bool:
+def isAdmin(userData: UserData) -> bool:
     """Whether this caller may maintain the sleeve library."""
     return hasRole(userData, ROLE_ADMIN)
 
 
 def requireAdmin(userData: UserData = Depends(requireAuth)) -> UserData:
-    """Repository console gate. Mirrors requireCan's refusal shape."""
+    """Repository console gate. Refuses in requireCan's own shape."""
     if not isAdmin(userData):
-        kerberos = getattr(userData, 'kerberos', 'unknown')
+        kerberos = getattr(userData, "kerberos", "unknown")
+        roles = getattr(userData, "roles", []) or [getattr(userData, "role", "")]
+        logger.error("PMG auth: forbidden repository access by '%s' roles=%s", kerberos, roles)
         raise PmgAppException(
             statusCode=HTTPStatus.FORBIDDEN.value,
-            reason="Forbidden: user '{}' is not a sleeve repository admin.".format(kerberos))
+            reason=(f"Forbidden: user '{kerberos}' with roles {roles} is not "
+                    f"a sleeve repository admin."),
+        )
     return userData
 ```
 
-Then `from cyrus_pmg.pmgService.core.pmgEntitlement import isAdmin, requireAdmin` joins the second
-import line. **Which role maintains the library is a PMG decision** — `ISGAdmin` is the natural
-reading, but the policy gives `PMGEditor` strictly more, so confirm it (§17).
+**Which role maintains the library is a PMG decision.** `ROLE_ADMIN` is the natural reading, but
+the policy gives `PMGEditor` strictly more — it alone holds `post`. If editors should maintain
+sleeves too, it is `hasRole(userData, ROLE_ADMIN, ROLE_EDITOR)`: one argument (§17).
 
-The schema route also calls `isAdmin(getKerberosFromFastApiRequest(request))` with a *string*. The
-host's `isAdmin` above takes a `UserData`. Either overload it, or change that one call site to
-`isAdmin(PmgEntitlement.isValidUser(kerberos)[1])`.
+**Verify before Step 4 — this is the one step that can break something already working.** The
+block is appended *inside* the host's own `dashboardRouter.py`, so a missing name is not a broken
+Proposal Tool but an `ImportError` that takes all 50+ existing dashboard endpoints with it:
 
-#### The `UserData`-versus-string boundary — fixed on this side
-
-The host's dependencies return a `UserData`; this block was written against a mirror whose
-dependencies return the kerberos itself, and it *binds* the value rather than only gating on it —
-which the host never does, so nothing there had noticed.
-
-Measured before the fix: a `UserData` reaching `scenarioStore` raised
-`TypeError: Object of type UserData is not JSON serializable` on **every scenario created**, and
-reaching either SQLite store raised `InterfaceError: Error binding parameter` on **every export and
-every sleeve save**. Three write paths, all hard failures.
-
-`_callerId()` now normalises at the eight points the value is consumed, so the same block runs
-against either host unchanged:
-
-```python
-def _callerId(user) -> str:
-    return (getattr(user, 'kerberos', None)
-            or (user if isinstance(user, str) else '')
-            or 'unknown')
+```bash
+python -c "from cyrus_pmg.pmgService.core.pmgEntitlement import (
+    isAdmin, requireAdmin, requireAuth, requireEditor); print('all four resolve')"
 ```
 
-`tests/test_sleeve_repository.py::test_the_caller_id_survives_either_shape_of_auth_dependency`
-asserts both shapes and that what lands in the stores is a string. The twenty `user: str =
-Depends(...)` annotations were dropped, since `str` is not what arrives on the host.
+#### Why the block speaks `UserData`
+
+The handlers bind what the dependency returns, and the two sides once disagreed: the host's
+returns an object, the mirror's returned a bare kerberos. Nothing in Cyrus had noticed, because
+its own routers use these purely as gates — `dependencies=[Depends(requireEditor)]` — and never
+bind the value. Measured against the host's shape before the mirror was aligned: a `UserData`
+reaching the scenario store raised `TypeError: Object of type UserData is not JSON serializable`
+on **every scenario created**, and reaching either SQLite store raised `InterfaceError: Error
+binding parameter` on **every export and every sleeve save** — while all 254 tests passed.
+
+The mirror's `accessControl.py` now reproduces the host's model: the three roles, three resources
+and three actions, the policy table verbatim, `hasRole`/`can`, and a `UserData` carrying the five
+attributes `pmgEntitlement` ever reads — `kerberos`, `role`, `roles`, `permissions`,
+`actionsAllowed`, each accessed there through `getattr` with a default. The two environment lists
+stand in for PERMIT membership: the admin list is `ISGAdmin`, the access list alone is
+`PMGEditor`, which leaves every gate answering exactly as it did before.
+
+**The object stops at the router.** `scenario/` imports nothing outward and has no notion of a
+`UserData`; the eight places that record who acted read `caller.kerberos`, because
+`sleeveHistory.actor`, `proposals.exportedBy` and `scenario.createdBy` are a kerberos string and
+that is what belongs in them permanently.
+`tests/test_sleeve_repository.py::test_the_mirror_hands_out_the_shape_the_host_hands_out` asserts
+the five attributes, both role helpers, the `post` asymmetry, and that a string is what reaches
+the store.
 
 ### 9.3 Nothing else changes on the backend
 
@@ -791,6 +803,9 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | GET | `/scenario/repository/proposals.csv` | `exportRegisterProposals` | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}` | `getRegisterProposal` | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}/workbook` | `downloadRegisterWorkbook` | requireAdmin |
+| GET | `/scenario/proposals/{proposalId}` | `lookupProposal` | router-level requireAuth (D76) |
+| POST | `/scenario/account-requests` | `createAccountRequest` | requireEditor (D76) |
+| GET | `/scenario/account-requests/{requestId}` | `getAccountRequest` | router-level requireAuth (D76) |
 
 Error contract (Verified over HTTP): 422 `{error, field}`; 404 `{error}` ("Scenario … is no
 longer available - scenarios are kept for 24 hours"); 502 `{error}` on analytics failure; 401
@@ -818,9 +833,24 @@ product's minimum (D70).
   liquidity, exposureCurrency, productCost, feeGroup, distributionYield, minimumInvestment, weight`.
 - **Schema**: `options, availability, categories, rules, fees, capabilities{canExport, canEdit,
   canAdmin}, dataInfo{adapter, source, dataversion, asOf}`.
-- **Export**: `Content-Disposition: attachment; filename="PMG_Scenario_<CCY>_<Hedging>_<date>.xlsx"`;
-  sheets `portfolios, risk_dashboard, assumptions, Implementation` plus a hidden `chartData` sheet
-  that feeds five native doughnut charts (D73).
+- **Export**: `Content-Disposition: attachment; filename="PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx"`
+  and `X-Proposal-Id: <uid>`, where `<uid>` is the Proposal UID (`pr_` + 12 hex) minted for this
+  delivery and written into the workbook (Implementation sheet `A1:B1`, every sheet's print header,
+  `dc:identifier`) and into the register row — one id in all of them, and the register refuses the
+  row if they differ (D75). Sheets `portfolios, risk_dashboard, assumptions, Implementation` plus a
+  hidden `chartData` sheet that feeds five native doughnut charts (D73). The page reads only
+  `Content-Disposition` today; if it comes to read `X-Proposal-Id`, the host's proxy must pass that
+  header through.
+- **Account opening request (D76)**: `GET /scenario/proposals/{uid}` → `{proposal: {proposalId, scenarioId,
+  sequence, exportedAt, exportedBy, createdBy, primaryPwa, topAccountSize, mandateSize, currency, hedging,
+  variant, riskLevel, allocationType, excludeRealAssets, tacticalTilt, volPremium, includeFees, feeSchedule,
+  feeLevel, workbookName, sleeves[{category, sleeve, revision}]}, requests[...]}`; 422 `field: proposalId` for a
+  non-UID, 404 `{error, field: proposalId}` for an unknown one. `POST /scenario/account-requests` with
+  `{proposalId, clientName, accountType, bookingCentre, taxResidency, fundingAmount, fundingSource,
+  fundingDate (ISO), kycReference?, notes?}` → `{request: {requestId ar_…, proposalId, submittedAt,
+  submittedBy, …fields}}`; 422 names the field, including `proposalId` when a request already exists. The
+  option lists ride the schema as `options.accountRequest{accountTypes, bookingCentres, fundingSources,
+  required, placeholder}`.
 
 ### 11.3 Persistence — the four stores the tool owns
 
@@ -828,7 +858,7 @@ product's minimum (D70).
 |---|---|---|---|---:|---|
 | Scenario state | `scenarioStore.py` | one JSON file per scenario, atomic rename | `SCENARIO_STORE_DIR` | worker-safe (files) | none needed — expires after `SCENARIO_RETENTION_HOURS` (24) |
 | Sleeve library | `sleeveRepo.py` | SQLite, schema v2: `sleeves`, `sleeveProducts`, `sleeveHistory`, `meta`; partial unique index on live names; `_migrate` rebuilds v1→v2 and back-fills a `baseline` revision | `SCENARIO_SLEEVES_DB` | SQLite, `PRAGMA foreign_keys=ON` | dated `sleeveTools --export`; every revision kept; soft delete + restore (D65/D66) |
-| Proposal register | `proposalRegister.py` | SQLite, schema v1: `proposals` (with the workbook blob and SHA-256), `proposalSleeves`, `meta`; seven indexes; **append-only by construction** | `SCENARIO_REGISTER_DB` | SQLite | **daily file backup off the host — the only store whose loss is unrecoverable** |
+| Proposal register | `proposalRegister.py` (+ `accountRequests.py`, an `accountRequests` table in the same file, D76) | SQLite, schema v1: `proposals` (with the workbook blob and SHA-256), `proposalSleeves`, `meta`; seven indexes; **append-only by construction** | `SCENARIO_REGISTER_DB` | SQLite | **daily file backup off the host — the only store whose loss is unrecoverable** |
 | Baked analytics | `bake.py` / `bakedAdapter.py` | `manifest.json` + one `<CCY>_<Hedging>.json` per slice + `assetEstimates.json` | `SCENARIO_BAKED_DIR` (read-only at runtime) | read-only | keep the previous store directory; swap by rename |
 
 Seeding: the sleeve database is created and seeded from `SCENARIO_SLEEVES_SEED` **once**, the first
@@ -1017,9 +1047,10 @@ elides the arguments).
 ### 13.2 Identity
 
 The package never reads identity. The router gets it from `accessControl` (`Depends`, and
-`getKerberosFromFastApiRequest(request)` in `getScenarioSchema`) and passes the user's id to
-`scenarioStore.createScenario(createdBy=user)` and `proposalRegister.record(scenarioId, user, …)`.
-Whatever string the host's `accessControl` returns is what the register stores.
+the `caller` its dependency yields) and passes `caller.kerberos` to
+`scenarioStore.createScenario(createdBy=…)` and `proposalRegister.record(…)`. Whatever kerberos the
+host's entitlement resolves is what the register stores; the `UserData` itself never leaves the
+router (§9.2).
 
 ### 13.3 The error contract — two shapes, both handled
 
@@ -1174,9 +1205,16 @@ nav for users.
 11. Export refuses with 422 `field: minimumInvestment` when any position is below its product's
     minimum — at the packaged catalogue this happens at every mandate the tool offers (§17); raise
     the mandate in the test to prove the success path.
-12. A successful export downloads `PMG_Scenario_<CCY>_<Hedging>_<date>.xlsx` with sheets
+12. A successful export downloads `PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx` with sheets
     `portfolios, risk_dashboard, assumptions, Implementation` (+ hidden `chartData`); the
+    Implementation sheet's first row reads `Proposal UID` / `<uid>` and the same `<uid>` is the
+    filename's last token and the new row's id in the console's Proposals tab (D75); the
     Implementation total is exactly 100.00%; the doughnut charts render in Excel.
+12a. Start here: the card shows **Continue · Cancel** far left and **Create Account Opening Request**
+    right. The new button opens the account form; a UID from a delivered workbook fills the greyed
+    read-only fields (PWA, sizes, basis, type, risk, fees, switches, sleeves); the required fields, once
+    filled, make Submit live; Submit shows a receipt with an `ar_…` reference and the row appears in
+    the register file's `accountRequests` table. A second Submit for the same UID is refused (D76).
 13. Refresh the page: the scenario rehydrates from `?scenario=<id>` with mandate, basis, columns,
     variant, sleeves and fee settings intact. Both uvicorn workers answer for the same id.
 14. Stop the FastAPI process: the page shows the degraded banner within seconds, disables editing
@@ -1255,7 +1293,7 @@ reachable only by URL, which is a useful soak.
 |---|---|---|
 | The package's default paths resolve outside itself (§3.6) | high — the service fails on first read | Set the seven required variables; the §8 checks catch it before start. |
 | `pandas`/`openpyxl` absent or at incompatible versions on the host | high | Verify before Step 3; pin the versions proven here as a floor. |
-| The host's `accessControl` names or signatures differ | high | Step 2 import check; adapt `requireAdmin` to call the host's `requireAuth`. |
+| ~~The host's `accessControl` names or signatures differ~~ | **closed** | Settled by `cyrus-files/`: `requireAuth`/`requireEditor` are `pmgEntitlement` shims returning a `UserData`, which the block now expects (§9.2). Only `requireAdmin`/`isAdmin` remain to be written, and Step 2's import check proves it. |
 | The host's error contract passes `{"detail": …}` through | medium — the page shows "Request failed (401)" instead of redirecting | §13.3 check; a test request without identity must return `{loginUrl}`. |
 | The stores land inside `src/` and get zipped or wiped by deployment | medium | Durable paths outside the tree; the reference block in §11.4. |
 | The extract and the bake drift apart (no staleness check at request time, finding F3) | medium | Deliver them together; compare `manifest.source.modified` to the extract on disk at each rollout. |
@@ -1294,10 +1332,10 @@ repository. Tick each before Step 1.
 - [ ] `isg-cyrus-pmg/src/cyrus_pmg/pmgService/dashboardRouter.py` exists, defines a module-level
       `router = APIRouter(dependencies=[Depends(requireAuth)])`, and is `include_router`-ed with
       `prefix='/api/v1'` in `pmgService/isgPMGService.py`.
-- [ ] `pmgService/core/accessControl.py` exports `requireAuth` and `requireEditor` as FastAPI
-      dependencies with the signature `(request: Request) -> str`, plus `isAllowed`,
-      `buildLoginUrl`, `getKerberosFromFlaskRequest`. Note the exact way it reads identity from a
-      FastAPI request — that is what `getKerberosFromFastApiRequest` must wrap.
+- [x] ~~`accessControl.py` exports `requireAuth`/`requireEditor` returning `str`~~ — **answered**,
+      and it was wrong: they live in `pmgEntitlement.py` as shims over `requireCan` and return a
+      `UserData`. The mirror now returns the same shape (§9.2), so nothing here needs confirming
+      beyond Step 2's import check once `requireAdmin` is written.
 - [ ] `dashboard/dashboardFrontend.py` has the per-page route pattern, `DASHBOARD_DIR`, the
       `/api/<path:path>` proxy to `/api/v1/`, and `_PUBLIC_PATHS` including `/api/whoami`,
       `/static/css/` and `/static/js/accessGate.js`.
@@ -1408,6 +1446,12 @@ One line each; the register carries the reasoning.
 - **D73** The five composition doughnuts in the workbook as native charts on a hidden `chartData`
   sheet; shares rounded as the page rounds them.
 - **D74** Three abbreviated on-screen headers that the sheet spells out.
+- **D75** One Proposal UID per finished proposal, minted before the workbook is written and put in
+  the file (Implementation `A1:B1`, print headers, `dc:identifier`), the filename (last token) and
+  the register row; `record(proposalId, …)` refuses a mismatch. `X-Proposal-Id` on the export.
+- **D76** Account opening request: the landing card's third button, a form filled read-only from a
+  Proposal UID, one request per proposal recorded in the register file's `accountRequests` table;
+  placeholder option lists on the schema.
 
 ## Appendix B — where the rest is written down
 

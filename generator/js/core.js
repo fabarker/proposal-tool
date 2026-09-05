@@ -2396,7 +2396,7 @@ function renderFooter() {
 /* ---- mandate dialog render ---------------------------------------------- */
 function renderDialog() {
   var host = document.getElementById('mandateDialog'); if (!host) return;
-  if (!draft) { host.innerHTML = ''; host.hidden = true; setBackgroundInert(false); return; }
+  if (!draft) { host.innerHTML = ''; host.hidden = true; if (!account) setBackgroundInert(false); return; }
   host.hidden = false;
   setBackgroundInert(true);
   var first = (state.phase === 'landing');
@@ -2421,9 +2421,10 @@ function renderDialog() {
   function invalid(id) {
     return (err && err.field === id) ? ' aria-invalid="true" aria-describedby="mderr"' : '';
   }
+  var dis = draft.saving ? ' disabled' : '';
   host.innerHTML =
       '<div class="scrim" data-scrim></div>'
-    + '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
+    + '<div class="dialog' + (first ? ' start' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
@@ -2450,13 +2451,22 @@ function renderDialog() {
         ? '<span class="field-hint">Type at least two characters.</span>' : '')
     + '</div>'
     + (err ? '<p class="md-err" id="mderr" role="alert">' + esc(err.msg) + '</p>' : '')
-    + '<div class="dlg-actions">'
-    + '<button type="button" class="btn btn-ghost" id="dlgcancel"'
-    + (draft.saving ? ' disabled' : '') + '>Cancel</button>'
-    + '<button type="button" class="btn btn-primary" id="dlgsave"'
-    + (draft.saving ? ' disabled' : '') + '>'
-    + (draft.saving ? 'Working…' : (first ? 'Continue' : 'Save mandate')) + '</button>'
-    + '</div></div>';
+    /* The landing card seats three actions: Continue then Cancel, far left as
+       a group, and Create Account Opening Request right (D76). Edit mandate
+       keeps its right-aligned pair. */
+    + (first
+        ? '<div class="dlg-actions split"><div class="dlg-grp">'
+          + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
+          + (draft.saving ? 'Working…' : 'Continue') + '</button>'
+          + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
+          + '</div>'
+          + '<button type="button" class="btn btn-ghost" id="dlgaccount"' + dis + '>'
+          + 'Create Account Opening Request</button></div>'
+        : '<div class="dlg-actions">'
+          + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
+          + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
+          + (draft.saving ? 'Working…' : 'Save mandate') + '</button></div>')
+    + '</div>';
 }
 
 function setBackgroundInert(on) {
@@ -2464,6 +2474,401 @@ function setBackgroundInert(on) {
     var node = document.querySelector(selector);
     if (node && 'inert' in node) node.inert = on;
   });
+}
+
+/* =============================================================================
+   Account opening request (D76). A form that fills itself from a Proposal
+   UID (D75): the register answers the lookup, the proposal's parameters land
+   in read-only fields, the user adds what the proposal cannot know, and
+   Submit records one request against that proposal. Reached from the landing
+   card's third button; rendered into #accountDialog.
+   ========================================================================== */
+var account = null;                 /* the account dialog's working copy */
+var acOpener = null;
+var UID_PATTERN = /^pr_[0-9a-f]{12}$/;
+var UID_SHAPE = 'A Proposal UID is pr_ followed by twelve letters or digits.';
+
+/* The fields the user supplies. Option lists come from the schema
+   (options.accountRequest), so the page never carries a list of its own. */
+var AC_FIELDS = [
+  { id: 'acclient', key: 'clientName',    label: 'Client / account name', kind: 'text',   required: true },
+  { id: 'actype',   key: 'accountType',   label: 'Account type',          kind: 'select', required: true, options: 'accountTypes' },
+  { id: 'acbook',   key: 'bookingCentre', label: 'Booking centre',        kind: 'select', required: true, options: 'bookingCentres' },
+  { id: 'actax',    key: 'taxResidency',  label: 'Tax residency',         kind: 'text',   required: true, placeholder: 'Country' },
+  { id: 'acfund',   key: 'fundingAmount', label: 'Initial funding',       kind: 'money',  required: true,
+    hint: 'From the mandate size. Change it if the first tranche differs.' },
+  { id: 'acsrc',    key: 'fundingSource', label: 'Funding source',        kind: 'select', required: true, options: 'fundingSources' },
+  { id: 'acdate',   key: 'fundingDate',   label: 'Expected funding date', kind: 'date',   required: true },
+  { id: 'ackyc',    key: 'kycReference',  label: 'KYC / onboarding reference', kind: 'text', required: false },
+  { id: 'acnotes',  key: 'notes',         label: 'Notes for Onboarding',  kind: 'textarea', required: false, wide: true,
+    placeholder: 'Anything Onboarding should know that the proposal does not say.' }
+];
+
+function acFieldId(key) {
+  if (key === 'proposalId') return 'acuid';
+  var spec = AC_FIELDS.filter(function (s) { return s.key === key; })[0];
+  return spec ? spec.id : null;
+}
+
+function openAccountDialog() {
+  if (!canEdit()) return;
+  acOpener = dlgOpener;               /* the landing button that opened the card */
+  if (draft) { draft = null; renderDialog(); }    /* the card gives way, no focus bounce */
+  account = {
+    uid: '', status: 'idle',          /* 'idle'|'looking'|'found'|'notfound'|'malformed'|'error' */
+    message: '', proposal: null, requests: [],
+    fields: { clientName: '', accountType: '', bookingCentre: '', taxResidency: '',
+              fundingAmount: null, fundingSource: '', fundingDate: '', kycReference: '', notes: '' },
+    fundingTouched: false,            /* the default (mandate size) never overwrites a typed amount */
+    err: null, dirty: false, submitting: false, receipt: null,
+    seq: 0, timer: null
+  };
+  renderAccountDialog();
+  var uid = document.getElementById('acuid');
+  if (uid) uid.focus();
+}
+
+function closeAccountDialog() {
+  if (!account) return;
+  if (account.timer) clearTimeout(account.timer);
+  account = null;
+  renderAccountDialog();
+  var back = (acOpener && acOpener.isConnected) ? acOpener : document.getElementById('startbtn');
+  if (back && !back.closest('[hidden]')) back.focus();
+}
+
+/* ---- the lookup: as soon as the box holds a well-formed UID, no button ---- */
+function onUidInput(value) {
+  account.uid = value.trim();
+  account.err = null;
+  if (account.timer) clearTimeout(account.timer);
+  account.proposal = null; account.requests = [];
+  var uid = account.uid.toLowerCase();
+  if (UID_PATTERN.test(uid)) {
+    account.status = 'looking'; account.message = '';
+    var seq = ++account.seq;
+    account.timer = window.setTimeout(function () { lookupProposal(uid, seq); }, 150);
+  } else {
+    ++account.seq;                    /* a reply to an earlier UID is stale now */
+    account.status = (uid.length >= 15) ? 'malformed' : 'idle';
+    account.message = (uid.length >= 15) ? UID_SHAPE : '';
+  }
+  preserveFocus(renderAccountDialog);
+}
+
+async function lookupProposal(uid, seq) {
+  /* No abort: a lookup is a primary-key read, and a stale reply is simply
+     ignored by the sequence check - cheaper than teaching apiFetch that an
+     abort is not the service going down (D64). */
+  try {
+    var found = await apiFetch('/scenario/proposals/' + encodeURIComponent(uid));
+    if (!account || account.seq !== seq) return;
+    account.status = 'found'; account.message = '';
+    account.proposal = found.proposal; account.requests = found.requests || [];
+    if (!account.fundingTouched && !(account.fields.fundingAmount > 0)) {
+      account.fields.fundingAmount = found.proposal.mandateSize || null;
+    }
+    announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
+      + money(found.proposal.mandateSize) + '.');
+  } catch (err) {
+    if (!account || account.seq !== seq) return;
+    account.status = (err && err.status === 404) ? 'notfound'
+      : (err && err.status === 422) ? 'malformed' : 'error';
+    account.message = (err && err.message) || 'The lookup failed.';
+  }
+  preserveFocus(renderAccountDialog);
+}
+
+function accountMissing() {
+  var f = account.fields;
+  return AC_FIELDS.filter(function (spec) {
+    if (!spec.required) return false;
+    var v = f[spec.key];
+    return (spec.kind === 'money') ? !(v > 0) : !(v && String(v).trim());
+  });
+}
+
+function accountReady() {
+  return !!(account && account.status === 'found' && !account.requests.length
+            && !accountMissing().length);
+}
+
+function accountStatusText() {
+  var a = account;
+  if (a.status !== 'found') return 'Enter a Proposal UID to begin.';
+  if (a.requests.length) {
+    var r = a.requests[0];
+    return 'An account opening request already exists for this proposal: ' + r.requestId
+      + ' by ' + r.submittedBy + ' on ' + whenText(r.submittedAt) + '.';
+  }
+  var missing = accountMissing();
+  if (missing.length) {
+    return missing.length + ' required field' + (missing.length === 1 ? '' : 's') + ' remaining: '
+      + missing.map(function (m) { return m.label; }).join(', ') + '.';
+  }
+  return 'Ready. Submitting records the request against ' + a.proposal.proposalId + '.';
+}
+
+function whenText(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  var date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  var time = String(iso).slice(11, 16);
+  return /^\d\d:\d\d$/.test(time) ? date + ' ' + time : date;
+}
+
+function riskAllocationText(p) {
+  var risk = riskLabel(p.riskLevel);
+  if (!p.allocationType) return risk;
+  return risk + ' · ' + p.allocationType + (p.excludeRealAssets ? ' · ex Real Assets' : '');
+}
+
+function switchesText(p) {
+  var on = [];
+  if (p.tacticalTilt) on.push('Tactical tilt');
+  if (p.volPremium) on.push('Vol premium');
+  return on.length ? on.join(' · ') : 'None';
+}
+
+function renderAccountDialog() {
+  var host = document.getElementById('accountDialog'); if (!host) return;
+  if (!account) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!draft) setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  setBackgroundInert(true);
+  host.innerHTML =
+      '<div class="scrim" data-scrim></div>'
+    + '<div class="dialog account" role="dialog" aria-modal="true" aria-labelledby="acTitle">'
+    + '<button type="button" class="dlg-close" id="acclose" aria-label="Close">×</button>'
+    + (account.receipt ? accountReceiptMarkup() : accountFormMarkup())
+    + '</div>';
+}
+
+function accountFormMarkup() {
+  var a = account, p = a.proposal;
+  var found = (a.status === 'found');
+  var busy = a.submitting;
+  /* the account fields open only for a proposal that can still be requested */
+  var editable = found && !a.requests.length;
+  var errField = a.err && a.err.field;
+  function invalid(id) {
+    return (errField === id) ? ' aria-invalid="true" aria-describedby="acerr"' : '';
+  }
+
+  var uidHint;
+  if (a.status === 'looking') {
+    uidHint = '<span class="field-hint busy" id="achint" role="status">Looking up…</span>';
+  } else if (found) {
+    uidHint = '<span class="field-hint ok" id="achint" role="status">✓ Proposal found · '
+      + esc(p.currency + ' ' + p.hedging) + ' · exported ' + esc(whenText(p.exportedAt))
+      + ' by ' + esc(p.exportedBy)
+      + (p.sequence > 1 ? ' · proposal #' + p.sequence + ' of its scenario' : '') + '</span>';
+  } else if (a.status === 'idle') {
+    uidHint = '<span class="field-hint" id="achint">The last part of the workbook\'s name, '
+      + 'and the first row of its Implementation sheet.</span>';
+  } else {
+    uidHint = '<p class="md-err dlg-uiderr" id="achint" role="alert">' + esc(a.message || UID_SHAPE) + '</p>';
+  }
+
+  /* Filled from the proposal: greyed, visibly filled, not editable. */
+  var ro = [
+    ['Primary PWA', p ? p.primaryPwa : ''],
+    ['Mandate size', p ? money(p.mandateSize) : ''],
+    ['Top account size', p ? money(p.topAccountSize) : ''],
+    ['Basis', p ? p.currency + ' · ' + p.hedging : ''],
+    ['Implementation type', p ? p.variant : ''],
+    ['Risk · allocation', p ? riskAllocationText(p) : ''],
+    ['Fees', p ? (p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees') : ''],
+    ['Switches', p ? switchesText(p) : '']
+  ];
+  var roMarkup = ro.map(function (pair, i) {
+    return '<div class="field"><label for="acro' + i + '">' + esc(pair[0]) + '</label>'
+      + '<input type="text" id="acro' + i + '" class="ro" readonly value="' + esc(pair[1]) + '"></div>';
+  }).join('');
+  var sleeves = (p && p.sleeves && p.sleeves.length)
+    ? p.sleeves.map(function (s) {
+        return '<div><span>' + esc(s.category) + '</span><span>' + esc(s.sleeve || '—')
+          + (s.revision ? '<em>r' + esc(String(s.revision)) + '</em>' : '') + '</span></div>';
+      }).join('')
+    : '<div class="none">' + (p ? 'No sleeves recorded.' : '—') + '</div>';
+
+  var fieldsMarkup = AC_FIELDS.map(function (spec) {
+    var v = a.fields[spec.key];
+    var label = '<label for="' + spec.id + '">' + esc(spec.label)
+      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + '</label>';
+    var common = ' id="' + spec.id + '" data-acf="' + spec.key + '"'
+      + (spec.required ? ' aria-required="true"' : '') + invalid(spec.id)
+      + ((editable && !busy) ? '' : ' disabled');
+    var control;
+    if (spec.kind === 'select') {
+      var choices = opt('options.accountRequest.' + spec.options, []);
+      control = '<select' + common + '><option value=""' + (v ? '' : ' selected') + '>Select…</option>'
+        + choices.map(function (o) {
+            return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
+          }).join('') + '</select>';
+    } else if (spec.kind === 'textarea') {
+      control = '<textarea' + common + ' rows="2" placeholder="' + esc(spec.placeholder || '') + '">'
+        + esc(v || '') + '</textarea>';
+    } else if (spec.kind === 'date') {
+      control = '<input type="date"' + common + ' value="' + esc(v || '') + '">';
+    } else if (spec.kind === 'money') {
+      control = '<input type="text" inputmode="numeric" autocomplete="off"' + common
+        + ' value="' + (v > 0 ? esc(money(v)) : '') + '">';
+    } else {
+      control = '<input type="text" autocomplete="off"' + common
+        + (spec.placeholder ? ' placeholder="' + esc(spec.placeholder) + '"' : '')
+        + ' value="' + esc(v || '') + '">';
+    }
+    return '<div class="field' + (spec.wide ? ' wide' : '') + '">' + label + control
+      + (spec.hint ? '<span class="field-hint">' + esc(spec.hint) + '</span>' : '') + '</div>';
+  }).join('');
+
+  var ready = accountReady() && !busy;
+  var uidInvalid = (errField === 'acuid' || a.status === 'notfound' || a.status === 'malformed'
+                    || a.status === 'error');
+  return '<h2 id="acTitle" class="dlg-shout">Account opening request</h2>'
+    + '<p class="dlg-sub">Open an account on the terms of a delivered proposal.</p>'
+    + '<div class="field"><label for="acuid">Proposal UID<span class="req" aria-hidden="true">•</span></label>'
+    + '<input type="text" id="acuid" autocomplete="off" spellcheck="false" autocapitalize="off"'
+    + ' aria-describedby="achint" aria-required="true" value="' + esc(a.uid) + '"'
+    + (uidInvalid ? ' aria-invalid="true"' : '') + (busy ? ' disabled' : '') + '>'
+    + uidHint + '</div>'
+    + '<div class="dlg-sect">From the proposal'
+    + (found ? '<span class="dlg-tag">filled · read only</span>' : '') + '</div>'
+    + '<div class="' + (found ? '' : 'dlg-muted') + '"><div class="dlg-grid">' + roMarkup + '</div>'
+    + '<div class="field"><label>Sleeves</label><div class="dlg-sleeves">' + sleeves + '</div></div></div>'
+    + '<div class="dlg-sect">Account details</div>'
+    + '<div class="' + (editable ? '' : 'dlg-muted') + '"><div class="dlg-grid">' + fieldsMarkup + '</div></div>'
+    + (a.err ? '<p class="md-err" id="acerr" role="alert">' + esc(a.err.msg) + '</p>' : '')
+    + '<div class="dlg-actions split">'
+    + '<span class="dlg-status' + (ready ? ' ok' : '') + '" id="acstatus" role="status">'
+    + esc(accountStatusText()) + '</span>'
+    + '<div class="dlg-grp">'
+    + '<button type="button" class="btn btn-ghost" id="accancel"' + (busy ? ' disabled' : '') + '>Cancel</button>'
+    + '<button type="button" class="btn btn-primary" id="acsubmit"' + (ready ? '' : ' disabled') + '>'
+    + (busy ? 'Working…' : 'Submit request') + '</button>'
+    + '</div></div>';
+}
+
+function accountReceiptMarkup() {
+  var r = account.receipt;
+  return '<div class="dlg-tick" aria-hidden="true">✓</div>'
+    + '<h2 id="acTitle">Request submitted</h2>'
+    + '<p class="dlg-receipt">Account opening request <code>' + esc(r.requestId) + '</code> for proposal '
+    + '<code>' + esc(r.proposalId) + '</code> was recorded at ' + esc(whenText(r.submittedAt))
+    + ' by ' + esc(r.submittedBy) + '. <b>Quote the request reference</b> in any follow-up; '
+    + 'the Proposal UID stays with the proposal.</p>'
+    + '<div class="dlg-actions split">'
+    + '<button type="button" class="btn btn-link" id="accopy">Copy reference</button>'
+    + '<button type="button" class="btn btn-primary" id="acdone">Done</button></div>';
+}
+
+/* The footer alone re-renders while the user types: a full re-render would
+   fight the caret in a textarea and drop a select mid-choice. */
+function patchAccountFooter() {
+  var status = document.getElementById('acstatus');
+  var submit = document.getElementById('acsubmit');
+  if (!status || !submit || !account) return;
+  var ready = accountReady() && !account.submitting;
+  status.textContent = accountStatusText();
+  status.classList.toggle('ok', ready);
+  submit.disabled = !ready;
+  var bad = document.querySelector('#accountDialog [data-acf][aria-invalid="true"]');
+  if (bad) { bad.removeAttribute('aria-invalid'); bad.removeAttribute('aria-describedby'); }
+  var err = document.getElementById('acerr');
+  if (err) err.remove();
+}
+
+function onAccountInput(e) {
+  var t = e.target;
+  if (!t || !account || account.receipt) return false;
+  if (t.id === 'acuid') { onUidInput(t.value); return true; }
+  var key = t.dataset && t.dataset.acf;
+  if (!key) return false;
+  var spec = AC_FIELDS.filter(function (s) { return s.key === key; })[0];
+  if (!spec) return false;
+  if (spec.kind === 'money') {
+    account.fields[key] = parseMoney(t.value) || null;
+    account.fundingTouched = true;
+  } else {
+    account.fields[key] = t.value;
+  }
+  account.err = null; account.dirty = true;
+  patchAccountFooter();
+  return true;
+}
+
+async function submitAccountRequest() {
+  if (!account || account.submitting || !accountReady()) return;
+  account.submitting = true; account.err = null;
+  renderAccountDialog();
+  var body = { proposalId: account.proposal.proposalId };
+  AC_FIELDS.forEach(function (spec) { body[spec.key] = account.fields[spec.key]; });
+  try {
+    var made = await apiFetch('/scenario/account-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!account) return;
+    account.submitting = false; account.dirty = false; account.receipt = made.request;
+    renderAccountDialog();
+    var done = document.getElementById('acdone');
+    if (done) done.focus();
+    announce('polite', 'Account opening request ' + made.request.requestId + ' recorded.');
+  } catch (err) {
+    if (!account) return;
+    account.submitting = false;
+    var field = err && err.body && err.body.field;
+    var id = acFieldId(field);
+    account.err = { field: id, msg: (err && err.message) || 'Could not submit the request.' };
+    renderAccountDialog();
+    var node = id ? document.getElementById(id) : null;
+    if (node && !node.disabled) node.focus();
+    /* the proposal has changed under us - gone, or now requested - so ask again */
+    if (field === 'proposalId' && (err.status === 404 || err.status === 422)) {
+      lookupProposal(account.proposal.proposalId, ++account.seq);
+    }
+  }
+}
+
+function copyRequestReference(button) {
+  if (!account || !account.receipt) return;
+  var text = account.receipt.requestId;
+  function done() {
+    button.textContent = 'Copied';
+    announce('polite', 'Reference ' + text + ' copied.');
+    window.setTimeout(function () { if (button.isConnected) button.textContent = 'Copy reference'; }, 1600);
+  }
+  function fallback() {
+    var area = document.createElement('textarea');
+    area.value = text; area.setAttribute('readonly', '');
+    area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.appendChild(area); area.select();
+    try { document.execCommand('copy'); } catch (e) { /* nothing to do */ }
+    area.remove();
+    done();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, fallback);
+  } else {
+    fallback();
+  }
+}
+
+function trapFocus(e, host) {
+  if (!host || host.hidden) return;
+  var focusables = host.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  if (!focusables.length) return;
+  var firstNode = focusables[0], lastNode = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === firstNode) { e.preventDefault(); lastNode.focus(); }
+  else if (!e.shiftKey && document.activeElement === lastNode) { e.preventDefault(); firstNode.focus(); }
 }
 
 /* ---- the service, and surviving it (D64) ---------------------------------
@@ -2689,8 +3094,16 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'dlgcancel' || e.target.id === 'dlgclose') {
     closeMandateDialog(); return;
   }
+  if (e.target.id === 'dlgaccount') { openAccountDialog(); return; }
+  if (e.target.id === 'accancel' || e.target.id === 'acclose' || e.target.id === 'acdone') {
+    if (!(account && account.submitting)) closeAccountDialog();
+    return;
+  }
+  if (e.target.id === 'acsubmit') { submitAccountRequest(); return; }
+  if (e.target.id === 'accopy') { copyRequestReference(e.target); return; }
   if (e.target.dataset && e.target.dataset.scrim !== undefined) {
     if (draft && !draft.dirty) closeMandateDialog();   /* spec 7.1 dialog rules */
+    else if (account && !account.dirty && !account.submitting) closeAccountDialog();
     return;
   }
   var option = e.target.closest ? e.target.closest('.combo-opt') : null;
@@ -2717,6 +3130,7 @@ document.addEventListener('click', function (e) {
 });
 
 document.addEventListener('input', function (e) {
+  if (account && onAccountInput(e)) return;
   if (!draft) return;
   if (e.target.id === 'mdtop') {
     draft.top = parseMoney(e.target.value); draft.err = null; draft.dirty = true; return;
@@ -2740,6 +3154,13 @@ document.addEventListener('input', function (e) {
    only for a field that has a value: a user who has not reached the mandate
    field yet must not be told it is wrong. */
 document.addEventListener('focusout', function (e) {
+  if (account && e.target.id === 'acfund') {          /* the amount re-formats on blur */
+    var amount = parseMoney(e.target.value);
+    account.fields.fundingAmount = amount || null;
+    e.target.value = amount ? money(amount) : '';
+    patchAccountFooter();
+    return;
+  }
   if (!draft) return;
   if (e.target.id === 'mdtop' || e.target.id === 'mdsize') {
     var value = parseMoney(e.target.value);
@@ -2760,7 +3181,21 @@ document.addEventListener('focusout', function (e) {
   }
 });
 
+/* selects and the date control report through change rather than input */
+document.addEventListener('change', function (e) {
+  if (account && e.target && e.target.dataset && e.target.dataset.acf) onAccountInput(e);
+});
+
 document.addEventListener('keydown', function (e) {
+  if (account && !draft) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (!account.submitting) closeAccountDialog();
+      return;
+    }
+    if (e.key === 'Tab') trapFocus(e, document.getElementById('accountDialog'));
+    return;
+  }
   if (draft) {
     var host = document.getElementById('mandateDialog');
     if (e.key === 'Escape') {

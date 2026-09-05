@@ -18,6 +18,17 @@ from cyrus_pmg.pmgService.scenario import (fees, products, rules, sleeveRepo, sl
                                            sleeves)
 from cyrus_pmg.pmgService.scenario.types import ValidationError
 
+
+def _caller(kerberos='alice'):
+    """The identity a router dependency hands a handler.
+
+    Both the mirror and the host pass a UserData now, so a test that calls a
+    handler directly has to build one. Direct calls to the stores still pass
+    the kerberos itself - that is what their TEXT columns hold.
+    """
+    from cyrus_pmg.pmgService.core import accessControl
+    return accessControl.UserData(kerberos, accessControl._rolesFor(kerberos))
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEED = os.path.join(HERE, '..', '..', 'sleeveSource', 'sleeves.csv')
 CATALOGUE = os.path.join(HERE, '..', '..', 'productSource', 'products.csv')
@@ -356,7 +367,7 @@ def test_admin_is_a_third_role_gating_the_repository(monkeypatch):
     assert accessControl.isAdmin('alice')
     assert not accessControl.isAdmin('bob'), 'an editor is not an admin'
     assert not accessControl.isAdmin('carol'), 'an admin must also be on the access list'
-    assert accessControl.requireAdmin(_request('alice')) == 'alice'
+    assert accessControl.requireAdmin(_request('alice')).kerberos == 'alice'
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
         accessControl.requireAdmin(_request('bob'))
@@ -369,13 +380,13 @@ def test_admin_is_a_third_role_gating_the_repository(monkeypatch):
 def test_schema_tells_the_page_whether_the_caller_is_an_admin(monkeypatch):
     monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice,bob')
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
-    admin = dashboardRouter.getScenarioSchema(_request('alice'))
-    editor = dashboardRouter.getScenarioSchema(_request('bob'))
+    admin = dashboardRouter.getScenarioSchema(_request('alice'), caller=_caller('alice'))
+    editor = dashboardRouter.getScenarioSchema(_request('bob'), caller=_caller('bob'))
     assert admin['capabilities']['canAdmin'] is True
     assert editor['capabilities']['canAdmin'] is False
     assert admin['capabilities']['canEdit'] is True, 'the existing capabilities survive'
     # and the stamp did not leak into whatever the port hands back
-    again = dashboardRouter.getScenarioSchema(_request('bob'))
+    again = dashboardRouter.getScenarioSchema(_request('bob'), caller=_caller('bob'))
     assert again['capabilities']['canAdmin'] is False
 
 
@@ -409,7 +420,7 @@ def test_every_repository_route_requires_the_admin_role():
 def test_the_console_payload_and_the_write_handlers(monkeypatch):
     monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
-    body = dashboardRouter.getRepository(user='alice')
+    body = dashboardRouter.getRepository(caller=_caller('alice'))
     assert body['variants'] == sleeves.VARIANTS
     assert body['categories'] == sleeveRepo.categories()
     assert len(body['products']) == 73 and len(body['sleeves']) == 102
@@ -417,21 +428,21 @@ def test_the_console_payload_and_the_write_handlers(monkeypatch):
 
     made = dashboardRouter.createRepositorySleeve(
         {'variant': 'PMG ESG', 'category': 'Public Equity', 'name': 'Via Route',
-         'products': [{'productId': A_PRODUCT, 'weight': 1}]}, user='alice')
+         'products': [{'productId': A_PRODUCT, 'weight': 1}]}, caller=_caller('alice'))
     sleeveId = made['sleeve']['id']
     try:
         refused = dashboardRouter.updateRepositorySleeve(
             sleeveId, {'name': 'Via Route', 'products': [{'productId': A_PRODUCT, 'weight': .5}]},
-            user='alice')
+            caller=_caller('alice'))
         assert refused.status_code == 422
         import json
         assert json.loads(refused.body)['field'] == 'weights'
         ok = dashboardRouter.updateRepositorySleeve(
             sleeveId, {'name': 'Via Route 2', 'products': [{'productId': A_PRODUCT, 'weight': 1}]},
-            user='alice')
+            caller=_caller('alice'))
         assert ok['sleeve']['name'] == 'Via Route 2'
     finally:
-        gone = dashboardRouter.deleteRepositorySleeve(sleeveId, user='alice')
+        gone = dashboardRouter.deleteRepositorySleeve(sleeveId, caller=_caller('alice'))
     assert gone['deleted']['id'] == sleeveId
 
 
@@ -442,7 +453,7 @@ def test_no_orphans_in_the_seed_and_the_payload_carries_the_field(monkeypatch):
     assert sleeveRepo.census()['orphans'] == []
     monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
-    assert dashboardRouter.getRepository(user='alice')['orphans'] == []
+    assert dashboardRouter.getRepository(caller=_caller('alice'))['orphans'] == []
 
 
 def test_a_dropped_product_is_reported_by_product_with_the_sleeves_it_breaks(tmp_path, monkeypatch, capsys):
@@ -630,7 +641,7 @@ def test_the_route_takes_a_list_of_types_and_reports_them_all(monkeypatch):
     body = dashboardRouter.createRepositorySleeve(
         {'variants': ['US Onshore', 'PMG Multi-Asset Portfolio'], 'category': 'Hedge Funds',
          'name': 'Route Shared', 'products': [{'productId': A_PRODUCT, 'weight': 1}]},
-        user='alice')
+        caller=_caller('alice'))
     made = body['sleeves']
     try:
         assert len(made) == 2 and body['sleeve'] == made[0]
@@ -638,7 +649,7 @@ def test_the_route_takes_a_list_of_types_and_reports_them_all(monkeypatch):
         # the single-type form still works, for callers that send one
         one = dashboardRouter.createRepositorySleeve(
             {'variant': 'PMG ESG', 'category': 'Hedge Funds', 'name': 'Route Shared',
-             'products': [{'productId': A_PRODUCT, 'weight': 1}]}, user='alice')
+             'products': [{'productId': A_PRODUCT, 'weight': 1}]}, caller=_caller('alice'))
         made.append(one['sleeve'])
         assert one['sleeve']['variant'] == 'PMG ESG'
     finally:
@@ -933,24 +944,24 @@ def test_the_console_payload_and_the_endpoints_carry_the_record(monkeypatch):
     sleeveRepo.updateSleeve(made['id'], 'Reaches The Console',
                             [{'productId': A_PRODUCT, 'weight': 1.0}], user='alice')
 
-    body = dashboardRouter.getRepository(user='alice')
+    body = dashboardRouter.getRepository(caller=_caller('alice'))
     assert 'archived' in body and isinstance(body['archived'], list)
     mine = [s for s in body['sleeves'] if s['id'] == made['id']][0]
     assert mine['revisions'] == 2
 
-    trail = dashboardRouter.getRepositorySleeveHistory(made['id'], user='alice')
+    trail = dashboardRouter.getRepositorySleeveHistory(made['id'], caller=_caller('alice'))
     assert trail['sleeveId'] == made['id'] and len(trail['history']) == 2
 
-    dashboardRouter.deleteRepositorySleeve(made['id'], user='alice')
-    after = dashboardRouter.getRepository(user='alice')
+    dashboardRouter.deleteRepositorySleeve(made['id'], caller=_caller('alice'))
+    after = dashboardRouter.getRepository(caller=_caller('alice'))
     assert made['id'] in [s['id'] for s in after['archived']]
     assert made['id'] not in [s['id'] for s in after['sleeves']]
-    assert len(dashboardRouter.getRepositorySleeveHistory(made['id'], user='alice')['history']) == 3
+    assert len(dashboardRouter.getRepositorySleeveHistory(made['id'], caller=_caller('alice'))['history']) == 3
 
-    restored = dashboardRouter.restoreRepositorySleeve(made['id'], user='alice')
+    restored = dashboardRouter.restoreRepositorySleeve(made['id'], caller=_caller('alice'))
     assert restored['sleeve']['archived'] is False
     reverted = dashboardRouter.revertRepositorySleeve(
-        made['id'], {'revision': 1}, user='alice')
+        made['id'], {'revision': 1}, caller=_caller('alice'))
     assert len(reverted['sleeve']['products']) == 2
     sleeveRepo.deleteSleeve(made['id'], user='alice')
 
@@ -1069,20 +1080,20 @@ def test_the_feed_and_export_endpoints_answer_as_the_console_expects(monkeypatch
     sleeveRepo.deleteSleeve(made['id'], user='alice')
 
     page = dashboardRouter.getRepositoryActivity(actions='deleted,created', actor='alice',
-                                                 limit=5, user='alice')
+                                                 limit=5, caller=_caller('alice'))
     assert page['entries'] and set(e['action'] for e in page['entries']) <= {'deleted', 'created'}
     assert 'facets' in page and 'total' in page
 
-    csv_ = dashboardRouter.exportRepositoryArchive(user='alice')
+    csv_ = dashboardRouter.exportRepositoryArchive(caller=_caller('alice'))
     assert csv_.media_type.startswith('text/csv')
     body = csv_.body.decode('utf-8')
     assert body.splitlines()[0] == ','.join(sleeveRepo.ARCHIVE_COLUMNS)
     assert 'Endpoint Feed' in body
 
-    feedCsv = dashboardRouter.exportRepositoryActivity(actions='deleted', user='alice')
+    feedCsv = dashboardRouter.exportRepositoryActivity(actions='deleted', caller=_caller('alice'))
     assert 'Endpoint Feed' in feedCsv.body.decode('utf-8')
 
-    back = dashboardRouter.restoreRepositorySleeves({'ids': [made['id']]}, user='alice')
+    back = dashboardRouter.restoreRepositorySleeves({'ids': [made['id']]}, caller=_caller('alice'))
     assert back['sleeves'][0]['archived'] is False
     sleeveRepo.deleteSleeve(made['id'], user='alice')
 
@@ -1151,43 +1162,58 @@ def test_four_workers_cold_starting_together_seed_the_library_once(tmp_path):
         opened.close()
 
 
-def test_the_caller_id_survives_either_shape_of_auth_dependency():
-    """The block binds the value its auth dependency returns, and two hosts
-    return two different things.
+def test_the_mirror_hands_out_the_shape_the_host_hands_out(monkeypatch):
+    """The mirror's dependencies must return what the host's return.
 
-    This mirror's accessControl dependencies return the kerberos itself. The
-    real host's pmgEntitlement dependencies return a UserData carrying it -
-    requireCan builds one - and nothing in Cyrus ever noticed, because its own
-    routers use those dependencies purely as gates and never bind the value.
+    The host's pmgEntitlement builds a UserData and hands it to the endpoint;
+    this mirror once handed back a bare kerberos string instead. The whole
+    suite passed against that divergence while three write paths crashed on
+    the host's shape - a TypeError on every scenario created and an
+    InterfaceError on every export and every sleeve save - and it took
+    simulating the object by hand to find them.
 
-    This block does bind it, and hands it to three stores that cannot take an
-    object: the scenario store writes it as JSON, and both SQLite stores write
-    it to a TEXT column. Asserted here against the object shape as well as the
-    string, because getting it wrong is not a wrong value - it is a TypeError
-    on every scenario created and an InterfaceError on every export.
+    So the shape is asserted here directly: the five attributes the host's own
+    code reads, all of which it reads through getattr with a default, and the
+    two role helpers the entitlement gate is built on. What the stores persist
+    is still the kerberos - that is checked wherever an actor or exportedBy is
+    asserted, not here.
     """
-    class HostUserData:
-        kerberos = 'alice'
-        role = 'PMGEditor'
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice,bob')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
 
-        def __repr__(self):
-            return "UserData(kerberos='alice')"
+    admin = accessControl.requireAuth(_request('alice'))
+    editor = accessControl.requireAuth(_request('bob'))
 
-    assert dashboardRouter._callerId('alice') == 'alice'
-    assert dashboardRouter._callerId(HostUserData()) == 'alice'
-    assert dashboardRouter._callerId(None) == 'unknown'
-    assert dashboardRouter._callerId('') == 'unknown'
+    # the five attributes cyrus_pmg.pmgService.core.pmgEntitlement ever reads
+    for who in (admin, editor):
+        assert isinstance(who.kerberos, str) and who.kerberos
+        assert isinstance(who.role, str)
+        assert isinstance(who.roles, list)
+        assert isinstance(who.permissions, dict)
+        assert isinstance(who.actionsAllowed, list)
 
-    # and it reaches the stores as something they can actually write
+    assert admin.role == accessControl.ROLE_ADMIN
+    assert editor.role == accessControl.ROLE_EDITOR
+    assert accessControl.hasRole(admin, accessControl.ROLE_ADMIN)
+    assert not accessControl.hasRole(editor, accessControl.ROLE_ADMIN)
+
+    # the gates the router gets its dependencies from, expressed as the host
+    # expresses them: pmgapi:view for reads, pmgapi:modify for writes
+    for who in (admin, editor):
+        assert accessControl.can(who, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_VIEW)
+        assert accessControl.can(who, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_MODIFY)
+    # post is PMGEditor's alone - ISGAdmin does not hold it, per the policy
+    assert not accessControl.can(admin, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_POST)
+    assert accessControl.can(editor, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_POST)
+
+    # and every write endpoint receives that object, not an id
     made = dashboardRouter.createRepositorySleeve(
         {'variant': 'PMG ESG', 'category': 'Public Equity', 'name': 'Caller Shape Probe',
          'products': [{'productId': _aPlacedProduct(), 'weight': 1.0}]},
-        user=dashboardRouter._callerId(HostUserData()))
+        caller=admin)
     try:
         entry = made['sleeve']
-        assert entry['createdBy'] == 'alice'
-        history = sleeveRepo.history(entry['id'])
-        assert history[0]['actor'] == 'alice'
-        assert isinstance(history[0]['actor'], str)
+        assert entry['createdBy'] == 'alice', 'the store keeps the kerberos, not the object'
+        assert isinstance(sleeveRepo.history(entry['id'])[0]['actor'], str)
     finally:
         sleeveRepo.deleteSleeve(entry['id'], user='alice')

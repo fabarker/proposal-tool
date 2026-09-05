@@ -159,7 +159,8 @@ class BakedScenarioPort:
                              implementation.get('includeFees', True),
                              bool(implementation.get('volPremium')),
                              assets=assetEstimates.forSlice(basis.currency, basis.hedging),
-                             model=implementation.get('model'))
+                             model=implementation.get('model'),
+                             proposalId=implementation.get('proposalId'))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

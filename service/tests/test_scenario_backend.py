@@ -29,6 +29,17 @@ from cyrus_pmg.pmgService.scenario.workbook import (
     FEE_COLUMNS, IMPL_COLUMNS, buildImplementationRows, implColumns,
     roundSharesOneDp)
 
+
+def _caller(kerberos='alice'):
+    """The identity a router dependency hands a handler.
+
+    Both the mirror and the host pass a UserData now, so a test that calls a
+    handler directly has to build one. Direct calls to the stores still pass
+    the kerberos itself - that is what their TEXT columns hold.
+    """
+    from cyrus_pmg.pmgService.core import accessControl
+    return accessControl.UserData(kerberos, accessControl._rolesFor(kerberos))
+
 BASIS = BasisInput(currency='USD', hedging='Hedged')
 PORT = FixturesScenarioPort()
 
@@ -1907,11 +1918,45 @@ def test_the_export_refuses_while_a_position_is_below_its_minimum(tmp_path):
     scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0])
     scenarioStore.recordColumn(state['id'], key, 'base')
     scenarioStore.updateScenario(state['id'], sleeves=chosen)
-    refused = dashboardRouter.exportScenario(state['id'], user='alice')
+    refused = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
     assert getattr(refused, 'status_code', 200) == 422
     body = json.loads(refused.body.decode('utf-8'))
     assert body['field'] == 'minimumInvestment'
     assert 'below mandate minimum' in body['error'].lower()
+
+
+def test_a_delivered_export_carries_one_uid_in_the_name_the_file_and_the_register():
+    """The endpoint's success path, at a mandate no placeholder minimum
+    reaches (D70). The UID minted for the delivery is in the filename, the
+    X-Proposal-Id header, the workbook's first cell and properties, and the
+    register row - the same id in all of them (D75)."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import proposalRegister, scenarioStore
+    from cyrus_pmg.pmgService.scenario.workbook import stampedProposalId
+    from cyrus_pmg.pmgService import dashboardRouter
+    state = scenarioStore.createScenario(
+        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid'),
+        BASIS, createdBy='alice')
+    key = PortfolioKey('USD', 'Moderate', 'Full', False)
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0])
+    scenarioStore.recordColumn(state['id'], key, 'base')
+    scenarioStore.updateScenario(state['id'], sleeves=chosen)
+    delivered = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
+    assert delivered.status_code == 200, delivered.body[:300]
+    uid = delivered.headers['x-proposal-id']
+    assert proposalRegister.isProposalId(uid)
+    disposition = delivered.headers['content-disposition']
+    assert 'filename="PMG_Scenario_USD_Hedged_' in disposition
+    assert disposition.endswith('_{}.xlsx"'.format(uid))
+    assert stampedProposalId(delivered.body) == uid
+    book = load_workbook(io.BytesIO(delivered.body))
+    assert (book['Implementation']['A1'].value, book['Implementation']['B1'].value) == ('Proposal UID', uid)
+    kept = proposalRegister.getProposal(uid)
+    assert kept['proposalId'] == uid and kept['exportedBy'] == 'alice'
+    assert 'filename="{}"'.format(kept['workbookName']) in disposition
+    assert proposalRegister.workbook(uid)['bytes'] == delivered.body
 
 
 def test_private_equity_and_other_private_assets_are_one_line():

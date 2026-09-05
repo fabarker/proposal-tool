@@ -100,7 +100,10 @@ class ScenarioPort(Protocol):
         ``volPremium``, ``includeFees``, ``feeSchedule`` and ``feeLevel``; the fee tier comes
         from the mandate's top account size (D51). With ``includeFees`` false
         the sheet carries no fee columns at all and no schedule is needed
-        (D52)."""
+        (D52). ``proposalId`` is the Proposal UID the caller minted before
+        asking for the file; the writer puts it in the Implementation sheet's
+        first row, in every sheet's print header and in the file's properties
+        (D75)."""
 
     def capabilities(self) -> dict:
         """{"canExport": bool, "canEdit": bool}. One role today; this is the seam."""

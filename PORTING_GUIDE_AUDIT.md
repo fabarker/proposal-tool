@@ -10,7 +10,9 @@ so, unlike the first pass, this audit did change application code.
 
 **Third pass, 2026-09-05.** Six real Cyrus files arrived at `../cyrus-files/` (§4.5). They close
 the auth blocker, correct two facts the screenshots had wrong, and expose **two incompatibilities
-that would have failed at runtime** — both now fixed and covered by a test (§9.3).
+that would have failed at runtime** — both fixed and covered by tests (§9.3). The mirror's auth
+was then aligned to the host's entitlement model outright, so the divergence that produced the
+first of them cannot recur (§9.4).
 
 ---
 
@@ -575,12 +577,12 @@ cannot take an object. Demonstrated before fixing:
 | `proposalRegister.record(…)` → `exportedBy TEXT` | `InterfaceError: Error binding parameter` |
 | `sleeveRepo.*(user=…)` → `sleeveHistory.actor TEXT` | `InterfaceError: Error binding parameter` |
 
-That is every scenario created, every export, and every sleeve save. Fixed by `_callerId()` in
-`dashboardRouter.py`, normalising at the eight consumption points, so the block runs unchanged
-against either host; the twenty `user: str = Depends(...)` annotations were dropped, `str` being
-untrue on the host. Covered by
-`test_the_caller_id_survives_either_shape_of_auth_dependency`, verified to fail against the
-previous module.
+That is every scenario created, every export, and every sleeve save. Fixed at the time by
+`_callerId()` in `dashboardRouter.py`, normalising at the eight consumption points, so the block
+ran unchanged against either host; the twenty `user: str = Depends(...)` annotations were dropped,
+`str` being untrue on the host. Covered by `test_the_caller_id_survives_either_shape_of_auth_dependency`,
+verified to fail against the previous module. **Superseded the same day — §9.4:** the mirror was
+aligned to the host's shape outright, `_callerId` removed, and that test replaced.
 
 **2. The error contract is inverted.** `PmgAppException` puts the HTTP status *phrase* in `error`
 and the message in `detail`; this block puts the message in `error` and adds `field`. Reading
@@ -589,6 +591,52 @@ and the message in `detail`; this block puts the message in `error` and adds `fi
 `detail`, which falls through rather than rendering as `[object Object]`.
 
 Suite after both: **254 passed, 4 skipped**.
+
+### 9.4 Third pass, continued — the mirror now presents the host's shape
+
+The `_callerId` tolerance layer of §9.3 worked, but it accommodated a divergence rather than
+removing it, and the divergence was the one that had already produced three hard failures while
+254 tests passed. So the mirror's `accessControl.py` was reshaped to the host's model instead:
+
+- the three roles, three resources and three actions, with `ROLE_PERMISSIONS` transcribed from
+  the host's policy table — including that `post` is PMGEditor's alone;
+- `hasRole` and `can`, the two helpers `pmgEntitlement` exposes;
+- a `UserData` carrying exactly the five attributes the host's own code reads, all of which it
+  reads through `getattr` with a default: `kerberos`, `role`, `roles`, `permissions`,
+  `actionsAllowed`;
+- `requireAuth` / `requireEditor` / `requireAdmin` returning that object, with the two environment
+  lists standing in for PERMIT membership — admin list ⇒ `ISGAdmin`, access list alone ⇒
+  `PMGEditor` — which leaves every gate answering exactly as it did before.
+
+`_callerId` is gone; the eight places that record who acted read `caller.kerberos`. The parameter
+is named `caller` rather than `user`, since it is an identity and not an id. The schema route now
+takes `caller=Depends(requireAuth)` and reads the roles the dependency already resolved, instead
+of pulling the kerberos back out of the request and asking PERMIT again.
+
+Two consequences for the port, both simplifications: the block's auth import collapses to **one
+line from one module** (`getKerberosFromFastApiRequest` is no longer needed at all), and the
+host-side `isAdmin` no longer has to accept a string as well as a `UserData`.
+
+One defect was caught reviewing the change before it was committed: `_rolesFor` granted roles to
+callers `requireAuth` would refuse — an admin-listed but non-allowlisted kerberos came back
+`ISGAdmin`, and one on neither list came back `PMGEditor` — so the string and object paths of
+`isAdmin` disagreed for the former. Unreachable in production, since `requireAuth` checks
+`isAllowed` first, but it did not match the host, whose `isValidUser` returns an empty `UserData`
+for someone on no list. `_rolesFor` now returns nothing unless the caller is allowlisted, and the
+two paths agree for every combination of the two lists.
+
+What did **not** change is the store boundary. `scenario/` still imports nothing outward and has
+no notion of a `UserData`; `sleeveHistory.actor`, `proposals.exportedBy` and `scenario.createdBy`
+hold a kerberos string, permanently, because that is the audit record.
+
+Verified end to end with two distinct roles: `fbarker` on both lists resolves to `ISGAdmin` and
+opens the console; `rmehta` on the access list alone resolves to `PMGEditor`, is refused the
+console with 403, and can still create a scenario and export — with `exportedBy='rmehta'` landing
+in the register as a string. `test_the_mirror_hands_out_the_shape_the_host_hands_out` replaces the
+now-meaningless `_callerId` test and asserts the five attributes, both role helpers, the `post`
+asymmetry, and that a string is what reaches the store.
+
+Suite: **254 passed, 4 skipped**.
 
 ## 10. Risk register
 

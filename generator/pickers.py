@@ -217,7 +217,7 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
   border-radius:50%;background:var(--accent)}
 
 /* ── mandate dialog ── */
-#mandateDialog[hidden]{display:none}
+#mandateDialog[hidden],#accountDialog[hidden]{display:none}
 .scrim{position:fixed;inset:0;background:rgba(16,24,40,.42);z-index:90}
 .dialog{position:fixed;z-index:91;top:50%;left:50%;transform:translate(-50%,-50%);
   width:min(460px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow-y:auto;
@@ -243,6 +243,60 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .dlg-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
 .dialog .md-err{margin:0;padding:9px 12px;border-radius:4px;background:#FDE8E8;
   border:1px solid #F1B8B2;color:#9B1C1C;font-size:13px;line-height:1.45;font-weight:600}
+
+/* ── the landing card's third action, and the account opening request (D76) ── */
+/* The landing card seats three buttons on one line: Continue and Cancel far
+   left as a group, Create Account Opening Request right. 460px cannot hold
+   them; 600px can. Edit mandate keeps the 460px card and its right-aligned
+   pair. */
+.dialog.start{width:min(600px,calc(100vw - 32px))}
+.dlg-actions.split{justify-content:space-between;align-items:center;flex-wrap:wrap}
+.dlg-grp{display:flex;gap:10px;align-items:center;min-width:0}
+.dialog.account{width:min(560px,calc(100vw - 32px))}
+.dlg-sub{margin:-14px 0 18px;font-size:13px;color:var(--ink-3);line-height:1.4}
+/* the UID box's own error sits under it, as its hint would */
+.dialog .field .md-err.dlg-uiderr{margin-top:6px}
+.dlg-sect{display:flex;align-items:center;gap:10px;margin:6px 0 10px;font-family:var(--f-num);
+  font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.dlg-sect::after{content:"";flex:1;height:1px;background:var(--line)}
+.dlg-sect .dlg-tag{color:#176A33;font-size:10.5px;letter-spacing:.08em}
+.dlg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;margin:0 0 16px}
+.dlg-grid .field{margin:0}
+.dlg-grid .field.wide{grid-column:1 / -1}
+.dialog .req{color:#B42318;margin-left:3px;font-weight:700}
+/* Filled from the proposal: greyed, legible, and not editable. readonly rather
+   than disabled, so the value stays readable to assistive tech and copyable. */
+.dialog input[readonly].ro{background:var(--surface-2);border-color:var(--line);color:var(--ink-2);
+  cursor:default;text-overflow:ellipsis}
+.dialog input[readonly].ro:hover{border-color:var(--line)}
+.dialog input[readonly].ro:focus-visible{outline-color:var(--ink-3)}
+.dialog .dlg-muted{opacity:.42}
+.dialog .dlg-muted *{pointer-events:none}
+.dialog select,.dialog input[type=date],.dialog textarea{font:inherit;font-family:var(--f-num);font-size:15.5px;
+  color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-sm);
+  padding:10px 12px;width:100%}
+.dialog select{padding-right:30px}
+.dialog textarea{min-height:64px;resize:vertical;font-family:var(--f-body);font-size:14px;line-height:1.4}
+.dialog select[aria-invalid="true"],.dialog input[type=date][aria-invalid="true"]{border-color:#B42318}
+.dlg-sleeves{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);
+  padding:6px 12px;font-size:13px;color:var(--ink-2)}
+.dlg-sleeves div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed var(--line-strong)}
+.dlg-sleeves div:last-child{border-bottom:0}
+.dlg-sleeves span:last-child{font-family:var(--f-num);color:var(--ink);text-align:right}
+.dlg-sleeves em{font-style:normal;color:var(--ink-3);font-size:11.5px;margin-left:6px}
+.dlg-sleeves .none{color:var(--ink-3);padding:6px 0}
+.dlg-status{font-size:12.5px;color:var(--ink-3);line-height:1.4;min-width:0;flex:1 1 200px}
+.dlg-status.ok{color:#176A33}
+.field-hint.ok{color:#176A33;font-weight:600}
+.field-hint.busy{color:var(--ink-2)}
+.dlg-tick{width:44px;height:44px;border-radius:50%;background:#EAF5EE;color:#176A33;display:grid;
+  place-items:center;font-size:22px;margin:0 0 14px}
+.dlg-receipt{font-size:14px;color:var(--ink-2);line-height:1.6;margin:0}
+.dlg-receipt code{font-family:var(--f-num);font-size:15px;color:var(--ink);background:var(--surface-2);
+  padding:2px 7px;border-radius:3px}
+.btn-link{background:none;border-color:transparent;color:var(--accent);padding:11px 4px}
+.btn-link:hover:not(:disabled){text-decoration:underline}
+@media (max-width:600px){.dlg-grid{grid-template-columns:1fr}}
 
 /* ── combobox ── */
 .combo{position:relative}

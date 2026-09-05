@@ -9,6 +9,8 @@ import hashlib
 import io
 import json
 import os
+import re
+import sqlite3
 
 import pytest
 from openpyxl import load_workbook
@@ -18,6 +20,17 @@ from cyrus_pmg.pmgService.scenario import (assetEstimates, proposalRegister, rul
                                            scenarioStore, sleeveRepo)
 from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput, ValidationError
 from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows, writeWorkbook
+
+
+def _caller(kerberos='alice'):
+    """The identity a router dependency hands a handler.
+
+    Both the mirror and the host pass a UserData now, so a test that calls a
+    handler directly has to build one. Direct calls to the stores still pass
+    the kerberos itself - that is what their TEXT columns hold.
+    """
+    from cyrus_pmg.pmgService.core import accessControl
+    return accessControl.UserData(kerberos, accessControl._rolesFor(kerberos))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN = os.path.join(HERE, 'golden')
@@ -31,9 +44,14 @@ def _case():
     return results, implementation
 
 
-def _deliver(user='alice', createdBy='bob', scenarioId='sc_test', includeFees=True, results=None):
-    """Do what the export endpoint does: build the model once, write the
-    workbook with it, record it."""
+def _deliver(user='alice', createdBy='bob', scenarioId='sc_test', includeFees=True, results=None,
+             recordAs=None, stampAs=None, filename=None):
+    """Do what the export endpoint does: mint the UID, build the model once,
+    write the workbook with both, name the file after the UID, record it.
+
+    The three keyword arguments exist to break the one-UID invariant on
+    purpose: *recordAs* records under another id, *stampAs* writes another
+    id into the file ('' for none), *filename* names the file otherwise."""
     results0, implementation = _case()
     results = results or results0
     implementation = dict(implementation, includeFees=includeFees)
@@ -45,14 +63,16 @@ def _deliver(user='alice', createdBy='bob', scenarioId='sc_test', includeFees=Tr
         mandate.mandateSize, implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'] if includeFees else None, implementation['feeLevel'],
         mandate.topAccountSize, implementation['volPremium'], 'USD')
+    proposalId = proposalRegister.newProposalId()
     content = writeWorkbook(
         basis, mandate, results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'], includeFees,
         implementation['volPremium'], assets=assetEstimates.forSlice('USD', 'Hedged'),
-        model=model)
-    entry = proposalRegister.record(scenarioId, user, createdBy, basis, mandate, results,
-                                    implementation, model, content, 'PMG_Scenario_test.xlsx')
+        model=model, proposalId=proposalId if stampAs is None else stampAs)
+    entry = proposalRegister.record(recordAs or proposalId, scenarioId, user, createdBy, basis,
+                                    mandate, results, implementation, model, content,
+                                    filename or rules.exportFilename(basis, proposalId))
     return entry, content, model
 
 
@@ -76,7 +96,7 @@ def test_the_stored_workbook_is_byte_identical_to_the_one_delivered():
     entry, content, _ = _deliver()
     kept = proposalRegister.workbook(entry['proposalId'])
     assert kept['bytes'] == content
-    assert kept['name'] == 'PMG_Scenario_test.xlsx'
+    assert kept['name'] == entry['workbookName']
     assert kept['sha'] == hashlib.sha256(content).hexdigest()
     assert load_workbook(io.BytesIO(kept['bytes'])).sheetnames == [
         'portfolios', 'risk_dashboard', 'assumptions', 'Implementation', 'chartData']
@@ -187,8 +207,8 @@ def test_nothing_to_record_is_refused():
     basis = BasisInput(currency='USD', hedging='Hedged')
     mandate = MandateInput(50e6, 50e6, 'x')
     with pytest.raises(ValidationError):
-        proposalRegister.record('sc_x', 'alice', 'bob', basis, mandate, results,
-                                implementation, {'groups': []}, b'', 'x.xlsx')
+        proposalRegister.record(proposalRegister.newProposalId(), 'sc_x', 'alice', 'bob', basis,
+                                mandate, results, implementation, {'groups': []}, b'', 'x.xlsx')
 
 
 def test_the_register_is_append_only_by_construction():
@@ -271,23 +291,114 @@ def test_the_endpoints_answer_as_the_panel_expects(monkeypatch):
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
     entry, content, _ = _deliver(user='alice', scenarioId='sc_endpoint')
 
-    page = dashboardRouter.listRegisterProposals(exportedBy='alice', user='alice')
+    page = dashboardRouter.listRegisterProposals(exportedBy='alice', caller=_caller('alice'))
     assert entry['proposalId'] in {e['proposalId'] for e in page['entries']}
 
-    one = dashboardRouter.getRegisterProposal(entry['proposalId'], user='alice')['proposal']
+    one = dashboardRouter.getRegisterProposal(entry['proposalId'], caller=_caller('alice'))['proposal']
     assert one['allocation'] and one['implemented'] and one['sleeves']
     assert 'workbook' not in one
 
-    file = dashboardRouter.downloadRegisterWorkbook(entry['proposalId'], user='alice')
+    file = dashboardRouter.downloadRegisterWorkbook(entry['proposalId'], caller=_caller('alice'))
     assert file.body == content
     assert file.headers['x-workbook-sha256'] == entry['workbookSha']
     assert 'attachment' in file.headers['content-disposition']
 
-    missing = dashboardRouter.getRegisterProposal('pr_nope', user='alice')
+    missing = dashboardRouter.getRegisterProposal('pr_nope', caller=_caller('alice'))
     assert missing.status_code == 404
 
-    csv_ = dashboardRouter.exportRegisterProposals(exportedBy='alice', user='alice')
+    csv_ = dashboardRouter.exportRegisterProposals(exportedBy='alice', caller=_caller('alice'))
     assert csv_.body.decode('utf-8').splitlines()[0] == ','.join(proposalRegister.EXPORT_COLUMNS)
 
-    body = dashboardRouter.getRepository(user='alice')
+    body = dashboardRouter.getRepository(caller=_caller('alice'))
     assert body['register']['proposals'] >= 1
+
+
+# ---------------------------------------------------------------- the UID ---
+# One UID per finished proposal (D75): minted before the file is written,
+# visible in the file and in its name, and the register's primary key.
+
+def _stampedIn(content):
+    """Everywhere the UID shows in a delivered file."""
+    book = load_workbook(io.BytesIO(content))
+    sheet = book['Implementation']
+    return {
+        'a1': (sheet.cell(row=1, column=1).value, sheet.cell(row=1, column=2).value),
+        'printHeaders': {name: book[name].oddHeader.right.text for name in book.sheetnames},
+        'identifier': book.properties.identifier,
+        'title': book.properties.title,
+    }
+
+
+def test_one_uid_is_in_the_row_the_file_and_the_filename():
+    from cyrus_pmg.pmgService.scenario.workbook import stampedProposalId
+    entry, content, _ = _deliver()
+    uid = entry['proposalId']
+    assert proposalRegister.isProposalId(uid)
+    seen = _stampedIn(content)
+    assert seen['a1'] == ('Proposal UID', uid), 'the first cell a reader meets'
+    assert seen['identifier'] == uid and uid in seen['title']
+    assert set(seen['printHeaders'].values()) == {'Proposal UID ' + uid}, 'every printed page'
+    assert stampedProposalId(content) == uid, 'what the register reads back'
+    assert entry['workbookName'].startswith('PMG_Scenario_USD_Hedged_')
+    assert entry['workbookName'].endswith('_{}.xlsx'.format(uid))
+    assert proposalRegister.workbook(uid)['name'] == entry['workbookName']
+
+
+def test_the_uid_row_sits_above_the_implementation_type():
+    entry, content, _ = _deliver()
+    sheet = load_workbook(io.BytesIO(content))['Implementation']
+    rows = list(sheet.iter_rows(values_only=True))
+    assert rows[0][:2] == ('Proposal UID', entry['proposalId'])
+    assert rows[1][0] == 'Implementation Type'
+    header = next(i for i, r in enumerate(rows) if r[0] == 'Categories & Asset Classes')
+    assert rows[header - 1][0] is None, 'the blank row still parts the preamble from the table'
+    assert sheet.freeze_panes == 'A{}'.format(header + 2), 'the pane freezes under the moved header'
+
+
+def test_a_workbook_with_no_uid_is_not_a_delivery():
+    """A file written without the UID cannot be recorded under one."""
+    from cyrus_pmg.pmgService.scenario.workbook import stampedProposalId
+    with pytest.raises(ValidationError) as caught:
+        _deliver(stampAs='')
+    assert caught.value.field == 'proposalId'
+    assert stampedProposalId(b'not a workbook') is None
+
+
+def test_a_workbook_stamped_with_another_uid_is_not_recorded():
+    """The register checks rather than trusts: the file must say what the row says."""
+    with pytest.raises(ValidationError) as caught:
+        _deliver(stampAs=proposalRegister.newProposalId())
+    assert caught.value.field == 'proposalId'
+
+
+def test_a_filename_without_the_uid_is_not_recorded():
+    with pytest.raises(ValidationError) as caught:
+        _deliver(filename='PMG_Scenario_USD_Hedged_2026-09-05.xlsx')
+    assert caught.value.field == 'proposalId'
+
+
+def test_something_that_is_not_a_uid_is_refused():
+    with pytest.raises(ValidationError):
+        _deliver(recordAs='PR-123', stampAs='PR-123', filename='PMG_PR-123.xlsx')
+
+
+def test_a_uid_is_never_reused():
+    """Primary key: a second row for an id is an error, not an overwrite."""
+    entry, _, _ = _deliver()
+    uid = entry['proposalId']
+    with pytest.raises(sqlite3.IntegrityError):
+        _deliver(recordAs=uid, stampAs=uid, filename=entry['workbookName'])
+    assert proposalRegister.getProposal(uid)['sequence'] == entry['sequence']
+
+
+def test_the_export_filename_carries_the_uid_last():
+    name = rules.exportFilename(BasisInput(currency='GBP', hedging='Hedged'), 'pr_0123456789ab')
+    assert re.fullmatch(r'PMG_Scenario_GBP_Hedged_\d{4}-\d{2}-\d{2}_pr_0123456789ab\.xlsx', name)
+
+
+def test_minted_uids_have_one_shape_and_do_not_repeat():
+    minted = {proposalRegister.newProposalId() for _ in range(2000)}
+    assert len(minted) == 2000
+    assert all(proposalRegister.isProposalId(uid) for uid in minted)
+    assert not proposalRegister.isProposalId('pr_0123456789AB'), 'lower case only'
+    assert not proposalRegister.isProposalId('sc_0123456789ab')

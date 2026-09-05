@@ -42,12 +42,14 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
 
 from . import rules, sleeveRepo, sleeves
 from .types import ValidationError
+from .workbook import stampedProposalId
 
 SCHEMA_VERSION = 1
 LIST_LIMIT_MAX = 500
@@ -198,20 +200,56 @@ def implementedPicture(model: dict, variant: str) -> list:
     return out
 
 
+# ------------------------------------------------------------ the UID ---
+
+#: The shape of a Proposal UID: ``pr_`` and twelve hex digits. Lower case,
+#: filename-safe, URL-safe, and the register's primary key.
+PROPOSAL_ID = re.compile(r'^pr_[0-9a-f]{12}$')
+
+
+def newProposalId() -> str:
+    """Mint a Proposal UID.
+
+    Minted BEFORE the workbook is written, not by the insert: the one id has
+    to land in the file, in the file's name and in the row (D75), and only an
+    id that exists before any of the three are made can be in all of them."""
+    return 'pr_' + secrets.token_hex(6)
+
+
+def isProposalId(value) -> bool:
+    return isinstance(value, str) and bool(PROPOSAL_ID.match(value))
+
+
 # ------------------------------------------------------------------ write ---
 
-def record(scenarioId: str, user: str, createdBy: str, basis, mandate, results,
-           implementation: dict, model: dict, workbook: bytes, filename: str) -> dict:
+def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, mandate,
+           results, implementation: dict, model: dict, workbook: bytes, filename: str) -> dict:
     """Write one delivered proposal. One transaction, one row, one file.
 
     Raises on any failure, and the export endpoint lets that propagate: a
-    proposal that could not be recorded is not delivered."""
+    proposal that could not be recorded is not delivered.
+
+    *proposalId* is the UID the caller minted with ``newProposalId`` and wrote
+    into the workbook and its name. There is only ever one UID for a finished
+    proposal (D75), so the register checks rather than trusts: the workbook
+    must be stamped with this id and the filename must carry it, or nothing is
+    written. The column is the primary key, so an id can never take two rows."""
     if not workbook:
         raise ValidationError('workbook', 'Nothing to record: the export produced no file.')
+    if not isProposalId(proposalId):
+        raise ValidationError('proposalId', 'Not a Proposal UID: {!r}.'.format(proposalId))
+    stamped = stampedProposalId(workbook)
+    if stamped != proposalId:
+        raise ValidationError(
+            'proposalId', 'The workbook is stamped {} but would be recorded as {}: a proposal '
+            'has one UID.'.format(stamped or 'with no UID', proposalId))
+    if proposalId not in filename:
+        raise ValidationError(
+            'proposalId', 'The filename {!r} does not carry the Proposal UID {}.'.format(
+                filename, proposalId))
     allocation = allocationPicture(results)
     implemented = implementedPicture(model, implementation.get('variant'))
     stamp = _now()
-    proposalId = 'pr_' + secrets.token_hex(6)
     sha = hashlib.sha256(workbook).hexdigest()
     conn = _connect()
     try:
