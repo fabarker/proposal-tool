@@ -81,7 +81,7 @@ export is written by the tool in ~200 ms, and the analytics library is never imp
 browser ──► Flask :8001 (host: dashboardFrontend.py)
               ├─ /proposalTool/<file>     send_from_directory(dashboard/proposalTool)   ◄─ INSERT one route
               ├─ /static/js/accessGate.js, /static/js/globals.js   the host's own shared JS
-              └─ /api/<x>  ─proxy─►  FastAPI :8088 (host: isgPMGService.py, PMG_SVC_PORT)
+              └─ /api/<x>  ─proxy─►  FastAPI :8002 (host: isgPMGService.py, PMG_SVC_PORT)
                                         └─ /api/v1/…  dashboardRouter  ◄─ INSERT the endpoint block
                                               │  Depends(requireAuth | requireEditor | requireAdmin)
                                               ▼
@@ -223,39 +223,61 @@ without them — `universe.py` raises on a missing extract, `products.py` raises
 
 ## 4. The Cyrus integration point
 
-### 4.0 Two sources, and where they disagree
+### 4.0 What the real host files settle
 
-`HOST_AUDIT.md` (2026-08-30) is the older description. A second-hand structural note supplied on
-2026-09-04 — screenshots of the Cyrus tree and the PMG service's own documentation, transcribed —
-is newer and contradicts it in four places. Where they differ, **treat the newer note as the
-better guess and the audit as stale, but confirm both against the checkout (§18)**; the note is a
-transcription, parts of it are marked truncated, and its `core/` listing may be curated rather
-than complete.
+Six actual Cyrus files are in the repository at `../cyrus-files/`, supplied 2026-09-05:
+`pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`, `exceptionHandlers.py`,
+`config.py`, `dashboard.env.defaults`. They are transcriptions with marked gaps, but they are
+source rather than description, and they **replace `HOST_AUDIT.md` wherever the two differ**.
+Everything in this section is Verified against them unless it says otherwise.
 
-| | `HOST_AUDIT.md` | The 2026-09-04 note | Effect on this port |
-|---|---|---|---|
-| Auth module | `pmgService/core/accessControl.py` | `pmgService/core/pmgEntitlement.py` — "Auth dependency (`requireAuth`)", and **no `accessControl.py` listed** | **Blocker.** §9.2 |
-| `PMG_SVC_PORT` | 8002 | **8088** | Cosmetic — the proxy reads the host's own config |
-| `PMG_SVC_WORKERS` | 2 | **4** | Store concurrency and cold start — §11.3 |
-| Roles | `requireAuth`, `requireEditor` | only `requireAuth` documented | §9.2 — aliasing is free |
+**Confirmed compatible — the port's structural assumptions all hold:**
 
-The note adds four things the audit does not have, each of which becomes a §18 check:
+| Assumption | Evidence |
+|---|---|
+| `dashboardRouter.py` exposes a module-level `router` | `router = APIRouter(dependencies=[Depends(requireAuth)])` — byte-identical to this mirror's line 41 |
+| The proxy rewrites `/api/<x>` → `/api/v1/<x>` | `dashboardFrontend.proxy_api`: `f'{_get_backend_url()}/api/v1/{path}'`, `timeout=300`, `allow_redirects=False`, 502/504 |
+| The proxy forwards the identity | it copies every header except `host`/`connection`/`transfer-encoding`, so the GSSSO cookie travels |
+| One hand-written route per page folder | eleven of them, all `send_from_directory(os.path.join(DASHBOARD_DIR, '<page>'), filename)` |
+| `_PUBLIC_PATHS` | `/health`, `/favicon.ico`, `/_access_denied`, `/api/whoami`, `/static/css/`, `/static/js/accessGate.js` — the mirror's list exactly |
+| `/api/whoami` exists and is public | on a separate `publicRouter`; returns `{success, kerberos, allowed, role, canView, canModify, canPost, env, …}` and adds `loginUrl` when there is no identity |
+| `getKerberosFromFastApiRequest`, `isAllowed`, `getAllowlist`, `buildLoginUrl` | all called by the host's own `whoami` |
+| `requireAuth` **and** `requireEditor` both exist | `pmgEntitlement` back-compat shims: `requireAuth = requirePmgApiView`, `requireEditor = requirePmgApiModify` |
+| `PMG_SVC_` settings prefix | `config.py` `env_prefix`; no collision with `SCENARIO_*` or `PMG_ALLOWED_KERBEROS` |
+| Ports 8001 / 8002 / 8003 | `dashboard.env.defaults` — the 8088 in an earlier screenshot was wrong |
 
-- **`pmgService/core/exceptionHandlers.py` and `PmgAppException`**, giving "structured JSON error
-  responses" — directly on top of the contract the page depends on (§13.3).
-- **Class-based handlers** in `pmgService/handler/`, each owning its own `APIRouter`. But
-  `dashboardRouter.py` still exists as a module beside `optimizeSessionRouter.py`, so the block in
-  §9.1 probably still applies — confirm it still exposes a module-level `router`.
-- **Config is pydantic-settings under the `PMG_SVC_` prefix.** No collision with our `SCENARIO_*`
-  or `PMG_ALLOWED_KERBEROS` / `PMG_ADMIN_KERBEROS` names.
-- **The service also serves `/pmg/*`** (root, health, admin) and `/api/v1/optimize-session*`.
-  Our `/api/v1/scenario/*` collides with neither. `/health` is unauthenticated.
+**The auth module is split across two files, not one.** The block's single import line must become
+two:
 
-Two signs the audit has aged generally: `dashboard/` now shows `approvals/` and `progressTracking/`
-and no `modelPlayground/`; `pmgService/handler/` shows no `dashboardHandler.py`, which
-`HOST_AUDIT.md` §8.6 put at the centre of the dashboard's data flow. There is also a `dashboard/DASHBOARD_AUDIT.md`
-in the tree — likely the current version of the document this section is built on, and worth
-reading before Step 1.
+| Name | Lives in | Status |
+|---|---|---|
+| `getKerberosFromFastApiRequest`, `isAllowed`, `getAllowlist`, `buildLoginUrl`, `requireAllowlistedUser` | `pmgService/core/accessControl.py` | exists |
+| `requireAuth`, `requireEditor`, `requirePoster`, `can`, `hasRole`, `PmgEntitlement` | `pmgService/core/pmgEntitlement.py` | exists |
+| `requireAdmin`, `isAdmin` | **neither** | must be written — §9.2 |
+
+**Cyrus has a three-role entitlement model**, not the one role the mirror stubs. Roles `ISGAdmin`,
+`PMGEditor`, `PMGViewer`; resources `pmgui`, `pmgapi`, `optimizationapi`; actions `view`, `modify`,
+`post`. `requireAuth` is `pmgapi:view` (all three roles), `requireEditor` is `pmgapi:modify`
+(ISGAdmin and PMGEditor). Two consequences:
+
+- **`post` is PMGEditor-only — ISGAdmin does not have it**, per the policy table. So there is no
+  `resource:action` that isolates an administrator, and `requireAdmin` has to test role membership
+  (`hasRole(userData, 'ISGAdmin')`) rather than a permission.
+- **In PROD the allowlist alone grants only `view`.** A kerberos on `PMG_ALLOWED_KERBEROS` but in
+  no PERMIT group can read the tool and cannot create a scenario, attach a sleeve or export. In
+  DEV/UAT-and-below every caller is short-circuited to a synthetic `ISGAdmin`. Getting PWAs into
+  `PMGEditor` is a go-live prerequisite, not a detail.
+
+**Two incompatibilities were found and fixed on this side** (§9.2, §13.3): the host's auth
+dependencies return a `UserData` object where this block bound a string, and the host's
+`PmgAppException` puts the HTTP status phrase in `error` with the message in `detail`, the
+opposite way round from this block's own errors.
+
+**Still to confirm against the checkout** (§18): the router docstring says it is "mounted under
+`/api/v1/dashboard` by the optimizationService application", which contradicts the live proxy line
+building `/api/v1/{path}` — and the host's own pages would 404 if the docstring were current, so it
+reads as stale. Confirm before Step 4, because if the mount really is `/api/v1/dashboard` every
+path in §11.1 shifts.
 
 ### 4.1 What the audit establishes (unchanged by the above)
 
@@ -276,9 +298,9 @@ Audit, unless marked otherwise:
 - Auth module: `pmgService/core/accessControl.py` with `getKerberosFromFlaskRequest`, `isAllowed`,
   `buildLoginUrl`, `requireAuth`, `requireEditor` (§9, §11) and the allowlist in
   `PMG_ALLOWED_KERBEROS` (Audit §5.5).
-- Ports: `FRONTEND_PORT` 8001, `PMG_SVC_PORT` **8088** (Audit §5.2 said 8002; the newer note says
-  8088 — the proxy reads it from the host's config either way), `OPT_SVC_PORT` 8003; the launcher
-  runs `isgPMGService` with **`--workers 4`** (Audit §5.2 said 2).
+- Ports: `FRONTEND_PORT` 8001, `PMG_SVC_PORT` **8002**, `OPT_SVC_PORT` 8003 (Verified:
+  `cyrus-files/dashboard.env.defaults`). `PMG_SVC_WORKERS` defaults to **2** in that file, though
+  `config.py`'s own fallback is 4 — so at least two workers, four if the env file is not sourced.
 - Dependencies named: Flask 2.2.5, requests, FastAPI, uvicorn, pydantic-settings, sqlalchemy, the
   Sybase driver (Audit §5.1). **openpyxl and pandas are not named** (this guide, §12).
 - Deployment: GitLab CI zips `src/cyrus_pmg/**`, `scripts/**`, `resources/**`; distributed by the
@@ -488,58 +510,73 @@ asserts the admin set).
 isAdmin(getKerberosFromFastApiRequest(request))` onto the schema; that is the only place the
 router reads identity directly.
 
-### 9.2 The auth module — a blocker to settle first, then three additions
+### 9.2 The auth module — two imports, and one function to write
 
-**Settle the module name and the symbols before anything else.** The router's first import is
-
-```python
-from cyrus_pmg.pmgService.core.accessControl import (
-    getKerberosFromFastApiRequest, isAdmin, requireAdmin, requireAuth, requireEditor)
-```
-
-`HOST_AUDIT.md` §9/§11 names `core/accessControl.py`. The newer structural note (§4.0) lists
-`core/` as `exceptionHandlers.py`, `pmgEntitlement.py` ("Auth dependency (`requireAuth`)"),
-`portfolioValidator.py`, `retryUtils.py`, `tagsMapping.py` — **no `accessControl.py`**, and only
-`requireAuth` documented.
-
-This matters more than a rename because the block is appended to the host's *own*
-`dashboardRouter.py`: a failed import there takes every existing dashboard endpoint down with it,
-not just the Proposal Tool. Read the real module first (`ls src/cyrus_pmg/pmgService/core/`), then
-point the import at it. Usage in the block: `requireAuth` ×3, `requireEditor` ×7, `requireAdmin`
-×16, `isAdmin` ×2, `getKerberosFromFastApiRequest` ×2 — so the import line is the only edit if the
-names match, and a thin shim module otherwise.
-
-`requireEditor` costs nothing if the host lacks it: in the mirror it is literally
-`return requireAuth(request)` (one role today; the seam exists so every write endpoint already
-carries it). Alias it and move on.
-
-Whatever the module turns out to be called, the router needs three names it will not have. The
-mirror's implementation, to be adapted to the host's identity source:
+Settled by `../cyrus-files/pmgEntitlement.py` and the host's own router. The block's single import
+line becomes two, because the names live in two modules:
 
 ```python
-def getKerberosFromFastApiRequest(request):
-    """Extract the caller's kerberos id from a FastAPI request, or None."""
-    # mirror: a 'kerberos' cookie or an X-Kerberos header; the host reads its GSSSO session here
-
-def getAdminAllowlist():
-    raw = os.getenv('PMG_ADMIN_KERBEROS', '')            # or the source the host's allowlist reads
-    return {item.strip() for item in raw.split(',') if item.strip()}
-
-def isAdmin(kerberos):
-    return isAllowed(kerberos) and kerberos in getAdminAllowlist()
-
-def requireAdmin(request: Request) -> str:
-    kerberos = requireAuth(request)
-    if not isAdmin(kerberos):
-        raise HTTPException(status_code=403,
-                            detail={'error': 'User {} is not a sleeve repository admin.'.format(kerberos)})
-    return kerberos
+from cyrus_pmg.pmgService.core.accessControl import getKerberosFromFastApiRequest
+from cyrus_pmg.pmgService.core.pmgEntitlement import requireAuth, requireEditor
 ```
 
-Semantics to preserve: an admin is also on the access list; an empty admin list means nobody, and
-the console's entry points simply do not render; the 403 body is `{error}` like the access-list
-refusal. If the host's `requireAuth` already exists with a different signature, `requireAdmin`
-must call whatever it calls.
+`requireAuth` (= `requirePmgApiView`) and `requireEditor` (= `requirePmgApiModify`) already exist
+as back-compat shims, so nothing needs aliasing. **Do not insert the mirror's
+`accessControl.py`** — the host's is richer and authoritative.
+
+**`requireAdmin` and `isAdmin` do not exist and must be written.** Because `post` is a
+PMGEditor-only privilege in the policy (ISGAdmin deliberately lacks it), no `resource:action`
+isolates an administrator; the test has to be role membership. Add to the host's
+`pmgEntitlement.py`, beside the other shims:
+
+```python
+def isAdmin(userData) -> bool:
+    """Whether this caller may maintain the sleeve library."""
+    return hasRole(userData, ROLE_ADMIN)
+
+
+def requireAdmin(userData: UserData = Depends(requireAuth)) -> UserData:
+    """Repository console gate. Mirrors requireCan's refusal shape."""
+    if not isAdmin(userData):
+        kerberos = getattr(userData, 'kerberos', 'unknown')
+        raise PmgAppException(
+            statusCode=HTTPStatus.FORBIDDEN.value,
+            reason="Forbidden: user '{}' is not a sleeve repository admin.".format(kerberos))
+    return userData
+```
+
+Then `from cyrus_pmg.pmgService.core.pmgEntitlement import isAdmin, requireAdmin` joins the second
+import line. **Which role maintains the library is a PMG decision** — `ISGAdmin` is the natural
+reading, but the policy gives `PMGEditor` strictly more, so confirm it (§17).
+
+The schema route also calls `isAdmin(getKerberosFromFastApiRequest(request))` with a *string*. The
+host's `isAdmin` above takes a `UserData`. Either overload it, or change that one call site to
+`isAdmin(PmgEntitlement.isValidUser(kerberos)[1])`.
+
+#### The `UserData`-versus-string boundary — fixed on this side
+
+The host's dependencies return a `UserData`; this block was written against a mirror whose
+dependencies return the kerberos itself, and it *binds* the value rather than only gating on it —
+which the host never does, so nothing there had noticed.
+
+Measured before the fix: a `UserData` reaching `scenarioStore` raised
+`TypeError: Object of type UserData is not JSON serializable` on **every scenario created**, and
+reaching either SQLite store raised `InterfaceError: Error binding parameter` on **every export and
+every sleeve save**. Three write paths, all hard failures.
+
+`_callerId()` now normalises at the eight points the value is consumed, so the same block runs
+against either host unchanged:
+
+```python
+def _callerId(user) -> str:
+    return (getattr(user, 'kerberos', None)
+            or (user if isinstance(user, str) else '')
+            or 'unknown')
+```
+
+`tests/test_sleeve_repository.py::test_the_caller_id_survives_either_shape_of_auth_dependency`
+asserts both shapes and that what lands in the stores is a string. The twenty `user: str =
+Depends(...)` annotations were dropped, since `str` is not what arrives on the host.
 
 ### 9.3 Nothing else changes on the backend
 
@@ -623,7 +660,7 @@ substitution. It is not part of this port.
 curl -s  http://localhost:8001/proposalTool/proposalTool.html | head -3
 curl -s  http://localhost:8001/proposalTool/static/js/proposalTool.js | head -1      # 'use strict';
 curl -sI http://localhost:8001/proposalTool/static/fonts/gs-sans-variable.woff2 | head -1
-curl -s  http://localhost:8088/health        # the host's PMG_SVC_PORT
+curl -s  http://localhost:8002/health        # the host's PMG_SVC_PORT
 ```
 
 Unauthenticated, the first two return the host's 302 to login (the mirror: `302 /_dev_login?next=…`).
@@ -785,7 +822,7 @@ means the host must set it; "own" means the host already has its own value.
 | `PMG_ALLOWED_KERBEROS` | `accessControl.py` | `fbarker` in the mirror | own (Audit §5.5) |
 | `PMG_ADMIN_KERBEROS` | `accessControl.py` (mirror) | `fbarker` | **Required** — or the host's equivalent source in `isAdmin` |
 | `SAA_ENGINE_PACKAGE` | `engine.py` | `epsilonPhi` | bake machine only |
-| `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are 8088 / 0.0.0.0 under its `PMG_SVC_` pydantic-settings prefix |
+| `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are **8002 / 0.0.0.0**, under its `PMG_SVC_` pydantic-settings prefix (Verified: `cyrus-files/config.py`, `dashboard.env.defaults`) |
 | `FRONTEND_PORT`, `DASHBOARD_HOST` | `dashboardConfig.py` (mirror) | 8001 / 127.0.0.1 | own |
 | `PMG_SVC_WORKERS` | `start_dashboard.sh` (mirror) | 1 | own (the host runs 2) |
 | `SCENARIO_FIXTURES_LATENCY_MS`, `SCENARIO_FIXTURES_FAIL`, `SCENARIO_FIXTURES_FAIL_SCHEMA`, `SCENARIO_FIXTURES_FAIL_SLEEVES`, `SCENARIO_FIXTURES_FAIL_EXPORT` | `fixturesAdapter.py` | unset | never in production |
@@ -891,20 +928,33 @@ The package never reads identity. The router gets it from `accessControl` (`Depe
 `scenarioStore.createScenario(createdBy=user)` and `proposalRegister.record(scenarioId, user, …)`.
 Whatever string the host's `accessControl` returns is what the register stores.
 
-### 13.3 The error contract the host must already meet
+### 13.3 The error contract — two shapes, both handled
 
-**Read `pmgService/core/exceptionHandlers.py` and `PmgAppException` before starting** (§4.0). The
-host has its own structured-JSON error handling, and the page needs the fields at the *top level*:
-a 401 must carry `loginUrl` (or the GSSSO redirect never happens), and a 422 must carry `error` and
-`field` (or every inline validation message is lost). An envelope such as `{"detail": …}` or
-`{"error": {"message": …}}` is an adaptation to design, not to discover.
+Settled by `../cyrus-files/exceptionHandlers.py`. The host wraps its own failures as
+`PmgAppException`, whose handler emits:
 
-The mirror's `isgPMGService.py` maps `HTTPException` whose `detail` is a dict onto a top-level body
-(`{loginUrl}` on 401, `{error}` on 403), `RequestValidationError` onto 422 `{error: 'Malformed
-request.'}`, and any unhandled exception onto 500 `{error}`. The router itself returns
-`JSONResponse` bodies directly for 422/404/502, so those need nothing from the app. **Verify** that
-the host's app never lets FastAPI's default `{"detail": …}` reach the page for auth failures
-(Unverifiable; the host's own pages read `body.error`/`body.loginUrl`, so it should already).
+```python
+{"error": HTTPStatus(exc.statusCode).phrase,   # "Forbidden" - the STATUS PHRASE
+ "detail": exc.reason,                          # the actual message
+ "path":   str(request.url)}                    # plus anything in exc.extra
+```
+
+That is the opposite way round from this block's own errors, which put the message in `error` and
+add `field` (spec 3.5). Reading `error` alone would have shown a caller **"Forbidden"** instead of
+the reason. `apiFetch` now prefers a string `detail` and falls back to `error`, which resolves
+every shape it can meet — this block's 422s and 404s, `PmgAppException`, the Flask gate's 401/403,
+the host's `_errorResponse`, and FastAPI's list-shaped `detail`, which correctly falls through
+rather than rendering as `[object Object]`.
+
+Two things that already work and need no change: `PmgAppException.extra` can carry `loginUrl`, and
+the Flask gate's 401 body carries it directly — which is what drives the page's GSSSO redirect. And
+`redirectUrl` on the exception produces a 302 that the proxy passes through untouched, because
+`allow_redirects=False`.
+
+One difference left deliberately alone: the host's `_errorResponse` returns **HTTP 200** with
+`{success: false, error}`. This block returns real status codes with its own `JSONResponse`, per
+spec 3.5, and does not route through that helper. The page needs the status codes, so this stays as
+it is.
 
 ### 13.4 Logging and observability
 
@@ -1119,8 +1169,11 @@ reachable only by URL, which is a useful soak.
 | Four workers, one set of file stores | low | Designed and now tested for it (§11.3.1); confirm the store paths are shared, not per-worker. |
 | The durable path is an NFS mount; SQLite locking is unreliable there | high if it happens | Establish local disk vs network mount (§11.3.2, §18). Register on local disk, backups shipped off. |
 | Host SQLite older than 3.8.0 | high | One-line check (§11.3.2); the partial unique index will not compile below it. |
-| The host's auth module is `pmgEntitlement`, not `accessControl`, and `requireEditor` may not exist | high | §9.2 — settle before Step 3; a failed import takes the host's whole dashboard router down. |
-| The host's `PmgAppException` handler wraps errors in its own envelope | medium | §13.3 — read it before Step 4. |
+| ~~The host's auth module is `pmgEntitlement`~~ | **closed** | Both modules confirmed; the import splits in two and `requireAdmin` is written (§9.2). |
+| ~~`PmgAppException` wraps errors in its own envelope~~ | **closed** | It does; `apiFetch` now reads both shapes (§13.3). |
+| **In PROD, an allowlisted PWA with no PERMIT role can only read** | high | Get PWAs into `PMGEditor` before go-live — without it, creating a scenario, attaching a sleeve and exporting are all 403. |
+| Which role maintains the sleeve library is undecided | medium | `ISGAdmin` is the natural reading, but the policy gives `PMGEditor` strictly more (it alone has `post`). Confirm with PMG (§9.2). |
+| The router's docstring claims a `/api/v1/dashboard` mount | medium | Contradicted by the live proxy line and by the host's own pages working; confirm before Step 4 (§4.0). |
 | Python version older than 3.8 on the host | low | `from __future__ import annotations` needs 3.7+; f-strings and `secrets` need 3.6+; proven only on 3.8.20. |
 | Theme mismatch with OneGS | cosmetic | A separate change with a measured cost (§10.5). |
 | Retention default of 24 h lands scenarios in `$TMPDIR` | low | `SCENARIO_STORE_DIR` is required. |
@@ -1160,8 +1213,7 @@ repository. Tick each before Step 1.
 - [ ] `dashboard/static/js/globals.js` sets `window.API_BASE` to `<origin>/api`;
       `dashboard/static/js/accessGate.js` probes `/api/whoami` and tolerates a page with no
       `.header` block.
-- [ ] The backend answers `GET /api/v1/whoami` with `{kerberos, allowed}` / 401 `{loginUrl}` /
-      403 `{error}`.
+- [x] ~~The backend answers `/api/v1/whoami`~~ — **confirmed**, on a public router, with `loginUrl` when there is no identity.
 - [ ] `isgPMGService.py` maps auth `HTTPException`s onto top-level `{error}` / `{loginUrl}` and
       malformed bodies onto a JSON `{error}` — never `{"detail": …}`.
 
@@ -1173,18 +1225,17 @@ repository. Tick each before Step 1.
 - [ ] `pandas` installed (2.0.3 proven).
 - [ ] FastAPI/Starlette/pydantic versions accept sync `def` handlers with `Body(...)`, `Depends`,
       path parameters typed `int`, and `{portfolioKey:path}` (0.122 / 0.44 / 2.5.3 proven).
-- [ ] The launcher's worker count for `isgPMGService` (the newer note says 4); the four store
+- [ ] The launcher's worker count for `isgPMGService` (env default 2, code fallback 4); the four store
       paths are shared by every worker and writable by the service user.
 - [ ] `python -c "import sqlite3; print(sqlite3.sqlite_version)"` is ≥ 3.8.0 (§11.3.2).
 - [ ] **Whether the durable storage path is local disk or a network mount** (§11.3.2). If NFS,
       decide where the proposal register lives before go-live.
-- [ ] `pmgService/core/` — the real auth module's filename, its symbols, `requireAuth`'s
-      signature, whether `requireEditor` exists, and how it reads identity from a FastAPI request
-      (§9.2). **Do this first.**
-- [ ] `pmgService/core/exceptionHandlers.py` / `PmgAppException` — the exact non-2xx body shape
-      (§13.3).
-- [ ] `pmgService/dashboardRouter.py` still exposes a module-level `router` rather than having
-      been converted to the class-based handler pattern used in `pmgService/handler/` (§4.0).
+- [x] ~~`pmgService/core/` — the real auth module~~ — **answered** by `cyrus-files/pmgEntitlement.py`:
+      two modules, `requireAuth`/`requireEditor` present, `requireAdmin`/`isAdmin` to be written (§9.2).
+- [x] ~~`exceptionHandlers.py` / `PmgAppException` body shape~~ — **answered**; handled in `apiFetch` (§13.3).
+- [x] ~~`dashboardRouter.py` exposes a module-level `router`~~ — **confirmed**, byte-identical to this mirror's.
+- [ ] **Whether the router is mounted at `/api/v1` or `/api/v1/dashboard`.** Its docstring says the
+      latter; the live proxy builds the former and the host's own pages depend on it. Settle before Step 4 (§4.0).
 - [ ] `dashboard/DASHBOARD_AUDIT.md` — read it; it is probably the current version of the document
       §4 is built on, and the dashboard's page folders have already moved on.
 - [ ] Durable, writable, backed-up storage exists outside `src/cyrus_pmg/**` for the register,

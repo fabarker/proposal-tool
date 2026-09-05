@@ -348,7 +348,11 @@ IMPL_CSS = r"""
 /* A position below its product's minimum: a hard block, so it reads as one
    and the export says why. */
 .tbl.impl tr.below-min th,.tbl.impl tr.below-min td{background:#FDE8E8;color:#7A1D1D}
-.tbl.impl tr.below-min .prodcol{background:#FDE8E8}
+/* The pinned products cell carries .asset here for the same reason the header
+   z-index fix carries its weight (D72): tr.asset.alt above is (0,5,1) and would
+   otherwise repaint every banded breaching row white while the rest of the row
+   went pink. Matched at equal weight and declared later, rather than escalated. */
+.tbl.impl tr.asset.below-min .prodcol{background:#FDE8E8}
 .tbl.impl tbody tr.below-min:hover th,.tbl.impl tbody tr.below-min:hover td,
 .tbl.impl tbody tr.below-min:hover .prodcol{background:#FBD9D9}
 .tbl.impl tr.below-min .bdg.b-breach{margin-left:8px;vertical-align:middle}

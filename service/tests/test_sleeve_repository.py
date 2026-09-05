@@ -1149,3 +1149,45 @@ def test_four_workers_cold_starting_together_seed_the_library_once(tmp_path):
         assert counted("SELECT COUNT(*) FROM meta WHERE key = 'seededAt'") == 1
     finally:
         opened.close()
+
+
+def test_the_caller_id_survives_either_shape_of_auth_dependency():
+    """The block binds the value its auth dependency returns, and two hosts
+    return two different things.
+
+    This mirror's accessControl dependencies return the kerberos itself. The
+    real host's pmgEntitlement dependencies return a UserData carrying it -
+    requireCan builds one - and nothing in Cyrus ever noticed, because its own
+    routers use those dependencies purely as gates and never bind the value.
+
+    This block does bind it, and hands it to three stores that cannot take an
+    object: the scenario store writes it as JSON, and both SQLite stores write
+    it to a TEXT column. Asserted here against the object shape as well as the
+    string, because getting it wrong is not a wrong value - it is a TypeError
+    on every scenario created and an InterfaceError on every export.
+    """
+    class HostUserData:
+        kerberos = 'alice'
+        role = 'PMGEditor'
+
+        def __repr__(self):
+            return "UserData(kerberos='alice')"
+
+    assert dashboardRouter._callerId('alice') == 'alice'
+    assert dashboardRouter._callerId(HostUserData()) == 'alice'
+    assert dashboardRouter._callerId(None) == 'unknown'
+    assert dashboardRouter._callerId('') == 'unknown'
+
+    # and it reaches the stores as something they can actually write
+    made = dashboardRouter.createRepositorySleeve(
+        {'variant': 'PMG ESG', 'category': 'Public Equity', 'name': 'Caller Shape Probe',
+         'products': [{'productId': _aPlacedProduct(), 'weight': 1.0}]},
+        user=dashboardRouter._callerId(HostUserData()))
+    try:
+        entry = made['sleeve']
+        assert entry['createdBy'] == 'alice'
+        history = sleeveRepo.history(entry['id'])
+        assert history[0]['actor'] == 'alice'
+        assert isinstance(history[0]['actor'], str)
+    finally:
+        sleeveRepo.deleteSleeve(entry['id'], user='alice')

@@ -1038,7 +1038,14 @@ async function apiFetch(path, opts) {
         try {
             body = await resp.json();
             if (body && body.loginUrl) { window.location = body.loginUrl; return; }
-            if (body && body.error) msg = body.error;
+            // Two error shapes reach here. This block's own failures put the
+            // message in `error` and add `field` (spec 3.5). The host wraps its
+            // own in PmgAppException, which puts the HTTP status PHRASE in
+            // `error` and the message in `detail` - so reading `error` alone
+            // would show a caller 'Forbidden' instead of the reason. Prefer the
+            // specific one; ignore FastAPI's list-shaped `detail`.
+            var detail = (body && typeof body.detail === 'string') ? body.detail : null;
+            if (detail || (body && body.error)) msg = detail || body.error;
         } catch (e) { /* non-JSON error body */ }
         var err = new Error(msg);
         err.status = resp.status;   // callers map 422 field errors and 404s

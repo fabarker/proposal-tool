@@ -8,6 +8,10 @@ Audit date 2026-09-03, extended 2026-09-04. Repository state at the original pas
 questions it raised were tested (§8.5). One defect was found in shipped code and fixed (§9.2) —
 so, unlike the first pass, this audit did change application code.
 
+**Third pass, 2026-09-05.** Six real Cyrus files arrived at `../cyrus-files/` (§4.5). They close
+the auth blocker, correct two facts the screenshots had wrong, and expose **two incompatibilities
+that would have failed at runtime** — both now fixed and covered by a test (§9.3).
+
 ---
 
 ## 1. Executive verdict
@@ -30,8 +34,10 @@ each is a change rather than a copy:
 2. **Two dependencies must be present on the host**: `openpyxl` (the whole Excel export, D67) and
    `pandas` (imported at module level by `portfolio_weights.py:85`, which builds two frames at
    import, lines 1257–1258). Neither is named in `HOST_AUDIT.md`'s dependency list.
-3. **Three names must be added to the host's `accessControl.py`**: `getKerberosFromFastApiRequest`,
-   `isAdmin`, `requireAdmin` (`dashboardRouter.py:23–24`).
+3. **The auth import splits across two host modules, and one function must be written.**
+   `accessControl` holds `getKerberosFromFastApiRequest`; `pmgEntitlement` holds `requireAuth` and
+   `requireEditor`; neither has `requireAdmin`/`isAdmin` (§4.5, §9.2). Two runtime
+   incompatibilities behind that seam are now fixed on this side (§9.3).
 4. **Four data deliveries** — three extracts and the baked store — travel as data, not as part of
    the package copy; the baked store is 688 payloads the host cannot regenerate.
 
@@ -71,6 +77,7 @@ and two inserts" — hides the auth additions and the mandatory configuration.
 | Git history | all 19 commits touching `proposal-tool` (`6d12d53` 2026-08-30 … `9f4dc50` 2026-09-03); per-file history of the three documents; diffs of the last guide commits; shortstats since each guide's last update | §6 |
 | Runtime | the mirror running from `service/start_dashboard.sh` (pids in `service/var/run/`), `SCENARIO_ADAPTER=baked`, fallback on; plus in-process probes with throwaway stores | §8 |
 | Cyrus structural note (second pass) | supplied 2026-09-04: transcribed screenshots of the `src/` tree, the PMG service's routes, its project structure, config and design principles. Parts marked truncated in the source | §4.4, §7 |
+| Real Cyrus files (third pass) | supplied 2026-09-05 at `../cyrus-files/`: `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`, `exceptionHandlers.py`, `config.py`, `dashboard.env.defaults`. Transcriptions with marked gaps; source rather than description | §4.5, §9.3 |
 
 ## 4. Current-state findings
 
@@ -146,6 +153,43 @@ Two signs the audit has aged beyond those points: `dashboard/` now lists `approv
 `progressTracking/` and no `modelPlayground/`; `pmgService/handler/` lists no `dashboardHandler.py`,
 which audit §8.6 put at the centre of the dashboard data flow. A `dashboard/DASHBOARD_AUDIT.md`
 exists in-tree and is probably the current version of the document this port was designed against.
+
+### 4.5 Third pass — the real host files
+
+`../cyrus-files/` holds `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`,
+`exceptionHandlers.py`, `config.py` and `dashboard.env.defaults`. Transcriptions with marked gaps,
+but source rather than description; they supersede both `HOST_AUDIT.md` and the 2026-09-04 note.
+
+**Confirmed — every structural assumption of the port holds.** `dashboardRouter.py` opens with
+`router = APIRouter(dependencies=[Depends(requireAuth)])`, byte-identical to this mirror's line 41.
+The proxy builds `/api/v1/{path}` with `timeout=300` and `allow_redirects=False` and forwards every
+header but the hop-by-hop three, so the GSSSO cookie travels. `_PUBLIC_PATHS` matches the mirror's
+list exactly. Eleven per-page routes use the exact `send_from_directory` pattern the Proposal Tool
+route needs. `/api/whoami` exists on a separate `publicRouter` and returns `loginUrl` when there is
+no identity. `getKerberosFromFastApiRequest`, `isAllowed`, `getAllowlist` and `buildLoginUrl` are
+all called by the host's own `whoami`.
+
+**Corrected.** `PMG_SVC_PORT` is **8002**, not the 8088 the screenshots showed
+(`dashboard.env.defaults`, and `config.py`'s own fallback). `PMG_SVC_WORKERS` defaults to **2** in
+the env file though `config.py` falls back to 4 — either way ≥ 2, so the cold-start fix of §8.5
+stands.
+
+**The blocker is resolved, and it was half right.** `accessControl` *does* exist — it holds
+`requireAllowlistedUser`, `getKerberosFromFastApiRequest`, `isAllowed`, `getAllowlist`,
+`buildLoginUrl`. But `requireAuth` and `requireEditor` live in `pmgEntitlement` as back-compat
+shims over a three-role model. So the block's single import line splits in two, and neither module
+has `requireAdmin`/`isAdmin` — those must be written. Because `post` is PMGEditor-only and ISGAdmin
+deliberately lacks it, no `resource:action` isolates an administrator: the gate must test role
+membership.
+
+**One operational finding with go-live consequences.** `_allowlistGrant()` gives an allowlisted
+kerberos `view + modify` in DEV/UAT-and-below but **`view` only in PROD**. A PWA on
+`PMG_ALLOWED_KERBEROS` with no PERMIT role can read the tool in production and cannot create a
+scenario, attach a sleeve or export. Getting PWAs into `PMGEditor` is a prerequisite, not a detail.
+
+**Unresolved.** The router docstring says it is "mounted under `/api/v1/dashboard` by the
+optimizationService application", which the proxy line contradicts — and the host's own pages
+would 404 if the docstring were current, so it reads as stale. Confirm before the router insert.
 
 ## 5. Accuracy review of the old guide
 
@@ -508,6 +552,37 @@ gains the `exceptionHandlers.py` instruction; §8 Step 2 reordered to settle the
 anything touches the host; the port (8088), worker count (4) and test count (253) corrected
 throughout; §17 and §18 extended with the five new risks and seven new checks.
 
+### 9.3 Third pass — two runtime incompatibilities, found and fixed
+
+Both were invisible to inspection and would have failed on the host at runtime.
+
+**1. The auth dependencies return an object where the block binds a string.** `requireCan` returns
+a `UserData`; the mirror's `accessControl` returns the kerberos itself. The host never noticed
+because its own routers use these purely as gates — `dependencies=[Depends(requireEditor)]` — and
+never bind the value. This block binds it in twenty handlers and hands it to three stores that
+cannot take an object. Demonstrated before fixing:
+
+| Path | Failure |
+|---|---|
+| `scenarioStore.createScenario(createdBy=…)` → JSON | `TypeError: Object of type UserData is not JSON serializable` |
+| `proposalRegister.record(…)` → `exportedBy TEXT` | `InterfaceError: Error binding parameter` |
+| `sleeveRepo.*(user=…)` → `sleeveHistory.actor TEXT` | `InterfaceError: Error binding parameter` |
+
+That is every scenario created, every export, and every sleeve save. Fixed by `_callerId()` in
+`dashboardRouter.py`, normalising at the eight consumption points, so the block runs unchanged
+against either host; the twenty `user: str = Depends(...)` annotations were dropped, `str` being
+untrue on the host. Covered by
+`test_the_caller_id_survives_either_shape_of_auth_dependency`, verified to fail against the
+previous module.
+
+**2. The error contract is inverted.** `PmgAppException` puts the HTTP status *phrase* in `error`
+and the message in `detail`; this block puts the message in `error` and adds `field`. Reading
+`error` alone showed a caller "Forbidden" rather than the reason. `apiFetch` now prefers a string
+`detail` and falls back to `error` — checked against seven shapes, including FastAPI's list-shaped
+`detail`, which falls through rather than rendering as `[object Object]`.
+
+Suite after both: **254 passed, 4 skipped**.
+
 ## 10. Risk register
 
 | # | Risk | Severity | Likelihood | Evidence | Mitigation | Needs live Cyrus? |
@@ -529,7 +604,10 @@ throughout; §17 and §18 extended with the five new risks and seven new checks.
 | R16 | Host SQLite older than 3.8.0 — the partial unique index will not compile | High | Low | §8.5; RHEL 7 ships 3.7.17 | One-line check in §11.3.2 | Yes |
 | R17 | Host auth module is `pmgEntitlement`, not `accessControl`; a failed import in the appended block breaks the host's whole dashboard router | High | Medium — the newer source says so | §4.4 | Settle in Step 2 before anything else; §9.2 | Yes |
 | R18 | `PmgAppException` wraps non-2xx bodies in an envelope, breaking the 401 redirect and inline field errors | Medium | Unknown | §4.4; `exceptionHandlers.py` named but not seen | Read it before Step 4; §13.3 | Yes |
-| R19 | `dashboardRouter.py` has been converted to the class-based handler pattern, so the block does not graft on | Medium | Low — the file still exists beside `optimizeSessionRouter.py` | §4.4 | §18 check | Yes |
+| ~~R19~~ | ~~`dashboardRouter.py` converted to class-based handlers~~ | **closed** | — | §4.5: module-level `router` confirmed, byte-identical to the mirror's | — | No |
+| R20 | **In PROD an allowlisted PWA with no PERMIT role can only read** — no scenario, no sleeve, no export | High | Certain unless PWAs are enrolled | §4.5, `pmgEntitlement._allowlistGrant()` | Enrol PWAs in `PMGEditor` before go-live | Partly — the enrolment itself |
+| R21 | Which role maintains the sleeve library is undecided; the policy gives PMGEditor strictly more than ISGAdmin | Medium | Certain | §4.5: `post` is PMGEditor-only | PMG decision, then `requireAdmin` (§9.2) | No |
+| R22 | The router may be mounted at `/api/v1/dashboard`, not `/api/v1` | Medium | Low — the docstring reads as stale | §4.5: proxy builds `/api/v1/{path}` | Confirm before the insert; every §11.1 path shifts if true | Yes |
 | R14 | Stale companion docs mislead a porter (`service/README.md`, `scenario/__init__.py`, `README.md`, `archive/dataOperations.html` counts, `config.py` docstring) | Low | Medium | §4.3 last row | `PORTING.md` Appendix B flags them; fix in a follow-up outside this audit's scope | No |
 
 ## 11. Outstanding decisions and recommended next steps

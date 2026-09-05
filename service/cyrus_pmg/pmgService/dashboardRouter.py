@@ -54,6 +54,25 @@ except Exception:                                     # noqa: BLE001 - reported 
     pass
 
 
+def _callerId(user) -> str:
+    """The caller's kerberos, whatever shape the host's auth dependency returns.
+
+    This mirror's ``accessControl`` dependencies hand back the id itself. The
+    host's ``pmgEntitlement`` dependencies hand back a ``UserData`` carrying it
+    (``requireCan`` returns one), and nothing in the host ever noticed because
+    its own routers use these purely as gates - ``dependencies=[Depends(...)]``
+    - and never bind the value.
+
+    This block does bind it: the scenario store writes it as JSON and both
+    SQLite stores write it to a TEXT column, so a ``UserData`` arriving here is
+    a hard failure rather than a wrong value. Normalising once, here, is what
+    lets the same block run against either.
+    """
+    return (getattr(user, 'kerberos', None)
+            or (user if isinstance(user, str) else '')
+            or 'unknown')
+
+
 def _validationError(exc: ValidationError):
     return JSONResponse(status_code=422,
                         content={'error': exc.message, 'field': exc.field})
@@ -205,7 +224,7 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
 # as the {error, field} body the page already knows how to show.
 
 @router.get('/scenario/repository')
-def getRepository(user: str = Depends(requireAdmin)):
+def getRepository(user=Depends(requireAdmin)):
     """Everything the console needs in one fetch: the types, the
     categories, every sleeve (broken ones included, with their problems
     and provenance), the sleeves that have been archived out of the library
@@ -231,7 +250,7 @@ def getRepository(user: str = Depends(requireAdmin)):
 
 
 @router.post('/scenario/repository/sleeves')
-def createRepositorySleeve(payload: dict = Body(...), user: str = Depends(requireAdmin)):
+def createRepositorySleeve(payload: dict = Body(...), user=Depends(requireAdmin)):
     """Build a sleeve: {category, name, note, products: [{productId, weight}]},
     weights as fractions summing to 1, under `variants` (a list) or `variant`.
 
@@ -245,7 +264,7 @@ def createRepositorySleeve(payload: dict = Body(...), user: str = Depends(requir
             variants = [payload.get('variant')] if payload.get('variant') else []
         made = sleeveRepo.createSleeves(
             variants, payload.get('category'), payload.get('name'),
-            payload.get('products') or [], note=payload.get('note', ''), user=user)
+            payload.get('products') or [], note=payload.get('note', ''), user=_callerId(user))
         return {'sleeves': made, 'sleeve': made[0]}
     except ValidationError as exc:
         return _validationError(exc)
@@ -255,13 +274,13 @@ def createRepositorySleeve(payload: dict = Body(...), user: str = Depends(requir
 
 @router.put('/scenario/repository/sleeves/{sleeveId}')
 def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
-                           user: str = Depends(requireAdmin)):
+                           user=Depends(requireAdmin)):
     """Rename, re-note or re-weight a sleeve. Its type and category are
     fixed at creation - a sleeve moved between them is a different sleeve."""
     try:
         sleeve = sleeveRepo.updateSleeve(
             sleeveId, payload.get('name'), payload.get('products') or [],
-            note=payload.get('note', ''), user=user)
+            note=payload.get('note', ''), user=_callerId(user))
         return {'sleeve': sleeve}
     except ValidationError as exc:
         return _validationError(exc)
@@ -270,20 +289,20 @@ def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
 
 
 @router.delete('/scenario/repository/sleeves/{sleeveId}')
-def deleteRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
+def deleteRepositorySleeve(sleeveId: int, user=Depends(requireAdmin)):
     """Archive a sleeve out of the library. Refused for a fixed category,
     which always holds one. The sleeve is not destroyed (D65): it keeps its
     whole history, appears under the console's Archive, and can be restored.
     A scenario still naming it keeps the name and shows the picker's
     'no longer offered' state until a PWA re-picks - never a substitution."""
     try:
-        return {'deleted': sleeveRepo.deleteSleeve(sleeveId, user=user)}
+        return {'deleted': sleeveRepo.deleteSleeve(sleeveId, user=_callerId(user))}
     except ValidationError as exc:
         return _validationError(exc)
 
 
 @router.get('/scenario/repository/sleeves/{sleeveId}/history')
-def getRepositorySleeveHistory(sleeveId: int, user: str = Depends(requireAdmin)):
+def getRepositorySleeveHistory(sleeveId: int, user=Depends(requireAdmin)):
     """Every revision of one sleeve, newest first, each carrying the whole
     sleeve as it stood plus what moved since the one before it (D65).
 
@@ -293,11 +312,11 @@ def getRepositorySleeveHistory(sleeveId: int, user: str = Depends(requireAdmin))
 
 
 @router.post('/scenario/repository/sleeves/restore')
-def restoreRepositorySleeves(payload: dict = Body(...), user: str = Depends(requireAdmin)):
+def restoreRepositorySleeves(payload: dict = Body(...), user=Depends(requireAdmin)):
     """Put several archived sleeves back at once: {ids: [...]}. All or
     nothing, and checked against itself as well as the library (D66)."""
     try:
-        made = sleeveRepo.restoreSleeves(payload.get('ids') or [], user=user)
+        made = sleeveRepo.restoreSleeves(payload.get('ids') or [], user=_callerId(user))
         return {'sleeves': made}
     except ValidationError as exc:
         return _validationError(exc)
@@ -320,7 +339,7 @@ def _feedFilters(actions: str = '', variant: str = '', category: str = '', actor
 def getRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
                           actor: str = '', since: str = '', until: str = '', q: str = '',
                           limit: int = 100, before: str = '',
-                          user: str = Depends(requireAdmin)):
+                          user=Depends(requireAdmin)):
     """A page of the record as a feed (D66): every revision across every
     sleeve, newest first, with the counts that frame it. `before` is the
     cursor a previous page handed back as `next`."""
@@ -340,7 +359,7 @@ def _csv(columns, rows, filename: str) -> Response:
 
 
 @router.get('/scenario/repository/archive.csv')
-def exportRepositoryArchive(user: str = Depends(requireAdmin)):
+def exportRepositoryArchive(user=Depends(requireAdmin)):
     """The archive as a table: one row per archived sleeve, what it held."""
     return _csv(sleeveRepo.ARCHIVE_COLUMNS, sleeveRepo.archiveRows(), 'sleeve-archive.csv')
 
@@ -348,7 +367,7 @@ def exportRepositoryArchive(user: str = Depends(requireAdmin)):
 @router.get('/scenario/repository/activity.csv')
 def exportRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
                              actor: str = '', since: str = '', until: str = '', q: str = '',
-                             user: str = Depends(requireAdmin)):
+                             user=Depends(requireAdmin)):
     """The feed under the same filters, every page of it, as a table."""
     filters = _feedFilters(actions, variant, category, actor, since, until, q)
     return _csv(sleeveRepo.ACTIVITY_COLUMNS, sleeveRepo.activityRows(**filters),
@@ -366,7 +385,7 @@ def _registerFilters(exportedBy: str = '', primaryPwa: str = '', currency: str =
 def listRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
                           variant: str = '', since: str = '', until: str = '', q: str = '',
                           limit: int = 100, before: str = '',
-                          user: str = Depends(requireAdmin)):
+                          user=Depends(requireAdmin)):
     """A page of the proposal register (D69): every delivered proposal, newest
     first, with the counts that frame it. `before` is the cursor a previous
     page handed back as `next`. No blob travels with a list."""
@@ -377,7 +396,7 @@ def listRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: 
 @router.get('/scenario/repository/proposals.csv')
 def exportRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
                             variant: str = '', since: str = '', until: str = '', q: str = '',
-                            user: str = Depends(requireAdmin)):
+                            user=Depends(requireAdmin)):
     """The register as a table under the same filters, every page of it."""
     filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
     return _csv(proposalRegister.EXPORT_COLUMNS, proposalRegister.exportRows(**filters),
@@ -385,7 +404,7 @@ def exportRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency
 
 
 @router.get('/scenario/repository/proposals/{proposalId}')
-def getRegisterProposal(proposalId: str, user: str = Depends(requireAdmin)):
+def getRegisterProposal(proposalId: str, user=Depends(requireAdmin)):
     """One proposal: both pictures, the sleeve pins with where the library is
     now, and the workbook's name, size and hash - but not its bytes."""
     entry = proposalRegister.getProposal(proposalId)
@@ -395,7 +414,7 @@ def getRegisterProposal(proposalId: str, user: str = Depends(requireAdmin)):
 
 
 @router.get('/scenario/repository/proposals/{proposalId}/workbook')
-def downloadRegisterWorkbook(proposalId: str, user: str = Depends(requireAdmin)):
+def downloadRegisterWorkbook(proposalId: str, user=Depends(requireAdmin)):
     """The delivered workbook, byte for byte, with its hash in a header so
     'this is the file they received' is checkable rather than asserted."""
     found = proposalRegister.workbook(proposalId)
@@ -407,12 +426,12 @@ def downloadRegisterWorkbook(proposalId: str, user: str = Depends(requireAdmin))
 
 
 @router.post('/scenario/repository/sleeves/{sleeveId}/restore')
-def restoreRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
+def restoreRepositorySleeve(sleeveId: int, user=Depends(requireAdmin)):
     """Put a removed sleeve back. Re-validated on the way in: the name may
     have been taken since, and a product it holds may have left the
     catalogue."""
     try:
-        return {'sleeve': sleeveRepo.restoreSleeve(sleeveId, user=user)}
+        return {'sleeve': sleeveRepo.restoreSleeve(sleeveId, user=_callerId(user))}
     except ValidationError as exc:
         return _validationError(exc)
     except products.BadCatalogue as exc:
@@ -421,7 +440,7 @@ def restoreRepositorySleeve(sleeveId: int, user: str = Depends(requireAdmin)):
 
 @router.post('/scenario/repository/sleeves/{sleeveId}/revert')
 def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
-                           user: str = Depends(requireAdmin)):
+                           user=Depends(requireAdmin)):
     """Put an earlier revision back in force: {revision}. Appends a new
     revision rather than rewinding - the revert is itself on the record."""
     try:
@@ -429,7 +448,7 @@ def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
     except (TypeError, ValueError):
         return _validationError(ValidationError('revision', 'Choose a revision to restore.'))
     try:
-        return {'sleeve': sleeveRepo.revertSleeve(sleeveId, number, user=user)}
+        return {'sleeve': sleeveRepo.revertSleeve(sleeveId, number, user=_callerId(user))}
     except ValidationError as exc:
         return _validationError(exc)
     except products.BadCatalogue as exc:
@@ -448,7 +467,7 @@ def getScenario(scenarioId: str):
 # --------------------------------------------------------------- writes -----
 
 @router.post('/scenario')
-def createScenario(payload: dict = Body(...), user: str = Depends(requireEditor)):
+def createScenario(payload: dict = Body(...), user=Depends(requireEditor)):
     """Create a scenario from mandate + basis; returns its id (spec 3.4)."""
     port = getScenarioPort()
     try:
@@ -456,7 +475,7 @@ def createScenario(payload: dict = Body(...), user: str = Depends(requireEditor)
         basis = BasisInput.fromDict(payload.get('basis') or {})
         validateBasis(basis)
         port.validate_mandate(mandate)
-        state = scenarioStore.createScenario(mandate, basis, createdBy=user)
+        state = scenarioStore.createScenario(mandate, basis, createdBy=_callerId(user))
         return {'id': state['id'], 'scenario': _scenarioPayload(state)}
     except ValidationError as exc:
         return _validationError(exc)
@@ -464,7 +483,7 @@ def createScenario(payload: dict = Body(...), user: str = Depends(requireEditor)
 
 @router.put('/scenario/{scenarioId}')
 def updateScenario(scenarioId: str, payload: dict = Body(...),
-                   user: str = Depends(requireEditor)):
+                   user=Depends(requireEditor)):
     """Persist mandate, basis, variant or sleeve updates (deviations D2, D29).
 
     Accepts any subset of {mandate, basis, variant, tacticalTilt, volPremium,
@@ -541,7 +560,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
 
 @router.post('/scenario/{scenarioId}/portfolio')
 def resolvePortfolio(scenarioId: str, payload: dict = Body(...),
-                     user: str = Depends(requireEditor)):
+                     user=Depends(requireEditor)):
     """Resolve one portfolio - THE EXPENSIVE CALL (spec 3.4).
 
     Body: {"key": {allocation, excludeRE, excludeTAA, riskLevel},
@@ -583,7 +602,7 @@ def resolvePortfolio(scenarioId: str, payload: dict = Body(...),
 
 @router.delete('/scenario/{scenarioId}/portfolio/{portfolioKey:path}')
 def removePortfolio(scenarioId: str, portfolioKey: str,
-                    user: str = Depends(requireEditor)):
+                    user=Depends(requireEditor)):
     """Remove a comparison column (spec 3.4). Idempotent."""
     try:
         key = PortfolioKey.fromStr(portfolioKey)
@@ -596,7 +615,7 @@ def removePortfolio(scenarioId: str, portfolioKey: str,
 
 
 @router.post('/scenario/{scenarioId}/export')
-def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
+def exportScenario(scenarioId: str, user=Depends(requireEditor)):
     """The Excel workbook (spec 14). Assembled from stored scenario state.
 
     Refuses (422) while no variant is chosen, a category lacks a sleeve, or
@@ -680,7 +699,7 @@ def exportScenario(scenarioId: str, user: str = Depends(requireEditor)):
         # Record first, deliver second. A proposal that could not be written
         # down is not delivered - the register is worth nothing with holes in
         # it, and this write is one insert of ~30 KB into a local file.
-        proposalRegister.record(scenarioId, user, state.get('createdBy', ''), basis, mandate,
+        proposalRegister.record(scenarioId, _callerId(user), state.get('createdBy', ''), basis, mandate,
                                 results, implementation, model, content, filename)
         return Response(
             content=content,

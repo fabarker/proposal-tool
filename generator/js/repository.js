@@ -1985,7 +1985,7 @@ function catTrayHtml() {
     + '<span class="spacer"></span>'
     + (n ? '<button type="button" class="btn btn-ghost" data-catclearpins>Clear</button>' : '')
     + '<button type="button" class="btn' + (cat.compare ? '' : ' btn-primary') + '" data-catcompare' + (n || cat.compare ? '' : ' disabled') + '>'
-    + (cat.compare ? '← Back to list' : 'Compare · c') + '</button>'
+    + (cat.compare ? '← Back to list' : 'Compare') + '</button>'
     + '</div>';
 }
 
@@ -2031,7 +2031,7 @@ function render() {
   var onRegister = repo.view === 'proposals';
   var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister;
 
-  var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Sleeve Repository</h2>'
+  var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
     + '<button type="button" role="tab" data-repoview="sleeves" aria-selected="' + onSleeves + '">Sleeves</button>'
     + '<button type="button" role="tab" data-repoview="catalogue" aria-selected="' + onCatalogue + '">Catalogue</button>'
@@ -2049,8 +2049,7 @@ function render() {
         }).join('') + '</div>';
   }
   if (d) {
-    header += '<span class="repo-src">Catalogue · ' + d.catalogue.products + ' products · '
-      + esc(d.catalogue.path.split('/').pop()) + ' · ' + esc(shortDate(d.catalogue.modified)) + '</span>';
+    header += '<span class="repo-src">' + esc(shortDate(d.catalogue.modified)) + '</span>';
   }
   header += '<button type="button" class="dlg-close" id="repoclose" data-repoclose aria-label="Close">×</button></div>';
 
@@ -2087,8 +2086,6 @@ function render() {
   } else if (onCatalogue && d) {
     footer = '<div class="repo-f cat-f">' + catTrayHtml()
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
-      + '<span class="repo-src cat-src">' + esc(d.catalogue.path.replace(/^.*\/(productSource\/)/, '$1')) + ' · '
-      + esc(shortDate(d.catalogue.modified)) + ' · read only</span>'
       + '</div>';
   } else {
     var onRemoved = false;
