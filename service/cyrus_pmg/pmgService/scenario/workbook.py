@@ -65,6 +65,8 @@ _PREMIA_LOW = 'C00000'            # assumptions: the low end of a range, red
 _PREMIA_HIGH = '039644'           # ...and the high end, green
 _DOTTED = Side(style='dotted', color='A9A9A9')
 _THIN = Side(style='thin')
+#: the rule that closes a table: solid, thin, black (D78)
+_BLACK_THIN = Side(style='thin', color='000000')
 _HAIR = Side(style='hair')
 _WHITE_FILL = PatternFill('solid', fgColor=_WHITE)
 
@@ -83,27 +85,30 @@ DONUT_DIMENSIONS = [('style', 'Style'), ('vehicle', 'Vehicle'), ('source', 'Sour
 DONUT_PALETTE = ['2A78D6', 'EB6834', '1BAF7A', 'EDA100', 'E87BA4', '4A3AA7', 'E34948']
 _CHART_SHEET = 'chartData'
 
-# The columns of spec 9.3, with 'Minimum Investment' beside the notional it
-# is checked against. The fee group is resolved from the product and still
-# prices the management fee; it is no longer a column of its own.
+# The columns of spec 9.3, less the two that left the sheet on request while
+# staying on the screen: Ticker and Minimum Investment (D78, and see D74 on
+# the screen and the sheet keeping their own header lists).
 IMPL_COLUMNS = [
-    'Categories & Asset Classes', 'Products', 'Allocation (%)', 'Ticker',
+    'Categories & Asset Classes', 'Products', 'Allocation (%)',
     'Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy', 'Product Cost',
-    'Mgmt fee', 'Wtd fee (bp)', 'Minimum Investment', 'Notional',
+    'Mgmt fee', 'Wtd fee (bp)', 'Notional',
 ]
+#: The columns whose values are words rather than figures, left-aligned in the
+#: body. Named rather than sliced by position, so a column leaving the list
+#: cannot silently re-align its neighbours.
+_TEXT_COLUMNS = ('Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy')
 # The two the sheet loses when the proposal excludes fees (D52). A proposal
 # that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
 # rows above the header.
 FEE_COLUMNS = ('Mgmt fee', 'Wtd fee (bp)')
-# The minimum sits beside the notional it is compared against, not beside the
-# cost: a reader checking a position against its minimum reads the two
-# adjacent figures rather than looking across the sheet.
+# Ticker and Minimum Investment are not here: both left the SHEET on request
+# (D78) while staying on the screen, in the catalogue and in the register.
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
-    'Ticker': 9, 'Style': 9, 'Vehicle': 12, 'Source': 10, 'Liquidity': 11,
+    'Style': 9, 'Vehicle': 12, 'Source': 10, 'Liquidity': 11,
     'Exposure ccy': 12, 'Product Cost': 12, 'Mgmt fee': 10,
-    'Wtd fee (bp)': 12, 'Minimum Investment': 18, 'Notional': 14,
+    'Wtd fee (bp)': 12, 'Notional': 14,
 }
 
 
@@ -451,7 +456,12 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
             _bpCell(sheet.cell(row=row, column=at['Wtd fee (bp)']), value)
 
     for group in model['groups']:
-        sheet.append([group['category'], group['sleeve'] or 'No sleeve attached'])
+        # The category alone: the Products cell of a band row is left empty on
+        # request (D78). The sleeve that implemented the category is still on
+        # the screen and pinned in the register's implemented picture, with its
+        # revision - it is the products beneath the band that this sheet is
+        # for, and the band names the category they belong to.
+        sheet.append([group['category']])
         row = sheet.max_row
         for column in range(1, len(columns) + 1):
             cell = sheet.cell(row=row, column=column)
@@ -468,46 +478,52 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
             notional.number_format = '$#,##0'
         for item in group['items']:
             line = [
-                '  ' + item['assetClass'], item['name'], None, item['ticker'],
+                '  ' + item['assetClass'], item['name'], None,
                 item['style'], item['vehicle'], item['source'], item['liquidity'],
                 item['exposureCurrency'], None,
             ]
             if includeFees:
                 line += [None, None]
-            sheet.append(line + [None, None])
+            sheet.append(line + [None])
             row = sheet.max_row
             for column in range(1, len(columns) + 1):
-                sheet.cell(row=row, column=column).font = bodyFont
+                cell = sheet.cell(row=row, column=column)
+                cell.font = bodyFont
+                # The table stands on white rather than on the sheet's default
+                # nothing, so the grid does not show through it and the block
+                # reads as one object (D78). The band and header fills above
+                # and the breach fill below are painted over this.
+                cell.fill = _WHITE_FILL
             _weightCell(sheet.cell(row=row, column=3), item['printedPct'])
             _feeCell(sheet.cell(row=row, column=at['Product Cost']),
                      float(item['productCost']))
             if includeFees:
                 _feeCell(sheet.cell(row=row, column=at['Mgmt fee']), item['managementFee'])
             _bpAt(row, item['wtdFeeBp'])
-            minimum = sheet.cell(row=row, column=at['Minimum Investment'])
-            if item.get('minimumInvestment') is not None:
-                minimum.value = float(item['minimumInvestment'])
-                minimum.number_format = '$#,##0'
             notional = sheet.cell(row=row, column=at['Notional'])
             notional.value = item['notional']
             notional.number_format = '$#,##0'
             if item.get('belowMinimum'):
                 # the sheet says so too: a workbook read away from the page
-                # must not look clean when the page refused to export it
-                for column in (at['Minimum Investment'], at['Notional']):
-                    breached = sheet.cell(row=row, column=column)
-                    breached.font = Font(name='Calibri', size=11, bold=True,
-                                         color=_BREACH_INK)
-                    breached.fill = PatternFill('solid', fgColor=_BREACH_FILL)
+                # must not look clean when the page refused to export it. The
+                # notional carries the mark alone now that the minimum it
+                # breaches is not a column of the sheet (D78) - it is the
+                # figure at fault either way.
+                notional.font = Font(name='Calibri', size=11, bold=True,
+                                     color=_BREACH_INK)
+                notional.fill = PatternFill('solid', fgColor=_BREACH_FILL)
 
     sheet.append(['Total'])
     row = sheet.max_row
     for column in range(1, len(columns) + 1):
         cell = sheet.cell(row=row, column=column)
         cell.font = boldFont
+        cell.fill = _WHITE_FILL
         # ruled above and below: the total closes the table, and a single
-        # line above it reads as just another separator between groups
-        cell.border = Border(top=_DOTTED, bottom=_DOTTED)
+        # line above it reads as just another separator between groups. Solid
+        # black and thin, so the close is a rule rather than another of the
+        # grey dotted separators the groups already use (D78).
+        cell.border = Border(top=_BLACK_THIN, bottom=_BLACK_THIN)
     _weightCell(sheet.cell(row=row, column=3), model['total']['weightPct'])
     _bpAt(row, model['total']['wtdFeeBp'])
     notional = sheet.cell(row=row, column=at['Notional'])
@@ -517,11 +533,12 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     totalRow = row
     for index, name in enumerate(columns, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = _WIDTHS[name]
+    text = [at[name] for name in _TEXT_COLUMNS if name in at]
     for row_cells in sheet.iter_rows(min_row=headerRow + 1):
         for cell in row_cells[2:]:
             cell.alignment = Alignment(horizontal='right')
-        for cell in row_cells[3:9]:
-            cell.alignment = Alignment(horizontal='left')
+        for index in text:
+            row_cells[index - 1].alignment = Alignment(horizontal='left')
 
     # the composition doughnuts, under the table the page draws them under
     writeDonutCharts(book, sheet, model, totalRow + 3)
@@ -731,7 +748,11 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
                               end_row=row, end_column=first + 1)
 
     sheet.append([None] + sum([[r['name'], None] for r in results], []))
-    paint(1, onNavy, navy, height=35, vertical='center')
+    # Every row of this table is 16 high on request (D78). The library's own
+    # sheet varied three of them - a deep header, a taller first category and
+    # a taller first stress row - and engineParity restores those for the
+    # golden comparison, as it restores the rows of D68.
+    paint(1, onNavy, navy, height=35 if engineParity else 16, vertical='center')
     merge(1)
 
     order, _ = _categoryOrder(results, engineParity)
@@ -742,7 +763,7 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
             values.extend([None if weight is None else weight / 100.0, None])
         sheet.append([categoryName] + values)
         paint(sheet.max_row, narrow, fmt='0.0%',
-              height=20 if sheet.max_row == 2 else 16)
+              height=20 if engineParity and sheet.max_row == 2 else 16)
         merge(sheet.max_row)
 
     # The library left four unlabelled rows in here - two before the metrics
@@ -792,7 +813,7 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
             # the report gives the first stress row a taller band and the rest
             # a plain one; nothing else on the sheet varies
             paint(sheet.max_row, narrow, fmt='0.0%', labelAlign='left', indent=1,
-                  height=20 if sheet.max_row == 18 else 16)
+                  height=20 if engineParity and sheet.max_row == 18 else 16)
 
     band('Factor Based Risk Analytics')
     subhead('Predicted Performance Over Stress Periods', heads=True)
@@ -822,7 +843,17 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
                             sign * entry['realPct'] / 100.0)
             return None, None
         rows(horizons, readPremia)
-    band('Portfolio Risk Premia')
+
+    # The library closed the sheet with a navy band reading 'Portfolio Risk
+    # Premia' - a heading with nothing beneath it, since the three premia
+    # blocks it names are above. It goes (D78): the table ends on its last
+    # figure, ruled off in solid black. engineParity keeps the band, so the
+    # golden comparison still has something to compare.
+    if engineParity:
+        band('Portfolio Risk Premia')
+    else:
+        for index in range(1, span + 2):
+            sheet.cell(row=sheet.max_row, column=index).border = Border(bottom=_BLACK_THIN)
 
     # red below zero, green above - the report's own rule over the stress block
     sheet.conditional_formatting.add(

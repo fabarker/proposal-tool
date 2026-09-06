@@ -1242,7 +1242,7 @@ def test_excluding_fees_takes_the_columns_off_the_sheet():
     assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS]
     assert len(implColumns(False)) == len(IMPL_COLUMNS) - 2
     # the columns that survive keep their order and their neighbours
-    assert implColumns(False)[-2:] == ['Minimum Investment', 'Notional']
+    assert implColumns(False)[-2:] == ['Product Cost', 'Notional']
 
 
 def test_an_excluded_workbook_carries_no_fee_column_and_no_fee_header(tmp_path):
@@ -1779,16 +1779,129 @@ def test_the_risk_dashboard_has_no_unlabelled_rows():
                       column=2).border.top.style == 'dotted'
 
 
-def test_the_implementation_total_is_ruled_above_and_below():
+def test_the_implementation_total_is_ruled_above_and_below_in_solid_black():
+    """D78. Thin, solid and black on both edges, right across the table: the
+    total closes it, where the grey dotted rules only separate groups."""
     from openpyxl import load_workbook
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
     # the doughnut captions follow the table now (item 9), so find the total
     row = next(r for r in range(1, sheet.max_row + 1)
                if sheet.cell(row=r, column=1).value == 'Total')
-    for column in range(1, sheet.max_column + 1):
+    columns = len(implColumns(True))
+    for column in range(1, columns + 1):
         border = sheet.cell(row=row, column=column).border
-        assert getattr(border.top, 'style', None) == 'dotted', column
-        assert getattr(border.bottom, 'style', None) == 'dotted', column
+        for side in (border.top, border.bottom):
+            assert getattr(side, 'style', None) == 'thin', column
+            assert (getattr(side.color, 'rgb', None) or '')[-6:] == '000000', column
+
+
+def test_the_implementation_table_stands_on_white():
+    """D78. Every cell of the table carries a fill, so the sheet's grid does
+    not show through it. White is the ground; the header band, the category
+    bands and a breached notional are painted over it, and nothing else is."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import workbook as wb
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
+    header = next(r for r in range(1, 12)
+                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
+    total = next(r for r in range(header, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'Total')
+    columns, items, seen = len(implColumns(True)), 0, set()
+    for row in range(header, total + 1):
+        label = str(sheet.cell(row=row, column=1).value or '')
+        for column in range(1, columns + 1):
+            fill = sheet.cell(row=row, column=column).fill
+            assert fill.patternType == 'solid', ('unfilled cell', row, column)
+            seen.add((fill.fgColor.rgb or '')[-6:])
+        if label.startswith('  '):
+            items += 1
+            # the product's own name, never a cell the breach mark can reach
+            assert (sheet.cell(row=row, column=2).fill.fgColor.rgb or '')[-6:] == 'FFFFFF', row
+    assert items, 'no product rows were checked'
+    for column in range(1, columns + 1):
+        assert (sheet.cell(row=total, column=column).fill.fgColor.rgb or '')[-6:] == 'FFFFFF', column
+    assert seen <= {'FFFFFF', wb._BAND, wb._HEADER_NAVY, wb._BREACH_FILL}, seen
+    assert 'FFFFFF' in seen
+
+
+def test_a_category_band_names_the_category_and_nothing_else():
+    """D78. The Products cell of a band row is empty: the sleeve that
+    implemented the category is the screen's and the register's to report, not
+    this sheet's. The band's own figures - weight, fee, notional - stay."""
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
+    header = next(r for r in range(1, 12)
+                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
+    total = next(r for r in range(header, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'Total')
+    bands = [r for r in range(header + 1, total)
+             if sheet.cell(row=r, column=1).value
+             and not str(sheet.cell(row=r, column=1).value).startswith('  ')]
+    assert bands, 'no category rows were found'
+    for row in bands:
+        assert sheet.cell(row=row, column=2).value is None, (
+            row, sheet.cell(row=row, column=2).value)
+        assert sheet.cell(row=row, column=3).value is not None, 'the band keeps its weight'
+    # and the screen's empty-sleeve wording reaches no cell of the workbook
+    assert 'No sleeve attached' not in {
+        cell.value for row in sheet.iter_rows() for cell in row}
+
+
+def test_the_risk_dashboard_ends_on_a_figure_ruled_off_in_black():
+    """D78. The library closed this sheet with a navy 'Portfolio Risk Premia'
+    band - a heading with nothing under it. It is gone; the last row of
+    figures carries a solid black rule instead, right across the table."""
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    labels = [sheet.cell(row=r, column=1).value for r in range(1, sheet.max_row + 1)]
+    assert 'Portfolio Risk Premia' not in labels
+    assert str(labels[-1]).strip() == 'Over 3 Years', labels[-3:]
+    for column in range(1, sheet.max_column + 1):
+        side = sheet.cell(row=sheet.max_row, column=column).border.bottom
+        assert getattr(side, 'style', None) == 'thin', column
+        assert (getattr(side.color, 'rgb', None) or '')[-6:] == '000000', column
+    # and nowhere else: the rule closes the table rather than banding it
+    for row in range(1, sheet.max_row):
+        for column in range(1, sheet.max_column + 1):
+            assert getattr(sheet.cell(row=row, column=column).border.bottom,
+                           'style', None) != 'thin', (row, column)
+
+
+def test_every_row_of_the_risk_dashboard_is_the_same_height():
+    """D78. Sixteen throughout, where the library varied three rows."""
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    heights = {r: sheet.row_dimensions[r].height for r in range(1, sheet.max_row + 1)}
+    assert set(heights.values()) == {16}, {r: h for r, h in heights.items() if h != 16}
+
+
+def test_engine_parity_still_reproduces_the_bands_and_heights_it_was_built_for():
+    """The golden comparison is the reason engineParity exists (D68, D78): the
+    production sheet drops the trailing band and levels the rows, and the flag
+    puts both back so the captured workbook still has a counterpart."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import assetEstimates
+    from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
+    results, implementation = _goldenCase()
+    def build(parity):
+        return load_workbook(io.BytesIO(writeWorkbook(
+            BasisInput(currency='USD', hedging='Hedged'),
+            MandateInput(topAccountSize=50e6, mandateSize=50e6, primaryPwa='x'),
+            results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+            implementation['variant'], implementation['tacticalTilt'],
+            implementation['feeSchedule'], implementation['feeLevel'],
+            implementation['includeFees'], implementation['volPremium'],
+            assets=assetEstimates.forSlice('USD', 'Hedged'),
+            engineParity=parity)))['risk_dashboard']
+    parity, plain = build(True), build(False)
+    assert parity.cell(row=parity.max_row, column=1).value == 'Portfolio Risk Premia'
+    assert plain.cell(row=plain.max_row, column=1).value != 'Portfolio Risk Premia'
+    # parity also restores the rows of D68, so it is the taller sheet by more
+    # than the band alone; what matters is that the band and the three heights
+    # the captured workbook carries are still there under the flag.
+    assert parity.max_row > plain.max_row
+    assert [parity.row_dimensions[r].height for r in (1, 2, 18)] == [35, 20, 20]
+    assert {plain.row_dimensions[r].height for r in range(1, plain.max_row + 1)} == {16}
 
 
 def test_the_assumptions_sheet_explains_only_what_the_proposal_holds():
@@ -1860,7 +1973,7 @@ def test_the_fee_group_column_is_gone_but_still_prices_the_row():
 def test_the_cost_column_is_named_product_cost():
     """Item 2. Header text only - the field behind it is unchanged."""
     assert 'Product Cost' in IMPL_COLUMNS and 'Cost' not in IMPL_COLUMNS
-    assert IMPL_COLUMNS.index('Product Cost') == 9
+    assert IMPL_COLUMNS.index('Product Cost') == 8
     result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,

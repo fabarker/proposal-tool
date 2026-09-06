@@ -1232,7 +1232,8 @@ nav for users.
     the mandate in the test to prove the success path.
 12. A successful export downloads `PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx` with sheets
     `portfolios, risk_dashboard, assumptions, Implementation` (+ hidden `chartData`); the
-    Implementation sheet's first row reads `Proposal UID` / `<uid>` and the same `<uid>` is the
+    Implementation sheet's first row reads `Proposal UID` / `<uid>`, its table carries twelve columns
+    (ten unpriced) with no Ticker and no Minimum Investment (D78), and the same `<uid>` is the
     filename's last token and the new row's id in the console's Proposals tab (D75); the
     Implementation total is exactly 100.00%; the doughnut charts render in Excel.
 12a. Start here: the card shows **Continue · Cancel** far left and **Create Account Opening Request**
@@ -1483,6 +1484,9 @@ One line each; the register carries the reasoning.
   placeholder option lists on the schema.
 - **D77** Two tiers: the proposal flow is gated on the allowlist alone (`view`), the repository on
   `ISGAdmin`; `requireEditor` is no longer imported; the mirror hands allowlisted callers PROD's grant.
+- **D78** Workbook formatting: the risk dashboard loses its trailing band and levels every row to 16,
+  closing on a solid black rule; the Implementation table is filled white, its Total ruled in solid
+  black, and Ticker and Minimum Investment leave the sheet (both stay on the screen and in the register).
 
 ## Appendix B — where the rest is written down
 
