@@ -1513,7 +1513,13 @@ One line each; the register carries the reasoning.
 The package treats each of these as data and validates rather than guesses: a file that does not
 match is refused at load with a message naming the file and the column, never coerced. Everything
 below is read from the validating readers named in each heading (Verified at the commit of this
-guide); the stand-in files under `proposal-tool/` are conforming examples of each shape. Where a
+guide); the stand-in files under `proposal-tool/` are conforming examples of each shape.
+
+**Hand `dataTemplates/ProposalTool_DataTemplates.xlsx` to whoever supplies the data.** It is this
+appendix as a workbook: one sheet per file below, each a table to fill in with the header row the
+reader demands, dropdowns on every closed-vocabulary column, the rule on each header cell as a
+note, and two example rows to delete. It is generated from the readers themselves
+(`dataTemplates/build_templates.py`), so rebuild it rather than editing it when a column changes. Where a
 value must come from a closed vocabulary, the vocabulary is given — it is code, and a new value
 upstream is a code change here, not a data change.
 
