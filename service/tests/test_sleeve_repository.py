@@ -365,7 +365,7 @@ def test_admin_is_a_third_role_gating_the_repository(monkeypatch):
     monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice,bob')
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice,carol')
     assert accessControl.isAdmin('alice')
-    assert not accessControl.isAdmin('bob'), 'an editor is not an admin'
+    assert not accessControl.isAdmin('bob'), 'a PWA is not an admin'
     assert not accessControl.isAdmin('carol'), 'an admin must also be on the access list'
     assert accessControl.requireAdmin(_request('alice')).kerberos == 'alice'
     from fastapi import HTTPException
@@ -1182,10 +1182,10 @@ def test_the_mirror_hands_out_the_shape_the_host_hands_out(monkeypatch):
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
 
     admin = accessControl.requireAuth(_request('alice'))
-    editor = accessControl.requireAuth(_request('bob'))
+    pwa = accessControl.requireAuth(_request('bob'))
 
     # the five attributes cyrus_pmg.pmgService.core.pmgEntitlement ever reads
-    for who in (admin, editor):
+    for who in (admin, pwa):
         assert isinstance(who.kerberos, str) and who.kerberos
         assert isinstance(who.role, str)
         assert isinstance(who.roles, list)
@@ -1193,18 +1193,19 @@ def test_the_mirror_hands_out_the_shape_the_host_hands_out(monkeypatch):
         assert isinstance(who.actionsAllowed, list)
 
     assert admin.role == accessControl.ROLE_ADMIN
-    assert editor.role == accessControl.ROLE_EDITOR
+    assert pwa.role == accessControl.ROLE_VIEWER, "the access list alone is PROD's grant: view"
     assert accessControl.hasRole(admin, accessControl.ROLE_ADMIN)
-    assert not accessControl.hasRole(editor, accessControl.ROLE_ADMIN)
+    assert not accessControl.hasRole(pwa, accessControl.ROLE_ADMIN)
 
-    # the gates the router gets its dependencies from, expressed as the host
-    # expresses them: pmgapi:view for reads, pmgapi:modify for writes
-    for who in (admin, editor):
+    # the grants as the host expresses them: an allowlisted PWA holds
+    # pmgapi:view and nothing more, which is all the proposal flow asks (D77)
+    for who in (admin, pwa):
         assert accessControl.can(who, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_VIEW)
-        assert accessControl.can(who, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_MODIFY)
-    # post is PMGEditor's alone - ISGAdmin does not hold it, per the policy
-    assert not accessControl.can(admin, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_POST)
-    assert accessControl.can(editor, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_POST)
+    assert accessControl.can(admin, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_MODIFY)
+    assert not accessControl.can(pwa, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_MODIFY)
+    # post is PMGEditor's alone - neither of these holds it, per the policy
+    for who in (admin, pwa):
+        assert not accessControl.can(who, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_POST)
 
     # and every write endpoint receives that object, not an id
     made = dashboardRouter.createRepositorySleeve(

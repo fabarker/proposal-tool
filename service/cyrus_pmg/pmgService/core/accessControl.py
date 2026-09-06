@@ -108,8 +108,14 @@ def can(userData, resource: str, action: str) -> bool:
 def _rolesFor(kerberos: str):
     """The roles this stand-in grants. The host reads PERMIT membership; here
     the two environment lists stand in for it - the admin list is ISGAdmin, the
-    access list on its own is PMGEditor, which keeps every gate answering
-    exactly as it did when these dependencies returned a bare string.
+    access list on its own is PMGViewer.
+
+    PMGViewer, not PMGEditor, because that is what the host's allowlist grants
+    in PROD (``pmgEntitlement``: view on every resource; modify needs a PERMIT
+    role). The proposal flow is gated on view alone (D77), so the mirror
+    hands out the strictest grant the host ever will and the suite proves the
+    flow on that footing - a PWA on the access list runs it end to end, and
+    only the admin list reaches the repository.
 
     A kerberos on neither list holds nothing, as the host's isValidUser returns
     an empty UserData for one; and an admin must also be on the access list, so
@@ -118,7 +124,7 @@ def _rolesFor(kerberos: str):
         return []
     if kerberos in getAdminAllowlist():
         return [ROLE_ADMIN]
-    return [ROLE_EDITOR]
+    return [ROLE_VIEWER]
 
 
 def getAllowlist():
@@ -174,8 +180,10 @@ def requireAuth(request: Request) -> UserData:
 
 
 def requireEditor(request: Request) -> UserData:
-    """FastAPI dependency for writes: the caller may modify. The host's
-    equivalent is ``pmgapi:modify``, which ISGAdmin and PMGEditor both hold."""
+    """FastAPI dependency: the caller may modify. The host's equivalent is
+    ``pmgapi:modify``, which ISGAdmin and PMGEditor hold and the PROD allowlist
+    does not. Kept because the host has it; the endpoint block no longer uses
+    it (D77) - the proposal flow is a PWA's own work and needs only view."""
     userData = requireAuth(request)
     if not can(userData, RESOURCE_PMGAPI, ACTION_MODIFY):
         raise HTTPException(

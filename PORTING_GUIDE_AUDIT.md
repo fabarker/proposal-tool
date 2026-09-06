@@ -692,3 +692,26 @@ Suite: **254 passed, 4 skipped**.
    when a default path does not exist, or drop the out-of-package defaults. That is a code change
    and was not made here.
 5. Then execute `PORTING.md` §8 step by step, holding to §15 before the nav link goes in.
+
+---
+
+## Addendum — 5 September 2026, after D75 and D76
+
+Two changes landed after this audit: the Proposal UID on every delivered workbook (D75) and the
+account opening request (D76). Re-checked by the same method at the commit that follows `d78d908`:
+the scenario package still imports no other part of the host (grep over `scenario/*.py`);
+`portfolio_weights.py` is still identical to its source of record; the page and its service mirror
+are identical after a rebuild; the three censuses pass on throwaway stores; the suite is **289
+passed, 4 skipped**. The guide's counts were brought up to date (26 modules, 28 routes), the router
+gained explicit `TRANSPLANT BLOCK BEGIN/END` markers so §9.1 copies by boundary rather than by line
+number, `PMG_ADMIN_KERBEROS` is marked mirror-only (on the host `isAdmin` is `ISGAdmin`
+membership), the §11.4 reference block is in the host env file's own idiom, and Appendix C now
+gives a column-level contract for every file the host supplies. Verdict unchanged: **ready with
+the specified changes** — the two functions in `pmgEntitlement.py`, one Flask route, one nav link,
+the settings block, two dependencies, and the data.
+
+Later the same day, D77: the proposal flow was re-gated on the allowlist alone and the repository
+left on `ISGAdmin`, after the host's `pmgEntitlement.py` showed that PROD grants an allowlisted
+kerberos `view` only and that `PMGEditor` carries `modify`/`post` on every Cyrus resource. The
+block imports three names from `pmgEntitlement` now, not four; the §17 PROD risk is closed; the
+mirror hands allowlisted callers `PMGViewer`, and an HTTP-level test runs the whole flow as one.

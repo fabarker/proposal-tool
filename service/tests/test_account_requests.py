@@ -17,7 +17,7 @@ from starlette.requests import Request
 from cyrus_pmg.pmgService import dashboardRouter
 from cyrus_pmg.pmgService.scenario import accountRequests, proposalRegister
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
-from cyrus_pmg.pmgService.scenario.types import BasisInput
+from cyrus_pmg.pmgService.scenario.types import BasisInput, PortfolioKey
 from test_proposal_register import _caller, _deliver
 
 
@@ -185,12 +185,71 @@ def test_the_store_is_append_only_by_construction():
     assert not [n for n in public if any(w in n.lower() for w in ('update', 'delete', 'remove', 'edit'))]
 
 
-def test_the_lookup_is_a_read_and_submit_is_a_write():
-    def deps(path, method):
-        for route in dashboardRouter.router.routes:
-            if route.path == path and method in route.methods:
-                return [d.call.__name__ for d in route.dependant.dependencies]
-        raise AssertionError('no route {} {}'.format(method, path))
-    assert 'requireEditor' in deps('/scenario/account-requests', 'POST')
-    assert 'requireEditor' not in deps('/scenario/proposals/{proposalId}', 'GET')
-    assert 'requireEditor' not in deps('/scenario/account-requests/{requestId}', 'GET')
+# ------------------------------------------------------------ the two tiers ---
+# A PWA on the access list runs the whole proposal flow; the repository is the
+# admin's alone (D77). Locked structurally on the routes, then proven over
+# HTTP through the mirror app with the strictest grant the host ever makes.
+
+def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the_admin():
+    seen = 0
+    for route in dashboardRouter.router.routes:
+        if not route.path.startswith('/scenario'):
+            continue
+        names = [d.call.__name__ for d in route.dependant.dependencies]
+        seen += 1
+        if route.path.startswith('/scenario/repository'):
+            assert 'requireAdmin' in names, (route.path, names)
+        else:
+            assert 'requireEditor' not in names and 'requireAdmin' not in names, (route.path, names)
+            assert set(names) <= {'requireAuth'}, (route.path, names)
+    assert seen == 28
+
+
+def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):
+    """Over HTTP. bob is on the access list only - which in PROD is `view` and
+    nothing more - and alice is an admin. bob creates, resolves, attaches,
+    exports and requests; the repository answers 403 to bob and 200 to alice;
+    the schema tells the page which is which."""
+    from fastapi.testclient import TestClient
+    from cyrus_pmg.pmgService.core import accessControl
+    from cyrus_pmg.pmgService.isgPMGService import app
+    from cyrus_pmg.pmgService.scenario import sleeves
+    from test_scenario_backend import BASIS, PORT, _sleeveMap
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice,bob')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    bob = accessControl.requireAuth(_request('bob'))
+    assert not accessControl.can(bob, accessControl.RESOURCE_PMGAPI, accessControl.ACTION_MODIFY), \
+        'the strictest footing: bob may not modify, and still does everything below'
+
+    client = TestClient(app)
+    pwa, admin = {'X-Kerberos': 'bob'}, {'X-Kerberos': 'alice'}
+    made = client.post('/api/v1/scenario', headers=pwa, json={
+        'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9, 'primaryPwa': 'A. Castellanos — Madrid'},
+        'basis': {'currency': 'USD', 'hedging': 'Hedged'}})
+    assert made.status_code == 200, made.text
+    sid = made.json()['id']
+    key = {'currency': 'USD', 'riskLevel': 'Moderate', 'allocationType': 'Full', 'excludeRealAssets': False}
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa,
+                      json={'variant': sleeves.VARIANTS[0]}).status_code == 200
+    resolved = client.post('/api/v1/scenario/' + sid + '/portfolio', headers=pwa,
+                           json={'key': key, 'role': 'base'})
+    assert resolved.status_code == 200, resolved.text
+    chosen = _sleeveMap(PORT.resolve_portfolio(BASIS, PortfolioKey.fromDict(key))['categories'],
+                        sleeves.VARIANTS[0])
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'sleeves': chosen}).status_code == 200
+    exported = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
+    assert exported.status_code == 200, exported.text
+    uid = exported.headers['x-proposal-id']
+    requested = client.post('/api/v1/scenario/account-requests', headers=pwa, json=_payload(uid))
+    assert requested.status_code == 200, requested.text
+    assert requested.json()['request']['submittedBy'] == 'bob'
+
+    for path in ('/api/v1/scenario/repository', '/api/v1/scenario/repository/proposals',
+                 '/api/v1/scenario/repository/proposals/' + uid):
+        refused = client.get(path, headers=pwa)
+        assert refused.status_code == 403, (path, refused.text)
+        assert 'error' in refused.json()
+    assert client.get('/api/v1/scenario/repository', headers=admin).status_code == 200
+    assert client.get('/api/v1/scenario/repository/proposals/' + uid, headers=admin).status_code == 200
+    assert client.get('/api/v1/scenario/schema', headers=pwa).json()['capabilities']['canAdmin'] is False
+    assert client.get('/api/v1/scenario/schema', headers=admin).json()['capabilities']['canAdmin'] is True

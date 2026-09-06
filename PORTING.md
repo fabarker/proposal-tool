@@ -42,8 +42,8 @@ only step in the guide that can break something that already works.
 Steps 1–7: dependencies, the auth names, the package copy, the endpoint block, the data delivery,
 the page folder and route, the nav link. After those, everything on the page works — the mandate,
 the basis, the base portfolio and up to three comparisons, the risk dashboard, implementation
-types, sleeves, the tilt and volatility overlays, fees, the register and the admin console — with
-one exception below.
+types, sleeves, the tilt and volatility overlays, fees, the register, the account opening request
+(D76) and the admin console — with one exception below.
 
 ### What does not work, and what unlocks each
 
@@ -56,6 +56,7 @@ one exception below.
 | The advisor typeahead | A 24-row stub with no environment override | A code change in `advisors.py` (§6) |
 | GBP / CHF / EUR analytics | Baked in a USD context; honest and stamped, but not native | Currency configs in the library, then a re-bake |
 | Looking like Cyrus | Self-contained stylesheet, not OneGS | The retheme (§10.5) — a measured piece of work, not a token swap |
+| The account opening request going anywhere | Submit records the request in the register file and says *recorded*; the option lists (account types, booking centres, funding sources) are placeholders flagged on the schema (D76) | Operations' lists in `accountRequests.py`; a destination for Submit — a code change once one is named |
 
 Measured against the packaged catalogue, so you can see the shape of the export block:
 
@@ -66,11 +67,14 @@ Measured against the packaged catalogue, so you can see the shape of the export 
 | $250m | 18 | 3 | refused (422) |
 | $1bn | 18 | 0 | allowed |
 
-### One gate that only bites in production
+### Two tiers, and no PERMIT enrolment for PWAs
 
-In PROD, `PMG_ALLOWED_KERBEROS` alone grants `view`. A PWA not enrolled in `PMGEditor` can open the
-tool and cannot create a scenario, attach a sleeve or export. In DEV and UAT every caller is
-auto-granted `ISGAdmin`, **so this looks fine in testing and fails on release** (§4.0).
+The proposal flow — create, compare, implement, export, request an account opening — needs only
+what the allowlist grants in PROD (`view`); the repository console needs `ISGAdmin` (D77). So a PWA
+on `PMG_ALLOWED_KERBEROS` uses the whole tool with no PERMIT role and never sees the repository, the
+catalogue or the register. In DEV and UAT every caller is auto-granted `ISGAdmin`, **so everyone
+sees the console in testing and only admins do on release** (§4.0) — test the admin experience
+there, and the PWA experience with a kerberos that is on the allowlist and in no PERMIT group.
 
 ### Two stages, then
 
@@ -79,7 +83,7 @@ auto-granted `ISGAdmin`, **so this looks fine in testing and fails on release** 
 Everything works except export, which needs an unrealistic mandate until minimums land.
 
 **Client-ready** — additionally: real minimums, the real fee card, real sleeve holdings, the real
-SAA extract, the advisor directory, PWAs enrolled in `PMGEditor`, and the retheme.
+SAA extract, the advisor directory, and the retheme.
 
 Nothing in the first list is a decision; everything in the second belongs to PMG or to a
 delivering team. §17 names the owners, and §18's remaining checks are formalities against the live
@@ -135,7 +139,7 @@ Behind it, in the order a request travels:
 2. **The Flask gate and proxy** — the host's own; `/api/<x>` becomes `/api/v1/<x>`.
 3. **The router block** — 25 endpoints on the host's FastAPI `dashboardRouter`: 5 reads, 5 editor
    writes, 15 admin routes for the sleeve repository console.
-4. **The scenario package** — 25 modules. A `ScenarioPort` protocol with three implementations
+4. **The scenario package** — 26 modules. A `ScenarioPort` protocol with three implementations
    (`fixtures`, `live`, `baked`), the rules, the wire payloads, four stores and the Excel writer.
 5. **The data** — four delivered extracts (strategic portfolios, products, fee card, advisors), a
    baked analytics store produced offline, and four stores the tool owns (scenarios, sleeves, the
@@ -156,7 +160,7 @@ browser ──► Flask :8001 (host: dashboardFrontend.py)
               ├─ /static/js/accessGate.js, /static/js/globals.js   the host's own shared JS
               └─ /api/<x>  ─proxy─►  FastAPI :8002 (host: isgPMGService.py, PMG_SVC_PORT)
                                         └─ /api/v1/…  dashboardRouter  ◄─ INSERT the endpoint block
-                                              │  Depends(requireAuth | requireEditor | requireAdmin)
+                                              │  Depends(requireAuth | requireAdmin)
                                               ▼
                                         cyrus_pmg.pmgService.scenario   ◄─ COPY verbatim
                                               ├─ registry.getScenarioPort()  → bakedAdapter (prod)
@@ -238,7 +242,7 @@ placeholder), `assetEstimates.json` (the packaged fallback for the assumptions s
 696 lines, entirely the block. Anatomy (line numbers as at `9f4dc50`):
 
 - lines 20–39: imports — `fastapi` (`APIRouter, Body, Depends, Request, Response`, `JSONResponse`),
-  `cyrus_pmg.pmgService.core.accessControl` (`isAdmin, requireAdmin, requireAuth, requireEditor`
+  `cyrus_pmg.pmgService.core.accessControl` (`isAdmin, requireAdmin, requireAuth`
   — one line, retargeted at `pmgEntitlement` on the host, §9.2), and
   `cyrus_pmg.pmgService.scenario.*`;
 - line 41: `router = APIRouter(dependencies=[Depends(requireAuth)])` — **the host already has this
@@ -247,7 +251,7 @@ placeholder), `assetEstimates.json` (the packaged fallback for the assumptions s
   swallowed and reported per request;
 - helpers `_validationError`, `_notFound`, `_analyticsError`, `_includeFees`, `_scenarioPayload`,
   `_feedFilters`, `_csv`;
-- 25 handlers (§11.1). All sync `def` on purpose: FastAPI runs them in the threadpool.
+- 28 handlers (§11.1). All sync `def` on purpose: FastAPI runs them in the threadpool.
 
 The router reads no environment and opens no file itself (Verified); everything goes through the
 package.
@@ -338,10 +342,11 @@ two:
 - **`post` is PMGEditor-only — ISGAdmin does not have it**, per the policy table. So there is no
   `resource:action` that isolates an administrator, and `requireAdmin` has to test role membership
   (`hasRole(userData, 'ISGAdmin')`) rather than a permission.
-- **In PROD the allowlist alone grants only `view`.** A kerberos on `PMG_ALLOWED_KERBEROS` but in
-  no PERMIT group can read the tool and cannot create a scenario, attach a sleeve or export. In
-  DEV/UAT-and-below every caller is short-circuited to a synthetic `ISGAdmin`. Getting PWAs into
-  `PMGEditor` is a go-live prerequisite, not a detail.
+- **In PROD the allowlist alone grants only `view`** — and that is all the proposal flow asks (D77).
+  Every `/scenario` route outside the repository inherits the router-level `requireAuth`; nothing
+  a PWA does needs `modify`. Enrolling PWAs in `PMGEditor` would have been wrong anyway: that role
+  carries `modify` and `post` on every Cyrus resource, not just this tool. The repository is
+  `ISGAdmin` membership, resolved by `pmgEntitlement` (§9.2).
 
 **Two incompatibilities were found and fixed on this side** (§9.2, §13.3): the host's auth
 dependencies return a `UserData` object where this block bound a string, and the host's
@@ -387,7 +392,7 @@ Audit, unless marked otherwise:
   `timeout=300`, `allow_redirects=False`, 502 on `ConnectionError`, 504 on `Timeout` (§4, §13).
 - The backend is FastAPI: `pmgService/isgPMGService.py` mounts `pmgService/dashboardRouter.py`
   under `/api/v1` (§4); handlers are `mixedCase`; the router carries `Depends(requireAuth)` and
-  writes take `Depends(requireEditor)` (§9, §12 step 7).
+  the repository takes `Depends(requireAdmin)` and the proposal flow inherits `requireAuth` (D77) (§9, §12 step 7).
 - Shared JS: `accessGate.js` probes `/api/whoami` and paints a badge or overlay; `globals.js` sets
   `window.API_BASE` (§3, §9). No module system; script order matters (§11).
 - Auth module: `pmgService/core/accessControl.py` with `getKerberosFromFlaskRequest`, `isAllowed`,
@@ -419,7 +424,7 @@ cd proposal-tool
 python3 generator/build_styles.py
 diff -rq proposalTool service/cyrus_pmg/dashboard/proposalTool && echo IDENTICAL
 
-# 2. The suite is green (253 passed, 4 skipped; the 4 need a live database)
+# 2. The suite is green (289 passed, 4 skipped; the 4 need a live database)
 cd service && PYTHONPATH=. python3 -m pytest tests -q
 
 # 3. The extracts parse and the stores are consistent
@@ -433,7 +438,8 @@ python3 -c "import json; m=json.load(open('var/baked/manifest.json')); print(m['
 ```
 
 Also confirm before starting (Unverifiable here — §18): the host's Python version and whether
-`openpyxl` and `pandas` are installed; the exact names in the host's `accessControl.py`; that the
+`openpyxl` and `pandas` are installed; that `pmgEntitlement.py` still exports `requireAuth`,
+`hasRole`, `ROLE_ADMIN` and `UserData` (§9.2 builds on them); that the
 host backend answers `/api/v1/whoami`; where extracts and stores may live on the deployed box.
 
 ---
@@ -445,7 +451,7 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 | What | To |
 |---|---|
 | `proposalTool/` (html, css, js, fonts) | `isg-cyrus-pmg/src/cyrus_pmg/dashboard/proposalTool/` |
-| `service/cyrus_pmg/pmgService/scenario/` (25 modules + `advisors.xlsx`, `fees.json`, `feeRates.csv`, `assetEstimates.json`) | `isg-cyrus-pmg/src/cyrus_pmg/pmgService/scenario/` |
+| `service/cyrus_pmg/pmgService/scenario/` (26 modules incl. `__init__.py` + `advisors.xlsx`, `fees.json`, `feeRates.csv`, `assetEstimates.json`) | `isg-cyrus-pmg/src/cyrus_pmg/pmgService/scenario/` |
 | The bake store: `service/var/baked/` (16 slices, `manifest.json`, `assetEstimates.json`, ~3.0 MB) | a durable directory named by `SCENARIO_BAKED_DIR` |
 | The extracts: `saaSource/saaPortfolios.csv`, `productSource/products.csv`, `sleeveSource/sleeves.csv` | durable locations named by `SCENARIO_SAA_SOURCE`, `SCENARIO_PRODUCTS_SOURCE`, `SCENARIO_SLEEVES_SEED` (until the real deliveries replace them) |
 
@@ -464,7 +470,7 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 | What | How |
 |---|---|
 | Identity | The host's GSSSO session replaces the mirror's `kerberos` cookie / `X-Kerberos` header, inside the host's own `accessControl` — the package never reads identity. |
-| Admin list | `isAdmin` reads whatever source the host's allowlist reads (the mirror reads `PMG_ADMIN_KERBEROS`). |
+| Admin list | On the host `isAdmin` is membership of `ISGAdmin`, resolved by `pmgEntitlement` (§9.2); only the mirror reads `PMG_ADMIN_KERBEROS`. |
 | The analytics library, on the **bake** machine only | `SAA_ENGINE_PACKAGE` if the library is named differently; the `_SYMBOLS` table in `engine.py` if its layout differs. Irrelevant to the host service under §11.4's recommended configuration. |
 | Log destination | The host's launcher redirects each process to its own log (Audit §9); the package logs nothing of its own (§13.4). |
 
@@ -479,7 +485,9 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 ### EXCLUDE
 
 Everything in §3.4 and §3.5; `service/var/log`, `service/var/run`, `service/var/*.bak*`;
-`.DS_Store` files; `service/weo_2026_1.csv`; the mirror's `/_dev_login`.
+**`service/var/sleeves.db` and `service/var/proposals.db`** — the developer's own sleeve library and
+proposal register, which the host must never inherit (it seeds its own library from the extract, and
+a register starts empty); `.DS_Store` files; `service/weo_2026_1.csv`; the mirror's `/_dev_login`.
 
 ---
 
@@ -497,7 +505,7 @@ Everything in §3.4 and §3.5; `service/var/log`, `service/var/run`, `service/va
 | `isAdmin` / `requireAdmin` as written in §9.2 | `src/cyrus_pmg/pmgService/core/pmgEntitlement.py` | INSERT — the rest of the mirror's `accessControl.py` is a stand-in and is not copied |
 | `service/cyrus_pmg/dashboard/dashboardFrontend.py` lines 165–168 | `src/cyrus_pmg/dashboard/dashboardFrontend.py` | INSERT |
 | `service/cyrus_pmg/dashboard/index.html` lines 14–19 | `src/cyrus_pmg/dashboard/index.html` header block | INSERT |
-| `service/dashboard.env.defaults` (the `SCENARIO_*`, `PMG_ADMIN_KERBEROS` lines) | the host's `dashboard.env.defaults` | CONFIG |
+| `service/dashboard.env.defaults` (the `SCENARIO_*` lines) | the host's `dashboard.env.defaults` | CONFIG |
 | `service/var/baked/` | `$SCENARIO_BAKED_DIR` | DATA delivery |
 | `saaSource/saaPortfolios.csv` | `$SCENARIO_SAA_SOURCE` | DATA delivery (stand-in until the real extract) |
 | `productSource/products.csv` | `$SCENARIO_PRODUCTS_SOURCE` | DATA delivery (stand-in) |
@@ -525,7 +533,7 @@ and retarget the block's one auth import at that module. Check, in the host's vi
 
 ```bash
 python -c "from cyrus_pmg.pmgService.core.pmgEntitlement import (
-    isAdmin, requireAdmin, requireAuth, requireEditor); print('all four resolve')"
+    isAdmin, requireAdmin, requireAuth); print('all three resolve')"
 ```
 
 **Step 3 — Copy the package.**
@@ -539,7 +547,7 @@ including `isg-cyrus-pmg/src`. (Nothing is read yet: the extracts are read on fi
 
 **Step 4 — Insert the endpoint block** (§9.1). Check: `python -c "from cyrus_pmg.pmgService.dashboardRouter
 import router; print(len([r for r in router.routes if r.path.startswith('/scenario')]))"` prints
-`25`.
+`28`.
 
 **Step 5 — Deliver the data.** Place the three extracts and the bake store on durable storage
 outside `src/`; create the directories for the sleeve database, the register and the scenario
@@ -557,7 +565,7 @@ python -m cyrus_pmg.pmgService.scenario.feeTools --census
 as an admin.
 
 **Step 8 — Operations.** Schedule the register backup (§16.3), the weekly sleeve export and
-census, and decide who holds `PMG_ADMIN_KERBEROS` (§11.4).
+census, and decide which PERMIT role maintains the sleeve library (§9.2, §17).
 
 ---
 
@@ -573,9 +581,9 @@ Append to the host's `pmgService/dashboardRouter.py`:
 
    ```python
    from cyrus_pmg.pmgService.core.pmgEntitlement import (
-       isAdmin, requireAdmin, requireAuth, requireEditor)
-   from cyrus_pmg.pmgService.scenario import (fees, products, proposalRegister, scenarioStore,
-                                              sleeveRepo)
+       isAdmin, requireAdmin, requireAuth)
+   from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, proposalRegister,
+                                              scenarioStore, sleeveRepo)
    from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
    from cyrus_pmg.pmgService.scenario.rules import (
        exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
@@ -590,12 +598,19 @@ Append to the host's `pmgService/dashboardRouter.py`:
    to the host's `router` by name (Unverifiable: that the host's variable is called `router`; Audit
    §12 step 7 shows `@router.get`).
 
-3. Lines 43–54 (`_XLSX`, the warm-up `try: getScenarioPort() except Exception: pass`).
+3. Everything between the two marker comments in the mirror file —
+   `# ===== TRANSPLANT BLOCK BEGIN` and `# ===== TRANSPLANT BLOCK END` — unchanged: `_XLSX`, the
+   warm-up `try: getScenarioPort() except Exception: pass`, the helpers and the 28 handlers. The
+   markers exist so the block is copied by its boundaries rather than by line numbers. Names the
+   block adds at module level (`_XLSX`, `_validationError`, `_notFound`, `_analyticsError`,
+   `_includeFees`, `_scenarioPayload`, `_feedFilters`, `_csv`, `_registerFilters`, `_UID_HINT`)
+   collide with nothing in the host file you supplied (it owns `logger`, `router`, `publicRouter`,
+   `service`, `_errorResponse`, `_applyNoCacheHeaders`) — re-check against the full file, since
+   the copy in `cyrus-files/` is an excerpt.
 
-4. Lines 57 to the end: the helpers and the 25 handlers, unchanged.
-
-Route-level gates are already correct: reads inherit the router's `requireAuth`, writes carry
-`Depends(requireEditor)`, the fifteen `/scenario/repository…` routes carry `Depends(requireAdmin)`
+Route-level gates are already correct: the whole proposal flow inherits the router's `requireAuth`
+— an allowlisted PWA runs it end to end with no PERMIT role (D77) — and the fifteen
+`/scenario/repository…` routes carry `Depends(requireAdmin)`
 (§11.1; `tests/test_sleeve_repository.py::test_every_repository_route_requires_the_admin_role`
 asserts the admin set).
 
@@ -612,11 +627,11 @@ import is one line from one module:
 
 ```python
 from cyrus_pmg.pmgService.core.pmgEntitlement import (
-    isAdmin, requireAdmin, requireAuth, requireEditor)
+    isAdmin, requireAdmin, requireAuth)
 ```
 
-`requireAuth` (= `requirePmgApiView`) and `requireEditor` (= `requirePmgApiModify`) already exist
-as back-compat shims. **Do not insert the mirror's `accessControl.py`** — the host's is richer and
+`requireAuth` (= `requirePmgApiView`) already exists as a back-compat shim; the block no longer
+imports `requireEditor` (D77). **Do not insert the mirror's `accessControl.py`** — the host's is richer and
 authoritative, and the block no longer imports anything from it.
 
 **`requireAdmin` and `isAdmin` must be written.** Because `post` is a PMGEditor-only privilege in
@@ -655,7 +670,7 @@ Proposal Tool but an `ImportError` that takes all 50+ existing dashboard endpoin
 
 ```bash
 python -c "from cyrus_pmg.pmgService.core.pmgEntitlement import (
-    isAdmin, requireAdmin, requireAuth, requireEditor); print('all four resolve')"
+    isAdmin, requireAdmin, requireAuth); print('all three resolve')"
 ```
 
 #### Why the block speaks `UserData`
@@ -673,7 +688,8 @@ and three actions, the policy table verbatim, `hasRole`/`can`, and a `UserData` 
 attributes `pmgEntitlement` ever reads — `kerberos`, `role`, `roles`, `permissions`,
 `actionsAllowed`, each accessed there through `getattr` with a default. The two environment lists
 stand in for PERMIT membership: the admin list is `ISGAdmin`, the access list alone is
-`PMGEditor`, which leaves every gate answering exactly as it did before.
+`PMGViewer` — PROD's own allowlist grant — so the suite proves the proposal flow on the strictest
+footing the host ever provides (D77).
 
 **The object stops at the router.** `scenario/` imports nothing outward and has no notion of a
 `UserData`; the eight places that record who acted read `caller.kerberos`, because
@@ -774,7 +790,7 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 
 ## 11. API, models, persistence and configuration
 
-### 11.1 The HTTP surface (25 routes under `/api/v1`; the page calls `/api/…`)
+### 11.1 The HTTP surface (28 routes under `/api/v1`; the page calls `/api/…`)
 
 | Method | Path | Handler | Gate |
 |---|---|---|---|
@@ -783,11 +799,11 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | GET | `/scenario/advisors?q&limit` | `searchAdvisors` | requireAuth |
 | GET | `/scenario/sleeves?category&variant&currency&hedging` | `listSleeves` | requireAuth |
 | GET | `/scenario/{scenarioId}` | `getScenario` | requireAuth |
-| POST | `/scenario` | `createScenario` | requireEditor |
-| PUT | `/scenario/{scenarioId}` | `updateScenario` | requireEditor |
-| POST | `/scenario/{scenarioId}/portfolio` | `resolvePortfolio` | requireEditor |
-| DELETE | `/scenario/{scenarioId}/portfolio/{portfolioKey:path}` | `removePortfolio` | requireEditor |
-| POST | `/scenario/{scenarioId}/export` | `exportScenario` | requireEditor |
+| POST | `/scenario` | `createScenario` | requireAuth (router-level; D77) |
+| PUT | `/scenario/{scenarioId}` | `updateScenario` | requireAuth (router-level; D77) |
+| POST | `/scenario/{scenarioId}/portfolio` | `resolvePortfolio` | requireAuth (router-level; D77) |
+| DELETE | `/scenario/{scenarioId}/portfolio/{portfolioKey:path}` | `removePortfolio` | requireAuth (router-level; D77) |
+| POST | `/scenario/{scenarioId}/export` | `exportScenario` | requireAuth (router-level; D77) |
 | GET | `/scenario/repository` | `getRepository` | requireAdmin |
 | POST | `/scenario/repository/sleeves` | `createRepositorySleeve` | requireAdmin |
 | PUT | `/scenario/repository/sleeves/{sleeveId}` | `updateRepositorySleeve` | requireAdmin |
@@ -804,7 +820,7 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | GET | `/scenario/repository/proposals/{proposalId}` | `getRegisterProposal` | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}/workbook` | `downloadRegisterWorkbook` | requireAdmin |
 | GET | `/scenario/proposals/{proposalId}` | `lookupProposal` | router-level requireAuth (D76) |
-| POST | `/scenario/account-requests` | `createAccountRequest` | requireEditor (D76) |
+| POST | `/scenario/account-requests` | `createAccountRequest` | requireAuth (router-level; D76, D77) |
 | GET | `/scenario/account-requests/{requestId}` | `getAccountRequest` | router-level requireAuth (D76) |
 
 Error contract (Verified over HTTP): 422 `{error, field}`; 404 `{error}` ("Scenario … is no
@@ -943,7 +959,7 @@ means the host must set it; "own" means the host already has its own value.
 | `SCENARIO_FEES_SOURCE` | `fees.py` | `<pkg>/feeRates.csv` (placeholder) | set when the real card is delivered; change it through `feeTools --accept` |
 | `SCENARIO_ASSET_ESTIMATES` | `assetEstimates.py` | the bake store's copy, else `<pkg>/assetEstimates.json` | optional |
 | `PMG_ALLOWED_KERBEROS` | `accessControl.py` | `fbarker` in the mirror | own (Audit §5.5) |
-| `PMG_ADMIN_KERBEROS` | `accessControl.py` (mirror) | `fbarker` | **Required** — or the host's equivalent source in `isAdmin` |
+| `PMG_ADMIN_KERBEROS` | `accessControl.py` (mirror only) | `fbarker` | not needed — on the host `isAdmin` is membership of `ISGAdmin` (§9.2); nothing in the package reads it |
 | `SAA_ENGINE_PACKAGE` | `engine.py` | `epsilonPhi` | bake machine only |
 | `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are **8002 / 0.0.0.0**, under its `PMG_SVC_` pydantic-settings prefix (Verified: `cyrus-files/config.py`, `dashboard.env.defaults`) |
 | `FRONTEND_PORT`, `DASHBOARD_HOST` | `dashboardConfig.py` (mirror) | 8001 / 127.0.0.1 | own |
@@ -951,20 +967,25 @@ means the host must set it; "own" means the host already has its own value.
 | `SCENARIO_FIXTURES_LATENCY_MS`, `SCENARIO_FIXTURES_FAIL`, `SCENARIO_FIXTURES_FAIL_SCHEMA`, `SCENARIO_FIXTURES_FAIL_SLEEVES`, `SCENARIO_FIXTURES_FAIL_EXPORT` | `fixturesAdapter.py` | unset | never in production |
 | `SAA_ENGINE_LIVE` | tests only | unset | — |
 
-Reference block for the host's `dashboard.env.defaults` (adjust the paths):
+Reference block for the host's `dashboard.env.defaults`, in that file's own idiom — a
+`: "${VAR:=default}"` line per setting, then one `export` (Verified: `cyrus-files/dashboard.env.defaults`).
+Adjust the paths:
 
 ```bash
-export SCENARIO_ADAPTER=baked
-export SCENARIO_BAKED_FALLBACK=0
-export SCENARIO_BAKED_DIR=/data/pmg/proposalTool/baked
-export SCENARIO_SAA_SOURCE=/data/pmg/proposalTool/extracts/saaPortfolios.csv
-export SCENARIO_PRODUCTS_SOURCE=/data/pmg/proposalTool/extracts/products.csv
-export SCENARIO_SLEEVES_SEED=/data/pmg/proposalTool/extracts/sleeves.csv
-export SCENARIO_SLEEVES_DB=/data/pmg/proposalTool/sleeves.db
-export SCENARIO_REGISTER_DB=/data/pmg/proposalTool/proposals.db
-export SCENARIO_STORE_DIR=/data/pmg/proposalTool/scenarios
-export SCENARIO_RETENTION_HOURS=24
-export PMG_ADMIN_KERBEROS=<comma-separated admins, a subset of PMG_ALLOWED_KERBEROS>
+# ---- Proposal Tool (PORTING.md §11.4) -----------------------------------------
+: "${SCENARIO_ADAPTER:=baked}"
+: "${SCENARIO_BAKED_FALLBACK:=0}"
+: "${SCENARIO_BAKED_DIR:=/data/pmg/proposalTool/baked}"
+: "${SCENARIO_SAA_SOURCE:=/data/pmg/proposalTool/extracts/saaPortfolios.csv}"
+: "${SCENARIO_PRODUCTS_SOURCE:=/data/pmg/proposalTool/extracts/products.csv}"
+: "${SCENARIO_SLEEVES_SEED:=/data/pmg/proposalTool/extracts/sleeves.csv}"
+: "${SCENARIO_SLEEVES_DB:=/data/pmg/proposalTool/sleeves.db}"
+: "${SCENARIO_REGISTER_DB:=/data/pmg/proposalTool/proposals.db}"
+: "${SCENARIO_STORE_DIR:=/data/pmg/proposalTool/scenarios}"
+: "${SCENARIO_RETENTION_HOURS:=24}"
+export SCENARIO_ADAPTER SCENARIO_BAKED_FALLBACK SCENARIO_BAKED_DIR SCENARIO_SAA_SOURCE
+export SCENARIO_PRODUCTS_SOURCE SCENARIO_SLEEVES_SEED SCENARIO_SLEEVES_DB SCENARIO_REGISTER_DB
+export SCENARIO_STORE_DIR SCENARIO_RETENTION_HOURS
 ```
 
 (`/data/pmg/proposalTool` is illustrative — where writable, durable storage lives on the deployed
@@ -1030,13 +1051,16 @@ the host's `requirements.in`.
 
 ## 13. Authentication, authorisation, error handling, logging
 
-### 13.1 Three roles, two lists
+### 13.1 Two tiers, two lists
 
-| Role | Gate | Source | What it unlocks |
+| Tier | Gate | Source | What it unlocks |
 |---|---|---|---|
-| Reader | router-level `requireAuth` | the access list (`PMG_ALLOWED_KERBEROS` or the host's) | schema, fees, advisors, sleeves, rehydrate |
-| Editor | `Depends(requireEditor)` — today identical to `requireAuth` | same | create/update scenarios, resolve, remove columns, export |
-| Admin | `Depends(requireAdmin)` | the admin list, a subset of the access list | the sleeve repository console, archive, activity, the proposal register |
+| PWA | router-level `requireAuth` — `view`, which the allowlist grants in every environment | the access list (`PMG_ALLOWED_KERBEROS` or the host's) | the whole page: schema, fees, advisors, the sleeve *picker*, create/update scenarios, resolve, compare, attach sleeves to a scenario, export, the account opening request |
+| Admin | `Depends(requireAdmin)` — `ISGAdmin` on the host | the admin list, a subset of the access list | the repository console: the sleeve library and its editing, the product catalogue, archive, activity, the proposal register |
+
+A PWA never edits the library — attaching a sleeve records a *choice* on their own scenario — and
+never sees the catalogue as a list; the products of the sleeves they attach appear in their
+proposal's implementation table, which is the proposal. There is no third tier (D77).
 
 `capabilities.canAdmin` on the schema tells the page whether to draw the admin entry points; the
 server re-enforces on every admin route (Verified: a non-admin gets 403 and `canAdmin: false`).
@@ -1110,14 +1134,15 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 253 passed, 4 skipped in ~43s
+# 289 passed, 4 skipped in ~50s
 ```
 
 | File | Tests | Covers |
 |---|---:|---|
 | `tests/test_scenario_backend.py` | 97 defs (parametrised) | rules, availability, rounding, the workbook against the golden files, the JS mirrors (needs `node`), the implementation model, fees, the export path, the library-leak guard |
 | `tests/test_sleeve_repository.py` | 50 | the sleeve store, migration, history, archive/activity, the console routes, the admin gate on every `/scenario/repository…` route, `accessControl` semantics, and the four-worker cold start (§11.3.1) |
-| `tests/test_proposal_register.py` | 18 | the register end to end, byte-identity of the stored workbook, append-only, the panel's endpoints |
+| `tests/test_proposal_register.py` | 27 | the register end to end, byte-identity of the stored workbook, append-only, the panel's endpoints, the one-UID invariant (D75) |
+| `tests/test_account_requests.py` | 25 | the UID lookup, the request store and its validation, one request per proposal, the gates, the option lists on the schema (D76) |
 | `tests/test_baked_adapter.py` | 10 | slice coverage, manifest provenance, no analytics on the read path, export without a delegate, resumable bake |
 | `tests/test_tier0_beta_equivalence.py` | 4 | the library-side Tier 0 optimisation; **skipped** unless `SAA_ENGINE_LIVE=1` and a database |
 
@@ -1302,7 +1327,7 @@ reachable only by URL, which is a useful soak.
 | Host SQLite older than 3.8.0 | high | One-line check (§11.3.2); the partial unique index will not compile below it. |
 | ~~The host's auth module is `pmgEntitlement`~~ | **closed** | Both modules confirmed; the import splits in two and `requireAdmin` is written (§9.2). |
 | ~~`PmgAppException` wraps errors in its own envelope~~ | **closed** | It does; `apiFetch` now reads both shapes (§13.3). |
-| **In PROD, an allowlisted PWA with no PERMIT role can only read** | high | Get PWAs into `PMGEditor` before go-live — without it, creating a scenario, attaching a sleeve and exporting are all 403. |
+| ~~In PROD, an allowlisted PWA with no PERMIT role can only read~~ | **closed** | The proposal flow needs only `view` (D77): an allowlisted PWA creates, exports and requests with no PERMIT role, and the repository stays `ISGAdmin`. Proven over HTTP with the mirror on PROD's grant (`tests/test_account_requests.py`). |
 | Which role maintains the sleeve library is undecided | medium | `ISGAdmin` is the natural reading, but the policy gives `PMGEditor` strictly more (it alone has `post`). Confirm with PMG (§9.2). |
 | ~~The router's docstring claims a `/api/v1/dashboard` mount~~ | **closed** | Stale, dated 2026-04-29 and self-contradictory; every executable source says `/api/v1` and the host's own pages would 404 otherwise (§4.0). |
 | Python version older than 3.8 on the host | low | `from __future__ import annotations` needs 3.7+; f-strings and `secrets` need 3.6+; proven only on 3.8.20. |
@@ -1319,6 +1344,10 @@ reachable only by URL, which is a useful soak.
 - Whether the advisor directory is swapped for a table before go-live (a code change, §6).
 - The OneGS retheme (open items 1 and 2).
 - Where extracts, stores and the bake live on the deployed host, and who delivers the bake.
+- The account opening request (D76): Operations' option lists (account types, booking centres,
+  funding sources — placeholders today); what Submit does downstream (nothing yet: the row is
+  recorded, the receipt says so); whether one request per proposal is the rule to keep; and whether
+  editors alone may submit (today's gate) or viewers too.
 
 ---
 
@@ -1362,7 +1391,7 @@ repository. Tick each before Step 1.
 - [ ] **Whether the durable storage path is local disk or a network mount** (§11.3.2). If NFS,
       decide where the proposal register lives before go-live.
 - [x] ~~`pmgService/core/` — the real auth module~~ — **answered** by `cyrus-files/pmgEntitlement.py`:
-      two modules, `requireAuth`/`requireEditor` present, `requireAdmin`/`isAdmin` to be written (§9.2).
+      two modules, `requireAuth` present (`requireEditor` no longer needed, D77), `requireAdmin`/`isAdmin` to be written (§9.2).
 - [x] ~~`exceptionHandlers.py` / `PmgAppException` body shape~~ — **answered**; handled in `apiFetch` (§13.3).
 - [x] ~~`dashboardRouter.py` exposes a module-level `router`~~ — **confirmed**, byte-identical to this mirror's.
 - [ ] *(formality — the answer is `/api/v1`, §4.0)* Confirm the mount while you are in the
@@ -1394,11 +1423,11 @@ repository. Tick each before Step 1.
 
 - [ ] §5 pre-port checks green at the frozen commit; commit hash and bake `updatedAt` recorded.
 - [ ] `openpyxl` and `pandas` present in the host environment.
-- [ ] Three names added to `accessControl.py`; the Step 2 import check passes.
-- [ ] `pmgService/scenario/` copied verbatim (25 modules, 4 data files); importable.
-- [ ] Endpoint block appended; 25 `/scenario` routes registered; no duplicate `router` definition.
-- [ ] Extracts and bake delivered to durable paths; the seven required variables plus
-      `PMG_ADMIN_KERBEROS` set; the three censuses pass on the host.
+- [ ] `isAdmin` and `requireAdmin` added to `pmgEntitlement.py`; the Step 2 import check passes.
+- [ ] `pmgService/scenario/` copied verbatim (26 modules, 4 data files); importable.
+- [ ] Endpoint block appended between its markers; 28 `/scenario` routes registered; no duplicate `router` definition.
+- [ ] Extracts and bake delivered to durable paths (Appendix C); the seven required variables set;
+      the three censuses pass on the host.
 - [ ] Page folder copied; route and nav link added; §10.6 curls pass.
 - [ ] §14.3 probe on the host: full cycle, no `epsilonPhi` in `sys.modules`.
 - [ ] §15 acceptance criteria 1–18 pass as a user and as an admin.
@@ -1408,7 +1437,7 @@ repository. Tick each before Step 1.
 
 ---
 
-## Appendix A — deviations that shape the port (`service/DEVIATIONS.md`, D1–D74)
+## Appendix A — deviations that shape the port (`service/DEVIATIONS.md`, D1–D76)
 
 One line each; the register carries the reasoning.
 
@@ -1452,6 +1481,8 @@ One line each; the register carries the reasoning.
 - **D76** Account opening request: the landing card's third button, a form filled read-only from a
   Proposal UID, one request per proposal recorded in the register file's `accountRequests` table;
   placeholder option lists on the schema.
+- **D77** Two tiers: the proposal flow is gated on the allowlist alone (`view`), the repository on
+  `ISGAdmin`; `requireEditor` is no longer imported; the mirror hands allowlisted callers PROD's grant.
 
 ## Appendix B — where the rest is written down
 
@@ -1459,9 +1490,174 @@ One line each; the register carries the reasoning.
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D74, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D76, the adapter-side decisions, the spec gaps G1–G8. |
 | `service/PERFORMANCE.md` | The analytics profile and the Tier 0 / bake measurements. |
 | `archive/dataSources.html`, `archive/dataOperations.html` | The data estate and its operating model (classes A–D, runbooks, rollback). Their test counts predate D69. |
 | `archive/exportPortingPlan.html`, `archive/exportTrace.html` | Why and how the export was cut loose from the library (D67). |
 | `spec.html` | Revision 6 of the build specification; §16 lists the open items. |
 | `HOST_AUDIT.md` | The host as audited on 2026-08-30. |
+
+---
+
+## Appendix C — the data contract: every file the host supplies, column by column
+
+The package treats each of these as data and validates rather than guesses: a file that does not
+match is refused at load with a message naming the file and the column, never coerced. Everything
+below is read from the validating readers named in each heading (Verified at the commit of this
+guide); the stand-in files under `proposal-tool/` are conforming examples of each shape. Where a
+value must come from a closed vocabulary, the vocabulary is given — it is code, and a new value
+upstream is a code change here, not a data change.
+
+### C.1 The strategic universe — `saaPortfolios.csv` (`SCENARIO_SAA_SOURCE`; `universe.py`, `saaKeys.py`)
+
+CSV or XLSX (first sheet), header row, **one row per holding**:
+
+| Column | Type | Rule |
+|---|---|---|
+| `PortfolioName` | text | The portfolio's name in the supplying database. Parsed into the key — see the grammar below. Every distinct name becomes a portfolio the UI can offer; there is no separate list of portfolios. |
+| `AssetTicker` | text | One of the **19 asset tickers** below. Anything else is an *unknown ticker* in `bake --census` and the bake refuses. |
+| `Weight` | number | The holding's weight as a **fraction** (`0.62`, not `62`). The rows of one portfolio should sum to 1. |
+
+**Name grammar** — `<Currency> <RiskLevel> <AllocationType>[ ex-RAs]`, or `<Currency> All Equity`:
+
+- Currency: `USD`, `GBP`, `CHF`, `EUR`
+- Risk level (ordered, least to most risky — the order drives the selector): `LowVol`, `Conservative`,
+  `ConsMod`, `Moderate`, `ModAgg`, `Agg`, `Higher Risk`, `All Equity`
+- Allocation type: `Full`, `Core`, `ex-Alts`, `ex-HFs`; the optional suffix ` ex-RAs` is the
+  real-assets exclusion. An `All Equity` book has no allocation type and no suffix.
+- Examples: `USD Moderate Full` → `USD|Moderate|Full|0`; `USD Moderate ex-HFs ex-RAs` →
+  `USD|Moderate|ex-HFs|1`; `GBP All Equity` → `GBP|All Equity|NA|NA`.
+
+Tokens are matched longest-first against these vocabularies; a name that does not parse is
+**rejected and listed** in the manifest's `unparsedNames`, never guessed. Hedging is not in the name:
+the four hedging bases (`Hedged`, `Unhedged`, `ISG Hedged`, `Equity Not Hedged`) are applied by the
+bake, so one extract yields four slices per currency.
+
+**The 19 asset tickers** (`portfolio_weights.ASSET_METADATA`: ticker → reporting name, category):
+
+| Ticker | Reporting name | Category |
+|---|---|---|
+| `LHTRYIN` | US Dollar Debt | Investment Grade Fixed Income |
+| `LHUT1T3` | Tactical Tilt Fund | Asset Allocation Strategies |
+| `LHYIELD` | US High Yield | Other Fixed Income |
+| `FRUS1GR` | US Large Cap Growth Equity | Public Equity |
+| `FRUS1VA` | US Large Cap Value Equity | Public Equity |
+| `FRUSS2L` | US Small Cap Equity | Public Equity |
+| `MSEMKF$` | Emerging Market Equity | Public Equity |
+| `MSEXUKL` | Europe ex-UK Equity | Public Equity |
+| `MSJPANL` | Japanese Equity | Public Equity |
+| `MSPXJPL` | Asia-Pacific Equity | Public Equity |
+| `MSUTDKL` | UK Equity | Public Equity |
+| `CSFBMTT` | Tactical Trading | Hedge Funds |
+| `CSTEVDH` | Event Driven | Hedge Funds |
+| `CSTLNSH` | Equity Long/Short | Hedge Funds |
+| `PE_BUYOUT` | Buyout | Private Equity |
+| `PE_GROWTH` | Growth | Private Equity |
+| `PE_VENTURE` | Venture | Private Equity |
+| `PA_REAL_ESTATE` | Core Real Estate | Other Private Assets |
+| `PRIVATE_CREDIT` | Private Credit | Other Private Assets |
+
+A new asset is a code change in `portfolio_weights.py` (metadata and hedge ratio) — not a data
+change. **Ship this extract and the bake built from it together** (§11.5).
+
+### C.2 The product catalogue — `products.csv` (`SCENARIO_PRODUCTS_SOURCE`; `products.py`)
+
+CSV, header row, one row per product. Reloaded when the file's mtime changes. Eleven required
+columns, two optional:
+
+| Column | Type | Rule |
+|---|---|---|
+| `ProductId` | text | The key. Unique, non-empty; referenced by `sleeves.csv` and by every sleeve the console saves. Stable across deliveries, or sleeves lose their products. |
+| `Name` | text | Non-empty. |
+| `Ticker` | text | May be blank (shown as `—`). |
+| `AssetClass` | text | Free text; shown in the table. |
+| `Style` | text | Free text; one of the five composition doughnuts (D31, D73) groups by its distinct values. |
+| `Vehicle` | text | Free text; a doughnut axis (e.g. `SMA`, `Mutual Fund`, `ETF`). |
+| `Source` | text | Free text; a doughnut axis (e.g. `Internal`, `External`). |
+| `Liquidity` | text | Free text; a doughnut axis (e.g. `Daily`, `Quarterly`). |
+| `ExposureCurrency` | text | Free text; a doughnut axis (`USD`, `EUR`, …). |
+| `ProductCost` | number ≥ 0 | **Percent** (`0.25` = 0.25%). Not a fraction. |
+| `FeeGroup` | text | One of the rate card's fee groups: `Passive`, `Core Active`, `Specialist Active`, `Alternatives`, `Asset Allocation` — the set the delivered card defines (C.4). |
+| `DistributionYield` | number ≥ 0, optional | Percent. Blank or absent → none. |
+| `MinimumInvestment` | number ≥ 0, optional | **Currency units** (`5000000`). Blank or absent → *no minimum*. A position whose notional falls below it **blocks the export** (D70): get these right, or nothing exports. |
+
+Refused as delivered (`BadCatalogue`): a missing required column, a duplicate `ProductId`, an empty
+`Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/`MinimumInvestment`, a
+`FeeGroup` outside the set.
+
+### C.3 The sleeve seed — `sleeves.csv` (`SCENARIO_SLEEVES_SEED`; `sleeveRepo.py`)
+
+CSV, header row **exactly** `Variant,Category,Sleeve,ProductId,Weight`, one row per product in a
+sleeve. **Read once**, on the first start against an empty `SCENARIO_SLEEVES_DB`; after that the
+console is the source of truth and the file is not re-read (`sleeveTools --import` for a later bulk
+load).
+
+| Column | Type | Rule |
+|---|---|---|
+| `Variant` | text | One of the four implementation types: `PMG Multi-Asset Portfolio`, `PMG ESG`, `US Onshore`, `Irish Onshore` (`sleeves.VARIANTS`). |
+| `Category` | text | One of the seven sleeve categories: `Investment Grade Fixed Income`, `Hybrid Fixed Income`, `Other Fixed Income`, `Public Equity`, `Hedge Funds`, `Private Equity & Other Private Assets`, `Asset Allocation Strategies`. `Private Equity` and `Other Private Assets` share the one combined sleeve (D60). `Hybrid Fixed Income` and `Asset Allocation Strategies` are attached automatically and need exactly one sleeve each per variant. |
+| `Sleeve` | text ≤ 80 chars | The sleeve's name; unique within (variant, category). |
+| `ProductId` | text | Must exist in `products.csv`. |
+| `Weight` | number | Fraction; a sleeve's rows sum to 1 within `1e-6`. |
+
+### C.4 The fee card — `feeRates.csv` (`SCENARIO_FEES_SOURCE`; `fees.py`) with `fees.json` (packaged)
+
+The **framework** is `fees.json` inside the package (schedules `CASP` — one rate for all, `RDR` — a
+rate per fee group; sources `Management`, `PMG`; points `Floor`, `Target`, `Ceiling`; the default
+level `PMG Target`) and the **rates** are the CSV, one row per cell:
+
+| Column | Type | Rule |
+|---|---|---|
+| `schedule` | text | `CASP` or `RDR`. |
+| `feeGroup` | text | Blank for `CASP`; one of the fee groups for `RDR`. The distinct values here *define* the set `products.csv` must use. |
+| `tier` | text | Tier id (`T1`…). Every row of a tier must carry the same edges. |
+| `tierMin`, `tierMax` | number | Top-account-size edges in **currency units**; `tierMax` blank = open-ended. |
+| `source` | text | `Management` or `PMG`. |
+| `point` | text | `Floor`, `Target` or `Ceiling`. The fee *level* a proposal prices at is `<source> <point>`, e.g. `PMG Floor`. |
+| `rate` | number ≥ 0 | **Percent** (`0.45` = 0.45%). |
+
+Refused (`BadRateCard`): a missing column, a non-number, a negative rate, tier edges that disagree,
+a duplicate cell. Deliver a real card through `feeTools --diff <csv>` then `--accept`, which records
+`delivery.version` and `asOf` in `fees.json` and clears `placeholder` — the flag the rail, the
+workbook header and the manifest all read.
+
+### C.5 The advisor directory — `advisors.xlsx` (packaged beside `advisors.py`; no environment override)
+
+One sheet, header row, columns `name` and `office`. The display string is `"{name} — {office}"`
+(em dash) and a mandate's Primary PWA must equal one exactly (`POST /scenario` is 422 otherwise).
+Replace the file in the package, or reimplement `searchAdvisors`/`advisorExists` over a table (§6).
+
+### C.6 The bake store — `SCENARIO_BAKED_DIR` (`bake.py`, `bakedAdapter.py`, `assetEstimates.py`)
+
+**This is where the risk and return figures live.** The service never computes analytics: under
+`SCENARIO_ADAPTER=baked SCENARIO_BAKED_FALLBACK=0` it reads these files and nothing else. Produce
+them either by running `bake.py` against an engine that satisfies the seam in `engine.py`
+(`SAA_ENGINE_PACKAGE`, the `_SYMBOLS` table), or by writing the files directly in this shape:
+
+- `manifest.json` — `slices` (the 16 slice files), `updatedAt`, `portfoliosBaked`, `currencies`,
+  `source{path, modified, portfolios, holdings, unparsed, unknownTickers}` (the extract it was built
+  from — the tie of §11.5), `vocabulary`, `facets`, `unparsedNames` (must be `[]`), `feeCard`,
+  `currencySubstitutions` (`{}` when every currency is analysed natively).
+- **16 slice files** `<CCY>_<HedgingSlug>.json` (`USD_Hedged`, `USD_Unhedged`, `USD_ISGHedged`,
+  `USD_EquityNotHedged`, and the same for `GBP`, `CHF`, `EUR`): an object keyed by portfolio key
+  string (`USD|Moderate|Full|0`) whose value is one `PortfolioResult` exactly as §11.2 gives it —
+  `key{currency, riskLevel, allocationType, excludeRealAssets}`, `keyStr`, `name`, `header`,
+  `categories[{name, weightPct, assets[{reportingName, weightPct}]}]`, `metrics{estimatedReturnPct,
+  volatilityPct, sharpe}`, `stress[{period, nominalPct, realPct}]`, `premia[{group, horizon, label,
+  nominalPct, realPct, kind}]`, plus `analyticsCurrency` on a payload analysed in another currency.
+  **Percent units throughout** (`5.957` = 5.957%); losses negative. Every portfolio the extract
+  offers must be present in every slice, or that key is a 502 with Retry when chosen.
+- `assetEstimates.json` — `{"_note": …, "slices": {"<CCY>|<Hedging>": {"analyticsCurrency": "USD",
+  "assets": [{reportingName, category, lower, mean, upper, volatility, sharpe, totalReturn,
+  hedgingRatio, from, to}]}}}` with the hedging written as `USD|ISG Hedged` (a space, unlike the
+  filename slug). **Fractions here, not percent** (`0.0111` = 1.11%); `from`/`to` are ISO dates of
+  the estimation window. This is the assumptions sheet of every export; `SCENARIO_ASSET_ESTIMATES`
+  overrides the store's copy, and the packaged copy is the floor.
+
+### C.7 What the tool writes (not delivered; created on first use; back up)
+
+| Store | Path | Contents |
+|---|---|---|
+| Sleeve library | `SCENARIO_SLEEVES_DB` | SQLite: sleeves, products-in-sleeves, history, meta (schema v2). Seeded once from C.3. |
+| Proposal register | `SCENARIO_REGISTER_DB` | SQLite: `proposals` (with the workbook blob and its SHA-256), `proposalSleeves`, `meta`, and `accountRequests` (D76). Append-only; **the record — back it up daily.** |
+| Scenario state | `SCENARIO_STORE_DIR` | One JSON file per live scenario; expires after `SCENARIO_RETENTION_HOURS`. |

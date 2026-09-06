@@ -3,8 +3,10 @@
 In the host this file already exists and carries every dashboard endpoint; the
 Proposal Tool TRANSPLANTS the scenario endpoint block below into it verbatim.
 In this mirror the file carries only that block, written exactly as it will
-appear in the host: mixedCase handler names, reads inheriting the router-level
-``requireAuth``, writes taking ``Depends(requireEditor)``, non-2xx JSON
+appear in the host: mixedCase handler names, the whole proposal flow inheriting
+the router-level ``requireAuth`` - an allowlisted PWA creates, exports and
+requests with no PERMIT role (D77) - the repository taking
+``Depends(requireAdmin)``, non-2xx JSON
 carrying top-level ``error`` (and ``field`` on validation failures) per the
 host error contract (spec 3.5).
 
@@ -21,7 +23,7 @@ from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
 from cyrus_pmg.pmgService.core.accessControl import (
-    isAdmin, requireAdmin, requireAuth, requireEditor)
+    isAdmin, requireAdmin, requireAuth)
 from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, proposalRegister,
                                            scenarioStore, sleeveRepo)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
@@ -39,6 +41,12 @@ from cyrus_pmg.pmgService.scenario.types import (
 )
 
 router = APIRouter(dependencies=[Depends(requireAuth)])
+
+# ===== TRANSPLANT BLOCK BEGIN (PORTING.md §9.1) ==============================
+# Everything from here to TRANSPLANT BLOCK END is pasted into the host's
+# dashboardRouter.py unchanged. The imports above it are merged into the
+# host's import section; the `router =` line above is NOT copied - the
+# host's router already exists and is already mounted under /api/v1.
 
 _XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -446,8 +454,9 @@ def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
 # ---- account opening requests (D76) --------------------------------------
 # The landing card's third button opens a form that fills itself from a
 # Proposal UID (D75) and records a request against that proposal. Static
-# paths, declared before /scenario/{scenarioId} like the others. The lookup
-# is a read and inherits the router-level requireAuth; Submit is a write.
+# paths, declared before /scenario/{scenarioId} like the others. Lookup and
+# Submit both inherit the router-level requireAuth: they are a PWA's own
+# actions (D77).
 
 _UID_HINT = ('A Proposal UID is pr_ followed by twelve letters or digits: the last part of '
              "the workbook's name, and cell B1 of its Implementation sheet.")
@@ -472,7 +481,7 @@ def lookupProposal(proposalId: str):
 
 
 @router.post('/scenario/account-requests')
-def createAccountRequest(payload: dict = Body(...), caller=Depends(requireEditor)):
+def createAccountRequest(payload: dict = Body(...), caller=Depends(requireAuth)):
     """Record an account opening request on the terms of a delivered proposal.
     One per proposal: a second is refused naming the first (D76)."""
     try:
@@ -505,7 +514,7 @@ def getScenario(scenarioId: str):
 # --------------------------------------------------------------- writes -----
 
 @router.post('/scenario')
-def createScenario(payload: dict = Body(...), caller=Depends(requireEditor)):
+def createScenario(payload: dict = Body(...), caller=Depends(requireAuth)):
     """Create a scenario from mandate + basis; returns its id (spec 3.4)."""
     port = getScenarioPort()
     try:
@@ -521,7 +530,7 @@ def createScenario(payload: dict = Body(...), caller=Depends(requireEditor)):
 
 @router.put('/scenario/{scenarioId}')
 def updateScenario(scenarioId: str, payload: dict = Body(...),
-                   caller=Depends(requireEditor)):
+                   caller=Depends(requireAuth)):
     """Persist mandate, basis, variant or sleeve updates (deviations D2, D29).
 
     Accepts any subset of {mandate, basis, variant, tacticalTilt, volPremium,
@@ -598,7 +607,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
 
 @router.post('/scenario/{scenarioId}/portfolio')
 def resolvePortfolio(scenarioId: str, payload: dict = Body(...),
-                     caller=Depends(requireEditor)):
+                     caller=Depends(requireAuth)):
     """Resolve one portfolio - THE EXPENSIVE CALL (spec 3.4).
 
     Body: {"key": {allocation, excludeRE, excludeTAA, riskLevel},
@@ -640,7 +649,7 @@ def resolvePortfolio(scenarioId: str, payload: dict = Body(...),
 
 @router.delete('/scenario/{scenarioId}/portfolio/{portfolioKey:path}')
 def removePortfolio(scenarioId: str, portfolioKey: str,
-                    caller=Depends(requireEditor)):
+                    caller=Depends(requireAuth)):
     """Remove a comparison column (spec 3.4). Idempotent."""
     try:
         key = PortfolioKey.fromStr(portfolioKey)
@@ -653,7 +662,7 @@ def removePortfolio(scenarioId: str, portfolioKey: str,
 
 
 @router.post('/scenario/{scenarioId}/export')
-def exportScenario(scenarioId: str, caller=Depends(requireEditor)):
+def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
     """The Excel workbook (spec 14). Assembled from stored scenario state.
 
     Refuses (422) while no variant is chosen, a category lacks a sleeve, or
@@ -757,3 +766,5 @@ def exportScenario(scenarioId: str, caller=Depends(requireEditor)):
         return _validationError(exc)
     except AnalyticsError as exc:
         return _analyticsError(exc)
+
+# ===== TRANSPLANT BLOCK END ==================================================
