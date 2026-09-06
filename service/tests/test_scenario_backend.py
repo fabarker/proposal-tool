@@ -1824,6 +1824,116 @@ def test_the_implementation_table_stands_on_white():
     assert 'FFFFFF' in seen
 
 
+def test_the_portfolios_sheet_is_dressed_for_delivery():
+    """D79. The names bold over a thick rule; a category is a heading in
+    #092C61 rather than a row on a blue band; TOTAL is that same heading,
+    closed with the same thick rule."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import workbook as wb
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['portfolios']
+    columns = sheet.max_column
+
+    for column in range(1, columns + 1):
+        head = sheet.cell(row=1, column=column)
+        assert head.font.bold is True, column
+        assert head.border.bottom.style == 'thick', column
+        assert (head.border.bottom.color.rgb or '')[-6:] == '000000', column
+
+    total = next(r for r in range(1, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'TOTAL')
+    headings = [r for r in range(2, total + 1)
+                if sheet.cell(row=r, column=1).value
+                and not str(sheet.cell(row=r, column=1).value).startswith('  ')]
+    assert len(headings) > 1 and total in headings
+    for row in headings:
+        for column in range(1, columns + 1):
+            cell = sheet.cell(row=row, column=column)
+            assert cell.font.bold is True, (row, column)
+            assert (cell.font.color.rgb or '')[-6:] == wb._HEADING_INK, (row, column)
+            assert (cell.fill.fgColor.rgb or '')[-6:] == 'FFFFFF', (row, column)
+    for column in range(1, columns + 1):
+        top = sheet.cell(row=total, column=column).border.top
+        assert top.style == 'thick' and (top.color.rgb or '')[-6:] == '000000', column
+    # the blue band is nowhere on the sheet any more
+    assert wb._BAND not in {(sheet.cell(row=r, column=c).fill.fgColor.rgb or '')[-6:]
+                            for r in range(1, sheet.max_row + 1)
+                            for c in range(1, columns + 1)}
+
+
+def test_each_category_on_the_portfolios_sheet_opens_with_a_thin_rule():
+    """D80. The blue band no longer parts the blocks, so a thin black rule
+    does: on every category row, across the sheet, and on no asset row."""
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['portfolios']
+    total = next(r for r in range(1, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'TOTAL')
+    categories = assets = 0
+    for row in range(2, total):
+        label = sheet.cell(row=row, column=1).value
+        if not label:
+            continue
+        rules = {(getattr(sheet.cell(row=row, column=c).border.top, 'style', None),
+                  (getattr(sheet.cell(row=row, column=c).border.top.color, 'rgb', None) or '')[-6:])
+                 for c in range(1, sheet.max_column + 1)}
+        if str(label).startswith('  '):
+            assets += 1
+            assert rules == {(None, '')}, (label, rules)
+        else:
+            categories += 1
+            assert rules == {('thin', '000000')}, (label, rules)
+    assert categories > 1 and assets > 1
+
+
+def test_the_risk_dashboard_writes_its_labels_in_the_heading_ink():
+    """D80. The category names and the three metrics, in column A only: the
+    figures beside them keep the plain font."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import workbook as wb
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    def ink(cell):
+        # an unset colour is an RGB descriptor, not a string
+        value = getattr(cell.font.color, 'rgb', None)
+        return value[-6:] if isinstance(value, str) else None
+
+    metrics = {'Estimated Mean Return', 'Sharpe Ratio', 'Volatility'}
+    categories = {c['name'] for c in _goldenCase()[0][0]['categories']}
+    seen = set()
+    for row in range(2, sheet.max_row + 1):
+        label = sheet.cell(row=row, column=1)
+        text = str(label.value or '')
+        if text in metrics or text in categories:
+            seen.add(text)
+            assert label.font.bold is True, text
+            assert ink(label) == wb._HEADING_INK, text
+            for column in range(2, sheet.max_column + 1):
+                figure = sheet.cell(row=row, column=column)
+                assert figure.font.bold is False, (text, column)
+                assert ink(figure) != wb._HEADING_INK, (text, column)
+    assert metrics <= seen, seen
+    assert len(seen) > len(metrics), 'the categories were not reached'
+
+
+def test_the_portfolios_sheet_parts_the_total_from_the_metric_bands():
+    """D79. A full-height empty row under TOTAL, then a hairline spacer above
+    each of the three metric bands - the Sharpe ratio included, where the
+    report had parted only two of them."""
+    from openpyxl import load_workbook
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['portfolios']
+    label = lambda r: sheet.cell(row=r, column=1).value
+    total = next(r for r in range(1, sheet.max_row + 1) if label(r) == 'TOTAL')
+
+    blank = total + 1
+    assert all(sheet.cell(row=blank, column=c).value is None
+               for c in range(1, sheet.max_column + 1)), 'the row under TOTAL is empty'
+    assert (sheet.cell(row=blank, column=1).fill.fgColor.rgb or '')[-6:] == 'FFFFFF'
+    assert sheet.row_dimensions[blank].height != 3, 'this one is a gap, not a hairline'
+
+    for metric in ('Estimated Mean Return', 'Sharpe Ratio', 'Volatility'):
+        row = next(r for r in range(1, sheet.max_row + 1) if label(r) == metric)
+        assert label(row - 1) is None, metric
+        assert sheet.row_dimensions[row - 1].height == 3, metric
+
+
 def test_a_category_band_names_the_category_and_nothing_else():
     """D78. The Products cell of a band row is empty: the sleeve that
     implemented the category is the screen's and the register's to report, not

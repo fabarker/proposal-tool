@@ -1487,6 +1487,11 @@ One line each; the register carries the reasoning.
 - **D78** Workbook formatting: the risk dashboard loses its trailing band and levels every row to 16,
   closing on a solid black rule; the Implementation table is filled white, its Total ruled in solid
   black, and Ticker and Minimum Investment leave the sheet (both stay on the screen and in the register).
+- **D79** The strategic sheet dressed for delivery: bold names over a thick rule, categories as headings
+  in `#092C61` instead of blue bands, TOTAL the same and thickly ruled, an empty row under it, and a
+  hairline spacer above all three metric bands. `engineParity` keeps the library's dress for the golden test.
+- **D80** A thin rule above every category on `portfolios`, and the same heading ink and weight on the
+  category and metric labels of `risk_dashboard`, in column A alone.
 
 ## Appendix B — where the rest is written down
 

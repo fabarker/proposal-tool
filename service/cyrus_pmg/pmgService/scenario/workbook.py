@@ -67,6 +67,11 @@ _DOTTED = Side(style='dotted', color='A9A9A9')
 _THIN = Side(style='thin')
 #: the rule that closes a table: solid, thin, black (D78)
 _BLACK_THIN = Side(style='thin', color='000000')
+#: the heavier rule that brackets the strategic table (D79)
+_BLACK_THICK = Side(style='thick', color='000000')
+#: the ink a category heading is written in, in place of the blue band it
+#: used to sit on (D79)
+_HEADING_INK = '092C61'
 _HAIR = Side(style='hair')
 _WHITE_FILL = PatternFill('solid', fgColor=_WHITE)
 
@@ -641,6 +646,22 @@ def writePortfoliosSheet(book, results, engineParity: bool = False):
     metricFont = Font(name='Calibri', size=12.5, color=_WHITE)
     band = PatternFill('solid', fgColor=_BAND)
     navy = PatternFill('solid', fgColor=_NAVY)
+
+    # How this sheet is dressed in a delivered proposal, against how the
+    # library dressed it (D79). The names are bold over a thick rule; a
+    # category is a heading in its own ink rather than a row on a blue band,
+    # and TOTAL is the same heading closed off with the same thick rule.
+    # engineParity keeps the library's own styling, which is what the golden
+    # workbook was captured with and the only thing it can be compared to.
+    headFont = light if engineParity else Font(name='Calibri Light', size=12.5, bold=True)
+    headRule = Border(bottom=_DOTTED if engineParity else _BLACK_THICK)
+    headingFont = light if engineParity else Font(name='Calibri Light', size=12.5,
+                                                  bold=True, color=_HEADING_INK)
+    headingFill = band if engineParity else _WHITE_FILL
+    # each category opens with a thin rule, so the blocks read apart now that
+    # the blue band no longer separates them (D80)
+    headingRule = None if engineParity else Border(top=_BLACK_THIN)
+    totalRule = Border(top=_DOTTED if engineParity else _BLACK_THICK)
     right = Alignment(horizontal='right', vertical='center', indent=4)
     columns = len(results)
 
@@ -665,7 +686,7 @@ def writePortfoliosSheet(book, results, engineParity: bool = False):
                     cell.number_format = fmt
 
     sheet.append([None] + [r['name'] for r in results])
-    style(1, light, border=Border(bottom=_DOTTED), height=37, labelAlign=None)
+    style(1, headFont, border=headRule, height=37, labelAlign=None)
     for index in range(2, columns + 2):
         sheet.cell(row=1, column=index).alignment = Alignment(
             horizontal='center', vertical='center')
@@ -675,7 +696,8 @@ def writePortfoliosSheet(book, results, engineParity: bool = False):
         sheet.append([categoryName] + [
             None if (w := _weight(r, categoryName)) is None else w / 100.0
             for r in results])
-        style(sheet.max_row, light, band, '0.0%', height=17)
+        style(sheet.max_row, headingFont, headingFill, '0.0%',
+              border=headingRule, height=17)
         for assetName in assets[categoryName]:
             sheet.append(['  ' + assetName] + [
                 None if (w := _weight(r, categoryName, assetName)) is None else w
@@ -683,14 +705,24 @@ def writePortfoliosSheet(book, results, engineParity: bool = False):
             style(sheet.max_row, light, fmt='0.0', height=17)
 
     sheet.append(['TOTAL'] + [1.0] * columns)
-    style(sheet.max_row, light, fmt='0.0%', border=Border(top=_DOTTED),
+    style(sheet.max_row, headingFont, fmt='0.0%', border=totalRule,
           height=23, labelAlign=None, vertical=None)
+    if not engineParity:
+        # An empty row under the total, so the metric bands below read as a
+        # separate block rather than as a continuation of the table (D79).
+        # Styled but never written to: it carries the sheet's white ground and
+        # nothing else. Addressed by number because openpyxl's max_row does not
+        # move for a row that has no cells yet.
+        blank = sheet.max_row + 1
+        style(blank, light)
 
     for label, field, fmt in (('Estimated Mean Return', 'estimatedReturnPct', '0.0%'),
                               ('Sharpe Ratio', 'sharpe', '0.00'),
                               ('Volatility', 'volatilityPct', '0.0%')):
-        if label != 'Sharpe Ratio':
-            # a hairline spacer above each block, exactly as the report has it
+        if not engineParity or label != 'Sharpe Ratio':
+            # A hairline spacer above each block. The report has one above the
+            # return and the volatility but not above the Sharpe ratio; a
+            # delivered proposal parts all three evenly (D79).
             sheet.append([None] + [0] * columns)
             style(sheet.max_row, spacerFont, height=3, labelAlign=None, vertical=None)
             for index in range(2, columns + 2):
@@ -716,6 +748,12 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
     because the screen reads them as losses, and the sheet does not."""
     sheet = book.create_sheet('risk_dashboard')
     narrow = Font(name='Aptos Narrow', size=12)
+    # The category and metric labels are written in the same ink as the
+    # strategic sheet's headings (D80), in this sheet's own face. The LABEL
+    # only: the figures beside it keep the plain font, so the column of names
+    # reads as headings without the table turning bold.
+    headingFont = narrow if engineParity else Font(name='Aptos Narrow', size=12,
+                                                   bold=True, color=_HEADING_INK)
     onNavy = Font(name='Aptos Narrow', size=12, color=_WHITE)
     section = Font(name='Aptos Narrow', size=12, bold=True, color=_SUBHEAD_NAVY)
     navy = PatternFill('solid', fgColor=_HEADER_NAVY)
@@ -764,6 +802,7 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
         sheet.append([categoryName] + values)
         paint(sheet.max_row, narrow, fmt='0.0%',
               height=20 if engineParity and sheet.max_row == 2 else 16)
+        sheet.cell(row=sheet.max_row, column=1).font = headingFont
         merge(sheet.max_row)
 
     # The library left four unlabelled rows in here - two before the metrics
@@ -790,6 +829,7 @@ def writeRiskDashboardSheet(book, results, engineParity: bool = False):
             sheet.append([label] + values)
             paint(sheet.max_row, narrow, fmt=fmt,
                   border=Border(top=_DOTTED) if field == 'estimatedReturnPct' else None)
+            sheet.cell(row=sheet.max_row, column=1).font = headingFont
         merge(sheet.max_row)
 
     def band(title):
