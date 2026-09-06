@@ -1035,7 +1035,7 @@ Measured on the epsilon-phi side (Python 3.8.20). The host's versions are Unveri
 |---|---|---|---|
 | Python | 3.8.20 | everything (`from __future__ import annotations` throughout) | not stated |
 | `fastapi` / `starlette` / `pydantic` | 0.122.0 / 0.44.0 / 2.5.3 | the router: `APIRouter, Body, Depends, Request, Response, JSONResponse` only | present, versions not stated |
-| `openpyxl` | 3.0.10 | `workbook.py` — `Workbook`, styles, `get_column_letter`, `chart.DoughnutChart`, `chart.Reference`, `chart.series.DataPoint`, `formatting.rule.CellIsRule`; `advisors.py`; the tests | **not named — verify/install** |
+| `openpyxl` | 3.0.10, and **3.1.5 verified** | `workbook.py` — `Workbook`, styles, `get_column_letter`, `chart.DoughnutChart`, `chart.Reference`, `chart.series.DataPoint`, `formatting.rule.CellIsRule`; `advisors.py`; the tests | the whole suite, the golden cell-for-cell comparison included, passes unchanged on 3.1.5, so either line is safe; **not named — verify/install** |
 | `pandas` | 2.0.3 | `portfolio_weights.py` imports it at module level and builds two frames at import (lines 1257–1258); `universe.py`, `rules.py` and `workbook.py` import that module for `ASSET_METADATA`. Measured: pandas import 0.73 s, then the package 0.37 s | **not named — verify/install** |
 | `requests`, `flask` | 2.32.3 / 2.2.5 | the host's own proxy and gate, not the package | present |
 | `sqlite3` | stdlib, **library ≥ 3.8.0** | the sleeve repository and the proposal register; the partial unique index needs 3.8.0 (§11.3.2) | verify — a stripped Python build without `_sqlite3`, or RHEL 7's 3.7.17, would fail |
