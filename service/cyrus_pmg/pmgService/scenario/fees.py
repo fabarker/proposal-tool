@@ -90,10 +90,23 @@ def _readDelivery(path: str) -> dict:
             tier = row['tier'].strip()
             try:
                 low = float(row['tierMin'])
+                # A BLANK tierMax is how the top tier says "and up": it becomes
+                # None, and tierLabel reads it back as "$100m and up".
                 high = float(row['tierMax']) if row['tierMax'].strip() else None
                 rate = float(row['rate'])
             except ValueError:
                 raise BadRateCard('{} row {}: a number is not a number'.format(path, n))
+            # Infinity is NOT the way to say "and up". float() takes 'inf' and a
+            # huge number alike, and each then prints as a bounded band with
+            # nonsense in it - "$10m - $infm" - on the rail, in the workbook and
+            # in the fee card viewer. Refused here rather than shown to a client
+            # (D82). Checked outside the try: BadRateCard IS a ValueError, so a
+            # raise inside it would come back out as "a number is not a number".
+            for edge, value in (('tierMin', low), ('tierMax', high)):
+                if value is not None and (value != value or value - value != 0):
+                    raise BadRateCard(
+                        '{} row {}: {} is {!r}. Leave tierMax EMPTY for the top tier - that '
+                        'is how a tier says "and up".'.format(path, n, edge, row[edge]))
             if rate < 0:
                 raise BadRateCard('{} row {}: negative rate'.format(path, n))
             edges = (low, high)
@@ -124,6 +137,7 @@ PLACEHOLDER = bool(_CONFIG.get('placeholder'))
 SCHEDULES = [s['id'] for s in _CONFIG['schedules']]
 SCHEDULE_NOTES = {s['id']: s['note'] for s in _CONFIG['schedules']}
 _BY_GROUP = {s['id']: bool(s['byGroup']) for s in _CONFIG['schedules']}
+_MARGINAL = {s['id']: bool(s.get('marginal')) for s in _CONFIG['schedules']}
 SOURCES = list(_CONFIG['sources'])
 POINTS = list(_CONFIG['points'])
 LEVELS = [levelId(s, p) for s in SOURCES for p in POINTS]
@@ -164,6 +178,89 @@ def byGroup(schedule: str) -> bool:
     return _BY_GROUP[schedule]
 
 
+def isMarginal(schedule: str) -> bool:
+    """Whether *schedule* is priced progressively across the tiers (D83).
+
+    A marginal schedule does not read one tier. The mandate fills the tiers in
+    turn, each band pays its own tier's rate, and the blended result is the
+    single rate every product carries. CASP is marginal; RDR reads one tier as
+    it always has. Which is which is `fees.json`'s to say, not this module's.
+    """
+    if schedule not in _MARGINAL:
+        raise KeyError('Unknown fee schedule: {!r}'.format(schedule))
+    return _MARGINAL[schedule]
+
+
+# ------------------------------------------- marginal pricing (D83) --------
+
+def marginalBands(amount) -> list:
+    """How *amount* fills the tier ladder: one entry per band it reaches.
+
+    Each carries the tier it belongs to, the band's own edges and the money in
+    it. The bands always cover [0, amount] exactly, because the card reader
+    refuses tiers that are not contiguous from zero with an open top
+    (`_assertWellFormed`), so the blend below never divides by a partial fill.
+    """
+    if isinstance(amount, bool) or not isinstance(amount, Real):
+        raise ValueError('The amount must be a number, got {!r}'.format(amount))
+    if amount <= 0:
+        raise ValueError('The amount must be above zero, got {!r}'.format(amount))
+    bands, filled = [], 0.0
+    for tier in TIERS:
+        low = tier['min']
+        high = amount if tier['max'] is None else min(float(tier['max']), float(amount))
+        if high <= low:
+            continue
+        bands.append({'tier': tier['id'], 'label': tier['label'],
+                      'from': float(low), 'to': float(high),
+                      'amount': float(high - low)})
+        filled += high - low
+        if tier['max'] is not None and amount <= tier['max']:
+            break
+    if abs(filled - amount) > 1e-6:
+        raise BadRateCard(
+            'the tiers fill {:,.2f} of {:,.2f}: the ladder has a gap'.format(filled, amount))
+    return bands
+
+
+def effectiveRate(schedule: str, amount, level: str, feeGroup: str = None) -> float:
+    """The blended rate *amount* pays across the ladder, in percent (D83).
+
+    Money in each band pays that band's tier rate; the blend is the total
+    divided by the amount. Only for a marginal schedule - a flat one has a
+    rate, not a blend, and asking for one here is a caller's mistake.
+    """
+    if not isMarginal(schedule):
+        raise KeyError('{} is not priced marginally; read its tier rate '
+                       'with managementFee()'.format(schedule))
+    source, point = splitLevel(level)
+    group = feeGroup if byGroup(schedule) else None
+    if byGroup(schedule) and group not in FEE_GROUPS:
+        raise KeyError('Unknown fee group: {!r}'.format(feeGroup))
+    paid = sum(band['amount'] * _rate(schedule, group, band['tier'], source, point)
+               for band in marginalBands(amount))
+    return paid / float(amount)
+
+
+def marginalPayload(schedule: str, amount, feeGroup: str = None) -> dict:
+    """The build-up behind a marginal blend: the bands, and the blended rate
+    at every level. What the API serves and what a reader checks a number
+    against."""
+    bands = marginalBands(amount)
+    source = {}
+    for band in bands:
+        source[band['tier']] = {level: _rate(schedule, None if not byGroup(schedule) else feeGroup,
+                                             band['tier'], *splitLevel(level))
+                                for level in LEVELS}
+    return {
+        'schedule': schedule,
+        'amount': float(amount),
+        'bands': [dict(band, rates=source[band['tier']]) for band in bands],
+        'effective': {level: effectiveRate(schedule, amount, level, feeGroup)
+                      for level in LEVELS},
+    }
+
+
 # ------------------------------------------------ the rates ---------------
 
 def _rate(schedule, group, tier, source, point) -> float:
@@ -187,6 +284,20 @@ def managementFee(schedule: str, topAccountSize, level: str, feeGroup: str = Non
     if feeGroup not in FEE_GROUPS:
         raise KeyError('Unknown fee group: {!r}'.format(feeGroup))
     return _rate(schedule, feeGroup, tierId, source, point)
+
+
+def productFee(schedule: str, level: str, feeGroup, topAccountSize, mandateSize) -> float:
+    """What one product's management fee is, whichever way its schedule prices.
+
+    The one entry point the implementation model uses, because the two
+    schedules read different inputs: a marginal schedule blends the MANDATE
+    across the ladder and ignores the top account size entirely (D83), while a
+    flat one reads the single tier the TOP ACCOUNT SIZE falls in (D51).
+    """
+    if isMarginal(schedule):
+        return effectiveRate(schedule, mandateSize, level,
+                             feeGroup if byGroup(schedule) else None)
+    return managementFee(schedule, topAccountSize, level, feeGroup)
 
 
 def ratesAtTier(tierId: str) -> dict:
@@ -217,16 +328,49 @@ def deliveryInfo() -> dict:
     return info
 
 
-def feePayload(topAccountSize=None) -> dict:
-    """The 'fees' block of the schema payload (spec 4.3: schema is data).
+def ratesFor(topAccountSize=None, mandateSize=None) -> dict:
+    """The rates the client prices with - the same shape as `ratesAtTier`.
 
-    Without a top account size there is no tier and no rates, and the client
-    shows the fee columns unpriced.
+    A marginal schedule's numbers are ALREADY BLENDED here (D83), so the
+    client's resolver stays the lookup it has always been and cannot drift
+    from this module by doing arithmetic of its own. A flat schedule reads its
+    tier. Either may be missing: without a mandate size a marginal schedule
+    has nothing to blend, and without a top account size a flat one has no
+    tier; that schedule is then absent and the client shows it unpriced.
     """
     tier = tierFor(topAccountSize) if topAccountSize is not None else None
+    out = {}
+    for schedule in SCHEDULES:
+        if isMarginal(schedule):
+            if mandateSize is None or mandateSize <= 0:
+                continue
+            if byGroup(schedule):
+                out[schedule] = {'byGroup': True, 'marginal': True, 'groups': {
+                    g: {level: effectiveRate(schedule, mandateSize, level, g)
+                        for level in LEVELS} for g in FEE_GROUPS}}
+            else:
+                out[schedule] = {'byGroup': False, 'marginal': True, 'levels': {
+                    level: effectiveRate(schedule, mandateSize, level) for level in LEVELS}}
+        elif tier is not None:
+            out[schedule] = dict(ratesAtTier(tier['id'])[schedule], marginal=False)
+    return out or None
+
+
+def feePayload(topAccountSize=None, mandateSize=None) -> dict:
+    """The 'fees' block of the schema payload (spec 4.3: schema is data).
+
+    Without a top account size there is no tier, and without a mandate size no
+    marginal blend; a schedule that cannot be priced is simply absent from
+    `rates` and the client shows its fee columns unpriced.
+    """
+    tier = tierFor(topAccountSize) if topAccountSize is not None else None
+    marginal = {s: marginalPayload(s, mandateSize) for s in SCHEDULES
+                if isMarginal(s) and not byGroup(s) and mandateSize and mandateSize > 0}
     return {
         'placeholder': PLACEHOLDER,
-        'schedules': [{'id': s, 'note': SCHEDULE_NOTES[s], 'byGroup': byGroup(s)} for s in SCHEDULES],
+        'schedules': [{'id': s, 'note': SCHEDULE_NOTES[s], 'byGroup': byGroup(s),
+                       'marginal': isMarginal(s)} for s in SCHEDULES],
+        'marginal': marginal or None,
         'sources': SOURCES,
         'points': POINTS,
         'levels': [{'id': levelId(s, p), 'source': s, 'point': p} for s in SOURCES for p in POINTS],
@@ -234,7 +378,7 @@ def feePayload(topAccountSize=None) -> dict:
         'feeGroups': FEE_GROUPS,
         'tiers': [dict(t) for t in TIERS],
         'tier': tier,
-        'rates': ratesAtTier(tier['id']) if tier else None,
+        'rates': ratesFor(topAccountSize, mandateSize),
         'delivery': {k: DELIVERY.get(k) for k in ('source', 'version', 'asOf')},
     }
 

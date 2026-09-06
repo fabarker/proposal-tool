@@ -795,7 +795,7 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | Method | Path | Handler | Gate |
 |---|---|---|---|
 | GET | `/scenario/schema?currency&hedging&mandateSize&variant&topAccountSize` | `getScenarioSchema` | requireAuth |
-| GET | `/scenario/fees?tier&topAccountSize&whole` | `getFeeCard` | requireAuth |
+| GET | `/scenario/fees?tier&topAccountSize&whole&mandateSize&schedule` | `getFeeCard` | requireAuth |
 | GET | `/scenario/advisors?q&limit` | `searchAdvisors` | requireAuth |
 | GET | `/scenario/sleeves?category&variant&currency&hedging` | `listSleeves` | requireAuth |
 | GET | `/scenario/{scenarioId}` | `getScenario` | requireAuth |
@@ -845,8 +845,9 @@ product's minimum (D70).
   weightPct}]}], metrics{estimatedReturnPct, volatilityPct, sharpe}, stress[{period, nominalPct,
   realPct}], premia[{group, horizon, label, nominalPct, realPct, kind}]`; non-USD payloads also
   carry `analyticsCurrency`.
-- **A served sleeve product**: `productId, name, ticker, assetClass, style, vehicle, source,
-  liquidity, exposureCurrency, productCost, feeGroup, distributionYield, minimumInvestment, weight`.
+- **A served sleeve product**: `productId, name, ticker, assetClass, style, vehicle, shareClass,
+  source, liquidity, exposureCurrency, productCost, feeGroup, distributionYield,
+  minimumInvestment, weight`.
 - **Schema**: `options, availability, categories, rules, fees, capabilities{canExport, canEdit,
   canAdmin}, dataInfo{adapter, source, dataversion, asOf}`.
 - **Export**: `Content-Disposition: attachment; filename="PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx"`
@@ -1232,8 +1233,9 @@ nav for users.
     the mandate in the test to prove the success path.
 12. A successful export downloads `PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx` with sheets
     `portfolios, risk_dashboard, assumptions, Implementation` (+ hidden `chartData`); the
-    Implementation sheet's first row reads `Proposal UID` / `<uid>`, its table carries twelve columns
-    (ten unpriced) with no Ticker and no Minimum Investment (D78), and the same `<uid>` is the
+    Implementation sheet's first row reads `Proposal UID` / `<uid>`, its table carries thirteen columns
+    (eleven unpriced) with no Ticker and no Minimum Investment (D78) and a Share Class beside the
+    Vehicle (D81), and the same `<uid>` is the
     filename's last token and the new row's id in the console's Proposals tab (D75); the
     Implementation total is exactly 100.00%; the doughnut charts render in Excel.
 12a. Start here: the card shows **Continue · Cancel** far left and **Create Account Opening Request**
@@ -1492,6 +1494,17 @@ One line each; the register carries the reasoning.
   hairline spacer above all three metric bands. `engineParity` keeps the library's dress for the golden test.
 - **D80** A thin rule above every category on `portfolios`, and the same heading ink and weight on the
   category and metric labels of `risk_dashboard`, in column A alone.
+- **D81** A `ShareClass` column on the catalogue — `Dis` or `Acc` — carried onto every line item and
+  shown on the screen, on the Implementation sheet and in the admin catalogue. Optional in the reader.
+- **D82** An empty `tierMax` is how the top fee tier says "and up"; a non-finite edge is refused on load.
+- **D83** CASP is priced **marginally**: the mandate size fills the tiers in turn and the blended rate is
+  what every row, the total, the rail and the sheet show. RDR still reads one tier from the top account
+  size. The server serves the blend, so the page's resolver stays a lookup.
+- **D84** A *How this is calculated* card in the rail, under a marginal schedule only: the bands, the money
+  in each, the rate it pays, the annual fee, and the same mandate blended at all six levels. Rendered from
+  the schema block, no fetch.
+- **D85** The screen table's band and total spans are counted off its column list, not written as literals;
+  a stale one had left band rows a cell short and the Notional column unshaded.
 
 ## Appendix B — where the rest is written down
 
@@ -1588,6 +1601,7 @@ columns, two optional:
 | `AssetClass` | text | Free text; shown in the table. |
 | `Style` | text | Free text; one of the five composition doughnuts (D31, D73) groups by its distinct values. |
 | `Vehicle` | text | Free text; a doughnut axis (e.g. `SMA`, `Mutual Fund`, `ETF`). |
+| `ShareClass` | text, optional | `Dis` (distributing) or `Acc` (accumulating), and nothing else — any other value is refused on load. Blank, or the column absent, means the product has no share class and the cell prints as a dash (D81). |
 | `Source` | text | Free text; a doughnut axis (e.g. `Internal`, `External`). |
 | `Liquidity` | text | Free text; a doughnut axis (e.g. `Daily`, `Quarterly`). |
 | `ExposureCurrency` | text | Free text; a doughnut axis (`USD`, `EUR`, …). |
@@ -1623,10 +1637,10 @@ level `PMG Target`) and the **rates** are the CSV, one row per cell:
 
 | Column | Type | Rule |
 |---|---|---|
-| `schedule` | text | `CASP` or `RDR`. |
+| `schedule` | text | `CASP` or `RDR`. **CASP is priced marginally** (D83): the mandate fills the tiers in turn and pays each band's own rate, so every tier's rate matters to every mandate, not just the one the account size lands in. RDR reads a single tier. |
 | `feeGroup` | text | Blank for `CASP`; one of the fee groups for `RDR`. The distinct values here *define* the set `products.csv` must use. |
 | `tier` | text | Tier id (`T1`…). Every row of a tier must carry the same edges. |
-| `tierMin`, `tierMax` | number | Top-account-size edges in **currency units**; `tierMax` blank = open-ended. |
+| `tierMin`, `tierMax` | number | Top-account-size edges in **currency units**. **Leave `tierMax` empty on the top tier** — an empty cell is how a tier says *and up*, and it reads back as "$100m and up". `Infinity`, `inf` and a very large number are all refused on load (D82). |
 | `source` | text | `Management` or `PMG`. |
 | `point` | text | `Floor`, `Target` or `Ceiling`. The fee *level* a proposal prices at is `<source> <point>`, e.g. `PMG Floor`. |
 | `rate` | number ≥ 0 | **Percent** (`0.45` = 0.45%). |

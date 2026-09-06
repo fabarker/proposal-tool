@@ -115,7 +115,8 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
 _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
-                'source', 'liquidity', 'exposureCurrency', 'printedPct', 'notional')
+                'shareClass', 'source', 'liquidity', 'exposureCurrency',
+                'printedPct', 'notional')
 
 _lock = threading.Lock()
 

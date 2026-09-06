@@ -258,8 +258,9 @@ function schemaQuery() {
   if (state.mandate && state.mandate.mandateSize) {
     q += '&mandateSize=' + encodeURIComponent(state.mandate.mandateSize);
   }
-  /* The top account size sets the fee tier, and the schema carries the
-     rates at that tier (D51). */
+  /* The top account size sets a flat schedule's fee tier (D51); the mandate
+     size, sent above, is what a marginal schedule blends across the ladder
+     (D83). The schema carries the resulting rates either way. */
   if (state.mandate && state.mandate.topAccountSize) {
     q += '&topAccountSize=' + encodeURIComponent(state.mandate.topAccountSize);
   }
@@ -267,6 +268,16 @@ function schemaQuery() {
      belongs in the key of what the schema describes (D49). */
   if (state.variant) q += '&variant=' + encodeURIComponent(state.variant);
   return q;
+}
+
+/* The blended rate the chosen schedule prices at, or null when it is not a
+   marginal schedule. Read straight off the schema - the server does the
+   blending (D83) - and used only to notice that a mandate edit moved it. */
+function feeBlendNow() {
+  var table = (opt('fees.rates', null) || {})[state.feeSchedule];
+  if (!table || !table.marginal) return null;
+  var rate = (table.levels || {})[state.feeLevel || opt('fees.defaultLevel', null)];
+  return (typeof rate === 'number') ? rate : null;
 }
 
 /* Whether the chosen variant mandates the real-estate exclusion. Read from the
@@ -281,15 +292,23 @@ async function fetchSchema() {
   state.schemaStatus = 'loading';
   refresh();
   var tierBefore = opt('fees.tier.id', null);
+  var blendBefore = feeBlendNow();
   try {
     state.schema = await apiFetch('/scenario/schema' + schemaQuery());
     state.schemaStatus = 'ready';
     state.schemaError = null;
     pruneUnavailableColumns();
-    /* A mandate edit can move the account-size tier, which re-prices every
-       management fee on the sheet without any row visibly changing. */
+    /* A mandate edit can re-price every management fee on the sheet without
+       any row visibly changing: it can move a flat schedule's account-size
+       tier, or move the blend a marginal schedule pays across the ladder
+       (D83). Either way the change is announced, because nothing on screen
+       would otherwise say it happened. */
     var tierAfter = opt('fees.tier.id', null);
-    if (tierBefore && tierAfter && tierBefore !== tierAfter) {
+    var blendAfter = feeBlendNow();
+    if (blendBefore !== null && blendAfter !== null && blendBefore !== blendAfter) {
+      announce('polite', 'Effective fee rate is now ' + blendAfter.toFixed(4)
+        + '%; management fees re-priced.');
+    } else if (tierBefore && tierAfter && tierBefore !== tierAfter) {
       announce('polite', 'Account size tier is now ' + opt('fees.tier.label', tierAfter)
         + '; management fees re-priced.');
     }

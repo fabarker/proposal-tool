@@ -974,6 +974,7 @@ PAGE_SHELL = """<!doctype html>
 <!-- Account opening request (D76), rendered on demand. -->
 <div id="accountDialog" hidden></div>
 <div id="feeDialog" hidden></div>
+<div id="priceDialog" hidden></div>
 <div id="repoDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>

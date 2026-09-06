@@ -333,8 +333,9 @@ function schemaQuery() {
   if (state.mandate && state.mandate.mandateSize) {
     q += '&mandateSize=' + encodeURIComponent(state.mandate.mandateSize);
   }
-  /* The top account size sets the fee tier, and the schema carries the
-     rates at that tier (D51). */
+  /* The top account size sets a flat schedule's fee tier (D51); the mandate
+     size, sent above, is what a marginal schedule blends across the ladder
+     (D83). The schema carries the resulting rates either way. */
   if (state.mandate && state.mandate.topAccountSize) {
     q += '&topAccountSize=' + encodeURIComponent(state.mandate.topAccountSize);
   }
@@ -342,6 +343,16 @@ function schemaQuery() {
      belongs in the key of what the schema describes (D49). */
   if (state.variant) q += '&variant=' + encodeURIComponent(state.variant);
   return q;
+}
+
+/* The blended rate the chosen schedule prices at, or null when it is not a
+   marginal schedule. Read straight off the schema - the server does the
+   blending (D83) - and used only to notice that a mandate edit moved it. */
+function feeBlendNow() {
+  var table = (opt('fees.rates', null) || {})[state.feeSchedule];
+  if (!table || !table.marginal) return null;
+  var rate = (table.levels || {})[state.feeLevel || opt('fees.defaultLevel', null)];
+  return (typeof rate === 'number') ? rate : null;
 }
 
 /* Whether the chosen variant mandates the real-estate exclusion. Read from the
@@ -356,15 +367,23 @@ async function fetchSchema() {
   state.schemaStatus = 'loading';
   refresh();
   var tierBefore = opt('fees.tier.id', null);
+  var blendBefore = feeBlendNow();
   try {
     state.schema = await apiFetch('/scenario/schema' + schemaQuery());
     state.schemaStatus = 'ready';
     state.schemaError = null;
     pruneUnavailableColumns();
-    /* A mandate edit can move the account-size tier, which re-prices every
-       management fee on the sheet without any row visibly changing. */
+    /* A mandate edit can re-price every management fee on the sheet without
+       any row visibly changing: it can move a flat schedule's account-size
+       tier, or move the blend a marginal schedule pays across the ladder
+       (D83). Either way the change is announced, because nothing on screen
+       would otherwise say it happened. */
     var tierAfter = opt('fees.tier.id', null);
-    if (tierBefore && tierAfter && tierBefore !== tierAfter) {
+    var blendAfter = feeBlendNow();
+    if (blendBefore !== null && blendAfter !== null && blendBefore !== blendAfter) {
+      announce('polite', 'Effective fee rate is now ' + blendAfter.toFixed(4)
+        + '%; management fees re-priced.');
+    } else if (tierBefore && tierAfter && tierBefore !== tierAfter) {
       announce('polite', 'Account size tier is now ' + opt('fees.tier.label', tierAfter)
         + '; management fees re-priced.');
     }
@@ -3771,6 +3790,50 @@ function managementFee(feeGroup) {
   return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup);
 }
 
+/* Whether the chosen schedule is priced marginally, and the one blended rate
+   it prices every product at (D83). The SERVER does the blending - what the
+   schema serves under a marginal schedule is already the blend - so this is a
+   lookup like every other fee here, and there is no arithmetic to drift from
+   fees.py. Null when the schedule is flat, or when there is nothing to price
+   from yet. */
+function feeIsMarginal() {
+  var table = (feeRates() || {})[App.feeSchedule()];
+  return !!(table && table.marginal);
+}
+
+function effectiveFee() {
+  return feeIsMarginal() ? managementFee(null) : null;
+}
+
+/* ---- the implementation table's columns ----------------------------------
+   The descriptive columns between Allocation and Product cost, as ONE list.
+   The header is written from it and both filler spans are counted off it,
+   because a band row and the total row cover these columns with a single
+   empty cell and a literal span goes stale the moment a column is added -
+   which is exactly what happened when Share Class arrived (D81) and left the
+   band rows one cell short, so the Notional column had no cell at all.
+
+   The screen's list is not the sheet's and is not meant to be: the sheet
+   spells three headers out (D74) and drops Ticker and Minimum Investment
+   (D78). Each states its own. */
+var IMPL_TEXT_COLUMNS = ['Ticker', 'Style', 'Vehicle', 'Share class',
+                         'Source', 'Liquidity', 'Exp ccy'];
+
+/* Every column of the screen's table, in order - the thing both spans below
+   have to add up to. */
+function implScreenColumns(fees) {
+  return ['Categories & Asset Classes', 'Products', 'Allocation (%)']
+    .concat(IMPL_TEXT_COLUMNS)
+    .concat(['Prod cost'])
+    .concat(fees ? ['Mgmt fee', 'Wtd fee'] : [])
+    .concat(['Min Investment', 'Notional']);
+}
+
+/* A category band leaves the descriptive columns empty and keeps its own
+   Product cost cell; the total also swallows Product cost, having none. */
+function implBandSpan() { return IMPL_TEXT_COLUMNS.length; }
+function implTotalSpan() { return IMPL_TEXT_COLUMNS.length + 1; }
+
 function feeText(pct) { return pct === null ? '—' : App.num(pct, 2, '%'); }
 function bpText(bp) { return bp === null ? '—' : App.num(bp, 1, 'bp'); }
 
@@ -3943,7 +4006,8 @@ function rows() {
       sleeve.products.forEach(function (product) {
         var item = {
           name: product.name, ticker: product.ticker, assetClass: product.assetClass,
-          style: product.style, vehicle: product.vehicle, source: product.source,
+          style: product.style, vehicle: product.vehicle,
+          shareClass: product.shareClass || null, source: product.source,
           liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
           cost: product.productCost, feeGroup: product.feeGroup,
           minimumInvestment: product.minimumInvestment,
@@ -4304,15 +4368,32 @@ function feeFields() {
               function (source, point) { return idFor(source, point); }, 'Fee source')
     + segment(points, curPoint, curSource, 'data-feepoint',
               function (point, source) { return idFor(source, point); }, 'Fee Level point')
-    + '<p class="vr-note">' + (tier
-        ? 'Tier ' + App.esc(tier.id) + ', ' + App.esc(tier.label) + ', from the top account size.'
-        : 'No account-size tier: the mandate has no top account size.')
-    + '</p>'
+    + '<p class="vr-note">' + feePricingNote(tier) + '</p>'
     + (App.opt('fees.placeholder', false)
         ? '<p class="fee-flag">Placeholder rates, not the published schedule.</p>' : '')
     + feeCardLine()
+    + (marginalBuildUp()
+        ? '<button type="button" class="btn btn-ghost fee-view" data-priceview>'
+          + 'How this is calculated</button>'
+        : '')
     + '</div></div></div>';
   return html;
+}
+
+/* What priced this book, in one line under the level. A marginal schedule has
+   no single tier to name - the mandate fills the ladder and pays a blend - so
+   it states the rate it actually prices at (D83). A flat one names its tier. */
+function feePricingNote(tier) {
+  if (feeIsMarginal()) {
+    var blend = effectiveFee();
+    return blend === null
+      ? 'Marginal pricing: the mandate size sets the rate, and there is no mandate size yet.'
+      : 'Effective rate ' + App.esc(App.num(blend, 4, '%'))
+        + ', blended across the tiers by the mandate size.';
+  }
+  return tier
+    ? 'Tier ' + App.esc(tier.id) + ', ' + App.esc(tier.label) + ', from the top account size.'
+    : 'No account-size tier: the mandate has no top account size.';
 }
 
 /* The card's own line under the level: which delivery priced this book. */
@@ -4419,7 +4500,9 @@ function feePivot() {
 function renderFeePanel() {
   var host = document.getElementById('feeDialog'); if (!host) return;
   if (!feePanel.open) {
-    host.innerHTML = ''; host.hidden = true; App.setBackgroundInert(false); return;
+    host.innerHTML = ''; host.hidden = true;
+    if (!pricePanel.open) App.setBackgroundInert(false);   /* the build-up may be up */
+    return;
   }
   host.hidden = false;
   App.setBackgroundInert(true);
@@ -4530,6 +4613,152 @@ function renderFeePanel() {
     + '<button type="button" class="btn btn-primary" id="feecancel">Close</button>'
     + '</div></div>';
 }
+
+/* ---- how a marginal schedule priced THIS mandate (D84) -------------------
+   The fee card above shows the DELIVERED ladder, unchanged by anyone. This
+   shows what this mandate does to it: which bands its money fills, what each
+   band pays, and how those add up to the one rate every row carries.
+
+   Everything comes from the schema block the server already sends
+   (fees.marginal), so the card opens with no fetch and no loading state. The
+   arithmetic below is only the presentation of a sum the server has already
+   done - priceBuildUp is checked against fees.py through node, like the
+   rounding and tilt mirrors - so the card can never quote a total the
+   workbook does not. */
+var pricePanel = { open: false, returnTo: null };
+
+/* The build-up for the chosen schedule, or null when it is not priced
+   marginally, or when there is no mandate size to fill the ladder with. */
+function marginalBuildUp() {
+  var all = App.opt('fees.marginal', null);
+  var schedule = App.feeSchedule && App.feeSchedule();
+  if (!all || !schedule) return null;
+  return all[schedule] || null;
+}
+
+/* The card's rows, and the two totals under them. A band's fee is its money
+   at its own tier's rate; the effective rate is the fees added up over the
+   mandate - which is the whole of the calculation, stated once here. */
+function priceBuildUp(build, level) {
+  if (!build || !level) return null;
+  var rows = (build.bands || []).map(function (band) {
+    var rate = (band.rates || {})[level];
+    return {
+      tier: band.tier, label: band.label,
+      from: band.from, to: band.to, amount: band.amount,
+      rate: (typeof rate === 'number') ? rate : null,
+      fee: (typeof rate === 'number') ? band.amount * rate / 100 : null
+    };
+  });
+  var priced = rows.filter(function (r) { return r.fee !== null; });
+  var totalFee = priced.length === rows.length
+    ? rows.reduce(function (sum, r) { return sum + r.fee; }, 0) : null;
+  return {
+    rows: rows,
+    amount: build.amount,
+    totalFee: totalFee,
+    effective: (totalFee === null || !build.amount) ? null : totalFee / build.amount * 100
+  };
+}
+
+function openPricePanel() {
+  if (!marginalBuildUp()) return;
+  pricePanel.open = true;
+  pricePanel.returnTo = document.activeElement;
+  renderPricePanel();
+  var close = document.getElementById('priceclose');
+  if (close) close.focus();
+}
+
+function closePricePanel() {
+  pricePanel.open = false;
+  renderPricePanel();
+  var trigger = pricePanel.returnTo && document.contains(pricePanel.returnTo)
+    ? pricePanel.returnTo : document.querySelector('[data-priceview]');
+  pricePanel.returnTo = null;
+  if (trigger && trigger.focus) trigger.focus();
+}
+
+function renderPricePanel() {
+  var host = document.getElementById('priceDialog'); if (!host) return;
+  if (!pricePanel.open) {
+    host.innerHTML = ''; host.hidden = true;
+    /* the fee card may still be up behind this one */
+    if (!feePanel.open) App.setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  App.setBackgroundInert(true);
+
+  var build = marginalBuildUp();
+  var level = (App.feeLevel && App.feeLevel()) || App.opt('fees.defaultLevel', null);
+  var sums = priceBuildUp(build, level);
+  var delivery = App.opt('fees.delivery', {}) || {};
+  var placeholder = App.opt('fees.placeholder', false);
+  var schedule = (build && build.schedule) || (App.feeSchedule && App.feeSchedule()) || '';
+
+  var body = '<p class="rc-loading">There is no mandate size to price yet.</p>';
+  if (sums) {
+    var rows = sums.rows.map(function (r) {
+      return '<tr><th scope="row"><span class="pb-id">' + App.esc(r.tier) + '</span>'
+        + '<span class="pb-band">' + App.esc(money(r.from)) + ' – '
+        + App.esc(r.to === null ? 'and up' : money(r.to)) + '</span></th>'
+        + '<td>' + App.esc(money(r.amount)) + '</td>'
+        + '<td>' + App.esc(App.num(r.rate, 4, '%')) + '</td>'
+        + '<td>' + App.esc(money(r.fee)) + '</td></tr>';
+    }).join('');
+    body = '<div class="rc-wrap"><table class="pb-grid">'
+      + '<thead><tr><th scope="col">Band</th><th scope="col">Assets in band</th>'
+      + '<th scope="col">Rate</th><th scope="col">Fee a year</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody>'
+      + '<tfoot><tr><th scope="row">Mandate</th>'
+      + '<td>' + App.esc(money(sums.amount)) + '</td>'
+      + '<td class="pb-eff">' + App.esc(App.num(sums.effective, 4, '%')) + '</td>'
+      + '<td>' + App.esc(money(sums.totalFee)) + '</td></tr></tfoot>'
+      + '</table></div>'
+      + '<p class="pb-how">The mandate fills the tiers in turn and each band pays its own '
+      + 'tier\u2019s rate. The fees add up to ' + App.esc(money(sums.totalFee))
+      + ' a year, which over ' + App.esc(money(sums.amount)) + ' is '
+      + App.esc(App.num(sums.effective, 4, '%')) + ' \u2014 the one rate every product in the '
+      + 'table carries, and the rate at the foot of it.</p>';
+
+    var levels = App.opt('fees.levels', []) || [];
+    if (levels.length && build.effective) {
+      body += '<p class="pb-h">The same mandate at every level</p><div class="pb-levels">'
+        + levels.map(function (entry) {
+            var id = entry.id || entry;
+            var rate = build.effective[id];
+            return '<div class="pb-lv' + (id === level ? ' on' : '') + '">'
+              + '<b>' + App.esc(id) + (id === level ? ' \u00b7 this proposal' : '') + '</b>'
+              + '<span>' + App.esc(App.num(typeof rate === 'number' ? rate : null, 4, '%'))
+              + '</span></div>';
+          }).join('') + '</div>';
+    }
+  }
+
+  host.innerHTML =
+      '<div class="scrim" data-pricescrim></div>'
+    + '<div class="dialog pb" role="dialog" aria-modal="true" aria-labelledby="priceTitle">'
+    + '<button type="button" class="dlg-close" id="priceclose" aria-label="Close">\u00d7</button>'
+    + '<div class="rc-head">'
+    + '<h2 id="priceTitle">How this mandate is priced</h2>'
+    + '<p class="rc-meta">'
+    + '<span>Schedule <b>' + App.esc(schedule) + '</b></span>'
+    + '<span>Level <b>' + App.esc(level || '\u2014') + '</b></span>'
+    + '<span>Card <b>' + App.esc(delivery.version || 'unversioned') + '</b></span>'
+    + '</p>'
+    + (placeholder ? '<span class="rc-flag">Placeholder rates</span>' : '')
+    + '</div>'
+    + '<p class="pb-sub">' + App.esc(schedule) + ' is priced marginally: no single tier sets '
+    + 'the rate, so this is the whole of the calculation.</p>'
+    + body
+    + '<div class="rc-actions">'
+    + '<span class="rc-note">The rates are the delivered card\u2019s; only the mandate is this '
+    + 'proposal\u2019s.</span>'
+    + '<button type="button" class="btn btn-primary" id="pricecancel">Close</button>'
+    + '</div></div>';
+}
+
 
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
 function renderRail() {
@@ -4856,12 +5085,9 @@ function renderView() {
     + '<th scope="col" class="rowhead txt">Categories &amp; Asset Classes</th>'
     + '<th scope="col" class="txt prodcol">Products</th>'
     + '<th scope="col" class="num">Allocation (%)</th>'
-    + '<th scope="col" class="txt">Ticker</th>'
-    + '<th scope="col" class="txt">Style</th>'
-    + '<th scope="col" class="txt">Vehicle</th>'
-    + '<th scope="col" class="txt">Source</th>'
-    + '<th scope="col" class="txt">Liquidity</th>'
-    + '<th scope="col" class="txt">Exp ccy</th>'
+    + IMPL_TEXT_COLUMNS.map(function (name) {
+        return '<th scope="col" class="txt">' + App.esc(name) + '</th>';
+      }).join('')
     + '<th scope="col" class="num">Prod cost</th>'
     + (fees
         ? '<th scope="col" class="num fee-col"><span class="fcw">Mgmt fee</span></th>'
@@ -4895,7 +5121,7 @@ function renderView() {
             + '</span>'
           : '<span class="bdg b-warn">No sleeve attached</span>') + '</td>'
       + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
-      + '<td colspan="6"></td>'
+      + '<td colspan="' + implBandSpan() + '"></td>'
       + '<td class="num"></td>'
       + feeCell('num', '')
       + feeCell('num', group.items.length ? bpText(groupBp) : '')
@@ -4910,6 +5136,8 @@ function renderView() {
         + '<td class="txt tick">' + App.esc(item.ticker) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
+        + '<td class="txt tick">' + (item.shareClass
+            ? App.esc(item.shareClass) : '<span class="mut">&mdash;</span>') + '</td>'
         + '<td class="txt">' + pillFor(item.source) + '</td>'
         + '<td class="txt">' + App.esc(item.liquidity) + '</td>'
         + '<td class="txt tick">' + App.esc(item.exposureCurrency) + '</td>'
@@ -4927,12 +5155,15 @@ function renderView() {
         + '</td></tr>';
     });
   });
-  /* The filler spans Ticker through Mgmt fee, so it is one column shorter
-     when the fee columns are not there. */
+  /* The filler spans the descriptive columns AND Product cost, which the total
+     has none of; the Mgmt fee cell after it is the total's own, since a
+     marginal schedule restates its blend where a reader looks for a total
+     (D83) and a flat one leaves it empty, having no single rate to state. */
   html += '<tr class="grand"><th scope="row">Total</th>'
     + '<td class="prodcol"></td>'
     + '<td class="num">' + App.num(t.weight, 2, '%') + '</td>'
-    + '<td colspan="' + (fees ? 8 : 7) + '"></td>'
+    + '<td colspan="' + implTotalSpan() + '"></td>'
+    + feeCell('num', feeText(effectiveFee()))
     + feeCell('num', bpText(t.bp))
     + '<td class="num"></td>'
     + '<td class="num">' + money(t.notional) + '</td></tr>';
@@ -5053,7 +5284,10 @@ async function exportWorkbook() {
 
 /* ---- events ------------------------------------------------------------- */
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape' && feePanel.open) closeFeePanel();
+  /* the build-up sits on top of the card, so it closes first */
+  if (e.key !== 'Escape') return;
+  if (pricePanel.open) { closePricePanel(); return; }
+  if (feePanel.open) closeFeePanel();
 });
 document.addEventListener('change', function (e) {
   if (!e.target.dataset) return;
@@ -5094,6 +5328,11 @@ document.addEventListener('click', function (e) {
     var at = e.target.closest('[data-openrepo]');
     if (App.openRepository) App.openRepository(at, 'sleeves', { variant: App.variant() });
     return;
+  }
+  if (e.target.closest && e.target.closest('[data-priceview]')) { openPricePanel(); return; }
+  if (e.target.id === 'priceclose' || e.target.id === 'pricecancel'
+      || (e.target.dataset && e.target.dataset.pricescrim !== undefined)) {
+    closePricePanel(); return;
   }
   if (e.target.closest && e.target.closest('[data-feeview]')) { openFeePanel(); return; }
   if (e.target.id === 'feeclose' || e.target.id === 'feecancel'
@@ -5267,6 +5506,7 @@ var actTimer = null;
 var CAT_FACETS = [
   { key: 'category', label: 'Category' },
   { key: 'vehicle', label: 'Vehicle' },
+  { key: 'shareClass', label: 'Share class', order: ['Dis', 'Acc'] },
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
@@ -5281,6 +5521,7 @@ var CAT_COLUMNS = [
   { key: 'name', label: 'Product', fixed: true },
   { key: 'assetClass', label: 'Class' },
   { key: 'vehicle', label: 'Veh' },
+  { key: 'shareClass', label: 'Share' },
   { key: 'style', label: 'Style' },
   { key: 'source', label: 'Src' },
   { key: 'exposureCurrency', label: 'Ccy' },

@@ -95,13 +95,13 @@ _CHART_SHEET = 'chartData'
 # the screen and the sheet keeping their own header lists).
 IMPL_COLUMNS = [
     'Categories & Asset Classes', 'Products', 'Allocation (%)',
-    'Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy', 'Product Cost',
-    'Mgmt fee', 'Wtd fee (bp)', 'Notional',
+    'Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity', 'Exposure ccy',
+    'Product Cost', 'Mgmt fee', 'Wtd fee (bp)', 'Notional',
 ]
 #: The columns whose values are words rather than figures, left-aligned in the
 #: body. Named rather than sliced by position, so a column leaving the list
 #: cannot silently re-align its neighbours.
-_TEXT_COLUMNS = ('Style', 'Vehicle', 'Source', 'Liquidity', 'Exposure ccy')
+_TEXT_COLUMNS = ('Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity', 'Exposure ccy')
 # The two the sheet loses when the proposal excludes fees (D52). A proposal
 # that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
@@ -111,7 +111,7 @@ FEE_COLUMNS = ('Mgmt fee', 'Wtd fee (bp)')
 # (D78) while staying on the screen, in the catalogue and in the register.
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
-    'Style': 9, 'Vehicle': 12, 'Source': 10, 'Liquidity': 11,
+    'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Source': 10, 'Liquidity': 11,
     'Exposure ccy': 12, 'Product Cost': 12, 'Mgmt fee': 10,
     'Wtd fee (bp)': 12, 'Notional': 14,
 }
@@ -152,7 +152,13 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     groups = []
     lineItems = []
     priced = feeSchedule is not None
-    tier = fees.tierFor(topAccountSize) if priced else None
+    # A marginal schedule reads the MANDATE across the whole ladder and never
+    # the top account size; a flat one reads the single tier the top account
+    # size falls in. The tier is carried only where it means something (D83).
+    marginal = priced and fees.isMarginal(feeSchedule)
+    tier = fees.tierFor(topAccountSize) if priced and not marginal else None
+    effectiveRate = (fees.effectiveRate(feeSchedule, mandateSize, feeLevel or fees.DEFAULT_LEVEL)
+                     if marginal else None)
     feeLevel = feeLevel or fees.DEFAULT_LEVEL
 
     # The implemented book, not the strategic one: with the tilt on, the
@@ -222,8 +228,9 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             item['printedPct'] = weight
             item['notional'] = round(mandateSize * weight / 100.0 / 100.0) * 100.0
             if priced:
-                item['managementFee'] = fees.managementFee(
-                    feeSchedule, topAccountSize, feeLevel, item['feeGroup'])
+                item['managementFee'] = fees.productFee(
+                    feeSchedule, feeLevel, item['feeGroup'],
+                    topAccountSize=topAccountSize, mandateSize=mandateSize)
                 allIn = float(item['productCost']) + item['managementFee']
                 item['wtdFeeBp'] = allIn * weight        # percent x percent = bp
             else:
@@ -259,7 +266,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                 if item.get('belowMinimum')]
 
     return {'groups': groups, 'total': total, 'complete': complete,
-            'priced': priced, 'tier': tier, 'breaches': breaches}
+            'priced': priced, 'tier': tier, 'marginal': marginal,
+            'effectiveRate': effectiveRate, 'breaches': breaches}
 
 
 def roundSharesOneDp(exact) -> list:
@@ -414,8 +422,14 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     if model['priced']:
         preamble.append(['Fee Schedule', feeSchedule])
         preamble.append(['Fee Level', feeLevel or fees.DEFAULT_LEVEL])
-        preamble.append(['Account Size Tier',
-                         '{} ({})'.format(model['tier']['id'], model['tier']['label'])])
+        # Under a marginal schedule there is no single tier that priced the
+        # book, so the blended rate is what a reader needs (D83). A flat one
+        # still names its tier.
+        if model.get('marginal'):
+            preamble.append(['Effective Rate', '{:.4f}%'.format(model['effectiveRate'])])
+        elif model.get('tier'):
+            preamble.append(['Account Size Tier',
+                             '{} ({})'.format(model['tier']['id'], model['tier']['label'])])
         # which card priced it: without the version, a re-delivery would leave
         # the sheet claiming rates it no longer matches (D55)
         card = fees.deliveryInfo()
@@ -484,8 +498,8 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
         for item in group['items']:
             line = [
                 '  ' + item['assetClass'], item['name'], None,
-                item['style'], item['vehicle'], item['source'], item['liquidity'],
-                item['exposureCurrency'], None,
+                item['style'], item['vehicle'], item.get('shareClass'), item['source'],
+                item['liquidity'], item['exposureCurrency'], None,
             ]
             if includeFees:
                 line += [None, None]
@@ -530,6 +544,9 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
         # grey dotted separators the groups already use (D78).
         cell.border = Border(top=_BLACK_THIN, bottom=_BLACK_THIN)
     _weightCell(sheet.cell(row=row, column=3), model['total']['weightPct'])
+    # the blend every row carries, restated where a reader looks for a total
+    if includeFees and model.get('marginal') and model.get('effectiveRate') is not None:
+        _feeCell(sheet.cell(row=row, column=at['Mgmt fee']), model['effectiveRate'])
     _bpAt(row, model['total']['wtdFeeBp'])
     notional = sheet.cell(row=row, column=at['Notional'])
     notional.value = model['total']['notional']

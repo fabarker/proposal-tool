@@ -108,6 +108,7 @@ var actTimer = null;
 var CAT_FACETS = [
   { key: 'category', label: 'Category' },
   { key: 'vehicle', label: 'Vehicle' },
+  { key: 'shareClass', label: 'Share class', order: ['Dis', 'Acc'] },
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
@@ -122,6 +123,7 @@ var CAT_COLUMNS = [
   { key: 'name', label: 'Product', fixed: true },
   { key: 'assetClass', label: 'Class' },
   { key: 'vehicle', label: 'Veh' },
+  { key: 'shareClass', label: 'Share' },
   { key: 'style', label: 'Style' },
   { key: 'source', label: 'Src' },
   { key: 'exposureCurrency', label: 'Ccy' },

@@ -592,7 +592,7 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'volPremiumCategory': VOL_PREMIUM_CATEGORY,
             'volPremiumCurrencies': VOL_PREMIUM_CURRENCIES,
         },
-        'fees': fees.feePayload(topAccountSize),
+        'fees': fees.feePayload(topAccountSize, mandateSize),
         'capabilities': capabilities,
         'dataInfo': dataInfo,
     }

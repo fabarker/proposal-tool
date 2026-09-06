@@ -69,8 +69,8 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     the table has always shown."""
     rows = products.all()
     assert len(rows) == 73
-    expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'source',
-                'liquidity', 'exposureCurrency', 'productCost', 'feeGroup',
+    expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
+                'source', 'liquidity', 'exposureCurrency', 'productCost', 'feeGroup',
                 'distributionYield', 'minimumInvestment'}
     for p in rows:
         assert set(p) == expected, p['productId']
@@ -82,6 +82,9 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     # the two figures the catalogue compares on (D63): a number, or None
     # where the delivery leaves the cell blank - an ETF has no minimum
     assert isinstance(sma['distributionYield'], float) and sma['minimumInvestment'] == 5_000_000.0
+    # and the share class, a word from a closed pair or None (D81)
+    assert {p['shareClass'] for p in rows} <= set(products.SHARE_CLASSES) | {None}
+    assert sma['shareClass'] == 'Dis'
     assert products.get('gs-access-ig-corporate-etf')['minimumInvestment'] is None
     assert products.get('nope') is None and not products.has('nope')
     assert products.describeSource()['products'] == 73

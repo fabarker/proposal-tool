@@ -91,6 +91,9 @@ SHEETS = [
             ('AssetClass', 'yes', 'text', 'Free text. Printed as the row label under its category.'),
             ('Style', 'yes', 'text', 'Free text. One of the five composition doughnuts groups by this.'),
             ('Vehicle', 'yes', 'text', 'Free text, e.g. SMA, Mutual Fund, ETF. A doughnut axis.'),
+            ('ShareClass', 'optional', 'text',
+             'Dis (distributing) or Acc (accumulating), and nothing else - a typo is refused on '
+             'load. Leave blank, or drop the column, for a product that has no share class.'),
             ('Source', 'yes', 'text', 'Free text, e.g. Internal, External. A doughnut axis.'),
             ('Liquidity', 'yes', 'text', 'Free text, e.g. Daily, Quarterly. A doughnut axis.'),
             ('ExposureCurrency', 'yes', 'text', 'Free text, e.g. USD. A doughnut axis.'),
@@ -105,7 +108,8 @@ SHEETS = [
              'CURRENCY UNITS: 5000000 means $5m. Blank means no minimum. THIS BLOCKS THE EXPORT: '
              'a position below its product minimum refuses the download, so get these right.'),
         ],
-        validation={'FeeGroup': ('feeGroups', len(fees.FEE_GROUPS))},
+        validation={'FeeGroup': ('feeGroups', len(fees.FEE_GROUPS)),
+                    'ShareClass': ('shareClasses', len(products.SHARE_CLASSES))},
     ),
     dict(
         name='sleeves', tab='7A5A12',
@@ -139,7 +143,10 @@ SHEETS = [
              'products sheet must use.'),
             ('tier', 'yes', 'text', 'Tier id, e.g. T1. Every row of a tier must carry the same edges.'),
             ('tierMin', 'yes', 'number', 'Top-account-size lower edge, CURRENCY UNITS. Inclusive.'),
-            ('tierMax', 'no', 'number', 'Upper edge, CURRENCY UNITS, exclusive. BLANK means open-ended.'),
+            ('tierMax', 'no', 'number',
+             'Upper edge, CURRENCY UNITS, exclusive. LEAVE IT EMPTY ON THE TOP TIER: an empty '
+             'cell is how a tier says "and up", and the tier then reads as "$100m and up". Do '
+             'not write Infinity, inf, or a very large number - all three are refused on load.'),
             ('source', 'yes', 'text', 'Management or PMG.'),
             ('point', 'yes', 'text',
              'Floor, Target or Ceiling. A proposal prices at "<source> <point>", e.g. PMG Floor.'),
@@ -198,6 +205,7 @@ LISTS = [
     ('variants', 'Implementation type', list(rules.IMPLEMENTATION_VARIANTS)),
     ('categories', 'Sleeve category', sleeveRepo.categories()),
     ('feeGroups', 'Fee group', list(fees.FEE_GROUPS)),
+    ('shareClasses', 'Share class', list(products.SHARE_CLASSES)),
     ('schedules', 'Fee schedule', list(fees.SCHEDULES)),
     ('sources', 'Fee source', list(fees.SOURCES)),
     ('points', 'Fee point', list(fees.POINTS)),
@@ -210,7 +218,7 @@ LISTS = [
 
 def examples(name):
     """Two rows of the packaged stand-in, so the shape is never in doubt."""
-    def csvRows(path, want):
+    def csvRows(path, want, limit=2):
         if not os.path.exists(path):
             return []
         with io.open(path, encoding='utf-8-sig') as fh:
@@ -218,7 +226,7 @@ def examples(name):
             out = []
             for row in reader:
                 out.append([row.get(c) if row.get(c) not in ('', None) else None for c in want])
-                if len(out) == 2:
+                if limit is not None and len(out) == limit:
                     break
         return out
     want = [c for c, _, _, _ in dict((s['name'], s) for s in SHEETS)[name]['columns']]
@@ -229,7 +237,11 @@ def examples(name):
     if name == 'sleeves':
         return csvRows(os.path.join(ROOT, 'sleeveSource', 'sleeves.csv'), want)
     if name == 'feeRates':
-        return csvRows(os.path.join(PKG, 'feeRates.csv'), want)
+        # one bounded tier and the TOP tier, so the empty tierMax that means
+        # "and up" is visible in the template rather than only described
+        rows = csvRows(os.path.join(PKG, 'feeRates.csv'), want, limit=None)
+        top = [r for r in rows if r[want.index('tierMax')] is None]
+        return [rows[0]] + ([top[0]] if top else [])
     if name == 'advisors':
         book = load_workbook(os.path.join(PKG, 'advisors.xlsx'))
         return [list(r) for r in book.active.iter_rows(min_row=2, max_row=3, values_only=True)]

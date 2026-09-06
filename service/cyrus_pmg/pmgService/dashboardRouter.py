@@ -160,12 +160,28 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
 # declared before /scenario/{scenarioId} like the others.
 
 @router.get('/scenario/fees')
-def getFeeCard(tier: str = None, topAccountSize: float = None, whole: bool = False):
+def getFeeCard(tier: str = None, topAccountSize: float = None, whole: bool = False,
+               mandateSize: float = None, schedule: str = None):
     """The card: every cell at every tier when *whole*, else one tier - by id,
     or the tier a top account size falls in. Each cell carries the delivered
     rate beside the rate in force and whether they differ. The panel takes the
-    whole card and pivots it locally."""
+    whole card and pivots it locally.
+
+    With *mandateSize* it answers instead with the marginal build-up behind a
+    blended rate (D83): the bands that amount fills, the rate in each, and the
+    blend at every level. *schedule* picks which marginally-priced schedule,
+    defaulting to the only one there is.
+    """
     try:
+        if mandateSize is not None:
+            marginal = [s for s in fees.SCHEDULES if fees.isMarginal(s)]
+            if not marginal:
+                raise ValidationError('schedule', 'No schedule is priced marginally.')
+            chosen = schedule or marginal[0]
+            if chosen not in marginal:
+                raise ValidationError(
+                    'schedule', '{} is not priced marginally; it reads one tier.'.format(chosen))
+            return fees.marginalPayload(chosen, mandateSize)
         if whole:
             return fees.card()
         if not tier:

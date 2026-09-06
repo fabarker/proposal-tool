@@ -38,12 +38,19 @@ _DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Style', 'Vehicle', 'Source',
            'Liquidity', 'ExposureCurrency', 'ProductCost', 'FeeGroup']
-# figures the catalogue view compares on (D63): served as None when the
-# delivery does not carry the column or leaves the cell blank
-OPTIONAL = ['DistributionYield', 'MinimumInvestment']
+# Columns a delivery may leave out entirely, or leave blank on a row: each is
+# served as None when it is absent, so an older extract still loads (D63, D81).
+# Of these, the last two are figures the catalogue view compares on and must
+# parse as numbers; the first is a word from a closed pair.
+OPTIONAL = ['ShareClass', 'DistributionYield', 'MinimumInvestment']
+
+#: What a share class can be: distributing, or accumulating (D81). Two values
+#: and a blank, checked on load - a typo is refused rather than printed.
+SHARE_CLASSES = ('Dis', 'Acc')
+SHARE_CLASS_LABELS = {'Dis': 'Distributing', 'Acc': 'Accumulating'}
 
 # the field names the rest of the package has always used for a product
-FIELDS = ['name', 'ticker', 'assetClass', 'style', 'vehicle', 'source',
+FIELDS = ['name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass', 'source',
           'liquidity', 'exposureCurrency', 'productCost', 'feeGroup']
 
 NO_TICKER = '—'
@@ -114,6 +121,11 @@ def _load(path: str):
             raise BadCatalogue('{}: {} fee group {!r} is not one of {}'.format(
                 path, pid, group, FEE_GROUPS))
 
+        shareClass = cell('ShareClass') if 'ShareClass' in index else ''
+        if shareClass and shareClass not in SHARE_CLASSES:
+            raise BadCatalogue('{}: {} share class {!r} is not one of {}'.format(
+                path, pid, shareClass, ', '.join(SHARE_CLASSES)))
+
         def figure(column):
             if column not in index:
                 return None
@@ -134,6 +146,7 @@ def _load(path: str):
             'assetClass': cell('AssetClass'),
             'style': cell('Style'),
             'vehicle': cell('Vehicle'),
+            'shareClass': shareClass or None,
             'source': cell('Source'),
             'liquidity': cell('Liquidity'),
             'exposureCurrency': cell('ExposureCurrency'),

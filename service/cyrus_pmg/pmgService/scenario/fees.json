@@ -1,17 +1,19 @@
 {
-  "_comment": "Framework configuration and the provenance of the delivered rate card (D55). The RATES live in the delivered CSV at SCENARIO_FEES_SOURCE - feeRates.csv beside this file by default - one row per cell; the tiers and fee groups are derived from those rows. This file holds only what is not the delivering team's to say: the schedules, the level vocabulary in its order, the default level, the placeholder flag. Local adjustments are an overlay in the scenario store, never edits to the delivery.",
+  "_comment": "Framework configuration and the provenance of the delivered rate card (D55). The RATES live in the delivered CSV at SCENARIO_FEES_SOURCE - feeRates.csv beside this file by default - one row per cell; the tiers and fee groups are derived from those rows. This file holds only what is not the delivering team's to say: the schedules, the level vocabulary in its order, the default level, the placeholder flag. Local adjustments are an overlay in the scenario store, never edits to the delivery. A schedule marked `marginal` is priced progressively: the MANDATE SIZE fills the tiers in turn, each band pays its own tier rate, and the blended result is the one rate every product carries (D83). A schedule that is not marginal reads a single tier, chosen by the top account size, as it always has.",
   "placeholder": true,
   "defaultLevel": "PMG Target",
   "schedules": [
     {
       "id": "CASP",
       "byGroup": false,
-      "note": "One rate for every product, set by the top account size."
+      "note": "Marginal: the mandate fills the tiers in turn and each band pays its own tier rate. One blended rate then prices every product.",
+      "marginal": true
     },
     {
       "id": "RDR",
       "byGroup": true,
-      "note": "Each product priced by its fee group, set by the top account size."
+      "note": "Each product priced by its fee group, set by the top account size.",
+      "marginal": false
     }
   ],
   "sources": [

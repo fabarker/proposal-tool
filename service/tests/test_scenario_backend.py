@@ -716,31 +716,51 @@ def test_schema_carries_the_fee_framework_at_the_mandates_tier():
     assert block['defaultLevel'] == fees.DEFAULT_LEVEL
     assert block['tier']['id'] == fees.tierFor(TOP_ACCOUNT)['id']
     rates = block['rates']
-    assert rates['CASP']['byGroup'] is False
+    # CASP is marginal: the numbers served are ALREADY BLENDED over the
+    # mandate, so the client's resolver stays a lookup and cannot drift (D83).
+    assert rates['CASP']['byGroup'] is False and rates['CASP']['marginal'] is True
     assert set(rates['CASP']['levels']) == set(fees.LEVELS)
-    assert rates['RDR']['byGroup'] is True
+    # RDR still reads the one tier the TOP account size falls in
+    assert rates['RDR']['byGroup'] is True and rates['RDR']['marginal'] is False
     assert set(rates['RDR']['groups']) == set(fees.FEE_GROUPS)
     for level in fees.LEVELS:
-        assert rates['CASP']['levels'][level] == fees.managementFee('CASP', TOP_ACCOUNT, level)
+        assert rates['CASP']['levels'][level] == fees.effectiveRate('CASP', 26e6, level)
+        assert rates['CASP']['levels'][level] != fees.managementFee('CASP', TOP_ACCOUNT, level)
         for group in fees.FEE_GROUPS:
             assert rates['RDR']['groups'][group][level] == \
                 fees.managementFee('RDR', TOP_ACCOUNT, level, group)
 
+    # the build-up behind the blend rides along, so a reader can check it
+    build = block['marginal']['CASP']
+    assert build['amount'] == 26e6
+    assert sum(b['amount'] for b in build['bands']) == pytest.approx(26e6)
+    assert build['effective'] == rates['CASP']['levels']
+
     # the tier follows the TOP account size, not the mandate size
     other = PORT.get_schema(BASIS, MandateInput(5e6, 5e6, ''))['fees']
     assert other['tier']['id'] != block['tier']['id']
+    # ...and the CASP blend follows the MANDATE, not the top account size
+    assert other['rates']['CASP']['levels'] != rates['CASP']['levels']
+    sameMandate = PORT.get_schema(BASIS, MandateInput(TOP_ACCOUNT * 2, 26e6, ''))['fees']
+    assert sameMandate['rates']['CASP']['levels'] == rates['CASP']['levels']
 
     bare = PORT.get_schema(BASIS, None)['fees']
     assert bare['tier'] is None and bare['rates'] is None
     assert [s['id'] for s in bare['schedules']] == fees.SCHEDULES
+    assert [s['marginal'] for s in bare['schedules']] == [fees.isMarginal(s)
+                                                          for s in fees.SCHEDULES]
 
 
 def test_implementation_fee_is_resolved_from_the_schedule_not_the_product():
     key = PortfolioKey('USD', 'Moderate', 'Core', False)
     casp = _implementationFor(key, feeSchedule='CASP')
     items = [i for g in casp['groups'] for i in g['items']]
-    assert casp['priced'] and casp['tier']['id'] == fees.tierFor(TOP_ACCOUNT)['id']
+    # marginal: one blended rate for every product, and no single tier priced
+    # it, so the model carries the blend instead of a tier (D83)
+    assert casp['priced'] and casp['marginal'] is True and casp['tier'] is None
+    assert casp['effectiveRate'] == fees.effectiveRate('CASP', 26e6, fees.DEFAULT_LEVEL)
     assert len({i['managementFee'] for i in items}) == 1
+    assert items[0]['managementFee'] == casp['effectiveRate']
 
     rdr = _implementationFor(key, feeSchedule='RDR', feeLevel='Management Ceiling')
     for item in (i for g in rdr['groups'] for i in g['items']):
@@ -748,11 +768,15 @@ def test_implementation_fee_is_resolved_from_the_schedule_not_the_product():
             'RDR', TOP_ACCOUNT, 'Management Ceiling', item['feeGroup'])
     assert len({i['managementFee'] for g in rdr['groups'] for i in g['items']}) > 1
 
-    # a different tier re-prices every row without touching a weight
-    small = _implementationFor(key, feeSchedule='CASP', topAccountSize=5e6)
+    # a smaller MANDATE re-prices every CASP row without touching a weight:
+    # fewer bands are reached, so the blend is dearer
+    small = _implementationFor(key, feeSchedule='CASP', mandateSize=6e6)
     smallItems = [i for g in small['groups'] for i in g['items']]
     assert [i['printedPct'] for i in smallItems] == [i['printedPct'] for i in items]
     assert smallItems[0]['managementFee'] > items[0]['managementFee']
+    # and the top account size no longer moves a CASP price at all
+    elsewhere = _implementationFor(key, feeSchedule='CASP', topAccountSize=TOP_ACCOUNT * 3)
+    assert elsewhere['effectiveRate'] == casp['effectiveRate']
 
     unpriced = _implementationFor(key, feeSchedule=None)
     assert unpriced['priced'] is False and unpriced['tier'] is None
@@ -761,8 +785,8 @@ def test_implementation_fee_is_resolved_from_the_schedule_not_the_product():
     assert unpriced['total']['wtdFeeBp'] is None
     assert unpriced['total']['weightPct'] == pytest.approx(100.0)
 
-    with pytest.raises(ValueError):          # a schedule with no account size is an error
-        _implementationFor(key, feeSchedule='CASP', topAccountSize=None)
+    with pytest.raises(ValueError):          # RDR with no account size has no tier
+        _implementationFor(key, feeSchedule='RDR', topAccountSize=None)
 
 
 @pytest.mark.parametrize('schedule', fees.SCHEDULES)
@@ -785,7 +809,13 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
     assert rows[0][:2] == ('Implementation Type', variant)
     assert rows[1][:2] == ('Fee Schedule', schedule)
     assert rows[2][:2] == ('Fee Level', 'PMG Floor')
-    assert rows[3][:2] == ('Account Size Tier', '{} ({})'.format(tier['id'], tier['label']))
+    # a marginal schedule has no single tier to name, so it states the blend
+    # it actually priced at; a flat one names its tier (D83)
+    if fees.isMarginal(schedule):
+        assert rows[3][:2] == ('Effective Rate', '{:.4f}%'.format(
+            fees.effectiveRate(schedule, 26e6, 'PMG Floor')))
+    else:
+        assert rows[3][:2] == ('Account Size Tier', '{} ({})'.format(tier['id'], tier['label']))
     # and which card priced it (D55): the delivered version, flagged as placeholder
     assert rows[4][0] == 'Fee Card'
     assert fees.DELIVERY['version'] in rows[4][1] and 'placeholder' in rows[4][1]
@@ -799,9 +829,19 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
     # (item 1), so the expected fee is looked up from the catalogue
     for row in assets:
         product = next(p for p in products.all() if p['name'] == row[1])
-        expected = fees.managementFee(schedule, TOP_ACCOUNT, 'PMG Floor', product['feeGroup'])
+        expected = fees.productFee(schedule, 'PMG Floor', product['feeGroup'],
+                                   topAccountSize=TOP_ACCOUNT, mandateSize=26e6)
         assert row[mgmt] == pytest.approx(expected / 100.0)
         assert row[bp] == pytest.approx((row[cost] * 100 + expected) * row[2] * 100)
+    # and the total row restates the blend a marginal schedule priced at (D83)
+    total = next(r for r in rows if r[0] == 'Total')
+    if fees.isMarginal(schedule):
+        assert total[mgmt] == pytest.approx(
+            fees.effectiveRate(schedule, 26e6, 'PMG Floor') / 100.0)
+        assert len({r[mgmt] for r in assets}) == 1, 'one blend prices every row'
+        assert assets[0][mgmt] == pytest.approx(total[mgmt])
+    else:
+        assert total[mgmt] is None, 'a flat schedule has no single rate to total'
 
 
 def test_unpriced_workbook_leaves_the_fee_cells_empty(tmp_path):
@@ -1299,6 +1339,194 @@ def test_a_scenario_stored_before_the_toggle_keeps_the_fees_it_was_showing():
     assert _includeFees({'includeFees': True, 'feeSchedule': None}) is True
 
 
+def test_a_marginal_schedule_fills_the_tiers_in_turn():
+    """D83. Money in each band pays that band's own rate, and the bands cover
+    the mandate exactly - the card reader guarantees a contiguous ladder from
+    zero, so a blend can never divide by a partial fill."""
+    ladder = {t['id']: t for t in fees.TIERS}
+
+    for amount in (1.0, 9_999_999, 10e6, 26e6, 100e6, 250e6, 5e9):
+        bands = fees.marginalBands(amount)
+        assert sum(b['amount'] for b in bands) == pytest.approx(amount)
+        assert bands[0]['from'] == 0.0, 'the first band always starts at zero'
+        assert bands[-1]['to'] == pytest.approx(amount)
+        for earlier, later in zip(bands, bands[1:]):
+            assert earlier['to'] == later['from'], 'no gap between bands'
+        for band in bands:
+            tier = ladder[band['tier']]
+            assert tier['min'] <= band['from'] and band['amount'] > 0
+
+    # the blend is the money-weighted average of the rates actually paid
+    for level in fees.LEVELS:
+        source, point = fees.splitLevel(level)
+        for amount in (6e6, 26e6, 300e6):
+            paid = sum(b['amount'] * fees._rate('CASP', None, b['tier'], source, point)
+                       for b in fees.marginalBands(amount))
+            assert fees.effectiveRate('CASP', amount, level) == pytest.approx(paid / amount)
+
+    # wholly inside the first tier it IS that tier's rate, and nothing else
+    assert fees.effectiveRate('CASP', 1e6, 'PMG Target') == pytest.approx(
+        fees.managementFee('CASP', 1e6, 'PMG Target'))
+    # and the blend falls as the mandate grows, since the ladder falls
+    blends = [fees.effectiveRate('CASP', a, 'PMG Target')
+              for a in (6e6, 26e6, 60e6, 300e6)]
+    assert blends == sorted(blends, reverse=True)
+    # never cheaper than the cheapest band nor dearer than the dearest
+    rates = [fees._rate('CASP', None, t['id'], 'PMG', 'Target') for t in fees.TIERS]
+    for blend in blends:
+        assert min(rates) <= blend <= max(rates)
+
+
+def test_a_marginal_blend_is_dearer_than_the_old_flat_rate_at_the_same_size():
+    """The change costs the client money at every size above the first tier,
+    which is the point of recording it: a flat rate charged the WHOLE balance
+    at the tier it landed in, so it never paid the dearer bands below."""
+    for amount in (26e6, 60e6, 150e6):
+        flat = fees.managementFee('CASP', amount, 'PMG Target')
+        blend = fees.effectiveRate('CASP', amount, 'PMG Target')
+        assert blend > flat
+    assert fees.managementFee('CASP', 4e6, 'PMG Target') == pytest.approx(
+        fees.effectiveRate('CASP', 4e6, 'PMG Target')), 'the first tier is unchanged'
+
+
+def test_marginal_pricing_refuses_what_it_cannot_price():
+    with pytest.raises(KeyError):            # RDR is flat: it has a rate, not a blend
+        fees.effectiveRate('RDR', 26e6, 'PMG Target')
+    with pytest.raises(KeyError):
+        fees.effectiveRate('Flat', 26e6, 'PMG Target')
+    with pytest.raises(KeyError):
+        fees.effectiveRate('CASP', 26e6, 'PMG Middle')
+    for bad in (0, -1, None, 'lots', True):
+        with pytest.raises(ValueError):
+            fees.marginalBands(bad)
+    # the dispatcher reads the right input for each schedule
+    assert fees.productFee('CASP', 'PMG Target', None, topAccountSize=None,
+                           mandateSize=26e6) == fees.effectiveRate('CASP', 26e6, 'PMG Target')
+    with pytest.raises(ValueError):          # a flat schedule still needs its tier
+        fees.productFee('RDR', 'PMG Target', 'Passive', topAccountSize=None, mandateSize=26e6)
+
+
+def test_the_marginal_build_up_is_served_and_adds_up():
+    """D83. The API hands back the bands behind a blend so a reader can check
+    the number rather than take it."""
+    from cyrus_pmg.pmgService import dashboardRouter
+    payload = dashboardRouter.getFeeCard(mandateSize=26e6)
+    assert payload['schedule'] == 'CASP' and payload['amount'] == 26e6
+    assert sum(b['amount'] for b in payload['bands']) == pytest.approx(26e6)
+    for level in fees.LEVELS:
+        paid = sum(b['amount'] * b['rates'][level] for b in payload['bands'])
+        assert payload['effective'][level] == pytest.approx(paid / 26e6)
+    refused = dashboardRouter.getFeeCard(mandateSize=26e6, schedule='RDR')
+    assert refused.status_code == 422
+    assert 'marginally' in json.loads(refused.body.decode('utf-8'))['error']
+    # the card itself is untouched: it is the delivered ladder, not a blend
+    assert dashboardRouter.getFeeCard(whole=True)['tiers'] == fees.card()['tiers']
+
+
+def test_js_implementation_table_rows_are_all_the_same_width():
+    """D85. Every row of the screen's table must have as many cells as the
+    header has columns. A band row and the total row cover the descriptive
+    columns with ONE cell spanning them, and a literal span goes stale the
+    moment a column is added - which is what Share Class did (D81), leaving
+    band rows a cell short so the Notional column had no cell at all and did
+    not shade. The spans are counted off the column list now; this holds them
+    to it, with and without the fee columns."""
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    jsPath = os.path.join(os.path.dirname(__file__), '..', '..',
+                          'generator', 'js', 'implementation.js')
+    with open(jsPath, encoding='utf-8') as fh:
+        source = fh.read()
+    fn = source[source.index('var IMPL_TEXT_COLUMNS'):source.index('function feeText(')]
+
+    probe = (
+        "const out = [true, false].map(function (fees) {\n"
+        "  const columns = implScreenColumns(fees);\n"
+        "  return {columns: columns,\n"
+        # rowhead + products + allocation, then the filler, product cost, the
+        # fee cells, minimum investment and notional
+        "    band: 3 + implBandSpan() + 1 + (fees ? 2 : 0) + 2,\n"
+        # the total's filler swallows product cost, so it has no cell for it
+        "    total: 3 + implTotalSpan() + (fees ? 2 : 0) + 2};\n"
+        "});\n"
+        "process.stdout.write(JSON.stringify(out));\n")
+    got = json.loads(subprocess.run([node, '-e', fn + probe], capture_output=True,
+                                    text=True, check=True).stdout)
+    priced, plain = got
+    assert len(priced['columns']) == priced['band'] == priced['total'], priced
+    assert len(plain['columns']) == plain['band'] == plain['total'], plain
+    assert len(priced['columns']) == len(plain['columns']) + 2, 'the two fee columns'
+    assert priced['columns'][-1] == 'Notional'
+    assert priced['columns'][-2] == 'Min Investment'
+    assert 'Share class' in priced['columns']
+
+    # the screen and the sheet keep their own lists on purpose (D74, D78)
+    assert priced['columns'] != IMPL_COLUMNS
+    assert 'Ticker' in priced['columns'] and 'Ticker' not in IMPL_COLUMNS
+    assert 'Min Investment' in priced['columns']
+    assert 'Minimum Investment' not in IMPL_COLUMNS
+    assert len(priced['columns']) == len(IMPL_COLUMNS) + 2
+
+def test_js_price_build_up_mirror_agrees_with_python():
+    """D84. The card that shows HOW a marginal blend was reached must reach
+    the same blend. It presents a sum the server already did, so the two must
+    agree to the cent: band by band, on the total fee, and on the rate the
+    table then carries."""
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    jsPath = os.path.join(os.path.dirname(__file__), '..', '..',
+                          'generator', 'js', 'implementation.js')
+    with open(jsPath, encoding='utf-8') as fh:
+        source = fh.read()
+    fn = source[source.index('function priceBuildUp('):source.index('function openPricePanel(')]
+
+    cases, expected = [], []
+    for amount in (4e6, 26e6, 60e6, 250e6, 5e9):
+        build = fees.marginalPayload('CASP', amount)
+        for level in fees.LEVELS:
+            cases.append([build, level])
+            rate = fees.effectiveRate('CASP', amount, level)
+            source_, point = fees.splitLevel(level)
+            expected.append({
+                'bands': len(build['bands']),
+                'fees': [b['amount'] * fees._rate('CASP', None, b['tier'], source_, point) / 100.0
+                         for b in build['bands']],
+                'totalFee': rate / 100.0 * amount,
+                'effective': rate,
+            })
+    # and the two answers a card must not invent
+    cases.append([None, 'PMG Target'])
+    cases.append([fees.marginalPayload('CASP', 26e6), None])
+
+    script = fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \
+        + 'process.stdout.write(JSON.stringify(cases.map(function (c) {\n' \
+        + '  const out = priceBuildUp(c[0], c[1]);\n' \
+        + '  if (!out) return null;\n' \
+        + '  return {bands: out.rows.length, fees: out.rows.map(function (r) { return r.fee; }),\n' \
+        + '          totalFee: out.totalFee, effective: out.effective};\n' \
+        + '})));\n'
+    out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
+    got = json.loads(out.stdout)
+    assert got[-2:] == [None, None], 'no build-up and no level each answer nothing'
+    assert len(got) - 2 == len(expected) == 5 * len(fees.LEVELS)
+    for mine, theirs in zip(got[:-2], expected):
+        assert mine['bands'] == theirs['bands']
+        assert mine['fees'] == pytest.approx(theirs['fees'])
+        assert mine['totalFee'] == pytest.approx(theirs['totalFee'])
+        assert mine['effective'] == pytest.approx(theirs['effective'])
+
+    # the card's total is the money the mandate actually pays: $26m at the
+    # blend, which for the packaged card is $132,100 a year at PMG Target
+    at = [i for i, c in enumerate(cases[:-2])
+          if c[0]['amount'] == 26e6 and c[1] == 'PMG Target'][0]
+    assert got[at]['totalFee'] == pytest.approx(
+        fees.effectiveRate('CASP', 26e6, 'PMG Target') / 100.0 * 26e6)
+    assert got[at]['fees'] == pytest.approx([56_000.0, 72_000.0, 4_100.0])
+    assert sum(got[at]['fees']) == pytest.approx(132_100.0)
+
+
 def test_js_fee_mirror_agrees_with_python():
     """The page resolves fees from the schema's rates block; the workbook
     resolves them from fees.json. Across every tier, schedule, level and group
@@ -1332,11 +1560,28 @@ def test_js_fee_mirror_agrees_with_python():
     cases.append([None, 'CASP', fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0]])
     expected.append(None)
 
+    # ...and against what the client is actually SERVED, which for a marginal
+    # schedule is the blend rather than a tier rate (D83). The resolver must
+    # land on the blend without doing any arithmetic of its own.
+    marginalCases = 0
+    for mandate in (5e6, 26e6, 120e6):
+        served = fees.ratesFor(TOP_ACCOUNT, mandate)
+        for schedule in fees.SCHEDULES:
+            for level in fees.LEVELS:
+                for group in fees.FEE_GROUPS:
+                    cases.append([served, schedule, level, group])
+                    expected.append(fees.productFee(schedule, level, group,
+                                                    topAccountSize=TOP_ACCOUNT,
+                                                    mandateSize=mandate))
+                    if fees.isMarginal(schedule):
+                        marginalCases += 1
+    assert marginalCases > 50
+
     script = fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \
         + 'process.stdout.write(JSON.stringify(cases.map(function (c) { ' \
         + 'return resolveFee(c[0], c[1], c[2], c[3]); })));\n'
     out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
-    assert json.loads(out.stdout) == expected
+    assert json.loads(out.stdout) == pytest.approx(expected)
     assert len(expected) > 300
 
 
@@ -2083,7 +2328,7 @@ def test_the_fee_group_column_is_gone_but_still_prices_the_row():
 def test_the_cost_column_is_named_product_cost():
     """Item 2. Header text only - the field behind it is unchanged."""
     assert 'Product Cost' in IMPL_COLUMNS and 'Cost' not in IMPL_COLUMNS
-    assert IMPL_COLUMNS.index('Product Cost') == 8
+    assert IMPL_COLUMNS.index('Product Cost') == 9
     result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
@@ -2091,6 +2336,109 @@ def test_the_cost_column_is_named_product_cost():
                                     48.5e6, False, 'USD')
     items = [i for g in model['groups'] for i in g['items']]
     assert all('productCost' in item for item in items)
+
+
+def test_the_top_fee_tier_says_and_up_with_an_empty_cell(tmp_path):
+    """D82. An empty tierMax is how the top tier is open-ended, and it reads
+    back as "and up". Infinity is not the way to say it: float() would take it,
+    and the tier would then print as a bounded band with nonsense in it."""
+    from cyrus_pmg.pmgService.scenario import fees
+    head = 'schedule,feeGroup,tier,tierMin,tierMax,source,point,rate\n'
+    def card(top):
+        body = ''
+        for tier, low, high in (('T1', 0, '10000000'), ('T2', 10000000, top)):
+            for source in fees.SOURCES:
+                for point in fees.POINTS:
+                    body += 'CASP,,{},{},{},{},{},0.3\n'.format(tier, low, high, source, point)
+        path = tmp_path / 'card.csv'
+        path.write_text(head + body, encoding='utf-8')
+        return fees._readDelivery(str(path))
+
+    tiers = {t['id']: t for t in card('')['tiers']}
+    assert tiers['T2']['max'] is None
+    assert tiers['T2']['label'] == '$10m and up'
+    assert tiers['T1']['label'] == 'Under $10m', 'the bounded tiers are unchanged'
+
+    for refused in ('Infinity', 'inf', '-inf', 'nan', '1e999'):
+        with pytest.raises(fees.BadRateCard) as caught:
+            card(refused)
+        assert 'tierMax' in str(caught.value) and 'EMPTY' in str(caught.value), refused
+
+    # and the packaged card is the shape the guidance describes
+    assert fees.TIERS[-1]['max'] is None and fees.TIERS[-1]['label'].endswith('and up')
+    assert all(t['max'] is not None for t in fees.TIERS[:-1]), 'only the last is open-ended'
+    huge = fees.tierFor(10 ** 12)
+    assert huge['id'] == fees.TIERS[-1]['id'], 'any size above the last edge lands in the top tier'
+
+
+def test_the_share_class_rides_from_the_catalogue_to_the_sheet():
+    """D81. Dis or Acc, read from the delivered catalogue, carried onto every
+    line item and printed in its own column beside the vehicle."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import products
+    assert IMPL_COLUMNS.index('Share Class') == IMPL_COLUMNS.index('Vehicle') + 1
+    result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
+                                    26e6, sleeves.VARIANTS[0], False, None, None,
+                                    48.5e6, False, 'USD')
+    items = [i for g in model['groups'] for i in g['items']]
+    assert items
+    for item in items:
+        assert item['shareClass'] in products.SHARE_CLASSES, item['name']
+        assert item['shareClass'] == products.get(item['productId'])['shareClass']
+    assert {i['shareClass'] for i in items} == {'Dis', 'Acc'}, 'both classes are in play'
+
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
+    header = next(r for r in range(1, 12)
+                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
+    at = [sheet.cell(row=header, column=c).value
+          for c in range(1, sheet.max_column + 1)].index('Share Class') + 1
+    printed = [sheet.cell(row=r, column=at).value for r in range(header + 1, sheet.max_row + 1)
+               if str(sheet.cell(row=r, column=1).value or '').startswith('  ')]
+    assert printed and set(printed) <= {'Dis', 'Acc'}, printed
+
+
+def test_a_share_class_the_catalogue_does_not_define_is_refused(tmp_path):
+    """A closed pair: a typo in the delivery is refused on load, not printed.
+    And a delivery with no such column at all still loads, serving None (D63)."""
+    import csv, os
+    from cyrus_pmg.pmgService.scenario import products
+
+    cell = {'ProductId': 'p-1', 'Name': 'Probe', 'Ticker': 'PRB', 'AssetClass': 'Equity',
+            'Style': 'Active', 'Vehicle': 'ETF', 'Source': 'Internal', 'Liquidity': 'Daily',
+            'ExposureCurrency': 'USD', 'ProductCost': '0.2', 'FeeGroup': 'Passive',
+            'ShareClass': 'Dis', 'DistributionYield': '1.0', 'MinimumInvestment': ''}
+    path = tmp_path / 'products.csv'
+
+    def write(columns, **over):
+        row = dict(cell, **over)
+        with io.open(str(path), 'w', encoding='utf-8', newline='') as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
+            writer.writeheader()
+            writer.writerow(row)
+        products.reload()
+
+    every = products.COLUMNS + products.OPTIONAL
+    os.environ['SCENARIO_PRODUCTS_SOURCE'] = str(path)
+    try:
+        write(every)
+        assert products.get('p-1')['shareClass'] == 'Dis'
+
+        write(every, ShareClass='Distributing')
+        with pytest.raises(products.BadCatalogue) as caught:
+            products.all()
+        assert 'share class' in str(caught.value)
+
+        write(every, ShareClass='')          # blank on a row: no share class
+        assert products.get('p-1')['shareClass'] is None
+
+        write(products.COLUMNS)              # the column absent entirely
+        assert products.get('p-1')['shareClass'] is None
+    finally:
+        os.environ.pop('SCENARIO_PRODUCTS_SOURCE', None)
+        products.reload()
+    assert len(products.all()) == 73, 'the packaged catalogue is back'
 
 
 def test_a_position_below_its_products_minimum_is_flagged_and_listed():
