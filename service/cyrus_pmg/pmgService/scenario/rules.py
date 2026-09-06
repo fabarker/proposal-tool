@@ -23,17 +23,64 @@ MANDATE_FLOOR = 5_000_000
 PRIVATE_ASSETS_MINIMUM = 20_000_000
 MAX_PORTFOLIOS = 4
 
+HEDGING_POLICIES = ['Hedged', 'ISG Hedged', 'Unhedged', 'Equity Not Hedged']
+
 # The option lists are DERIVED from the strategic universe - the supplying
 # database's extract, parsed into keys (D54). A currency, risk level or
 # allocation type is offered because a portfolio carrying it exists, and for
 # no other reason; the vocabularies in saaKeys only fix the ORDER, which a
 # name cannot supply. Nothing here is a list that can drift from the data.
-_FACETS = universe.facets()
-CURRENCIES = list(_FACETS['currencies'])
-HEDGING_POLICIES = ['Hedged', 'ISG Hedged', 'Unhedged', 'Equity Not Hedged']
-RISK_LEVELS = list(_FACETS['riskLevels'])
-ALLOCATIONS = [t for t in saaKeys.ALLOCATION_TYPES
-               if any(t in offered for offered in _FACETS['allocationTypes'].values())]
+#
+# THEY RESOLVE ON FIRST USE, NOT AT IMPORT (D86). Reading the extract while
+# this module is being imported made a missing or unreadable extract an
+# ImportError - and since the endpoint block lives inside the HOST's own
+# dashboardRouter.py, that ImportError took every other dashboard endpoint
+# down with it. Deferred, the same fault is an error from the Proposal Tool
+# alone, on the request that needs the data. engine.py defers the analytics
+# library's symbols the same way and for the same reason.
+#
+# `rules.CURRENCIES` and the rest still read as module constants from outside
+# - PEP 562's module __getattr__ below resolves them - so no caller changed.
+# Inside this module they are read through _derived(), because a bare global
+# would not reach __getattr__.
+
+#: (universe generation, the lists) - rebuilt when the extract is re-read.
+_derivedCache = None
+
+#: The names __getattr__ resolves. Everything else here is a literal.
+_DERIVED_NAMES = ('_FACETS', 'CURRENCIES', 'RISK_LEVELS', 'ALLOCATIONS', 'RE_ALLOWED')
+
+
+def _derived() -> dict:
+    """The universe-derived option lists, read once and cached against the
+    generation universe.reload() bumps."""
+    global _derivedCache
+    generation = universe.generation()
+    if _derivedCache is None or _derivedCache[0] != generation:
+        facets = universe.facets()
+        _derivedCache = (generation, {
+            '_FACETS': facets,
+            'CURRENCIES': list(facets['currencies']),
+            'RISK_LEVELS': list(facets['riskLevels']),
+            'ALLOCATIONS': [t for t in saaKeys.ALLOCATION_TYPES
+                            if any(t in offered
+                                   for offered in facets['allocationTypes'].values())],
+            # The allocation types that hold real assets, and so offer the
+            # ex-RAs toggle. Derived: a type is here because an ex-RAs variant
+            # of it exists. Core and ex-Alts hold no private assets in the
+            # first place, so no such variant exists and the toggle has
+            # nothing to offer them - which is what spec 2.1 said, and used to
+            # be a literal list here.
+            'RE_ALLOWED': universe.realAssetTypes(),
+        })
+    return _derivedCache[1]
+
+
+def __getattr__(name):
+    """PEP 562: the universe-derived names resolve on first access."""
+    if name in _DERIVED_NAMES:
+        return _derived()[name]
+    raise AttributeError('module {!r} has no attribute {!r}'.format(__name__, name))
 
 # Display names for the risk levels. The VALUES are the supplying database's
 # own spellings - they are the key's second field and key the bake - and three
@@ -51,13 +98,6 @@ RISK_LEVEL_LABELS = {
     'Higher Risk': 'Higher Risk',
     'All Equity': 'All Equity',
 }
-
-# The allocation types that hold real assets, and so offer the ex-RAs toggle.
-# Derived: a type is here because an ex-RAs variant of it exists in the
-# universe. Core and ex-Alts hold no private assets in the first place, so no
-# such variant exists and the toggle has nothing to offer them - which is what
-# spec 2.1 said, and used to be a literal list here.
-RE_ALLOWED = universe.realAssetTypes()
 
 # Which allocations each implementation type offers (D49).
 #
@@ -170,10 +210,11 @@ def allocationsForVariant(variant) -> list:
     before a variant is chosen, and a rule cannot bind before its input exists
     (the same reasoning as the mandate filter below).
     """
+    allocations = _derived()['ALLOCATIONS']
     offered = VARIANT_ALLOCATIONS.get(variant)
     if not offered:
-        return list(ALLOCATIONS)
-    return [a for a in ALLOCATIONS if a in offered]
+        return list(allocations)
+    return [a for a in allocations if a in offered]
 
 
 def variantForcesExcludeRE(variant) -> bool:
@@ -388,7 +429,8 @@ def availability(basis: BasisInput, mandateSize, variant=None,
             continue
         if key.allocationType not in allowed:
             continue
-        if forceExRE and key.allocationType in RE_ALLOWED and not key.excludeRealAssets:
+        if forceExRE and key.allocationType in _derived()['RE_ALLOWED'] \
+                and not key.excludeRealAssets:
             continue
         out.append(keyStr)
     return out
@@ -433,7 +475,7 @@ def exportFilename(basis: BasisInput, proposalId: str) -> str:
 
 def validateBasis(basis: BasisInput) -> None:
     """Reject a basis outside the option lists."""
-    if basis.currency not in CURRENCIES:
+    if basis.currency not in _derived()['CURRENCIES']:
         raise ValidationError('currency', 'Unknown currency {!r}.'.format(basis.currency))
     if basis.hedging not in HEDGING_POLICIES:
         raise ValidationError('hedging', 'Unknown hedging policy {!r}.'.format(basis.hedging))
@@ -496,7 +538,7 @@ def validateKey(key: PortfolioKey, variant, mandateSize=None) -> None:
     if key.allocationType not in allowed:
         raise ValidationError('allocationType', '{} does not offer the {} allocation.'
                               .format(variant, key.allocationType))
-    if (variantForcesExcludeRE(variant) and key.allocationType in RE_ALLOWED
+    if (variantForcesExcludeRE(variant) and key.allocationType in _derived()['RE_ALLOWED']
             and not key.excludeRealAssets):
         raise ValidationError(
             'excludeRealAssets',
@@ -559,19 +601,20 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
     round trip per product, and without a rate of its own (D51). Without a
     top account size there is no tier and the block carries no rates.
     """
+    derived = _derived()
     return {
         'options': {
-            'currencies': CURRENCIES,
+            'currencies': derived['CURRENCIES'],
             'hedgingPolicies': HEDGING_POLICIES,
             'allocations': allocationsFor(mandateSize, variant),
-            'riskLevels': RISK_LEVELS,
+            'riskLevels': derived['RISK_LEVELS'],
             'riskLevelLabels': RISK_LEVEL_LABELS,
-            'reAllowed': RE_ALLOWED,
+            'reAllowed': derived['RE_ALLOWED'],
             # the facets: which allocation types each risk level offers (empty
             # for an all-equity level, which greys the selector), and which
             # types offer the ex-RAs toggle - both derived from the universe
-            'allocationTypesByRisk': _FACETS['allocationTypes'],
-            'exclusionOffered': _FACETS['exclusionOffered'],
+            'allocationTypesByRisk': derived['_FACETS']['allocationTypes'],
+            'exclusionOffered': derived['_FACETS']['exclusionOffered'],
             'implementationVariants': IMPLEMENTATION_VARIANTS,
             'variantAllocations': VARIANT_ALLOCATIONS,
             'variantsExcludingRealEstate': VARIANTS_EXCLUDING_RE,

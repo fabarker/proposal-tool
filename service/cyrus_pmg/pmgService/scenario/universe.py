@@ -38,6 +38,8 @@ _ASSETS = {code: (name, category) for code, name, category in pw.ASSET_METADATA}
 _ASSET_ORDER = {code: index for index, (code, _, _) in enumerate(pw.ASSET_METADATA)}
 
 _lock = threading.Lock()
+#: bumped by reload(); see generation()
+_generation = 0
 _loaded = None
 
 
@@ -118,9 +120,18 @@ def _get() -> _Universe:
 
 def reload() -> None:
     """Forget the loaded source (tests, or a bake that re-reads)."""
-    global _loaded
+    global _loaded, _generation
     with _lock:
         _loaded = None
+        _generation += 1
+
+
+def generation() -> int:
+    """How many times the source has been forgotten. Anything caching a
+    PROJECTION of the universe - rules' option lists above all - holds this
+    beside its cache and rebuilds when it moves, so a reload cannot leave a
+    stale list of currencies behind (D86)."""
+    return _generation
 
 
 # ------------------------------------------------------------------ reads ---

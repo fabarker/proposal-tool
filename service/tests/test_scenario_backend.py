@@ -1120,6 +1120,56 @@ def test_all_equity_holds_nothing_the_allocation_axis_describes():
         assert [c['name'] for c in result['categories']] == ['Public Equity']
 
 
+def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
+    """D86. The endpoint block lives inside the HOST's own dashboardRouter, so
+    anything this package raises at IMPORT time takes every other dashboard
+    endpoint with it. The universe-derived option lists therefore resolve on
+    first use: with no extract at all the router still imports, and the fault
+    surfaces only when something asks for the data."""
+    import subprocess
+    import sys
+    here = os.path.join(os.path.dirname(__file__), '..')
+    probe = (
+        'from cyrus_pmg.pmgService.dashboardRouter import router\n'
+        'import cyrus_pmg.pmgService.scenario.rules as rules\n'
+        'import cyrus_pmg.pmgService.scenario.workbook\n'
+        'routes = len([r for r in router.routes if r.path.startswith("/scenario")])\n'
+        'try:\n'
+        '    rules.CURRENCIES\n'
+        '    asked = "resolved"\n'
+        'except FileNotFoundError:\n'
+        '    asked = "raised"\n'
+        'print(routes, asked)\n')
+    environment = dict(os.environ, PYTHONPATH=os.path.abspath(here),
+                       SCENARIO_SAA_SOURCE=str(tmp_path / 'nothing-here.csv'))
+    done = subprocess.run([sys.executable, '-c', probe], capture_output=True,
+                          text=True, env=environment)
+    assert done.returncode == 0, done.stderr[-600:]
+    routes, asked = done.stdout.split()
+    assert int(routes) == 28, 'the whole block registered without the extract'
+    assert asked == 'raised', 'and the data is still required when it is wanted'
+
+
+def test_the_option_lists_follow_a_reloaded_universe(tmp_path, monkeypatch):
+    """D86. They are cached, so a re-read of the extract must not leave a
+    stale list of currencies behind."""
+    from cyrus_pmg.pmgService.scenario import universe
+    before = list(rules.CURRENCIES)
+    assert 'GBP' in before
+    src = tmp_path / 'saa.csv'
+    src.write_text('PortfolioName,AssetTicker,Weight\n'
+                   'USD Moderate Core,LHTRYIN,0.6\nUSD Moderate Core,FRUS1GR,0.4\n')
+    monkeypatch.setenv('SCENARIO_SAA_SOURCE', str(src))
+    universe.reload()
+    try:
+        assert rules.CURRENCIES == ['USD'], 'the lists followed the new extract'
+        assert rules.RISK_LEVELS == ['Moderate']
+    finally:
+        monkeypatch.delenv('SCENARIO_SAA_SOURCE')
+        universe.reload()
+    assert rules.CURRENCIES == before, 'and followed it back'
+
+
 def test_unparsed_names_are_recorded_not_fatal(tmp_path, monkeypatch):
     """A name the vocabulary does not cover is left out and reported; the
     rest of the extract still loads. The bake's census prints exactly this."""

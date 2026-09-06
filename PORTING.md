@@ -547,7 +547,9 @@ including `isg-cyrus-pmg/src`. (Nothing is read yet: the extracts are read on fi
 
 **Step 4 — Insert the endpoint block** (§9.1). Check: `python -c "from cyrus_pmg.pmgService.dashboardRouter
 import router; print(len([r for r in router.routes if r.path.startswith('/scenario')]))"` prints
-`28`.
+`28`. This check passes **before** any data is delivered: the package reads nothing at import
+(D86). It did once, which made this step fail with a `FileNotFoundError` for the SAA extract until
+Step 5 had been done first.
 
 **Step 5 — Deliver the data.** Place the three extracts and the bake store on durable storage
 outside `src/`; create the directories for the sleeve database, the register and the scenario
@@ -1505,6 +1507,8 @@ One line each; the register carries the reasoning.
   the schema block, no fetch.
 - **D85** The screen table's band and total spans are counted off its column list, not written as literals;
   a stale one had left band rows a cell short and the Notional column unshaded.
+- **D86** The universe-derived option lists resolve on first use, not at import, so a missing extract
+  cannot turn into an ImportError inside the host's own `dashboardRouter.py`.
 
 ## Appendix B — where the rest is written down
 
