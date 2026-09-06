@@ -7,11 +7,18 @@ __pycache__/
 ~$*
 
 # Runtime state, written by start_dashboard.sh and the bake. Nothing here is
-# source: logs, pidfiles, and the baked analytics, which are derived from the
-# database and keyed to a dataversion. Rebuild with
+# source: logs, pidfiles, the live sleeve library and the proposal register.
+# None of it travels: the host seeds its own library and starts with an empty
+# register, and a copied .db would carry my rows into it.
+#
+# var/baked IS tracked, and deliberately. It is a DELIVERY, not a cache: the
+# host computes no analytics, so those 16 slices and their manifest are the
+# figures every proposal is made of, and the Cyrus checkout is on another
+# machine with git as the way across. Rebuild with
 #   python3 -m cyrus_pmg.pmgService.scenario.bake --all
 # or, with no database, --adapter fixtures.
-service/var/
+service/var/*
+!service/var/baked/
 
 # The IMF WEO release download writes an empty file relative to the working
 # directory before falling back to the vendored copy (D11). Nothing reads it.
