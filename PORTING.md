@@ -1512,6 +1512,8 @@ One line each; the register carries the reasoning.
   cannot turn into an ImportError inside the host's own `dashboardRouter.py`.
 - **D87** `API_BASE` is resolved whether the host's `globals.js` assigns a window property or declares a
   script-scoped `const`; the old guard tested the bare name and left every request relative.
+- **D88** Scrollbars are styled thin rather than left to the platform, so the page reads the same on
+  Windows as on macOS; the navy rail carries its own light thumb.
 
 ## Appendix B — where the rest is written down
 

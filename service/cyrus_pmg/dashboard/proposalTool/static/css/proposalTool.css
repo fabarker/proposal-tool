@@ -348,6 +348,34 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 
+
+/* ── scrollbars ──────────────────────────────────────────────────────────────
+   Left to the platform, these are not the same page on two machines: macOS
+   draws thin overlay bars that fade when idle, Windows draws classic ones that
+   are wider, opaque and always present. The rail's track and the
+   implementation table's horizontal bar carried real width on the host and the
+   whole document read heavier for it (D88).
+
+   So the bar is stated rather than inherited. Both syntaxes are needed: the
+   standard properties serve Firefox and current Chromium, the -webkit-
+   pseudo-elements everything else. The thumb is drawn inside a transparent
+   border with background-clip, which is what makes a 10px gutter carry a 4px
+   bar - narrower than any scrollbar-width keyword allows on its own.
+
+   The rail is the exception and needs its own: it is navy, and a thumb in the
+   document's line colour would be nearly invisible on it. */
+*{scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line-strong);border:3px solid transparent;
+  background-clip:content-box;border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:var(--ink-3);background-clip:content-box}
+
+.rail{scrollbar-color:rgba(255,255,255,.28) transparent}
+.rail::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28);background-clip:content-box}
+.rail::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.45);background-clip:content-box}
+
 .rail{position:fixed;top:0;left:0;bottom:0;width:var(--rail-w);background:var(--rail-bg);
   border-right:1px solid var(--rail-line-strong);overflow-y:auto;z-index:50;
   display:flex;flex-direction:column}
