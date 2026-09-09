@@ -186,8 +186,9 @@ Never hand-edit either copy.
 
 What the page assumes of its host (all Verified in the mirror):
 
-- `window.API_BASE` is set by `globals.js`; the page guards with
-  `if (typeof API_BASE === 'undefined') window.API_BASE = window.location.origin + '/api'`.
+- `window.API_BASE` is set by `globals.js`. The page resolves it with `resolveApiBase()`, which takes
+  a window property if there is one, else a script-scoped `const`/`let` of the same name, else the
+  page's own origin + `/api` (D87). **Both declarations work**; testing only the bare name did not.
 - Every call is `fetch(window.API_BASE + path, {credentials: 'same-origin'})` through one
   `apiFetch`; a non-2xx JSON body's `error` is shown, a `loginUrl` is followed.
 - Errors render into `#alertArea`; a 502/504 from the proxy marks the service down and the page
@@ -1509,6 +1510,8 @@ One line each; the register carries the reasoning.
   a stale one had left band rows a cell short and the Notional column unshaded.
 - **D86** The universe-derived option lists resolve on first use, not at import, so a missing extract
   cannot turn into an ImportError inside the host's own `dashboardRouter.py`.
+- **D87** `API_BASE` is resolved whether the host's `globals.js` assigns a window property or declares a
+  script-scoped `const`; the old guard tested the bare name and left every request relative.
 
 ## Appendix B — where the rest is written down
 

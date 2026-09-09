@@ -1577,6 +1577,43 @@ def test_js_price_build_up_mirror_agrees_with_python():
     assert sum(got[at]['fees']) == pytest.approx(132_100.0)
 
 
+def test_the_page_resolves_the_api_base_however_the_host_declares_it():
+    """D87. Every call reads window.API_BASE, so it must be set whichever way
+    the host's globals.js declares its own. This repo's stand-in assigns
+    `window.API_BASE = ...`; Cyrus writes `const API_BASE = ...`, which is a
+    SCRIPT-SCOPED binding and no window property. The old guard tested the
+    bare name and so skipped, leaving window.API_BASE undefined and every
+    request built as "undefined/scenario/..." against the page's own path -
+    a 404 from the static server, reported on screen as the service being
+    down."""
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    built = os.path.join(os.path.dirname(__file__), '..', '..',
+                         'proposalTool', 'static', 'js', 'proposalTool.js')
+    with open(built, encoding='utf-8') as fh:
+        source = fh.read()
+    fn = source[source.index('function resolveApiBase('):]
+    fn = fn[:fn.index('\n}') + 2]
+
+    probe = (fn + "\nconst O = 'http://host:8001';\n"
+             "process.stdout.write(JSON.stringify([\n"
+             # the host assigns a window property, as this repo's stand-in does
+             "  resolveApiBase(O + '/api', null, O),\n"
+             # the host declares const/let: script-scoped, no window property
+             "  resolveApiBase(undefined, O + '/api', O),\n"
+             # opened standalone, with no globals.js at all
+             "  resolveApiBase(undefined, null, O),\n"
+             # declared but empty, which must not win over the fallback
+             "  resolveApiBase('', '', O)]));\n")
+    got = json.loads(subprocess.run([node, '-e', probe], capture_output=True,
+                                    text=True, check=True).stdout)
+    assert got == ['http://host:8001/api'] * 4, got
+
+    # and the page never reads the bare name for a request
+    assert 'window.API_BASE + ' in source or 'window.API_BASE +' in source
+    assert source.count('resolveApiBase(') >= 2, 'defined and called'
+
 def test_js_fee_mirror_agrees_with_python():
     """The page resolves fees from the schema's rates block; the workbook
     resolves them from fees.json. Across every tier, schedule, level and group

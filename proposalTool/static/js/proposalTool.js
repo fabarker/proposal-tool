@@ -4,11 +4,30 @@
 //
 // The Flask frontend reverse-proxies /api/* to the FastAPI backend, rewriting
 // /api/<x> to /api/v1/<x>. On a host page globals.js has already set API_BASE;
-// this guard keeps the page working when opened standalone.
+// this resolves it however the host chose to declare it, and falls back so the
+// page still works opened standalone.
+//
+// THE BARE NAME AND THE WINDOW PROPERTY ARE NOT THE SAME THING (D87). This
+// used to read `if (typeof API_BASE === 'undefined') window.API_BASE = ...`,
+// which every call site then read back as `window.API_BASE`. That holds only
+// while the host's globals.js assigns `window.API_BASE = ...`, as this repo's
+// stand-in does. A host that writes `const API_BASE = ...` instead creates a
+// SCRIPT-SCOPED binding and no window property: the bare name exists, so the
+// guard skipped, `window.API_BASE` stayed undefined, and every call built
+// "undefined/scenario/..." relative to the page's own path - answered by the
+// static file server with a 404, so the tool reported the service as down
+// while the service was fine. Found on the host, at Cyrus.
 // ---------------------------------------------------------------------------
-if (typeof API_BASE === 'undefined') {
-    window.API_BASE = window.location.origin + '/api';
+function resolveApiBase(fromWindow, fromScope, origin) {
+    if (typeof fromWindow === 'string' && fromWindow) return fromWindow;
+    if (typeof fromScope === 'string' && fromScope) return fromScope;
+    return origin + '/api';
 }
+window.API_BASE = resolveApiBase(
+    window.API_BASE,
+    /* a script-scoped const/let from the host's globals.js */
+    (typeof API_BASE === 'string' ? API_BASE : null),
+    window.location.origin);
 
 /** Render an API error into the page's #alertArea. Host convention. */
 function showAlert(kind, message) {
