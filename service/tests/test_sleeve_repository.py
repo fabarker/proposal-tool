@@ -49,10 +49,12 @@ def _aPlacedProduct():
 
 
 def _seedRows():
+    """The delivered seed in the interchange shape - the seed predates
+    editions, so every row is a fallback (edition '') (D89)."""
     with open(SEED, newline='', encoding='utf-8') as fh:
         reader = csv.reader(fh)
         next(reader)
-        return [(v, c, s, p, float(w)) for v, c, s, p, w in reader]
+        return [(v, c, s, '', p, float(w)) for v, c, s, p, w in reader]
 
 
 def _request(kerberos=None):
@@ -153,7 +155,7 @@ def test_seed_equals_the_extract_sleeve_for_sleeve_and_weight_for_weight():
     """The parity that lets the rest of the suite pass unchanged: what the
     repository serves is what the tables used to say."""
     want = {}
-    for v, c, s, p, w in _seedRows():
+    for v, c, s, _, p, w in _seedRows():
         want.setdefault((v, c, s), {})[p] = w
     got = {}
     for variant in sleeves.VARIANTS:
@@ -407,7 +409,9 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/sleeves/{sleeveId}/history', ('GET',)),
         ('/scenario/repository/sleeves/{sleeveId}/restore', ('POST',)),
         ('/scenario/repository/sleeves/{sleeveId}/revert', ('POST',)),
+        ('/scenario/repository/sleeves/{sleeveId}/editions', ('POST',)),
         ('/scenario/repository/sleeves/restore', ('POST',)),
+        ('/scenario/repository/applicability', ('POST',)),
         ('/scenario/repository/activity', ('GET',)),
         ('/scenario/repository/archive.csv', ('GET',)),
         ('/scenario/repository/activity.csv', ('GET',)),
@@ -971,7 +975,7 @@ def test_the_console_payload_and_the_endpoints_carry_the_record(monkeypatch):
 
 def test_a_replacing_import_retires_the_library_rather_than_erasing_it():
     before = {e['id'] for e in sleeveRepo.listAll()}
-    rows = [('PMG ESG', 'Public Equity', 'Only Survivor', A_PRODUCT, 1.0)]
+    rows = [('PMG ESG', 'Public Equity', 'Only Survivor', '', A_PRODUCT, 1.0)]
     sleeveRepo.importRows(rows, replace=True, user='importer')
     try:
         assert len(sleeveRepo.listAll()) == 1
@@ -1122,7 +1126,8 @@ def test_four_workers_cold_starting_together_seed_the_library_once(tmp_path):
     import time
 
     rows = list(sleeveRepo.readSeedRows(sleeveRepo.seedPath()))
-    wantedSleeves = len({(variant, category, name) for variant, category, name, _, _ in rows})
+    wantedSleeves = len({(variant, category, name, label)
+                         for variant, category, name, label, _, _ in rows})
     wantedProducts = len(rows)
 
     database = tmp_path / 'cold.db'

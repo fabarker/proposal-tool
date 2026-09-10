@@ -1626,6 +1626,39 @@ body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max
 .repo-vars{display:flex;flex-wrap:wrap;gap:6px 14px}
 .repo-var{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer}
 .repo-var.off{color:var(--ink-3);cursor:not-allowed}
+/* ── editions (D89) ──
+   A name's editions sit together under it in the list, indented, each
+   saying which portfolios it is for. In the editor the edition is one
+   field: the label, then the rules as rows of chips - one row per rule,
+   rules being alternatives - and under them the count the server gives
+   back, green when it is clean and red when it collides. */
+.repo-grp{display:flex;align-items:baseline;gap:8px;padding:9px 16px 3px;border-bottom:1px solid var(--line);
+  background:var(--surface-2)}
+.repo-grp b{font-size:13.5px;font-weight:600;color:var(--ink)}
+.repo-grp small{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.repo-sleeve.ed{padding-left:28px}
+.repo-sleeve.ed b small{font-weight:400;color:var(--ink-3);font-size:12px;margin-left:4px}
+.repo-edn .repo-sub{font-size:12px;color:var(--ink-3);line-height:1.45}
+.repo-rules{display:grid;gap:8px}
+.repo-rule{border:1px solid var(--line-strong);border-radius:6px;padding:8px 10px 6px;display:grid;gap:6px;
+  background:var(--surface)}
+.repo-rule-h{display:flex;align-items:center;justify-content:space-between;font-family:var(--f-num);
+  font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.repo-rule-h small{font-weight:400;letter-spacing:.04em;color:var(--ink-3);margin-left:6px;text-transform:none}
+.repo-rule-h .repo-rm{position:static;width:22px;height:22px}
+.repo-rule-f{display:grid;grid-template-columns:78px minmax(0,1fr);gap:8px;align-items:start}
+.repo-rule-f .lbl{font-size:12px;color:var(--ink-2);padding-top:3px}
+.repo-rule-f .chips{display:flex;flex-wrap:wrap;gap:4px}
+.repo-chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink);cursor:pointer;
+  border:1px solid var(--line-strong);border-radius:999px;padding:2px 9px 2px 6px;background:var(--surface);
+  line-height:18px;user-select:none}
+.repo-chip:hover{border-color:var(--accent)}
+.repo-chip.on{background:#E3EBFA;border-color:#1E4FA3;color:#1E4FA3;font-weight:600}
+.repo-chip input{margin:0;width:12px;height:12px;accent-color:#1E4FA3}
+.repo-applies{margin:2px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.repo-applies.ok{color:#176A33}
+.repo-applies.bad{color:#9B1C1C}
+.rev-rules{margin:-4px 0 6px;font-family:var(--f-num);font-size:11.5px;color:var(--ink-3);letter-spacing:.02em}
 /* the context menu on a sleeve: inside the dialog, clamped off its edges */
 .repo-ctx{position:absolute;z-index:8;min-width:238px;background:var(--surface);
   border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 12px 34px rgba(12,24,44,.24);

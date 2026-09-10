@@ -202,7 +202,7 @@ def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the
         else:
             assert 'requireEditor' not in names and 'requireAdmin' not in names, (route.path, names)
             assert set(names) <= {'requireAuth'}, (route.path, names)
-    assert seen == 28
+    assert seen == 30
 
 
 def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):

@@ -50,6 +50,7 @@ from . import fees, rules
 from . import portfolio_weights as pw
 from .payloads import roundWeightsLargestRemainder
 from .rules import sleeveCategory
+from .types import PortfolioKey
 from .sleeves import listSleeves
 
 # House palette from the existing report (spec 14.3). The UI navy differs by
@@ -186,20 +187,23 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         combined[key]['weightPct'] += float(category['weightPct'])
     categories = [combined[key] for key in order]
 
+    # the sleeves are resolved for the portfolio being implemented: a name
+    # may hold several editions and only the one for this book is built (D89)
+    baseKey = PortfolioKey.fromStr(baseResult['keyStr']) if baseResult.get('keyStr') else None
     for category in categories:
         name = category['name']
         catWeight = float(category['weightPct'])
         # grouped categories share one choice, stored under the group (D60)
         pickedUnder = sleeveCategory(name)
         if name in autoCategories:
-            library = listSleeves(pickedUnder, variant)
+            library = listSleeves(pickedUnder, variant, baseKey)
             sleeve = library[0] if library else None
             auto = True
         else:
             chosen = (sleevesMap or {}).get(pickedUnder)
             sleeve = None
             if chosen:
-                sleeve = next((s for s in listSleeves(pickedUnder, variant)
+                sleeve = next((s for s in listSleeves(pickedUnder, variant, baseKey)
                                if s['name'] == chosen), None)
             auto = False
         items = []

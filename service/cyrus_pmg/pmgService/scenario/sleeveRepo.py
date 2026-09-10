@@ -2,14 +2,28 @@
 
 Sleeves used to be tables in sleeves.py. They are now rows in a SQLite file
 the service owns and writes, built and maintained by an admin from inside the
-app. Four tables:
+app. Five tables:
 
-    sleeves         id, variant, category, name, note, provenance, deletion
-                    unique on (variant, category, name) among the LIVE ones
+    sleeves         id, variant, category, name, label, note, provenance,
+                    deletion - unique on (variant, category, name, label)
+                    among the LIVE ones
     sleeveProducts  sleeveId, position, productId, weight   (weight a fraction)
+    sleeveRules     sleeveId, position, currency, riskLevel, allocationType -
+                    which strategic portfolios this row is for (D89)
     sleeveHistory   one append-only row per revision: the whole sleeve as it
                     stood after that action, with who did it and when
     meta            schema version and the seed stamp
+
+Editions (D89). A row is an EDITION of a sleeve name. A name a PWA picks may
+have several: a fallback with no rules, which applies wherever nothing else
+does, and any number of editions each carrying rules over the strategic
+portfolio's currency, risk level and allocation type (sleeveRules.py). The
+resolver serves ONE row per name for a given base portfolio - the edition
+whose rules match it, else the fallback, else nothing - and the PWA never
+learns which; the served shape is the shape it always was. Two editions of a
+name whose rules claim the same portfolio are refused at save; if the
+universe later changes under them so that both claim one, the name is
+withheld for that portfolio and the console shows both as broken.
 
 Nothing is ever destroyed (D65). Every write appends a revision recording the
 sleeve in full - name, note and the complete product set - so an earlier
@@ -59,7 +73,7 @@ import os
 import sqlite3
 import threading
 
-from . import products
+from . import products, sleeveRules, universe
 from .types import ValidationError
 
 # The order the UI offers implementation types in. First is not a default -
@@ -77,13 +91,22 @@ _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 _DEFAULT_SEED = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              '..', '..', '..', '..', 'sleeveSource', 'sleeves.csv')
 
+#: The seed as delivered before editions existed, still accepted unchanged:
+#: every row becomes a fallback edition. SEED_COLUMNS_EDITIONS adds the label.
 SEED_COLUMNS = ['Variant', 'Category', 'Sleeve', 'ProductId', 'Weight']
+SEED_COLUMNS_EDITIONS = ['Variant', 'Category', 'Sleeve', 'Edition', 'ProductId', 'Weight']
+#: The rules, one row per rule, in a file beside the seed (D89). A cell holds
+#: one value or several separated by |; blank means any. Several rows for one
+#: edition are alternatives - the edition applies where any of them matches.
+RULE_COLUMNS = ['Variant', 'Category', 'Sleeve', 'Edition', 'Currency', 'RiskLevel',
+                'AllocationType']
 NAME_MAX = 80
 WEIGHT_TOLERANCE = 1e-6
 
 #: schema revision written to meta. 1 was the original two-table store; 2
-#: added the soft delete and the history table (D65).
-SCHEMA_VERSION = 2
+#: added the soft delete and the history table (D65); 3 added the edition
+#: label and the rules table (D89).
+SCHEMA_VERSION = 3
 
 #: what a history row's action can say. baseline is the one nobody performed:
 #: it is the state a sleeve was in when history started being kept.
@@ -96,6 +119,7 @@ CREATE TABLE IF NOT EXISTS {name} (
     variant   TEXT NOT NULL,
     category  TEXT NOT NULL,
     name      TEXT NOT NULL,
+    label     TEXT NOT NULL DEFAULT '',
     note      TEXT NOT NULL DEFAULT '',
     createdBy TEXT NOT NULL DEFAULT '',
     createdAt TEXT NOT NULL,
@@ -108,7 +132,9 @@ CREATE TABLE IF NOT EXISTS {name} (
 
 # The uniqueness of a sleeve name is a rule about the LIBRARY, not about the
 # record: a deleted sleeve must not stop the same name being used again, and a
-# partial index is how SQLite says exactly that.
+# partial index is how SQLite says exactly that. Since D89 the unit of
+# uniqueness is the EDITION - name plus label - so a name may hold a fallback
+# (label '') and any number of labelled editions.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sleeveProducts (
     sleeveId  INTEGER NOT NULL REFERENCES sleeves(id) ON DELETE CASCADE,
@@ -116,6 +142,14 @@ CREATE TABLE IF NOT EXISTS sleeveProducts (
     productId TEXT NOT NULL,
     weight    REAL NOT NULL,
     PRIMARY KEY (sleeveId, productId)
+);
+CREATE TABLE IF NOT EXISTS sleeveRules (
+    sleeveId       INTEGER NOT NULL REFERENCES sleeves(id) ON DELETE CASCADE,
+    position       INTEGER NOT NULL,
+    currency       TEXT NOT NULL DEFAULT '',
+    riskLevel      TEXT NOT NULL DEFAULT '',
+    allocationType TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (sleeveId, position)
 );
 CREATE TABLE IF NOT EXISTS sleeveHistory (
     id        INTEGER PRIMARY KEY,
@@ -125,16 +159,18 @@ CREATE TABLE IF NOT EXISTS sleeveHistory (
     variant   TEXT NOT NULL,
     category  TEXT NOT NULL,
     name      TEXT NOT NULL,
+    label     TEXT NOT NULL DEFAULT '',
     note      TEXT NOT NULL DEFAULT '',
     products  TEXT NOT NULL,
+    rules     TEXT NOT NULL DEFAULT '[]',
     actor     TEXT NOT NULL DEFAULT '',
     at        TEXT NOT NULL,
     UNIQUE (sleeveId, revision)
 );
 CREATE INDEX IF NOT EXISTS sleeves_by_home ON sleeves (variant, category);
 CREATE INDEX IF NOT EXISTS sleeves_live ON sleeves (deletedAt);
-CREATE UNIQUE INDEX IF NOT EXISTS sleeves_live_name
-    ON sleeves (variant, category, name) WHERE deletedAt = '';
+CREATE UNIQUE INDEX IF NOT EXISTS sleeves_live_edition
+    ON sleeves (variant, category, name, label) WHERE deletedAt = '';
 CREATE INDEX IF NOT EXISTS history_by_sleeve ON sleeveHistory (sleeveId, revision);
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -151,6 +187,15 @@ def dbPath() -> str:
 
 def seedPath() -> str:
     return os.path.abspath(os.getenv('SCENARIO_SLEEVES_SEED', '') or _DEFAULT_SEED)
+
+
+def rulesPath() -> str:
+    """The rules file: SCENARIO_SLEEVES_RULES, else sleeveRules.csv beside
+    the seed. Optional - a library with no editions has no rules to read."""
+    named = os.getenv('SCENARIO_SLEEVES_RULES', '')
+    if named:
+        return os.path.abspath(named)
+    return os.path.join(os.path.dirname(seedPath()), 'sleeveRules.csv')
 
 
 def _now() -> str:
@@ -285,28 +330,46 @@ def _migrate(conn: sqlite3.Connection) -> None:
         return
 
     columns = {r['name'] for r in conn.execute('PRAGMA table_info(sleeves)')}
-    if 'deletedAt' in columns:
-        return
+    if 'deletedAt' not in columns:
+        conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute('PRAGMA legacy_alter_table = ON')
+        try:
+            with conn:
+                conn.executescript(_SLEEVES_TABLE.format(name='sleevesNew'))
+                conn.execute(
+                    'INSERT INTO sleevesNew (id, variant, category, name, note, createdBy, '
+                    'createdAt, updatedBy, updatedAt, deletedBy, deletedAt) '
+                    "SELECT id, variant, category, name, note, createdBy, createdAt, "
+                    "updatedBy, updatedAt, '', '' FROM sleeves")
+                conn.execute('DROP TABLE sleeves')
+                conn.execute('ALTER TABLE sleevesNew RENAME TO sleeves')
+                conn.executescript(_SCHEMA)
+                _baseline(conn)
+                conn.execute("INSERT OR REPLACE INTO meta VALUES ('schemaVersion', ?)",
+                             (str(SCHEMA_VERSION),))
+                conn.execute("INSERT OR REPLACE INTO meta VALUES ('migratedAt', ?)", (_now(),))
+        finally:
+            conn.execute('PRAGMA legacy_alter_table = OFF')
+        columns = {r['name'] for r in conn.execute('PRAGMA table_info(sleeves)')}
 
-    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-    conn.execute('PRAGMA legacy_alter_table = ON')
-    try:
+    # 2 -> 3 (D89): the edition label on the sleeve and its revisions, the
+    # rules on the revisions, and uniqueness widened from the name to the
+    # edition. Additive, so ALTER TABLE does it and no row is rewritten -
+    # every existing sleeve is the fallback edition of its name, which is
+    # exactly what a blank label and no rules mean. The rules table and the
+    # new index come from _SCHEMA, which every connection runs.
+    if 'label' not in columns:
+        history = {r['name'] for r in conn.execute('PRAGMA table_info(sleeveHistory)')}
         with conn:
-            conn.executescript(_SLEEVES_TABLE.format(name='sleevesNew'))
-            conn.execute(
-                'INSERT INTO sleevesNew (id, variant, category, name, note, createdBy, '
-                'createdAt, updatedBy, updatedAt, deletedBy, deletedAt) '
-                "SELECT id, variant, category, name, note, createdBy, createdAt, "
-                "updatedBy, updatedAt, '', '' FROM sleeves")
-            conn.execute('DROP TABLE sleeves')
-            conn.execute('ALTER TABLE sleevesNew RENAME TO sleeves')
-            conn.executescript(_SCHEMA)
-            _baseline(conn)
+            conn.execute("ALTER TABLE sleeves ADD COLUMN label TEXT NOT NULL DEFAULT ''")
+            if 'label' not in history:
+                conn.execute("ALTER TABLE sleeveHistory ADD COLUMN label TEXT NOT NULL DEFAULT ''")
+            if 'rules' not in history:
+                conn.execute("ALTER TABLE sleeveHistory ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'")
+            conn.execute('DROP INDEX IF EXISTS sleeves_live_name')
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('schemaVersion', ?)",
                          (str(SCHEMA_VERSION),))
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('migratedAt', ?)", (_now(),))
-    finally:
-        conn.execute('PRAGMA legacy_alter_table = OFF')
 
 
 def _baseline(conn: sqlite3.Connection) -> None:
@@ -340,54 +403,92 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.commit()
         return
     rows = list(readSeedRows(path))
-    _importInto(conn, rows, replace=False, user='seed', strict=False, action='seeded')
+    rulesFile = rulesPath()
+    ruleRows = list(readRuleRows(rulesFile)) if os.path.exists(rulesFile) else []
+    _importInto(conn, rows, replace=False, user='seed', strict=False, action='seeded',
+                ruleRows=ruleRows)
     conn.execute("INSERT OR REPLACE INTO meta VALUES ('seededAt', ?)", (stamp,))
     conn.execute("INSERT OR REPLACE INTO meta VALUES ('seededFrom', ?)", (path,))
+    conn.execute("INSERT OR REPLACE INTO meta VALUES ('rulesFrom', ?)",
+                 (rulesFile if ruleRows else '',))
     conn.commit()
 
 
 # ------------------------------------------------------------- the seed ---
 
-def readSeedRows(path: str):
-    """Rows of the interchange shape from a CSV or XLSX:
-    (variant, category, sleeve, productId, weight)."""
-    def _clean(row):
-        cells = ['' if v is None else str(v).strip() for v in row[:5]]
-        while len(cells) < 5:
-            cells.append('')
-        try:
-            cells[4] = float(cells[4])
-        except ValueError:
-            raise ValueError('{}: weight {!r} is not a number'.format(' / '.join(cells[:3]), cells[4]))
-        return tuple(cells)
-
+def _tableRows(path: str):
+    """(header, row iterator) from a CSV or the first sheet of an XLSX."""
     if path.lower().endswith('.csv'):
-        with open(path, newline='', encoding='utf-8') as fh:
+        with open(path, newline='', encoding='utf-8-sig') as fh:
             reader = csv.reader(fh)
             head = [str(h).strip() for h in (next(reader, None) or [])]
-            if head[:5] != SEED_COLUMNS:
-                raise ValueError('{}: header is {!r}, expected {!r}'.format(path, head, SEED_COLUMNS))
-            for row in reader:
-                if row and str(row[0]).strip():
-                    yield _clean(row)
-        return
+            body = [row for row in reader if row and str(row[0]).strip()]
+        return head, body
     from openpyxl import load_workbook
     sheet = load_workbook(path, read_only=True).active
     rows = sheet.iter_rows(values_only=True)
     head = [str(h).strip() if h is not None else '' for h in (next(rows, None) or [])]
-    if head[:5] != SEED_COLUMNS:
-        raise ValueError('{}: header is {!r}, expected {!r}'.format(path, head, SEED_COLUMNS))
-    for row in rows:
-        if row and row[0] is not None and str(row[0]).strip():
-            yield _clean(row)
+    body = [row for row in rows if row and row[0] is not None and str(row[0]).strip()]
+    return head, body
+
+
+def readSeedRows(path: str):
+    """Rows of the interchange shape from a CSV or XLSX:
+    (variant, category, sleeve, edition, productId, weight).
+
+    Both headers are read: the one delivered before editions existed, whose
+    rows become fallback editions (edition ''), and the one with the Edition
+    column. A reader is told which it has so the two never get confused."""
+    head, body = _tableRows(path)
+    if head[:6] == SEED_COLUMNS_EDITIONS:
+        width, editions = 6, True
+    elif head[:5] == SEED_COLUMNS:
+        width, editions = 5, False
+    else:
+        raise ValueError('{}: header is {!r}, expected {!r} or {!r}'.format(
+            path, head, SEED_COLUMNS_EDITIONS, SEED_COLUMNS))
+    for row in body:
+        cells = ['' if v is None else str(v).strip() for v in row[:width]]
+        while len(cells) < width:
+            cells.append('')
+        if not editions:
+            cells.insert(3, '')
+        try:
+            cells[5] = float(cells[5])
+        except ValueError:
+            raise ValueError('{}: weight {!r} is not a number'.format(' / '.join(cells[:4]), cells[5]))
+        yield tuple(cells)
+
+
+def readRuleRows(path: str):
+    """Rules from a CSV or XLSX with RULE_COLUMNS: one dict per row, the three
+    fields as lists (blank means any)."""
+    head, body = _tableRows(path)
+    if head[:7] != RULE_COLUMNS:
+        raise ValueError('{}: header is {!r}, expected {!r}'.format(path, head, RULE_COLUMNS))
+    for row in body:
+        cells = ['' if v is None else str(v).strip() for v in row[:7]]
+        while len(cells) < 7:
+            cells.append('')
+        yield {'variant': cells[0], 'category': cells[1], 'sleeve': cells[2], 'edition': cells[3],
+               'currency': sleeveRules.parseCell(cells[4]),
+               'riskLevel': sleeveRules.parseCell(cells[5]),
+               'allocationType': sleeveRules.parseCell(cells[6])}
 
 
 # ------------------------------------------------------------ validation ---
 
-def _validate(conn, variant, category, name, note, productRows, sleeveId=None):
-    """Everything a sleeve has to satisfy to be saved. Raises the first
+def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
+              label='', rules=None):
+    """Everything an edition has to satisfy to be saved. Raises the first
     failure as a ValidationError naming the field; returns the cleaned
-    (name, note, [(productId, weight)])."""
+    (name, note, [(productId, weight)], label, rules).
+
+    The edition rules (D89): a labelled edition carries rules and a fallback
+    carries none, never the other way round; labels are unique within a name;
+    a name has at most one fallback; and two labelled editions of one name may
+    not claim the same portfolio - the clash is named, portfolio by portfolio,
+    because it is computed rather than guessed."""
     if not variantExists(variant):
         raise ValidationError('variant', 'Choose an implementation type.')
     if category not in categories():
@@ -398,18 +499,50 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None):
     if len(name) > NAME_MAX:
         raise ValidationError('name', 'Keep the name to {} characters.'.format(NAME_MAX))
     note = (note or '').strip()
+    label = (label or '').strip()
+    if len(label) > NAME_MAX:
+        raise ValidationError('label', 'Keep the edition label to {} characters.'.format(NAME_MAX))
+    rules = sleeveRules.normalise(rules)
+    if rules and not label:
+        raise ValidationError('label', 'An edition with rules needs a label - the desk\'s short '
+                                       'name for it, such as "GBP" or "GBP ex-Alts".')
+    if label and not rules:
+        raise ValidationError('rules', 'The {} edition has no rules. Add at least one, or clear the '
+                                       'label to make it the fallback.'.format(label))
 
-    clash = conn.execute(
-        "SELECT id FROM sleeves WHERE variant = ? AND category = ? AND name = ? "
-        "AND deletedAt = ''", (variant, category, name)).fetchone()
-    if clash and clash['id'] != sleeveId:
-        raise ValidationError(
-            'name', 'A sleeve named {} already exists in {} under {}.'.format(name, category, variant))
+    siblings = [r for r in conn.execute(
+        "SELECT * FROM sleeves WHERE variant = ? AND category = ? AND name = ? AND deletedAt = ''",
+        (variant, category, name)).fetchall() if r['id'] != sleeveId]
+    for sib in siblings:
+        if sib['label'] == label:
+            if label:
+                raise ValidationError(
+                    'label', '{} already has a {} edition in {} under {}.'.format(
+                        name, label, category, variant))
+            # a second fallback is, from where the desk stands, the name
+            # clash it always was: the same words, on the same field
+            raise ValidationError(
+                'name', 'A sleeve named {} already exists in {} under {}. To offer it for '
+                'particular portfolios, add an edition to it instead.'.format(
+                    name, category, variant))
+    if rules:
+        for sib in siblings:
+            sibRules = _ruleRows(conn, sib['id'])
+            if not sibRules:
+                continue
+            shared = sleeveRules.overlap(rules, sibRules)
+            if shared:
+                raise ValidationError(
+                    'rules', 'Overlaps the {} edition on {} portfolio{}: {}{}. Narrow one of them; '
+                    'exactly one edition may apply to a portfolio.'.format(
+                        sib['label'], len(shared), '' if len(shared) == 1 else 's',
+                        ', '.join(shared[:4]), '' if len(shared) <= 4 else ', …'))
 
     if category in fixedCategories():
+        # one NAME per type - its editions are all that one sleeve
         others = conn.execute(
-            "SELECT COUNT(*) FROM sleeves WHERE variant = ? AND category = ? AND id IS NOT ? "
-            "AND deletedAt = ''", (variant, category, sleeveId)).fetchone()[0]
+            "SELECT COUNT(DISTINCT name) FROM sleeves WHERE variant = ? AND category = ? "
+            "AND name != ? AND deletedAt = ''", (variant, category, name)).fetchone()[0]
         if others:
             raise ValidationError(
                 'category', '{} holds exactly one sleeve under each implementation type - '
@@ -439,7 +572,7 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None):
     if abs(total - 1.0) > WEIGHT_TOLERANCE:
         raise ValidationError(
             'weights', 'Weights sum to {:.2f}%; a sleeve must sum to 100%.'.format(total * 100.0))
-    return name, note, cleaned
+    return name, note, cleaned, label, rules
 
 
 # --------------------------------------------------------------- reading ---
@@ -462,6 +595,42 @@ def _productRows(conn, sleeveId):
     return conn.execute(
         'SELECT productId, weight, position FROM sleeveProducts WHERE sleeveId = ? ORDER BY position',
         (sleeveId,)).fetchall()
+
+
+def _ruleRows(conn, sleeveId) -> list:
+    """An edition's rules in the canonical shape: [] for the fallback."""
+    out = []
+    for r in conn.execute('SELECT currency, riskLevel, allocationType FROM sleeveRules '
+                          'WHERE sleeveId = ? ORDER BY position', (sleeveId,)):
+        rule = {}
+        for field in sleeveRules.FIELDS:
+            values = sleeveRules.parseCell(r[field])
+            if values:
+                rule[field] = values
+        if rule:
+            out.append(rule)
+    return out
+
+
+def _resolveEdition(conn, rows, key):
+    """The one row of a name to serve for *key*: the edition whose rules
+    match, else the fallback, else None. With no key only the fallback can
+    answer. More than one match is a library fault - the universe moved under
+    two editions that were disjoint when saved - and the name is withheld
+    rather than one of them chosen; the console lists both as broken."""
+    fallback, hits = None, []
+    for row in rows:
+        rules = _ruleRows(conn, row['id'])
+        if not rules:
+            if fallback is None:
+                fallback = row
+        elif key is not None and sleeveRules.matches(rules, key):
+            hits.append(row)
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        return None
+    return fallback
 
 
 def _served(row, productRows):
@@ -493,12 +662,34 @@ def _entry(conn, row, productRows, revisions=None):
         problems.append('The sleeve has no products.')
     elif abs(total - 1.0) > WEIGHT_TOLERANCE:
         problems.append('Weights sum to {:.2f}%, not 100%.'.format(total * 100.0))
-    offeredUnder = [r['variant'] for r in conn.execute(
-        "SELECT variant FROM sleeves WHERE category = ? AND name = ? AND deletedAt = '' "
-        "ORDER BY id", (row['category'], row['name'])).fetchall()]
+    rules = _ruleRows(conn, row['id'])
+    if rules:
+        # an overlap can only arise after the fact - the universe changed
+        # under two editions that were disjoint when saved - and it is shown
+        # exactly like a missing product: a problem, and withheld meanwhile
+        for sib in conn.execute(
+                "SELECT id, label FROM sleeves WHERE variant = ? AND category = ? AND name = ? "
+                "AND deletedAt = '' AND id != ? ORDER BY id",
+                (row['variant'], row['category'], row['name'], row['id'])).fetchall():
+            shared = sleeveRules.overlap(rules, _ruleRows(conn, sib['id']))
+            if shared:
+                problems.append('Overlaps the {} edition on {} portfolio{}: {}{}.'.format(
+                    sib['label'], len(shared), '' if len(shared) == 1 else 's',
+                    ', '.join(shared[:4]), '' if len(shared) <= 4 else ', …'))
+    offeredUnder = []
+    for r in conn.execute(
+            "SELECT variant FROM sleeves WHERE category = ? AND name = ? AND deletedAt = '' "
+            "ORDER BY id", (row['category'], row['name'])).fetchall():
+        if r['variant'] not in offeredUnder:
+            offeredUnder.append(r['variant'])
     return {
         'id': row['id'], 'variant': row['variant'], 'category': row['category'],
         'name': row['name'], 'note': row['note'],
+        # the edition (D89): its label, its rules, and how many strategic
+        # portfolios those rules name - None for the fallback, which applies
+        # wherever no labelled edition does
+        'label': row['label'], 'rules': rules, 'fallback': not rules,
+        'applies': len(sleeveRules.applicability(rules)) if rules else None,
         'fixed': row['category'] in fixedCategories(),
         'products': hydrated, 'problems': problems, 'offeredUnder': offeredUnder,
         'createdBy': row['createdBy'], 'createdAt': row['createdAt'],
@@ -511,9 +702,15 @@ def _entry(conn, row, productRows, revisions=None):
     }
 
 
-def listSleeves(category: str, variant: str) -> list:
+def listSleeves(category: str, variant: str, key=None) -> list:
     """The library for one category under one type, in the shape every
-    consumer has always read: well-formed sleeves only.
+    consumer has always read: one entry per NAME, well-formed sleeves only.
+
+    *key* is the base portfolio the sleeves are for (D89). Each name resolves
+    to the edition whose rules match it, else its fallback; a name with
+    neither is not offered under that portfolio. With no key only fallbacks
+    are served, which is the whole library as it stood before editions.
+    Nothing served says which edition it is - the PWA is not to know.
 
     An unknown type returns nothing rather than falling back: the caller has
     to have chosen one, and quietly serving the Multi-Asset library to a book
@@ -525,8 +722,17 @@ def listSleeves(category: str, variant: str) -> list:
         return []
     conn = _connect()
     try:
-        out = []
+        byName, order = {}, []
         for row in _sleeveRows(conn, variant, category):
+            if row['name'] not in byName:
+                byName[row['name']] = []
+                order.append(row['name'])
+            byName[row['name']].append(row)
+        out = []
+        for name in order:
+            row = _resolveEdition(conn, byName[name], key)
+            if row is None:
+                continue
             served = _served(row, _productRows(conn, row['id']))
             if served is not None:
                 out.append(served)
@@ -535,8 +741,8 @@ def listSleeves(category: str, variant: str) -> list:
         conn.close()
 
 
-def sleeveExists(category: str, name, variant: str) -> bool:
-    return any(s['name'] == name for s in listSleeves(category, variant))
+def sleeveExists(category: str, name, variant: str, key=None) -> bool:
+    return any(s['name'] == name for s in listSleeves(category, variant, key))
 
 
 def listAll(variant: str = None) -> list:
@@ -616,18 +822,19 @@ def _revisionCounts(conn) -> dict:
 
 
 def _recordHistory(conn, sleeveId, action, variant, category, name, note, cleaned,
-                   actor, at=None) -> int:
+                   actor, at=None, label='', rules=None) -> int:
     """Append one revision. Called inside the caller's transaction, always -
     a write that reached the library but not the history would be worse than
-    either failing."""
+    either failing. The label and rules ride along (D89) so a revert puts
+    back the whole edition, not only its products."""
     revision = conn.execute(
         'SELECT COALESCE(MAX(revision), 0) FROM sleeveHistory WHERE sleeveId = ?',
         (sleeveId,)).fetchone()[0] + 1
     conn.execute(
         'INSERT INTO sleeveHistory (sleeveId, revision, action, variant, category, name, '
-        'note, products, actor, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (sleeveId, revision, action, variant, category, name, note,
-         _packProducts(cleaned), actor, at or _now()))
+        'label, note, products, rules, actor, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (sleeveId, revision, action, variant, category, name, label or '', note,
+         _packProducts(cleaned), sleeveRules.pack(rules), actor, at or _now()))
     return revision
 
 
@@ -646,6 +853,12 @@ def _changes(previous, current) -> list:
     out = []
     if previous['name'] != current['name']:
         out.append('Renamed from {}'.format(previous['name']))
+    if (previous['label'] or '') != (current['label'] or ''):
+        out.append('Relabelled from {}'.format(previous['label']) if previous['label']
+                   else 'Labelled {}'.format(current['label']))
+    if (previous['rules'] or '[]') != (current['rules'] or '[]'):
+        now = sleeveRules.unpack(current['rules'])
+        out.append('Rules now: {}'.format(sleeveRules.describe(now)) if now else 'Rules cleared')
     if (previous['note'] or '') != (current['note'] or ''):
         out.append('Note changed' if current['note'] else 'Note cleared')
     was = dict(_unpackProducts(previous['products']))
@@ -672,6 +885,7 @@ def _historyEntry(row, previous, currentRevision) -> dict:
     return {
         'sleeveId': row['sleeveId'], 'revision': row['revision'], 'action': row['action'],
         'variant': row['variant'], 'category': row['category'], 'name': row['name'],
+        'label': row['label'], 'rules': sleeveRules.unpack(row['rules']),
         'note': row['note'], 'actor': row['actor'], 'at': row['at'],
         'products': hydrated, 'changes': _changes(previous, row),
         'current': row['revision'] == currentRevision,
@@ -796,6 +1010,7 @@ def activity(actions=None, variant=None, category=None, actor=None, since=None,
     conn = _connect()
     try:
         sql = ('SELECT h.*, p.name AS prevName, p.note AS prevNote, p.products AS prevProducts, '
+               'p.label AS prevLabel, p.rules AS prevRules, '
                "COALESCE(s.deletedAt, '') AS sleeveDeletedAt, "
                '(SELECT MAX(revision) FROM sleeveHistory m WHERE m.sleeveId = h.sleeveId) AS top '
                'FROM sleeveHistory h '
@@ -810,7 +1025,8 @@ def activity(actions=None, variant=None, category=None, actor=None, since=None,
             previous = None
             if row['prevProducts'] is not None:
                 previous = {'name': row['prevName'], 'note': row['prevNote'],
-                            'products': row['prevProducts']}
+                            'products': row['prevProducts'], 'label': row['prevLabel'],
+                            'rules': row['prevRules']}
             entry = _historyEntry(row, previous, row['top'])
             entry['sleeveArchived'] = bool(row['sleeveDeletedAt'])
             entry['cursor'] = _cursor(row)
@@ -846,10 +1062,10 @@ def activity(actions=None, variant=None, category=None, actor=None, since=None,
 
 # ------------------------------------------------------------- the export ---
 
-ARCHIVE_COLUMNS = ['SleeveId', 'Variant', 'Category', 'Sleeve', 'ArchivedAt', 'ArchivedBy',
-                   'CreatedAt', 'CreatedBy', 'Revisions', 'Products']
-ACTIVITY_COLUMNS = ['At', 'Action', 'Actor', 'Variant', 'Category', 'Sleeve', 'SleeveId',
-                    'Revision', 'Changes', 'Products']
+ARCHIVE_COLUMNS = ['SleeveId', 'Variant', 'Category', 'Sleeve', 'Edition', 'Rules', 'ArchivedAt',
+                   'ArchivedBy', 'CreatedAt', 'CreatedBy', 'Revisions', 'Products']
+ACTIVITY_COLUMNS = ['At', 'Action', 'Actor', 'Variant', 'Category', 'Sleeve', 'Edition', 'Rules',
+                    'SleeveId', 'Revision', 'Changes', 'Products']
 
 
 def _productsCell(products) -> str:
@@ -860,7 +1076,8 @@ def archiveRows() -> list:
     """The archive as a table, one row per archived sleeve, for the export."""
     out = []
     for e in listArchived():
-        out.append((e['id'], e['variant'], e['category'], e['name'], e['archivedAt'],
+        out.append((e['id'], e['variant'], e['category'], e['name'], e['label'],
+                    sleeveRules.describe(e['rules']), e['archivedAt'],
                     e['archivedBy'], e['createdAt'], e['createdBy'], e['revisions'],
                     _productsCell(e['products'])))
     return out
@@ -874,7 +1091,8 @@ def activityRows(**filters) -> list:
         page = activity(limit=FEED_LIMIT_MAX, before=before, **filters)
         for e in page['entries']:
             out.append((e['at'], e['action'], e['actor'], e['variant'], e['category'],
-                        e['name'], e['sleeveId'], e['revision'], ' | '.join(e['changes']),
+                        e['name'], e['label'], sleeveRules.describe(e['rules']),
+                        e['sleeveId'], e['revision'], ' | '.join(e['changes']),
                         _productsCell(e['products'])))
         if not page['next'] or not page['entries']:
             return out
@@ -890,7 +1108,18 @@ def _writeProducts(conn, sleeveId, cleaned):
         [(sleeveId, position, pid, weight) for position, (pid, weight) in enumerate(cleaned)])
 
 
-def createSleeves(variants, category, name, productRows, note='', user='') -> list:
+def _writeRules(conn, sleeveId, rules):
+    conn.execute('DELETE FROM sleeveRules WHERE sleeveId = ?', (sleeveId,))
+    conn.executemany(
+        'INSERT INTO sleeveRules (sleeveId, position, currency, riskLevel, allocationType) '
+        'VALUES (?, ?, ?, ?, ?)',
+        [(sleeveId, position, sleeveRules.cell(r.get('currency')),
+          sleeveRules.cell(r.get('riskLevel')), sleeveRules.cell(r.get('allocationType')))
+         for position, r in enumerate(rules or [])])
+
+
+def createSleeves(variants, category, name, productRows, note='', user='', label='',
+                  rules=None) -> list:
     """The same sleeve under one or more implementation types at once.
 
     One definition applied to several books is the ordinary case - a sleeve
@@ -912,18 +1141,21 @@ def createSleeves(variants, category, name, productRows, note='', user='') -> li
     try:
         checked = []
         for variant in ordered:
-            checked.append((variant,) + _validate(conn, variant, category, name, note, productRows))
+            checked.append((variant,) + _validate(conn, variant, category, name, note, productRows,
+                                                  label=label, rules=rules))
         stamp = _now()
         made = []
         with conn:
-            for variant, cleanName, cleanNote, cleaned in checked:
+            for variant, cleanName, cleanNote, cleaned, cleanLabel, cleanRules in checked:
                 cur = conn.execute(
-                    'INSERT INTO sleeves (variant, category, name, note, createdBy, createdAt, '
-                    'updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    (variant, category, cleanName, cleanNote, user, stamp, user, stamp))
+                    'INSERT INTO sleeves (variant, category, name, label, note, createdBy, '
+                    'createdAt, updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (variant, category, cleanName, cleanLabel, cleanNote, user, stamp, user, stamp))
                 _writeProducts(conn, cur.lastrowid, cleaned)
+                _writeRules(conn, cur.lastrowid, cleanRules)
                 _recordHistory(conn, cur.lastrowid, 'created', variant, category,
-                               cleanName, cleanNote, cleaned, user, stamp)
+                               cleanName, cleanNote, cleaned, user, stamp,
+                               label=cleanLabel, rules=cleanRules)
                 made.append(cur.lastrowid)
         out = []
         for sleeveId in made:
@@ -934,15 +1166,40 @@ def createSleeves(variants, category, name, productRows, note='', user='') -> li
         conn.close()
 
 
-def createSleeve(variant, category, name, productRows, note='', user='') -> dict:
+def createSleeve(variant, category, name, productRows, note='', user='', label='',
+                 rules=None) -> dict:
     """One type. The single-book case of createSleeves."""
-    return createSleeves([variant], category, name, productRows, note=note, user=user)[0]
+    return createSleeves([variant], category, name, productRows, note=note, user=user,
+                         label=label, rules=rules)[0]
 
 
-def updateSleeve(sleeveId, name, productRows, note='', user='', action='updated') -> dict:
+def addEdition(sleeveId, label, rules, productRows, note='', user='') -> dict:
+    """Another edition of an existing sleeve's name, in the same book and
+    category (D89): the way the desk actually works, starting from an edition
+    it has and changing the products and the portfolios it is for. The same
+    create path, so it meets the same rules - a label the name already
+    carries, or rules that overlap a sibling's, are refused."""
+    conn = _connect()
+    try:
+        row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
+        if row is None:
+            raise ValidationError('id', 'That sleeve no longer exists.')
+        if row['deletedAt']:
+            raise ValidationError('id', 'That sleeve was removed from the library. '
+                                        'Restore it before adding an edition.')
+        variant, category, name = row['variant'], row['category'], row['name']
+    finally:
+        conn.close()
+    return createSleeve(variant, category, name, productRows, note=note, user=user,
+                        label=label, rules=rules)
+
+
+def updateSleeve(sleeveId, name, productRows, note='', user='', action='updated',
+                 label=None, rules=None) -> dict:
     """Save a sleeve and append the revision that records it. A deleted sleeve
     is not editable: restore it first, so the history reads in the order the
-    events happened."""
+    events happened. *label* and *rules* left None keep what the edition has;
+    given, they are validated with everything else (D89)."""
     conn = _connect()
     try:
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
@@ -951,15 +1208,21 @@ def updateSleeve(sleeveId, name, productRows, note='', user='', action='updated'
         if row['deletedAt']:
             raise ValidationError('id', 'That sleeve was removed from the library. '
                                         'Restore it before editing it.')
-        name, note, cleaned = _validate(conn, row['variant'], row['category'], name, note,
-                                        productRows, sleeveId=sleeveId)
+        if label is None:
+            label = row['label']
+        if rules is None:
+            rules = _ruleRows(conn, sleeveId)
+        name, note, cleaned, label, rules = _validate(
+            conn, row['variant'], row['category'], name, note, productRows, sleeveId=sleeveId,
+            label=label, rules=rules)
         stamp = _now()
         with conn:
-            conn.execute('UPDATE sleeves SET name = ?, note = ?, updatedBy = ?, updatedAt = ? '
-                         'WHERE id = ?', (name, note, user, stamp, sleeveId))
+            conn.execute('UPDATE sleeves SET name = ?, label = ?, note = ?, updatedBy = ?, '
+                         'updatedAt = ? WHERE id = ?', (name, label, note, user, stamp, sleeveId))
             _writeProducts(conn, sleeveId, cleaned)
+            _writeRules(conn, sleeveId, rules)
             _recordHistory(conn, sleeveId, action, row['variant'], row['category'],
-                           name, note, cleaned, user, stamp)
+                           name, note, cleaned, user, stamp, label=label, rules=rules)
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
         return _entry(conn, row, _productRows(conn, row['id']))
     finally:
@@ -993,7 +1256,8 @@ def deleteSleeve(sleeveId, user='') -> dict:
                          (user, stamp, sleeveId))
             revisionNumber = _recordHistory(conn, sleeveId, 'deleted', row['variant'],
                                             row['category'], row['name'], row['note'],
-                                            cleaned, user, stamp)
+                                            cleaned, user, stamp, label=row['label'],
+                                            rules=_ruleRows(conn, sleeveId))
         return {'id': sleeveId, 'variant': row['variant'], 'category': row['category'],
                 'name': row['name'], 'archivedAt': stamp, 'archivedBy': user,
                 'revision': revisionNumber}
@@ -1018,14 +1282,15 @@ def restoreSleeve(sleeveId, user='') -> dict:
             raise ValidationError('id', 'That sleeve is already in the library.')
         productRows = [{'productId': r['productId'], 'weight': r['weight']}
                        for r in _productRows(conn, sleeveId)]
-        name, note, cleaned = _validate(conn, row['variant'], row['category'], row['name'],
-                                        row['note'], productRows, sleeveId=sleeveId)
+        name, note, cleaned, label, rules = _validate(
+            conn, row['variant'], row['category'], row['name'], row['note'], productRows,
+            sleeveId=sleeveId, label=row['label'], rules=_ruleRows(conn, sleeveId))
         stamp = _now()
         with conn:
             conn.execute("UPDATE sleeves SET deletedBy = '', deletedAt = '', updatedBy = ?, "
                          'updatedAt = ? WHERE id = ?', (user, stamp, sleeveId))
             _recordHistory(conn, sleeveId, 'restored', row['variant'], row['category'],
-                           name, note, cleaned, user, stamp)
+                           name, note, cleaned, user, stamp, label=label, rules=rules)
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
         return _entry(conn, row, _productRows(conn, sleeveId))
     finally:
@@ -1046,7 +1311,7 @@ def restoreSleeves(ids, user='') -> list:
         raise ValidationError('ids', 'Choose at least one archived sleeve.')
     conn = _connect()
     try:
-        checked, names, slots = [], set(), set()
+        checked, names, slots = [], set(), {}
         for sleeveId in wanted:
             row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
             if row is None:
@@ -1055,30 +1320,32 @@ def restoreSleeves(ids, user='') -> list:
                 raise ValidationError('ids', '{} is already in the library.'.format(row['name']))
             productRows = [{'productId': r['productId'], 'weight': r['weight']}
                            for r in _productRows(conn, sleeveId)]
-            name, note, cleaned = _validate(conn, row['variant'], row['category'], row['name'],
-                                            row['note'], productRows, sleeveId=sleeveId)
-            key = (row['variant'], row['category'], name.lower())
+            name, note, cleaned, label, rules = _validate(
+                conn, row['variant'], row['category'], row['name'], row['note'], productRows,
+                sleeveId=sleeveId, label=row['label'], rules=_ruleRows(conn, sleeveId))
+            key = (row['variant'], row['category'], name.lower(), label.lower())
             if key in names:
-                raise ValidationError('ids', 'Two of these are called {} in {} under {}; '
-                                      'only one can come back.'.format(name, row['category'],
-                                                                     row['variant']))
+                raise ValidationError('ids', 'Two of these are the {} edition of {} in {} under '
+                                      '{}; only one can come back.'.format(
+                                          label or 'fallback', name, row['category'], row['variant']))
             names.add(key)
             if row['category'] in fixedCategories():
+                # one NAME per fixed category; two editions of it may come back together
                 slot = (row['variant'], row['category'])
-                if slot in slots:
+                if slot in slots and slots[slot] != name.lower():
                     raise ValidationError('ids', '{} holds one sleeve under {}; two of these '
                                           'would fill it.'.format(row['category'], row['variant']))
-                slots.add(slot)
-            checked.append((row, name, note, cleaned))
+                slots[slot] = name.lower()
+            checked.append((row, name, note, cleaned, label, rules))
         stamp = _now()
         with conn:
-            for row, name, note, cleaned in checked:
+            for row, name, note, cleaned, label, rules in checked:
                 conn.execute("UPDATE sleeves SET deletedBy = '', deletedAt = '', updatedBy = ?, "
                              'updatedAt = ? WHERE id = ?', (user, stamp, row['id']))
                 _recordHistory(conn, row['id'], 'restored', row['variant'], row['category'],
-                               name, note, cleaned, user, stamp)
+                               name, note, cleaned, user, stamp, label=label, rules=rules)
         out = []
-        for row, _, _, _ in checked:
+        for row, _, _, _, _, _ in checked:
             fresh = conn.execute('SELECT * FROM sleeves WHERE id = ?', (row['id'],)).fetchone()
             out.append(_entry(conn, fresh, _productRows(conn, row['id'])))
         return out
@@ -1101,38 +1368,69 @@ def revertSleeve(sleeveId, number: int, user='') -> dict:
     productRows = [{'productId': p['productId'], 'weight': p['weight']}
                    for p in stored['products']]
     return updateSleeve(sleeveId, stored['name'], productRows, note=stored['note'],
-                        user=user, action='reverted')
+                        user=user, action='reverted', label=stored['label'],
+                        rules=stored['rules'])
 
 
 # ----------------------------------------------------------- interchange ---
 
 def exportRows() -> list:
-    """The whole library in the interchange shape, one row per product."""
+    """The whole library in the interchange shape, one row per product, with
+    the edition label (SEED_COLUMNS_EDITIONS)."""
     conn = _connect()
     try:
         out = []
         for row in _sleeveRows(conn):
             for pr in _productRows(conn, row['id']):
-                out.append((row['variant'], row['category'], row['name'],
+                out.append((row['variant'], row['category'], row['name'], row['label'],
                             pr['productId'], pr['weight']))
         return out
     finally:
         conn.close()
 
 
-def _importInto(conn, rows, replace, user, strict, action='imported'):
-    """Load interchange rows. Grouped by (variant, category, sleeve); a group
-    is one sleeve. With *strict* every group goes through the same validation
-    as a save and the first failure aborts the whole load; the seed loads
-    non-strict, so a stand-in whose products drifted still comes up - broken
-    sleeves are what the census is for."""
+def exportRuleRows() -> list:
+    """Every live edition's rules in the interchange shape (RULE_COLUMNS),
+    one row per rule; a fallback has none and appears nowhere here."""
+    conn = _connect()
+    try:
+        out = []
+        for row in _sleeveRows(conn):
+            for rule in _ruleRows(conn, row['id']):
+                out.append((row['variant'], row['category'], row['name'], row['label'],
+                            sleeveRules.cell(rule.get('currency')),
+                            sleeveRules.cell(rule.get('riskLevel')),
+                            sleeveRules.cell(rule.get('allocationType'))))
+        return out
+    finally:
+        conn.close()
+
+
+def _importInto(conn, rows, replace, user, strict, action='imported', ruleRows=None):
+    """Load interchange rows. Grouped by (variant, category, sleeve, edition);
+    a group is one edition. With *strict* every group goes through the same
+    validation as a save and the first failure aborts the whole load; the
+    seed loads non-strict, so a stand-in whose products drifted still comes
+    up - broken sleeves are what the census is for. The rules are always
+    checked for shape and vocabulary, strict or not: a rule about a
+    portfolio that does not exist is a mistake in the delivery, not a
+    drifted product."""
     grouped, order = {}, []
-    for variant, category, name, pid, weight in rows:
-        key = (variant, category, name)
+    for variant, category, name, label, pid, weight in rows:
+        key = (variant, category, name, label)
         if key not in grouped:
             grouped[key] = []
             order.append(key)
         grouped[key].append({'productId': pid, 'weight': weight})
+    rulesFor = {}
+    for r in ruleRows or []:
+        key = (r['variant'], r['category'], r['sleeve'], r['edition'])
+        if key not in grouped:
+            raise ValidationError('rules', 'A rule names the {} edition of {} in {} under {}, '
+                                  'which has no product rows.'.format(
+                                      r['edition'] or 'fallback', r['sleeve'], r['category'],
+                                      r['variant']))
+        rulesFor.setdefault(key, []).append({f: r[f] for f in sleeveRules.FIELDS if r.get(f)})
     stamp = _now()
     with conn:
         if replace:
@@ -1145,40 +1443,78 @@ def _importInto(conn, rows, replace, user, strict, action='imported'):
                 _recordHistory(conn, row['id'], 'deleted', row['variant'], row['category'],
                                row['name'], row['note'],
                                [(r['productId'], r['weight']) for r in _productRows(conn, row['id'])],
-                               user, stamp)
+                               user, stamp, label=row['label'], rules=_ruleRows(conn, row['id']))
         for key in order:
-            variant, category, name = key
+            variant, category, name, label = key
             productRows = grouped[key]
-            if strict:
-                name, _, cleaned = _validate(conn, variant, category, name, '', productRows)
-            else:
-                cleaned = [(p['productId'], float(p['weight'])) for p in productRows]
+            rules = rulesFor.get(key, [])
             existing = conn.execute(
                 "SELECT id FROM sleeves WHERE variant = ? AND category = ? AND name = ? "
-                "AND deletedAt = ''", (variant, category, name)).fetchone()
+                "AND label = ? AND deletedAt = ''", (variant, category, name, label)).fetchone()
+            if strict:
+                name, _, cleaned, label, rules = _validate(
+                    conn, variant, category, name, '', productRows,
+                    sleeveId=existing['id'] if existing else None, label=label, rules=rules)
+            else:
+                cleaned = [(p['productId'], float(p['weight'])) for p in productRows]
+                rules = sleeveRules.normalise(rules)
+                if rules and not label:
+                    raise ValidationError('rules', 'The fallback edition of {} in {} under {} '
+                                          'carries rules; give it an Edition label.'.format(
+                                              name, category, variant))
             if existing:
                 sleeveId = existing['id']
                 conn.execute('UPDATE sleeves SET updatedBy = ?, updatedAt = ? WHERE id = ?',
                              (user, stamp, sleeveId))
             else:
                 cur = conn.execute(
-                    'INSERT INTO sleeves (variant, category, name, note, createdBy, createdAt, '
-                    'updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                    (variant, category, name, '', user, stamp, user, stamp))
+                    'INSERT INTO sleeves (variant, category, name, label, note, createdBy, '
+                    'createdAt, updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (variant, category, name, label, '', user, stamp, user, stamp))
                 sleeveId = cur.lastrowid
             _writeProducts(conn, sleeveId, cleaned)
+            _writeRules(conn, sleeveId, rules)
             _recordHistory(conn, sleeveId, action, variant, category, name, '',
-                           cleaned, user, stamp)
+                           cleaned, user, stamp, label=label, rules=rules)
     return len(order)
 
 
-def importRows(rows, replace=False, user='import') -> int:
+def importRows(rows, replace=False, user='import', ruleRows=None) -> int:
     """Load interchange rows through full validation. Returns the number of
-    sleeves written. Existing sleeves of the same name are overwritten;
-    *replace* clears the library first."""
+    editions written. Existing editions of the same name and label are
+    overwritten; *replace* clears the library first."""
     conn = _connect()
     try:
-        return _importInto(conn, list(rows), replace=replace, user=user, strict=True)
+        return _importInto(conn, list(rows), replace=replace, user=user, strict=True,
+                           ruleRows=list(ruleRows or []))
+    finally:
+        conn.close()
+
+
+def applicabilityPreview(variant, category, name, label, rules, sleeveId=None) -> dict:
+    """What a rule set would mean before it is saved (D89): how many
+    strategic portfolios it names, which, and which of them a sibling
+    edition of the same name already claims. Raises the same ValidationError
+    a save would, so the console shows the same words either way."""
+    rules = sleeveRules.normalise(rules)
+    keys = sleeveRules.applicability(rules)
+    conn = _connect()
+    try:
+        overlaps = []
+        for sib in conn.execute(
+                "SELECT id, label FROM sleeves WHERE variant = ? AND category = ? AND name = ? "
+                "AND deletedAt = '' ORDER BY id", (variant, category, name or '')).fetchall():
+            if sib['id'] == sleeveId:
+                continue
+            sibRules = _ruleRows(conn, sib['id'])
+            if not sibRules:
+                continue
+            shared = sleeveRules.overlap(rules, sibRules)
+            if shared:
+                overlaps.append({'sleeveId': sib['id'], 'label': sib['label'],
+                                 'count': len(shared), 'keys': shared})
+        return {'rules': rules, 'applies': len(keys), 'appliesTo': keys,
+                'universe': len(universe.keys()), 'overlaps': overlaps}
     finally:
         conn.close()
 
@@ -1210,9 +1546,11 @@ def census() -> dict:
     fixed = []
     for variant in VARIANTS:
         for category in fixedCategories():
-            n = sum(1 for e in entries if e['variant'] == variant and e['category'] == category)
-            if n != 1:
-                fixed.append('{} / {}: {} sleeve(s), expected exactly 1'.format(variant, category, n))
+            names = {e['name'] for e in entries
+                     if e['variant'] == variant and e['category'] == category}
+            if len(names) != 1:
+                fixed.append('{} / {}: {} sleeve(s), expected exactly 1'.format(
+                    variant, category, len(names)))
     return {
         'store': describe(),
         'catalogue': products.describeSource(),
@@ -1221,5 +1559,6 @@ def census() -> dict:
         'orphans': orphanProducts(),
         'fixedCategoryProblems': fixed,
         'total': len(entries),
+        'editions': sum(1 for e in entries if not e['fallback']),
         'archived': listArchived(),
     }

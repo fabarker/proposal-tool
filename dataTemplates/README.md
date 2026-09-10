@@ -9,6 +9,7 @@ each a literal table to fill in:
 | `saaPortfolios` | `saaPortfolios.csv` | `SCENARIO_SAA_SOURCE` |
 | `products` | `products.csv` | `SCENARIO_PRODUCTS_SOURCE` |
 | `sleeves` | `sleeves.csv` | `SCENARIO_SLEEVES_SEED` |
+| `sleeveRules` | `sleeveRules.csv` | `SCENARIO_SLEEVES_RULES` (optional; else beside the seed) |
 | `feeRates` | `feeRates.csv` | `SCENARIO_FEES_SOURCE` |
 | `advisors` | `advisors.xlsx` | replaces the packaged file (no override) |
 | `assetEstimates` | `assetEstimates.json` | `SCENARIO_ASSET_ESTIMATES` |

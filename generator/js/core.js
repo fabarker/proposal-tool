@@ -503,6 +503,10 @@ function setBase(key) {
   });
   state.columns = [col].concat(rest);
   App.lastAdded = -1;
+  /* the library is resolved per base portfolio (D89): what a name offers
+     under the new one is fetched again, and the choices re-checked against
+     it once the base has resolved (onBaseReady) */
+  state.sleeveLib = {};
   startResolve(col);
   refresh();
   return true;
@@ -526,6 +530,9 @@ function onBaseReady() {
     });
     pushSleeves();
   }
+  /* and a name the new portfolio has no edition of is dropped and named,
+     the same as under a new basis (D89) */
+  revalidateSleeves();
 }
 
 /* ---- scenario basis (spec 11.4): confirm before a full rebuild ---------- */
@@ -597,8 +604,9 @@ function persistBasis() {
   }).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
-/* Sleeves kept on a basis change, re-validated against the new library;
-   any no longer offered are dropped and named (spec 11.6). */
+/* Sleeves kept on a basis or base change, re-validated against the library
+   for the portfolio now in force; any no longer offered are dropped and
+   named (spec 11.6, D89). */
 function revalidateSleeves() {
   Object.keys(state.sleeves).forEach(function (category) {
     ensureSleeveLib(category, function (lib) {
@@ -608,7 +616,7 @@ function revalidateSleeves() {
       if (!stillOffered) {
         delete state.sleeves[category];
         announce('assertive', 'The ' + category + ' sleeve "' + name
-          + '" is not offered under the new basis and has been removed.');
+          + '" is not offered for this portfolio and has been removed.');
         pushSleeves();
         refresh();
       }
@@ -629,10 +637,15 @@ function ensureSleeveLib(category, onReady) {
     return;                       /* ready, loading OR error: nothing to start */
   }
   state.sleeveLib[category] = { status: 'loading', sleeves: [], error: null };
+  /* The base portfolio goes with the request (D89): a sleeve name may hold
+     several editions in the library and the server serves the one for this
+     book. Nothing in the reply says which - the page lists names. */
+  var base = state.columns[0] || null;
   apiFetch('/scenario/sleeves?category=' + encodeURIComponent(category)
       + '&variant=' + encodeURIComponent(state.variant)
       + '&currency=' + encodeURIComponent(state.basis.currency)
-      + '&hedging=' + encodeURIComponent(state.basis.hedging))
+      + '&hedging=' + encodeURIComponent(state.basis.hedging)
+      + (base ? '&key=' + encodeURIComponent(keyStr(base.key)) : ''))
     .then(function (body) {
       state.sleeveLib[category] = { status: 'ready', sleeves: body.sleeves || [], error: null };
       if (onReady) onReady(state.sleeveLib[category]);

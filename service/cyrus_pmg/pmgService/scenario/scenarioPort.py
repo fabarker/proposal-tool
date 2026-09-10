@@ -70,11 +70,14 @@ class ScenarioPort(Protocol):
         take seconds. Implementations should cache."""
 
     def list_sleeves(
-        self, category: str, basis: "BasisInput", variant: str
+        self, category: str, basis: "BasisInput", variant: str, key=None
     ) -> "Sequence[Sleeve]":
         """The PMG-authored sleeve library for one category, under one
-        implementation type. A sleeve is a fixed block: name plus products
-        whose weights sum to 1.
+        implementation type, resolved for the base portfolio *key* - a
+        PortfolioKey, or None for the fallbacks alone (D89). A sleeve is a
+        fixed block: name plus products whose weights sum to 1; which edition
+        of a name that block is depends on the portfolio, and the caller is
+        not told.
 
         *variant* is one of the schema's options.implementationVariants and
         decides both which sleeves the category offers and what they contain

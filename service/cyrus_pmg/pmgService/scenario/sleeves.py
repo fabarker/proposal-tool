@@ -7,8 +7,10 @@ This module is the contract the rest of the package has always depended on
 and nothing more - the four implementation types, and three functions:
 
     VARIANTS                          the types, in the order the UI offers them
-    listSleeves(category, variant)    the sleeves a category offers under a type
-    sleeveExists(category, name, variant)
+    listSleeves(category, variant, key=None)
+                                      the sleeves a category offers under a type,
+                                      resolved for the base portfolio *key* (D89)
+    sleeveExists(category, name, variant, key=None)
     variantExists(variant)
 
 Until D57 the tables were written here: a BASELINE library for the Multi-Asset
@@ -22,6 +24,12 @@ each carrying the eleven fields of spec 4.1 minus the management fee (D51) -
 a fee group instead, and its fee resolved at pricing time. Two fields ride
 along now that did not before, the sleeve's id and note; nothing downstream
 reads them.
+
+Editions (D89). A name may hold several rows in the repository, each for a
+set of strategic portfolios; listSleeves takes the base portfolio's key and
+serves ONE row per name - the edition whose rules match, else the fallback.
+The served shape does not say which. Without a key only fallbacks are served,
+which is the library exactly as it stood before editions existed.
 
 Implementation types (D29)
 --------------------------

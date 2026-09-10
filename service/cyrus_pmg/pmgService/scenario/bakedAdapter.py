@@ -137,8 +137,8 @@ class BakedScenarioPort:
             'enable the live analytics fallback.'.format(
                 rules.portfolioName(basis, key), basis.currency, basis.hedging))
 
-    def list_sleeves(self, category: str, basis: BasisInput, variant: str):
-        return sleeves.listSleeves(category, variant)
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None):
+        return sleeves.listSleeves(category, variant, key)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:

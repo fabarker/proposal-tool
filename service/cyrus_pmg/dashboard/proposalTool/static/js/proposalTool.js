@@ -597,6 +597,10 @@ function setBase(key) {
   });
   state.columns = [col].concat(rest);
   App.lastAdded = -1;
+  /* the library is resolved per base portfolio (D89): what a name offers
+     under the new one is fetched again, and the choices re-checked against
+     it once the base has resolved (onBaseReady) */
+  state.sleeveLib = {};
   startResolve(col);
   refresh();
   return true;
@@ -620,6 +624,9 @@ function onBaseReady() {
     });
     pushSleeves();
   }
+  /* and a name the new portfolio has no edition of is dropped and named,
+     the same as under a new basis (D89) */
+  revalidateSleeves();
 }
 
 /* ---- scenario basis (spec 11.4): confirm before a full rebuild ---------- */
@@ -691,8 +698,9 @@ function persistBasis() {
   }).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
-/* Sleeves kept on a basis change, re-validated against the new library;
-   any no longer offered are dropped and named (spec 11.6). */
+/* Sleeves kept on a basis or base change, re-validated against the library
+   for the portfolio now in force; any no longer offered are dropped and
+   named (spec 11.6, D89). */
 function revalidateSleeves() {
   Object.keys(state.sleeves).forEach(function (category) {
     ensureSleeveLib(category, function (lib) {
@@ -702,7 +710,7 @@ function revalidateSleeves() {
       if (!stillOffered) {
         delete state.sleeves[category];
         announce('assertive', 'The ' + category + ' sleeve "' + name
-          + '" is not offered under the new basis and has been removed.');
+          + '" is not offered for this portfolio and has been removed.');
         pushSleeves();
         refresh();
       }
@@ -723,10 +731,15 @@ function ensureSleeveLib(category, onReady) {
     return;                       /* ready, loading OR error: nothing to start */
   }
   state.sleeveLib[category] = { status: 'loading', sleeves: [], error: null };
+  /* The base portfolio goes with the request (D89): a sleeve name may hold
+     several editions in the library and the server serves the one for this
+     book. Nothing in the reply says which - the page lists names. */
+  var base = state.columns[0] || null;
   apiFetch('/scenario/sleeves?category=' + encodeURIComponent(category)
       + '&variant=' + encodeURIComponent(state.variant)
       + '&currency=' + encodeURIComponent(state.basis.currency)
-      + '&hedging=' + encodeURIComponent(state.basis.hedging))
+      + '&hedging=' + encodeURIComponent(state.basis.hedging)
+      + (base ? '&key=' + encodeURIComponent(keyStr(base.key)) : ''))
     .then(function (body) {
       state.sleeveLib[category] = { status: 'ready', sleeves: body.sleeves || [], error: null };
       if (onReady) onReady(state.sleeveLib[category]);
@@ -5459,8 +5472,18 @@ var repo = {
   history: null,               /* { sleeveId, entries } */
   historyOpen: false,
   historyBusy: false,
-  openRevision: null           /* the revision whose composition is expanded */
+  openRevision: null,          /* the revision whose composition is expanded */
+  /* the applicability of the draft's rules (D89): how many strategic
+     portfolios they name and which sibling edition they collide with,
+     asked of the server as the desk ticks, a beat behind the last tick */
+  preview: null,               /* { busy } | { applies, universe, overlaps } | { error } */
+  previewStamp: 0
 };
+
+/* the three fields an edition's rules may constrain (D89), in the order
+   the builder shows them, and the words it shows them under */
+var RULE_FIELDS = ['currency', 'riskLevel', 'allocationType'];
+var RULE_LABELS = { currency: 'Currency', riskLevel: 'Risk level', allocationType: 'Allocation' };
 
 /* The catalogue view's own state (D63). It survives a switch to the other
    view, and every part of it encodes into the URL, so a view is a link. */
@@ -5746,26 +5769,75 @@ function usedIn(productId) {
 function forgetJoins() { productIndex = null; catRowCache = null; }
 
 /* ---- the draft ---------------------------------------------------------- */
+function copyRules(rules) {
+  return (rules || []).map(function (r) {
+    var out = {};
+    RULE_FIELDS.forEach(function (f) { out[f] = (r[f] || []).slice(); });
+    return out;
+  });
+}
 function draftFrom(entry) {
   return {
     id: entry.id, name: entry.name, note: entry.note || '',
+    label: entry.label || '', rules: copyRules(entry.rules),
     products: entry.products.map(function (row) {
       return { productId: row.productId, weightPct: Math.round(row.weight * 10000) / 100 };
     })
   };
 }
-function newDraft(create) {
+function newDraft(create, edition) {
   /* A creation draft carries the two things an existing sleeve already knows:
      which category it implements, and which books offer it. Both are fixed
      once it exists - a sleeve moved between them is a different sleeve - so
-     they are only editable here (D61). */
-  var draft = { id: null, name: '', note: '', products: [] };
+     they are only editable here (D61).
+
+     An EDITION draft (D89) is the third kind: another edition of a name the
+     library already has, in the same book and category. It starts as a copy
+     of the edition it was taken from - the desk edits rather than retypes -
+     with the name locked and the label and rules its own to fill in. */
+  var draft = { id: null, name: '', note: '', label: '', rules: [], products: [] };
+  if (edition) {
+    var from = sleeveById(edition.ofId);
+    draft.edition = { ofId: edition.ofId, variant: from ? from.variant : repo.variant };
+    draft.name = from ? from.name : edition.name;
+    draft.note = from ? (from.note || '') : '';
+    draft.products = from ? from.products.map(function (row) {
+      return { productId: row.productId, weightPct: Math.round(row.weight * 10000) / 100 };
+    }) : [];
+    return draft;
+  }
   if (create) {
     draft.create = true;
     draft.category = repo.category;
     draft.variants = [repo.variant];
   }
   return draft;
+}
+/* the rules as the server takes them: only the fields with something ticked */
+function cleanRules(rules) {
+  return (rules || []).map(function (r) {
+    var out = {};
+    RULE_FIELDS.forEach(function (f) { if ((r[f] || []).length) out[f] = r[f].slice(); });
+    return out;
+  });
+}
+function ruleIsEmpty(r) {
+  return !RULE_FIELDS.some(function (f) { return (r[f] || []).length; });
+}
+function describeRules(rules) {
+  return (rules || []).map(function (r) {
+    return RULE_FIELDS.filter(function (f) { return (r[f] || []).length; })
+      .map(function (f) { return RULE_LABELS[f].toLowerCase() + ' ' + r[f].join(' | '); }).join('; ');
+  }).join('  OR  ');
+}
+/* the live editions of one name in one book and category, the draft's own
+   siblings: what its label and rules must not collide with */
+function siblingsOf(d) {
+  var variant = d.edition ? d.edition.variant : (d.create ? (d.variants || [])[0] : repo.variant);
+  var category = d.create ? d.category : repo.category;
+  return sleevesIn(variant, category).filter(function (s) {
+    return s.name.trim().toLowerCase() === (d.name || '').trim().toLowerCase() && s.id !== d.id;
+  });
 }
 function total() {
   return repo.draft.products.reduce(function (sum, r) {
@@ -5779,6 +5851,19 @@ function draftProblems() {
   if (!d.name.trim()) out.push('Give the sleeve a name.');
   if (d.create && !(d.variants || []).length) out.push('Choose at least one implementation type.');
   if (d.create && !d.category) out.push('Choose a category.');
+  /* the edition (D89): a label goes with rules and rules with a label; a
+     rule ticks something; one fallback per name; one label per name */
+  var rules = d.rules || [];
+  if (rules.length && !d.label.trim()) out.push('Give the edition a label, such as "GBP" or "GBP ex-Alts".');
+  if (d.label.trim() && !rules.length) out.push('Add at least one rule, or clear the label to make this the fallback.');
+  if (rules.some(ruleIsEmpty)) out.push('Every rule needs at least one value ticked.');
+  var sibs = siblingsOf(d);
+  if (!rules.length && sibs.some(function (s) { return s.fallback; })) {
+    out.push((d.edition ? 'This name' : d.name.trim()) + ' already has a fallback edition; give this one rules and a label.');
+  }
+  if (d.label.trim() && sibs.some(function (s) { return (s.label || '').toLowerCase() === d.label.trim().toLowerCase(); })) {
+    out.push('An edition labelled ' + d.label.trim() + ' already exists for this name.');
+  }
   if (!d.products.length) out.push('Add at least one product.');
   if (d.products.some(function (r) { return !r.productId; })) out.push('Every row needs a product.');
   if (d.products.some(function (r) { return !(r.weightPct > 0); })) out.push('Every product needs a weight above zero.');
@@ -5972,12 +6057,15 @@ function chooseDefaults() {
   loadDraft(keep ? repo.sleeveId : (offered[0] ? offered[0].id : null));
 }
 
-function loadDraft(sleeveId, create) {
+function loadDraft(sleeveId, create, edition) {
   var entry = sleeveId ? sleeveById(sleeveId) : null;
   repo.sleeveId = entry ? entry.id : null;
-  repo.draft = entry ? draftFrom(entry) : newDraft(create);
+  repo.draft = entry ? draftFrom(entry) : newDraft(create, edition);
   repo.dirty = false; repo.fieldError = null; repo.picker = null;
   repo.confirmDelete = false; repo.leaving = null; repo.menu = null;
+  /* an existing edition already knows how many portfolios it names */
+  repo.preview = entry && entry.rules && entry.rules.length ? { applies: entry.applies } : null;
+  repo.previewStamp += 1;
 }
 
 function closeRepository(force) {
@@ -6017,11 +6105,14 @@ function applyTarget(t) {
     repo.historyOpen = false; repo.history = null; repo.openRevision = null;
   }
   try { window.history.replaceState(null, '', hashFor('sleeves')); } catch (e) { /* file: */ }
-  if (t.fresh) { loadDraft(null, t.create); }
+  if (t.fresh) { loadDraft(null, t.create, t.edition); }
   else if (t.to != null) { loadDraft(t.to); }
   else { repo.sleeveId = null; repo.dirty = false; chooseDefaults(); }
   render();
-  if (t.fresh) { var name = document.getElementById('repoName'); if (name) name.focus(); }
+  if (t.fresh) {
+    var focusOn = document.getElementById(t.edition ? 'repoLabel' : 'repoName');
+    if (focusOn) focusOn.focus();
+  }
   if (t.then) t.then();
 }
 function selectSleeve(id) {
@@ -6061,6 +6152,7 @@ async function saveDraft() {
   var d = repo.draft;
   var payload = {
     name: d.name.trim(), note: d.note.trim(),
+    label: d.label.trim(), rules: cleanRules(d.rules),
     products: d.products.map(function (r) {
       return { productId: r.productId, weight: Math.round(r.weightPct * 10000) / 1000000 };
     })
@@ -6070,6 +6162,8 @@ async function saveDraft() {
     var r;
     if (d.id) {
       r = await api('PUT', '/scenario/repository/sleeves/' + d.id, payload);
+    } else if (d.edition) {
+      r = await api('POST', '/scenario/repository/sleeves/' + d.edition.ofId + '/editions', payload);
     } else {
       payload.category = d.create ? d.category : repo.category;
       payload.variants = d.create ? d.variants : [repo.variant];
@@ -6108,7 +6202,7 @@ async function saveDraft() {
       if (act.loaded) act.loaded = false;
       App.announce('polite', madeAll.length > 1
         ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types.'
-        : 'Saved ' + last.name + '.');
+        : 'Saved ' + last.name + (last.label ? ' (' + last.label + ' edition)' : '') + '.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -6163,6 +6257,7 @@ async function copyToVariant(sleeveId, variant) {
   try {
     var r = await api('POST', '/scenario/repository/sleeves', {
       category: entry.category, name: entry.name, note: entry.note,
+      label: entry.label || '', rules: cleanRules(entry.rules),
       variants: [variant],
       products: entry.products.map(function (p) {
         return { productId: p.productId, weight: p.weight };
@@ -6223,6 +6318,85 @@ function forgetLibrary(category) {
   var lib = App.sleeveLib && App.sleeveLib();
   if (lib && lib[category]) delete lib[category];
   App.refresh();
+}
+
+/* ---- the applicability preview (D89) --------------------------------------
+   The server counts what a rule set names and what it collides with, the
+   same way a save will. Asked a beat after the last tick, and an answer
+   that arrives after a later question is thrown away. */
+var previewTimer = null;
+function schedulePreview() {
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(runPreview, 250);
+}
+async function runPreview() {
+  previewTimer = null;
+  var d = repo.draft; if (!d || !repo.open) return;
+  var rules = cleanRules(d.rules).filter(function (r) { return !ruleIsEmpty(r); });
+  if (!rules.length) { repo.preview = null; updateApplies(); return; }
+  var stamp = (repo.previewStamp += 1);
+  repo.preview = { busy: true }; updateApplies();
+  try {
+    var r = await api('POST', '/scenario/repository/applicability', {
+      variant: d.edition ? d.edition.variant : (d.create ? (d.variants || [])[0] || repo.variant : repo.variant),
+      category: d.create ? d.category : repo.category,
+      name: d.name.trim(), label: d.label.trim(), rules: rules, sleeveId: d.id || null
+    });
+    if (stamp !== repo.previewStamp || !r) return;
+    repo.preview = r.ok
+      ? { applies: r.body.applies, universe: r.body.universe, overlaps: r.body.overlaps || [] }
+      : { error: r.body.error || ('Could not check the rules (' + r.status + ')') };
+  } catch (err) { repo.preview = { error: err.message }; }
+  updateApplies();
+}
+function appliesHtml() {
+  var d = repo.draft; if (!d) return '';
+  var rules = (d.rules || []).filter(function (r) { return !ruleIsEmpty(r); });
+  if (!rules.length) {
+    return '<p class="repo-applies">' + (d.label.trim()
+      ? 'No rules yet: tick the portfolios the ' + esc(d.label.trim()) + ' edition is for.'
+      : 'The fallback: applies wherever no other edition of this name does.') + '</p>';
+  }
+  var p = repo.preview;
+  if (!p) return '<p class="repo-applies"></p>';
+  if (p.busy) return '<p class="repo-applies">Counting…</p>';
+  if (p.error) return '<p class="repo-applies bad">' + esc(p.error) + '</p>';
+  var line = 'Applies to ' + p.applies + (p.universe ? ' of ' + p.universe : '') + ' strategic portfolio'
+    + (p.applies === 1 ? '' : 's') + '.';
+  var clash = (p.overlaps || []).map(function (o) {
+    return 'Overlaps the ' + esc(o.label) + ' edition on ' + o.count + ' portfolio' + (o.count === 1 ? '' : 's')
+      + ': ' + esc(o.keys.slice(0, 4).join(', ')) + (o.keys.length > 4 ? ', …' : '') + '.';
+  });
+  return '<p class="repo-applies' + (clash.length ? ' bad' : ' ok') + '">' + esc(line)
+    + (clash.length ? ' ' + clash.join(' ') + ' Narrow one of them; exactly one edition may apply to a portfolio.' : '')
+    + '</p>';
+}
+function updateApplies() {
+  var el = document.getElementById('repoApplies');
+  if (el) el.innerHTML = appliesHtml(); else render();
+  updateTotals();
+}
+function rulesHtml() {
+  var d = repo.draft;
+  var vocab = repo.data.ruleVocabulary || {};
+  var rows = (d.rules || []).map(function (rule, i) {
+    var fields = RULE_FIELDS.map(function (f) {
+      var chips = (vocab[f] || []).map(function (v) {
+        var on = (rule[f] || []).indexOf(v) !== -1;
+        return '<label class="repo-chip' + (on ? ' on' : '') + '"><input type="checkbox" data-reporule="' + i
+          + '" data-repofld="' + esc(f) + '" data-repoval="' + esc(v) + '"' + (on ? ' checked' : '') + '> '
+          + esc(v) + '</label>';
+      }).join('');
+      return '<div class="repo-rule-f"><span class="lbl">' + esc(RULE_LABELS[f]) + '</span><span class="chips">' + chips + '</span></div>';
+    }).join('');
+    return '<div class="repo-rule"><div class="repo-rule-h"><span>Rule ' + (i + 1)
+      + (i ? ' <small>or</small>' : '') + '</span>'
+      + '<button type="button" class="repo-rm" data-reporulerm="' + i + '" aria-label="Remove rule ' + (i + 1) + '">×</button></div>'
+      + fields + '</div>';
+  }).join('');
+  return '<div class="repo-rules">' + rows
+    + '<button type="button" class="btn repo-add" data-reporuleadd>+ ' + ((d.rules || []).length ? 'Add another rule' : 'Add a rule') + '</button>'
+    + '</div>';
 }
 
 /* ---- the product picker ------------------------------------------------- */
@@ -6346,6 +6520,11 @@ function editorHtml() {
   } else {
     prov = 'New sleeve · ' + esc(repo.category) + ' under ' + esc(repo.variant);
   }
+  if (d.edition) {
+    var of = sleeveById(d.edition.ofId);
+    prov = 'New edition of ' + esc(d.name) + ' · ' + esc(repo.category) + ' under ' + esc(d.edition.variant)
+      + (of ? ' · starts as a copy of the ' + (of.label ? esc(of.label) + ' edition' : 'fallback') : '');
+  }
   var serverProblems = entry && entry.problems && entry.problems.length
     ? '<div class="repo-notice" role="status">' + entry.problems.map(esc).join(' ') + ' The sleeve is withheld from the pickers until this is fixed.</div>'
     : '';
@@ -6373,7 +6552,9 @@ function editorHtml() {
           var taken = sleevesIn(v, d.category).some(function (x) {
             return x.name.trim().toLowerCase() === d.name.trim().toLowerCase();
           });
-          var full = isFixed(d.category) && sleevesIn(v, d.category).length >= 1;
+          var full = isFixed(d.category) && sleevesIn(v, d.category).some(function (x) {
+            return x.name.trim().toLowerCase() !== d.name.trim().toLowerCase();
+          });
           var off = taken || full;
           return '<label class="repo-var' + (off ? ' off' : '') + '"'
             + (off ? ' title="' + esc(taken ? 'A sleeve of that name is already offered here'
@@ -6384,17 +6565,38 @@ function editorHtml() {
         }).join('')
       + '</div>' + fieldErr('variants') + '</div>';
   }
+  /* the name is the sleeve's identity across its editions (D89): an
+     edition draft shows it read only, and an existing edition that has
+     siblings cannot be renamed on its own */
+  var sibs = entry ? siblingsOf(d) : [];
+  var nameField;
+  if (d.edition || sibs.length) {
+    nameField = '<div class="repo-fld"><label>Sleeve name</label><div class="ro">' + esc(d.name)
+      + (sibs.length ? ' <span class="repo-fixed" title="Shared by ' + (sibs.length + 1) + ' editions">' + (sibs.length + 1) + ' editions</span>' : '')
+      + '</div></div>';
+  } else {
+    nameField = '<div class="repo-fld"><label for="repoName">Sleeve name</label>'
+      + '<input type="text" id="repoName" maxlength="80" value="' + esc(d.name) + '"'
+      + (repo.fieldError && repo.fieldError.field === 'name' ? ' aria-invalid="true"' : '') + '>' + fieldErr('name') + '</div>';
+  }
+  var editionField = '<div class="repo-fld repo-edn"><label for="repoLabel">Edition</label>'
+    + '<input type="text" id="repoLabel" maxlength="80" placeholder="Leave blank for the fallback, or label it: GBP, GBP ex-Alts, EUR Moderate…"'
+    + ' value="' + esc(d.label) + '"'
+    + (repo.fieldError && repo.fieldError.field === 'label' ? ' aria-invalid="true"' : '') + '>' + fieldErr('label')
+    + '<span class="repo-sub">Which strategic portfolios this edition is for. Tick values within a rule to narrow it; add a rule for an alternative. PWAs never see the label - they pick the name, and get the edition for their portfolio.</span>'
+    + rulesHtml()
+    + '<div id="repoApplies">' + appliesHtml() + '</div>'
+    + fieldErr('rules') + '</div>';
   return ''
     + serverProblems
     + '<div class="repo-frow">'
-    + '<div class="repo-fld"><label for="repoName">Sleeve name</label>'
-    + '<input type="text" id="repoName" maxlength="80" value="' + esc(d.name) + '"'
-    + (repo.fieldError && repo.fieldError.field === 'name' ? ' aria-invalid="true"' : '') + '>' + fieldErr('name') + '</div>'
+    + nameField
     + categoryField
     + '</div>'
     + variantField
     + '<div class="repo-fld"><label for="repoNote">Note</label>'
     + '<input type="text" id="repoNote" maxlength="240" placeholder="Optional. Shown to PWAs in the picker hint." value="' + esc(d.note) + '"></div>'
+    + editionField
     + '<div class="repo-fld"><label>Products</label>' + productsHtml()
     + fieldErr('products') + fieldErr('weights')
     + '<button type="button" class="btn repo-add" data-repoadd' + (repo.picker ? ' disabled' : '') + '>+ Add product</button></div>'
@@ -6444,7 +6646,9 @@ function revisionHtml(entry) {
     + '</button>'
     + changes
     + (open ? '<div class="rev-b"><p class="rev-name">' + esc(entry.name)
+        + (entry.label ? ' <span class="repo-fixed">' + esc(entry.label) + '</span>' : '')
         + (entry.note ? ' <small>' + esc(entry.note) + '</small>' : '') + '</p>'
+        + (entry.rules && entry.rules.length ? '<p class="rev-rules">' + esc(describeRules(entry.rules)) + '</p>' : '')
         + '<ul class="rev-products">' + products + '</ul>'
         + (entry.current ? ''
             : '<button type="button" class="btn rev-put" data-reporevert="' + entry.revision + '"'
@@ -6564,7 +6768,7 @@ function sleeveMenuHtml() {
   });
   var full = entry.fixed;
   var adds = elsewhere.map(function (v) {
-    var blocked = full && sleevesIn(v, entry.category).length >= 1;
+    var blocked = full && sleevesIn(v, entry.category).some(function (x) { return x.name !== entry.name; });
     return '<button type="button" class="repo-mi" data-repocopy="' + v + '"'
       + (blocked ? ' disabled title="' + esc(entry.category + ' already holds its one sleeve under ' + v) + '"' : '')
       + '>' + esc(v) + '</button>';
@@ -6574,6 +6778,8 @@ function sleeveMenuHtml() {
     + '<p class="h">' + esc(entry.name) + '<small>' + esc(entry.category) + ' · ' + esc(entry.variant) + '</small></p>'
     + '<p class="lbl">Add to implementation type</p>'
     + (adds || '<p class="none">Offered under every implementation type.</p>')
+    + '<p class="sep"></p>'
+    + '<button type="button" class="repo-mi" data-repoedition="' + entry.id + '">Add an edition for particular portfolios…</button>'
     + '<p class="sep"></p>'
     + '<button type="button" class="repo-mi danger" data-reporemove="' + entry.id + '"'
     + (entry.fixed ? ' disabled title="A fixed category always holds one sleeve"' : '')
@@ -6591,20 +6797,39 @@ function sleevesViewHtml() {
       + '<span class="n">' + n + '</span></button>';
   }).join('');
   var offered = sleevesIn(repo.variant, repo.category);
-  var newDisabled = isFixed(repo.category) && offered.length >= 1;
-  var list = offered.map(function (s) {
+  /* editions of one name sit together under it (D89); a name with a single
+     fallback reads exactly as a sleeve always did */
+  var groups = [], byName = {};
+  offered.forEach(function (s) {
+    if (!byName[s.name]) { byName[s.name] = []; groups.push(s.name); }
+    byName[s.name].push(s);
+  });
+  var newDisabled = isFixed(repo.category) && groups.length >= 1;
+  var rowHtml = function (s, grouped) {
     var vehicles = [];
     s.products.forEach(function (r) { if (r.product && vehicles.indexOf(r.product.vehicle) === -1) vehicles.push(r.product.vehicle); });
     var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
       + (vehicles.length ? ' · ' + vehicles.join(', ') : '')
       + ' · saved ' + shortDate(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '');
-    return '<button type="button" class="repo-sleeve" data-reposleeve="' + s.id + '"'
+    var head = grouped
+      ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
+                    : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
+      : esc(s.name) + (s.fallback ? '' : ' <span class="repo-fixed">' + esc(s.label) + '</span>');
+    return '<button type="button" class="repo-sleeve' + (grouped ? ' ed' : '') + '" data-reposleeve="' + s.id + '"'
       + ' aria-selected="' + (s.id === repo.sleeveId && !(repo.draft && repo.draft.id === null) ? 'true' : 'false') + '">'
-      + '<b>' + esc(s.name) + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem' + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
+      + '<b>' + head + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem' + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
       + '<small>' + esc(sub) + '</small></button>';
+  };
+  var list = groups.map(function (name) {
+    var eds = byName[name];
+    if (eds.length === 1) return rowHtml(eds[0], false);
+    return '<div class="repo-grp"><b>' + esc(name) + '</b><small>' + eds.length + ' editions</small></div>'
+      + eds.map(function (s) { return rowHtml(s, true); }).join('');
   }).join('') || '<p class="repo-none">No sleeve under ' + esc(repo.variant) + ' yet.</p>';
   if (repo.draft && repo.draft.id === null) {
-    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve') + '</b><small>unsaved</small></div>';
+    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve')
+      + (repo.draft.edition ? ' <span class="repo-fixed">' + (esc(repo.draft.label) || 'new edition') + '</span>' : '')
+      + '</b><small>unsaved</small></div>';
   }
   return '<div class="repo-b">'
     + '<div class="repo-pane"><div class="repo-pane-h">Categories</div>' + cats + '</div>'
@@ -7517,6 +7742,10 @@ function render() {
           + (d.store.archived ? ' · ' + d.store.archived + ' archived' : '') + '</span>' : '')
       + '<span class="spacer"></span>'
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
+      + (!onRemoved && repo.draft && repo.draft.id
+          ? '<button type="button" class="btn" data-repoedition="' + repo.draft.id + '"' + (repo.saving ? ' disabled' : '')
+            + ' title="Another edition of ' + esc(repo.draft.name) + ', for particular portfolios">+ Add edition</button>'
+          : '')
       + (!onRemoved && repo.draft && repo.draft.id && !isFixed(repo.category)
           ? (repo.confirmDelete
               ? '<span class="repo-src">It keeps its history and can be restored from the Archive.</span>'
@@ -7526,7 +7755,8 @@ function render() {
           : '')
       + (onRemoved ? ''
           : '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
-            + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve' : 'Save sleeve')) + '</button>')
+            + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve'
+               : (repo.draft && repo.draft.edition ? 'Create edition' : 'Save sleeve'))) + '</button>')
       + '</div>';
   }
 
@@ -7629,7 +7859,7 @@ document.addEventListener('click', function (e) {
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
     + '[data-catrow],[data-catopen],[data-catfee],'
-    + '[data-repocreate],[data-repocopy],[data-reporemove],'
+    + '[data-repocreate],[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
     + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
@@ -7652,6 +7882,20 @@ document.addEventListener('click', function (e) {
   if (ds.reponew !== undefined) { goTo({ fresh: true }); return; }
   if (ds.repocreate !== undefined) { goTo({ fresh: true, create: true }); return; }
   if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
+  /* editions (D89) */
+  if (ds.repoedition !== undefined) {
+    var ofId = parseInt(ds.repoedition, 10); var of = sleeveById(ofId); repo.menu = null;
+    if (of) goTo({ variant: of.variant, category: of.category, fresh: true, edition: { ofId: ofId, name: of.name } });
+    return;
+  }
+  if (ds.reporuleadd !== undefined) {
+    var blank = {}; RULE_FIELDS.forEach(function (f) { blank[f] = []; });
+    repo.draft.rules.push(blank); repo.dirty = true; repo.fieldError = null; render(); return;
+  }
+  if (ds.reporulerm !== undefined) {
+    repo.draft.rules.splice(parseInt(ds.reporulerm, 10), 1); repo.dirty = true; repo.fieldError = null;
+    render(); schedulePreview(); return;
+  }
   if (ds.reporemove !== undefined) { removeFromCategory(parseInt(ds.reporemove, 10)); return; }
   /* the record (D65) */
   if (ds.repohistory !== undefined) { toggleHistory(parseInt(ds.repohistory, 10)); return; }
@@ -7827,6 +8071,20 @@ document.addEventListener('change', function (e) {
     if (el.checked && at === -1) picked.push(el.dataset.repovar);
     if (!el.checked && at !== -1) picked.splice(at, 1);
     repo.draft.variants = picked; repo.dirty = true; render();
+    return;
+  }
+  /* a rule's chip (D89): the value goes in or out of that rule's field, in
+     the vocabulary's order, and the count is asked for again */
+  if (el.dataset && el.dataset.reporule !== undefined && el.dataset.repofld !== undefined) {
+    var rule = repo.draft.rules[parseInt(el.dataset.reporule, 10)]; if (!rule) return;
+    var field = el.dataset.repofld, value = el.dataset.repoval;
+    var have = (rule[field] || []).filter(function (v) { return v !== value; });
+    if (el.checked) have.push(value);
+    var order = (repo.data.ruleVocabulary || {})[field] || [];
+    rule[field] = order.filter(function (v) { return have.indexOf(v) !== -1; });
+    repo.dirty = true; repo.fieldError = null;
+    el.closest('.repo-chip').classList.toggle('on', el.checked);
+    schedulePreview(); updateTotals();
   }
 });
 
@@ -7840,6 +8098,12 @@ document.addEventListener('input', function (e) {
   if (!repo.draft) return;
   if (el.id === 'repoName') { repo.draft.name = el.value; repo.dirty = true; updateTotals(); return; }
   if (el.id === 'repoNote') { repo.draft.note = el.value; repo.dirty = true; updateTotals(); return; }
+  if (el.id === 'repoLabel') {
+    repo.draft.label = el.value; repo.dirty = true; repo.fieldError = null;
+    /* the words under the rules speak of the label */
+    var applies = document.getElementById('repoApplies'); if (applies && !(repo.draft.rules || []).length) applies.innerHTML = appliesHtml();
+    updateTotals(); return;
+  }
   if (el.dataset && el.dataset.repoweight !== undefined) {
     var i = parseInt(el.dataset.repoweight, 10);
     var v = parseFloat(el.value.replace(/[%,\s]/g, ''));
@@ -7928,7 +8192,7 @@ document.addEventListener('keydown', function (e) {
     closeRepository(false);
     return;
   }
-  if (e.key === 'Enter' && e.target.id === 'repoName') { e.preventDefault(); saveDraft(); }
+  if (e.key === 'Enter' && (e.target.id === 'repoName' || e.target.id === 'repoLabel')) { e.preventDefault(); saveDraft(); }
 }, true);
 
 App.addRenderer(renderEntryLinks);

@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse
 from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
 from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, proposalRegister,
-                                           scenarioStore, sleeveRepo)
+                                           scenarioStore, sleeveRepo, sleeveRules)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
     exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
@@ -49,6 +49,17 @@ router = APIRouter(dependencies=[Depends(requireAuth)])
 # host's router already exists and is already mounted under /api/v1.
 
 _XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+def _baseKeyFrom(keyStr):
+    """A base portfolio key string as a PortfolioKey, or None for none; a
+    malformed one is a 422 naming the field, like every other bad input."""
+    if not keyStr:
+        return None
+    try:
+        return PortfolioKey.fromStr(keyStr)
+    except (ValueError, TypeError) as exc:
+        raise ValidationError('key', 'Not a portfolio key: {!r}.'.format(keyStr))
+
 
 # Build the port at import rather than on the first request, so any warm-up it
 # does (the baked adapter pre-builds the static weight tables on a daemon
@@ -203,21 +214,28 @@ def searchAdvisors(q: str = '', limit: int = 20):
 
 @router.get('/scenario/sleeves')
 def listSleeves(category: str, variant: str = None, currency: str = 'USD',
-                hedging: str = 'Hedged'):
-    """The sleeve library for one category, under one variant (spec 3.4, D29).
+                hedging: str = 'Hedged', key: str = None):
+    """The sleeve library for one category, under one variant (spec 3.4, D29),
+    resolved for the base portfolio *key* (D89).
 
     *variant* is required. It is declared optional only so that an absent one
     reaches validateVariant and comes back as a 422 naming the field, rather
     than as FastAPI's own unfielded "Malformed request." Serving a default
     library to a caller that has not chosen a variant is how the wrong
     products reach the wrong book, so it is never a fallback.
+
+    *key* is the base column's key string. A name that has an edition for
+    that portfolio is served as that edition, and nothing in the response
+    says so - the PWA sees names. Without a key only fallback editions are
+    offered.
     """
     basis = BasisInput(currency=currency, hedging=hedging)
     try:
         validateVariant(variant)
+        baseKey = _baseKeyFrom(key)
         return {'category': category, 'variant': variant,
                 'sleeves': list(getScenarioPort().list_sleeves(
-                    category, basis, variant))}
+                    category, basis, variant, baseKey))}
     except ValidationError as exc:
         return _validationError(exc)
     except AnalyticsError as exc:
@@ -248,6 +266,10 @@ def getRepository(caller=Depends(requireAdmin)):
             'variants': list(sleeveRepo.VARIANTS),
             'categories': sleeveRepo.categories(),
             'fixedCategories': sleeveRepo.fixedCategories(),
+            # the values an edition's rules may name, per field, from the
+            # strategic universe as loaded (D89)
+            'ruleVocabulary': sleeveRules.vocabulary(),
+            'ruleFields': list(sleeveRules.FIELDS),
             'sleeves': sleeveRepo.listAll(),
             'archived': sleeveRepo.listArchived(),
             'orphans': sleeveRepo.orphanProducts(),
@@ -265,6 +287,8 @@ def getRepository(caller=Depends(requireAdmin)):
 def createRepositorySleeve(payload: dict = Body(...), caller=Depends(requireAdmin)):
     """Build a sleeve: {category, name, note, products: [{productId, weight}]},
     weights as fractions summing to 1, under `variants` (a list) or `variant`.
+    Optionally an edition (D89): {label, rules: [{currency, riskLevel,
+    allocationType}]}, each field a list of values or absent for any.
 
     Several types in one call is how the console both creates a sleeve for a
     set of books and copies an existing one into another (D61). All or
@@ -276,7 +300,8 @@ def createRepositorySleeve(payload: dict = Body(...), caller=Depends(requireAdmi
             variants = [payload.get('variant')] if payload.get('variant') else []
         made = sleeveRepo.createSleeves(
             variants, payload.get('category'), payload.get('name'),
-            payload.get('products') or [], note=payload.get('note', ''), user=caller.kerberos)
+            payload.get('products') or [], note=payload.get('note', ''), user=caller.kerberos,
+            label=payload.get('label', ''), rules=payload.get('rules'))
         return {'sleeves': made, 'sleeve': made[0]}
     except ValidationError as exc:
         return _validationError(exc)
@@ -287,17 +312,53 @@ def createRepositorySleeve(payload: dict = Body(...), caller=Depends(requireAdmi
 @router.put('/scenario/repository/sleeves/{sleeveId}')
 def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
                            caller=Depends(requireAdmin)):
-    """Rename, re-note or re-weight a sleeve. Its type and category are
-    fixed at creation - a sleeve moved between them is a different sleeve."""
+    """Rename, re-note, re-weight or re-scope a sleeve. Its type and category
+    are fixed at creation - a sleeve moved between them is a different sleeve.
+    `label` and `rules` absent from the payload leave the edition as it is."""
     try:
         sleeve = sleeveRepo.updateSleeve(
             sleeveId, payload.get('name'), payload.get('products') or [],
-            note=payload.get('note', ''), user=caller.kerberos)
+            note=payload.get('note', ''), user=caller.kerberos,
+            label=payload.get('label') if 'label' in payload else None,
+            rules=payload.get('rules') if 'rules' in payload else None)
         return {'sleeve': sleeve}
     except ValidationError as exc:
         return _validationError(exc)
     except products.BadCatalogue as exc:
         return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.post('/scenario/repository/sleeves/{sleeveId}/editions')
+def addRepositoryEdition(sleeveId: int, payload: dict = Body(...),
+                         caller=Depends(requireAdmin)):
+    """Another edition of an existing sleeve's name, in its book and
+    category (D89): {label, rules, note, products}. Meets every rule a
+    created sleeve meets, plus the edition's own: a label the name already
+    carries, or rules that claim a portfolio a sibling claims, are refused
+    with the portfolios named."""
+    try:
+        sleeve = sleeveRepo.addEdition(
+            sleeveId, payload.get('label', ''), payload.get('rules'),
+            payload.get('products') or [], note=payload.get('note', ''), user=caller.kerberos)
+        return {'sleeve': sleeve}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.post('/scenario/repository/applicability')
+def previewApplicability(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What a rule set would mean, before it is saved (D89): {variant,
+    category, name, label, rules, sleeveId?} -> {applies, appliesTo,
+    universe, overlaps}. The console's live count and clash report; the
+    same validation a save runs, so the words match."""
+    try:
+        return sleeveRepo.applicabilityPreview(
+            payload.get('variant'), payload.get('category'), payload.get('name'),
+            payload.get('label', ''), payload.get('rules'), sleeveId=payload.get('sleeveId'))
+    except ValidationError as exc:
+        return _validationError(exc)
 
 
 @router.delete('/scenario/repository/sleeves/{sleeveId}')
@@ -595,13 +656,16 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                 raise ValidationError(
                     'variant',
                     'Choose an implementation type before attaching sleeves.')
+            # a name resolves for the base portfolio in force (D89): with no
+            # base yet only fallbacks can answer, which is the honest state
+            baseKey = _baseKeyFrom(current.get('base'))
             sleeves = {}
             for category, name in (payload['sleeves'] or {}).items():
                 if category in AUTO_SLEEVE_CATEGORIES:
                     raise ValidationError(
                         'sleeves',
                         '{} carries its sleeve automatically.'.format(category))
-                if name is not None and not sleeveExists(category, name, against):
+                if name is not None and not sleeveExists(category, name, against, baseKey):
                     # *category* is already the group name where there is one:
                     # the page sends what it picked under (D60)
                     raise ValidationError(
@@ -717,18 +781,29 @@ def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
         from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
         sleeves = state['sleeves'] or {}
         # one choice per sleeve category: grouped categories share theirs (D60)
-        missing = []
+        missing, unresolved = [], []
+        baseKey = _baseKeyFrom(state['base'])
         for c in results[0]['categories']:
             if c['name'] in AUTO_SLEEVE_CATEGORIES:
                 continue
             under = sleeveCategory(c['name'])
-            if not sleeves.get(under) and under not in missing:
-                missing.append(under)
+            if not sleeves.get(under):
+                if under not in missing:
+                    missing.append(under)
+            elif under not in unresolved and not sleeveExists(under, sleeves[under], variant, baseKey):
+                # chosen under a different base, or the library moved: the
+                # name has no edition for this portfolio and cannot be built
+                unresolved.append(under)
         if missing:
             raise ValidationError(
                 'sleeves',
                 'Attach a sleeve to every category first - missing: {}.'.format(
                     ', '.join(missing)))
+        if unresolved:
+            raise ValidationError(
+                'sleeves',
+                'The sleeve chosen for {} is not offered for this portfolio. '
+                'Choose another.'.format(', '.join(unresolved)))
 
         implementation = {'sleeves': sleeves, 'variant': variant,
                           'tacticalTilt': bool(state.get('tacticalTilt', True)),

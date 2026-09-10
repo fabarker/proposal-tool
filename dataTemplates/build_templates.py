@@ -28,7 +28,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from cyrus_pmg.pmgService.scenario import (fees, products, rules, sleeveRepo,
+from cyrus_pmg.pmgService.scenario import (fees, products, rules, sleeveRepo, sleeveRules,
                                            portfolio_weights as pw)
 from cyrus_pmg.pmgService.scenario import sleeves as sleeveFacade
 
@@ -122,10 +122,49 @@ SHEETS = [
             ('Category', 'yes', 'text',
              'One of the seven sleeve categories on the Valid values sheet. Private Equity and '
              'Other Private Assets share the one combined category.'),
-            ('Sleeve', 'yes', 'text (<= 80)', 'The sleeve name. Unique within a variant and category.'),
+            ('Sleeve', 'yes', 'text (<= 80)',
+             'The sleeve name: what a PWA picks. Its editions share it. Unique within a variant '
+             'and category together with the Edition.'),
+            ('Edition', 'no', 'text (<= 80)',
+             'BLANK for the fallback edition, which applies wherever no other edition of the name '
+             'does; or the desk\'s short label for an edition that is only for particular strategic '
+             'portfolios ("GBP", "GBP ex-Alts"). A labelled edition must have rules on the '
+             'sleeveRules sheet; a fallback must not. At most one fallback per name. The header '
+             'without this column is still accepted: every row is then a fallback.'),
             ('ProductId', 'yes', 'text', 'Must exist in the products sheet.'),
             ('Weight', 'yes', 'number',
-             'A FRACTION. One sleeve\'s rows must sum to 1 within 0.000001.'),
+             'A FRACTION. One edition\'s rows must sum to 1 within 0.000001.'),
+        ],
+        validation={'Variant': ('variants', len(rules.IMPLEMENTATION_VARIANTS)),
+                    'Category': ('categories', len(sleeveRepo.categories()))},
+    ),
+    dict(
+        name='sleeveRules', tab='A64D1E',
+        target='sleeveRules.csv', env='SCENARIO_SLEEVES_RULES', fmt='CSV',
+        what='Which strategic portfolios each labelled edition on the sleeves sheet is for: one '
+             'row per rule. An edition with several rows applies where ANY of them matches. A rule '
+             'matches a portfolio when every filled cell contains the portfolio\'s value; a blank '
+             'cell means any. Read with the sleeves sheet, once, on the first start; optional - a '
+             'library with no editions needs no rules. Two editions of one name may not both claim '
+             'a portfolio: the load refuses and names the clash.',
+        columns=[
+            ('Variant', 'yes', 'text', 'As on the sleeves sheet.'),
+            ('Category', 'yes', 'text', 'As on the sleeves sheet.'),
+            ('Sleeve', 'yes', 'text', 'The sleeve name, exactly as on the sleeves sheet.'),
+            ('Edition', 'yes', 'text',
+             'The edition label, exactly as on the sleeves sheet. Never blank here: the fallback '
+             'has no rules.'),
+            ('Currency', 'no', 'text',
+             'One or more currencies from the Valid values sheet, several separated by | '
+             '("GBP" or "GBP|EUR"). Blank means any currency.'),
+            ('RiskLevel', 'no', 'text',
+             'One or more risk levels from the Valid values sheet, several separated by | '
+             '("Moderate" or "Moderate|ModAgg"). Blank means any risk level.'),
+            ('AllocationType', 'no', 'text',
+             'One or more allocation types from the Valid values sheet, several separated by |, '
+             'and NA for the all-equity book ("ex-Alts" or "Full|Core|ex-HFs|NA"). Blank means any. '
+             'At least one of the three cells must be filled: a rule that constrains nothing is '
+             'refused. Hedging and the real-assets exclusion are not rule fields.'),
         ],
         validation={'Variant': ('variants', len(rules.IMPLEMENTATION_VARIANTS)),
                     'Category': ('categories', len(sleeveRepo.categories()))},
@@ -202,6 +241,8 @@ LISTS = [
     ('hedging', 'Hedging basis', HEDGING),
     ('riskLevels', 'Risk level (least to most risky)', list(rules.RISK_LEVELS)),
     ('allocations', 'Allocation type', list(rules.ALLOCATIONS)),
+    ('ruleAllocations', 'Allocation type in a rule (NA = all-equity)',
+     list(sleeveRules.vocabulary()['allocationType'])),
     ('variants', 'Implementation type', list(rules.IMPLEMENTATION_VARIANTS)),
     ('categories', 'Sleeve category', sleeveRepo.categories()),
     ('feeGroups', 'Fee group', list(fees.FEE_GROUPS)),
@@ -235,7 +276,21 @@ def examples(name):
     if name == 'products':
         return csvRows(os.path.join(ROOT, 'productSource', 'products.csv'), want)
     if name == 'sleeves':
-        return csvRows(os.path.join(ROOT, 'sleeveSource', 'sleeves.csv'), want)
+        # two delivered fallbacks, then the same name again as two labelled
+        # editions, so the shape of an edition is on the sheet and not only
+        # described; their rules are the sleeveRules examples
+        rows = csvRows(os.path.join(ROOT, 'sleeveSource', 'sleeves.csv'), want)
+        v, c, s = rows[0][0], rows[0][1], rows[0][2]
+        p1, p2 = rows[0][want.index('ProductId')], rows[1][want.index('ProductId')]
+        return rows + [[v, c, s, 'GBP', p1, 0.55], [v, c, s, 'GBP', p2, 0.45],
+                       [v, c, s, 'EUR Mod / GBP Full', p2, 1.0]]
+    if name == 'sleeveRules':
+        rows = csvRows(os.path.join(ROOT, 'sleeveSource', 'sleeves.csv'),
+                       ['Variant', 'Category', 'Sleeve'])
+        v, c, s = rows[0]
+        return [[v, c, s, 'GBP', 'GBP', None, 'Full|Core|ex-HFs|NA'],
+                [v, c, s, 'EUR Mod / GBP Full', 'EUR', 'Moderate', None],
+                [v, c, s, 'EUR Mod / GBP Full', 'GBP', None, 'Full']]
     if name == 'feeRates':
         # one bounded tier and the TOP tier, so the empty tierMax that means
         # "and up" is visible in the template rather than only described

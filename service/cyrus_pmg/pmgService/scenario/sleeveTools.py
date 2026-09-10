@@ -11,13 +11,15 @@ between environments, and reviewing it as a table:
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --export out.csv
         The whole library in the interchange shape, one row per product:
-        Variant, Category, Sleeve, ProductId, Weight.
+        Variant, Category, Sleeve, Edition, ProductId, Weight - and beside
+        it, as out.rules.csv, every edition's rules (D89).
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --import in.csv [--replace]
-        Load a library through the same validation a save gets. Sleeves of
-        the same name are overwritten; --replace retires the ones already
-        there rather than erasing them. A single failing sleeve aborts the
-        whole load.
+        Load a library through the same validation a save gets. Editions of
+        the same name and label are overwritten; --replace retires the ones
+        already there rather than erasing them. A single failing sleeve
+        aborts the whole load. Rules are read from in.rules.csv, or from
+        sleeveRules.csv beside the file, when either exists.
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --history 42
         Every revision of one sleeve, oldest first: what it was called, what
@@ -41,6 +43,7 @@ from __future__ import annotations
 import argparse
 import csv
 import getpass
+import os
 import sys
 
 from . import products, sleeveRepo
@@ -55,6 +58,8 @@ def _census() -> int:
         store['sleeves'], store['seededAt'] or 'never', store['seededFrom'] or 'nothing'))
     print('           schema v{} · {} revisions on record · {} sleeve(s) archived'.format(
         store.get('schemaVersion', 1), store.get('revisions', 0), store.get('archived', 0)))
+    if c.get('editions'):
+        print('           {} labelled edition(s) with rules (D89)'.format(c['editions']))
     print('catalogue  {}'.format(cat['path']))
     print('           {} products, modified {}'.format(cat['products'], cat['modified']))
     print('types')
@@ -150,31 +155,55 @@ def _activity(limit: int) -> int:
     return 0
 
 
+def _rulesFileFor(path: str) -> str:
+    """in.csv -> in.rules.csv; falling back to sleeveRules.csv beside it."""
+    base, ext = os.path.splitext(path)
+    sibling = base + '.rules' + (ext or '.csv')
+    if os.path.exists(sibling):
+        return sibling
+    return os.path.join(os.path.dirname(os.path.abspath(path)), 'sleeveRules.csv')
+
+
 def _export(path: str) -> int:
     rows = sleeveRepo.exportRows()
     with open(path, 'w', newline='', encoding='utf-8') as fh:
         writer = csv.writer(fh)
-        writer.writerow(sleeveRepo.SEED_COLUMNS)
+        writer.writerow(sleeveRepo.SEED_COLUMNS_EDITIONS)
         writer.writerows(rows)
-    print('wrote {} rows ({} sleeves) to {}'.format(
-        len(rows), len({r[:3] for r in rows}), path))
+    print('wrote {} rows ({} editions) to {}'.format(
+        len(rows), len({r[:4] for r in rows}), path))
+    ruleRows = sleeveRepo.exportRuleRows()
+    # always the sibling name on export; the fallback to sleeveRules.csv
+    # beside the file is for reading a delivery, not for writing one
+    base, ext = os.path.splitext(path)
+    rulesFile = base + '.rules' + (ext or '.csv')
+    if ruleRows or os.path.exists(rulesFile):
+        with open(rulesFile, 'w', newline='', encoding='utf-8') as fh:
+            writer = csv.writer(fh)
+            writer.writerow(sleeveRepo.RULE_COLUMNS)
+            writer.writerows(ruleRows)
+        print('wrote {} rule(s) to {}'.format(len(ruleRows), rulesFile))
     return 0
 
 
 def _import(path: str, replace: bool) -> int:
     try:
         rows = list(sleeveRepo.readSeedRows(path))
+        rulesFile = _rulesFileFor(path)
+        ruleRows = list(sleeveRepo.readRuleRows(rulesFile)) if os.path.exists(rulesFile) else []
     except (ValueError, OSError) as exc:
         print('cannot read {}: {}'.format(path, exc))
         return 2
     try:
-        count = sleeveRepo.importRows(rows, replace=replace, user=getpass.getuser())
+        count = sleeveRepo.importRows(rows, replace=replace, user=getpass.getuser(),
+                                      ruleRows=ruleRows)
     except ValidationError as exc:
         print('REFUSED ({}): {}'.format(exc.field, exc.message))
         print('nothing was written')
         return 1
-    print('{} {} sleeves from {}'.format('replaced the library with' if replace else 'loaded',
-                                        count, path))
+    print('{} {} editions from {}{}'.format(
+        'replaced the library with' if replace else 'loaded', count, path,
+        ' (with {} rule(s))'.format(len(ruleRows)) if ruleRows else ''))
     return 0
 
 

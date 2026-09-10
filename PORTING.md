@@ -548,7 +548,7 @@ including `isg-cyrus-pmg/src`. (Nothing is read yet: the extracts are read on fi
 
 **Step 4 — Insert the endpoint block** (§9.1). Check: `python -c "from cyrus_pmg.pmgService.dashboardRouter
 import router; print(len([r for r in router.routes if r.path.startswith('/scenario')]))"` prints
-`28`. This check passes **before** any data is delivered: the package reads nothing at import
+`30`. This check passes **before** any data is delivered: the package reads nothing at import
 (D86). It did once, which made this step fail with a `FileNotFoundError` for the SAA extract until
 Step 5 had been done first.
 
@@ -793,7 +793,7 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 
 ## 11. API, models, persistence and configuration
 
-### 11.1 The HTTP surface (28 routes under `/api/v1`; the page calls `/api/…`)
+### 11.1 The HTTP surface (30 routes under `/api/v1`; the page calls `/api/…`)
 
 | Method | Path | Handler | Gate |
 |---|---|---|---|
@@ -815,6 +815,8 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | POST | `/scenario/repository/sleeves/{sleeveId}/restore` | `restoreRepositorySleeve` | requireAdmin |
 | POST | `/scenario/repository/sleeves/{sleeveId}/revert` | `revertRepositorySleeve` | requireAdmin |
 | POST | `/scenario/repository/sleeves/restore` | `restoreRepositorySleeves` | requireAdmin |
+| POST | `/scenario/repository/sleeves/{sleeveId}/editions` | `addRepositoryEdition` | requireAdmin |
+| POST | `/scenario/repository/applicability` | `previewApplicability` | requireAdmin |
 | GET | `/scenario/repository/activity` | `getRepositoryActivity` | requireAdmin |
 | GET | `/scenario/repository/archive.csv` | `exportRepositoryArchive` | requireAdmin |
 | GET | `/scenario/repository/activity.csv` | `exportRepositoryActivity` | requireAdmin |
@@ -956,6 +958,7 @@ means the host must set it; "own" means the host already has its own value.
 | `SCENARIO_SAA_SOURCE` | `universe.py` | `<pkg>/../../../../saaSource/saaPortfolios.csv` | **Required** — read at request time |
 | `SCENARIO_PRODUCTS_SOURCE` | `products.py` | `<pkg>/../../../../productSource/products.csv` | **Required** |
 | `SCENARIO_SLEEVES_SEED` | `sleeveRepo.py` | `<pkg>/../../../../sleeveSource/sleeves.csv` | **Required** for the first start (read once) |
+| `SCENARIO_SLEEVES_RULES` | `sleeveRepo.py` | `sleeveRules.csv` beside the seed | Optional: the editions' rules, read with the seed (D89) |
 | `SCENARIO_SLEEVES_DB` | `sleeveRepo.py` | `<pkg>/../../../var/sleeves.db` | **Required** — durable, writable |
 | `SCENARIO_REGISTER_DB` | `proposalRegister.py` | `<pkg>/../../../var/proposals.db` | **Required** — durable, writable, backed up |
 | `SCENARIO_STORE_DIR` | `scenarioStore.py` | `$TMPDIR/pmg_proposal_scenarios` | **Required** — durable, shared by both workers |
@@ -1431,7 +1434,7 @@ repository. Tick each before Step 1.
 - [ ] `openpyxl` and `pandas` present in the host environment.
 - [ ] `isAdmin` and `requireAdmin` added to `pmgEntitlement.py`; the Step 2 import check passes.
 - [ ] `pmgService/scenario/` copied verbatim (26 modules, 4 data files); importable.
-- [ ] Endpoint block appended between its markers; 28 `/scenario` routes registered; no duplicate `router` definition.
+- [ ] Endpoint block appended between its markers; 30 `/scenario` routes registered; no duplicate `router` definition.
 - [ ] Extracts and bake delivered to durable paths (Appendix C); the seven required variables set;
       the three censuses pass on the host.
 - [ ] Page folder copied; route and nav link added; §10.6 curls pass.
@@ -1512,6 +1515,9 @@ One line each; the register carries the reasoning.
   cannot turn into an ImportError inside the host's own `dashboardRouter.py`.
 - **D87** `API_BASE` is resolved whether the host's `globals.js` assigns a window property or declares a
   script-scoped `const`; the old guard tested the bare name and left every request relative.
+- **D89** A sleeve name may hold several editions, each for the strategic portfolios its rules name
+  (currency, risk level, allocation type); one row per name is served for the base portfolio and the
+  PWA is never told which. Schema v3, two routes, a second delivery file `sleeveRules.csv`.
 - **D88** Scrollbars are styled thin rather than left to the platform, so the page reads the same on
   Windows as on macOS; the navy rail carries its own light thumb.
 
@@ -1625,18 +1631,44 @@ Refused as delivered (`BadCatalogue`): a missing required column, a duplicate `P
 
 ### C.3 The sleeve seed — `sleeves.csv` (`SCENARIO_SLEEVES_SEED`; `sleeveRepo.py`)
 
-CSV, header row **exactly** `Variant,Category,Sleeve,ProductId,Weight`, one row per product in a
-sleeve. **Read once**, on the first start against an empty `SCENARIO_SLEEVES_DB`; after that the
+CSV, header row **exactly** `Variant,Category,Sleeve,Edition,ProductId,Weight`, one row per product
+in an edition of a sleeve. The header without `Edition` — `Variant,Category,Sleeve,ProductId,Weight`,
+the shape delivered before D89 — is still accepted, and every row is then the fallback edition of its
+name. **Read once**, on the first start against an empty `SCENARIO_SLEEVES_DB`; after that the
 console is the source of truth and the file is not re-read (`sleeveTools --import` for a later bulk
-load).
+load). Read together with `sleeveRules.csv` (C.3b) when that file exists.
 
 | Column | Type | Rule |
 |---|---|---|
 | `Variant` | text | One of the four implementation types: `PMG Multi-Asset Portfolio`, `PMG ESG`, `US Onshore`, `Irish Onshore` (`sleeves.VARIANTS`). |
 | `Category` | text | One of the seven sleeve categories: `Investment Grade Fixed Income`, `Hybrid Fixed Income`, `Other Fixed Income`, `Public Equity`, `Hedge Funds`, `Private Equity & Other Private Assets`, `Asset Allocation Strategies`. `Private Equity` and `Other Private Assets` share the one combined sleeve (D60). `Hybrid Fixed Income` and `Asset Allocation Strategies` are attached automatically and need exactly one sleeve each per variant. |
 | `Sleeve` | text ≤ 80 chars | The sleeve's name; unique within (variant, category). |
+| `Edition` | text ≤ 80, optional | **Blank for the fallback** edition, which applies wherever no other edition of the name does; or the desk's short label for an edition that is only for particular strategic portfolios (`GBP`, `GBP ex-Alts`). A labelled edition must have rules in `sleeveRules.csv`; a fallback must not. At most one fallback per name; labels unique within a name. Weights sum to 1 **per edition** (D89). |
 | `ProductId` | text | Must exist in `products.csv`. |
 | `Weight` | number | Fraction; a sleeve's rows sum to 1 within `1e-6`. |
+
+### C.3b The edition rules — `sleeveRules.csv` (`SCENARIO_SLEEVES_RULES`, else beside the seed; `sleeveRepo.py`, `sleeveRules.py`)
+
+CSV, header row **exactly** `Variant,Category,Sleeve,Edition,Currency,RiskLevel,AllocationType`,
+**one row per rule**. Optional: a library with no labelled editions needs no rules. Read with the seed,
+once. An edition with several rows applies to a strategic portfolio when **any** of them matches; a
+row matches when every filled cell contains the portfolio's value, a blank cell meaning any.
+
+| Column | Type | Rule |
+|---|---|---|
+| `Variant`, `Category`, `Sleeve`, `Edition` | text | Exactly as on `sleeves.csv`; together they name the edition the rule belongs to. `Edition` is never blank here — the fallback has no rules. A rule naming an edition with no product rows is refused. |
+| `Currency` | text, optional | One or more of `USD`, `GBP`, `CHF`, `EUR`; several separated by `\|` (`GBP\|EUR`). Blank: any. |
+| `RiskLevel` | text, optional | One or more risk levels as spelt in the extract (`LowVol`, `Conservative`, `ConsMod`, `Moderate`, `ModAgg`, `Agg`, `Higher Risk`, `All Equity`); several separated by `\|`. Blank: any. |
+| `AllocationType` | text, optional | One or more of `Full`, `Core`, `ex-Alts`, `ex-HFs`, and `NA` for the all-equity book; several separated by `\|` (`Full\|Core\|ex-HFs\|NA`). Blank: any. |
+
+At least one of the three cells must be filled: a rule that constrains nothing is refused. A value
+the strategic universe does not contain is refused **by name**, like an unknown ticker. Hedging and the
+real-assets exclusion are **not** rule fields: a rule matches both exclusion variants of a book alike.
+
+Refused as delivered (`ValidationError`, the whole load): two labelled editions of one name whose rules
+claim the same portfolio — the message lists the portfolios; a labelled edition with no rules, or a
+fallback with rules; a second fallback for a name; a rule for an edition that has no products. The
+console's *applicability* preview runs the same checks before a save, so the words match.
 
 ### C.4 The fee card — `feeRates.csv` (`SCENARIO_FEES_SOURCE`; `fees.py`) with `fees.json` (packaged)
 

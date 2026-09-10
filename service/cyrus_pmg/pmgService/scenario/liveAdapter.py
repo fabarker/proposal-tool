@@ -150,8 +150,8 @@ class LiveScenarioPort:
         self._resolveCache[cacheKey] = payload
         return payload
 
-    def list_sleeves(self, category: str, basis: BasisInput, variant: str):
-        return sleeves.listSleeves(category, variant)
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None):
+        return sleeves.listSleeves(category, variant, key)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:

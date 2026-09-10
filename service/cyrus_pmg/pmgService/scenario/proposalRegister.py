@@ -48,7 +48,7 @@ import sqlite3
 import threading
 
 from . import rules, sleeveRepo, sleeves
-from .types import ValidationError
+from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
 SCHEMA_VERSION = 1
@@ -169,25 +169,26 @@ def allocationPicture(results) -> dict:
     }
 
 
-def _pinSleeve(category: str, sleeveName, variant: str):
-    """The (sleeveId, revision) a sleeve name resolves to right now - the
-    version this proposal is being made against."""
+def _pinSleeve(category: str, sleeveName, variant: str, key=None):
+    """The (sleeveId, revision) a sleeve name resolves to right now, for the
+    portfolio being implemented - the edition and version this proposal is
+    being made against (D89)."""
     if not sleeveName:
         return None, None
     under = rules.sleeveCategory(category)
-    for entry in sleeves.listSleeves(under, variant):
+    for entry in sleeves.listSleeves(under, variant, key):
         if entry['name'] == sleeveName:
             full = sleeveRepo.getSleeve(entry['id'])
             return entry['id'], (full['revisions'] if full else None)
     return None, None
 
 
-def implementedPicture(model: dict, variant: str) -> list:
+def implementedPicture(model: dict, variant: str, key=None) -> list:
     """Picture two: the implemented model, sleeves pinned to their revision,
     products carried by name, and no fee field anywhere."""
     out = []
     for group in model.get('groups', []):
-        sleeveId, revision = _pinSleeve(group['category'], group.get('sleeve'), variant)
+        sleeveId, revision = _pinSleeve(group['category'], group.get('sleeve'), variant, key)
         out.append({
             'category': group['category'],
             'weightPct': group['weightPct'],
@@ -249,7 +250,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
             'proposalId', 'The filename {!r} does not carry the Proposal UID {}.'.format(
                 filename, proposalId))
     allocation = allocationPicture(results)
-    implemented = implementedPicture(model, implementation.get('variant'))
+    baseKey = (PortfolioKey.fromStr(results[0]['keyStr'])
+               if results and results[0].get('keyStr') else None)
+    implemented = implementedPicture(model, implementation.get('variant'), baseKey)
     stamp = _now()
     sha = hashlib.sha256(workbook).hexdigest()
     conn = _connect()
