@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sleeve Editions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --accent-ink:#FFFFFF; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --tint:#EEF2F9; --good:#1E6B45; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#8E2A2A; --bad-tint:#F8E7E7; --code:#F1F3F7;
+  --f-display:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+    --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+    --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+    --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+  --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55}
+a{color:var(--accent)}
+.wrap{max-width:1120px;margin:0 auto;padding:40px 28px 96px;display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:0 48px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);padding:28px 18px 72px}.toc{display:none}}
+main{min-width:0;max-width:72ch}
+.mast{grid-column:1/-1;border-bottom:2px solid var(--navy);padding-bottom:22px;margin-bottom:40px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(34px,4.6vw,52px);line-height:1.05;margin:0 0 14px;color:var(--navy);text-wrap:balance;letter-spacing:-.01em}
+.sub{font-size:18px;color:var(--ink-2);max-width:66ch;margin:0 0 18px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+.toc{position:sticky;top:24px;align-self:start;font-size:13px;border-left:1px solid var(--line);padding-left:16px}
+.toc p{margin:0 0 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.toc a{display:block;color:var(--ink-2);text-decoration:none;padding:4px 0;line-height:1.3}
+.toc a:hover{color:var(--accent)}
+.toc a.ind{padding-left:12px;color:var(--ink-3)}
+h2{font-family:var(--f-display);font-weight:500;font-size:30px;line-height:1.15;margin:56px 0 14px;color:var(--navy);text-wrap:balance;letter-spacing:-.005em}
+h3{font-size:17px;font-weight:700;margin:32px 0 8px;color:var(--ink)}
+h4{font-size:14px;font-weight:700;margin:18px 0 6px;color:var(--ink-2);letter-spacing:.02em}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 6px}
+li>ul{margin-top:6px}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--code);padding:1px 5px;border-radius:4px;color:var(--ink)}
+pre{font-family:var(--f-mono);font-size:13px;line-height:1.5;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:14px 16px;overflow-x:auto;margin:0 0 16px}
+pre code{background:none;padding:0}
+strong{font-weight:700}
+.lede{font-size:18px;line-height:1.5;color:var(--ink)}
+.note{border-left:3px solid var(--accent);background:var(--tint);padding:12px 16px;border-radius:0 6px 6px 0;margin:18px 0}
+.note.warn{border-color:var(--warn);background:var(--warn-tint)}
+.note.good{border-color:var(--good);background:var(--good-tint)}
+.note p:last-child{margin-bottom:0}
+.summary{background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;padding:22px 24px;margin:0 0 8px}
+.summary h2{margin:0 0 10px;font-size:24px}
+.summary .rec{display:inline-block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--good);background:var(--good-tint);padding:3px 9px;border-radius:999px;margin-bottom:12px}
+.summary ol{margin-bottom:0}
+.revised{background:var(--warn-tint);border:1px solid var(--warn);border-radius:10px;padding:16px 20px;margin:0 0 28px;font-size:15px}
+.revised h2{font-size:20px;margin:0 0 8px;color:var(--ink)}
+.revised ul{margin-bottom:0}
+.tblwrap{overflow-x:auto;margin:14px 0 22px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+thead th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;background:var(--tint);white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.id{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
+tr.total td{font-weight:700;border-top:2px solid var(--line-strong)}
+.matrix{min-width:900px}
+.matrix td{text-align:center}
+.matrix td:first-child{text-align:left;font-weight:600;white-space:nowrap}
+.pip{display:inline-block;min-width:22px;padding:2px 7px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
+.pip.g{background:var(--good-tint);color:var(--good)}
+.pip.w{background:var(--warn-tint);color:var(--warn)}
+.pip.b{background:var(--bad-tint);color:var(--bad)}
+.pip.n{background:var(--tint);color:var(--ink-3)}
+.appr{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:18px 22px 6px;margin:0 0 18px}
+.appr.rec{border-color:var(--good);box-shadow:0 0 0 3px var(--good-tint)}
+.appr header{display:flex;align-items:baseline;gap:14px;margin-bottom:8px;flex-wrap:wrap}
+.appr .letter{font-family:var(--f-display);font-size:30px;font-weight:500;color:var(--navy);line-height:1;min-width:34px}
+.appr .letter.rec{color:var(--good)}
+.appr h3{margin:0;font-size:19px}
+.appr .tag{margin-left:auto;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.tag.g{background:var(--good-tint);color:var(--good)}
+.tag.w{background:var(--warn-tint);color:var(--warn)}
+.tag.b{background:var(--bad-tint);color:var(--bad)}
+.tag.n{background:var(--tint);color:var(--ink-2)}
+.pm{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;margin:8px 0 6px}
+@media (max-width:640px){.pm{grid-template-columns:1fr}}
+.pm h4{margin-top:6px}
+.pm ul{margin-bottom:8px;padding-left:18px;font-size:14.5px}
+.verdict{font-size:14.5px;color:var(--ink-2);border-top:1px dashed var(--line);padding:10px 0 8px;margin-top:6px}
+.verdict b{color:var(--ink)}
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 20px}
+@media (max-width:640px){.res{grid-template-columns:1fr}}
+.res div{border:1px solid var(--line-strong);border-radius:8px;padding:14px 14px 12px;background:var(--surface);font-size:14px;position:relative}
+.res div b{display:block;font-family:var(--f-mono);font-size:12.5px;color:var(--navy);margin-bottom:4px}
+.res div small{display:block;color:var(--ink-3);font-size:12px;margin-top:6px}
+.res div.hit{border-color:var(--good);background:var(--good-tint)}
+.res .step{position:absolute;top:-10px;left:12px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;background:var(--paper);padding:0 6px;color:var(--ink-3)}
+.ed{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 8px}
+@media (max-width:760px){.ed{grid-template-columns:1fr}}
+.ed .card{border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);padding:12px 14px;font-size:13.5px}
+.ed .card h4{margin:0 0 2px;font-size:14px;color:var(--ink)}
+.ed .card .scope{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);margin-bottom:8px;line-height:1.5}
+.ed .card .count{font-size:12px;color:var(--good);font-weight:600;margin-bottom:8px}
+.ed .card table{font-size:12.5px}
+.ed .card td,.ed .card th{padding:5px 6px}
+.ed .card thead th{background:none}
+.badge{display:inline-block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:4px;background:var(--tint);color:var(--ink-2);margin-left:6px;vertical-align:middle}
+.badge.ed{background:var(--navy);color:var(--paper)}
+.chip{display:inline-block;font-family:var(--f-mono);font-size:12px;background:var(--code);border:1px solid var(--line);border-radius:4px;padding:1px 7px;margin:2px 2px 2px 0}
+.chip.any{color:var(--ink-3);border-style:dashed}
+.dec{counter-reset:d;list-style:none;padding:0}
+.dec li{counter-increment:d;position:relative;padding:12px 14px 12px 54px;border:1px solid var(--line);border-radius:8px;background:var(--surface);margin-bottom:10px}
+.dec li::before{content:counter(d);position:absolute;left:14px;top:10px;font-family:var(--f-display);font-size:24px;color:var(--navy);line-height:1}
+.dec li b{display:block;margin-bottom:3px}
+.dec li .mine{display:block;margin-top:6px;font-size:13.5px;color:var(--good)}
+.dec li .mine::before{content:"Recommendation: ";font-weight:700}
+.wf{counter-reset:s;list-style:none;padding:0;margin:10px 0 18px}
+.wf li{counter-increment:s;position:relative;padding:10px 14px 10px 46px;border-left:2px solid var(--line-strong);margin:0;font-size:15px}
+.wf li::before{content:counter(s);position:absolute;left:-13px;top:9px;width:24px;height:24px;border-radius:50%;background:var(--navy);color:var(--paper);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.wf li b{color:var(--ink)}
+.wf li .ui{display:block;font-size:13px;color:var(--ink-3);margin-top:3px}
+.wf li.same{border-left-color:var(--good)}
+.wf li.same::before{background:var(--good)}
+.effort td:first-child{font-weight:600}
+.small{font-size:13px;color:var(--ink-3)}
+.foot{grid-column:1/-1;margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">PMG Proposal Tool · Design proposal · Revised · For review</p>
+  <h1>Sleeve Editions</h1>
+  <p class="sub">Letting the desk say exactly which resolved strategic portfolios a sleeve's products and weights apply to, so “SMA” can mean one thing for every GBP mandate and another for EUR Moderate and GBP Full, while a PWA still just picks “SMA”.</p>
+  <div class="meta">
+    <span><b>Status</b> proposal, nothing built, nothing committed</span>
+    <span><b>Written against</b> commit <code>ce6329f</code> on <code>datasource-dev</code></span>
+    <span><b>Revised</b> 10 September 2026, after the applicability requirement was widened</span>
+  </div>
+</header>
+
+<main>
+
+<section class="revised" id="revision">
+  <h2>What changed since the first draft, and why the recommendation moved</h2>
+  <p>The first draft recommended scoping a sleeve by <em>currency alone</em>, resolved by a two-level rule, and argued that risk level and allocation type were out of reach because they vary per column. The requirement is now that the desk can say, for any sleeve, which resolved strategic portfolios it applies to, in any combination: all GBP, all GBP ex-Alts, EUR Moderate together with GBP Full. That changes three things.</p>
+  <ul>
+    <li><strong>The recommendation moves from single-value scopes to applicability rules.</strong> A scope column that holds one currency cannot say “EUR Moderate or GBP Full”. An edition now carries a set of rules, each a combination over the five fields of a resolved portfolio, and applies wherever any rule matches.</li>
+    <li><strong>The per-column objection was overstated, and is withdrawn.</strong> Step 2 implements the <em>base</em> column only; comparison columns are never implemented. A sleeve is therefore resolved against one portfolio, the base, and a rule on its risk level or allocation type is perfectly coherent. What a base change does is re-resolve, which the tool already does for a type change.</li>
+    <li><strong>The universe is finite, and that is the whole design.</strong> There are 172 strategic portfolios, 688 once hedging is counted, and the tool already holds every one of them. So applicability is not evaluated as an abstract rule; it is <em>materialised</em> into the exact set of portfolios it names, which is what lets the console show the desk “this edition applies to 43 portfolios” and refuse an overlap before it is saved.</li>
+  </ul>
+</section>
+
+<section class="summary" id="summary">
+  <span class="rec">Recommendation</span>
+  <h2>Editions with explicit applicability, materialised against the universe</h2>
+  <p class="lede">A sleeve keeps its name, and the name is all a PWA sees. Behind it the desk maintains one or more <em>editions</em>, each holding its own products and weights and a set of rules saying which resolved strategic portfolios it applies to. The tool resolves the base portfolio against those rules, serves the one edition that applies, badges it, and pins it into the proposal record.</p>
+  <ol>
+    <li><strong>A rule is a combination over five fields</strong>: currency, hedging, risk level, allocation type, real-assets exclusion. Blank means any; a field may list several values. An edition has one or more rules and applies where any of them matches.</li>
+    <li><strong>One optional fallback per name</strong>, with no rules, applies wherever no other edition of that name does. Everything delivered today becomes a fallback on migration.</li>
+    <li><strong>Overlap between scoped editions of one name is refused at save.</strong> The console computes each edition's portfolios and names the clash, so the desk fixes it by narrowing a rule, not by reasoning about precedence.</li>
+    <li><strong>The PWA's model is untouched.</strong> The rail lists names; the scenario stores <code>{category → name}</code>. A quiet badge says which edition applied. Changing the base portfolio re-resolves, and a name with no edition for the new portfolio is dropped and named, exactly as a type change does now.</li>
+    <li><strong>Delivered as two CSVs</strong>: the existing <code>sleeves.csv</code> plus an <code>Edition</code> column, and a new <code>sleeveRules.csv</code>, one row per rule. Today's 260 rows load unchanged.</li>
+    <li><strong>About five to six days</strong>, the console's rule builder being most of it, plus five decisions from PMG at the end.</li>
+  </ol>
+</section>
+
+<h2 id="today">How a sleeve works today</h2>
+<p>A sleeve is identified by its <strong>implementation type</strong>, its <strong>category</strong> and its <strong>name</strong>, unique among live sleeves, and holds products whose weights sum to one. The allocation touches it in one place, and it is a multiplication:</p>
+<pre><code>item['exactPct'] = catWeight * float(product['weight'])</code></pre>
+<p>The lookup, <code>listSleeves(category, variant)</code>, takes neither the basis nor the portfolio key. The port seam in front of it, <code>list_sleeves(category, basis, variant)</code>, has always received the basis and discarded it. The page already sends currency and hedging on every sleeve request and clears its sleeve cache when the basis changes. So the plumbing for “the library differs by portfolio” is largely in place; what is missing is the library's own ability to say so.</p>
+
+<h3>The thing a sleeve would be resolved against</h3>
+<p>A <strong>resolved strategic portfolio</strong> is five fields, all of which the tool already holds for the base column:</p>
+<div style="margin:6px 0 14px">
+  <span class="chip">currency</span><span class="chip">hedging</span><span class="chip">riskLevel</span><span class="chip">allocationType</span><span class="chip">excludeRealAssets</span>
+</div>
+<p>The first two are the scenario basis, fixed across every column. The last three are the base column's key. An all-equity book has no allocation type and no exclusion; both read <code>NA</code>. The universe holds 172 keys, or 688 resolved portfolios once the four hedging policies are counted, which is also the bake's count. Every rule in this document is judged against that set and nothing else.</p>
+<div class="note">
+  <p><strong>Why the base column is enough.</strong> A scenario may carry up to four columns, but only the first is implemented: step 2's heading reads <em>Implementing USD Moderate Full</em> and the Implementation sheet is that portfolio's. The others are comparisons on the portfolios sheet. So a sleeve is chosen once per category, resolved once against the base, and a rule on risk level or allocation type has exactly one portfolio to be true or false of.</p>
+</div>
+
+<h2 id="dimensions">The five fields, revisited</h2>
+<div class="tblwrap"><table>
+<thead><tr><th>Field</th><th class="num">Values</th><th>Where it comes from</th><th>First draft said</th><th>Now</th></tr></thead>
+<tbody>
+<tr><td>Implementation type</td><td class="num">4</td><td>Chosen before the base portfolio</td><td>Already branches the library</td><td><span class="pip g">unchanged</span></td></tr>
+<tr><td>Currency</td><td class="num">4</td><td>Basis</td><td>Do</td><td><span class="pip g">rule field</span></td></tr>
+<tr><td>Hedging</td><td class="num">4</td><td>Basis</td><td>Reserve, do not resolve</td><td><span class="pip g">rule field</span> — it is part of the resolved portfolio, so supporting it costs nothing and refusing it would be a special case</td></tr>
+<tr><td>Risk level</td><td class="num">8</td><td>Base column</td><td>No: varies per column</td><td><span class="pip g">rule field</span> — the objection is withdrawn above</td></tr>
+<tr><td>Allocation type</td><td class="num">4 + NA</td><td>Base column</td><td>No: varies per column</td><td><span class="pip g">rule field</span></td></tr>
+<tr><td>Real-assets exclusion</td><td class="num">2 + NA</td><td>Base column</td><td>No</td><td><span class="pip g">rule field</span> — an ex-RAs portfolio may reasonably want a different private-markets sleeve</td></tr>
+<tr><td>Mandate size</td><td class="num">∞</td><td>Mandate</td><td>Solved as eligibility</td><td><span class="pip n">unchanged</span> — product minimums and the export gate, not a rule field</td></tr>
+</tbody></table></div>
+
+<h2 id="approaches">The approaches</h2>
+<p>The original eight, with the recommendation now a ninth that supersedes the third. Each is judged on the same questions: does the rail offer only what applies, can a PWA pick the wrong one, can weights differ, can the desk express “EUR Moderate or GBP Full”, what does the export pin, and what changes.</p>
+
+<article class="appr" id="a">
+  <header><span class="letter">A</span><h3>Naming convention</h3><span class="tag b">not viable</span></header>
+  <p>Encode the applicability in the name: “SMA (GBP ex-Alts)”. Nothing to build; the PWA reads the label.</p>
+  <div class="pm">
+    <div><h4>For</h4><ul><li>Nothing to build.</li></ul></div>
+    <div><h4>Against</h4><ul><li>The rail offers every edition under every portfolio; nothing stops a wrong pick and the export cannot check it.</li><li>“EUR Moderate or GBP Full” does not fit in a name anyone would read.</li></ul></div>
+  </div>
+  <p class="verdict"><b>Verdict.</b> What happens if nothing is decided. Moves the burden to the PWA at the moment the tool exists to remove it.</p>
+</article>
+
+<article class="appr" id="b">
+  <header><span class="letter">B</span><h3>Multiply the implementation types</h3><span class="tag b">not viable</span></header>
+  <p>Treat (type × currency × …) as the implementation type, reusing the mechanism that already gives one name different contents per book.</p>
+  <div class="pm">
+    <div><h4>For</h4><ul><li>Zero schema change.</li></ul></div>
+    <div><h4>Against</h4><ul><li>With five fields the count of “types” is in the hundreds; the type selector becomes a restatement of choices already made.</li><li>Cannot express an OR across portfolios at all.</li></ul></div>
+  </div>
+  <p class="verdict"><b>Verdict.</b> Worse under the widened requirement than under the first.</p>
+</article>
+
+<article class="appr" id="c">
+  <header><span class="letter">C</span><h3>Single-value scopes on the sleeve</h3><span class="tag w">superseded</span></header>
+  <p>The first draft's recommendation: one scope column per field, each holding one value or blank, resolved by specificity.</p>
+  <div class="pm">
+    <div><h4>For</h4><ul><li>Simplest possible schema; the PWA model is unchanged.</li></ul></div>
+    <div><h4>Against</h4><ul><li>One value per field cannot say “GBP or EUR”, and one row cannot say “EUR Moderate or GBP Full”. The desk would duplicate a product list across rows to express an OR, and maintain the copies by hand.</li><li>Nested scopes, such as “all GBP” and “GBP ex-Alts”, force a precedence rule.</li></ul></div>
+  </div>
+  <p class="verdict"><b>Verdict.</b> Right for the original ask, insufficient for this one. It survives inside I as the shape of a single rule.</p>
+</article>
+
+<article class="appr" id="d">
+  <header><span class="letter">D</span><h3>Precedence: most specific edition wins</h3><span class="tag w">alternative policy</span></header>
+  <p>Allow editions of one name to overlap and resolve by counting constrained fields: “GBP ex-Alts” beats “all GBP”. Ties are refused at save.</p>
+  <div class="pm">
+    <div><h4>For</h4><ul><li>Lets the desk write the natural pair, a broad edition and a narrow override, without carving the override out of the broad rule.</li></ul></div>
+    <div><h4>Against</h4><ul><li>“Which edition did I get, and why” needs explaining on the rail and in the workbook every time an override fires.</li><li>Ties are real: in this universe “GBP ex-Alts” and “GBP Moderate” share one portfolio and neither is more specific. The save-time check is needed anyway.</li></ul></div>
+  </div>
+  <p class="verdict"><b>Verdict.</b> Not an alternative model but an alternative <em>conflict policy</em> for I, and one of the decisions at the end. Recommended against, narrowly.</p>
+</article>
+
+<article class="appr" id="e">
+  <header><span class="letter">E</span><h3>Rule-based sleeves resolved from product attributes</h3><span class="tag w">not now</span></header>
+  <p>A sleeve holds roles, filled at run time from the catalogue by exposure currency, vehicle and asset class.</p>
+  <div class="pm">
+    <div><h4>For</h4><ul><li>One definition serves every portfolio.</li></ul></div>
+    <div><h4>Against</h4><ul><li>Weights cannot differ by portfolio, and the requirement is that they do.</li><li>The desk loses “this fund, at this weight”; the register pins something the catalogue can later contradict.</li></ul></div>
+  </div>
+  <p class="verdict"><b>Verdict.</b> A screener, not a library. Right only if PMG wants sleeves to follow the catalogue automatically.</p>
+</article>
+
+<article class="appr" id="f">
+  <header><span class="letter">F</span><h3>Product substitution map</h3><span class="tag w">partial</span></header>
+  <p>Sleeves stay portfolio-blind; a map swaps a product for its local equivalent. Weights untouched.</p>
+  <p class="verdict"><b>Verdict.</b> Cannot vary weights or product count, so fails the stated case. Could later complement I for share-class and listing differences.</p>
+</article>
+
+<article class="appr" id="g">
+  <header><span class="letter">G</span><h3>Per-scenario sleeve editing</h3><span class="tag b">not viable</span></header>
+  <p>Let the PWA adjust products and weights inside a scenario.</p>
+  <p class="verdict"><b>Verdict.</b> Undoes the library the two-tier entitlement was built to protect; nothing is learned across proposals. Listed to be rejected.</p>
+</article>
+
+<article class="appr" id="h">
+  <header><span class="letter">H</span><h3>Hedging as a share-class choice</h3><span class="tag n">adjacent</span></header>
+  <p>Where hedging changes only the share class of the same fund at the same weight, that belongs on the product. Where it changes the composition, hedging is a rule field in I and the desk writes an edition for it. Both can coexist.</p>
+  <p class="verdict"><b>Verdict.</b> No longer a reason to keep hedging out of the sleeve; it is a reason to keep the product-level path open too.</p>
+</article>
+
+<article class="appr rec" id="i">
+  <header><span class="letter rec">I</span><h3>Editions with explicit applicability rules, materialised</h3><span class="tag g">recommended</span></header>
+  <p>A sleeve name has one or more editions. Each edition holds products and weights and a set of rules; a rule constrains any of the five fields, with any-of lists per field; an edition applies to a portfolio when any rule matches. One edition per name may have no rules and is the fallback. The tool expands every edition's rules into the exact set of portfolios in the universe, uses that set to resolve the base portfolio, and uses the same sets to refuse overlap between scoped editions of a name at save.</p>
+  <div class="pm">
+    <div><h4>For</h4><ul><li>Expresses every example given, and any other combination, as data the desk can read back.</li><li>The PWA sees one name per sleeve; the wrong pick is impossible because only the applicable edition is served.</li><li>Materialisation makes applicability visible and overlap detectable before it is saved, because the universe is finite and already loaded.</li><li>Each edition is its own row with its own history, revert and archive; the register pins exactly what was proposed.</li><li>The page needs one badge; the seam already carries the basis; the base key is already in hand.</li></ul></div>
+    <div><h4>Against</h4><ul><li>A second table and a rule builder in the console, which is real work.</li><li>A rule expressed by exclusion (“all GBP except ex-Alts”) has to be written by listing what remains, unless the precedence policy is adopted instead.</li><li>Two delivery files rather than one.</li></ul></div>
+  </div>
+  <p class="verdict"><b>Verdict.</b> The smallest model that meets the widened requirement without asking a PWA to think about it. Detailed below.</p>
+</article>
+
+<h2 id="matrix">Side by side</h2>
+<div class="tblwrap"><table class="matrix">
+<thead><tr><th>Question</th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>I</th></tr></thead>
+<tbody>
+<tr><td>Rail offers only what applies</td><td><span class="pip b">no</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip n">n/a</span></td><td><span class="pip g">yes</span></td></tr>
+<tr><td>Wrong pick is impossible</td><td><span class="pip b">no</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip b">no</span></td><td><span class="pip g">yes</span></td></tr>
+<tr><td>Weights can differ by portfolio</td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip b">no</span></td><td><span class="pip b">no</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td></tr>
+<tr><td>“EUR Moderate or GBP Full” in one edition</td><td><span class="pip b">no</span></td><td><span class="pip b">no</span></td><td><span class="pip b">no</span></td><td><span class="pip w">two rows</span></td><td><span class="pip n">n/a</span></td><td><span class="pip b">no</span></td><td><span class="pip n">n/a</span></td><td><span class="pip g">yes</span></td></tr>
+<tr><td>Applicability visible to the desk</td><td><span class="pip b">no</span></td><td><span class="pip w">by type</span></td><td><span class="pip w">by field</span></td><td><span class="pip w">by field</span></td><td><span class="pip b">no</span></td><td><span class="pip b">no</span></td><td><span class="pip n">n/a</span></td><td><span class="pip g">as portfolios</span></td></tr>
+<tr><td>PWA's model unchanged</td><td><span class="pip w">names</span></td><td><span class="pip b">no</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip b">no</span></td><td><span class="pip g">yes</span></td></tr>
+<tr><td>Register pins exactly what was shown</td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip g">yes</span></td><td><span class="pip w">drifts</span></td><td><span class="pip w">two truths</span></td><td><span class="pip w">one-off</span></td><td><span class="pip g">yes</span></td></tr>
+<tr><td>Schema change</td><td><span class="pip g">none</span></td><td><span class="pip g">none</span></td><td><span class="pip w">columns</span></td><td><span class="pip w">columns</span></td><td><span class="pip b">new model</span></td><td><span class="pip w">new table</span></td><td><span class="pip w">new table</span></td><td><span class="pip w">new table</span></td></tr>
+<tr><td>Effort</td><td><span class="pip g">0</span></td><td><span class="pip g">0.5d</span></td><td><span class="pip w">3d</span></td><td><span class="pip w">4d</span></td><td><span class="pip b">8d+</span></td><td><span class="pip w">3d</span></td><td><span class="pip b">5d+</span></td><td><span class="pip w">5–6d</span></td></tr>
+</tbody></table></div>
+
+<h2 id="design">The recommendation in detail</h2>
+
+<h3>The model</h3>
+<ul>
+  <li>A <strong>sleeve option</strong> is what the PWA sees: a name, under a type and a category.</li>
+  <li>An <strong>edition</strong> is a library row: the option's name, a short <strong>edition label</strong> (“GBP”, “EUR Moderate / GBP Full”), products and weights, and zero or more rules. The label is what the rail badges and the workbook prints; it is the desk's words, not the rule spelled out.</li>
+  <li>A <strong>rule</strong> constrains any subset of the five fields. A constrained field lists one or more allowed values. An unconstrained field means any. A rule matches a portfolio when every constrained field contains the portfolio's value.</li>
+  <li>An edition's <strong>applicability</strong> is the set of portfolios in the universe matched by any of its rules. An edition with no rules is the name's <strong>fallback</strong>; at most one per name.</li>
+</ul>
+
+<h3>Resolution, given the base portfolio</h3>
+<div class="res">
+  <div><span class="step">First</span><b>an edition whose rules match</b>Exactly one can, because scoped editions of a name may not overlap.<small>Served, and badged with its label.</small></div>
+  <div class="hit"><span class="step">Otherwise</span><b>the fallback</b>The edition with no rules, if the name has one.<small>What every sleeve delivered today becomes on migration.</small></div>
+  <div><span class="step">Neither</span><b>not offered</b>The name does not appear under this portfolio.<small>Not an error; the same state as a category with no sleeve under a type.</small></div>
+</div>
+
+<h3>Conflict policy</h3>
+<p>Two scoped editions of the same name whose applicability sets intersect are refused at save, and the console names the portfolios they share. The desk resolves it by narrowing one rule. This is the <em>refuse overlap</em> policy; the alternative, <em>most specific wins</em> (D), is decision 2 below. The refusal is possible only because applicability is materialised: the check is a set intersection over at most 688 items, not a reasoning problem.</p>
+
+<h3>Worked example, against the real universe</h3>
+<p>The Multi-Asset “SMA” sleeve for Investment Grade Fixed Income, with the editions your examples imply. Counts are computed from the delivered extract: 172 strategic keys, 688 resolved portfolios. Products in the scoped editions are illustrative.</p>
+<div class="ed">
+  <div class="card">
+    <h4>SMA <span class="badge">fallback</span></h4>
+    <div class="scope">rules: none</div>
+    <div class="count">applies wherever nothing below does</div>
+    <table><thead><tr><th>Product</th><th class="num">Wt</th></tr></thead><tbody>
+      <tr><td>GSAM Core Municipal SMA</td><td class="num">45%</td></tr>
+      <tr><td>GSAM Intermediate Credit SMA</td><td class="num">35%</td></tr>
+      <tr><td>GSAM Short Duration SMA</td><td class="num">20%</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h4>SMA <span class="badge ed">GBP</span></h4>
+    <div class="scope">rule 1: currency = GBP<br>allocation = Full | Core | ex-HFs | NA</div>
+    <div class="count">applies to 36 keys · 144 resolved</div>
+    <table><thead><tr><th>Product</th><th class="num">Wt</th></tr></thead><tbody>
+      <tr><td>GSAM Sterling Credit SMA</td><td class="num">55%</td></tr>
+      <tr><td>GSAM Gilts SMA</td><td class="num">45%</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h4>SMA <span class="badge ed">GBP ex-Alts</span></h4>
+    <div class="scope">rule 1: currency = GBP<br>allocation = ex-Alts</div>
+    <div class="count">applies to 7 keys · 28 resolved</div>
+    <table><thead><tr><th>Product</th><th class="num">Wt</th></tr></thead><tbody>
+      <tr><td>GSAM Sterling Credit SMA</td><td class="num">40%</td></tr>
+      <tr><td>GSAM Gilts SMA</td><td class="num">40%</td></tr>
+      <tr><td>GSAM Sterling Ultra-Short SMA</td><td class="num">20%</td></tr>
+    </tbody></table>
+  </div>
+</div>
+<p>Note what the GBP edition's rule had to say. “All GBP” is 43 keys, and “GBP ex-Alts” is 7 of them, so under the refuse-overlap policy the broad edition lists the four allocation types that are <em>not</em> ex-Alts and lands on 36. The console does this arithmetic for the desk and shows the seven-portfolio clash if they try to save “all GBP” alongside it. Under the precedence policy the GBP edition could simply say <code>currency = GBP</code> and lose to the narrower one.</p>
+<div class="ed">
+  <div class="card">
+    <h4>SMA <span class="badge ed">EUR Mod / GBP Full</span></h4>
+    <div class="scope">rule 1: currency = EUR, risk = Moderate<br>rule 2: currency = GBP, allocation = Full</div>
+    <div class="count">applies to 20 keys · 80 resolved</div>
+    <table><thead><tr><th>Product</th><th class="num">Wt</th></tr></thead><tbody>
+      <tr><td colspan="2" class="small">One edition, two rules, one product list. This is the case single-value scopes could not express.</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card">
+    <h4>What the PWA sees</h4>
+    <div class="scope">base: GBP · Hedged · Moderate · ex-Alts · 0</div>
+    <div class="count">rail lists “SMA” once</div>
+    <p class="small" style="margin:0">Chosen sleeve pill reads <b>SMA</b> <span class="badge ed">GBP ex-Alts</span>. The Implementation preamble prints “SMA (GBP ex-Alts edition)”. The PWA never saw the other editions and never chose between them.</p>
+  </div>
+  <div class="card">
+    <h4>Overlap the console refuses</h4>
+    <div class="scope">“GBP ex-Alts” vs “GBP Moderate”</div>
+    <div class="count" style="color:var(--bad)">1 portfolio in common</div>
+    <p class="small" style="margin:0">GBP · Moderate · ex-Alts is in both. Neither rule is more specific than the other, so even the precedence policy must refuse this one. The console names the key.</p>
+  </div>
+</div>
+
+<h2 id="workflow">What using it looks like</h2>
+
+<h3>The desk, in the repository console</h3>
+<ol class="wf">
+  <li><b>Open the library</b> and pick a category. Sleeves are listed by name; a name with more than one edition shows them grouped beneath it, each with its label and its portfolio count.<span class="ui">List: “SMA · fallback · 3 products” / “GBP · 36 portfolios” / “GBP ex-Alts · 7 portfolios”.</span></li>
+  <li><b>Add an edition</b> from an existing one. The new edition opens pre-filled with that edition's products and weights, so the desk edits rather than retypes.<span class="ui">Editor footer: <em>Add edition</em>, beside <em>Create sleeve</em>.</span></li>
+  <li><b>Give it a label.</b> Short, in the desk's words. This is what the rail badges.<span class="ui">Field: Edition label, e.g. “GBP ex-Alts”.</span></li>
+  <li><b>Build the rules.</b> Five rows of checkboxes, one per field, nothing ticked meaning any. Tick GBP under currency and ex-Alts under allocation type. <em>Add another rule</em> starts a second row for an OR.<span class="ui">Rule builder, with the live line “applies to 7 of 172 portfolios · 28 resolved”, and a <em>show</em> link that lists them.</span></li>
+  <li><b>See the clash before saving.</b> If another edition of the same name shares any portfolio, the builder shows the count in red and lists the keys. Save is disabled until a rule is narrowed.<span class="ui">“Overlaps GBP on 7 portfolios: GBP|LowVol|ex-Alts|0, …”</span></li>
+  <li><b>Set the products and weights</b> as today. The same checks run: weights to one, fee groups priced, minimums present.</li>
+  <li><b>Save.</b> A revision is written for that edition; history, revert, archive and restore are per edition, unchanged from how they work for a sleeve now.</li>
+  <li><b>Optionally, import.</b> A delivered <code>sleeves.csv</code> and <code>sleeveRules.csv</code> seed the library on first open, with the same overlap check refusing a bad delivery whole and naming the rows.</li>
+</ol>
+
+<h3>The PWA, in the tool</h3>
+<ol class="wf">
+  <li class="same"><b>Start a proposal</b>, set the basis, choose the type and the base portfolio. Unchanged.</li>
+  <li class="same"><b>Step 2: pick a sleeve per category.</b> The rail lists names, once each, exactly as now. “SMA” is one line.</li>
+  <li><b>See which edition applied.</b> The chosen-sleeve pill carries a small badge with the edition's label when the edition is not the fallback. Nothing to choose; it is information.<span class="ui">“SMA <span class="badge ed">GBP ex-Alts</span>”</span></li>
+  <li><b>Change the base portfolio or the basis</b>, and every chosen sleeve is re-resolved. A name with no edition for the new portfolio is dropped and the rail says so, the same notice a type change gives today; the PWA re-picks. There is never a silent substitution.</li>
+  <li class="same"><b>Export.</b> The gate requires every category to have a sleeve that resolves under the base portfolio. The workbook's Implementation preamble names the edition; the rows print the products it holds.</li>
+</ol>
+
+<h3>Data delivery, on the Cyrus side</h3>
+<ol class="wf">
+  <li><b><code>sleeves.csv</code> gains one column, <code>Edition</code></b>, the label. Blank means the fallback. Today's 260 rows have it blank and load as fallbacks.<span class="ui">Variant, Category, Sleeve, Edition, ProductId, Weight</span></li>
+  <li><b><code>sleeveRules.csv</code> is new</b>: one row per rule. Blank cell means any; several values in a cell are separated by <code>|</code>. Several rows for one edition are an OR.</li>
+  <li><b>The template workbook</b> gains the sheet, and Appendix C of the porting guide documents both.</li>
+</ol>
+<div class="tblwrap"><table>
+<thead><tr><th>Variant</th><th>Category</th><th>Sleeve</th><th>Edition</th><th>Currency</th><th>Hedging</th><th>RiskLevel</th><th>AllocationType</th><th>ExcludeRealAssets</th></tr></thead>
+<tbody>
+<tr><td>PMG Multi-Asset Portfolio</td><td>Investment Grade Fixed Income</td><td>SMA</td><td>GBP</td><td class="id">GBP</td><td></td><td></td><td class="id">Full|Core|ex-HFs|NA</td><td></td></tr>
+<tr><td>PMG Multi-Asset Portfolio</td><td>Investment Grade Fixed Income</td><td>SMA</td><td>GBP ex-Alts</td><td class="id">GBP</td><td></td><td></td><td class="id">ex-Alts</td><td></td></tr>
+<tr><td>PMG Multi-Asset Portfolio</td><td>Investment Grade Fixed Income</td><td>SMA</td><td>EUR Mod / GBP Full</td><td class="id">EUR</td><td></td><td class="id">Moderate</td><td></td><td></td></tr>
+<tr><td>PMG Multi-Asset Portfolio</td><td>Investment Grade Fixed Income</td><td>SMA</td><td>EUR Mod / GBP Full</td><td class="id">GBP</td><td></td><td></td><td class="id">Full</td><td></td></tr>
+</tbody></table></div>
+<p class="small">Rows three and four are one edition with two rules. A rule that names a value the universe does not contain is refused by name, the way an unknown ticker is today.</p>
+
+<h3>What changes, by layer</h3>
+<div class="tblwrap"><table>
+<thead><tr><th>Layer</th><th>Today</th><th>Proposed</th></tr></thead>
+<tbody>
+<tr><td><b>Library schema</b><br><span class="small">sleeveRepo.py</span></td><td><code>sleeves(variant, category, name, …)</code>; live-unique on those three.</td><td>Add <code>label TEXT NOT NULL DEFAULT ''</code> to <code>sleeves</code> and <code>sleeveHistory</code>. New table <code>sleeveRules(sleeveId, position, currency, hedging, riskLevel, allocationType, excludeRealAssets)</code>, each cell a <code>|</code>-list or blank. Live-unique on <code>(variant, category, name, label)</code>; at most one live edition per name with no rules. Rules are copied into the history row's JSON so revert restores them.</td></tr>
+<tr><td><b>Migration</b></td><td>—</td><td>Add the column and the table on first open, guarded by the schema-version key in <code>meta</code>. Every existing row becomes a fallback. Nothing is rewritten.</td></tr>
+<tr><td><b>Applicability</b><br><span class="small">new: sleeveScope.py</span></td><td>—</td><td><code>materialise(rules) → set of resolved keys</code> over <code>universe.keys() × HEDGING_POLICIES</code>; <code>matches(rules, portfolio)</code>; <code>overlap(a, b)</code>. Pure functions over the loaded universe, cached against its generation like the option lists are.</td></tr>
+<tr><td><b>Validation</b><br><span class="small">sleeveRepo._validate</span></td><td>Weights, name, fee groups.</td><td>Plus: every rule value exists in the universe's vocabulary; at most one fallback per name; no overlap among scoped editions of the name, reported as the shared keys.</td></tr>
+<tr><td><b>Lookup</b><br><span class="small">sleeves.py</span></td><td><code>listSleeves(category, variant)</code></td><td><code>listSleeves(category, variant, portfolio)</code>: group live editions by name, resolve each name against the portfolio, return one entry per name carrying <code>edition: {label}</code> or <code>null</code> for the fallback. <code>sleeveExists</code> likewise. <code>listAll</code> for the console returns every edition with its rules and its count.</td></tr>
+<tr><td><b>Port seam</b><br><span class="small">scenarioPort.py, three adapters</span></td><td><code>list_sleeves(category, basis, variant)</code></td><td><code>list_sleeves(category, basis, variant, baseKey)</code>. The one interface change.</td></tr>
+<tr><td><b>Endpoints</b><br><span class="small">dashboardRouter.py</span></td><td><code>GET /scenario/sleeves</code> takes category, variant, currency, hedging.</td><td>Also takes <code>key</code>, the base column's key string, which the page already has. Repository create and update accept <code>label</code> and <code>rules</code>. New <code>POST …/sleeves/{id}/editions</code> to add an edition from an existing one, and <code>POST …/repository/applicability</code> to preview a rule set's count, keys and overlaps without saving. Routes 28 → 30.</td></tr>
+<tr><td><b>Scenario state</b></td><td><code>sleeves: {category → name}</code></td><td>Unchanged. Resolution happens at read time against the stored base key and basis.</td></tr>
+<tr><td><b>Export gate</b></td><td>Every category's sleeve exists under the type.</td><td>… and resolves under the base portfolio. Same call, one more argument.</td></tr>
+<tr><td><b>Workbook</b></td><td>Receives resolved sleeves.</td><td>Preamble names the edition when it is not the fallback: “SMA (GBP ex-Alts edition)”.</td></tr>
+<tr><td><b>Proposal register</b></td><td>Pins sleeve id and revision.</td><td>Unchanged; the id is the edition. Picture two shows the label.</td></tr>
+<tr><td><b>The page</b><br><span class="small">core.js, implementation.js</span></td><td>Sends basis; clears <code>sleeveLib</code> on basis change.</td><td>Also sends the base key and clears the cache when the base column changes. One badge on the pill and one in the select. The drop-and-name notice already exists.</td></tr>
+<tr><td><b>Repository console</b><br><span class="small">repository.js</span></td><td>One sleeve per row.</td><td>Editions grouped under the name; edition label field; rule builder with live count, key list and overlap report; <em>Add edition</em>; archive and activity CSVs gain label and rules. The bulk of the work.</td></tr>
+<tr><td><b>Tests</b></td><td>—</td><td>Materialisation counts against the fixture universe; the four examples in this document; overlap refused with the right keys; fallback uniqueness; old CSV loads as fallbacks; migration idempotent; gate refuses a name that does not resolve; JS badge mirror; rule vocabulary refused by name.</td></tr>
+</tbody></table></div>
+
+<h3>Why rules are stored as data, not as a string</h3>
+<p>Because the tool has to evaluate them, count them, intersect them and print them, and the console has to build them with checkboxes. A grammar in a string would need a parser, an error vocabulary and an editor; five columns and a <code>|</code> need none of those, and the CSV reads as a table.</p>
+
+<h3>Why applicability is materialised rather than evaluated</h3>
+<p>Evaluating a rule against one portfolio is trivial either way. Materialising it into a set is what makes the <em>console</em> honest: the desk sees a count and a list rather than a promise, overlap becomes an intersection the tool can name, and an unknown value is caught at save rather than at the moment a PWA picks. It costs nothing at 688 items and is recomputed only when the universe reloads.</p>
+
+<h2 id="not">What this deliberately does not do</h2>
+<ul>
+  <li><strong>No precedence by default.</strong> Exactly one edition can apply, so “which one did I get” has one answer with no reasoning. Decision 2 can reverse this.</li>
+  <li><strong>No per-column sleeves.</strong> Comparison columns are never implemented, so they carry no sleeves. If a future version implements more than one column, each would be resolved separately by the same rules, and nothing here prevents that.</li>
+  <li><strong>No mandate-size rules.</strong> Eligibility by size is already handled per product through minimums and the export gate; folding it into rules would create two mechanisms for one question.</li>
+  <li><strong>No PWA-side choice between editions.</strong> The label is shown after the fact. A PWA who wants the other edition wants a different portfolio, and should change that.</li>
+</ul>
+
+<h2 id="decisions">Decisions needed from PMG</h2>
+<ol class="dec">
+  <li><b>Is the five-field rule the right vocabulary?</b> Currency, hedging, risk level, allocation type, real-assets exclusion: the fields of a resolved portfolio. Anything else the desk wants to scope by would have to come from somewhere else.<span class="mine">Yes; it is exactly what the bake is keyed on.</span></li>
+  <li><b>Refuse overlap, or most specific wins?</b> Refusal means a broad edition must carve out its narrow sibling by listing what remains, which the console helps with. Precedence means the pair can be written naturally, at the cost of explaining which applied whenever an override fires, and ties must still be refused.<span class="mine">Refuse overlap. One edition applies, always, and the desk sees the arithmetic.</span></li>
+  <li><b>Does a fallback apply wherever no scoped edition does, or must every portfolio be explicitly covered?</b><span class="mine">Fallback applies. It is how today's library migrates, and a name that should not exist for some portfolio simply has no fallback.</span></li>
+  <li><b>Should the PWA see the edition label at all?</b> The requirement is that the rail shows “SMA” only; a badge after the choice does not contradict that, but PMG may prefer silence.<span class="mine">Show the label, quietly, on the pill and in the workbook preamble. A proposal should be able to say what it holds and why.</span></li>
+  <li><b>Should rules be allowed to name values not yet in the universe?</b> A delivery may arrive before the portfolios it refers to.<span class="mine">No. Refuse by name at save, as with unknown tickers; a rule about a portfolio that does not exist is most often a typo.</span></li>
+</ol>
+
+<h2 id="effort">Effort and sequencing</h2>
+<div class="tblwrap"><table class="effort">
+<thead><tr><th>Step</th><th>Work</th><th class="num">Est.</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Schema, migration, rules table, uniqueness, seed columns and the second CSV, template workbook, Appendix C</td><td class="num">1 day</td></tr>
+<tr><td>2</td><td>Materialisation module; resolution; overlap and vocabulary validation; lookup and seam signatures; export gate; router threading; tests</td><td class="num">1 day</td></tr>
+<tr><td>3</td><td>Page: base key on the request, cache invalidation on base change, badges, mirror test</td><td class="num">½ day</td></tr>
+<tr><td>4</td><td>Console: grouped editions, label field, rule builder with live count and overlap report, <em>Add edition</em>, applicability preview endpoint, archive and activity columns</td><td class="num">2–2½ days</td></tr>
+<tr><td>5</td><td>Workbook preamble; register picture two; deviation record; porting guide</td><td class="num">½ day</td></tr>
+<tr class="total"><td></td><td>Total, with the suite green throughout</td><td class="num">≈ 5–6 days</td></tr>
+</tbody></table></div>
+<p>Steps 1 and 2 make the feature real for a delivered CSV before the console can author editions, which is likely the order the data arrives in. Nothing in steps 1–3 changes what a PWA does.</p>
+
+<div class="note good">
+  <p><strong>The short version for the desk.</strong> A sleeve keeps its name. Behind the name you can keep several versions, and for each one say exactly which strategic portfolios it is for, in any combination: all GBP, GBP ex-Alts, EUR Moderate together with GBP Full. The tool shows you how many portfolios that is and stops you saving two versions that claim the same one. A PWA picks “SMA”, gets the right version for their portfolio, and can see which one it was.</p>
+</div>
+
+</main>
+
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#revision">What changed</a>
+  <a href="#summary">Summary</a>
+  <a href="#today">How it works today</a>
+  <a href="#dimensions">The five fields</a>
+  <a href="#approaches">The approaches</a>
+  <a class="ind" href="#a">A · Naming convention</a>
+  <a class="ind" href="#b">B · Multiply the types</a>
+  <a class="ind" href="#c">C · Single-value scopes</a>
+  <a class="ind" href="#d">D · Precedence</a>
+  <a class="ind" href="#e">E · Rule-based</a>
+  <a class="ind" href="#f">F · Substitution map</a>
+  <a class="ind" href="#g">G · Per-scenario edits</a>
+  <a class="ind" href="#h">H · Hedging on the product</a>
+  <a class="ind" href="#i">I · Applicability rules</a>
+  <a href="#matrix">Side by side</a>
+  <a href="#design">The recommendation</a>
+  <a href="#workflow">What using it looks like</a>
+  <a href="#not">What it does not do</a>
+  <a href="#decisions">Decisions needed</a>
+  <a href="#effort">Effort</a>
+</nav>
+
+<footer class="foot">Facts about the current model are read from <code>sleeveRepo.py</code>, <code>sleeves.py</code>, <code>scenarioPort.py</code>, <code>rules.py</code>, <code>core.js</code> and <code>sleeves.csv</code> at commit <code>ce6329f</code>. Portfolio counts are computed against the delivered strategic extract: 172 keys, 688 resolved. Products in the scoped editions are illustrative and are not in the delivered catalogue.</footer>
+
+</div>
+</body>
+</html>
