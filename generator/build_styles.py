@@ -218,9 +218,6 @@ h2.stage-title{font-family:var(--f-num);font-size:39px;font-weight:480;
   border:2px solid var(--line-strong);border-top-color:var(--accent);
   border-radius:50%;animation:resolvespin .7s linear infinite}
 @keyframes resolvespin{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){
-  .resolving{animation:none;border-top-color:var(--accent);opacity:.7}
-}
 @media (max-width:640px){h2.stage-title{font-size:32px}.stage-sub{font-size:14px}}
 .sec-note{font-size:14.5px;color:var(--ink-3);max-width:52ch}
 .lede{font-size:16.5px;color:var(--ink-2);max-width:62ch;margin:10px 0 0}
@@ -320,7 +317,6 @@ input:focus-visible,select:focus-visible,.btn:focus-visible,.toggle:focus-visibl
 @property --fixed-col{syntax:'<length>';inherits:true;initial-value:0px}
 .tbl.alloc{transition:width var(--col-motion),
   --fixed-c1 var(--col-motion),--fixed-col var(--col-motion)}
-@media (prefers-reduced-motion:reduce){.tbl.alloc{transition:none}}
 /* The risk table lays out automatically and takes its geometry from these two
    measured values (sizeRiskColumns). Column one is pinned exactly - min and
    max together - so the crisis names cannot be clipped and cannot push into
@@ -407,7 +403,6 @@ tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;lett
   .fieldgrid{grid-template-columns:1fr}
   .btn{width:100%;text-align:center}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 """
 
 from themes import THEMES, DEFAULTS
@@ -425,16 +420,13 @@ main{display:block}
   color:#fff;padding:9px 16px;border-radius:0 0 6px 0;font-family:var(--f-num);font-size:13px}
 .skip-link:focus{left:0}
 
-/* skeleton cells (spec 10.1): a 60%-width shimmer bar; static tint under
-   reduced motion */
+/* skeleton cells (spec 10.1): a 60%-width shimmer bar */
 .skel{display:inline-block;width:60%;min-width:42px;height:12px;border-radius:3px;
   background:linear-gradient(90deg,var(--line) 25%,var(--surface-2) 42%,var(--line) 60%);
   background-size:200% 100%;animation:skel-sweep 1.1s linear infinite}
 @keyframes skel-sweep{from{background-position:200% 0}to{background-position:-200% 0}}
-@media (prefers-reduced-motion:reduce){.skel{animation:none;background:var(--line)}}
 .col-ellipsis{display:inline-block;margin-left:5px;animation:skel-blink 1.2s steps(4,end) infinite}
 @keyframes skel-blink{0%{opacity:.2}50%{opacity:1}100%{opacity:.2}}
-@media (prefers-reduced-motion:reduce){.col-ellipsis{animation:none}}
 
 /* ── the service being down (D64) ──
    Two surfaces. The banner is for a workspace that survived on its cache -
@@ -476,7 +468,6 @@ main{display:block}
 .down-toggle:hover{color:var(--ink-2)}
 .down-reason{display:block;margin-top:7px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   font-size:11.5px;color:var(--ink-3);word-break:break-word}
-@media (prefers-reduced-motion:reduce){.degraded{transition:none}}
 /* the failed column (spec 10.3): Failed chip in the header, Retry beneath it */
 .tbl thead th .bdg{margin-left:7px;vertical-align:middle}
 .col-retry{display:block;margin:4px 0 0 auto;font:inherit;font-family:var(--f-num);
@@ -513,16 +504,12 @@ main{display:block}
    other again, which is the thing being fixed. */
 .doc-reveal{animation:docreveal var(--reveal-motion) ease-out both}
 @keyframes docreveal{from{opacity:0}to{opacity:1}}
-@media (prefers-reduced-motion:reduce){.doc-reveal{animation:none}}
 
 .tier-ring{position:relative}
 .tier-ring::after{content:"";position:absolute;inset:6px 11px;pointer-events:none;
   border:2px solid var(--rail-focus,#8FB4FF);border-radius:5px;
   animation:tierpulse 2.6s ease-in-out infinite}
 @keyframes tierpulse{0%,100%{opacity:.22}50%{opacity:1}}
-@media (prefers-reduced-motion:reduce){
-  .tier-ring::after{animation:none;opacity:.85}
-}
 
 /* basis rebuild confirmation (spec 11.4) */
 .basis-confirm{margin-top:10px;background:var(--rail-input-bg,#1D2F4B);
@@ -607,7 +594,6 @@ main{display:block}
   transition:background .12s ease}
 .col-rm:hover{background:var(--surface-2)}
 .col-rm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-@media (prefers-reduced-motion:reduce){.col-rm{transition:none}}
 
 /* Collapsing the rail. It folds to a strip that still carries the control, so
    the way back is always in view, and the document reclaims the width. */
@@ -656,13 +642,6 @@ body.rail-collapsed .rail-brand>b,body.rail-collapsed .rail-brand>span{opacity:0
   transition:opacity 110ms linear}
 body.has-rail.rail-collapsed .shell{margin-left:var(--rail-w-collapsed,48px);max-width:none}
 
-/* Spec 13: reduced motion gets the finished layout and no animation. */
-@media (prefers-reduced-motion:reduce){
-  .rail,.rail-tiers,.rail-brand,.rail-brand>b,.rail-brand>span,
-  body.has-rail .shell,body.rail-collapsed .rail-tiers,
-  body.rail-collapsed .rail-brand>b,body.rail-collapsed .rail-brand>span{transition:none}
-  body.rail-collapsed .rail-tiers{visibility:hidden}
-}
 @media (max-width:1039px){
   /* Stacked: the rail is static and full width, so there is no fold to slide.
      Collapsing hides the tiers and nothing animates sideways. */

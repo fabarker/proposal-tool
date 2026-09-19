@@ -42,8 +42,6 @@ SHARED_CSS = r"""
   visibility 0s linear 420ms}
 /* the frame in which the renderer paints the outgoing state, before it flips */
 .tier-body.no-roll{transition:none}
-@media (prefers-reduced-motion:reduce){
-  .tier-roll,.tier-body,.tier.is-rolled .tier-body{transition:none}}
 .tier-edit{background:none;border:0;padding:0;font:inherit;font-size:12px;letter-spacing:.06em;
   text-transform:uppercase;color:var(--rail-accent);cursor:pointer;font-weight:700}
 .tier-edit:hover{text-decoration:underline}
@@ -116,10 +114,8 @@ dl.md-kv dd{margin:0;color:var(--rail-ink);font-weight:500;overflow-wrap:anywher
 .viz-tip.on{display:block}
 .viz-tip b{color:#8FB4FF;font-weight:700}
 .viz-empty{padding:26px 0;font-size:14px;color:var(--ink-3);text-align:center}
-@media (prefers-reduced-motion:reduce){.viz .seg:hover{filter:none}}
 .tbl thead th.just-added{animation:landed 1.4s ease-out}
 @keyframes landed{0%{background:#E3EBFA}60%{background:#E3EBFA}100%{background:var(--head-bg)}}
-@media (prefers-reduced-motion:reduce){.tbl thead th.just-added{animation:none}}
 .pk-note{font-size:12.5px;color:var(--rail-ink-3);line-height:1.45;margin:10px 0 0}
 /* ── landing ─────────────────────────────────────────────────────────────────
    The Swiss direction, chosen 30 Aug 2026. There is no hero artefact: the type

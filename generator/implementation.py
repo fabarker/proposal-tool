@@ -45,8 +45,7 @@ IMPL_CSS = r"""
    cycle, which read as a rendering artefact rather than an invitation; this
    one carries a tinted disc, two rings leaving at different rates, and a small
    swell of the disc itself, on a cycle short enough to catch the eye without
-   nagging. Reduced motion keeps the tint and a static double ring, so the
-   affordance survives with the movement removed. */
+   nagging. */
 .step-beckon .step-index{animation:stepbeckon 1.6s ease-in-out infinite;
   border-color:var(--accent);color:var(--accent);background:#EAF1FC}
 @keyframes stepbeckon{
@@ -54,10 +53,6 @@ IMPL_CSS = r"""
     transform:scale(1)}
   50%{box-shadow:0 0 0 10px rgba(31,95,191,0),0 0 0 17px rgba(31,95,191,0);
     transform:scale(1.09)}
-}
-@media (prefers-reduced-motion:reduce){
-  .step-beckon .step-index{animation:none;transform:none;
-    box-shadow:0 0 0 4px rgba(31,95,191,.34),0 0 0 8px rgba(31,95,191,.16)}
 }
 .step:disabled:hover{background:none}
 .step-index{width:37.5px;height:37.5px;flex:0 0 auto;display:grid;place-items:center;
@@ -71,7 +66,6 @@ IMPL_CSS = r"""
 .step[aria-selected="true"] .step-index{background:#16243A;color:#fff;border-color:#16243A}
 .step[aria-selected="true"] .step-label strong{font-weight:700}
 .step-connector{width:100px;height:1px;flex:0 0 auto;background:var(--line-strong);margin:0 12.5px}
-@media (prefers-reduced-motion:reduce){.step-index{transition:none}}
 /* Narrow: the descriptions go before the stage names do, and the connector
    shrinks rather than pushing the second stage off the edge. */
 @media (max-width:719px){
@@ -127,8 +121,6 @@ IMPL_CSS = r"""
   to{opacity:0;max-height:0;transform:translateY(-6px)}}
 .fee-body.unravel{animation:feeunravel 360ms cubic-bezier(.4,0,.2,1);overflow:hidden}
 .fee-body.ravel{animation:feeravel 360ms cubic-bezier(.4,0,.2,1) both;overflow:hidden}
-@media (prefers-reduced-motion:reduce){
-  .fee-body.unravel,.fee-body.ravel{animation:none}}
 .fee-field{display:grid;gap:6px;margin:0 0 14px;padding:0 0 14px;
   border-bottom:1px solid var(--rail-line)}
 .fee-group .fee-field:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
@@ -289,7 +281,6 @@ IMPL_CSS = r"""
 .sl-progress{margin:12px 0 0;font-size:13px;color:var(--rail-ink-2)}
 .sl-bar{height:4px;border-radius:2px;background:#22334E;overflow:hidden;margin:6px 0 0}
 .sl-bar i{display:block;height:100%;background:var(--rail-accent);transition:width .2s}
-@media (prefers-reduced-motion:reduce){.sl-bar i{transition:none}}
 
 /* ── implementation table ── */
 /* 30px below, matching .sec-head.stage-head - both steps open on the same
@@ -309,7 +300,6 @@ IMPL_CSS = r"""
 .progress-track i{display:block;height:100%;width:var(--progress);background:#176A33;
   transition:width .2s ease}
 .progress-track.is-done i{background:#176A33}
-@media (prefers-reduced-motion:reduce){.progress-track i{transition:none}}
 
 /* ── export card, from proposalToolv2 ──
    Its structure verbatim; its greens, ambers and reds swapped for the ones
@@ -349,7 +339,6 @@ IMPL_CSS = r"""
    read across, where those are read down. .tbl sets 15px for both. */
 .tbl.impl{min-width:1690px;transition:min-width var(--col-motion);font-size:13px}
 .tbl.impl.no-fees,.tbl.impl.fees-out{min-width:1340px}
-@media (prefers-reduced-motion:reduce){.tbl.impl{transition:none}}
 .tbl.impl td.txt{white-space:nowrap}
 /* both identity columns stay pinned while the attribute and money columns scroll */
 /* Column 1 sizes to its longest label rather than a fixed 248px. Column 2 is
@@ -422,10 +411,6 @@ IMPL_CSS = r"""
 .tbl.impl.fees-out th.fee-col,.tbl.impl.fees-out td.fee-col{
   animation:feecolout 360ms ease-in both}
 .tbl.impl.fees-out .fcw{animation:feespanout 360ms cubic-bezier(.4,0,.2,1) both}
-@media (prefers-reduced-motion:reduce){
-  .tbl.impl.fees-in th.fee-col,.tbl.impl.fees-in td.fee-col,.tbl.impl.fees-in .fcw,
-  .tbl.impl.fees-out th.fee-col,.tbl.impl.fees-out td.fee-col,
-  .tbl.impl.fees-out .fcw{animation:none}}
 /* Remove control inside the sleeve pill. Sized to stay inside an 11px pill
    without stretching it, and given a real hit area by the negative margin
    rather than by growing the pill. */
@@ -453,7 +438,6 @@ IMPL_CSS = r"""
   text-transform:uppercase;color:var(--ink-2);font-weight:700;align-self:flex-start}
 .dn{width:118px;height:118px;display:block;transform:rotate(-90deg)}
 .dn-arc{transition:stroke-dasharray .25s ease,stroke-dashoffset .25s ease}
-@media (prefers-reduced-motion:reduce){.dn-arc{transition:none}}
 .dn-key{list-style:none;margin:11px 0 0;padding:0;width:100%;display:grid;gap:3px}
 .dn-key li{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);
   line-height:1.35}

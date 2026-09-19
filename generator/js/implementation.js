@@ -477,18 +477,13 @@ var feeReveal = false;
 var feeHiding = false;
 var railPadWas = null;                /* the rail's own padding, while borrowed */
 
-function reducedMotion() {
-  return !!(window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
-
-/* Play the leave animation over the live DOM, then hand back. Reduced motion
-   and a page with nothing to animate both commit straight away. */
+/* Play the leave animation over the live DOM, then hand back. A page with
+   nothing to animate commits straight away. */
 function hideFeesThen(commit) {
   if (feeHiding) return;
   var body = document.querySelector('#tier-sleeves .fee-body');
   var table = document.querySelector('.tbl.impl');
-  if (reducedMotion() || (!body && !table)) { commit(); return; }
+  if (!body && !table) { commit(); return; }
   feeHiding = true;
   if (body) body.classList.add('ravel');
   if (table) table.classList.add('fees-out');
@@ -551,7 +546,7 @@ function scrollFeeGroupIntoView(smooth) {
     window.setTimeout(releaseRailPad, FEE_MOTION + 80);
   }
   if (rail.scrollTo) {
-    rail.scrollTo({ top: top, behavior: (smooth && !reducedMotion()) ? 'smooth' : 'auto' });
+    rail.scrollTo({ top: top, behavior: smooth ? 'smooth' : 'auto' });
   } else {
     rail.scrollTop = top;
   }

@@ -389,7 +389,6 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .tier-admin:hover{color:#fff;border-color:var(--rail-input-border,#52739C)}
 .tier-admin:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:1px}
 .tier-h-r{display:flex;align-items:center;gap:9px}
-@media (prefers-reduced-motion:reduce){.rail-admin-btn{transition:none}}
 /* ── the catalogue view (D58), laid out as the terminal (D63) ──
    A facet rail, a dense table with the figures on the right, a tray of pins
    that opens into a comparison, a side panel on demand. Density is the

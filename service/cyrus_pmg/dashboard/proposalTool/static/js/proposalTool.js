@@ -1284,7 +1284,7 @@ function applyBaseRoll() {
   var body = el.querySelector('.tier-body');
   var roll = state.baseRoll;
   state.baseRoll = null;
-  if (!body || !roll || prefersReducedMotion()) {
+  if (!body || !roll) {
     el.classList.toggle('is-rolled', state.baseCollapsed);
     return;
   }
@@ -1295,11 +1295,6 @@ function applyBaseRoll() {
   window.requestAnimationFrame(function () {
     el.classList.toggle('is-rolled', roll === 'up');
   });
-}
-
-function prefersReducedMotion() {
-  return !!(window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 function renderBase() {
@@ -1660,8 +1655,6 @@ var rowSnapshots = {};                  /* per table, held across a render pair 
 
 function animateRowChanges(table, mutate) {
   var slot = table.id || 'table';
-  var reduced = window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* One change renders twice: optimistically while the column is loading, and
      again when the resolve lands. The snapshot is taken on the first of those
@@ -1672,7 +1665,7 @@ function animateRowChanges(table, mutate) {
      Ghosts are excluded: they carry data-rk because they are clones of real
      rows, and counting them would make the next render try to remove them
      again. */
-  if (!reduced && !rowSnapshots[slot]) {
+  if (!rowSnapshots[slot]) {
     rowSnapshots[slot] = { keys: {}, order: [] };
     var old = table.querySelectorAll('tbody tr[data-rk]:not([data-ghost])');
     for (var i = 0; i < old.length; i++) {
@@ -1683,7 +1676,6 @@ function animateRowChanges(table, mutate) {
   }
 
   mutate();
-  if (reduced) { rowSnapshots[slot] = null; return; }
 
   /* Still settling: keep the snapshot and animate on the render that lands. */
   if (state.columns.some(function (c) { return c.status === 'loading'; })) return;
@@ -1998,9 +1990,7 @@ function toggleRail() {
    settles, which reads as the table coming to rest rather than as a jump. */
 function trackRailMotion() {
   var rail = document.querySelector('.rail');
-  var reduced = window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!rail || reduced) { sizeComparisonTables(); return; }
+  if (!rail) { sizeComparisonTables(); return; }
 
   var pending = true;
   function settle(e) {
@@ -2491,14 +2481,10 @@ function renderStageChrome() {
   var view = document.getElementById('view-aa');
   if (view && show && !stageShown) {
     stageShown = true;
-    var reduced = window.matchMedia
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!reduced) {
-      view.classList.remove('doc-reveal');
-      void view.offsetWidth;                 /* restart if it is still running */
-      view.classList.add('doc-reveal');
-      window.setTimeout(function () { view.classList.remove('doc-reveal'); }, 1400);
-    }
+    view.classList.remove('doc-reveal');
+    void view.offsetWidth;                   /* restart if it is still running */
+    view.classList.add('doc-reveal');
+    window.setTimeout(function () { view.classList.remove('doc-reveal'); }, 1400);
   }
   /* Re-arm only for a genuinely new scenario - no columns at all, or back on
      the landing. A column that is merely re-resolving must not reveal twice. */
@@ -4192,18 +4178,13 @@ var feeReveal = false;
 var feeHiding = false;
 var railPadWas = null;                /* the rail's own padding, while borrowed */
 
-function reducedMotion() {
-  return !!(window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-}
-
-/* Play the leave animation over the live DOM, then hand back. Reduced motion
-   and a page with nothing to animate both commit straight away. */
+/* Play the leave animation over the live DOM, then hand back. A page with
+   nothing to animate commits straight away. */
 function hideFeesThen(commit) {
   if (feeHiding) return;
   var body = document.querySelector('#tier-sleeves .fee-body');
   var table = document.querySelector('.tbl.impl');
-  if (reducedMotion() || (!body && !table)) { commit(); return; }
+  if (!body && !table) { commit(); return; }
   feeHiding = true;
   if (body) body.classList.add('ravel');
   if (table) table.classList.add('fees-out');
@@ -4266,7 +4247,7 @@ function scrollFeeGroupIntoView(smooth) {
     window.setTimeout(releaseRailPad, FEE_MOTION + 80);
   }
   if (rail.scrollTo) {
-    rail.scrollTo({ top: top, behavior: (smooth && !reducedMotion()) ? 'smooth' : 'auto' });
+    rail.scrollTo({ top: top, behavior: smooth ? 'smooth' : 'auto' });
   } else {
     rail.scrollTop = top;
   }

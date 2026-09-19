@@ -1453,7 +1453,7 @@ async function apiFetch(path, opts) {
     so on the same curve the number looked finished while the row was still going. A row cannot
     be transitioned &mdash; <code>display:table-row</code> does not interpolate &mdash; so what
     moves is each cell's padding, line-height and border, and the max-height of a wrapper inside
-    it. Reduced motion gets every finished state and no animation. Deviation D42.</p></div>
+    it. Motion plays whatever the platform's reduced-motion setting. Deviations D42, D89.</p></div>
   <div class="rule"><p><strong>The first appearance is one movement, not a sequence.</strong>
     Rows are not animated into a table that was empty: opening each from collapsed made the
     allocation table grow under the sections below it and shove them down the page. Everything
@@ -1465,8 +1465,7 @@ async function apiFetch(path, opts) {
     controls reflow through every width down to 48px looks like the fields crushing themselves
     and costs a full relayout per frame. The tiers fade and take
     <code>visibility:hidden</code> at the end of the fold, not the start, so they leave the tab
-    order only once they have gone. Reduced motion gets the finished layout and no animation
-    (&sect;13).</p></div>
+    order only once they have gone (&sect;13.5).</p></div>
   <div class="rule"><p><strong>The columns are sized once, when the fold settles.</strong> Not per
     frame: one pass over the allocation and risk tables measures at about 18ms, past the frame
     budget on its own, and it usually has nothing to do &mdash; the data columns sit at their cap
@@ -1512,8 +1511,7 @@ async function apiFetch(path, opts) {
   <ul>
     <li><strong>Add to table</strong> inserts the column immediately and <strong>the popover stays
       open</strong> with the risk select cleared, so three comparisons are three presses.</li>
-    <li>The new column header is highlighted for 1.4s, suppressed under
-      <code>prefers-reduced-motion</code>. Both tables scroll to reveal it.</li>
+    <li>The new column header is highlighted for 1.4s. Both tables scroll to reveal it.</li>
     <li>Options with no stored portfolio are <strong>disabled and suffixed &ldquo;&mdash;
       unavailable&rdquo;</strong>; those already on screen, &ldquo;&mdash; already added&rdquo;.</li>
     <li>At the cap the popover replaces its controls with an explanation pointing at the rail, and
@@ -1835,7 +1833,7 @@ portfolio total fee = Σ weighted fee</code></pre>
     <li>Placeholder option: <em>&ldquo;Select a sleeve&hellip;&rdquo;</em>.</li>
     <li>A filled row is visually distinguished from an unfilled one.</li>
     <li>Beneath: <em>&ldquo;<em>n</em> of <em>m</em> categories have a sleeve&rdquo;</em> and a
-      progress bar. The bar respects <code>prefers-reduced-motion</code>.</li>
+      progress bar.</li>
   </ul>
 
   <h3><span class="n">9.5</span>Charts</h3>
@@ -1911,7 +1909,6 @@ portfolio total fee = Σ weighted fee</code></pre>
         is no topbar.</td></tr>
     </tbody>
   </table></div>
-  <p>Shimmer respects <code>prefers-reduced-motion</code>: a static tint of the same colour.</p>
   <div class="rule"><p><strong>Showing is not the same as being ready.</strong> A column that is
     re-resolving still holds the figures from last time, and it keeps showing them. Judging on
     status alone emptied the row union, blanked every cell, emptied the risk dashboard and hid
@@ -2282,9 +2279,11 @@ portfolio total fee = Σ weighted fee</code></pre>
   </ul>
 
   <h3><span class="n">13.5</span>Motion</h3>
-  <p>Under <code>prefers-reduced-motion: reduce</code>: the column-landing highlight does not
-    animate, skeleton shimmer becomes a static tint, the sleeve progress bar does not transition, and
-    smooth scrolling becomes instant. Nothing conveys information through motion alone.</p>
+  <p>Motion is <strong>not</strong> conditional on <code>prefers-reduced-motion</code>: every
+    transition and animation plays whatever the platform asks for. The page's motion is small and
+    brief &mdash; highlights, fades, a fold, rows opening and closing &mdash; and was judged not to
+    warrant suppressing. Nothing conveys information through motion alone, so a reader who misses
+    a movement misses nothing. Deviation D89.</p>
 
   <h3><span class="n">13.6</span>Optional hardening</h3>
   <ul>

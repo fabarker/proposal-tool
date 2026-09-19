@@ -643,7 +643,7 @@ the blue Queue button it should be "Add to table" or similar.
 Behaviour:
 
 - **Add to table** inserts the column immediately, scrolls both tables to reveal it, and highlights
-  the new column header for 1.4s (suppressed under `prefers-reduced-motion`).
+  the new column header for 1.4s (once suppressed under `prefers-reduced-motion`; always shown since D89).
 - The popover **stays open** with the risk select cleared, so three comparisons are three presses
   without leaving it. This is how "up to 3 in one go" is satisfied without a queue.
 - At the cap the popover replaces its controls with an explanation and points at the rail to free a
