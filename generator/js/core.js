@@ -32,6 +32,7 @@ var state = {
   step: 'aa',                       /* 'aa' | 'impl' */
   columns: [],                      /* index 0 is always the base; see makeColumn */
   basisChosen: false,               /* the PWA has answered currency + hedging */
+  basisAnswered: { currency: false, hedging: false },   /* each half, until both are (D93) */
   implSeen: false,                  /* step 2 has been opened at least once */
   variant: null,                    /* implementation type; gates step 2 (D29) */
   /* On by default: the tilt is house practice wherever it can be funded.
@@ -998,11 +999,8 @@ async function commitMandate() {
   /* mandate size gates the $20m rule: refetch the schema; any column now
      invalid is dropped with an announcement (spec 11.2) */
   await fetchSchema();
+  if (wasLanding) guideFocus = true;
   refresh();
-  if (wasLanding) {
-    var allocationSelect = document.getElementById('bpa');
-    if (allocationSelect) allocationSelect.focus();
-  }
 }
 
 /* =============================================================================
@@ -1130,26 +1128,27 @@ function renderBasis() {
   var el = document.getElementById('tier-basis'); if (!el) return;
   var showing = state.basisDraft || state.basis;
   var disabled = !schemaReady() || !canEdit() ? ' disabled' : '';
-  /* Until both are answered the tier carries the ring, and the selects show a
-     placeholder rather than a default. The scenario does hold a basis - it has
+  /* Until each is answered its select shows a placeholder rather than a
+     default, and the guide marks whichever is still open as next (D91, D93). The scenario does hold a basis - it has
      to, the schema is fetched against one - but presenting that as a chosen
      answer invites the PWA to skip a decision the whole comparison rests on. */
-  var pending = !state.basisChosen;
-  el.className = 'tier' + (pending && state.phase === 'workspace' ? ' tier-ring' : '');
+  var pendingCcy = !state.basisChosen && !state.basisAnswered.currency;
+  var pendingHedge = !state.basisChosen && !state.basisAnswered.hedging;
+  el.className = 'tier';
   var placeholder = '<option value="" selected>Select…</option>';
   var html = '<div class="tier-h"><h3>Scenario basis</h3></div>'
     + '<div class="basis">'
     + '<div class="field"><label for="ccy">Base Currency</label><select id="ccy"' + disabled + '>'
-    + (pending ? placeholder : '')
+    + (pendingCcy ? placeholder : '')
     + opt('options.currencies', []).map(function (c) {
-        return '<option' + (!pending && c === showing.currency ? ' selected' : '') + '>'
+        return '<option' + (!pendingCcy && c === showing.currency ? ' selected' : '') + '>'
           + esc(c) + '</option>';
       }).join('')
     + '</select></div>'
     + '<div class="field"><label for="hedge">Currency Hedging</label><select id="hedge"' + disabled + '>'
-    + (pending ? placeholder : '')
+    + (pendingHedge ? placeholder : '')
     + opt('options.hedgingPolicies', []).map(function (c) {
-        return '<option' + (!pending && c === showing.hedging ? ' selected' : '') + '>'
+        return '<option' + (!pendingHedge && c === showing.hedging ? ' selected' : '') + '>'
           + esc(c) + '</option>';
       }).join('')
     + '</select></div></div>';
@@ -1222,12 +1221,10 @@ function renderBase() {
   var allEquity = isAllEquityRisk(risk);
   var canRA = allocationType ? reAllowed(allocationType) : false;
   var exRA = key ? !!key.excludeRealAssets : !!pending.excludeRealAssets;
-  /* The basis comes first. Until it is answered these controls are inert and
-     the ring stays on the tier above - two tiers competing for attention tells
-     the PWA nothing about which to answer first. */
+  /* The basis comes first. Until it is answered these controls are inert, and
+     the guide's highlight stays on the basis (D91). */
   var locked = !state.basisChosen;
   var disabled = (!schemaReady() || !canEdit() || locked) ? ' disabled' : '';
-  var ring = (state.phase === 'workspace' && !base && !locked) ? ' tier-ring' : '';
 
   /* Then the variant, which decides which allocations exist at all (D49).
      Until it is answered the allocation and risk selects are inert for the
@@ -1274,7 +1271,7 @@ function renderBase() {
   }
   var raEnabled = !allEquity && allocationType && canRA && canEdit() && !forceExRA;
 
-  el.className = 'tier' + ring;
+  el.className = 'tier';
   /* Allocation, then risk level, then the exclusion: the selects are the
      choice, the tick box narrows what it produced. */
   /* The heading carries the chevron, so the tier can be reopened wherever it
@@ -1467,15 +1464,204 @@ function columnHeadCell(col, i, scope) {
     + '<span class="col-head">' + esc(label) + extra + remove + '</span></th>';
 }
 
+/* ---- guiding the first build (D91) ---------------------------------------
+   Until the base portfolio exists, exactly one rail control is "next", and
+   everything that guides reads it from setupNext(): the field's highlight in
+   the rail, the card in the document, the line between them, and where focus
+   goes after an answer. The basis is one step made of two answers, both
+   required (D93): the card names the pair until one is given, then points at
+   the half still open.
+
+   Wide, the rail sits beside the document and a line runs from the card to
+   the field. Narrow, the rail stacks above the document and a line would have
+   nowhere to go, so it is not drawn and focus does the work alone. */
+var GUIDE_WIDE = '(min-width:1040px)';     /* the rail's stacking breakpoint */
+var guideFocus = false;                     /* move focus on after the next render */
+
+function setupNext() {
+  if (state.phase !== 'workspace' || state.columns.length || !canEdit() || state.step !== 'aa') {
+    return null;
+  }
+  var p = state.baseDraft;
+  var total = isAllEquityRisk(p.riskLevel) ? 3 : 4;
+  if (!state.basisChosen) {
+    var a = state.basisAnswered;
+    if (a.currency && !a.hedging) {
+      return { id: 'hedge', n: 1, total: total, title: 'Scenario basis',
+               text: 'Now the currency hedging, to complete the basis every figure is priced on.' };
+    }
+    if (a.hedging && !a.currency) {
+      return { id: 'ccy', n: 1, total: total, title: 'Scenario basis',
+               text: 'Now the base currency, to complete the basis every figure is priced on.' };
+    }
+    return { id: 'ccy', also: 'hedge', n: 1, total: total, title: 'Scenario basis',
+             text: 'Choose a base currency and currency hedging. Every figure in the proposal is priced on this basis.' };
+  }
+  if (!state.variant) {
+    return { id: 'bpv', n: 2, total: total, title: 'Implementation type',
+             text: 'It decides which portfolios, and later which sleeves, are available.' };
+  }
+  if (!p.riskLevel) {
+    return { id: 'bpr', n: 3, total: total, title: 'Risk level',
+             text: 'The base portfolio’s level of risk. Every comparison is measured against it.' };
+  }
+  if (!p.allocationType && total === 4) {
+    return { id: 'bpa', n: 4, total: total, title: 'Allocation',
+             text: 'The base portfolio builds as soon as this is chosen.' };
+  }
+  return null;            /* answered, and either building or unavailable */
+}
+
+function renderGuide() {
+  var next = setupNext();
+  document.querySelectorAll('.rail .field.is-next').forEach(function (f) {
+    f.classList.remove('is-next');
+  });
+  [next && next.id, next && next.also].forEach(function (id) {
+    var control = id && document.getElementById(id);
+    var field = control && control.closest('.field');
+    if (field) field.classList.add('is-next');
+  });
+
+  var card = document.getElementById('doc-empty');
+  if (card && next) {
+    card.innerHTML = '<p class="guide-step">Step ' + next.n + ' of ' + next.total + '</p>'
+      + '<h3>' + esc(next.title) + '</h3><p>' + esc(next.text) + '</p>'
+      + '<p class="guide-where">'
+      + (railCollapsed
+          ? '<span class="guide-wide">Expand the scenario panel on the left to continue.</span>'
+          : '<span class="guide-wide">In the scenario panel, on the left.</span>')
+      + '<span class="guide-narrow">In the scenario panel above.</span></p>';
+  } else if (card) {
+    card.innerHTML = '<h3>Choose a base portfolio</h3>'
+      + '<p>Choose a risk level and allocation in the scenario panel to build the first column.</p>';
+  }
+  if (!next) placeGuide(false);           /* take the line down now, not next frame */
+  window.requestAnimationFrame(function () { placeGuide(true); });
+}
+
+/* The line is fixed to the viewport, so it is redrawn on every scroll, the
+   rail's included. The card is only re-aligned with its field on a render or
+   a resize: moving it while the page scrolls would chase the reader. */
+function guideWire() {
+  var wire = document.getElementById('guide-wire');
+  if (wire || !document.body) return wire;
+  /* on body, so no ancestor's stacking context can put it under the rail */
+  var ns = 'http://www.w3.org/2000/svg';
+  wire = document.createElementNS(ns, 'svg');
+  wire.setAttribute('id', 'guide-wire');
+  wire.setAttribute('class', 'guide-wire');
+  wire.setAttribute('aria-hidden', 'true');
+  wire.setAttribute('hidden', '');
+  wire.appendChild(document.createElementNS(ns, 'path'));
+  var dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('r', '3.5');
+  wire.appendChild(dot);
+  document.body.appendChild(wire);
+  return wire;
+}
+
+function placeGuide(realign) {
+  var wire = guideWire();
+  var card = document.getElementById('doc-empty');
+  var next = setupNext();
+  var wide = window.matchMedia && window.matchMedia(GUIDE_WIDE).matches;
+  var target = next && document.getElementById(railCollapsed ? 'railtoggle' : (next.also || next.id));
+  var show = !!(wire && card && next && wide && target && !card.hidden && !draft);
+  if (card && (!show || !wide)) card.style.marginTop = '';
+  if (!show) { if (wire) wire.setAttribute('hidden', ''); return; }
+
+  var tr = target.getBoundingClientRect();
+  var ty = tr.top + tr.height / 2;
+  if (realign) {
+    /* centre the card on the field, never above where it sits naturally and
+       never so low that it runs off the bottom of the window */
+    /* measured against the margin it has NOW - mid-slide that is not the
+       one last asked for, and using the target walks the card off course */
+    var current = parseFloat(window.getComputedStyle(card).marginTop) || 0;
+    var natural = card.getBoundingClientRect().top - current;
+    var room = window.innerHeight - natural - card.offsetHeight - 24;
+    var want = Math.round(Math.max(0, Math.min(ty - natural - card.offsetHeight / 2, room)));
+    if (Math.abs((parseFloat(card.style.marginTop) || 0) - want) > 1) card.style.marginTop = want + 'px';
+    /* the card slides there, and the line follows it rather than jumping */
+    trackGuide(500);
+    return;
+  }
+  var cr = card.getBoundingClientRect();
+  var rail = document.querySelector('.rail');
+  var rr = rail ? rail.getBoundingClientRect() : null;
+  var visible = cr.bottom > 0 && cr.top < window.innerHeight
+    && (!rr || (ty > rr.top && ty < rr.bottom));
+  if (!visible) { wire.setAttribute('hidden', ''); return; }
+
+  var x1 = cr.left - 2, y1 = cr.top + cr.height / 2;
+  var x2 = tr.right + 7, y2 = ty;
+  var dx = Math.max(28, (x1 - x2) / 2);
+  wire.removeAttribute('hidden');
+  wire.setAttribute('viewBox', '0 0 ' + window.innerWidth + ' ' + window.innerHeight);
+  wire.querySelector('path').setAttribute('d', 'M' + x1 + ' ' + y1 + ' C' + (x1 - dx) + ' ' + y1
+    + ' ' + (x2 + dx) + ' ' + y2 + ' ' + x2 + ' ' + y2);
+  var dot = wire.querySelector('circle');
+  dot.setAttribute('cx', x2);
+  dot.setAttribute('cy', y2);
+}
+
+/* Redraw every frame for a while: the card sliding, or the rail folding. */
+var guideTrackUntil = 0;
+function trackGuide(ms) {
+  var running = guideTrackUntil > Date.now();
+  guideTrackUntil = Math.max(guideTrackUntil, Date.now() + ms);
+  if (running) return;
+  (function frame() {
+    placeGuide(false);
+    if (Date.now() < guideTrackUntil) window.requestAnimationFrame(frame);
+  })();
+}
+
+var guideScrollFrame = 0;
+document.addEventListener('scroll', function () {
+  if (guideScrollFrame) return;
+  guideScrollFrame = window.requestAnimationFrame(function () {
+    guideScrollFrame = 0;
+    placeGuide(false);
+  });
+}, true);
+window.addEventListener('resize', function () { placeGuide(true); });
+/* and once more when the card lands, however long the slide really took */
+document.addEventListener('transitionend', function (e) {
+  if (e.target && e.target.id === 'doc-empty') placeGuide(false);
+});
+
+/* After an answer, focus moves to the next control - at every width, and
+   only while the base is still to be built. It waits out a control that is
+   disabled while the schema re-fetches, and gives up rather than pulling
+   focus back if the user has gone somewhere else in the meantime. */
+function focusGuide() {
+  if (!guideFocus) return;
+  var next = setupNext();
+  if (!next) { guideFocus = false; return; }
+  var el = document.getElementById(next.id);
+  if (!el || el.disabled || el.offsetParent === null) return;
+  var active = document.activeElement;
+  var free = !active || active === document.body || !!(active.closest && active.closest('.rail'));
+  guideFocus = false;
+  if (free) el.focus();
+}
+
 function renderAlloc() {
   var el = document.getElementById('alloc'); if (!el) return;
   var wrap = document.getElementById('doc-empty');
+  /* The wrapper carries the accent rule, so an empty table must take it
+     with it - otherwise the rule sits alone above the empty state. */
+  var frame = el.closest('.tblwrap');
   if (state.phase === 'workspace' && !state.columns.length) {
     if (wrap) wrap.hidden = false;
+    if (frame) frame.hidden = true;
     el.innerHTML = '';
     return;
   }
   if (wrap) wrap.hidden = true;
+  if (frame) frame.hidden = false;
 
   var plus = App.plusColumn && canEdit()
     && state.columns.length < opt('rules.maxPortfolios', 4) && state.columns.length > 0;
@@ -1856,11 +2042,12 @@ function sizeFixedColumns(table, dataCells, skip) {
 }
 
 /* ---- the rail collapses, and the document takes the width ---------------
-   The preference outlives the page, so a refresh - which this tool does on
-   every rehydrate - comes back the way the user left it. */
-var RAIL_PREF = 'pmg.proposalTool.railCollapsed';
+   Every load opens with the rail open. It closes only when someone presses
+   the button, and that lasts for the page, not beyond it: the rail is where
+   the work starts, so it is never remembered shut (D92). The preference used
+   to persist; the key it left behind is cleared so it can never be read. */
 var railCollapsed = false;
-try { railCollapsed = window.localStorage.getItem(RAIL_PREF) === '1'; } catch (e) {}
+try { window.localStorage.removeItem('pmg.proposalTool.railCollapsed'); } catch (e) {}
 
 function renderRailToggle() {
   document.body.classList.toggle('rail-collapsed', railCollapsed);
@@ -1875,8 +2062,9 @@ function renderRailToggle() {
 
 function toggleRail() {
   railCollapsed = !railCollapsed;
-  try { window.localStorage.setItem(RAIL_PREF, railCollapsed ? '1' : '0'); } catch (e) {}
   renderRailToggle();
+  renderGuide();
+  trackGuide(450);                      /* the line follows the fold */
   /* the document just changed width, and the columns share what it has */
   trackRailMotion();
 }
@@ -3059,6 +3247,7 @@ function refresh() {
     if (picker && picker.render) picker.render();
     renderBuilt();
     renderAlloc();
+    renderGuide();
     renderRisk();
     renderCharts();
     renderStageChrome();
@@ -3068,6 +3257,7 @@ function refresh() {
     extras.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } });
     sizeComparisonTables();
   });
+  focusGuide();
 }
 
 /* ---- shared tooltip for both charts ------------------------------------- */
@@ -3274,16 +3464,21 @@ document.addEventListener('change', function (e) {
   if (e.target.id === 'ccy' || e.target.id === 'hedge') {
     var field = e.target.id === 'ccy' ? 'currency' : 'hedging';
     if (!state.basisChosen) {
-      /* First answer on a fresh scenario: record it against the basis the
-         scenario already carries, and treat the pair as settled - the other
-         half keeps whatever the mandate was created with, which is the value
-         the schema was fetched against. No rebuild confirmation, because
-         there is nothing built yet to rebuild. */
+      /* A fresh scenario: each half is recorded as it is answered, and the
+         basis counts as chosen only when BOTH are (D93). Filling the other
+         half from whatever the scenario was created with passed a default
+         off as the PWA's answer, on the one decision every figure is priced
+         in. Only then is it persisted and the schema fetched against it. No
+         rebuild confirmation, because there is nothing built yet to rebuild. */
       if (!e.target.value) return;
       state.basis[field] = e.target.value;
-      state.basisChosen = true;
-      persistBasis();
-      fetchSchema();
+      state.basisAnswered[field] = true;
+      guideFocus = true;
+      if (state.basisAnswered.currency && state.basisAnswered.hedging) {
+        state.basisChosen = true;
+        persistBasis();
+        fetchSchema();
+      }
       refresh();
       return;
     }
@@ -3292,6 +3487,7 @@ document.addEventListener('change', function (e) {
   }
 
   if (e.target.id === 'bpv') {
+    if (!state.columns.length) guideFocus = true;
     setVariant(e.target.value);
     return;
   }
@@ -3315,6 +3511,7 @@ document.addEventListener('change', function (e) {
        nothing more - and setBase replaces column one or falls to the nearest
        risk level the combination offers (D54) */
     var key = buildKey(allocationType, exRA, risk);
+    if (!base) guideFocus = true;
     var built = key ? setBase(key) : false;
     if (built || (key && base && keyEq(key, base.key))) {
       /* built, or the answer is the book already there: nothing pending */

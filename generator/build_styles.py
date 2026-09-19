@@ -485,31 +485,44 @@ main{display:block}
 .doc-empty .btn{margin-top:16px}
 .doc-empty-detail{margin-top:8px;color:var(--ink-3);font-size:13px}
 
-/* the Base tier's ring while no base exists (spec 10.2). The spec names the
-   accent for it; on the navy rail the accessible focus blue is the same
-   adjustment section 6.2 makes for the rail button. */
-/* The ring that marks the tier still waiting for an answer (spec 10.2).
-
-   Drawn as a pseudo-element inset INSIDE the tier's padding rather than as an
-   outline on the box. An outline sits on the border edge, which for a tier is
-   the rail's own right edge - the ring's right side landed against the white
-   document and effectively disappeared. The insets here are independent, so
-   it can sit within the 20px horizontal padding without clipping the fields
-   vertically.
-
-   It breathes slowly to draw the eye, since it is the one thing on the page
-   the user has to act on before anything else works. */
 /* The document arriving for the first time: one fade, everything together.
    No translate - a rising document would move the sections relative to each
    other again, which is the thing being fixed. */
 .doc-reveal{animation:docreveal var(--reveal-motion) ease-out both}
 @keyframes docreveal{from{opacity:0}to{opacity:1}}
 
-.tier-ring{position:relative}
-.tier-ring::after{content:"";position:absolute;inset:6px 11px;pointer-events:none;
-  border:2px solid var(--rail-focus,#8FB4FF);border-radius:5px;
-  animation:tierpulse 2.6s ease-in-out infinite}
-@keyframes tierpulse{0%,100%{opacity:.22}50%{opacity:1}}
+/* ── guiding the first build (D91) ──
+   One control is next until the base exists. In the rail it takes the focus
+   blue - the colour the tier ring used to carry, moved from the whole tier to
+   the one field. In the document the choose-a-base panel is a card that names
+   the step, and when the rail sits beside the document a dashed line runs
+   from the card to the field. Narrow, the rail stacks above, the line is not
+   drawn and focus moving on does the guiding. */
+.rail .field.is-next>label{color:var(--rail-ink)}
+.rail .field.is-next select{border-color:var(--rail-focus,#8FB4FF);
+  box-shadow:0 0 0 3px rgba(143,180,255,.28);animation:guidebeckon 1.8s ease-in-out infinite}
+@keyframes guidebeckon{0%,100%{box-shadow:0 0 0 3px rgba(143,180,255,.28)}
+  50%{box-shadow:0 0 0 5px rgba(143,180,255,.12)}}
+.doc-empty.guide{text-align:left;max-width:380px;padding:18px 20px 16px;border:1px solid var(--accent);
+  box-shadow:0 2px 12px rgba(31,95,191,.10);transition:margin-top .45s cubic-bezier(.4,0,.2,1)}
+.doc-empty.guide h3{font-size:18px;margin:2px 0 6px}
+.doc-empty.guide p{margin:0;max-width:none}
+.doc-empty.guide .guide-step{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent)}
+.doc-empty.guide .guide-where{margin-top:10px;font-size:13px;color:var(--ink-3)}
+.guide-narrow{display:none}
+@media (max-width:1039px){
+  .guide-wide{display:none}
+  .guide-narrow{display:inline}
+  .doc-empty.guide{max-width:none;margin-top:0!important}
+  .guide-wire{display:none}
+}
+.guide-wire{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:55;overflow:visible}
+.guide-wire path{fill:none;stroke:var(--rail-accent,#2A6AD0);stroke-width:1.6;stroke-dasharray:5 4;
+  animation:guidemarch 1s linear infinite}
+.guide-wire circle{fill:var(--rail-accent,#2A6AD0)}
+@keyframes guidemarch{to{stroke-dashoffset:-9}}
+
 
 /* basis rebuild confirmation (spec 11.4) */
 .basis-confirm{margin-top:10px;background:var(--rail-input-bg,#1D2F4B);
@@ -916,12 +929,9 @@ PAGE_SHELL = """<!doctype html>
 <div id="view-aa">
 {chrome}
 
-  <!-- Mandate set, no base chosen yet: the rail's Base tier carries a ring
-       and this panel says what to do (spec 10.2). -->
-  <div class="doc-empty" id="doc-empty" hidden>
-    <h3>Choose a base portfolio</h3>
-    <p>Pick an allocation and risk level in the rail to build the first column.</p>
-  </div>
+  <!-- Mandate set, no base chosen yet: the guide writes this card, names the
+       next control, and draws the line to it (spec 10.2, D91). -->
+  <div class="doc-empty guide" id="doc-empty" hidden></div>
 
   <section class="sec">
     <div class="sec-head stage-head">

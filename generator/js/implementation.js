@@ -460,6 +460,13 @@ function volPremiumField() {
     + '<p class="chk-note" id="volpremnote">' + note + '</p></div>';
 }
 
+/* The two overlays together, below the sleeve pickers and above pricing: they
+   adjust the model the sleeves have built, so they are read after it. */
+function overlayFields() {
+  var fields = tacticalTiltField() + volPremiumField();
+  return fields ? '<div class="overlay-group">' + fields + '</div>' : '';
+}
+
 /* ---- revealing and hiding the fee layer (D52) ----------------------------
    Two mechanisms, because the two directions are not symmetrical. Turning
    fees ON re-renders first: the rail block and the fee cells are brand new
@@ -1072,6 +1079,51 @@ function renderPricePanel() {
 }
 
 
+/* ---- the sleeves introduce themselves (D94) -------------------------------
+   The first time in a browser session that someone opens step 2 from the step
+   nav, the sleeve pickers flash in turn, top to bottom: this is where the
+   step's work is, and the rail has just changed under them. It waits until
+   every library has settled - flashing "Loading sleeves..." points at nothing
+   to do - and it is timed from a clock rather than bound to nodes, because
+   the rail re-renders as each library lands. A row drawn mid-flash picks it up
+   where it had got to, through a negative animation delay. */
+var SLEEVE_FLASH_KEY = 'pmg.proposalTool.sleevesFlashed';
+var SLEEVE_FLASH_STEP = 120;          /* ms between one row and the next */
+var SLEEVE_FLASH_RUN = 1100;          /* one row's flash, as in the CSS */
+var sleeveFlashPending = false;
+var sleeveFlashAt = 0;                /* when row one starts; 0 = not flashing */
+var sleeveFlashedHere = false;        /* stands in if session storage is refused */
+
+function sleevesFlashed() {
+  if (sleeveFlashedHere) return true;
+  try { return window.sessionStorage.getItem(SLEEVE_FLASH_KEY) === '1'; } catch (e) { return false; }
+}
+function markSleevesFlashed() {
+  sleeveFlashedHere = true;
+  try { window.sessionStorage.setItem(SLEEVE_FLASH_KEY, '1'); } catch (e) {}
+}
+
+/* Called with the rows about to be drawn: starts the flash if it is owed and
+   the libraries are ready, and returns each row's delay while it runs. */
+function sleeveFlashDelays(categories) {
+  var libs = App.sleeveLib();
+  var settled = categories.length && categories.every(function (c) {
+    return libs[c.name] && libs[c.name].status !== 'loading';
+  });
+  if (sleeveFlashPending && settled) {
+    sleeveFlashPending = false;
+    sleeveFlashAt = Date.now() + 250;   /* let the base tier's roll-up start first */
+    markSleevesFlashed();
+  }
+  if (!sleeveFlashAt) return null;
+  var elapsed = Date.now() - sleeveFlashAt;
+  if (elapsed > SLEEVE_FLASH_STEP * (categories.length - 1) + SLEEVE_FLASH_RUN) {
+    sleeveFlashAt = 0;
+    return null;
+  }
+  return categories.map(function (c, i) { return i * SLEEVE_FLASH_STEP - elapsed; });
+}
+
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
 function renderRail() {
   var el = document.getElementById('tier-sleeves'); if (!el) return;
@@ -1097,20 +1149,21 @@ function renderRail() {
           + ' aria-label="Open the sleeve repository" title="Sleeve repository">'
           + '<svg viewBox="0 0 20 20" aria-hidden="true"><use href="#i-sleeves"/></svg></button>'
         : '')
-    + '</span></div>' + tacticalTiltField() + volPremiumField();
+    + '</span></div>';
 
   /* Pricing closes the tier on every path, including the ones that never draw
      a picker: the schedule and the level are scenario state, answerable while
      the base is still resolving, and taking them away when the base fails
      would lose an answer the PWA had already given. */
   if (!base) {
-    el.innerHTML = head + '<p class="field-note">Build a base portfolio first.</p>' + feeFields();
+    el.innerHTML = head + '<p class="field-note">Build a base portfolio first.</p>'
+      + overlayFields() + feeFields();
     return;
   }
   if (base.status !== 'ready') {
     el.innerHTML = head + '<p class="field-note">' + (base.status === 'error'
         ? 'The base portfolio could not be built. Retry it from the allocation step.'
-        : 'Resolving the base portfolio…') + '</p>' + feeFields();
+        : 'Resolving the base portfolio…') + '</p>' + overlayFields() + feeFields();
     return;
   }
   var html = head;
@@ -1124,7 +1177,7 @@ function renderRail() {
     el.innerHTML = html + '<p class="field-note">No implementation variant is '
       + 'set. Choose one with the base portfolio on the allocation step; it '
       + 'decides which sleeves each category offers and what they hold.</p>'
-      + feeFields();
+      + overlayFields() + feeFields();
     return;
   }
 
@@ -1133,9 +1186,11 @@ function renderRail() {
      control for it would be a control that can never be used; the count and
      the note below say it is in the model (D53). */
   html += '<div class="sl-list">';
-  sleeveCategories(baseCategories()).filter(function (category) {
+  var pickable = sleeveCategories(baseCategories()).filter(function (category) {
     return !isAuto(category.name);
-  }).forEach(function (category, i) {
+  });
+  var flash = sleeveFlashDelays(pickable);
+  pickable.forEach(function (category, i) {
     var lib = App.sleeveLib()[category.name];
     var chosen = sleeveFor(category.name);
     var select;
@@ -1155,7 +1210,8 @@ function renderRail() {
         + (App.canEdit() ? '' : ' disabled') + '>'
         + '<option value="">Select a sleeve…</option>' + options + '</select>';
     }
-    html += '<div class="sl-row' + (chosen ? ' done' : '') + '">'
+    html += '<div class="sl-row' + (chosen ? ' done' : '') + (flash ? ' sl-flash' : '') + '"'
+      + (flash ? ' style="--sl-flash-delay:' + flash[i] + 'ms"' : '') + '>'
       + '<span class="cat"><b><label for="sl' + i + '">' + App.esc(category.name) + '</label></b>'
       + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select + '</div>';
   });
@@ -1163,7 +1219,7 @@ function renderRail() {
   html += '</div><p class="sl-progress">' + counts.filled + ' of ' + counts.total
     + ' categories have a sleeve.'
     + '<span class="sl-bar"><i style="width:' + progressPct + '%"></i></span></p>';
-  html += feeFields();
+  html += overlayFields() + feeFields();
   el.innerHTML = html;
 }
 
@@ -1634,7 +1690,14 @@ document.addEventListener('change', function (e) {
 });
 document.addEventListener('click', function (e) {
   var step = e.target.closest ? e.target.closest('.step') : null;
-  if (step) { App.setStep(step.dataset.step); return; }
+  if (step) {
+    /* the first visit this session, by the step nav, is owed a flash (D94) */
+    if (step.dataset.step === 'impl' && App.step() !== 'impl' && !sleevesFlashed()) {
+      sleeveFlashPending = true;
+    }
+    App.setStep(step.dataset.step);
+    return;
+  }
   /* the rate card panel (D55) */
   if (e.target.closest && e.target.closest('[data-openrepo]')) {
     var at = e.target.closest('[data-openrepo]');

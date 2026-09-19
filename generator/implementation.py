@@ -77,10 +77,12 @@ IMPL_CSS = r"""
    read-only variant summary this file used to open with: the variant is
    chosen with the base portfolio and step 2 no longer restates it. */
 .vr-note{margin:1px 0 0;font-size:12.5px;color:var(--rail-ink-3);line-height:1.45}
-/* the tactical tilt toggle: an implementation choice, so it sits with the
-   sleeves rather than in the strategic tier (D50) */
-.tilt-field{display:grid;gap:4px;margin:0 0 14px;padding:0 0 14px;
-  border-bottom:1px solid var(--rail-line)}
+/* the tactical tilt and volatility premium toggles: implementation choices,
+   so they sit with the sleeves rather than in the strategic tier (D50). They
+   follow the pickers, divided off the way the pricing group is. */
+.overlay-group{display:grid;gap:14px;margin:16px 0 0;padding:15px 0 0;
+  border-top:1px solid var(--rail-line)}
+.tilt-field{display:grid;gap:4px}
 .tilt-field .chk{margin:0}
 .tilt-field.done label{color:var(--rail-ink)}
 .tilt-field .chk-note{margin:0}
@@ -278,6 +280,12 @@ IMPL_CSS = r"""
 .sl-row .cat span{font-family:var(--f-num);font-size:12px;color:var(--rail-ink-3);
   font-variant-numeric:tabular-nums;flex-shrink:0}
 .sl-row.done .cat b{color:var(--rail-ink)}
+/* the first-visit flash (D94): two quick pulses per picker, rows in turn */
+.sl-row.sl-flash select{animation:slflash 1100ms ease-in-out var(--sl-flash-delay,0ms) both}
+@keyframes slflash{
+  0%,50%,100%{border-color:var(--rail-input-border,#52739C);box-shadow:0 0 0 0 rgba(143,180,255,0)}
+  22%,72%{border-color:var(--rail-focus,#8FB4FF);box-shadow:0 0 0 4px rgba(143,180,255,.5);
+    background-color:#27406A}}
 .sl-progress{margin:12px 0 0;font-size:13px;color:var(--rail-ink-2)}
 .sl-bar{height:4px;border-radius:2px;background:#22334E;overflow:hidden;margin:6px 0 0}
 .sl-bar i{display:block;height:100%;background:var(--rail-accent);transition:width .2s}

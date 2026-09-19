@@ -300,7 +300,7 @@ td code,th code{white-space:nowrap}
         display label. Derived from the key, never from a stored name.</td><td>D35, D36</td></tr>
       <tr><td><strong>&sect;7.1</strong></td><td><strong>Revision 6.</strong> The page asks one
         question at a time: basis, then base portfolio, then implementation. Each is inert and
-        un-ringed until its turn.</td><td>D45</td></tr>
+        unmarked until its turn.</td><td>D45, D91</td></tr>
       <tr><td><strong>&sect;9.1</strong>,
         <strong>&sect;9.2</strong></td><td><strong>Revision 6.</strong> Table typography and
         chrome; the risk dashboard sizes on auto layout with column one pinned and the wrapper
@@ -1294,13 +1294,19 @@ async function apiFetch(path, opts) {
     and the step nav are both hidden and the page shows a single front door.</p>
   <div class="rule"><p><strong>The page asks one question at a time.</strong> On arrival the
     scenario basis is unanswered &mdash; currency and hedging both read <em>Select&hellip;</em>
-    &mdash; and its tier carries the ring. The base portfolio's controls are disabled and its
-    tier is <em>not</em> ringed: two rings competing say nothing about which to answer first.
-    Answering the basis enables the base tier and moves the ring to it; resolving an allocation
-    reveals the document and unlocks step 2, which then pulses until it is opened. The scenario
+    &mdash; and it is marked as the next thing to answer. The base portfolio's controls are
+    disabled and unmarked: two marks competing say nothing about which to answer first.
+    Answering the basis enables the base tier and moves the mark to Implementation Type, then
+    Risk Level, then Allocation; resolving an allocation reveals the document and unlocks step 2,
+    which then pulses until it is opened. The first time in a browser session that step 2 is
+    opened from the step nav, its sleeve pickers flash in turn, top to bottom, once their
+    libraries have loaded (D94). How the next control is shown, and how focus follows
+    it, is &sect;10.2. The scenario
     always holds a basis &mdash; the schema is fetched against one &mdash; so the unanswered
-    state is presentation rather than absence, and answering either half settles the pair with
-    no rebuild confirmation, because nothing is built yet to rebuild. A rehydrated scenario that
+    state is presentation rather than absence. <strong>Both halves must be answered</strong>:
+    choosing a currency leaves hedging on <em>Select&hellip;</em>, and the reverse, and the base
+    tier stays locked until the pair is complete (D93). Neither takes a rebuild confirmation,
+    because nothing is built yet to rebuild. A rehydrated scenario that
     already has columns skips the sequence entirely. Deviation D45.</p></div>
   <div class="rule"><p><strong>Nothing is titled until there is something under it.</strong>
     The stage heading, its standfirst and the whole risk dashboard stay hidden until an
@@ -1453,7 +1459,7 @@ async function apiFetch(path, opts) {
     so on the same curve the number looked finished while the row was still going. A row cannot
     be transitioned &mdash; <code>display:table-row</code> does not interpolate &mdash; so what
     moves is each cell's padding, line-height and border, and the max-height of a wrapper inside
-    it. Motion plays whatever the platform's reduced-motion setting. Deviations D42, D89.</p></div>
+    it. Motion plays whatever the platform's reduced-motion setting. Deviations D42, D90.</p></div>
   <div class="rule"><p><strong>The first appearance is one movement, not a sequence.</strong>
     Rows are not animated into a table that was empty: opening each from collapsed made the
     allocation table grow under the sections below it and shove them down the page. Everything
@@ -1938,9 +1944,17 @@ portfolio total fee = Σ weighted fee</code></pre>
           not an empty state waiting to be filled &mdash; it is a distinct phase with one
           control.</td></tr>
       <tr><td>Document, step 1</td><td>Mandate set, no base chosen</td>
-        <td>Table area replaced by a centred panel: <strong>&ldquo;Choose a base portfolio&rdquo;</strong>
-          with <em>&ldquo;Pick an allocation and risk level in the rail to build the first
-          column.&rdquo;</em> The rail's Base tier gets a 2px <code>--blu</code> ring.</td></tr>
+        <td>The guide (D91). Exactly one rail control is next &mdash; the basis pair, then
+          Implementation Type, Risk Level, Allocation (three steps at an all-equity level) &mdash;
+          and it carries a <code>--rail-focus</code> border and glow. The basis is one step of
+          two answers: both selects are marked until one is given, then only the other. The table area holds a card:
+          <em>&ldquo;Step <var>n</var> of <var>m</var>&rdquo;</em>, the control's name, one
+          sentence on why it matters. <strong>At 1040px and wider</strong> the card aligns with the
+          field and a dashed <code>--rail-accent</code> line joins them; with the rail folded it
+          joins the expand button instead, and the card says to expand. <strong>Narrower</strong>
+          there is no line and the card points to the panel above. <strong>At every width</strong>
+          focus moves to the next control after each answer, and to Base Currency when the mandate
+          dialog closes (&sect;13). Once the base exists none of it shows.</td></tr>
       <tr><td>Charts</td><td>Fewer than one ready column</td><td>Section hidden entirely.</td></tr>
       <tr><td>Comparisons list</td><td>Base only</td>
         <td><em>&ldquo;No comparisons yet. Add up to three from the + column.&rdquo;</em></td></tr>
@@ -2235,6 +2249,10 @@ portfolio total fee = Σ weighted fee</code></pre>
       <tr><td>Global</td><td>Skip link to <code>&lt;main&gt;</code> as the first focusable element.</td></tr>
       <tr><td>Step nav</td><td>Arrow keys move between tabs; Enter or Space activates.</td></tr>
       <tr><td>Modal dialog</td><td>Focus moves in, is trapped, returns to the invoker. Escape closes.</td></tr>
+      <tr><td>First build</td><td>The mandate dialog's first Continue sends focus to Base
+        Currency, not back to the landing's button, which has gone. Until the base exists each
+        answer moves focus to the next control (&sect;10.2), and only when focus is still in the
+        rail. Deviation D91.</td></tr>
       <tr><td>Popover</td><td>Non-modal. Focus moves in; Escape and outside click close; focus returns
         to <code>+</code>.</td></tr>
       <tr><td>Typeahead</td><td>Arrow keys move <code>aria-activedescendant</code> without moving
@@ -2283,7 +2301,7 @@ portfolio total fee = Σ weighted fee</code></pre>
     transition and animation plays whatever the platform asks for. The page's motion is small and
     brief &mdash; highlights, fades, a fold, rows opening and closing &mdash; and was judged not to
     warrant suppressing. Nothing conveys information through motion alone, so a reader who misses
-    a movement misses nothing. Deviation D89.</p>
+    a movement misses nothing. Deviation D90.</p>
 
   <h3><span class="n">13.6</span>Optional hardening</h3>
   <ul>
