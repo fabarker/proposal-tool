@@ -236,6 +236,39 @@ IMPL_CSS = r"""
 .rc-legend i.k-ring{box-shadow:inset 0 0 0 2px var(--accent);background:#E3EBFA;border-color:transparent}
 .rc-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
 
+/* ── custom fees (D96) ──
+   The fee card's by-tier grid with one column added, the PWA's. The chosen
+   schedule's rows are live; the other schedule's stay for reference, and
+   their Custom cell is inert. The rail block under the level lists the rows. */
+#customDialog .scrim{z-index:94}
+#customDialog .dialog{z-index:95}
+.dialog.cf{width:min(1060px,calc(100vw - 32px))}
+.cf-tools .cf-lbl{font-size:13px;color:var(--ink-2)}
+.cf-grid tbody th.rowhead{min-width:232px}
+.cf-grid td.rate{min-width:56px;padding:0 9px}
+.cf-grid .rc-grp{padding-left:14px}
+.cf-cnt{display:block;font-family:var(--f-num);font-size:10.5px;color:var(--ink-3);letter-spacing:.02em;line-height:1.2}
+.rate-grid th.cust,.rate-grid td.cust{border-left:2px solid var(--accent);background:#F7FAFF;
+  text-align:right;white-space:nowrap;min-width:172px}
+.rate-grid thead th.cust{color:#1E4FA3;vertical-align:bottom;padding-bottom:8px}
+.rate-grid tr.off td,.rate-grid tr.off th.rowhead,.rate-grid tr.off .rc-lbl{color:var(--ink-3)}
+.rate-grid tr.off td.cust{background:var(--surface-2)}
+.rc-id-blank{visibility:hidden}
+.cf-copy{appearance:none;background:none;border:1px dashed transparent;border-radius:3px;padding:2px 5px;
+  font:inherit;color:inherit;cursor:pointer;font-variant-numeric:tabular-nums}
+.cf-copy:hover,.cf-copy:focus-visible{border-color:var(--accent);color:#1E4FA3;outline:none}
+.rate-grid td.cust .cf-in{width:84px;text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;
+  font-size:13.5px;padding:4px 7px;height:auto}
+.rate-grid td.cust .cf-in:disabled{background:var(--surface-2);color:var(--ink-3);border-style:dashed;cursor:not-allowed}
+.rate-grid td.cust small{display:inline-block;font-family:var(--f-num);font-size:10.5px;color:var(--ink-3);margin-left:8px;min-width:62px;text-align:left}
+.rate-grid td.cust.bad .cf-in{border-color:var(--neg);background:#FDE8E8}
+.rate-grid tr.mark td.cust{background:#EEF3FC}
+.cf-actions{display:flex;gap:8px}
+.cf-rows{list-style:none;margin:6px 0 2px;padding:0;display:grid;gap:3px;font-size:12.5px;color:var(--rail-ink-2)}
+.cf-rows li{display:flex;justify-content:space-between;gap:8px}
+.cf-rows b{color:var(--rail-ink);font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
+.cf-rows li.miss b{color:var(--rail-eyebrow,#F3C46B)}
+
 /* ── how this mandate is priced (D84) ──
    The build-up behind a marginal blend. It borrows the fee card's head, wrap
    and actions; what is its own is the four-column sum and the level strip. */
@@ -280,12 +313,8 @@ IMPL_CSS = r"""
 .sl-row .cat span{font-family:var(--f-num);font-size:12px;color:var(--rail-ink-3);
   font-variant-numeric:tabular-nums;flex-shrink:0}
 .sl-row.done .cat b{color:var(--rail-ink)}
-/* the first-visit flash (D94): two quick pulses per picker, rows in turn */
-.sl-row.sl-flash select{animation:slflash 1100ms ease-in-out var(--sl-flash-delay,0ms) both}
-@keyframes slflash{
-  0%,50%,100%{border-color:var(--rail-input-border,#52739C);box-shadow:0 0 0 0 rgba(143,180,255,0)}
-  22%,72%{border-color:var(--rail-focus,#8FB4FF);box-shadow:0 0 0 4px rgba(143,180,255,.5);
-    background-color:#27406A}}
+/* the guided picker (D95) takes the same mark as a guided field (D91) */
+.sl-row.is-next .cat b{color:var(--rail-ink)}
 .sl-progress{margin:12px 0 0;font-size:13px;color:var(--rail-ink-2)}
 .sl-bar{height:4px;border-radius:2px;background:#22334E;overflow:hidden;margin:6px 0 0}
 .sl-bar i{display:block;height:100%;background:var(--rail-accent);transition:width .2s}

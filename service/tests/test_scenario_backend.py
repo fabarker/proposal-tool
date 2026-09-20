@@ -1664,9 +1664,35 @@ def test_js_fee_mirror_agrees_with_python():
                         marginalCases += 1
     assert marginalCases > 50
 
+    # ...and under the custom level (D96), where the resolver reads the PWA's
+    # map for the row and never the card: the whole book under CASP, the fee
+    # group under RDR, null for a row not entered, and the card's own rate
+    # for any of the six levels however full the map is.
+    served = fees.ratesFor(TOP_ACCOUNT, 26e6)
+    customMap = {'CASP': 0.51,
+                 'RDR': {g: fees.customBounds('RDR', TOP_ACCOUNT, 26e6, g)[0]
+                         for g in fees.FEE_GROUPS[:-1]}}
+    custom = {'level': fees.CUSTOM_LEVEL, 'map': customMap}
+    for schedule in fees.SCHEDULES:
+        for group in fees.FEE_GROUPS + ['not a group']:
+            cases.append([served, schedule, fees.CUSTOM_LEVEL, group, custom])
+            expected.append(fees.productFee(schedule, fees.CUSTOM_LEVEL, group,
+                                            topAccountSize=TOP_ACCOUNT, mandateSize=26e6,
+                                            customFees=customMap))
+        cases.append([served, schedule, fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0], custom])
+        expected.append(fees.productFee(schedule, fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0],
+                                        topAccountSize=TOP_ACCOUNT, mandateSize=26e6,
+                                        customFees=customMap))
+    cases.append([served, 'RDR', fees.CUSTOM_LEVEL, fees.FEE_GROUPS[0], {'level': fees.CUSTOM_LEVEL, 'map': {}}])
+    expected.append(None)
+    cases.append([served, 'RDR', fees.CUSTOM_LEVEL, fees.FEE_GROUPS[0], {'level': fees.CUSTOM_LEVEL, 'map': {'RDR': 0.3}}])
+    expected.append(None)                        # the wrong shape is no rate
+    cases.append([served, 'CASP', fees.CUSTOM_LEVEL, fees.FEE_GROUPS[0], None])
+    expected.append(None)                        # no custom block: the card does not price it
+
     script = fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \
         + 'process.stdout.write(JSON.stringify(cases.map(function (c) { ' \
-        + 'return resolveFee(c[0], c[1], c[2], c[3]); })));\n'
+        + 'return resolveFee(c[0], c[1], c[2], c[3], c[4]); })));\n'
     out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
     assert json.loads(out.stdout) == pytest.approx(expected)
     assert len(expected) > 300
@@ -2718,3 +2744,174 @@ def test_js_donut_share_rounding_mirror_agrees_with_python():
         py = roundSharesOneDp(case)
         assert js == pytest.approx(py), case
         assert sum(py) == pytest.approx(100.0), 'the labels must close on 100.0'
+
+
+# ------------------------------------------- custom fee rates (D96) --------
+
+MANDATE_26M = MandateInput(topAccountSize=TOP_ACCOUNT, mandateSize=26e6,
+                           primaryPwa='M. Aldridge — Zurich')
+
+
+def test_custom_level_is_a_level_and_its_bounds_are_the_bounding_source_band():
+    assert fees.CUSTOM_LEVEL not in fees.LEVELS
+    assert fees.CUSTOM_BOUNDS_SOURCE in fees.SOURCES
+    rules.validateFeeLevel(fees.CUSTOM_LEVEL)              # accepted beside the six
+    floorId = fees.levelId(fees.CUSTOM_BOUNDS_SOURCE, fees.POINTS[0])
+    ceilId = fees.levelId(fees.CUSTOM_BOUNDS_SOURCE, fees.POINTS[-1])
+    for group in fees.FEE_GROUPS:
+        low, high = fees.customBounds('RDR', TOP_ACCOUNT, 26e6, group)
+        assert low == fees.managementFee('RDR', TOP_ACCOUNT, floorId, group)
+        assert high == fees.managementFee('RDR', TOP_ACCOUNT, ceilId, group)
+        assert low <= high
+    low, high = fees.customBounds('CASP', TOP_ACCOUNT, 26e6)
+    assert low == fees.effectiveRate('CASP', 26e6, floorId)
+    assert high == fees.effectiveRate('CASP', 26e6, ceilId)
+    assert fees.customRows('CASP') == [None]
+    assert fees.customRows('RDR') == fees.FEE_GROUPS
+
+
+def test_validate_custom_fees_holds_each_row_inside_its_bounds():
+    low, high = fees.customBounds('RDR', TOP_ACCOUNT, 26e6, 'Alternatives')
+    lowC, highC = fees.customBounds('CASP', TOP_ACCOUNT, 26e6)
+    for ok in ({'RDR': {'Alternatives': low}}, {'RDR': {'Alternatives': high}},
+               {'RDR': {'Alternatives': (low + high) / 2, 'Passive': None}},
+               {'CASP': lowC}, {'CASP': highC}, {'CASP': None, 'RDR': {}}, {}, None):
+        rules.validateCustomFees(ok, MANDATE_26M)
+    for bad in ({'RDR': {'Alternatives': high + 0.01}}, {'RDR': {'Alternatives': low - 0.01}},
+                {'CASP': highC + 0.01}, {'RDR': {'Not a group': low}}, {'Flat': 0.3},
+                {'RDR': 0.3}, {'CASP': 'x'}, {'CASP': float('nan')}, {'CASP': True}, [0.3]):
+        with pytest.raises(ValidationError) as caught:
+            rules.validateCustomFees(bad, MANDATE_26M)
+        assert caught.value.field == 'customFees'
+    # without a mandate there is nothing to bound against, and the shape still holds
+    rules.validateCustomFees({'RDR': {'Alternatives': 9.0}}, None)
+    with pytest.raises(ValidationError):
+        rules.validateCustomFees({'RDR': {'Nope': 0.1}}, None)
+
+
+def test_product_fee_under_the_custom_level_reads_the_row_or_is_unpriced():
+    custom = {'CASP': 0.5, 'RDR': {'Passive': 0.1}}
+    assert fees.productFee('CASP', fees.CUSTOM_LEVEL, 'Alternatives', TOP_ACCOUNT, 26e6, custom) == 0.5
+    assert fees.productFee('RDR', fees.CUSTOM_LEVEL, 'Passive', TOP_ACCOUNT, 26e6, custom) == 0.1
+    assert fees.productFee('RDR', fees.CUSTOM_LEVEL, 'Alternatives', TOP_ACCOUNT, 26e6, custom) is None
+    assert fees.productFee('RDR', fees.CUSTOM_LEVEL, 'Passive', TOP_ACCOUNT, 26e6, None) is None
+    assert fees.customRate({'RDR': 0.3}, 'RDR', 'Passive') is None       # the wrong shape is no rate
+    # the six delivered levels never read the map
+    assert fees.productFee('RDR', 'PMG Target', 'Passive', TOP_ACCOUNT, 26e6, custom) == \
+        fees.managementFee('RDR', TOP_ACCOUNT, 'PMG Target', 'Passive')
+    payload = fees.feePayload(TOP_ACCOUNT, 26e6)
+    assert payload['customLevel'] == fees.CUSTOM_LEVEL
+    assert payload['customBounds']['floor'] in fees.LEVELS
+    assert payload['customBounds']['ceiling'] in fees.LEVELS
+
+
+def _customModel(schedule, customFees):
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    return buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES, 26e6,
+                                   sleeves.VARIANTS[0], False, schedule, fees.CUSTOM_LEVEL,
+                                   TOP_ACCOUNT, customFees=customFees)
+
+
+def test_implementation_model_prices_every_product_by_its_custom_row():
+    custom = {'RDR': {g: fees.customBounds('RDR', TOP_ACCOUNT, 26e6, g)[0]
+                      for g in fees.FEE_GROUPS}}
+    model = _customModel('RDR', custom)
+    assert model['custom'] and model['priced'] and not model['unpricedGroups']
+    items = [i for g in model['groups'] for i in g['items']]
+    assert items
+    for item in items:
+        assert item['managementFee'] == custom['RDR'][item['feeGroup']]
+        allIn = item['productCost'] + item['managementFee']
+        assert abs(item['wtdFeeBp'] - allIn * item['printedPct']) < 1e-9
+    assert abs(model['total']['wtdFeeBp'] - sum(i['wtdFeeBp'] for i in items)) < 1e-9
+    assert dict(model['customRates']) == custom['RDR']
+    # a row left unset leaves its products unpriced, and the total with them
+    gone = items[0]['feeGroup']
+    partial = {'RDR': {g: v for g, v in custom['RDR'].items() if g != gone}}
+    model2 = _customModel('RDR', partial)
+    assert model2['unpricedGroups'] == [gone]
+    assert model2['total']['wtdFeeBp'] is None
+    assert all(i['managementFee'] is None for g in model2['groups'] for i in g['items']
+               if i['feeGroup'] == gone)
+    # under a uniform schedule one rate prices the book and is its effective rate
+    model3 = _customModel('CASP', {'CASP': 0.5})
+    assert model3['marginal'] and model3['effectiveRate'] == 0.5
+    assert all(i['managementFee'] == 0.5 for g in model3['groups'] for i in g['items'])
+    assert model3['customRates'] == [(None, 0.5)]
+    # nothing set at all: every row unpriced, named by the schedule
+    assert _customModel('CASP', {})['unpricedGroups'] == ['CASP']
+
+
+def test_store_keeps_custom_fees_and_who_entered_them(tmp_path, monkeypatch):
+    from cyrus_pmg.pmgService.scenario import scenarioStore
+    monkeypatch.setenv('SCENARIO_STORE_DIR', str(tmp_path))
+    state = scenarioStore.createScenario(MANDATE_26M, BASIS)
+    assert state['customFees'] == {}
+    after = scenarioStore.updateScenario(state['id'], feeLevel=fees.CUSTOM_LEVEL,
+                                         customFees={'CASP': 0.5}, customFeesBy='alice')
+    assert after['feeLevel'] == fees.CUSTOM_LEVEL
+    assert after['customFees'] == {'CASP': 0.5}
+    assert after['customFeesBy'] == 'alice' and after['customFeesAt']
+    # an unrelated write keeps the map; a level change does too, so coming
+    # back to Custom finds the rates where they were
+    again = scenarioStore.updateScenario(state['id'], feeLevel='PMG Target')
+    assert again['customFees'] == {'CASP': 0.5}
+
+
+def test_workbook_header_states_custom_rates_and_who_entered_them(tmp_path):
+    import time as _time
+    from openpyxl import load_workbook
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    custom = {'RDR': {g: fees.customBounds('RDR', TOP_ACCOUNT, 26e6, g)[1]
+                      for g in fees.FEE_GROUPS}}
+    payload = PORT.build_export(BASIS, MANDATE_26M, [result],
+                                {'sleeves': chosen, 'variant': sleeves.VARIANTS[0],
+                                 'feeSchedule': 'RDR', 'feeLevel': fees.CUSTOM_LEVEL,
+                                 'customFees': custom, 'customFeesBy': 'alice',
+                                 'customFeesAt': _time.time()})
+    path = tmp_path / 'custom.xlsx'
+    path.write_bytes(payload)
+    sheet = load_workbook(path)['Implementation']
+    rows_ = list(sheet.iter_rows(values_only=True))
+    labels = [r[0] for r in rows_[:14]]
+    assert rows_[labels.index('Fee Level')][1] == fees.CUSTOM_LEVEL
+    stated = {r[0]: r[1] for r in rows_[:14] if r[0] and str(r[0]).startswith('Custom Rate · ')}
+    assert set(stated) == {'Custom Rate · ' + g for g in fees.FEE_GROUPS}
+    assert stated['Custom Rate · Passive'] == '{:.2f}%'.format(custom['RDR']['Passive'])
+    assert 'Effective Rate' not in labels and 'Account Size Tier' not in labels
+    assert rows_[labels.index('Custom Rates Entered By')][1].startswith('alice')
+    # every product row's Mgmt fee is its group's custom rate
+    header = next(r for r in rows_ if 'Mgmt fee' in r)
+    mgmtAt = list(header).index('Mgmt fee')
+    priced = [r[mgmtAt] for r in rows_ if isinstance(r[mgmtAt], float)]
+    assert priced and all(any(abs(v * 100 - c) < 1e-9 for c in custom['RDR'].values()) for v in priced)
+
+
+def test_export_refuses_a_custom_level_with_a_row_unset(tmp_path, monkeypatch):
+    """The endpoint, end to end: a custom level with a fee group still to set
+    is a 422 naming the group, the way a missing sleeve is (D96)."""
+    from cyrus_pmg.pmgService import dashboardRouter
+    from cyrus_pmg.pmgService.scenario import scenarioStore
+    monkeypatch.setenv('SCENARIO_STORE_DIR', str(tmp_path))
+    monkeypatch.setenv('SCENARIO_ADAPTER', 'fixtures')
+    dashboardRouter._port = None
+    state = scenarioStore.createScenario(MANDATE_26M, BASIS)
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0], sleeves=chosen,
+                                 includeFees=True, feeSchedule='RDR',
+                                 feeLevel=fees.CUSTOM_LEVEL,
+                                 customFees={'RDR': {'Passive': 0.1}})
+    scenarioStore.updateScenario(state['id'], basis=BASIS)
+    from cyrus_pmg.pmgService.scenario.types import PortfolioKey as PK
+    scenarioStore.recordColumn(state['id'], PK.fromStr(result['keyStr']), 'base') \
+        if hasattr(scenarioStore, 'recordColumn') else None
+    response = dashboardRouter.exportScenario(state['id'], caller=_caller())
+    assert response.status_code == 422, getattr(response, 'body', b'')[:200]
+    body = json.loads(response.body)
+    assert body.get('field') == 'customFees' or 'customFees' in json.dumps(body)

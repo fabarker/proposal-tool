@@ -100,7 +100,8 @@ class ScenarioPort(Protocol):
         portfolios, risk_dashboard, assumptions, Implementation.
 
         *implementation* carries ``sleeves``, ``variant``, ``tacticalTilt``,
-        ``volPremium``, ``includeFees``, ``feeSchedule`` and ``feeLevel``; the fee tier comes
+        ``volPremium``, ``includeFees``, ``feeSchedule``, ``feeLevel`` and, under the
+        custom level, ``customFees`` (D96); the fee tier comes
         from the mandate's top account size (D51). With ``includeFees`` false
         the sheet carries no fee columns at all and no schedule is needed
         (D52). ``proposalId`` is the Proposal UID the caller minted before

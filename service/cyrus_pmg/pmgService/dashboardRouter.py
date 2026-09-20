@@ -28,7 +28,7 @@ from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, prop
                                            scenarioStore, sleeveRepo, sleeveRules)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
-    exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
+    exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
     validateKey, validateVariant)
 from cyrus_pmg.pmgService.scenario.sleeves import sleeveExists
 from cyrus_pmg.pmgService.scenario.types import (
@@ -115,6 +115,7 @@ def _scenarioPayload(state: dict) -> dict:
         'includeFees': _includeFees(state),
         'feeSchedule': state.get('feeSchedule'),
         'feeLevel': state.get('feeLevel'),
+        'customFees': state.get('customFees') or {},
     }
 
 
@@ -611,7 +612,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
     """Persist mandate, basis, variant or sleeve updates (deviations D2, D29).
 
     Accepts any subset of {mandate, basis, variant, tacticalTilt, volPremium,
-    sleeves, includeFees, feeSchedule, feeLevel}. Mandate updates are validated server-side; sleeve
+    sleeves, includeFees, feeSchedule, feeLevel, customFees}. Mandate updates are validated server-side; sleeve
     maps are checked against the library, and auto-attached categories are
     refused so a client bug cannot store one. The fee schedule and level are
     checked against the framework's lists (D51).
@@ -627,7 +628,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         current = scenarioStore.getScenario(scenarioId)
         mandate = basis = sleeves = variant = None
         tacticalTilt = feeSchedule = feeLevel = includeFees = None
-        volPremium = None
+        volPremium = customFees = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
             port.validate_mandate(mandate)
@@ -649,6 +650,10 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         if 'feeLevel' in payload:
             feeLevel = payload['feeLevel']
             validateFeeLevel(feeLevel)
+        if 'customFees' in payload:
+            # bounded against the mandate in force after this write (D96)
+            customFees = payload['customFees'] or {}
+            validateCustomFees(customFees, mandate or MandateInput.fromDict(current['mandate']))
         if 'sleeves' in payload:
             from cyrus_pmg.pmgService.scenario.rules import AUTO_SLEEVE_CATEGORIES
             against = variant or current.get('variant')
@@ -677,7 +682,8 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             scenarioId, mandate=mandate, basis=basis, sleeves=sleeves,
             variant=variant, tacticalTilt=tacticalTilt,
             feeSchedule=feeSchedule, feeLevel=feeLevel,
-            includeFees=includeFees, volPremium=volPremium)
+            includeFees=includeFees, volPremium=volPremium,
+            customFees=customFees, customFeesBy=caller.kerberos)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
@@ -809,7 +815,10 @@ def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
                           'tacticalTilt': bool(state.get('tacticalTilt', True)),
                           'volPremium': bool(state.get('volPremium', True)),
                           'includeFees': includeFees,
-                          'feeSchedule': feeSchedule, 'feeLevel': feeLevel}
+                          'feeSchedule': feeSchedule, 'feeLevel': feeLevel,
+                          'customFees': state.get('customFees') or {},
+                          'customFeesBy': state.get('customFeesBy') or '',
+                          'customFeesAt': state.get('customFeesAt')}
         # The implemented model is built ONCE here and handed to both the
         # writer and the register, so the sheet a client receives and the
         # record kept of it are the same model rather than two builds (D69).
@@ -818,7 +827,15 @@ def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
         model = buildImplementationRows(
             results[0], sleeves, AUTO_SLEEVE_CATEGORIES, mandate.mandateSize, variant,
             implementation['tacticalTilt'], feeSchedule if includeFees else None, feeLevel,
-            mandate.topAccountSize, implementation['volPremium'], basis.currency)
+            mandate.topAccountSize, implementation['volPremium'], basis.currency,
+            customFees=implementation['customFees'])
+        # Under the custom level a row without a rate leaves its products
+        # unpriced, and an unpriced product cannot go on a priced sheet (D96).
+        if model.get('unpricedGroups'):
+            raise ValidationError(
+                'customFees',
+                'Set a custom rate for every fee group in the model - missing: {}.'.format(
+                    ', '.join(model['unpricedGroups'])))
         # A position smaller than the product will accept is not a position:
         # the export refuses while any survives, so the UI's block cannot be
         # walked past by calling the endpoint directly (item 3).

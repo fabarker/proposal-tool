@@ -1,0 +1,598 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Fees</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Document chrome: the same system as proposals/guided-first-build.html */
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --accent-ink:#FFFFFF; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --tint:#EEF2F9; --good:#1E6B45; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#8E2A2A; --bad-tint:#F8E7E7; --code:#F1F3F7;
+  --f-display:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+    --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+    --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+    --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+  --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55}
+a{color:var(--accent)}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:28px;padding-block:40px 96px}
+@media (max-width:700px){.wrap{padding-inline:16px;padding-block:28px 72px}}
+.prose{max-width:70ch}
+.mast{border-bottom:2px solid var(--navy);padding-bottom:22px;margin-bottom:44px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(34px,4.6vw,52px);line-height:1.05;margin:0 0 14px;color:var(--navy);text-wrap:balance;letter-spacing:-.01em}
+.sub{font-size:18px;color:var(--ink-2);max-width:66ch;margin:0 0 18px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+h2{font-family:var(--f-display);font-weight:500;font-size:clamp(26px,3vw,34px);line-height:1.15;color:var(--navy);margin:64px 0 12px;text-wrap:balance;scroll-margin-top:20px}
+h3{font-size:19px;font-weight:600;margin:0 0 6px;color:var(--ink);text-wrap:balance}
+p{margin:0 0 14px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--code);padding:1px 5px;border-radius:3px}
+pre{font-family:var(--f-mono);font-size:13px;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;line-height:1.5;margin:0 0 14px}
+.toc{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin:14px 0 0;padding:0;list-style:none}
+.toc a{text-decoration:none;color:var(--ink-2)} .toc a:hover{color:var(--accent)}
+.toc b{font-family:var(--f-mono);font-size:12px;color:var(--accent);margin-right:5px}
+
+/* the flow, three steps in order */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:20px 0 0;counter-reset:s}
+.steps div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px 12px;font-size:14px;color:var(--ink-2);position:relative}
+.steps div::before{counter-increment:s;content:counter(s);position:absolute;top:12px;right:14px;font:600 12px var(--f-mono);color:var(--accent)}
+.steps b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px;padding-right:20px}
+.steps small{display:block;font-family:var(--f-mono);font-size:11px;color:var(--ink-3);margin-top:8px}
+.anat{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:18px 0 0}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+.rule h3{font-size:15px;margin-bottom:5px}
+.rule p{font-size:14px;color:var(--ink-2);margin:0 0 6px}
+.rule p:last-child{margin:0}
+.tbl-wrap{overflow-x:auto;margin:18px 0 0;border:1px solid var(--line);border-radius:6px}
+.tbl{border-collapse:collapse;width:100%;min-width:640px;font-size:14px;background:var(--surface)}
+.tbl th,.tbl td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl thead th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700;background:var(--tint)}
+.tbl tbody tr:last-child td,.tbl tbody tr:last-child th{border-bottom:0}
+.tbl tbody th{font-weight:600;white-space:nowrap}
+.rec{background:var(--surface);border:1px solid var(--line-strong);border-left:4px solid var(--accent);border-radius:6px;padding:20px 22px;margin:20px 0 0}
+.rec p:last-child{margin:0}
+ol.plan{padding-left:22px;margin:14px 0 0}
+ol.plan li{margin:0 0 12px;padding-left:4px}
+ol.plan li b{display:block}
+ol.plan li span{color:var(--ink-2);font-size:14.5px}
+ol.dq{padding-left:20px;margin:12px 0 0}
+ol.dq li{margin:0 0 10px}
+.aside{margin:18px 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:14px;color:var(--ink-2)}
+.aside li b{color:var(--ink);font-weight:600}
+.aside li i{font-family:var(--f-mono);font-style:normal;font-size:12px;color:var(--ink-3);margin-right:8px}
+
+/* the live mock-up frame */
+.demo{margin:20px 0 0}
+.demo-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.demo-bar .lbl{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-right:auto}
+.demo-bar button{font:600 13px var(--f-body);border-radius:4px;padding:5px 12px;cursor:pointer;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink)}
+.demo-bar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.demo-scroll{overflow-x:auto;border-radius:8px;border:1px solid var(--line-strong)}
+.demo-cap{font-size:13px;color:var(--ink-3);margin:8px 0 0}
+
+/* ── the mock: the tool's own tokens, fixed ── */
+.mock{--p-bg:#FBFCFE;--p-surface:#FFFFFF;--p-ink:#1C2733;--p-ink2:#5B6B7C;--p-ink3:#8494A4;
+  --p-line:#EEF1F4;--p-line-strong:#D4DAE2;--p-line-mid:#AFBAC7;--p-accent:#1F5FBF;--p-neg:#B42318;
+  --r-bg:#12233f;--r-line:#233754;--r-ink:#FFFFFF;--r-ink2:#B6C2D2;--r-ink3:#7E90A8;
+  --r-input:#1D2F4B;--r-input-border:#52739C;--r-focus:#8FB4FF;--r-eyebrow:#F3C46B;--r-accent:#2A6AD0;
+  position:relative;display:grid;grid-template-columns:262px minmax(0,1fr);min-width:900px;min-height:540px;
+  background:var(--p-bg);color:var(--p-ink);font-family:var(--f-body);font-size:13px;line-height:1.4;overflow:hidden}
+.m-rail{background:var(--r-bg);color:var(--r-ink);border-right:1px solid var(--r-line);padding:0 0 14px;overflow-y:auto;max-height:640px}
+.m-brand{padding:12px 16px 10px;border-bottom:1px solid var(--r-line)}
+.m-brand b{display:block;font-size:14px;font-weight:700} .m-brand span{display:block;font-size:11.5px;font-weight:600;color:var(--r-eyebrow)}
+.m-tier{padding:10px 16px 6px;border-bottom:1px solid var(--r-line);color:var(--r-ink3);font:700 9.5px var(--f-mono);letter-spacing:.16em;text-transform:uppercase}
+.m-tier span{display:block;font:500 11.5px var(--f-body);letter-spacing:0;text-transform:none;color:var(--r-ink2);margin-top:4px}
+.m-fees{padding:12px 16px 0}
+.m-fees h4{margin:0 0 8px;font:700 9.5px var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--r-ink3)}
+.m-chk{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--r-ink);margin:0 0 3px}
+.m-chk i{width:14px;height:14px;border-radius:3px;background:var(--r-accent);display:grid;place-items:center;color:#fff;font-size:10px;font-style:normal}
+.m-note{font-size:10.5px;color:var(--r-ink3);margin:0 0 9px;line-height:1.45}
+.m-note.warn{color:var(--r-eyebrow);font-weight:600}
+.m-lbl{display:block;font-size:11.5px;font-weight:600;color:var(--r-ink2);margin:9px 0 4px}
+.m-seg{display:grid;border:1px solid var(--r-input-border);border-radius:4px;overflow:hidden;margin:0 0 5px}
+.m-seg button{appearance:none;border:0;background:var(--r-input);color:var(--r-ink2);font:600 11px var(--f-body);letter-spacing:.03em;padding:6px 4px;cursor:pointer;border-right:1px solid var(--r-input-border)}
+.m-seg button:last-child{border-right:0}
+.m-seg button[aria-pressed=true]{background:var(--r-accent);color:#fff}
+.m-seg button:focus-visible{outline:2px solid var(--r-focus);outline-offset:-2px}
+.m-seg button:disabled{opacity:.45;cursor:not-allowed}
+.m-seg.is-next button[aria-pressed=false]{box-shadow:inset 0 0 0 1px var(--r-focus)}
+.m-btn{display:block;width:100%;font:700 10.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--r-ink);background:none;border:1px solid var(--r-input-border);border-radius:4px;padding:6px 8px;cursor:pointer;margin:6px 0 0}
+.m-btn:hover{border-color:var(--r-focus)} .m-btn:focus-visible{outline:2px solid var(--r-focus);outline-offset:2px}
+.m-btn.primary{background:var(--r-accent);border-color:var(--r-accent)}
+.m-stat{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:11.5px;color:var(--r-ink2);margin:8px 0 0}
+.m-stat b{color:var(--r-ink);font-variant-numeric:tabular-nums;text-align:right;font-weight:600}
+.m-rows{margin:4px 0 0;font-size:11px;color:var(--r-ink2);display:grid;gap:2px}
+.m-rows span{display:flex;justify-content:space-between;gap:8px}
+.m-rows b{color:var(--r-ink);font-variant-numeric:tabular-nums;font-weight:600}
+.m-rows .miss b{color:var(--r-eyebrow)}
+.m-rows .dim{opacity:.55}
+
+.m-doc{padding:14px 22px 22px;overflow:auto}
+.m-eyebrow{margin:0 0 2px;font:700 9.5px var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--p-ink3)}
+.m-title{margin:0 0 2px;font-size:20px;font-weight:500;letter-spacing:-.01em;color:#16243A}
+.m-sub{margin:0 0 12px;font-size:12px;color:var(--p-ink2)}
+.m-sub b{color:var(--p-ink)}
+.m-tbl{border-collapse:collapse;background:var(--p-surface);border:1px solid var(--p-line-strong);font-size:11.5px;width:100%;min-width:560px}
+.m-tbl th,.m-tbl td{padding:4px 10px;text-align:left;white-space:nowrap;vertical-align:middle}
+.m-tbl thead th{border-bottom:1px solid var(--p-ink);font:700 9.5px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--p-ink2)}
+.m-tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.m-tbl tbody tr+tr th,.m-tbl tbody tr+tr td{border-top:1px solid var(--p-line)}
+.m-tbl tr.cat th,.m-tbl tr.cat td{background:#F0F2F5;font-weight:700;color:var(--p-ink)}
+.m-tbl tr.asset th{font-weight:400;color:#4B5A6A;padding-left:18px}
+.m-tbl tr.tot th,.m-tbl tr.tot td{background:#16243A;color:#fff;font-weight:700;border-top:1px solid #16243A}
+.m-tbl .pill{display:inline-block;font:600 9.5px var(--f-mono);letter-spacing:.04em;border-radius:8px;padding:0 6px;background:#EEF1F4;color:#5B6B7C;border:1px solid #D8DEE6}
+.m-tbl .pill.lock::after{content:" 🔒"}
+.m-tbl .dash{color:var(--p-ink3)}
+.m-tbl th.fee,.m-tbl td.fee{background:#F7FAFF}
+.m-tbl tr.cat td.fee{background:#E9EFF9}
+.m-tbl tr.unpriced td.fee{background:#FEF3C7}
+.m-foot{display:flex;flex-wrap:wrap;gap:6px 22px;margin:10px 0 0;font-size:11.5px;color:var(--p-ink2)}
+.m-gate{margin:12px 0 0;padding:10px 12px;border:1px solid var(--p-line-strong);border-left:4px solid #B45309;background:#FFFBEB;font-size:12px;color:#4A3B10;border-radius:4px}
+.m-gate.ok{border-left-color:#176A33;background:#E7F4EC;color:#14532D}
+.m-ex{font:600 10px var(--f-mono);color:var(--p-ink3);margin:8px 0 0;letter-spacing:.04em}
+
+/* the card: a modal over the mock, in the rate-card viewer's shape */
+.m-scrim{position:absolute;inset:0;background:rgba(16,24,40,.42);z-index:5;display:flex;align-items:center;justify-content:center;padding:16px}
+.m-dlg{background:#fff;border-radius:6px;box-shadow:0 12px 36px rgba(9,20,40,.35);width:min(820px,100%);max-height:100%;overflow:auto;padding:16px 18px 14px}
+.m-dlg h5{margin:0;font-size:15px;font-weight:600;color:#16243A;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.m-dlg h5 small{font:600 10px var(--f-mono);color:var(--p-ink3);letter-spacing:.06em}
+.m-dlg .sub{font-size:12px;color:var(--p-ink2);margin:3px 0 10px;max-width:none}
+.m-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px;padding:8px 10px;background:#F5F7FA;border-radius:4px;font-size:11.5px;color:var(--p-ink2)}
+.m-tools .tb{font:600 11px var(--f-body);color:var(--p-accent);background:#fff;border:1px solid #B9CDF0;border-radius:3px;padding:3px 8px;cursor:pointer}
+.m-tools .tb:hover{background:#E3EBFA}
+.m-tools .tb:focus-visible{outline:2px solid var(--p-accent);outline-offset:1px}
+.m-tools .sep{width:1px;height:18px;background:var(--p-line-strong);margin:0 4px}
+.m-tools .pick{display:inline-flex;border:1px solid var(--p-line-mid);border-radius:3px;overflow:hidden}
+.m-tools .pick button{font:600 11px var(--f-body);background:#fff;border:0;border-right:1px solid var(--p-line-mid);padding:3px 8px;cursor:pointer;color:var(--p-ink2)}
+.m-tools .pick button:last-child{border-right:0}
+.m-tools .pick button[aria-pressed=true]{background:#E3EBFA;color:#1E4FA3}
+.m-card{border-collapse:collapse;width:100%;font-size:11.5px;background:#fff;border:1px solid var(--p-line-strong)}
+.m-card th,.m-card td{padding:5px 9px;white-space:nowrap;vertical-align:middle;text-align:right;font-variant-numeric:tabular-nums}
+.m-card th:first-child,.m-card td:first-child,.m-card th:nth-child(2),.m-card td:nth-child(2){text-align:left}
+.m-card thead th{font:700 9.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--p-ink2);border-bottom:1px solid var(--p-ink)}
+.m-card thead tr.grp th{border-bottom:1px solid var(--p-line-strong);color:var(--p-ink3);text-align:center;letter-spacing:.14em}
+.m-card thead tr.grp th:first-child,.m-card thead tr.grp th:nth-child(2){border-bottom:0}
+.m-card tbody tr+tr th,.m-card tbody tr+tr td{border-top:1px solid var(--p-line)}
+.m-card tbody th{font-weight:600;color:var(--p-ink)}
+.m-card tbody th small{display:block;font:500 10px var(--f-mono);color:var(--p-ink3);letter-spacing:.04em}
+.m-card td.cnt{color:var(--p-ink2)}
+.m-card tr.sched th,.m-card tr.sched td{background:#F5F7FA}
+.m-card tr.sched th{font:700 9.5px var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--p-ink2)}
+.m-card tr.off th,.m-card tr.off td{color:var(--p-ink3)}
+.m-card td.ref button{appearance:none;background:none;border:0;font:inherit;color:inherit;cursor:pointer;padding:1px 4px;border-radius:3px;border:1px dashed transparent}
+.m-card td.ref button:hover,.m-card td.ref button:focus-visible{border-color:var(--p-accent);color:var(--p-accent);outline:none}
+.m-card td.ref.src{background:#EEF3FC}
+.m-card th.cust,.m-card td.cust{background:#F7FAFF;border-left:2px solid var(--p-accent)}
+.m-card thead th.cust{color:#1E4FA3}
+.m-cell{font:500 11.5px var(--f-body);color:var(--p-ink);background:#fff;border:1px solid var(--p-line-mid);border-radius:3px;padding:2px 5px;width:66px;text-align:right;font-variant-numeric:tabular-nums}
+.m-cell:focus-visible{outline:none;border-color:var(--p-accent);box-shadow:0 0 0 3px rgba(31,95,191,.18)}
+.m-cell.bad{border-color:var(--p-neg);background:#FDE8E8}
+.m-cell.is-next{border-color:var(--p-accent);box-shadow:0 0 0 3px rgba(31,95,191,.18)}
+.m-cell:disabled{background:#F0F2F5;color:var(--p-ink3);cursor:not-allowed;border-style:dashed}
+.m-card td.cust small{display:block;font-size:10px;color:var(--p-ink3);text-align:right;margin-top:2px}
+.m-dlg-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:12px 0 0;font-size:11.5px;color:var(--p-ink2);flex-wrap:wrap}
+.m-dlg-actions div{display:flex;gap:8px}
+.m-dlg-actions button{font:700 10.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;border-radius:4px;padding:6px 12px;cursor:pointer;border:1px solid var(--p-line-strong);background:#fff;color:var(--p-ink)}
+.m-dlg-actions button.primary{background:var(--p-accent);border-color:var(--p-accent);color:#fff}
+.m-dlg-actions button:focus-visible{outline:2px solid var(--p-accent);outline-offset:2px}
+.m-err{font-size:11.5px;color:var(--p-neg);font-weight:600;margin:6px 0 0}
+.m-legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 0;font-size:11px;color:var(--p-ink3)}
+.m-legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Proposal Tool · Design proposal for review</p>
+    <h1>Custom fees</h1>
+    <p class="sub">A third fee level beside Management and PMG. Choosing it opens an editable fee card: the delivered rates for reference, and a Custom column the PWA fills, one rate per schedule and fee group. Every product in a group pays that group's rate.</p>
+    <div class="meta"><span><b>Scope</b> step 2, the Pricing group, the fee card and the fee columns</span><span><b>Branch</b> sleeve-editions</span><span><b>Status</b> built, 20 Sep &mdash; deviation D96</span><span><b>Revision</b> 2, the design as decided on 19 Sep</span></div>
+  </header>
+
+  <section class="prose">
+    <h2 style="margin-top:0">The flow</h2>
+    <p>The order the PWA already follows, with one more option at the second step. Nothing moves in the rail; the schedule control is untouched, the level control's first row gains <b>Custom</b>, and the card opens from there.</p>
+  </section>
+  <div class="steps">
+    <div><b>Choose the schedule</b>CASP or RDR, as today. It decides the <em>grain</em> of a custom rate: under CASP there is one row and one rate for the whole book; under RDR one row per fee group, five rates at most.<small>unchanged</small></div>
+    <div><b>Choose the level: Management, PMG, or Custom</b>The level's source row gains a third button. Management and PMG behave as today, with Floor / Target / Ceiling beneath. Under Custom the point row is not offered, because a custom rate has no point on a band.<small>new: one button</small></div>
+    <div><b>Fill the card</b>Choosing Custom opens the fee card in an editable form. The delivered rates at every level are the reference columns; the far-right column is the PWA's. It can be filled from any delivered level in one click, then edited. Apply writes it; the rail then summarises it and can reopen the card.<small>new: the card</small></div>
+  </div>
+
+  <section class="prose">
+    <h2>The mock-up</h2>
+    <p>Priced from the running tool's <b>USD Moderate Core</b> base: $10,000,000 mandate, $25,000,000 top account, thirteen products in six categories, placeholder card. The first mock starts where a PWA starts, on CASP at PMG Target: choose <b>Custom</b> and the card opens. The second starts under RDR with custom rates already applied. Type into any Custom cell, click any delivered rate to copy it across, press <b>Reset</b> to start over.</p>
+  </section>
+  <div class="demo" data-start="fresh"></div>
+  <p class="demo-cap">From the standard state. Choose Custom to open the card; under CASP the card has one live row.</p>
+  <div class="demo" data-start="rdr"></div>
+  <p class="demo-cap">Under RDR, already priced by fee group. Reopen the card with <b>Edit custom fees</b>; switch the schedule to CASP and back to see each schedule keep its own rates.</p>
+
+  <section>
+    <h2 id="card">The card, in detail</h2>
+    <p class="prose">It is the rate-card viewer (D55) in its <em>by tier</em> pivot, pinned to this mandate, with one column added. The reader who knows the viewer knows this card.</p>
+    <div class="anat">
+      <div class="rule"><h3>Rows</h3><p>One per schedule and fee group, the viewer's own list: <b>CASP</b> as one row, then <b>RDR</b> with a row for each of its five fee groups. Each row says how many of this model's products it prices, so a group with none is visibly optional.</p><p>The rows of the schedule chosen in the rail are live. The other schedule's rows stay on the card for reference but their Custom cell is inert, with the reason on hover: <em>choose RDR to price by fee group</em>.</p></div>
+      <div class="rule"><h3>Reference columns</h3><p><b>Management</b> Floor / Target / Ceiling, then <b>PMG</b> Floor / Target / Ceiling: six columns of delivered rates. The RDR rows show the tier this mandate's top account size falls in, named in the card's head. The CASP row shows the blend for this mandate at each level, since CASP is marginal (D83) and a single tier would be the wrong number to copy.</p><p>Every reference cell on a live row is a button: click it and it becomes that row's custom rate.</p></div>
+      <div class="rule"><h3>The Custom column</h3><p>Far right, ruled off, one input per live row. Percent to two decimals, the unit of every other fee; <code>45bp</code> is accepted and shown as <code>0.45%</code>. Under each input, the product count it applies to.</p><p><b>Fill from</b>, in the tool strip, copies one delivered level into every live row at once; the PWA then edits the rows that differ. <b>Clear</b> empties the column.</p></div>
+      <div class="rule"><h3>Foot and actions</h3><p>What the column prices: rows set, effective management fee, all-in weighted fee in basis points, and dollars a year, live as cells are entered. <b>Apply</b> writes the column to the scenario; <b>Cancel</b> and Escape discard the draft. A partial column can be applied: the products of a group without a rate are unpriced, and the rail and the table say which.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 id="rail">What the rail shows</h2>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th scope="col">State</th><th scope="col">Under the level control</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Management or PMG</th><td>As today: the point row, the pricing note (effective rate under CASP, the tier under RDR), the placeholder flag, the card version, and <em>How this is calculated</em> under CASP.</td></tr>
+        <tr><th scope="row">Custom, nothing applied</th><td>No point row. <em>No custom rates yet. Every product is unpriced until the card is filled.</em> An <b>Edit custom fees</b> button. The card opens itself the first time Custom is chosen, so this state is seen only after a Cancel.</td></tr>
+        <tr><th scope="row">Custom, CASP</th><td><em>One rate for every product: 0.45%.</em> Effective rate, all-in and dollars a year. <b>Edit custom fees</b>.</td></tr>
+        <tr><th scope="row">Custom, RDR</th><td>One line per fee group with its rate, the groups with no products dimmed, a group still to set marked. Then the same three figures and <b>Edit custom fees</b>.</td></tr>
+        <tr><th scope="row">Custom, any</th><td>The placeholder flag is not shown: it is about the delivered card, and these rates are the PWA's. The card version line stays, because the reference columns came from it.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2 id="rules">Rules</h2>
+    <div class="anat">
+      <div class="rule"><h3>Grain</h3><p>A custom rate belongs to a schedule and fee group, never to a product. Every product in the group pays it; a product cannot differ from its group. Under CASP the group is the whole book.</p></div>
+      <div class="rule"><h3>Range</h3><p>0.00% to 3.00% inclusive, a rule served in the schema (<code>rules.customFeeMax</code>), not a number in the page. Outside it is refused with the reason and the previous value kept. Zero is a real rate and prints as <code>0.00%</code>.</p></div>
+      <div class="rule"><h3>A blank is unpriced</h3><p>A live row without a rate leaves its products with no management fee: dash in the cell, no weighted fee, the total unpriced, the download refused with <em>Set a custom rate for every fee group in the model</em>. It never reads as zero. Rows with no products in the model may stay blank.</p></div>
+      <div class="rule"><h3>Each schedule keeps its own</h3><p>The custom rates for CASP and for RDR are stored side by side. Switching the schedule under Custom shows the other set; switching the level back to PMG or Management keeps both, as a stored schedule survives an untick today (D52), so returning to Custom restores them.</p></div>
+      <div class="rule"><h3>Sleeves can change under it</h3><p>Rates are keyed by group, so a product that arrives in a priced group is priced at once, and one that leaves changes nothing. A product that arrives in a group with no rate is unpriced and the rail says which group. No rate is ever carried from one group to another.</p></div>
+      <div class="rule"><h3>The tier is this mandate's</h3><p>The card is pinned to the tier the top account size falls in (RDR) and to the mandate's blend (CASP). There is no tier selector on the editable card; the viewer keeps its own for browsing the delivery.</p></div>
+      <div class="rule"><h3>The server prices</h3><p><code>fees.productFee</code> gains a custom branch that reads the group's rate; <code>resolveFee</code> on the page mirrors it; the mirror test walks every schedule and group. The page never computes a fee it was not served.</p></div>
+      <div class="rule"><h3>The rounding rule holds</h3><p>Weighted fee is the printed all-in times the printed weight, and the total is the sum (§8.4). Custom changes an input to that arithmetic, not the arithmetic.</p></div>
+      <div class="rule"><h3>The record says so</h3><p>The workbook's header rows read <em>Fee schedule: RDR · Fee level: Custom · entered by A. Castellanos, 20 Sep 2026 · against card 0.0-placeholder</em>, then one line per group and rate. The register's implemented picture carries the same.</p></div>
+      <div class="rule"><h3>Who may</h3><p>Anyone who may edit the scenario. A cap below the range, or an approval before download, would be a capability in the schema, off by default, and a proposal of its own.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 id="wire">On the wire</h2>
+    <p class="prose">One new value for an existing field, and one new field. Everything else the scenario carries is unchanged.</p>
+<pre>PUT /api/scenario/{id}
+{
+  "feeSchedule": "RDR",              // unchanged: CASP or RDR
+  "feeLevel":    "Custom",           // new value beside the six delivered levels
+  "customFees": {                    // new; each schedule keeps its own
+    "CASP": 0.45,                    // one rate, the whole book
+    "RDR":  { "Passive": 0.10, "Core Active": 0.38, "Specialist Active": 0.56,
+              "Alternatives": 0.76, "Asset Allocation": 0.26 }
+  }
+}</pre>
+    <p class="prose"><code>validateFeeLevel</code> accepts <code>Custom</code>; a rate outside <code>rules.customFeeMax</code> or a group the card does not name is refused with the field. <code>GET /scenario/schema</code> already serves the reference rates the card needs (<code>fees.rates</code>, blended under CASP), so the card opens with no fetch, as the build-up card does (D84).</p>
+  </section>
+
+  <section>
+    <h2 id="plan">How it would be built</h2>
+    <ol class="plan prose">
+      <li><b>Data</b><span><code>fees.json</code> gains <code>"customLevel": "Custom"</code> and <code>"customFeeMax": 3.0</code>; the store gains <code>customFees</code> with the shape above, accepted by <code>PUT /scenario/{id}</code> and validated in <code>rules.py</code> beside <code>validateFeeLevel</code>.</span></li>
+      <li><b>Pricing</b><span><code>fees.productFee</code> reads the group's custom rate when the level is Custom, or <code>None</code> when the group has none. <code>workbook.implementationModel</code> passes <code>customFees</code> through; the header rows gain the Custom lines.</span></li>
+      <li><b>Rail</b><span><code>feeFields</code> draws a third source button, hides the point row under Custom, and draws the summary block and <em>Edit custom fees</em>. The change handlers write <code>feeLevel</code> as they do for the six levels.</span></li>
+      <li><b>Card</b><span>A new panel beside <code>renderFeePanel</code> and <code>renderPricePanel</code>, built from the viewer's by-tier table with the Custom column, the tool strip, the foot and Apply / Cancel. Same focus, Escape and inert handling as the other two (§13). Opens itself on the first choice of Custom; the rail button reopens it.</span></li>
+      <li><b>Table</b><span>No change to the columns. <code>resolveFee</code> gains the branch; the guide marks nothing here, since the entry happens in the card.</span></li>
+      <li><b>Record</b><span>Spec §8.3 (the model), §9.3 (the column under Custom), §10.3 (the refusal), §11 (the wire); a DEVIATIONS entry; the register's implemented picture gains the rates.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2 id="questions">For you to decide</h2>
+    <ol class="dq prose">
+      <li><b>Both schedules on the card, or only the chosen one?</b> The mock shows both, the unchosen one inert, because that is the viewer's shape and it lets a PWA see what RDR would have charged while pricing under CASP. Showing only the chosen schedule's rows makes a shorter card under CASP: one row.</li>
+      <li><b>Open the card on the first choice of Custom?</b> The mock does. The alternative is to show the summary block with <em>Edit custom fees</em> and let the PWA open it, which is one more click and no surprise.</li>
+      <li><b>Groups with no products.</b> The mock lets them stay blank. Requiring every row would make the card a complete custom schedule, reusable if the sleeves change; the cost is entering rates for products that are not there.</li>
+      <li><b>The ceiling.</b> 3.00% is a guess.</li>
+      <li><b>Who entered it, on the client-facing sheet.</b> The name and date could go only to the register.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2 id="aside">Set aside</h2>
+    <p class="prose">Six shapes were mocked up in the first revision of this page. They are listed so the reasoning is on record; the mock-ups are in the page's history.</p>
+    <ul class="aside">
+      <li><i>A</i><b>Custom as a schedule, edited in the table.</b> Per product, in the twelfth column of a scrolling table; inputs on the client-facing document.</li>
+      <li><i>B</i><b>A worksheet in the rail.</b> Per product; thirteen more rows in the tool's longest surface.</li>
+      <li><i>C</i><b>An editable fee card, per product.</b> The nearest to what was chosen; the grain was the product, not the group.</li>
+      <li><i>D</i><b>Overrides on a standard schedule.</b> Per product, with the standard rate struck through; the record says <em>CASP with 2 exceptions</em>.</li>
+      <li><i>E</i><b>Custom by shape.</b> One rate, or one per group, entered in the rail. The group half is what was chosen, moved into the card.</li>
+      <li><i>F</i><b>A negotiated ladder.</b> The PWA's own tier rates, priced marginally.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function () {
+  var MANDATE = 10000000, TOP = 25000000, TIER = { id: 'T3', label: '$25m to $50m' };
+  var SOURCES = ['Management', 'PMG'], POINTS = ['Floor', 'Target', 'Ceiling'];
+  var LEVELS = ['Management Floor', 'Management Target', 'Management Ceiling', 'PMG Floor', 'PMG Target', 'PMG Ceiling'];
+  /* the placeholder card's CASP ladder; the $10m mandate fills T1 only, so
+     the blend at each level is T1's rate */
+  var LADDER = [
+    { id: 'T1', from: 0, to: 10e6, r: [0.45, 0.60, 0.75, 0.47, 0.56, 0.65] },
+    { id: 'T2', from: 10e6, to: 25e6, r: [0.37, 0.52, 0.67, 0.39, 0.48, 0.57] },
+    { id: 'T3', from: 25e6, to: 50e6, r: [0.30, 0.45, 0.60, 0.32, 0.41, 0.50] },
+    { id: 'T4', from: 50e6, to: 100e6, r: [0.23, 0.38, 0.53, 0.25, 0.34, 0.43] },
+    { id: 'T5', from: 100e6, to: null, r: [0.17, 0.32, 0.47, 0.19, 0.28, 0.37] }
+  ];
+  var GROUPS = ['Passive', 'Core Active', 'Specialist Active', 'Alternatives', 'Asset Allocation'];
+  var RDR = {                                  /* at T3, the $25m top account's tier */
+    'Passive': [0.07, 0.22, 0.37, 0.09, 0.18, 0.27],
+    'Core Active': [0.27, 0.42, 0.57, 0.29, 0.38, 0.47],
+    'Specialist Active': [0.45, 0.60, 0.75, 0.47, 0.56, 0.65],
+    'Alternatives': [0.65, 0.80, 0.95, 0.67, 0.76, 0.85],
+    'Asset Allocation': [0.15, 0.30, 0.45, 0.17, 0.26, 0.35]
+  };
+  var CATS = [
+    { name: 'Investment Grade Fixed Income', sleeve: 'SMA Only', w: 27.16 },
+    { name: 'Hybrid Fixed Income', sleeve: 'SVP', auto: true, w: 2.20 },
+    { name: 'Other Fixed Income', sleeve: 'Mutual Funds', w: 9.89 },
+    { name: 'Public Equity', sleeve: 'Passive', w: 41.76 },
+    { name: 'Hedge Funds', sleeve: 'HFM & ART', w: 10.99 },
+    { name: 'Asset Allocation Strategies', sleeve: 'Tactical Tilt Overlay Portfolio', auto: true, w: 8.00 }
+  ];
+  var P = [
+    { id: 'muni', c: 0, a: 'Municipals', n: 'GSAM Core Municipal SMA', w: 12.22, cost: 0.25, g: 'Core Active' },
+    { id: 'igc', c: 0, a: 'IG Corporate', n: 'GSAM Intermediate Credit SMA', w: 9.51, cost: 0.28, g: 'Core Active' },
+    { id: 'sd', c: 0, a: 'Short Duration', n: 'GSAM Short Duration SMA', w: 5.43, cost: 0.22, g: 'Core Active' },
+    { id: 'svp', c: 1, a: 'Volatility Premium', n: 'Strategic Volatility Premium', w: 2.20, cost: 0.65, g: 'Specialist Active' },
+    { id: 'hy', c: 2, a: 'High Yield', n: 'GS High Yield Fund', w: 4.45, cost: 0.72, g: 'Specialist Active' },
+    { id: 'emd', c: 2, a: 'EM Debt', n: 'GS Emerging Markets Debt', w: 3.46, cost: 0.85, g: 'Specialist Active' },
+    { id: 'ms', c: 2, a: 'Multi-Sector', n: 'GS Strategic Income Fund', w: 1.98, cost: 0.79, g: 'Specialist Active' },
+    { id: 'uslc', c: 3, a: 'US Large Cap', n: 'GS Access US Large Cap ETF', w: 22.97, cost: 0.09, g: 'Passive' },
+    { id: 'intl', c: 3, a: 'Intl Developed', n: 'GS Access Intl Equity ETF', w: 12.53, cost: 0.25, g: 'Passive' },
+    { id: 'em', c: 3, a: 'Emerging Markets', n: 'GS Access EM Equity ETF', w: 6.26, cost: 0.37, g: 'Passive' },
+    { id: 'hw', c: 4, a: 'Multi-Strategy', n: 'GS HedgeWorks Multi-Strategy', w: 6.59, cost: 1.35, g: 'Alternatives' },
+    { id: 'art', c: 4, a: 'Multi-Strategy', n: 'GS Absolute Return Tracker', w: 4.40, cost: 0.96, g: 'Alternatives' },
+    { id: 'ttf', c: 5, a: 'Tactical Tilts', n: 'Tactical Tilt Fund', w: 8.00, cost: 0.85, g: 'Asset Allocation' }
+  ];
+  /* the card's rows: CASP, then RDR by group. key is what customFees stores under */
+  var ROWS = [{ sched: 'CASP', key: 'CASP', label: 'CASP', note: 'one rate, every product' }]
+    .concat(GROUPS.map(function (g) { return { sched: 'RDR', key: g, label: g }; }));
+  function countFor(row) { return row.sched === 'CASP' ? P.length : P.filter(function (p) { return p.g === row.key; }).length; }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function pct(v, dp) { return v === null || v === undefined ? '—' : v.toFixed(dp === undefined ? 2 : dp) + '%'; }
+  function bp(v) { return v === null ? '—' : v.toFixed(1) + 'bp'; }
+  function money(v) { return v === null ? '—' : '$' + Math.round(v).toLocaleString('en-US'); }
+
+  function caspBlend(ix) {
+    var left = MANDATE, fee = 0;
+    LADDER.forEach(function (t) {
+      var cap = t.to === null ? Infinity : t.to - t.from;
+      var amt = Math.max(0, Math.min(left, cap));
+      fee += amt * t.r[ix] / 100; left -= amt;
+    });
+    return fee / MANDATE * 100;
+  }
+  /* the six delivered rates for a card row, this mandate's */
+  function reference(row) {
+    return row.sched === 'CASP' ? LEVELS.map(function (_, ix) { return caspBlend(ix); }) : RDR[row.key];
+  }
+  /* what one product's group is under a schedule */
+  function rowFor(p, schedule) { return schedule === 'CASP' ? ROWS[0] : ROWS.filter(function (r) { return r.sched === 'RDR' && r.key === p.g; })[0]; }
+  function customRate(s, row) {
+    var v = row.sched === 'CASP' ? s.custom.CASP : s.custom.RDR[row.key];
+    return v === undefined ? null : v;
+  }
+  function mgmt(p, s) {
+    var row = rowFor(p, s.schedule);
+    if (s.source === 'Custom') return customRate(s, row);
+    return reference(row)[LEVELS.indexOf(s.source + ' ' + s.point)];
+  }
+  function priced(s) {
+    var rows = P.map(function (p) { var m = mgmt(p, s); return { p: p, m: m, wtd: m === null ? null : (p.cost + m) * p.w }; });
+    var all = rows.every(function (r) { return r.m !== null; });
+    var total = all ? rows.reduce(function (a, r) { return a + r.wtd; }, 0) : null;
+    var eff = all ? rows.reduce(function (a, r) { return a + r.m * r.p.w; }, 0) / 100 : null;
+    return { rows: rows, all: all, totalBp: total, effective: eff, annual: total === null ? null : MANDATE * total / 10000 };
+  }
+  /* the live rows: the chosen schedule's; missing = live, has products, no rate */
+  function liveRows(s) { return ROWS.filter(function (r) { return r.sched === s.schedule; }); }
+  function missing(s, custom) {
+    return liveRows(s).filter(function (r) {
+      var v = r.sched === 'CASP' ? custom.CASP : custom.RDR[r.key];
+      return countFor(r) > 0 && (v === undefined || v === null);
+    });
+  }
+
+  var MAX = 3.0;
+  function parseRate(text) {
+    var t = String(text || '').trim().toLowerCase();
+    if (!t) return { empty: true };
+    var m = t.match(/^(-?\d*\.?\d+)\s*(%|bp|bps)?$/);
+    if (!m) return { bad: 'Enter a percentage, like 0.45 or 45bp.' };
+    var v = parseFloat(m[1]); if (m[2] && m[2] !== '%') v = v / 100;
+    if (v < 0) return { bad: 'A fee cannot be negative.' };
+    if (v > MAX) return { bad: 'Above the ' + MAX.toFixed(2) + '% ceiling.' };
+    return { v: Math.round(v * 100) / 100 };
+  }
+
+  /* ── rail ── */
+  function seg(values, chosen, attr, extra) {
+    return '<div class="m-seg' + (extra || '') + '" style="grid-template-columns:repeat(' + values.length + ',1fr)">'
+      + values.map(function (v) { return '<button type="button" ' + attr + '="' + esc(v) + '" aria-pressed="' + (v === chosen) + '">' + esc(v) + '</button>'; }).join('') + '</div>';
+  }
+  function railHTML(d) {
+    var s = d.s, pr = priced(s), custom = s.source === 'Custom';
+    var h = '<div class="m-brand"><b>Portfolio Management Group</b><span>Proposal Tool</span></div>'
+      + '<div class="m-tier">Sleeves <span>4 of 4 categories have a sleeve.</span></div>'
+      + '<div class="m-fees"><h4>Pricing</h4><div class="m-chk"><i>✓</i>Include Fees</div>'
+      + '<p class="m-note">Fee columns are shown in the table and written to the workbook.</p>'
+      + '<span class="m-lbl">Fee Schedule</span>' + seg(['CASP', 'RDR'], s.schedule, 'data-sched')
+      + '<p class="m-note">' + (s.schedule === 'CASP' ? 'Marginal: the mandate fills the tiers in turn. One blended rate then prices every product.' : 'Each product priced by its fee group, set by the top account size.') + '</p>'
+      + '<span class="m-lbl">Fee Level</span>' + seg(['Management', 'PMG', 'Custom'], s.source, 'data-source');
+    if (!custom) {
+      h += seg(POINTS, s.point, 'data-point')
+        + '<p class="m-note">' + (s.schedule === 'CASP' ? 'Effective rate ' + pct(caspBlend(LEVELS.indexOf(s.source + ' ' + s.point)), 4) + ', blended across the tiers by the mandate size.' : 'Tier T3, $25m to $50m, from the top account size.') + '</p>'
+        + '<p class="m-note warn">Placeholder rates, not the published schedule.</p>';
+    } else {
+      var live = liveRows(s), miss = missing(s, s.custom), any = live.some(function (r) { return customRate(s, r) !== null; });
+      if (!any) {
+        h += '<p class="m-note">No custom rates yet. Every product is unpriced until the card is filled.</p>';
+      } else if (s.schedule === 'CASP') {
+        h += '<p class="m-note">One rate for every product: <b style="color:var(--r-ink)">' + pct(s.custom.CASP) + '</b>.</p>';
+      } else {
+        h += '<p class="m-note" style="margin-bottom:4px">By fee group, tier T3:</p><div class="m-rows">' + live.map(function (r) {
+          var v = customRate(s, r), n = countFor(r);
+          return '<span class="' + (n === 0 ? 'dim' : v === null ? 'miss' : '') + '"><span>' + esc(r.label) + (n === 0 ? ' · none held' : '') + '</span><b>' + (v === null ? (n ? 'not set' : '—') : pct(v)) + '</b></span>';
+        }).join('') + '</div>';
+      }
+      h += '<button type="button" class="m-btn primary" data-opencard>Edit custom fees</button>';
+      if (miss.length && any) h += '<p class="m-note warn" style="margin-top:8px">' + miss.map(function (r) { return r.label; }).join(', ') + ': products unpriced until set.</p>';
+      h += '<div class="m-stat"><span>Effective rate</span><b>' + pct(pr.effective, 4) + '</b><span>All-in, weighted</span><b>' + bp(pr.totalBp) + '</b><span>A year</span><b>' + money(pr.annual) + '</b></div>';
+    }
+    h += '<p class="m-note" style="margin-top:8px">Card 0.0-placeholder</p>';
+    if (!custom && s.schedule === 'CASP') h += '<button type="button" class="m-btn">How this is calculated</button>';
+    return h + '</div>';
+  }
+
+  /* ── document ── */
+  function docHTML(d) {
+    var s = d.s, pr = priced(s);
+    var h = '<p class="m-eyebrow">Step 2 of 2</p><h3 class="m-title">Portfolio Implementation</h3>'
+      + '<p class="m-sub">Implementing <b>USD Moderate Core</b> against a mandate of <b>$10,000,000</b>.</p>'
+      + '<table class="m-tbl"><thead><tr><th>Categories &amp; asset classes</th><th>Products</th><th class="num">Alloc (%)</th><th>Fee group</th><th class="num">Prod cost</th><th class="num fee">Mgmt fee</th><th class="num fee">Wtd fee</th><th class="num">Notional</th></tr></thead><tbody>';
+    CATS.forEach(function (c, ci) {
+      var rows = pr.rows.filter(function (r) { return r.p.c === ci; });
+      var catBp = rows.every(function (r) { return r.wtd !== null; }) ? rows.reduce(function (a, r) { return a + r.wtd; }, 0) : null;
+      h += '<tr class="cat"><th>' + esc(c.name) + '</th><td><span class="pill' + (c.auto ? ' lock' : '') + '">' + esc(c.sleeve) + '</span></td><td class="num">' + c.w.toFixed(2) + '%</td><td></td><td></td><td class="fee"></td><td class="num fee">' + bp(catBp) + '</td><td class="num">' + money(MANDATE * c.w / 100) + '</td></tr>';
+      rows.forEach(function (r) {
+        h += '<tr class="asset' + (r.m === null ? ' unpriced' : '') + '"><th>' + esc(r.p.a) + '</th><td>' + esc(r.p.n) + '</td><td class="num">' + r.p.w.toFixed(2) + '%</td><td><span class="pill">' + esc(r.p.g) + '</span></td><td class="num">' + pct(r.p.cost) + '</td>'
+          + '<td class="num fee">' + (r.m === null ? '<span class="dash">—</span>' : pct(r.m)) + '</td><td class="num fee">' + bp(r.wtd) + '</td><td class="num">' + money(MANDATE * r.p.w / 100) + '</td></tr>';
+      });
+    });
+    h += '<tr class="tot"><th>Total</th><td></td><td class="num">100.00%</td><td></td><td></td><td class="num fee">' + pct(pr.effective) + '</td><td class="num fee">' + bp(pr.totalBp) + '</td><td class="num">' + money(MANDATE) + '</td></tr></tbody></table>';
+    if (pr.all) h += '<div class="m-gate ok">Priced: ' + bp(pr.totalBp) + ' all-in, ' + money(pr.annual) + ' a year at ' + pct(pr.effective, 4) + ' effective management fee. Download enabled.</div>';
+    else h += '<div class="m-gate">' + (s.source === 'Custom' ? 'Set a custom rate for every fee group in the model to price it and enable the download. Still to set: ' + missing(s, s.custom).map(function (r) { return r.label; }).join(', ') + '.' : 'The model is unpriced.') + '</div>';
+    h += '<p class="m-ex">Placeholder rates and example figures, for the mock-up only. The fee group column is shown here for the reader; the real table dropped it (D70).</p>';
+    return h;
+  }
+
+  /* ── the card ── */
+  function cardHTML(d) {
+    var s = d.s, draft = s.draft, live = liveRows(s);
+    var probe = Object.assign({}, s, { custom: draft, source: 'Custom' }), pr = priced(probe);
+    var setCount = live.filter(function (r) { return countFor(r) > 0 && (r.sched === 'CASP' ? draft.CASP : draft.RDR[r.key]) != null; }).length;
+    var needed = live.filter(function (r) { return countFor(r) > 0; }).length;
+    var nextKey = (missing(s, draft)[0] || {}).key;
+    var h = '<div class="m-scrim"><div class="m-dlg" role="dialog" aria-modal="true" aria-label="Custom fees">'
+      + '<h5>Custom fees<small>' + esc(s.schedule) + ' · TIER T3, $25M TO $50M · $10,000,000 MANDATE</small></h5>'
+      + '<p class="sub">The delivered rates at every level, for reference: RDR at this mandate’s tier, CASP blended for this mandate. Enter one rate per ' + (s.schedule === 'CASP' ? 'schedule' : 'fee group') + ' in the Custom column, or click any delivered rate to copy it across. Every product in the group pays that rate.</p>'
+      + '<div class="m-tools"><span>Fill Custom from</span><span class="pick">' + SOURCES.map(function (v) { return '<button type="button" data-fsrc="' + v + '" aria-pressed="' + (s.fillSrc === v) + '">' + v + '</button>'; }).join('') + '</span>'
+      + '<span class="pick">' + POINTS.map(function (v) { return '<button type="button" data-fpt="' + v + '" aria-pressed="' + (s.fillPt === v) + '">' + v + '</button>'; }).join('') + '</span>'
+      + '<button type="button" class="tb" data-fill>Fill</button><span class="sep"></span><button type="button" class="tb" data-cclear>Clear</button></div>'
+      + '<table class="m-card"><thead><tr class="grp"><th></th><th></th><th colspan="3">Management</th><th colspan="3">PMG</th><th class="cust"></th></tr>'
+      + '<tr><th>Schedule / fee group</th><th>Products</th>' + POINTS.map(function (p) { return '<th>' + p + '</th>'; }).join('') + POINTS.map(function (p) { return '<th>' + p + '</th>'; }).join('') + '<th class="cust">Custom</th></tr></thead><tbody>';
+    var fillIx = LEVELS.indexOf(s.fillSrc + ' ' + s.fillPt);
+    ['CASP', 'RDR'].forEach(function (sched) {
+      var on = sched === s.schedule;
+      h += '<tr class="sched' + (on ? '' : ' off') + '"><th>' + sched + (on ? '' : ' <span style="letter-spacing:0;text-transform:none;font-weight:500">· not the chosen schedule</span>') + '</th><td colspan="8"></td></tr>';
+      ROWS.filter(function (r) { return r.sched === sched; }).forEach(function (row) {
+        var ref = reference(row), n = countFor(row), v = row.sched === 'CASP' ? draft.CASP : draft.RDR[row.key];
+        var id = d.id + '-' + row.key.replace(/\W/g, '');
+        h += '<tr' + (on ? '' : ' class="off"') + '><th>' + esc(row.label) + (row.note ? '<small>' + esc(row.note) + '</small>' : '') + '</th><td class="cnt">' + (n ? n + ' product' + (n === 1 ? '' : 's') : '<span style="color:var(--p-ink3)">none held</span>') + '</td>'
+          + ref.map(function (r, ix) {
+              return '<td class="ref' + (on && ix === fillIx ? ' src' : '') + '">' + (on ? '<button type="button" data-copy="' + esc(row.key) + '" data-val="' + r + '" title="Copy ' + esc(LEVELS[ix]) + ' into Custom">' + pct(r) + '</button>' : pct(r)) + '</td>';
+            }).join('')
+          + '<td class="cust"><input class="m-cell' + (s.bad[row.key] ? ' bad' : '') + (on && row.key === nextKey ? ' is-next' : '') + '" id="' + id + '" data-rate="' + esc(row.key) + '" placeholder="' + (on ? (n ? '—' : 'optional') : '') + '" value="' + (v == null ? '' : pct(v)) + '"' + (on ? '' : ' disabled title="Choose ' + sched + ' in the rail to price by ' + (sched === 'CASP' ? 'one rate' : 'fee group') + '"') + ' aria-label="Custom rate for ' + esc(row.label) + '">'
+          + (on && n ? '<small>' + n + ' product' + (n === 1 ? '' : 's') + '</small>' : '') + '</td></tr>';
+      });
+    });
+    h += '</tbody></table>';
+    var badMsg = Object.keys(s.bad).map(function (k) { return s.bad[k]; })[0];
+    if (badMsg) h += '<p class="m-err">' + esc(badMsg) + ' The previous value is kept.</p>';
+    h += '<div class="m-legend"><span><i style="background:#EEF3FC;border:1px solid #B9CDF0"></i>the level Fill copies from</span><span><i style="background:#F7FAFF;border-left:2px solid #1F5FBF"></i>the Custom column, yours</span><span><i style="background:#F0F2F5;border:1px dashed #AFBAC7"></i>inert: the other schedule’s rows</span></div>';
+    h += '<div class="m-dlg-actions"><span>' + setCount + ' of ' + needed + ' set' + (pr.all ? ' · effective ' + pct(pr.effective, 4) + ' · ' + bp(pr.totalBp) + ' all-in · ' + money(pr.annual) + ' a year' : ' · ' + missing(s, draft).map(function (r) { return r.label; }).join(', ') + ' still to set') + '</span>'
+      + '<div><button type="button" data-cclose>Cancel</button><button type="button" class="primary" data-capply>Apply</button></div></div></div></div>';
+    return h;
+  }
+
+  /* ── state and wiring ── */
+  function fresh(start) {
+    var s = { schedule: 'CASP', source: 'PMG', point: 'Target', custom: { CASP: undefined, RDR: {} }, card: false, draft: null, bad: {}, fillSrc: 'PMG', fillPt: 'Target', returnTo: null };
+    if (start === 'rdr') { s.schedule = 'RDR'; s.source = 'Custom'; s.custom = { CASP: 0.45, RDR: { 'Passive': 0.10, 'Core Active': 0.35, 'Specialist Active': 0.50, 'Alternatives': 0.70, 'Asset Allocation': 0.26 } }; }
+    return s;
+  }
+  function cloneCustom(c) { return { CASP: c.CASP, RDR: Object.assign({}, c.RDR) }; }
+  function render(d) {
+    var active = document.activeElement, id = active && active.id;
+    d.rail.innerHTML = railHTML(d);
+    d.doc.innerHTML = docHTML(d);
+    d.dlg.innerHTML = d.s.card ? cardHTML(d) : '';
+    if (id) { var again = document.getElementById(id); if (again && again !== document.activeElement) { try { again.focus(); } catch (e) {} } }
+  }
+  function openCard(d) { d.s.card = true; d.s.draft = cloneCustom(d.s.custom); d.s.bad = {}; render(d); var first = d.dlg.querySelector('.m-cell.is-next') || d.dlg.querySelector('.m-cell:not(:disabled)'); if (first) first.focus(); }
+  function closeCard(d, apply) { if (apply) d.s.custom = cloneCustom(d.s.draft); d.s.card = false; d.s.draft = null; d.s.bad = {}; render(d); var back = d.rail.querySelector('[data-opencard]') || d.rail.querySelector('[data-source=Custom]'); if (back) back.focus(); }
+  function setDraft(d, key, v) { if (key === 'CASP') d.s.draft.CASP = v; else if (v === undefined) delete d.s.draft.RDR[key]; else d.s.draft.RDR[key] = v; }
+
+  function mount(el, i) {
+    var start = el.getAttribute('data-start');
+    el.innerHTML = '<div class="demo-bar"><span class="lbl">Live mock-up · ' + (start === 'rdr' ? 'under RDR, custom rates applied' : 'from the standard state') + '</span><button type="button" data-act="reset">Reset</button></div>'
+      + '<div class="demo-scroll"><div class="mock"><aside class="m-rail" aria-label="Rail (mock-up)"></aside><div class="m-doc"></div><div class="m-dlgslot"></div></div></div>';
+    var d = { id: 'd' + i, s: fresh(start), rail: el.querySelector('.m-rail'), doc: el.querySelector('.m-doc'), dlg: el.querySelector('.m-dlgslot'), mock: el.querySelector('.mock') };
+    render(d);
+    el.querySelector('[data-act=reset]').addEventListener('click', function () { d.s = fresh(start); render(d); });
+
+    d.mock.addEventListener('click', function (e) {
+      var t = e.target.closest('button'); if (!t) return;
+      var s = d.s, a = t.dataset;
+      if (a.sched) { s.schedule = a.sched; if (s.card) { s.bad = {}; } render(d); return; }
+      if (a.source) {
+        var was = s.source; s.source = a.source;
+        /* the first choice of Custom opens the card; a later one shows the summary */
+        if (a.source === 'Custom' && was !== 'Custom' && !liveRows(s).some(function (r) { return customRate(s, r) !== null; })) { openCard(d); return; }
+        render(d); return;
+      }
+      if (a.point) { s.point = a.point; render(d); return; }
+      if (a.opencard !== undefined) { openCard(d); return; }
+      if (a.cclose !== undefined) { closeCard(d, false); return; }
+      if (a.capply !== undefined) { closeCard(d, true); return; }
+      if (a.fsrc) { s.fillSrc = a.fsrc; render(d); return; }
+      if (a.fpt) { s.fillPt = a.fpt; render(d); return; }
+      if (a.fill !== undefined) {
+        var ix = LEVELS.indexOf(s.fillSrc + ' ' + s.fillPt);
+        liveRows(s).forEach(function (r) { setDraft(d, r.key, Math.round(reference(r)[ix] * 100) / 100); });
+        s.bad = {}; render(d); return;
+      }
+      if (a.cclear !== undefined) { s.draft = { CASP: undefined, RDR: {} }; s.bad = {}; render(d); return; }
+      if (a.copy) { setDraft(d, a.copy, Math.round(parseFloat(a.val) * 100) / 100); delete s.bad[a.copy]; render(d); return; }
+    });
+    d.mock.addEventListener('change', function (e) {
+      var inp = e.target, s = d.s, key = inp.dataset.rate; if (!key || !s.card) return;
+      var r = parseRate(inp.value);
+      delete s.bad[key];
+      if (r.bad) s.bad[key] = r.bad; else if (r.empty) setDraft(d, key, undefined); else setDraft(d, key, r.v);
+      render(d);
+    });
+    d.mock.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.classList.contains('m-cell')) {
+        e.preventDefault(); e.target.blur();
+        /* Enter commits and moves down the column */
+        var cells = Array.prototype.slice.call(d.dlg.querySelectorAll('.m-cell:not(:disabled)'));
+        var at = cells.indexOf(e.target); var next = cells[at + 1] || cells[at];
+        setTimeout(function () { var again = document.getElementById(next.id); if (again) again.focus(); }, 0);
+      }
+      if (e.key === 'Escape' && d.s.card) closeCard(d, false);
+    });
+  }
+  document.querySelectorAll('.demo[data-start]').forEach(mount);
+})();
+</script>

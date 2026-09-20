@@ -58,7 +58,8 @@ var state = {
      like the variant; the level has a prescribed one, which the server sets
      when it creates the scenario and the schema names (fees.defaultLevel). */
   feeSchedule: null,                /* 'CASP' | 'RDR' | null */
-  feeLevel: null,                   /* e.g. 'PMG Target' */
+  feeLevel: null,                   /* e.g. 'PMG Target', or the custom level */
+  customFees: {},                   /* the PWA's rates by schedule, under it (D96) */
   sleeves: {},                      /* category -> sleeve name (pickable categories only) */
   sleeveLib: {},                    /* category -> {status, sleeves, error} */
   exporting: { status: 'idle', error: null },
@@ -750,7 +751,21 @@ function feeScheduleIds() {
 }
 
 function feeLevelIds() {
-  return opt('fees.levels', []).map(function (l) { return l.id; });
+  var ids = opt('fees.levels', []).map(function (l) { return l.id; });
+  return customLevel() ? ids.concat([customLevel()]) : ids;
+}
+
+/* The custom level (D96): the schema names it, the page never does. Under it
+   the rates are the PWA's own, one per row of the schedule chosen, and they
+   live in state.customFees as {schedule: rate | {feeGroup: rate}}. */
+function customLevel() { return opt('fees.customLevel', null); }
+
+function setCustomFees(map) {
+  if (!canEdit()) return;
+  state.customFees = map || {};
+  pushFee({ customFees: state.customFees });
+  announce('polite', 'Custom fee rates applied.');
+  refresh();
 }
 
 function feeLevel() {
@@ -972,6 +987,7 @@ async function commitMandate() {
       state.volPremium = !(created.scenario && created.scenario.volPremium === false);
       state.feeSchedule = (created.scenario && created.scenario.feeSchedule) || null;
       state.feeLevel = (created.scenario && created.scenario.feeLevel) || null;
+      state.customFees = (created.scenario && created.scenario.customFees) || {};
       try {
         history.replaceState(null, '', '?scenario=' + encodeURIComponent(created.id));
       } catch (e) { /* file:// review mode */ }
@@ -1050,6 +1066,7 @@ async function boot() {
       state.volPremium = stored.volPremium !== false;
       state.feeSchedule = stored.feeSchedule || null;
       state.feeLevel = stored.feeLevel || null;
+      state.customFees = stored.customFees || {};
       /* A scenario stored before the toggle existed has no includeFees, and
          the server fills it from whether a schedule was ever chosen: a
          proposal already priced keeps showing its fees (D52). */
@@ -3168,6 +3185,7 @@ function saveSnapshot() {
       step: state.step, basisChosen: state.basisChosen, implSeen: state.implSeen,
       tacticalTilt: state.tacticalTilt, volPremium: state.volPremium,
       includeFees: state.includeFees, feeSchedule: state.feeSchedule, feeLevel: state.feeLevel,
+      customFees: state.customFees,
       sleeves: state.sleeves,
       columns: state.columns.filter(function (c) { return c.status === 'ready'; })
     }));
@@ -3196,6 +3214,7 @@ function restoreSnapshot(snap) {
   state.volPremium = snap.volPremium !== false;
   state.includeFees = !!snap.includeFees;
   state.feeSchedule = snap.feeSchedule || null; state.feeLevel = snap.feeLevel || null;
+  state.customFees = snap.customFees || {};
   state.sleeves = snap.sleeves || {};
   state.columns = snap.columns || [];
   state.phase = 'workspace';
@@ -3605,6 +3624,9 @@ return {
   setIncludeFees: setIncludeFees,
   feeSchedule: function () { return state.feeSchedule; },
   feeLevel: feeLevel,
+  customLevel: customLevel,
+  customFees: function () { return state.customFees || {}; },
+  setCustomFees: setCustomFees,
   setFeeSchedule: setFeeSchedule,
   setFeeLevel: setFeeLevel,
   setVariant: setVariant,

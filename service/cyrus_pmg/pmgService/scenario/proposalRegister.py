@@ -47,11 +47,11 @@ import secrets
 import sqlite3
 import threading
 
-from . import rules, sleeveRepo, sleeves
+from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2          # 2: customFees (D96)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     includeFees    INTEGER NOT NULL,
     feeSchedule    TEXT,
     feeLevel       TEXT,
+    customFees     TEXT,
     allocation     TEXT NOT NULL,
     implemented    TEXT NOT NULL,
     workbook       BLOB NOT NULL,
@@ -110,7 +111,7 @@ CREATE INDEX IF NOT EXISTS ps_sleeve ON proposalSleeves (sleeveId);
 _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, createdBy, '
                  'primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                  'baseKey, tacticalTilt, volPremium, includeFees, '
-                 'feeSchedule, feeLevel, workbookName, workbookBytes, workbookSha')
+                 'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -138,7 +139,14 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     with _lock:
         conn.executescript(_SCHEMA)
+        # a register opened before the column existed gains it here (D96);
+        # CREATE IF NOT EXISTS leaves an existing table alone
+        held = {row[1] for row in conn.execute('PRAGMA table_info(proposals)')}
+        if 'customFees' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN customFees TEXT')
         conn.execute("INSERT OR IGNORE INTO meta VALUES ('schemaVersion', ?)",
+                     (str(SCHEMA_VERSION),))
+        conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
                      (str(SCHEMA_VERSION),))
         conn.execute("INSERT OR IGNORE INTO meta VALUES ('openedAt', ?)", (_now(),))
         conn.commit()
@@ -265,8 +273,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'INSERT INTO proposals (proposalId, scenarioId, sequence, exportedAt, exportedBy, '
                 'createdBy, primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                 'baseKey, tacticalTilt, volPremium, includeFees, feeSchedule, '
-                'feeLevel, allocation, implemented, workbook, workbookName, workbookSha, '
-                'workbookBytes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
+                'workbookSha, workbookBytes) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -276,6 +285,10 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                  1 if implementation.get('includeFees') else 0,
                  implementation.get('feeSchedule') if implementation.get('includeFees') else None,
                  implementation.get('feeLevel') if implementation.get('includeFees') else None,
+                 # the PWA's rates go on the record only when they priced it (D96)
+                 (json.dumps(implementation.get('customFees') or {})
+                  if implementation.get('includeFees') and fees.isCustom(implementation.get('feeLevel'))
+                  else None),
                  json.dumps(allocation), json.dumps(implemented),
                  sqlite3.Binary(workbook), filename, sha, len(workbook)))
             conn.executemany(
@@ -440,7 +453,8 @@ def describe() -> dict:
 EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'ExportedBy', 'CreatedBy',
                   'PrimaryPwa', 'TopAccountSize', 'MandateSize', 'Currency', 'Hedging', 'Variant',
                   'BasePortfolio', 'TacticalTilt', 'VolPremium', 'IncludeFees',
-                  'FeeSchedule', 'FeeLevel', 'Sleeves', 'WorkbookName', 'WorkbookBytes', 'WorkbookSha']
+                  'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
+                  'WorkbookBytes', 'WorkbookSha']
 
 
 def exportRows(**filters) -> list:
@@ -455,7 +469,8 @@ def exportRows(**filters) -> list:
                         e['exportedBy'], e['createdBy'], e['primaryPwa'], e['topAccountSize'],
                         e['mandateSize'], e['currency'], e['hedging'], e['variant'], e['baseKey'],
                         int(e['tacticalTilt']), int(e['volPremium']),
-                        int(e['includeFees']), e['feeSchedule'] or '', e['feeLevel'] or '', pins,
+                        int(e['includeFees']), e['feeSchedule'] or '', e['feeLevel'] or '',
+                        e.get('customFees') or '', pins,
                         e['workbookName'], e['workbookBytes'], e['workbookSha']))
         if not page['next'] or not page['entries']:
             return out

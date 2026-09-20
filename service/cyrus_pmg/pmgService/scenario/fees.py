@@ -142,6 +142,14 @@ SOURCES = list(_CONFIG['sources'])
 POINTS = list(_CONFIG['points'])
 LEVELS = [levelId(s, p) for s in SOURCES for p in POINTS]
 DEFAULT_LEVEL = _CONFIG['defaultLevel']
+# A seventh level the card does not price (D96): the rates are the PWA's, one
+# per row of the schedule chosen - the whole book under a uniform schedule,
+# each fee group under a grouped one - and each is held between the bounding
+# source's first and last points as this mandate prices them. The name and
+# the source are fees.json's to say; the points are the vocabulary's ends.
+_CUSTOM = dict(_CONFIG.get('custom') or {})
+CUSTOM_LEVEL = str(_CUSTOM.get('level') or 'Custom')
+CUSTOM_BOUNDS_SOURCE = str(_CUSTOM.get('boundsSource') or SOURCES[0])
 TIERS = [dict(t) for t in _DELIVERED['tiers']]
 FEE_GROUPS = list(_DELIVERED['feeGroups'])
 DELIVERY = dict(_CONFIG.get('delivery') or {})
@@ -286,18 +294,72 @@ def managementFee(schedule: str, topAccountSize, level: str, feeGroup: str = Non
     return _rate(schedule, feeGroup, tierId, source, point)
 
 
-def productFee(schedule: str, level: str, feeGroup, topAccountSize, mandateSize) -> float:
+def productFee(schedule: str, level: str, feeGroup, topAccountSize, mandateSize,
+               customFees=None):
     """What one product's management fee is, whichever way its schedule prices.
 
     The one entry point the implementation model uses, because the two
     schedules read different inputs: a marginal schedule blends the MANDATE
     across the ladder and ignores the top account size entirely (D83), while a
-    flat one reads the single tier the TOP ACCOUNT SIZE falls in (D51).
+    flat one reads the single tier the TOP ACCOUNT SIZE falls in (D51). Under
+    the custom level neither is read: the rate is the one entered for the
+    product's row, or None when that row has none - an unpriced product,
+    never a guessed one (D96).
     """
+    if isCustom(level):
+        return customRate(customFees, schedule, feeGroup if byGroup(schedule) else None)
     if isMarginal(schedule):
         return effectiveRate(schedule, mandateSize, level,
                              feeGroup if byGroup(schedule) else None)
     return managementFee(schedule, topAccountSize, level, feeGroup)
+
+
+# ------------------------------------------------ custom rates (D96) -------
+
+def isCustom(level) -> bool:
+    """Whether *level* is the custom level rather than one the card prices."""
+    return level == CUSTOM_LEVEL
+
+
+def customRows(schedule: str) -> list:
+    """The rows a custom column has under *schedule*: [None] for a uniform
+    schedule, the fee groups for a grouped one."""
+    return list(FEE_GROUPS) if byGroup(schedule) else [None]
+
+
+def customBounds(schedule: str, topAccountSize, mandateSize, feeGroup=None) -> tuple:
+    """(floor, ceiling) a custom rate may take on one row, in percent.
+
+    The bounding source's first and last points, priced the way the schedule
+    prices: blended for this mandate under a marginal schedule, at the top
+    account size's tier under a flat one. So the room a PWA has is the room
+    the card gives that source, at this mandate, on that row.
+    """
+    low = levelId(CUSTOM_BOUNDS_SOURCE, POINTS[0])
+    high = levelId(CUSTOM_BOUNDS_SOURCE, POINTS[-1])
+    group = feeGroup if byGroup(schedule) else None
+    if isMarginal(schedule):
+        return (effectiveRate(schedule, mandateSize, low, group),
+                effectiveRate(schedule, mandateSize, high, group))
+    return (managementFee(schedule, topAccountSize, low, group),
+            managementFee(schedule, topAccountSize, high, group))
+
+
+def customRate(customFees, schedule: str, feeGroup=None):
+    """The custom rate entered for one row, or None when there is none.
+
+    *customFees* is {schedule: rate} for a uniform schedule and
+    {schedule: {feeGroup: rate}} for a grouped one; each schedule keeps its
+    own, so switching between them loses nothing.
+    """
+    held = (customFees or {}).get(schedule)
+    if byGroup(schedule):
+        value = held.get(feeGroup) if isinstance(held, dict) else None
+    else:
+        value = held
+    if isinstance(value, bool) or not isinstance(value, Real):
+        return None
+    return float(value)
 
 
 def ratesAtTier(tierId: str) -> dict:
@@ -375,6 +437,10 @@ def feePayload(topAccountSize=None, mandateSize=None) -> dict:
         'points': POINTS,
         'levels': [{'id': levelId(s, p), 'source': s, 'point': p} for s in SOURCES for p in POINTS],
         'defaultLevel': DEFAULT_LEVEL,
+        'customLevel': CUSTOM_LEVEL,
+        'customBounds': {'source': CUSTOM_BOUNDS_SOURCE,
+                         'floor': levelId(CUSTOM_BOUNDS_SOURCE, POINTS[0]),
+                         'ceiling': levelId(CUSTOM_BOUNDS_SOURCE, POINTS[-1])},
         'feeGroups': FEE_GROUPS,
         'tiers': [dict(t) for t in TIERS],
         'tier': tier,

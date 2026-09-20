@@ -112,6 +112,8 @@ def createScenario(mandate: MandateInput, basis: BasisInput, createdBy: str = ''
             'includeFees': False,
             'feeSchedule': None,
             'feeLevel': DEFAULT_FEE_LEVEL,
+            # the PWA's own rates, by schedule, for the custom level (D96)
+            'customFees': {},
         }
         _writeAtomic(_path(scenarioId), state)
         return state
@@ -140,8 +142,13 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
                    basis: BasisInput = None, sleeves: dict = None,
                    variant: str = None, tacticalTilt: bool = None,
                    feeSchedule: str = None, feeLevel: str = None,
-                   includeFees: bool = None, volPremium: bool = None) -> dict:
+                   includeFees: bool = None, volPremium: bool = None,
+                   customFees: dict = None, customFeesBy: str = None) -> dict:
     """Apply a partial state update (the PUT endpoint - deviation D2).
+
+    *customFees* replaces the whole map (D96) and records who wrote it and
+    when, for the workbook's header: a custom rate has no delivery behind it,
+    so the sheet says whose it is.
 
     A variant change clears the sleeve map in the same write unless the caller
     supplied one, because sleeve names are only meaningful under the variant
@@ -179,6 +186,10 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
             state['feeSchedule'] = feeSchedule
         if feeLevel is not None:
             state['feeLevel'] = feeLevel
+        if customFees is not None:
+            state['customFees'] = dict(customFees)
+            state['customFeesBy'] = customFeesBy or ''
+            state['customFeesAt'] = time.time()
         return _save(state)
 
 

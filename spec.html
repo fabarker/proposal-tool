@@ -1298,9 +1298,9 @@ async function apiFetch(path, opts) {
     disabled and unmarked: two marks competing say nothing about which to answer first.
     Answering the basis enables the base tier and moves the mark to Implementation Type, then
     Risk Level, then Allocation; resolving an allocation reveals the document and unlocks step 2,
-    which then pulses until it is opened. The first time in a browser session that step 2 is
-    opened from the step nav, its sleeve pickers flash in turn, top to bottom, once their
-    libraries have loaded (D94). How the next control is shown, and how focus follows
+    which then pulses until it is opened. On step 2 the sleeve pickers are guided the same way:
+    the first without a sleeve is marked, and the mark and focus move down the rail as each is
+    answered, until every category has one &mdash; once per scenario (D95). How the next control is shown, and how focus follows
     it, is &sect;10.2. The scenario
     always holds a basis &mdash; the schema is fetched against one &mdash; so the unanswered
     state is presentation rather than absence. <strong>Both halves must be answered</strong>:
@@ -1626,6 +1626,16 @@ portfolio total fee = Σ weighted fee</code></pre>
     departure: at 2dp a thinly-weighted product renders a real fee as <code>0.00%</code> &mdash;
     0.33% all-in on a 1.40% weight is 0.0046%. A fee of zero on a client-facing document generates a
     phone call.</p>
+  <div class="rule"><p><strong>The management fee is resolved, and may be the PWA's own.</strong>
+    A product's fee is read at pricing time from the fee schedule (CASP, one rate for every
+    product, blended across the tiers by the mandate; RDR, one rate per fee group at the top
+    account size's tier), the fee level and, under RDR, the product's fee group (D51, D83). The
+    level is one of six the delivered card prices &mdash; Management or PMG at Floor, Target or
+    Ceiling &mdash; or <strong>Custom</strong> (D96): under it the rate is the one entered for the
+    product's row on the custom fee card, one per schedule and fee group, and every product in the
+    row pays it. A custom rate may be any value between the Management floor and ceiling for its row
+    at this mandate; a row with products and no rate leaves them unpriced, and an unpriced row
+    blocks the export (&sect;10.3). The card the rates are entered on is &sect;9.7.</p></div>
 
   <h3><span class="n">8.4</span>The rounding rule</h3>
   <div class="rule"><p><strong>Every printed figure derives from the printed weight.</strong> A
@@ -1845,6 +1855,28 @@ portfolio total fee = Σ weighted fee</code></pre>
   <h3><span class="n">9.5</span>Charts</h3>
   <p>Inline SVG, no library, between the two step-1 tables in an <strong>At a glance</strong>
     section. Both summarise; neither replaces a table.</p>
+  <h3><span class="n">9.7</span>Custom fee card</h3>
+  <p>Opened by choosing <strong>Custom</strong> on the fee level's source row (D96), and from
+    <em>Edit custom fees</em> beneath it after. The fee card viewer's by-tier grid, pinned to this
+    mandate, with one column added on the right.</p>
+  <ul>
+    <li><strong>Rows:</strong> CASP as one row, then RDR with a row per fee group, each stating
+      how many of the model's products it prices. The chosen schedule's rows are live; the other
+      schedule's are shown for reference with their Custom cell inert.</li>
+    <li><strong>Reference columns:</strong> Management and PMG at Floor, Target and Ceiling, as
+      this mandate prices them: RDR at its tier, CASP blended. On a live row each is a button that
+      copies its rate into the Custom cell.</li>
+    <li><strong>The Custom column:</strong> one input per live row, percent to 2dp, <code>45bp</code>
+      accepted as <code>0.45%</code>, the row's floor and ceiling stated beneath it. Out of range
+      is refused with the bounds and the previous value kept. <em>Fill from</em> copies a whole
+      delivered level into the column; <em>Clear</em> empties it.</li>
+    <li><strong>Foot:</strong> rows set, and while every row with products has a rate, the
+      effective management fee, the all-in weighted fee and the cost a year, priced from the
+      draft. <strong>Apply</strong> writes the column to the scenario in one PUT; Cancel and Escape
+      discard it. A partial column can be applied; the rail names the rows still to set.</li>
+    <li><strong>Modal:</strong> the same focus, Escape and inert handling as the fee card and the
+      build-up (&sect;13). Focus returns to the control that opened it.</li>
+  </ul>
   <div class="tw"><table>
     <thead><tr><th>Chart</th><th>Form</th><th>Specification</th></tr></thead>
     <tbody>

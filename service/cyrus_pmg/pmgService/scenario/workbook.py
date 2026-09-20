@@ -131,7 +131,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                             feeSchedule: str = None, feeLevel: str = None,
                             topAccountSize: float = None,
                             volPremium: bool = False,
-                            currency: str = None) -> dict:
+                            currency: str = None,
+                            customFees: dict = None) -> dict:
     """The implementation model's numbers, derived per spec 8.4.
 
     Returns {'groups': [...], 'total': {...}, 'complete': bool, 'priced': bool,
@@ -158,9 +159,16 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     # size falls in. The tier is carried only where it means something (D83).
     marginal = priced and fees.isMarginal(feeSchedule)
     tier = fees.tierFor(topAccountSize) if priced and not marginal else None
-    effectiveRate = (fees.effectiveRate(feeSchedule, mandateSize, feeLevel or fees.DEFAULT_LEVEL)
-                     if marginal else None)
     feeLevel = feeLevel or fees.DEFAULT_LEVEL
+    # Under the custom level the ladder is not read at all: the one rate a
+    # uniform schedule carries is the PWA's (D96), so that is the "blend".
+    custom = priced and fees.isCustom(feeLevel)
+    if marginal and custom:
+        effectiveRate = fees.customRate(customFees, feeSchedule)
+    elif marginal:
+        effectiveRate = fees.effectiveRate(feeSchedule, mandateSize, feeLevel)
+    else:
+        effectiveRate = None
 
     # The implemented book, not the strategic one: with the tilt on, the
     # funding category is reduced and the tilt category appended (D50); with
@@ -234,9 +242,13 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             if priced:
                 item['managementFee'] = fees.productFee(
                     feeSchedule, feeLevel, item['feeGroup'],
-                    topAccountSize=topAccountSize, mandateSize=mandateSize)
-                allIn = float(item['productCost']) + item['managementFee']
-                item['wtdFeeBp'] = allIn * weight        # percent x percent = bp
+                    topAccountSize=topAccountSize, mandateSize=mandateSize,
+                    customFees=customFees)
+                if item['managementFee'] is None:        # a custom row not yet set
+                    item['wtdFeeBp'] = None
+                else:
+                    allIn = float(item['productCost']) + item['managementFee']
+                    item['wtdFeeBp'] = allIn * weight    # percent x percent = bp
             else:
                 item['managementFee'] = None
                 item['wtdFeeBp'] = None
@@ -246,9 +258,15 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             minimum = item.get('minimumInvestment')
             item['belowMinimum'] = bool(minimum) and item['notional'] < float(minimum)
 
+    # the rows the custom level has not priced, named so the export can say
+    # which - one unpriced product makes the total unpriced, never smaller
+    unpricedGroups = sorted({
+        i['feeGroup'] if fees.byGroup(feeSchedule) else feeSchedule
+        for i in lineItems if priced and i.get('managementFee') is None})
     total = {
         'weightPct': sum(i.get('printedPct', 0.0) for i in lineItems),
-        'wtdFeeBp': sum(i.get('wtdFeeBp') or 0.0 for i in lineItems) if priced else None,
+        'wtdFeeBp': (sum(i.get('wtdFeeBp') or 0.0 for i in lineItems)
+                     if priced and not unpricedGroups else None),
         'notional': sum(i.get('notional', 0.0) for i in lineItems),
     }
 
@@ -269,9 +287,18 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                 for group in groups for item in group['items']
                 if item.get('belowMinimum')]
 
+    # what the sheet's header states under the custom level: the row (or
+    # rows) and the rate each carries, in the card's own order
+    customRates = None
+    if custom:
+        customRates = [(row, fees.customRate(customFees, feeSchedule, row))
+                       for row in fees.customRows(feeSchedule)]
+
     return {'groups': groups, 'total': total, 'complete': complete,
             'priced': priced, 'tier': tier, 'marginal': marginal,
-            'effectiveRate': effectiveRate, 'breaches': breaches}
+            'effectiveRate': effectiveRate, 'breaches': breaches,
+            'custom': custom, 'customRates': customRates,
+            'unpricedGroups': unpricedGroups}
 
 
 def roundSharesOneDp(exact) -> list:
@@ -377,9 +404,16 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                              volPremium: bool = False,
                              currency: str = None,
                              model: dict = None,
-                             proposalId: str = None) -> None:
+                             proposalId: str = None,
+                             customFees: dict = None,
+                             customFeesBy: str = None,
+                             customFeesAt=None) -> None:
     """Append the implementation sheet: the columns of ``implColumns``, in
     order, grouped by category with subtotals and a grand total.
+
+    Under the custom level (D96) the header names the rate each row carries
+    and who entered them: a custom rate has no delivery behind it, so the
+    sheet says whose it is, and the card it departs from.
 
     The variant is written above the header, because the same category and
     sleeve name can carry different products under a different variant and a
@@ -404,7 +438,7 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
         model = buildImplementationRows(baseResult, sleevesMap, autoCategories,
                                         mandateSize, variant, tacticalTilt,
                                         feeSchedule, feeLevel, topAccountSize,
-                                        volPremium, currency)
+                                        volPremium, currency, customFees)
     sheet = book.create_sheet('Implementation')
     headFont = Font(name='Aptos Narrow', size=12, bold=True, color='FFFFFF')
     bodyFont = Font(name='Aptos Narrow', size=12)
@@ -426,10 +460,20 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     if model['priced']:
         preamble.append(['Fee Schedule', feeSchedule])
         preamble.append(['Fee Level', feeLevel or fees.DEFAULT_LEVEL])
-        # Under a marginal schedule there is no single tier that priced the
-        # book, so the blended rate is what a reader needs (D83). A flat one
-        # still names its tier.
-        if model.get('marginal'):
+        # Under the custom level the rates are the PWA's, one per row, and the
+        # header states each and who entered them (D96). Under a marginal
+        # schedule there is no single tier that priced the book, so the
+        # blended rate is what a reader needs (D83). A flat one names its tier.
+        if model.get('custom'):
+            for row, rate in model.get('customRates') or []:
+                preamble.append(['Custom Rate' + (' \u00b7 ' + row if row else ''),
+                                 '{:.2f}%'.format(rate) if rate is not None else 'not set'])
+            if customFeesBy or customFeesAt:
+                when = (datetime.datetime.fromtimestamp(customFeesAt).strftime('%Y-%m-%d')
+                        if customFeesAt else '')
+                preamble.append(['Custom Rates Entered By',
+                                 ' \u00b7 '.join(x for x in (customFeesBy, when) if x)])
+        elif model.get('marginal'):
             preamble.append(['Effective Rate', '{:.4f}%'.format(model['effectiveRate'])])
         elif model.get('tier'):
             preamble.append(['Account Size Tier',
@@ -1103,7 +1147,8 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                   feeSchedule: str = None, feeLevel: str = None,
                   includeFees: bool = True, volPremium: bool = False,
                   assets=None, engineParity: bool = False, model: dict = None,
-                  proposalId: str = None) -> bytes:
+                  proposalId: str = None, customFees: dict = None,
+                  customFeesBy: str = None, customFeesAt=None) -> bytes:
     """The proposal workbook: four sheets, no analytics library (D67).
 
     ``portfolios``, ``risk_dashboard`` and ``assumptions`` reproduce what the
@@ -1131,7 +1176,9 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                              mandate.mandateSize, variant, tacticalTilt,
                              feeSchedule, feeLevel, mandate.topAccountSize,
                              includeFees, volPremium, basis.currency,
-                             model=model, proposalId=proposalId)
+                             model=model, proposalId=proposalId,
+                             customFees=customFees, customFeesBy=customFeesBy,
+                             customFeesAt=customFeesAt)
 
     # Enhancements that add nothing to the grid and cost nothing to read: a
     # coloured tab per sheet, a sensible print setup, and the proposal's own

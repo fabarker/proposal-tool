@@ -175,7 +175,10 @@ class LiveScenarioPort:
                              bool(implementation.get('volPremium')),
                              assets=assetEstimates.forSlice(basis.currency, basis.hedging),
                              model=implementation.get('model'),
-                             proposalId=implementation.get('proposalId'))
+                             proposalId=implementation.get('proposalId'),
+                             customFees=implementation.get('customFees'),
+                             customFeesBy=implementation.get('customFeesBy'),
+                             customFeesAt=implementation.get('customFeesAt'))
 
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}

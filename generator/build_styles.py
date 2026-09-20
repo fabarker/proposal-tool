@@ -499,7 +499,7 @@ main{display:block}
    from the card to the field. Narrow, the rail stacks above, the line is not
    drawn and focus moving on does the guiding. */
 .rail .field.is-next>label{color:var(--rail-ink)}
-.rail .field.is-next select{border-color:var(--rail-focus,#8FB4FF);
+.rail .field.is-next select,.rail .sl-row.is-next select{border-color:var(--rail-focus,#8FB4FF);
   box-shadow:0 0 0 3px rgba(143,180,255,.28);animation:guidebeckon 1.8s ease-in-out infinite}
 @keyframes guidebeckon{0%,100%{box-shadow:0 0 0 3px rgba(143,180,255,.28)}
   50%{box-shadow:0 0 0 5px rgba(143,180,255,.12)}}
@@ -992,6 +992,7 @@ PAGE_SHELL = """<!doctype html>
 <div id="accountDialog" hidden></div>
 <div id="feeDialog" hidden></div>
 <div id="priceDialog" hidden></div>
+<div id="customDialog" hidden></div>
 <div id="repoDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>

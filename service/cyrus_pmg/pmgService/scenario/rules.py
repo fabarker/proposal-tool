@@ -12,6 +12,7 @@ not code) and enforced again server-side where they gate writes.
 from __future__ import annotations
 
 from functools import lru_cache
+from numbers import Real
 
 from . import fees
 from . import portfolio_weights as pw
@@ -509,11 +510,66 @@ def validateFeeSchedule(schedule) -> None:
 
 
 def validateFeeLevel(level) -> None:
-    """Reject a fee level outside the six the framework prices (D51)."""
+    """Reject a fee level outside the six the framework prices (D51), or the
+    custom level beside them (D96)."""
     if not level:
         raise ValidationError('feeLevel', 'Choose a fee level.')
-    if level not in fees.LEVELS:
+    if level not in fees.LEVELS and not fees.isCustom(level):
         raise ValidationError('feeLevel', 'Unknown fee level {!r}.'.format(level))
+
+
+def _customRowLabel(schedule, group) -> str:
+    return '{} \u00b7 {}'.format(schedule, group) if group else schedule
+
+
+def validateCustomFees(customFees, mandate: MandateInput = None) -> None:
+    """Reject custom rates that are not one number per row, or that fall
+    outside the row's bounds (D96).
+
+    The shape is {schedule: rate} for a uniform schedule and {schedule:
+    {feeGroup: rate}} for a grouped one. A row may be absent or None - its
+    products are then unpriced - but a rate that is present must be a real
+    number between the bounding source's floor and ceiling for this mandate,
+    which is the whole meaning of "custom": any value the PWA likes, within
+    the room the card gives.
+    """
+    if customFees is None:
+        return
+    if not isinstance(customFees, dict):
+        raise ValidationError('customFees', 'Custom fees must be a map of schedule to rate.')
+    top = mandate.topAccountSize if mandate else None
+    size = mandate.mandateSize if mandate else None
+    for schedule, held in customFees.items():
+        if schedule not in fees.SCHEDULES:
+            raise ValidationError('customFees', 'Unknown fee schedule {!r}.'.format(schedule))
+        if fees.byGroup(schedule):
+            if held is None:
+                continue
+            if not isinstance(held, dict):
+                raise ValidationError(
+                    'customFees', '{} prices by fee group: give a rate per group.'.format(schedule))
+            rows = dict(held)
+        else:
+            rows = {None: held}
+        for group, value in rows.items():
+            if value is None:
+                continue
+            label = _customRowLabel(schedule, group)
+            if group is not None and group not in fees.FEE_GROUPS:
+                raise ValidationError('customFees', 'Unknown fee group {!r}.'.format(group))
+            if (isinstance(value, bool) or not isinstance(value, Real)
+                    or value != value or value in (float('inf'), float('-inf'))):
+                raise ValidationError(
+                    'customFees', '{}: a custom rate must be a number.'.format(label))
+            if top is None or size is None:
+                continue                      # no mandate yet: nothing to bound against
+            low, high = fees.customBounds(schedule, top, size, group)
+            if value < low - 1e-6 or value > high + 1e-6:
+                raise ValidationError(
+                    'customFees',
+                    '{}: {:.2f}% is outside {:.2f}% to {:.2f}%, the {} floor and ceiling '
+                    'for this mandate.'.format(label, value, low, high,
+                                               fees.CUSTOM_BOUNDS_SOURCE))
 
 
 def validateKey(key: PortfolioKey, variant, mandateSize=None) -> None:

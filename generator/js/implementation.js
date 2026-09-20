@@ -85,10 +85,21 @@ function sleeveCategories(categories) {
    the test suite checks the two agree across every schedule, level and group.
    Anything unknown resolves to null - rendered as a dash and blocking the
    export - never to a guessed rate. */
-function resolveFee(rates, schedule, level, feeGroup) {
+function resolveFee(rates, schedule, level, feeGroup, custom) {
   if (!rates || !schedule || !level) return null;
   var table = rates[schedule];
   if (!table) return null;
+  /* The custom level reads the PWA's rate for the row, never the card (D96).
+     *custom* is {level, map}, the map {schedule: rate | {feeGroup: rate}}.
+     Self-contained, like the rest of this function: the mirror test runs it
+     alone against fees.py, so it may reach for nothing outside itself. */
+  if (custom && custom.level && level === custom.level) {
+    var held = (custom.map || {})[schedule];
+    var entered = table.byGroup
+      ? (held && typeof held === 'object' ? held[feeGroup] : undefined)
+      : held;
+    return (typeof entered === 'number' && isFinite(entered)) ? entered : null;
+  }
   var levels = table.byGroup ? (table.groups || {})[feeGroup] : table.levels;
   if (!levels) return null;
   var rate = levels[level];
@@ -104,7 +115,85 @@ function feeScheduleEntry() {
 }
 
 function managementFee(feeGroup) {
-  return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup);
+  return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup,
+                    { level: customLevel(), map: App.customFees() });
+}
+
+/* ---- the custom level (D96) ---------------------------------------------
+   The schema names a seventh level the card does not price. Under it the
+   rates are the PWA's own, one per row of the schedule chosen - the whole
+   book under a uniform schedule, each fee group under a grouped one - and
+   each is held between the bounding source's floor and ceiling as this
+   mandate prices them. The map lives on the scenario as
+   {schedule: rate | {feeGroup: rate}}, and each schedule keeps its own. */
+function customLevel() { return App.customLevel ? App.customLevel() : null; }
+function isCustomLevel() { return !!customLevel() && App.feeLevel() === customLevel(); }
+
+function scheduleByGroup(schedule) {
+  var entry = feeSchedules().filter(function (s) { return s.id === schedule; })[0];
+  return !!(entry && entry.byGroup);
+}
+
+/* the rows a custom column has under *schedule*, in the card's own order */
+function customRowsFor(schedule) {
+  if (!schedule) return [];
+  return scheduleByGroup(schedule)
+    ? App.opt('fees.feeGroups', []).map(function (g) { return { group: g, label: g }; })
+    : [{ group: null, label: 'one rate for every product' }];
+}
+
+function customRowKey(schedule, group) { return schedule + '|' + (group || ''); }
+
+/* the rate entered for one row, or null when none has been */
+function customRate(schedule, feeGroup, map) {
+  var held = (map || App.customFees())[schedule];
+  var value = scheduleByGroup(schedule)
+    ? (held && typeof held === 'object' ? held[feeGroup] : undefined)
+    : held;
+  return (typeof value === 'number' && isFinite(value)) ? value : null;
+}
+
+/* the delivered rates for one row at this mandate - blended under a marginal
+   schedule, at the tier under a flat one: the block the resolver reads */
+function customReference(schedule, feeGroup) {
+  var table = (feeRates() || {})[schedule];
+  if (!table) return null;
+  return table.byGroup ? ((table.groups || {})[feeGroup] || null) : (table.levels || null);
+}
+
+/* the room a custom rate has on one row: the bounding source's floor and
+   ceiling, the levels the schema names, as this mandate prices them */
+function customBoundsFor(schedule, feeGroup) {
+  var ref = customReference(schedule, feeGroup);
+  var bounds = App.opt('fees.customBounds', null);
+  if (!ref || !bounds) return null;
+  var low = ref[bounds.floor], high = ref[bounds.ceiling];
+  if (typeof low !== 'number' || typeof high !== 'number') return null;
+  return { low: low, high: high, source: bounds.source };
+}
+
+/* how many of the model's products each fee group holds, for the card and
+   the rail: a row with none is optional */
+function customProductCounts() {
+  var out = {};
+  rows().forEach(function (group) {
+    group.items.forEach(function (item) { out[item.feeGroup] = (out[item.feeGroup] || 0) + 1; });
+  });
+  return out;
+}
+
+/* the rows the custom level has not priced, among those with products */
+function customUnpriced(groups) {
+  var schedule = App.feeSchedule();
+  if (!schedule) return [];
+  var missing = {};
+  groups.forEach(function (group) {
+    group.items.forEach(function (item) {
+      if (item.mgmt === null) missing[scheduleByGroup(schedule) ? item.feeGroup : schedule] = true;
+    });
+  });
+  return customRowsFor(schedule).map(function (r) { return r.group || schedule; })
+    .filter(function (key) { return missing[key]; });
 }
 
 /* Whether the chosen schedule is priced marginally, and the one blended rate
@@ -663,8 +752,14 @@ function feeFields() {
     return null;
   }
   var chosenLevel = levels.filter(function (l) { return l.id === level; })[0] || null;
-  var curSource = chosenLevel ? chosenLevel.source : (sources[0] || null);
+  /* The custom level sits on the source row as a third choice (D96). It has
+     no point on a band, so the point row is not offered under it, and the
+     block beneath says what the card holds and reopens it. */
+  var custom = customLevel();
+  var onCustom = isCustomLevel();
+  var curSource = onCustom ? custom : (chosenLevel ? chosenLevel.source : (sources[0] || null));
   var curPoint = chosenLevel ? chosenLevel.point : (points[0] || null);
+  var sourceValues = custom ? sources.concat([custom]) : sources;
 
   /* Both controls are sized from the schema's own lists, not from a count
      written here: a framework that priced four points would still lay out. */
@@ -683,12 +778,15 @@ function feeFields() {
 
   html += '<div class="fee-field done">'
     + '<span class="fee-label" id="feelevellabel">Fee Level</span>'
-    + segment(sources, curSource, curPoint, 'data-feesource',
-              function (source, point) { return idFor(source, point); }, 'Fee source')
-    + segment(points, curPoint, curSource, 'data-feepoint',
-              function (point, source) { return idFor(source, point); }, 'Fee Level point')
+    + segment(sourceValues, curSource, curPoint, 'data-feesource',
+              function (source, point) { return source === custom ? custom : idFor(source, point); },
+              'Fee source')
+    + (onCustom ? '' : segment(points, curPoint, curSource, 'data-feepoint',
+              function (point, source) { return idFor(source, point); }, 'Fee Level point'))
     + '<p class="vr-note">' + feePricingNote(tier) + '</p>'
-    + (App.opt('fees.placeholder', false)
+    + (onCustom ? customRailBlock() : '')
+    /* the flag is about the delivered card; custom rates are the PWA's */
+    + (App.opt('fees.placeholder', false) && !onCustom
         ? '<p class="fee-flag">Placeholder rates, not the published schedule.</p>' : '')
     + feeCardLine()
     + (marginalBuildUp()
@@ -699,10 +797,45 @@ function feeFields() {
   return html;
 }
 
+/* Under the custom level: the rows this book holds and what each carries,
+   and the way back into the card. A fee group with no products in the model
+   is not listed - it prices nothing here - and one with products and no rate
+   is marked, since its products are unpriced. The card still shows every
+   row, so a rate can be entered ahead of a sleeve that would need it. */
+function customRailBlock() {
+  var schedule = App.feeSchedule();
+  var html = '';
+  if (schedule && scheduleByGroup(schedule)) {
+    var counts = customProductCounts();
+    var held = customRowsFor(schedule).filter(function (r) { return counts[r.group]; });
+    html += '<ul class="cf-rows">' + held.map(function (r) {
+      var rate = customRate(schedule, r.group);
+      return '<li class="' + (rate === null ? 'miss' : '') + '">'
+        + '<span>' + App.esc(r.label) + '</span>'
+        + '<b>' + (rate === null ? 'not set' : App.esc(App.num(rate, 2, '%'))) + '</b></li>';
+    }).join('') + '</ul>';
+  }
+  return html + '<button type="button" class="btn btn-ghost fee-view" data-customview'
+    + (schedule && App.canEdit() ? '' : ' disabled') + '>Edit custom fees</button>';
+}
+
 /* What priced this book, in one line under the level. A marginal schedule has
    no single tier to name - the mandate fills the ladder and pays a blend - so
    it states the rate it actually prices at (D83). A flat one names its tier. */
 function feePricingNote(tier) {
+  if (isCustomLevel()) {
+    var schedule = App.feeSchedule();
+    if (!schedule) return 'Choose a fee schedule; the custom rates follow its rows.';
+    if (!scheduleByGroup(schedule)) {
+      var one = customRate(schedule, null);
+      return one === null
+        ? 'No custom rate yet: every product is unpriced until the card is filled.'
+        : 'One custom rate for every product: ' + App.esc(App.num(one, 2, '%')) + '.';
+    }
+    var rowsC = customRowsFor(schedule);
+    var set = rowsC.filter(function (r) { return customRate(schedule, r.group) !== null; }).length;
+    return 'Custom rates by fee group: ' + set + ' of ' + rowsC.length + ' set.';
+  }
   if (feeIsMarginal()) {
     var blend = effectiveFee();
     return blend === null
@@ -729,6 +862,20 @@ function feeCardLine() {
    selection is instant. */
 var feePanel = { open: false, card: null, pivot: 'group', tier: null, group: 0,
                  error: null, busy: false };
+
+/* Focus, given back when a panel closes. The rail and the document were
+   inert while it was up, and lifting inert does not make their controls
+   focusable again until the style has been flushed - a synchronous focus()
+   right after it is ignored. So flush first, and if it still did not take,
+   try once more on the next turn of the loop. */
+function focusOnClose(trigger) {
+  if (!trigger || !trigger.focus) return;
+  void trigger.offsetWidth;
+  trigger.focus();
+  if (document.activeElement !== trigger) {
+    window.setTimeout(function () { if (document.contains(trigger)) trigger.focus(); }, 0);
+  }
+}
 
 function feeCellKey(schedule, group, tier, source, point) {
   return [schedule, group || '', tier, source, point].join('|');
@@ -778,7 +925,7 @@ function closeFeePanel() {
   var trigger = feePanel.returnTo && document.contains(feePanel.returnTo)
     ? feePanel.returnTo : document.querySelector('[data-feeview]');
   feePanel.returnTo = null;
-  if (trigger && trigger.focus) trigger.focus();
+  focusOnClose(trigger);
 }
 
 function feeGroupLabel(entry) {
@@ -820,7 +967,7 @@ function renderFeePanel() {
   var host = document.getElementById('feeDialog'); if (!host) return;
   if (!feePanel.open) {
     host.innerHTML = ''; host.hidden = true;
-    if (!pricePanel.open) App.setBackgroundInert(false);   /* the build-up may be up */
+    if (!pricePanel.open && !customPanel.open) App.setBackgroundInert(false);   /* another may be up */
     return;
   }
   host.hidden = false;
@@ -951,7 +1098,7 @@ var pricePanel = { open: false, returnTo: null };
 function marginalBuildUp() {
   var all = App.opt('fees.marginal', null);
   var schedule = App.feeSchedule && App.feeSchedule();
-  if (!all || !schedule) return null;
+  if (!all || !schedule || isCustomLevel()) return null;   /* the ladder did not price it (D96) */
   return all[schedule] || null;
 }
 
@@ -995,15 +1142,15 @@ function closePricePanel() {
   var trigger = pricePanel.returnTo && document.contains(pricePanel.returnTo)
     ? pricePanel.returnTo : document.querySelector('[data-priceview]');
   pricePanel.returnTo = null;
-  if (trigger && trigger.focus) trigger.focus();
+  focusOnClose(trigger);
 }
 
 function renderPricePanel() {
   var host = document.getElementById('priceDialog'); if (!host) return;
   if (!pricePanel.open) {
     host.innerHTML = ''; host.hidden = true;
-    /* the fee card may still be up behind this one */
-    if (!feePanel.open) App.setBackgroundInert(false);
+    /* the fee card, or the custom card, may still be up behind this one */
+    if (!feePanel.open && !customPanel.open) App.setBackgroundInert(false);
     return;
   }
   host.hidden = false;
@@ -1079,50 +1226,269 @@ function renderPricePanel() {
 }
 
 
-/* ---- the sleeves introduce themselves (D94) -------------------------------
-   The first time in a browser session that someone opens step 2 from the step
-   nav, the sleeve pickers flash in turn, top to bottom: this is where the
-   step's work is, and the rail has just changed under them. It waits until
-   every library has settled - flashing "Loading sleeves..." points at nothing
-   to do - and it is timed from a clock rather than bound to nodes, because
-   the rail re-renders as each library lands. A row drawn mid-flash picks it up
-   where it had got to, through a negative animation delay. */
-var SLEEVE_FLASH_KEY = 'pmg.proposalTool.sleevesFlashed';
-var SLEEVE_FLASH_STEP = 120;          /* ms between one row and the next */
-var SLEEVE_FLASH_RUN = 1100;          /* one row's flash, as in the CSS */
-var sleeveFlashPending = false;
-var sleeveFlashAt = 0;                /* when row one starts; 0 = not flashing */
-var sleeveFlashedHere = false;        /* stands in if session storage is refused */
+/* ---- guiding the sleeves (D95) -------------------------------------------
+   The base portfolio's controls are guided one at a time (D91); the sleeve
+   pickers are guided the same way. The first picker without a sleeve is
+   marked as next, and once it is answered the mark - and focus - move to the
+   next empty one, until every category has a sleeve. That is the model's
+   first completion, and it is remembered for the scenario: emptying a picker
+   later is a choice, not a step left undone, and is not pointed at.
 
-function sleevesFlashed() {
-  if (sleeveFlashedHere) return true;
-  try { return window.sessionStorage.getItem(SLEEVE_FLASH_KEY) === '1'; } catch (e) { return false; }
+   A picker whose library is still loading, or failed, is skipped: it holds
+   nothing to choose yet, and the retry beside it says what to do. */
+var sleeveGuideDone = false;         /* this page's memory, when storage is refused */
+
+function sleeveGuideKey() {
+  return 'pmg.proposalTool.sleevesGuided.' + (App.scenarioId() || '');
 }
-function markSleevesFlashed() {
-  sleeveFlashedHere = true;
-  try { window.sessionStorage.setItem(SLEEVE_FLASH_KEY, '1'); } catch (e) {}
+function sleevesGuided() {
+  if (sleeveGuideDone) return true;
+  try { return window.localStorage.getItem(sleeveGuideKey()) === '1'; } catch (e) { return false; }
+}
+function markSleevesGuided() {
+  sleeveGuideDone = true;
+  try { window.localStorage.setItem(sleeveGuideKey(), '1'); } catch (e) {}
 }
 
-/* Called with the rows about to be drawn: starts the flash if it is owed and
-   the libraries are ready, and returns each row's delay while it runs. */
-function sleeveFlashDelays(categories) {
+/* The index of the picker to mark, among the rows about to be drawn, or -1.
+   Answering the last one is what closes the guide. */
+function sleeveNext(categories) {
+  if (!categories.length || !App.canEdit() || sleevesGuided()) return -1;
   var libs = App.sleeveLib();
-  var settled = categories.length && categories.every(function (c) {
-    return libs[c.name] && libs[c.name].status !== 'loading';
-  });
-  if (sleeveFlashPending && settled) {
-    sleeveFlashPending = false;
-    sleeveFlashAt = Date.now() + 250;   /* let the base tier's roll-up start first */
-    markSleevesFlashed();
+  var empty = -1;
+  for (var i = 0; i < categories.length; i++) {
+    if (sleeveFor(categories[i].name)) continue;
+    var lib = libs[categories[i].name];
+    if (empty < 0 && lib && lib.status === 'ready') empty = i;
+    if (empty < 0 && !(lib && lib.status === 'ready')) empty = -2;   /* not ready: no mark */
   }
-  if (!sleeveFlashAt) return null;
-  var elapsed = Date.now() - sleeveFlashAt;
-  if (elapsed > SLEEVE_FLASH_STEP * (categories.length - 1) + SLEEVE_FLASH_RUN) {
-    sleeveFlashAt = 0;
-    return null;
-  }
-  return categories.map(function (c, i) { return i * SLEEVE_FLASH_STEP - elapsed; });
+  if (empty === -1) { markSleevesGuided(); return -1; }
+  return empty < 0 ? -1 : empty;
 }
+
+/* ---- the custom fee card (D96) --------------------------------------------
+   The fee card's by-tier grid, pinned to this mandate, with one column added:
+   the PWA's. The chosen schedule's rows are live and their delivered rates
+   are buttons that copy across; the other schedule's rows stay for reference
+   with their Custom cell inert. A draft until Apply, which writes the whole
+   map in one PUT; Cancel and Escape discard it. Opens itself the first time
+   the custom level is chosen with nothing entered, and from the rail after. */
+var customPanel = { open: false, draft: null, bad: {}, fillSrc: null, fillPt: null, returnTo: null };
+
+function cloneCustomFees(map) {
+  var out = {};
+  Object.keys(map || {}).forEach(function (schedule) {
+    var held = map[schedule];
+    out[schedule] = (held && typeof held === 'object') ? Object.assign({}, held) : held;
+  });
+  return out;
+}
+
+function setDraftRate(schedule, group, value) {
+  var draft = customPanel.draft;
+  if (scheduleByGroup(schedule)) {
+    var held = (draft[schedule] && typeof draft[schedule] === 'object') ? draft[schedule] : {};
+    if (value === null) delete held[group]; else held[group] = value;
+    draft[schedule] = held;
+  } else if (value === null) {
+    delete draft[schedule];
+  } else {
+    draft[schedule] = value;
+  }
+}
+
+/* "0.45", "0.45%" or "45bp"; percent to 2dp; held inside the row's bounds */
+function parseCustomRate(text, bounds) {
+  var t = String(text || '').trim().toLowerCase();
+  if (!t) return { empty: true };
+  var m = t.match(/^(-?\d*\.?\d+)\s*(%|bps?)?$/);
+  if (!m) return { bad: 'Enter a percentage, like 0.45 or 45bp.' };
+  var v = parseFloat(m[1]);
+  if (m[2] && m[2] !== '%') v = v / 100;
+  v = Math.round(v * 100) / 100;
+  if (bounds && (v < bounds.low - 1e-9 || v > bounds.high + 1e-9)) {
+    return { bad: 'Between ' + bounds.low.toFixed(2) + '% and ' + bounds.high.toFixed(2)
+      + '%: the ' + bounds.source + ' floor and ceiling for this row at this mandate.' };
+  }
+  return { v: v };
+}
+
+function openCustomPanel() {
+  if (!App.feeSchedule() || !App.canEdit()) return;
+  var levels = App.opt('fees.levels', []);
+  var dflt = levels.filter(function (l) { return l.id === App.opt('fees.defaultLevel', null); })[0];
+  customPanel.open = true;
+  customPanel.draft = cloneCustomFees(App.customFees());
+  customPanel.bad = {};
+  customPanel.fillSrc = (dflt && dflt.source) || App.opt('fees.sources', [])[0] || null;
+  customPanel.fillPt = (dflt && dflt.point) || App.opt('fees.points', [])[0] || null;
+  customPanel.returnTo = document.activeElement;
+  renderCustomPanel();
+  var first = document.querySelector('#customDialog [data-crate]:not(:disabled)');
+  if (first) first.focus();
+}
+
+function closeCustomPanel(apply) {
+  var draft = customPanel.draft;
+  customPanel.open = false; customPanel.draft = null; customPanel.bad = {};
+  renderCustomPanel();
+  if (apply) App.setCustomFees(draft);
+  var trigger = customPanel.returnTo && document.contains(customPanel.returnTo)
+    ? customPanel.returnTo : document.querySelector('[data-customview]');
+  customPanel.returnTo = null;
+  focusOnClose(trigger);
+}
+
+function renderCustomPanel() {
+  var host = document.getElementById('customDialog'); if (!host) return;
+  if (!customPanel.open) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!feePanel.open && !pricePanel.open) App.setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  App.setBackgroundInert(true);
+
+  var schedule = App.feeSchedule(), draft = customPanel.draft;
+  var sources = App.opt('fees.sources', []), points = App.opt('fees.points', []);
+  var tier = App.opt('fees.tier', null);
+  var delivery = App.opt('fees.delivery', {}) || {};
+  var bounds = App.opt('fees.customBounds', null) || {};
+  var counts = customProductCounts();
+  var held = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0);
+  var fillId = customPanel.fillSrc + ' ' + customPanel.fillPt;
+
+  var head1 = '<tr><th rowspan="2" class="rowhead">Schedule / fee group</th>'
+    + sources.map(function (src) {
+        return '<th colspan="' + points.length + '" class="src rc-grp"><span>' + App.esc(src) + '</span></th>';
+      }).join('')
+    + '<th rowspan="2" class="cust rc-grp">Custom</th></tr>';
+  var head2 = '<tr>' + sources.map(function (src) {
+      return points.map(function (pt, i) {
+        var id = src + ' ' + pt, fill = id === fillId;
+        return '<th class="pt' + (i === 0 ? ' rc-grp' : '') + (fill ? ' lvl' : '') + '">'
+          + App.esc(pt) + (fill ? '<small>fill from</small>' : '') + '</th>';
+      }).join('');
+    }).join('') + '</tr>';
+
+  var body = feeSchedules().map(function (entry) {
+    var on = entry.id === schedule;
+    return customRowsFor(entry.id).map(function (r, ix) {
+      var ref = customReference(entry.id, r.group) || {};
+      var key = customRowKey(entry.id, r.group);
+      var value = customRate(entry.id, r.group, draft);
+      var n = r.group ? (counts[r.group] || 0) : held;
+      var bad = customPanel.bad[key];
+      var room = customBoundsFor(entry.id, r.group);
+      var cells = sources.map(function (src) {
+        return points.map(function (pt, i) {
+          var id = src + ' ' + pt, rate = ref[id];
+          var text = typeof rate === 'number' ? rate.toFixed(2) : '—';
+          return '<td class="rate' + (i === 0 ? ' rc-grp' : '') + (id === fillId ? ' lvl' : '') + '">'
+            + (on && typeof rate === 'number'
+                ? '<button type="button" class="cf-copy" data-ccopy="' + App.esc(key) + '" data-cval="' + rate
+                  + '" title="Copy ' + App.esc(id) + ' into Custom">' + text + '</button>'
+                : text)
+            + '</td>';
+        }).join('');
+      }).join('');
+      var input = '<td class="cust rc-grp' + (bad ? ' bad' : '') + '">'
+        + '<input type="text" inputmode="decimal" class="cf-in" id="cf-' + key.replace(/\W/g, '_') + '"'
+        + ' data-crate="' + App.esc(key) + '" value="' + (value === null ? '' : value.toFixed(2) + '%') + '"'
+        + (on ? '' : ' disabled') + ' placeholder="' + (on ? (n ? '—' : 'optional') : '') + '"'
+        + ' aria-label="Custom rate for ' + App.esc(entry.id + (r.group ? ' ' + r.group : '')) + '"'
+        + (on && room ? ' title="Between ' + room.low.toFixed(2) + '% and ' + room.high.toFixed(2) + '%"' : '')
+        + (on ? '' : ' title="Choose ' + App.esc(entry.id) + ' in the rail to price by '
+          + (entry.byGroup ? 'fee group' : 'one rate') + '"') + '>'
+        + (on && room ? '<small>' + room.low.toFixed(2) + '–' + room.high.toFixed(2) + '%</small>' : '')
+        + '</td>';
+      var rowHead = '<th scope="row" class="rowhead">'
+        + '<span class="rc-id' + (ix === 0 ? '' : ' rc-id-blank') + '">' + App.esc(entry.id) + '</span>'
+        + '<span class="rc-lbl">' + App.esc(r.label)
+        + '<small class="cf-cnt">' + (n ? n + ' product' + (n === 1 ? '' : 's') : 'none held') + '</small></span>'
+        + (on && ix === 0 ? '<span class="rc-tag">this proposal</span>' : '') + '</th>';
+      return '<tr class="' + (on ? 'mark' : 'off') + '">' + rowHead + cells + input + '</tr>';
+    }).join('');
+  }).join('');
+
+  /* the foot prices the DRAFT, so the PWA sees the consequence before Apply */
+  var bp = 0, msum = 0, wsum = 0, all = true;
+  rows().forEach(function (group) {
+    group.items.forEach(function (item) {
+      var m = customRate(schedule, item.feeGroup, draft);
+      if (m === null) { all = false; return; }
+      bp += (item.cost + m) * item.weight; msum += m * item.weight; wsum += item.weight;
+    });
+  });
+  var live = customRowsFor(schedule).filter(function (r) { return r.group ? counts[r.group] : held; });
+  var set = live.filter(function (r) { return customRate(schedule, r.group, draft) !== null; }).length;
+  var foot = set + ' of ' + live.length + ' set';
+  if (all && wsum) {
+    foot += ' · effective ' + App.esc(App.num(msum / wsum, 4, '%')) + ' · '
+      + App.esc(App.num(bp, 1, 'bp')) + ' all-in · ' + App.esc(money(App.mandateSize() * bp / 10000)) + ' a year';
+  } else {
+    foot += ' · ' + live.filter(function (r) { return customRate(schedule, r.group, draft) === null; })
+      .map(function (r) { return r.group || schedule; }).join(', ') + ' still to set';
+  }
+  var badMsg = Object.keys(customPanel.bad).map(function (k) { return customPanel.bad[k]; })[0];
+
+  var tools = '<div class="rc-controls cf-tools"><span class="cf-lbl">Fill Custom from</span>'
+    + '<div class="rc-seg" role="group" aria-label="Source to fill from">' + sources.map(function (s) {
+        return '<button type="button" data-cfsrc="' + App.esc(s) + '" aria-selected="' + (s === customPanel.fillSrc) + '">' + App.esc(s) + '</button>';
+      }).join('') + '</div>'
+    + '<div class="rc-seg" role="group" aria-label="Point to fill from">' + points.map(function (p) {
+        return '<button type="button" data-cfpt="' + App.esc(p) + '" aria-selected="' + (p === customPanel.fillPt) + '">' + App.esc(p) + '</button>';
+      }).join('') + '</div>'
+    + '<button type="button" class="btn btn-ghost" data-cfill>Fill</button>'
+    + '<button type="button" class="btn btn-ghost" data-cclear>Clear</button></div>';
+
+  host.innerHTML =
+      '<div class="scrim" data-customscrim></div>'
+    + '<div class="dialog wide rc cf" role="dialog" aria-modal="true" aria-labelledby="customTitle">'
+    + '<button type="button" class="dlg-close" id="customclose" aria-label="Close">×</button>'
+    + '<div class="rc-head"><h2 id="customTitle">Custom fees</h2>'
+    + '<p class="rc-meta"><span>Schedule <b>' + App.esc(schedule) + '</b></span>'
+    + (tier ? '<span>Tier <b>' + App.esc(tier.id + ' · ' + tier.label) + '</b></span>' : '')
+    + '<span>Mandate <b>' + App.esc(money(App.mandateSize())) + '</b></span>'
+    + '<span>Card <b>' + App.esc(delivery.version || 'unversioned') + '</b></span></p>'
+    + (App.opt('fees.placeholder', false) ? '<span class="rc-flag">Placeholder rates</span>' : '')
+    + '</div>'
+    + '<p class="pb-sub">The delivered rates at every level, for reference: a flat schedule at this '
+    + 'mandate’s tier, a marginal one blended for this mandate. Enter one rate per '
+    + (scheduleByGroup(schedule) ? 'fee group' : 'schedule') + ' in the Custom column, or click any '
+    + 'delivered rate to copy it across. A custom rate may be any value between the '
+    + App.esc(bounds.source || 'Management') + ' floor and ceiling shown under it; every product in '
+    + 'the row pays it.</p>'
+    + tools
+    + '<div class="rc-wrap"><table class="rate-grid cf-grid"><thead>' + head1 + head2 + '</thead>'
+    + '<tbody>' + body + '</tbody></table></div>'
+    + '<p class="rc-legend"><span><i class="k-lvl"></i>the level Fill copies from</span>'
+    + '<span><i class="k-mark"></i>' + App.esc(schedule) + ' — this proposal’s schedule, the live rows</span>'
+    + '<span><i class="k-unit"></i>the other schedule, for reference</span></p>'
+    + (badMsg ? '<p class="md-err" role="alert">' + App.esc(badMsg) + ' The previous value is kept.</p>' : '')
+    + '<div class="rc-actions"><span class="rc-note">' + foot + '</span>'
+    + '<span class="cf-actions"><button type="button" class="btn btn-ghost" id="customcancel">Cancel</button>'
+    + '<button type="button" class="btn btn-primary" id="customapply">Apply</button></span></div>'
+    + '</div>';
+}
+
+document.addEventListener('keydown', function (e) {
+  if (!customPanel.open) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeCustomPanel(false); return; }
+  /* Enter commits and moves down the Custom column */
+  if (e.key === 'Enter' && e.target.dataset && e.target.dataset.crate !== undefined) {
+    e.preventDefault();
+    var inputs = Array.prototype.slice.call(
+      document.querySelectorAll('#customDialog [data-crate]:not(:disabled)'));
+    var next = inputs[inputs.indexOf(e.target) + 1];
+    var nextId = next ? next.id : 'customapply';
+    e.target.blur();                              /* commits through change */
+    window.setTimeout(function () {
+      var again = document.getElementById(nextId);
+      if (again) again.focus();
+    }, 0);
+  }
+});
 
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
 function renderRail() {
@@ -1189,7 +1555,7 @@ function renderRail() {
   var pickable = sleeveCategories(baseCategories()).filter(function (category) {
     return !isAuto(category.name);
   });
-  var flash = sleeveFlashDelays(pickable);
+  var next = sleeveNext(pickable);
   pickable.forEach(function (category, i) {
     var lib = App.sleeveLib()[category.name];
     var chosen = sleeveFor(category.name);
@@ -1210,8 +1576,7 @@ function renderRail() {
         + (App.canEdit() ? '' : ' disabled') + '>'
         + '<option value="">Select a sleeve…</option>' + options + '</select>';
     }
-    html += '<div class="sl-row' + (chosen ? ' done' : '') + (flash ? ' sl-flash' : '') + '"'
-      + (flash ? ' style="--sl-flash-delay:' + flash[i] + 'ms"' : '') + '>'
+    html += '<div class="sl-row' + (chosen ? ' done' : '') + (i === next ? ' is-next' : '') + '">'
       + '<span class="cat"><b><label for="sl' + i + '">' + App.esc(category.name) + '</label></b>'
       + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select + '</div>';
   });
@@ -1546,6 +1911,11 @@ function renderView() {
   /* Only a proposal that includes fees needs a schedule: one that does not
      exports a sheet with no fee column to price (D52). */
   else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
+  /* under the custom level a row without a rate leaves its products unpriced (D96) */
+  else if (fees && isCustomLevel() && customUnpriced(groups).length) {
+    reason = 'Set a custom rate for every fee group in the model: '
+      + customUnpriced(groups).join(', ') + ' still to set.';
+  }
   else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
   /* A hard block: a position below the product's minimum cannot be bought,
@@ -1665,6 +2035,16 @@ document.addEventListener('change', function (e) {
     renderFeePanel();                    /* the card is already here: no fetch */
     return;
   }
+  if (e.target.dataset.crate !== undefined && customPanel.open) {
+    var parts = e.target.dataset.crate.split('|');
+    var rateSchedule = parts[0], rateGroup = parts[1] || null;
+    var parsed = parseCustomRate(e.target.value, customBoundsFor(rateSchedule, rateGroup));
+    delete customPanel.bad[e.target.dataset.crate];
+    if (parsed.bad) customPanel.bad[e.target.dataset.crate] = parsed.bad;
+    else setDraftRate(rateSchedule, rateGroup, parsed.empty ? null : parsed.v);
+    renderCustomPanel();
+    return;
+  }
   if (e.target.dataset.tilt !== undefined) {
     App.setTacticalTilt(e.target.checked);
     return;
@@ -1685,23 +2065,52 @@ document.addEventListener('change', function (e) {
     return;
   }
   if (e.target.dataset.cat !== undefined) {
+    var guided = !!e.target.closest('.sl-row.is-next') && !!e.target.value;
     App.chooseSleeve(e.target.dataset.cat, e.target.value || null);
+    /* the guide's mark has moved on with the render; focus follows it, the
+       way it does on the allocation step (D91), while focus is still here */
+    var onward = guided && document.querySelector('.sl-row.is-next select');
+    var active = document.activeElement;
+    if (onward && !onward.disabled && (!active || active === document.body || active.closest('.rail'))) {
+      onward.focus();
+    }
   }
 });
 document.addEventListener('click', function (e) {
   var step = e.target.closest ? e.target.closest('.step') : null;
-  if (step) {
-    /* the first visit this session, by the step nav, is owed a flash (D94) */
-    if (step.dataset.step === 'impl' && App.step() !== 'impl' && !sleevesFlashed()) {
-      sleeveFlashPending = true;
-    }
-    App.setStep(step.dataset.step);
-    return;
-  }
+  if (step) { App.setStep(step.dataset.step); return; }
   /* the rate card panel (D55) */
   if (e.target.closest && e.target.closest('[data-openrepo]')) {
     var at = e.target.closest('[data-openrepo]');
     if (App.openRepository) App.openRepository(at, 'sleeves', { variant: App.variant() });
+    return;
+  }
+  /* the custom fee card (D96) */
+  if (e.target.closest && e.target.closest('[data-customview]')) { openCustomPanel(); return; }
+  if (e.target.id === 'customclose' || e.target.id === 'customcancel'
+      || (e.target.dataset && e.target.dataset.customscrim !== undefined)) { closeCustomPanel(false); return; }
+  if (e.target.id === 'customapply') { closeCustomPanel(true); return; }
+  var cf = e.target.closest ? e.target.closest('[data-cfsrc],[data-cfpt],[data-cfill],[data-cclear],[data-ccopy]') : null;
+  if (cf && customPanel.open) {
+    var d = cf.dataset, schedNow = App.feeSchedule();
+    if (d.cfsrc) customPanel.fillSrc = d.cfsrc;
+    else if (d.cfpt) customPanel.fillPt = d.cfpt;
+    else if (d.cfill !== undefined) {
+      var fillId = customPanel.fillSrc + ' ' + customPanel.fillPt;
+      customRowsFor(schedNow).forEach(function (r) {
+        var rate = (customReference(schedNow, r.group) || {})[fillId];
+        if (typeof rate === 'number') setDraftRate(schedNow, r.group, Math.round(rate * 100) / 100);
+      });
+      customPanel.bad = {};
+    } else if (d.cclear !== undefined) {
+      customRowsFor(schedNow).forEach(function (r) { setDraftRate(schedNow, r.group, null); });
+      customPanel.bad = {};
+    } else if (d.ccopy) {
+      var parts = d.ccopy.split('|');
+      setDraftRate(parts[0], parts[1] || null, Math.round(parseFloat(d.cval) * 100) / 100);
+      delete customPanel.bad[d.ccopy];
+    }
+    renderCustomPanel();
     return;
   }
   if (e.target.closest && e.target.closest('[data-priceview]')) { openPricePanel(); return; }
@@ -1728,12 +2137,27 @@ document.addEventListener('click', function (e) {
   var half = e.target.closest
     ? e.target.closest('[data-feesource],[data-feepoint]') : null;
   if (half) {
+    var custom = customLevel();
+    if (half.dataset.feesource && half.dataset.feesource === custom) {
+      /* the custom level is chosen like a source (D96); the card opens itself
+         the first time, when nothing has been entered for this schedule */
+      var wasCustom = isCustomLevel();
+      App.setFeeLevel(custom);
+      var schedC = App.feeSchedule();
+      var nothing = schedC && customRowsFor(schedC).every(function (r) {
+        return customRate(schedC, r.group) === null;
+      });
+      if (!wasCustom && nothing) openCustomPanel();
+      return;
+    }
     var levels = App.opt('fees.levels', []);
     var inForce = levels.filter(function (l) { return l.id === App.feeLevel(); })[0];
+    /* leaving the custom level, the point comes back from the default */
+    var dflt = levels.filter(function (l) { return l.id === App.opt('fees.defaultLevel', null); })[0];
     var source = half.dataset.feesource
       || (inForce && inForce.source) || App.opt('fees.sources', [])[0];
     var point = half.dataset.feepoint
-      || (inForce && inForce.point) || App.opt('fees.points', [])[0];
+      || (inForce && inForce.point) || (dflt && dflt.point) || App.opt('fees.points', [])[0];
     var chosen = levels.filter(function (l) {
       return l.source === source && l.point === point;
     })[0];
