@@ -301,6 +301,43 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             'unpricedGroups': unpricedGroups}
 
 
+SHEET_PASSWORD = 'PA55WORD'
+"""The workbook's sheet-protection password (D104).
+
+Not a secret and not a security control: Excel's sheet protection is a
+convention, the hash it stores is trivially stripped, and the file is a zip
+besides. It is here so that unprotecting a delivered sheet is deliberate
+rather than accidental, which is the whole of what this mechanism can do.
+Nothing is encrypted, so nothing in the workbook is confidential by virtue
+of it - the register's stored copy (D69) remains the record of what was
+actually delivered.
+"""
+
+
+def protectSheet(sheet) -> None:
+    """Lock the figures, leave the presentation alone (D98, D104).
+
+    Every cell is already locked; protection is what makes that mean
+    anything. The flags read backwards - True BLOCKS the action - so the
+    three that are set False are the ones a reader is invited to use:
+    formatting cells, column widths and row heights. Sorting and filtering
+    are allowed too, because neither changes a value.
+
+    The password is set on every sheet, including the hidden chart data, so
+    the protection is uniform: a sheet left open would be the one a figure
+    got edited on. openpyxl hashes it on assignment; the plaintext is never
+    written to the file.
+    """
+    protection = sheet.protection
+    protection.sheet = True          # the values are read only
+    protection.password = SHEET_PASSWORD
+    protection.formatCells = False   # fonts, fills, borders, number formats
+    protection.formatColumns = False # column widths
+    protection.formatRows = False    # row heights
+    protection.sort = False
+    protection.autoFilter = False
+
+
 def roundSharesOneDp(exact) -> list:
     """Round shares to 1dp so they sum to exactly 100.0. Mirrors the page's
     roundSharesOneDp(); the two must agree or the export contradicts the UI."""
@@ -1185,6 +1222,10 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
     # identity in the file's properties.
     for name in book.sheetnames:
         sheet = book[name]
+        # the figures are ours; the presentation is the reader's (D98). Every
+        # sheet, the hidden chart data included - editing that would leave the
+        # doughnuts disagreeing with the table they were drawn from.
+        protectSheet(sheet)
         sheet.sheet_properties.tabColor = _NAVY
         sheet.page_setup.orientation = 'landscape'
         sheet.page_setup.fitToWidth = 1

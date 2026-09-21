@@ -253,3 +253,45 @@ def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository
     assert client.get('/api/v1/scenario/repository/proposals/' + uid, headers=admin).status_code == 200
     assert client.get('/api/v1/scenario/schema', headers=pwa).json()['capabilities']['canAdmin'] is False
     assert client.get('/api/v1/scenario/schema', headers=admin).json()['capabilities']['canAdmin'] is True
+
+
+def test_account_opening_has_two_doors_and_neither_is_an_action_row_button():
+    """D107. The request used to be a third button in the Start a proposal
+    card's action row, beside Continue and Cancel - a terminal action on a
+    delivered proposal sitting among the controls for starting one. It now has
+    a door of its own on the landing page, and the card carries only a link
+    below the rule. Pinned because the placement is the whole point of the
+    change and a later tidy-up would not know that."""
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.join(here, '..', '..')
+    with open(os.path.join(root, 'generator', 'js', 'core.js'), encoding='utf-8') as fh:
+        source = fh.read()
+    with open(os.path.join(root, 'proposalTool', 'proposalTool.html'), encoding='utf-8') as fh:
+        page = fh.read()
+
+    # the landing page's own door, beside Start Here and outside any card
+    assert 'id="lpaccount"' in page, 'the landing page needs its own entry'
+    assert page.index('id="startbtn"') < page.index('id="lpaccount"'), \
+        'Start Here leads; the account door is the quieter second'
+    # and it sits on the far side of the column, on the admin strip's own axis
+    with open(os.path.join(root, 'proposalTool', 'static', 'css', 'proposalTool.css'),
+              encoding='utf-8') as fh:
+        css = fh.read()
+    rule = css[css.index('.lp-second{'):css.index('.lp-second:hover')]
+    assert 'margin-left:auto' in rule, 'the second door is right-aligned (D109)'
+
+    # the card's link is below the rule, not in the action row
+    actions = source.index("'<div class=\"dlg-actions\">'")
+    assert actions < source.index("id=\"dlgaccount\""), \
+        'the account link must come after the action row, not inside it'
+    assert 'dlg-aside' in source and 'btn-inline' in source
+    assert 'dlg-actions split"><div class="dlg-grp"' not in source, \
+        'the three-button landing row is gone'
+    assert "(first ? ' start' : '')" not in source, \
+        'the 600px card existed only to seat the third button'
+
+    # and opening it no longer throws away what the user typed
+    assert 'acDraftBack = draft;' in source
+    assert 'if (acDraftBack) { draft = acDraftBack; acDraftBack = null; }' in source
+    assert 'draft = null; renderDialog(); }    /* the card gives way' not in source

@@ -1494,11 +1494,12 @@ def test_js_implementation_table_rows_are_all_the_same_width():
         "const out = [true, false].map(function (fees) {\n"
         "  const columns = implScreenColumns(fees);\n"
         "  return {columns: columns,\n"
-        # rowhead + products + allocation, then the filler, product cost, the
-        # fee cells, minimum investment and notional
-        "    band: 3 + implBandSpan() + 1 + (fees ? 2 : 0) + 2,\n"
+        # rowhead + products + allocation + notional, then the filler over the
+        # descriptive columns, the band's own product cost, the fee cells and
+        # the minimum
+        "    band: 4 + implBandSpan() + 1 + (fees ? 2 : 0) + 1,\n"
         # the total's filler swallows product cost, so it has no cell for it
-        "    total: 3 + implTotalSpan() + (fees ? 2 : 0) + 2};\n"
+        "    total: 4 + implTotalSpan() + (fees ? 2 : 0) + 1};\n"
         "});\n"
         "process.stdout.write(JSON.stringify(out));\n")
     got = json.loads(subprocess.run([node, '-e', fn + probe], capture_output=True,
@@ -1507,8 +1508,12 @@ def test_js_implementation_table_rows_are_all_the_same_width():
     assert len(priced['columns']) == priced['band'] == priced['total'], priced
     assert len(plain['columns']) == plain['band'] == plain['total'], plain
     assert len(priced['columns']) == len(plain['columns']) + 2, 'the two fee columns'
-    assert priced['columns'][-1] == 'Notional'
-    assert priced['columns'][-2] == 'Min Investment'
+    # Notional sits beside Allocation, not at the far end (D103): they are one
+    # fact in two units, and the money was otherwise only ever reached by
+    # scrolling. The minimum stays on the right.
+    assert priced['columns'][2:4] == ['Allocation (%)', 'Notional']
+    assert priced['columns'][-1] == 'Min Investment'
+    assert 'Notional' not in priced['columns'][4:]
     assert 'Share class' in priced['columns']
 
     # the screen and the sheet keep their own lists on purpose (D74, D78)
@@ -2915,3 +2920,39 @@ def test_export_refuses_a_custom_level_with_a_row_unset(tmp_path, monkeypatch):
     assert response.status_code == 422, getattr(response, 'body', b'')[:200]
     body = json.loads(response.body)
     assert body.get('field') == 'customFees' or 'customFees' in json.dumps(body)
+
+
+# --------------------------------------- the workbook is protected (D98) ----
+
+def test_every_sheet_locks_its_values_and_leaves_presentation_open():
+    """A delivered workbook may be restyled but not re-figured: protection on,
+    formatting, widths, heights, sorting and filtering still allowed, and the
+    password set, on every sheet including the hidden chart data (D98, D104).
+
+    The password is a convention, not a secret - Excel stores a 16-bit hash
+    and the file is a zip - so what is asserted is that it is set, that it is
+    the hash of the one we mean, and that the plaintext never reaches the
+    file."""
+    from openpyxl import load_workbook
+    from openpyxl.utils.protection import hash_password
+    from cyrus_pmg.pmgService.scenario import workbook
+    import io
+    key = PortfolioKey('USD', 'Moderate', 'Core', False)
+    result = PORT.resolve_portfolio(BASIS, key)
+    chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
+    payload = PORT.build_export(BASIS, MANDATE_26M, [result],
+                                {'sleeves': chosen, 'variant': sleeves.VARIANTS[0],
+                                 'feeSchedule': 'CASP', 'feeLevel': 'PMG Target'})
+    book = load_workbook(io.BytesIO(payload))
+    assert len(book.sheetnames) == 5
+    for name in book.sheetnames:
+        guard = book[name].protection
+        assert guard.sheet is True, name
+        # False means ALLOWED: what a reader may still do
+        assert (guard.formatCells, guard.formatColumns, guard.formatRows) == (False, False, False), name
+        assert (guard.sort, guard.autoFilter) == (False, False), name
+        # locked by default, and unprotecting has to be deliberate
+        assert book[name]['A1'].protection.locked is not False, name
+        assert guard.password, name
+        assert guard.password == hash_password(workbook.SHEET_PASSWORD), name
+        assert guard.password != workbook.SHEET_PASSWORD, 'the plaintext is never written'

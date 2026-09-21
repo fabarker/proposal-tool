@@ -105,6 +105,11 @@ dl.md-kv dd{margin:0;color:var(--rail-ink);font-weight:500;overflow-wrap:anywher
 .viz .seg{stroke:var(--surface);stroke-width:2}
 .viz .seg:hover{filter:brightness(1.08)}
 .viz .dot{stroke:var(--surface);stroke-width:2}
+/* the columns' marks on the risk and return plane (D1) */
+.viz text.rr-mark{fill:#fff;font-size:10.5px;font-weight:700;pointer-events:none}
+.viz .rr-link{stroke:var(--viz-axis);stroke-width:1;stroke-dasharray:3 3}
+.viz .rr-lead{stroke:var(--viz-mut);stroke-width:1}
+.viz-legend .viz-note{color:var(--ink-3);margin-left:auto}
 .viz .lbl{font-size:12px;fill:#fff;font-weight:700}
 .viz .plbl{font-size:12.5px;fill:var(--ink);font-weight:600}
 .viz .tick{font-size:11.5px;fill:var(--ink-3)}
@@ -127,9 +132,13 @@ body.phase-landing{background:var(--bg)}
 body.phase-landing .rail{display:none}
 body.phase-landing .shell{margin-left:0;max-width:none;padding:0}
 body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
+/* Two rows: the copy takes what it needs and centres in the space left over,
+   the admin strip sits in the foot row. align-content:center would collapse
+   the 1fr, so the centring moves onto the copy itself (D108). */
 #view-landing{min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr);
-  align-content:center;padding:clamp(32px,5vh,72px) clamp(20px,6vw,80px);background:var(--bg)}
-.lp-inner{width:100%;max-width:1120px;margin:0 auto}
+  grid-template-rows:1fr auto;
+  padding:clamp(32px,5vh,72px) clamp(20px,6vw,80px);background:var(--bg)}
+.lp-inner{width:100%;max-width:1120px;margin:0 auto;align-self:center}
 .lp-rule{height:2px;background:#16243A;margin:0 0 18px;transform-origin:left;
   animation:lp-grow .7s both}
 
@@ -170,13 +179,13 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 /* What the tool is for, in two lines. The marker is a square in the accent,
    which is the same rectilinear language as the colour bars above it - a
    round bullet would be the only curve on the page. */
-.lp-points{list-style:none;margin:0 0 34px;padding:0;display:grid;gap:15px;max-width:88ch}
+.lp-points{list-style:none;margin:0 0 40px;padding:0;display:grid;gap:15px;max-width:88ch}
 .lp-points li{position:relative;padding-left:24px;font-size:16.5px;line-height:1.5;
   color:var(--ink-2)}
 .lp-points li::before{content:"";position:absolute;left:0;top:.55em;width:9px;height:9px;
   background:var(--accent)}
 
-.lp-cta{font-size:16px;padding:16px 30px 16px 36px;border-radius:0;letter-spacing:.02em;
+.lp-cta{font-size:16px;padding:12px 28px 12px 34px;border-radius:0;letter-spacing:.02em;
   position:relative;display:inline-flex;align-items:center;gap:14px;
   --btn-case:none;                       /* the landing CTA is sentence case, unlike app buttons */
   animation:lp-pulse 2.8s .9s ease-in-out infinite}
@@ -187,8 +196,35 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
   pointer-events:none;opacity:0;animation:lp-halo 2.8s .9s ease-out infinite}
 .lp-cta:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
+/* The second door. Quieter than the CTA - it is the rarer job, and the pulse
+   belongs to one button only - but a real button rather than a link, because
+   it opens the same kind of thing Start Here opens (D107). stretch keeps the
+   pair the same height whatever either one holds. */
+.lp-doors{display:flex;align-items:stretch;gap:20px;flex-wrap:wrap}
+/* Hard right, on the far side of the column. It is a different job from the
+   one on the left, and the admin strip below already runs its links out to
+   this edge - so the lower half reads on one axis rather than as a cluster
+   against the left margin (D109). */
+.lp-second{font-size:15px;font-weight:700;letter-spacing:.02em;padding:12px 30px;
+  border-radius:0;--btn-case:none;display:inline-flex;align-items:center;
+  margin-left:auto;
+  /* Navy outline, not the standard hairline: navy is already the rule above
+     the eyebrow and the title itself, so the door gains weight without the
+     palette gaining a colour. 1.5px, because at 1px on a near-white ground it
+     read as a disabled control rather than a way in (D110). */
+  background:var(--surface);color:#16243A;border:1.5px solid #16243A}
+/* Filled on hover: the accent means *go* and belongs to Start Here, so this
+   one darkens into itself rather than borrowing the blue. */
+.lp-second:hover{background:#16243A;color:var(--accent-ink);border-color:#16243A}
+.lp-second:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
 @media (max-width:560px){
   .lp-title{font-size:clamp(40px,11vw,55px);line-height:.98;max-width:100%}
+  /* Side by side they would each be too narrow to read; stacked, each keeps
+     its full label and the right edge has no meaning. */
+  .lp-doors{flex-direction:column;align-items:stretch;gap:12px}
+  .lp-doors .btn{width:100%;justify-content:center}
+  .lp-second{margin-left:0}
 }
 @keyframes lp-grow{from{transform:scaleX(0)}}
 @keyframes lp-rise{from{opacity:0;transform:translateY(14px)}}
@@ -240,12 +276,19 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .dialog .md-err{margin:0;padding:9px 12px;border-radius:4px;background:#FDE8E8;
   border:1px solid #F1B8B2;color:#9B1C1C;font-size:13px;line-height:1.45;font-weight:600}
 
-/* ── the landing card's third action, and the account opening request (D76) ── */
-/* The landing card seats three buttons on one line: Continue and Cancel far
-   left as a group, Create Account Opening Request right. 460px cannot hold
-   them; 600px can. Edit mandate keeps the 460px card and its right-aligned
-   pair. */
-.dialog.start{width:min(600px,calc(100vw - 32px))}
+/* ── the account opening request (D76, D107) ── */
+/* The landing card once seated three buttons on one line and needed 600px to
+   hold them. With the third moved below the rule, both cards are the standard
+   460px again (D107). */
+.dlg-aside{margin:18px 0 0;padding-top:15px;border-top:1px solid var(--line);
+  font-size:13.5px;line-height:1.5;color:var(--ink-3)}
+/* A button that reads as prose: this is a sentence with one word you can
+   press, not a fourth control competing with the pair above it. */
+.btn-inline{background:none;border:0;padding:0;font:inherit;color:var(--accent);
+  font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.btn-inline:hover:not(:disabled){text-decoration-thickness:2px}
+.btn-inline:disabled{opacity:.45;cursor:not-allowed}
+.btn-inline:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 .dlg-actions.split{justify-content:space-between;align-items:center;flex-wrap:wrap}
 .dlg-grp{display:flex;gap:10px;align-items:center;min-width:0}
 .dialog.account{width:min(560px,calc(100vw - 32px))}

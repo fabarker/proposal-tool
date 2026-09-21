@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repository console — a critique</title>
+<style>
+:root{--bg:#FBFCFE;--surface:#fff;--s2:#F0F2F5;--ink:#1C2733;--ink2:#4B5A6A;--ink3:#6B7A8A;--line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--navy:#12233F;--gold:#B7862A;--neg:#B42318;--pos:#1A7F37;--amber:#92600A;--amberbg:#FEF3C7;
+  --num:"GS Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;--body:"GS Sans",Roboto,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px}
+header.top{background:var(--navy);color:#fff;padding:56px 0 44px;margin-bottom:40px}
+header.top .wrap{display:block}
+.eyebrow{font:700 12px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:#F3C46B;margin:0 0 14px}
+h1{font:400 40px/1.12 var(--num);margin:0 0 14px;letter-spacing:.005em}
+header.top p{max-width:74ch;color:#B6C2D2;margin:0 0 10px}
+header.top code{background:#1D2F4B;color:#dbe5f3;padding:2px 5px;border-radius:3px;font-size:13px}
+nav.toc{position:sticky;top:20px;align-self:start;font-size:13.5px;max-height:calc(100vh - 40px);overflow:auto;padding-bottom:20px}
+nav.toc p{font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--line);color:var(--ink2);text-decoration:none}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--accent)}
+nav.toc a b{font-family:var(--num);color:var(--ink3);font-weight:700;margin-right:6px}
+main{min-width:0;padding-bottom:96px}
+h2{font:400 28px/1.2 var(--num);margin:56px 0 6px;padding-top:8px}
+h2:first-child{margin-top:0}
+h2 small{display:block;font:700 11.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+.lede{color:var(--ink2);max-width:72ch;margin:0 0 20px}
+h3{font:600 17px/1.35 var(--body);margin:0}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.fact b{display:block;font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px}
+.fact p{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink)}
+table.views,table.top5{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:18px 0}
+table.views th,table.top5 th{font:700 11px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 14px;background:var(--s2)}
+table.views td,table.top5 td{padding:11px 14px;border-top:1px solid var(--line);vertical-align:top}
+table.views td:first-child{font-weight:600;white-space:nowrap}
+table.top5 td:first-child{font:700 14px var(--num);color:var(--accent);white-space:nowrap}
+ol.friction{margin:14px 0 0;padding:0;list-style:none;counter-reset:f}
+ol.friction li{counter-increment:f;position:relative;padding:12px 0 12px 44px;border-top:1px solid var(--line);font-size:15px}
+ol.friction li::before{content:counter(f);position:absolute;left:0;top:12px;width:28px;height:28px;border-radius:50%;background:var(--navy);color:#fff;
+  font:700 13px/28px var(--num);text-align:center}
+ol.friction b{font-weight:600}
+.rec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px 18px;margin:14px 0;scroll-margin-top:16px}
+.rec-h{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px}
+.rec-h .id{font:700 13px/1 var(--num);color:#fff;background:var(--accent);border-radius:4px;padding:5px 7px;letter-spacing:.04em}
+.rec-h h3{flex:1;min-width:240px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font:700 10.5px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--s2);color:var(--ink2);white-space:nowrap}
+.tag.hi{background:#E3EBFA;color:#1E4FA3}.tag.bug{background:#FDE8E8;color:#9B1C1C}.tag.s{background:#E7F4EC;color:#176A33}.tag.m{background:var(--amberbg);color:var(--amber)}.tag.l{background:#F3E8FF;color:#6B21A8}
+dl.r{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px 16px;margin:0;font-size:15px}
+dl.r dt{font:700 11px/1.9 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+dl.r dd{margin:0}
+dl.r dd.trade{color:var(--ink2);font-size:14.5px}
+code{font:13px/1 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--s2);padding:2px 5px;border-radius:3px;color:#16243A}
+.mock{margin:14px 0 2px;border:1px dashed var(--line2);border-radius:8px;padding:14px;background:#FCFDFE;overflow-x:auto}
+.mock-l{font:700 10.5px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+.m-tbl{border-collapse:collapse;font:13.5px var(--num);min-width:520px;width:100%}
+.m-tbl th,.m-tbl td{padding:5px 10px;text-align:right;white-space:nowrap}
+.m-tbl th:first-child,.m-tbl td:first-child{text-align:left}
+.m-tbl thead th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);border-bottom:2px solid var(--line2)}
+.m-tbl .was{color:var(--neg);text-decoration:line-through;opacity:.75}
+.m-tbl .now{color:var(--pos);font-weight:700}
+.m-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#16243A;color:#fff;border-radius:6px 6px 0 0;padding:10px 14px;font:13px var(--body)}
+.m-bar .brand{font:700 12px var(--num);letter-spacing:.14em;text-transform:uppercase;margin-right:6px}
+.m-seg{display:inline-flex;border:1px solid #3E5C86;border-radius:4px;overflow:hidden;font:600 12.5px var(--body)}
+.m-seg span{padding:5px 11px;color:#B6C2D2}.m-seg span.on{background:#fff;color:#16243A}
+.m-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#F0F2F5;border:1px solid var(--line2);border-top:0;
+  border-radius:0 0 6px 6px;padding:8px 14px;font:13px var(--body);color:var(--ink2)}
+.m-chip{background:#fff;border:1px solid var(--line2);border-radius:12px;padding:3px 10px;font:12.5px var(--body)}
+.m-chip.on{background:#16243A;color:#fff;border-color:#16243A}
+.m-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--line2);border-radius:6px;padding:11px 14px;margin-top:10px}
+.m-foot .sp{flex:1}
+.m-btn{border-radius:4px;padding:7px 12px;font:700 11.5px var(--num);letter-spacing:.08em;text-transform:uppercase;display:inline-block}
+.m-btn.p{background:var(--accent);color:#fff}
+.m-btn.g{background:#fff;color:var(--ink2);border:1px solid var(--line2)}
+.m-btn.d{background:#fff;color:var(--neg);border:1px solid #F1B8B2}
+.note{border-left:3px solid var(--gold);background:#FFFBF0;padding:12px 16px;border-radius:0 6px 6px 0;font-size:14.5px;color:var(--ink2);margin:18px 0}
+.keep li{margin:6px 0}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:18px;margin-top:56px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:0}nav.toc{position:static;max-height:none;margin-bottom:32px;columns:2}.grid3{grid-template-columns:1fr}h1{font-size:32px}dl.r{grid-template-columns:1fr;gap:2px}dl.r dt{margin-top:8px}}
+@media print{nav.toc{display:none}.wrap{display:block}.rec{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <p class="eyebrow">Proposal Tool · design critique</p>
+  <h1>The repository console</h1>
+  <p>Sleeves, Catalogue, Archive, Activity and Proposals — what the console is for, where it slows its user down, and 24 specific changes. Read from <code>repository.js</code> and <code>repository.py</code>, and measured in the running tool at a 1,680px window.</p>
+  <p style="font-size:14px;color:#8FA2BC">A note on the framing: you called this step 3, and the tool does present it as one more place to go. It isn't a step. Steps 1 and 2 are one task for one person; this is five tasks for a different person, and most of what follows comes from that.</p>
+</div></header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#read"><b>·</b>Reading the screen</a>
+  <a href="#views"><b>·</b>The five views</a>
+  <a href="#friction"><b>·</b>Where the friction is</a>
+  <a href="#top5"><b>·</b>If you do five things</a>
+  <a href="#shell"><b>A</b>The console shell</a>
+  <a href="#editor"><b>B</b>The sleeve editor</a>
+  <a href="#find"><b>C</b>Finding a sleeve</a>
+  <a href="#reg"><b>D</b>The register</a>
+  <a href="#feed"><b>E</b>Activity &amp; Archive</a>
+  <a href="#safe"><b>F</b>Unsaved work</a>
+  <a href="#a11y"><b>G</b>Accessibility</a>
+  <a href="#one"><b>H</b>One console, four idioms</a>
+  <a href="#keep"><b>·</b>What to leave alone</a>
+</nav>
+
+<main>
+<h2 id="read"><small>Part one</small>Reading the screen</h2>
+<p class="lede">A modal dialog over the proposal tool, 1,280px wide, holding five views behind a tab strip. Four of them are data tables; one is a three-pane editor. It opens from a glyph in the rail's admin bar or from the landing tiles, and it is gated on <code>capabilities.canAdmin</code>.</p>
+<div class="grid3">
+  <div class="fact"><b>Who</b><p>Not the PWA. Whoever maintains the sleeve library — a PMG desk member or investment operations — plus anyone answering a question from compliance or a client team.</p></div>
+  <div class="fact"><b>The tasks</b><p>Two kinds. <em>Maintenance</em>: edit a sleeve, add an edition, create one, look a product up. <em>Investigation</em>: what changed and who changed it, what did we send this client, where did that archived sleeve go.</p></div>
+  <div class="fact"><b>Why that split matters</b><p>Maintenance is planned and repetitive; investigation is interruptive and usually prompted from outside. The console gives both the same chrome and the same modal, and the investigation half suffers most.</p></div>
+</div>
+<p class="lede">The individual views are well made — the catalogue especially. What is missing is the level above them: this is a second application sharing the first one's window, and nothing about the frame acknowledges that.</p>
+
+<h2 id="views"><small>Part two</small>The five views</h2>
+<table class="views">
+  <thead><tr><th>View</th><th>What it is</th><th>How it filters</th><th>Export</th></tr></thead>
+  <tbody>
+    <tr><td>Sleeves</td><td>Three panes: categories, sleeve list, editor</td><td>Category list × implementation-type strip</td><td>—</td></tr>
+    <tr><td>Catalogue</td><td>73 products, dense table, pins and comparison</td><td>Facet rail, search, columns, grouping, keyboard</td><td><b>none</b></td></tr>
+    <tr><td>Archive</td><td>Removed sleeves, restorable in batches</td><td>Search + three dropdowns</td><td>CSV</td></tr>
+    <tr><td>Activity</td><td>Dated feed of every change</td><td>Search + six count chips + two dropdowns + range</td><td>CSV</td></tr>
+    <tr><td>Proposals</td><td>Append-only register of everything exported</td><td>Search + four dropdowns + range</td><td>CSV</td></tr>
+  </tbody>
+</table>
+<p class="lede">Read down the last two columns: four filter idioms across four tables, and the one view with the richest data and the best filtering is the only one you cannot get out of the building.</p>
+
+<h2 id="friction"><small>Part three</small>Where the friction is</h2>
+<ol class="friction">
+  <li><b>The register prints every figure in dollars.</b> A GBP proposal's mandate shows as <code>$200.0m</code> and its notionals as <code>$52.4m</code>, with <em>GBP · ISG Hedged</em> in the next column. <code>money()</code> hardcodes the symbol; the row already carries its currency. This is the permanent record of what was sent to a client.</li>
+  <li><b>Clicking a sleeve's history appears to do nothing.</b> The panel renders 740px down an editor pane 654px tall, and nothing scrolls to it. The button toggles, the fetch runs, the screen does not move.</li>
+  <li><b>Two buttons named almost the same thing make different sleeves.</b> <em>+ New sleeve</em> in the list header creates one in the current category and book; <em>+ Create sleeve</em> in the footer opens the same editor with category and implementation-type choosers. Both are visible at once.</li>
+  <li><b>101 sleeves and no way to search them.</b> The catalogue next door has search, eight facets, sorting and a keyboard interface for 73 products. Finding a sleeve means clicking categories against the book strip until it appears.</li>
+  <li><b>Unsaved work survives every exit except the one people actually use.</b> Switching view, closing the dialog and moving to another sleeve are all guarded. Reloading or closing the tab is not — there is no <code>beforeunload</code> — while the proposal tool beside it snapshots its state to <code>localStorage</code> on every render.</li>
+  <li><b>Two identical-looking tab strips sit side by side doing different jobs.</b> One navigates views, the other filters the sleeve list by implementation type. The second vanishes on the other four views, so the header changes shape as you move through the console.</li>
+  <li><b>Archive sits next to Save.</b> A red-bordered <em>Archive sleeve</em> and the primary <em>Save sleeve</em> are adjacent in the footer, with <em>+ Add edition</em> beside them and a create button at the far left — four actions of three different weights in one row.</li>
+  <li><b>The money formatter stops at millions.</b> A mandate of 5×10<sup>14</sup> renders as <code>$500000000.0m</code>. The value is dev nonsense, but nothing above <code>m</code> exists and nothing rejects it on the way in.</li>
+</ol>
+
+<h2 id="top5"><small>Part four</small>If you only do five things</h2>
+<table class="top5">
+  <thead><tr><th>Rec</th><th>Change</th><th>Why it's first</th></tr></thead>
+  <tbody>
+    <tr><td>D1</td><td>Print register money in the proposal's own currency</td><td>A defect in the audit record, and the only one here that could mislead someone outside the team.</td></tr>
+    <tr><td>B1</td><td>Scroll the history into view when it opens</td><td>A control that looks broken. An hour's work.</td></tr>
+    <tr><td>C1</td><td>Search the sleeve list</td><td>The most repeated action in the console has no shortcut, next door to a view that has six.</td></tr>
+    <tr><td>F1</td><td>Guard the reload, and keep a local draft</td><td>The one way to lose work is the one way that isn't covered.</td></tr>
+    <tr><td>A1</td><td>Tell the two header strips apart</td><td>Cheap, and it fixes the console's most confusing first impression.</td></tr>
+  </tbody>
+</table>
+<div class="note">Tags: <span class="tag s">S</span> under a day, <span class="tag m">M</span> a few days, <span class="tag l">L</span> a week or more · <span class="tag hi">High impact</span> · <span class="tag bug">Defect</span> means it is wrong today, not merely improvable.</div>
+
+<!-- ───────────── A ───────────── -->
+<h2 id="shell"><small>A · The console shell</small>The frame, which is doing the least</h2>
+
+<section class="rec" id="A1"><div class="rec-h"><span class="id">A1</span><h3>Make the two header strips read as different kinds of control</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Two <code>.repo-seg</code> groups in <code>render()</code>'s header: <code>aria-label="View"</code> and <code>aria-label="Implementation type"</code>, identical in every visual respect.</dd>
+<dt>Change</dt><dd>Keep the view switch as the segmented control and move the book strip onto the sleeve list's own header, where what it filters is. Failing that: label it in place (<em>Book:</em> before the buttons), give it the lighter chip treatment the catalogue's facets use, and reserve its row so the header does not resize when it disappears on the other four views.</dd>
+<dt>Why</dt><dd>Two controls of the same shape, the same size and the same selected state, an inch apart, one of which navigates and one of which filters. It is the first thing on screen and it teaches the wrong model — and because the second only exists on Sleeves, moving between views makes the header jump.</dd>
+<dt>Tradeoff</dt><dd class="trade">Moving it costs a redraw of the list header. I would move it: the book is a property of the list, not of the console.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · the book strip where it belongs</p>
+<div class="m-bar"><span class="brand">Repository</span>
+  <span class="m-seg"><span class="on">Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span>Proposals</span></span>
+  <span style="flex:1"></span><span style="font-size:12px;color:#8FA2BC">Library as of 6 Sept 2026</span></div>
+<div class="m-sub"><b style="color:var(--ink)">Investment Grade Fixed Income</b><span>·</span>
+  <span class="m-chip on">PMG Multi-Asset</span><span class="m-chip">PMG ESG</span><span class="m-chip">US Onshore</span><span class="m-chip">Irish Onshore</span>
+  <span style="flex:1"></span><span class="m-chip">⌕ search sleeves</span></div></div>
+</section>
+
+<section class="rec" id="A2"><div class="rec-h"><span class="id">A2</span><h3>Sort the footer: one primary action, destructive apart from it</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.repo-f</code> on the sleeves view: <em>+ Create sleeve</em> (green, far left), the library provenance line, then <em>+ Add edition</em>, <em>Archive sleeve</em> (red outline) and <em>Save sleeve</em> (primary) together on the right.</dd>
+<dt>Change</dt><dd>Save alone on the right. <em>Add edition</em> belongs beside the edition field it creates, not in the footer. <em>Archive</em> moves into an overflow menu on the sleeve row or the editor head, where the thing being archived is named. Keep the provenance line.</dd>
+<dt>Why</dt><dd>Archiving is the one irreversible-feeling action in the console and it currently shares an edge with the one people press constantly. The two-step confirm behind it is good, and it should not be the only thing standing between a tired admin and a removed sleeve.</dd>
+<dt>Tradeoff</dt><dd class="trade">A menu is one more click for a rare action. That is the right side of the trade for a destructive one.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · footer, as it could read</p>
+<div class="m-foot"><span style="font-size:12.5px;color:var(--ink3)">Library · sleeves.db · 101 sleeves · 104 versions on record</span>
+  <span class="sp"></span><span style="font-size:12.5px;color:var(--ink3)">Unsaved changes</span><span class="m-btn g">Discard</span><span class="m-btn p">Save sleeve</span></div></div>
+</section>
+
+<section class="rec" id="A3"><div class="rec-h"><span class="id">A3</span><h3>Label the date in the header, or drop it</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.repo-src</code> — <code>shortDate(d.catalogue.modified)</code>, rendered as a bare <em>6 Sept 2026</em> at the top right of every view.</dd>
+<dt>Change</dt><dd>Say what it is: <em>Catalogue as of 6 Sept 2026</em>. On the sleeves view, where it sits directly above a sleeve with its own <em>saved 2 Sept 2026</em> line, that disambiguation is the whole point.</dd>
+<dt>Why</dt><dd>An unlabelled date in the corner of an editor showing dated records will be read as that record's date. It is the product catalogue's modification time and has nothing to do with the sleeve on screen.</dd>
+</dl></section>
+
+<section class="rec" id="A4"><div class="rec-h"><span class="id">A4</span><h3>Give the console its own page</h3><div class="tags"><span class="tag l">L</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The whole of <code>#repoDialog</code>: <code>.dialog.repo</code> at <code>min(1280px, 100vw − 32px)</code> and <code>min(780px, 100vh − 32px)</code>, over an inert proposal document.</dd>
+<dt>Change</dt><dd>Serve it at its own route, reusing the same module. The hashes it already maintains (<code>#catalogue?q=…&amp;sort=…</code>) become real URLs, the dialog chrome becomes page chrome, and the height cap goes.</dd>
+<dt>Why</dt><dd>Everything about this is an application rather than a dialog: five views, per-view URL state, CSV exports, an append-only register, a permanent audit trail. Consequences of the modal today — the catalogue wants 1,887px and gets 1,528; the editor pane is 746px of a 1,680px window; the whole thing is 780px tall regardless of the screen; and an admin answering a compliance question has a client's proposal sitting behind their work, inert but visible.</dd>
+<dt>Tradeoff</dt><dd class="trade">Real work: routing, an entry point that does not assume a scenario, and a decision about what the page shows when opened cold. I would not start here — every other recommendation stands on its own — but I would stop adding to the dialog as though it were temporary.</dd>
+</dl></section>
+
+<!-- ───────────── B ───────────── -->
+<h2 id="editor"><small>B · The sleeve editor</small>The thing this console is mostly used for</h2>
+
+<section class="rec" id="B1"><div class="rec-h"><span class="id">B1</span><h3>Scroll the history into view when it is opened</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>toggleHistory()</code> / <code>historyPanelHtml()</code>, rendered at the foot of <code>editorHtml()</code> inside the scrolling <code>.repo-ed</code> pane.</dd>
+<dt>Change</dt><dd>After the render that opens it, scroll the panel to the top of its pane — the pattern <code>scrollFeeGroupIntoView()</code> already establishes in step 2 for exactly this situation. Move focus to the panel's heading so a keyboard user arrives with it.</dd>
+<dt>Why</dt><dd>Measured on a saved sleeve: the panel lands 740px down a 654px pane. The button flips its state, the request goes out, the rows render — and the admin sees nothing change. A control that looks broken is worse than one that is missing, because they press it again.</dd>
+</dl></section>
+
+<section class="rec" id="B2"><div class="rec-h"><span class="id">B2</span><h3>One create button, with the scope on the form</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>data-reponew</code> → <code>goTo({fresh:true})</code>, labelled <em>+ New sleeve</em>; <code>data-repocreate</code> → <code>goTo({fresh:true, create:true})</code>, labelled <em>+ Create sleeve</em>.</dd>
+<dt>Change</dt><dd>Keep one, in the list header, and always open the create form with Category and Implementation types pre-filled from where the admin was — which is what the <code>create</code> draft already does. The difference then stops being two buttons and becomes two fields that happen to be filled in.</dd>
+<dt>Why</dt><dd>Two buttons whose labels differ only in verb, visible simultaneously, producing forms that differ in which fields exist. Nothing on screen says the green one lets you pick the category. And the quiet one is disabled with a tooltip on fixed categories while the green one is not, so the same intent has different availability depending on which control you reach for.</dd>
+</dl></section>
+
+<section class="rec" id="B3"><div class="rec-h"><span class="id">B3</span><h3>Help the weights reach 100</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>productsHtml()</code>: one free-text <code>.repo-w</code> per product, and <code>totalHtml()</code>'s ✓/✗ against 100.00.</dd>
+<dt>Change</dt><dd>Two buttons by the total: <em>Even</em> (split 100 across the rows, largest-remainder so it lands exactly) and <em>Normalise</em> (scale what is typed to sum to 100). Show the running gap — <em>3.40 short</em> — rather than only pass or fail.</dd>
+<dt>Why</dt><dd>A twelve-product sleeve is twelve numbers that must total 100.00 exactly, typed by hand, with the only feedback a cross until the last one lands. The rounding rule the rest of the product cares about so much — largest remainder, so columns close — is the one thing the editor makes the admin do in their head.</dd>
+<dt>Tradeoff</dt><dd class="trade">Normalise silently changes typed numbers. Have it fill the fields visibly rather than on submit, so it is an edit the admin can see and undo.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · the total row</p>
+<table class="m-tbl"><tbody>
+<tr><td>Total · 3 products</td><td class="was">97.40 ✗</td><td style="color:var(--ink3)">was</td></tr>
+<tr><td>Total · 3 products <span style="color:var(--ink3);font-size:12px">— 2.60 short</span></td><td class="now">97.40</td><td><span class="m-btn g">Even</span> <span class="m-btn g">Normalise</span></td></tr>
+</tbody></table></div>
+</section>
+
+<section class="rec" id="B4"><div class="rec-h"><span class="id">B4</span><h3>Let the product picker use the catalogue's facets</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>pickerMatches()</code> / <code>pickerListHtml()</code> — free-text match over name, ticker, class, vehicle, source and fee group, capped at 40 with <em>keep typing</em>.</dd>
+<dt>Change</dt><dd>Add the two filters that decide most picks — vehicle and fee group — as chips above the list, reusing <code>catFacets()</code>. Show each row's all-in cost, not just the product cost, since the sleeve's own cost is what the desk is composing.</dd>
+<dt>Why</dt><dd>The console contains a very good product finder and the editor does not use it. An admin building an <em>ETFs Only</em> sleeve is filtering by vehicle in their head and typing until the list is short enough, one row at a time, while the Catalogue tab does that with a tick box.</dd>
+<dt>Tradeoff</dt><dd class="trade">Facets in a popover risk becoming a second catalogue. Two chips, not eight.</dd>
+</dl></section>
+
+<!-- ───────────── C ───────────── -->
+<h2 id="find"><small>C · Finding a sleeve</small>101 of them, by clicking</h2>
+
+<section class="rec" id="C1"><div class="rec-h"><span class="id">C1</span><h3>Put a search over the sleeve list</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The middle <code>.repo-pane</code> in <code>sleevesViewHtml()</code> — a header and a list, no input.</dd>
+<dt>Change</dt><dd>A search box in that pane's header, matching sleeve name, edition label and product name, <strong>across every category and book</strong>, with each hit labelled by where it lives and clicking it switching there. Bind <code>/</code> as the catalogue does.</dd>
+<dt>Why</dt><dd>101 sleeves live behind 7 categories × 4 books. To edit one whose book you do not remember you click until it appears. Searching by <em>product</em> matters as much: <em>which sleeves hold GSAM Short Duration</em> is exactly the question asked when a product is being retired, and the console cannot answer it — the catalogue's side panel can, one product at a time, in a different view.</dd>
+<dt>Tradeoff</dt><dd class="trade">Cross-book results mean a hit can move the book strip under the admin. Say so on the row (<em>Public Equity · Irish Onshore</em>) and it reads as navigation rather than a jump.</dd>
+</dl></section>
+
+<section class="rec" id="C2"><div class="rec-h"><span class="id">C2</span><h3>Show problems where they can be found</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>s.problems</code> — a <code>.warn</code> count on the sleeve row, and a <code>.repo-notice</code> at the top of the editor.</dd>
+<dt>Change</dt><dd>Surface the count per category in the left pane beside the sleeve count, and put a <em>Problems only</em> toggle on the list. A withheld sleeve is invisible to PWAs, so finding all of them should not require opening each one.</dd>
+<dt>Why</dt><dd>The rule is that a sleeve with problems is withheld from the pickers. The console knows which those are and makes an admin walk 28 category-and-book combinations to find them.</dd>
+</dl></section>
+
+<!-- ───────────── D ───────────── -->
+<h2 id="reg"><small>D · The register</small>The permanent record, in the wrong currency</h2>
+
+<section class="rec" id="D1"><div class="rec-h"><span class="id">D1</span><h3>Print money in the proposal's own currency</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>money(n)</code> in <code>repository.js</code> — <code>'$' + …</code>, three times, with no currency argument. Used for the register's Mandate column, the detail headline and every notional in <code>regImplementedHtml()</code>.</dd>
+<dt>Change</dt><dd>Take the row's <code>currency</code> — the register already stores and displays it one column across — and print its symbol, or the ISO code where no symbol is safe. The same function serves the archive and the sleeve editor, so give it a currency parameter rather than a second copy.</dd>
+<dt>Why</dt><dd>Measured on a real row: a GBP · ISG Hedged proposal for PMG ESG shows <strong>$200.0m</strong>, and its implemented model shows <strong>$52.4m</strong> and <strong>$42.9m</strong> against GBP products. This is the append-only record of what was delivered to a client, the thing you would open to answer a question from compliance, and it restates every figure in the wrong unit. Nothing else in this critique could mislead someone outside the team; this could.</dd>
+</dl>
+<div class="mock"><p class="mock-l">A real row, as it reads now and as it should</p>
+<table class="m-tbl"><thead><tr><th>Exported</th><th>Mandate</th><th>Basis</th><th>Book</th></tr></thead>
+<tbody>
+<tr><td>21 Sept 2026 12:17</td><td class="was">$200.0m</td><td>GBP · ISG Hedged</td><td>PMG ESG</td></tr>
+<tr><td>21 Sept 2026 12:17</td><td class="now">£200.0m</td><td>GBP · ISG Hedged</td><td>PMG ESG</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="rec" id="D2"><div class="rec-h"><span class="id">D2</span><h3>Give the formatter a ceiling, and the mandate a bound</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>money()</code>'s top branch, <code>n &gt;= 1e6</code>, which divides by a million and appends <code>m</code> for every value above it.</dd>
+<dt>Change</dt><dd>Add <code>bn</code> above 1e9. And put a sane upper bound on mandate size at entry, in the dialog and on the server.</dd>
+<dt>Why</dt><dd>The register currently holds a row whose mandate is 5×10<sup>14</sup> and prints it as <code>$500000000.0m</code> — an unreadable run of digits that breaks the column. The value is development nonsense, but nothing rejected it, nothing flagged it, and a register that cannot render its own contents is a register you stop trusting.</dd>
+<dt>Tradeoff</dt><dd class="trade">A bound needs a number, and the only honest source is the desk. Until there is one, reject anything above the largest tier's ceiling by a wide margin and say why.</dd>
+</dl></section>
+
+<section class="rec" id="D3"><div class="rec-h"><span class="id">D3</span><h3>Spend the width on what varies</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>regHeadHtml()</code> — Exported, By, Primary PWA, Mandate, Basis, Book, Proposal portfolio, Pricing, badges.</dd>
+<dt>Change</dt><dd>Fold <em>By</em> into the Exported cell as a second line, and let Primary PWA truncate; give the space to Proposal portfolio and Pricing, which are the columns an investigation reads.</dd>
+<dt>Why</dt><dd>On the live register every row reads <em>fbarker</em> and <em>M. Aldridge — Zurich</em>. That is a development artefact, but the layout gives two identity columns the same weight as the portfolio and the price, and identity is the thing most likely to repeat in real use too — one desk, a handful of PWAs.</dd>
+<dt>Tradeoff</dt><dd class="trade">Judgment call, and the one recommendation here I would want to see against real data before acting on.</dd>
+</dl></section>
+
+<!-- ───────────── E ───────────── -->
+<h2 id="feed"><small>E · Activity &amp; Archive</small>Two good views with noisy furniture</h2>
+
+<section class="rec" id="E1"><div class="rec-h"><span class="id">E1</span><h3>Collapse the action chips that are empty</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Six <code>data-acttoggle</code> chips — Created, Edited, Reverted, Archived, Restored, Imported — each with its count for the range.</dd>
+<dt>Change</dt><dd>Show the chips with counts; gather the zeroes behind a single <em>+3 more</em> that expands. Keep them all when any is selected, so a filter can always be cleared.</dd>
+<dt>Why</dt><dd>Measured on the last 30 days: <em>Edited 2</em>, <em>Reverted 1</em>, and four chips reading 0 taking a third of the toolbar. They are filters for things that did not happen, and they push the range control and the export onto a second row.</dd>
+</dl></section>
+
+<section class="rec" id="E2"><div class="rec-h"><span class="id">E2</span><h3>Separate the library's own creation from what people did</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>baseline</code> and <code>seeded</code> entries — <em>history begins</em> — one per sleeve, all at the same timestamp.</dd>
+<dt>Change</dt><dd>Roll a run of them into one row: <em>101 sleeves loaded with the library · 19:17 · expand</em>. Leave the individual entries reachable.</dd>
+<dt>Why</dt><dd>The feed's job is <em>what changed, and who</em>. The seed contributes a hundred rows of <em>history begins by francisbarker</em> that no one will ever need individually, and they sit at the bottom of every unfiltered view of the record, which is exactly where someone scrolling back through an incident ends up.</dd>
+</dl></section>
+
+<section class="rec" id="E3"><div class="rec-h"><span class="id">E3</span><h3>Empty states should not advertise what cannot be done</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>arcFooterHtml()</code> — <em>Tick sleeves to restore several at once</em>, shown while the archive is empty.</dd>
+<dt>Change</dt><dd>Hide the hint and the header tick box at zero rows. The empty sentence in the body is already the right one and says where archived sleeves come from.</dd>
+<dt>Why</dt><dd>An instruction for a control with nothing to act on, under a table with no rows, beside a count that says zero.</dd>
+</dl></section>
+
+<!-- ───────────── F ───────────── -->
+<h2 id="safe"><small>F · Unsaved work</small>Guarded everywhere but the exit people use</h2>
+
+<section class="rec" id="F1"><div class="rec-h"><span class="id">F1</span><h3>Guard the reload, and keep a local draft</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>repo.dirty</code>, checked by <code>switchView()</code>, <code>closeRepository()</code> and <code>goTo()</code>; no <code>beforeunload</code> listener anywhere in the module.</dd>
+<dt>Change</dt><dd>Register <code>beforeunload</code> while <code>repo.dirty</code>. And snapshot the draft to <code>localStorage</code> on change, keyed by sleeve id, offering it back on the next open — the mechanism <code>saveSnapshot()</code>/<code>loadSnapshot()</code> already provides for the scenario.</dd>
+<dt>Why</dt><dd>The three in-app exits are carefully handled, with a named notice and a Discard button. The fourth — ⌘R, a closed tab, a crash — loses a twelve-product sleeve silently. The asymmetry is the tell: the proposal tool treats its own state as precious enough to survive a refresh, and the console does not extend that to the thing an admin spent ten minutes typing.</dd>
+<dt>Tradeoff</dt><dd class="trade"><code>beforeunload</code> prompts are blunt and browsers style them their own way. Restore-on-open is the better half; do both, since the prompt costs four lines.</dd>
+</dl></section>
+
+<section class="rec" id="F2"><div class="rec-h"><span class="id">F2</span><h3>Say what is unsaved, in the footer, all the time</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>repo.dirty</code> currently shows only as the Save button becoming enabled.</dd>
+<dt>Change</dt><dd>An <em>Unsaved changes</em> marker beside Save while dirty, and <em>Saved 14:02</em> after a successful write — the same signal step 1 wants for the scenario.</dd>
+<dt>Why</dt><dd>An enabled button is a weak signal for state, particularly in an editor where a draft can survive a lot of navigation. It is also what makes the leaving notice feel abrupt: the first mention of unsaved work is a warning about losing it.</dd>
+</dl></section>
+
+<!-- ───────────── G ───────────── -->
+<h2 id="a11y"><small>G · Accessibility</small></h2>
+
+<section class="rec" id="G1"><div class="rec-h"><span class="id">G1</span><h3>Finish the tab pattern, or drop it</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Five <code>role="tab"</code> buttons in a <code>role="tablist"</code>: no <code>aria-controls</code>, no <code>role="tabpanel"</code> on any view, all five at <code>tabindex="0"</code>, and no arrow-key handler.</dd>
+<dt>Change</dt><dd>The same fix the step nav had: name the panel, mark the body as one, roving tabindex, arrows between tabs. The category list has the same problem — <code>.repo-cat</code> buttons are <code>role="tab"</code> too.</dd>
+<dt>Why</dt><dd>The markup promises a tab widget and delivers five buttons. A screen-reader user is told <em>tab 1 of 5</em> and given no panel to move to; a keyboard user gets five tab stops where the pattern specifies one and arrow keys.</dd>
+</dl></section>
+
+<section class="rec" id="G2"><div class="rec-h"><span class="id">G2</span><h3>Announce what the console did</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The live regions in <code>core.js</code>, which <code>repository.js</code> does not use; saving, archiving, restoring and reverting all report by re-rendering.</dd>
+<dt>Change</dt><dd>Announce the outcome of every write: <em>SMA Only saved · revision 4</em>, <em>Passive archived · restore it from the Archive</em>, <em>3 sleeves restored</em>.</dd>
+<dt>Why</dt><dd>These are the console's consequential actions and several are hard to reverse. A sighted user sees the list redraw; without that, a successful archive and a failed one are equally silent.</dd>
+</dl></section>
+
+<!-- ───────────── H ───────────── -->
+<h2 id="one"><small>H · One console, four idioms</small>Learn it once, not four times</h2>
+
+<section class="rec" id="H1"><div class="rec-h"><span class="id">H1</span><h3>Settle on one filter pattern across the four tables</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Catalogue: a facet rail with counts. Archive: three <code>&lt;select&gt;</code>s. Activity: six count chips, two selects and a range. Proposals: four selects and a range.</dd>
+<dt>Change</dt><dd>Take the catalogue's chip-with-count as the house style and use it in all four; keep the range control as a select, since a date range is genuinely a different thing. The catalogue's <code>catFacets()</code> already computes counts-excluding-self, which is the part worth sharing.</dd>
+<dt>Why</dt><dd>Four tables, four ways to narrow them, in one dialog reached by one set of tabs. The archive was built on the catalogue's chrome deliberately — same search, same dense rows — and then filters differently, which is the confusing halfway point.</dd>
+<dt>Tradeoff</dt><dd class="trade">Chips need horizontal room and the register has five facets. Let them wrap, or collapse to selects under a width — but pick one default.</dd>
+</dl></section>
+
+<section class="rec" id="H2"><div class="rec-h"><span class="id">H2</span><h3>Let the catalogue export CSV too</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.arc-export</code> links on Archive, Activity and Proposals; nothing equivalent in <code>catToolbarHtml()</code>.</dd>
+<dt>Change</dt><dd>The same link, carrying the current query, facets, column selection and sort — the state <code>catHash()</code> already serialises.</dd>
+<dt>Why</dt><dd>Three of the four tables export. The one that does not is the one with 73 rows, sixteen columns, eight facets and a pinning tray — the view most likely to be the answer to <em>send me the list</em>. An admin's alternative is a screenshot.</dd>
+</dl></section>
+
+<section class="rec" id="H3"><div class="rec-h"><span class="id">H3</span><h3>Make the pinned comparison reachable from the editor</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>cat.pins</code> and <code>catCompareHtml()</code> on one side; the editor's product rows on the other.</dd>
+<dt>Change</dt><dd><em>Add pinned products to this sleeve</em> in the editor when the tray is not empty, and <em>Pin</em> on a product row in the editor.</dd>
+<dt>Why</dt><dd>The catalogue exists to narrow a shortlist; the editor exists to compose one. They are two tabs apart and nothing carries between them, so an admin comparing four products for a sleeve writes the winners down and retypes them into the picker.</dd>
+</dl></section>
+
+<h2 id="keep"><small>Finally</small>What to leave alone</h2>
+<p class="lede">The console gets a lot right, and several of these are better than their equivalents elsewhere in the product.</p>
+<ul class="keep">
+  <li><strong>The leaving guard.</strong> Switching view, closing the dialog and moving to another sleeve all stop on unsaved work, name the sleeve, and offer Keep editing or Discard. F1 only asks it to cover the fourth exit.</li>
+  <li><strong>Provenance on everything.</strong> Sleeve rows carry <em>saved 2 Sept by francisbarker</em>, the editor carries created-and-last-saved, the register carries an exporter and a workbook sha, the footers carry the store and its version count. This is what makes the console trustworthy.</li>
+  <li><strong>The register is append-only and keeps the workbook.</strong> Not a reconstruction from current data — the actual bytes that were sent, with a hash. Exactly right for what it is for.</li>
+  <li><strong>Editions grouped under their name</strong>, with the fallback described as <em>applies wherever no other edition does</em> and the label explained as something PWAs never see. A genuinely hard model, explained in place rather than in a manual.</li>
+  <li><strong>The catalogue.</strong> Facets with counts that exclude themselves, a keyboard path for everything, density and grouping, and the whole view in the URL.</li>
+  <li><strong>The editor's validation.</strong> <code>draftProblems()</code> speaks in sentences — <em>Weights sum to 97.40%; a sleeve must sum to 100%</em> — and blocks the save rather than letting the server refuse it.</li>
+  <li><strong>Fixed categories are explained, not merely enforced.</strong> The disabled button carries <em>A fixed category holds exactly one sleeve</em>, which is the rule, in the place it bites.</li>
+</ul>
+
+<footer>Read from branch <code>sleeve-editions</code> and measured in the running tool at a 1,680px window: dialog 1,280px, panes 232 / 300 / 746, editor pane 654px visible of 855px, history panel at 740px. The register figures are from live rows. Mock-ups are illustrative. No existing files were changed.</footer>
+</main>
+</div>
+</body>
+</html>

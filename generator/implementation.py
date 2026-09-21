@@ -143,6 +143,16 @@ IMPL_CSS = r"""
 .fee-seg button:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:-2px}
 /* the card's own line: delivery version, adjustments, and the way in (D55) */
 .fee-card{margin:6px 0 0;font-size:12px;color:var(--rail-ink-3);line-height:1.5}
+/* What the level costs, under the control that sets it (F2). The money leads,
+   because that is the figure the proposal is written around. */
+.fee-outcome{display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 10px;margin:9px 0 0;
+  padding:8px 10px;border-radius:5px;background:var(--rail-input-bg,#1D2F4B);
+  border:1px solid var(--rail-input-border,#52739C)}
+.fee-outcome b{font-family:var(--f-num);font-size:17px;font-weight:700;color:var(--rail-ink,#fff);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.fee-outcome span{font-family:var(--f-num);font-size:13px;color:var(--rail-ink-2)}
+.fee-outcome small{flex:1 0 100%;font-size:11.5px;color:var(--rail-ink-3)}
+.fee-outcome.none{display:block;font-size:12.5px;color:var(--rail-ink-3);background:none;border-style:dashed}
 /* the way into the card, under the toggle that turns fees on */
 .fee-view{width:100%;margin:9px 0 0;font-size:12.5px;padding:6px 10px;
   background:var(--rail-input-bg,#1D2F4B);border:1px solid var(--rail-input-border,#52739C);
@@ -172,8 +182,6 @@ IMPL_CSS = r"""
 .rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;margin:0;font-family:var(--f-num);font-size:12.5px;
   color:var(--ink-3)}
 .rc-meta b{color:var(--ink-2);font-weight:600}
-.rc-flag{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  color:#92600A;background:#FEF3C7;border:1px solid #F3D48A;border-radius:9px;padding:1px 8px;line-height:16px}
 .rc-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px 12px;margin:0 0 12px}
 .rc-seg{display:flex;border:1px solid var(--line-strong);border-radius:4px;overflow:hidden}
 .rc-seg button{appearance:none;border:0;border-left:1px solid var(--line-strong);background:var(--surface);
@@ -235,6 +243,44 @@ IMPL_CSS = r"""
 .rc-legend i.k-mark{background:#F0F4FB;border-color:#B9CDF0;box-shadow:inset 3px 0 0 var(--accent)}
 .rc-legend i.k-ring{box-shadow:inset 0 0 0 2px var(--accent);background:#E3EBFA;border-color:transparent}
 .rc-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+
+/* ── the step-2 greeting (D97) ──
+   The document dims and the rail does not: the panel the card is about is the
+   one thing left legible, and it wears the guide's own focus blue. The card
+   sits against the rail's edge with a pointer into it; below the rail's
+   stacking breakpoint there is no edge to sit against, so it centres and the
+   scrim covers everything. The rail is lit but INERT - nothing behind the
+   card is clickable until OK, which is the only way out. */
+#greetDialog .scrim{z-index:92}
+#greetDialog .dialog{z-index:96}
+.greet-scrim{left:var(--rail-w)}
+body.rail-collapsed .greet-scrim{left:var(--rail-w-collapsed,48px)}
+body.greeting .rail{z-index:93;box-shadow:0 0 0 2px var(--rail-focus,#8FB4FF),10px 0 34px rgba(143,180,255,.3)}
+.dialog.greet{width:min(390px,calc(100vw - 32px));top:132px;left:calc(var(--rail-w) + 26px);
+  transform:none;padding:20px 22px 18px}
+body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)}
+.dialog.greet::before{content:"";position:absolute;left:-9px;top:38px;width:16px;height:16px;
+  background:var(--surface);border-left:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);
+  transform:rotate(45deg)}
+.greet-eyebrow{margin:0 0 6px;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--accent)}
+.dialog.greet h2{margin:0 0 10px;font-size:19px;line-height:1.25}
+.greet-lede{margin:0 0 12px;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.greet-cats{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.greet-cats li{display:flex;justify-content:space-between;gap:10px;padding:6px 10px;background:var(--surface-2);
+  border-radius:var(--radius-sm);font-size:13px;color:var(--ink-2)}
+.greet-cats li b{color:var(--ink);font-weight:600}
+.greet-cats li i{font-style:normal;font-family:var(--f-num);font-variant-numeric:tabular-nums;
+  font-size:12px;color:var(--ink-3)}
+.greet-left{margin:11px 0 0;font-size:13px;color:var(--ink-2)}
+.greet-acts{display:flex;justify-content:flex-end;margin:16px 0 0}
+/* stacked: the rail is above the document, so there is no edge to point at */
+@media (max-width:1039px){
+  .greet-scrim{left:0}
+  .dialog.greet{top:50%;left:50%;transform:translate(-50%,-50%)}
+  .dialog.greet::before{display:none}
+  body.greeting .rail{box-shadow:0 0 0 2px var(--rail-focus,#8FB4FF)}
+}
 
 /* ── custom fees (D96) ──
    The fee card's by-tier grid with one column added, the PWA's. The chosen
@@ -302,8 +348,6 @@ IMPL_CSS = r"""
 .pb-lv.on span{color:var(--accent)}
 .rc-note{font-family:var(--f-num);font-size:12px;color:var(--ink-3)}
 .dialog .md-err{margin-top:12px}
-/* placeholder pricing is flagged in the rail as long as fees.json says so */
-.fee-flag{margin:2px 0 0;font-size:12px;font-weight:600;color:#F3C46B;line-height:1.4}
 
 /* ── sleeve pickers in the rail ── */
 .sl-list{display:grid;gap:9px}
@@ -315,9 +359,16 @@ IMPL_CSS = r"""
 .sl-row.done .cat b{color:var(--rail-ink)}
 /* the guided picker (D95) takes the same mark as a guided field (D91) */
 .sl-row.is-next .cat b{color:var(--rail-ink)}
-.sl-progress{margin:12px 0 0;font-size:13px;color:var(--rail-ink-2)}
-.sl-bar{height:4px;border-radius:2px;background:#22334E;overflow:hidden;margin:6px 0 0}
+/* Only the bar: the count is already beside the Sleeves heading, and the
+   sentence repeated both of them (D2). */
+.sl-progress{margin:12px 0 0}
+.sl-bar{display:block;height:4px;border-radius:2px;background:#22334E;overflow:hidden;margin:0}
 .sl-bar i{display:block;height:100%;background:var(--rail-accent);transition:width .2s}
+/* What the chosen sleeve holds and costs, at this category's weight (C2).
+   The figures are the same ones the table builds its weighted fee from. */
+.sl-shape{display:flex;flex-wrap:wrap;gap:3px 12px;font-family:var(--f-num);font-size:11.5px;
+  color:var(--rail-ink-3);letter-spacing:.02em;margin-top:1px}
+.sl-shape .bad{color:#F3A9A2;font-weight:700}
 
 /* ── implementation table ── */
 /* 30px below, matching .sec-head.stage-head - both steps open on the same
@@ -333,6 +384,35 @@ IMPL_CSS = r"""
 .completion-line{display:flex;justify-content:space-between;gap:15px;
   font-family:var(--f-num);color:var(--ink-2);font-size:12px;margin-bottom:5px}
 .completion-line strong{color:var(--ink);font-variant-numeric:tabular-nums}
+/* The state that actually gates the download, beside the count (D2). */
+.cs-state{font-weight:700;text-align:right;white-space:nowrap}
+.cs-state.ready{color:#176A33}
+.cs-state.blocked{color:#B45309}
+.cs-state.error{color:#9B1C1C}
+/* ── the same state, where the work happens (B4) ──
+   The card at the foot is several screens below the table a change was just
+   made to, so the consequence is also said directly under it. */
+.impl-state{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;margin:12px 0 0;
+  padding:10px 14px;border-radius:var(--radius-sm);font-size:13.5px;line-height:1.5;
+  background:var(--surface-2);color:var(--ink-2);border-left:3px solid var(--line-strong)}
+.impl-state b{font-family:var(--f-num);font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+  white-space:nowrap;color:var(--ink)}
+.impl-state.ready{background:#E7F4EC;border-left-color:#176A33}
+.impl-state.ready b{color:#176A33}
+.impl-state.blocked{background:#FEF3C7;border-left-color:#B45309}
+.impl-state.blocked b{color:#B45309}
+.impl-state.error{background:#FDE8E8;border-left-color:#9B1C1C}
+.impl-state.error b{color:#9B1C1C}
+/* a named product is the way to its row (B3) */
+.gate-go{appearance:none;background:none;border:0;padding:0;font:inherit;color:inherit;
+  font-weight:700;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.gate-go:hover{color:#9B1C1C}
+.gate-go:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+/* the row it lands on, lit long enough to be found */
+.tbl.impl tr.lit th,.tbl.impl tr.lit td,.tbl.impl tr.lit .prodcol{animation:impllit 2.4s ease-out}
+@keyframes impllit{0%,55%{background:#FDF0C4}100%{background:transparent}}
+.sl-row.lit{animation:sleevelit 2.4s ease-out}
+@keyframes sleevelit{0%,55%{background:rgba(143,180,255,.22)}100%{background:transparent}}
 .progress-track{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden}
 .progress-track i{display:block;height:100%;width:var(--progress);background:#176A33;
   transition:width .2s ease}
@@ -396,6 +476,18 @@ IMPL_CSS = r"""
 /* The total row keeps its navy on hover: the row-hover tint washed the
    white text off it. Every other row still lights up. */
 .tbl.impl tbody tr:not(.grand):hover .prodcol{background:var(--row-hover)}
+/* ── narrow: one pinned column, not two (H1) ──
+   At an 840px document the two pinned columns measured 449px - 53% of
+   everything visible - leaving a 391px window onto thirteen more. Two frozen
+   columns and a peephole is not a table. Below the rail's own breakpoint the
+   product column scrolls with the rest, and the category column is capped and
+   allowed to wrap rather than holding a whole line of text open. */
+@media (max-width:1039px){
+  .tbl.impl .prodcol{position:static;z-index:auto}
+  .tbl.impl thead .prodcol{z-index:2}
+  .tbl.impl .rowhead{max-width:34vw}
+  .tbl.impl tbody th,.tbl.impl thead th.rowhead{white-space:normal;line-height:1.25}
+}
 .tbl.impl td.txt,.tbl.impl th.txt{text-align:left}
 .tbl.impl .tick{font-family:var(--f-num);color:var(--ink-2);letter-spacing:.02em}
 .tbl.impl tr.cat td.num{font-weight:700}
@@ -414,6 +506,27 @@ IMPL_CSS = r"""
 .tbl.impl tbody tr.below-min:hover th,.tbl.impl tbody tr.below-min:hover td,
 .tbl.impl tbody tr.below-min:hover .prodcol{background:#FBD9D9}
 .tbl.impl tr.below-min .bdg.b-breach{margin-left:8px;vertical-align:middle}
+/* The breach beside the name, in the column that is always on screen (B2).
+   The row's pink fill was the only carrier of it at rest - the badge that
+   explained it sat 753px to the right - which is colour alone, and a
+   background pale enough to vanish on a meeting-room projector. */
+.bdg.b-breach.sm{font-size:9.5px;letter-spacing:.07em;padding:0 5px;line-height:15px;
+  margin-left:6px;vertical-align:1px}
+/* and the minimum it breaches, under its own notional */
+.vs-min{display:block;font-family:var(--f-num);font-size:10.5px;font-weight:400;
+  letter-spacing:.02em;color:#9B1C1C;line-height:1.2;margin-top:-1px}
+/* what the implemented total is a total OF, while it is not all of it (D1) */
+.of-all{display:block;font-family:var(--f-num);font-size:10.5px;font-weight:400;
+  letter-spacing:.03em;color:rgba(255,255,255,.72);line-height:1.2;margin-top:-1px}
+/* the sleeve pill: its name is the way back to the picker that set it (C3) */
+.pill-go{appearance:none;background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;
+  cursor:pointer;border-radius:3px}
+.pill-go:hover{text-decoration:underline;text-underline-offset:2px}
+.pill-go:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pill .pc{font-size:9.5px;font-weight:700;opacity:.72;margin-left:5px;letter-spacing:.02em}
+/* attached by rule: a labelled glyph, not an emoji (G2) */
+.pill-lock{width:9px;height:9px;margin-left:5px;vertical-align:-1px;opacity:.7}
+.pill.p-sleeve.is-auto{cursor:default}
 .pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;
   letter-spacing:.04em;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .p-act{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}

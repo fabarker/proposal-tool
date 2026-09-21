@@ -44,6 +44,9 @@
             aria-controls="rail-tiers" aria-label="Collapse the scenario panel"
             title="Collapse the scenario panel"><span aria-hidden="true">&#171;</span></button>
   </div>
+  <!-- Narrow, on step 1, once the proposed portfolio exists: the rail as one
+       line (H2). Not shown wide. -->
+  <div class="rail-sum" id="railsum"></div>
   <div class="rail-tiers" id="rail-tiers">
     <div class="tier" id="tier-mandate"></div>
     <div class="tier" id="tier-basis"></div>
@@ -144,25 +147,42 @@
             <li>Compare Different Portfolio Allocation and Implementation Options</li>
             <li>Finesse Pricing Levels via a Range of Pre-Set Plans or Set Your Own Bespoke Pricing</li>
           </ul>
-          <button type="button" class="btn btn-primary lp-cta" id="startbtn">Start Here</button>
+          <!-- Two doors, not one nested inside the other. Start Here begins a
+               proposal; Open an Account acts on one already delivered, which is
+               a different job with the opposite precondition - it needs a
+               Proposal UID, so a proposal must already exist (D107). -->
+          <div class="lp-doors">
+            <button type="button" class="btn btn-primary lp-cta" id="startbtn">Start Here</button>
+            <button type="button" class="btn lp-second" id="lpaccount">Open an Account</button>
+          </div>
         </div>
       </div>
     </div>
+    <!-- The library, for an admin who came to maintain it rather than to
+         write a proposal (D106). Written by renderEntryLinks and hidden
+         outright for everyone else: an empty strip would be worse than no
+         strip, which is the rule D62 set for the rail's own bar.
+         It sits in the landing grid's own foot row, outside .lp-inner, so it
+         reads as the page's footer rather than as one more line in the stack
+         above it (D108). -->
+    <div class="lp-admin" id="lpadmin" hidden></div>
   </section>
 
   <div class="steps" id="steps" role="tablist" aria-label="Scenario steps">
-    <button type="button" class="step" data-step="aa" role="tab" aria-selected="true">
+    <button type="button" class="step" id="tab-aa" data-step="aa" role="tab" aria-selected="true"
+            aria-controls="view-aa">
       <span class="step-index" aria-hidden="true">1</span>
       <span class="step-label"><strong>Asset allocation</strong><small>Build &amp; compare</small></span>
     </button>
     <span class="step-connector" aria-hidden="true"></span>
-    <button type="button" class="step" data-step="impl" role="tab" aria-selected="false">
+    <button type="button" class="step" id="tab-impl" data-step="impl" role="tab" aria-selected="false"
+            aria-controls="view-impl-wrap" tabindex="-1">
       <span class="step-index" aria-hidden="true">2</span>
       <span class="step-label"><strong>Implementation</strong><small>Sleeves &amp; export</small></span>
     </button>
   </div>
 
-<div id="view-aa">
+<div id="view-aa" role="tabpanel" aria-labelledby="tab-aa">
 
 
   <!-- Mandate set, no base chosen yet: the guide writes this card, names the
@@ -172,14 +192,13 @@
   <section class="sec">
     <div class="sec-head stage-head">
       <div>
-        <p class="eyebrow">Step 1 of 2</p>
-        <h2 class="stage-title">Strategic Asset Allocation</h2>
-        <p class="stage-sub">Comparing Portfolio Risk and Return Characteristics</p>
+        <h2 class="stage-title">Strategic Asset Allocation <span class="stage-sub">Comparing risk and return</span></h2>
       </div>
       <span class="resolving" id="resolving" aria-hidden="true" hidden></span>
     </div>
     <div class="tblwrap accent-top" tabindex="0" aria-label="Allocation table, scrolls horizontally">
       <table class="tbl alloc" id="alloc"></table></div>
+    <span class="tbl-more" id="alloc-more" aria-hidden="true"></span>
   </section>
 
   <section class="sec viz">
@@ -207,11 +226,20 @@
     </div>
     <div class="tblwrap" tabindex="0" aria-label="Risk dashboard, scrolls horizontally">
       <table class="tbl risk" id="risk"></table></div>
+    <span class="tbl-more" id="risk-more" aria-hidden="true"></span>
   </section>
+
+  <!-- The way on (B4): what is being proposed, and the door to step 2, where
+       the reader finishes rather than only where they began. -->
+  <div class="aa-next" id="aa-next" hidden></div>
 
 </div>
 
-<div id="view-impl-wrap" hidden>
+<!-- The column heads, docked while a table passes beneath them (B1). Drawn
+     from the live heads; hidden from assistive tech, which has the real ones. -->
+<div class="col-dock" id="coldock" aria-hidden="true" hidden></div>
+
+<div id="view-impl-wrap" role="tabpanel" aria-labelledby="tab-impl" hidden>
   <section class="sec" id="view-impl"></section>
 </div>
 
@@ -229,6 +257,7 @@
 <div id="feeDialog" hidden></div>
 <div id="priceDialog" hidden></div>
 <div id="customDialog" hidden></div>
+<div id="greetDialog" hidden></div>
 <div id="repoDialog" hidden></div>
 
 <script src="static/js/proposalTool.js"></script>

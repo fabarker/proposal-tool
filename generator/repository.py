@@ -21,8 +21,13 @@ REPO_CSS = r"""
    than a grid template because two of the bands - the unsaved-changes notice,
    the orphans notice - are only sometimes there, and a row template that
    counts children hands the wrong track to the wrong band when one is missing. */
-.dialog.repo>.repo-h,.dialog.repo>.repo-f,.dialog.repo>.cat-tools,.dialog.repo>.repo-notice{flex:0 0 auto}
-.dialog.repo>.repo-b,.dialog.repo>.cat-b{flex:1 1 auto;min-height:0}
+.dialog.repo>.repo-h,.dialog.repo>.repo-f,.dialog.repo>.repo-notice{flex:0 0 auto}
+/* The views sit inside the panel the tabs name (G1), so the band that takes
+   the remaining height is that panel - and it passes the height on, because
+   the panes inside it are what actually scroll. */
+.dialog.repo>#repoPanel{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+#repoPanel>.cat-tools,#repoPanel>.repo-notice{flex:0 0 auto}
+#repoPanel>.repo-b,#repoPanel>.cat-b{flex:1 1 auto;min-height:0}
 .repo-h{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;
   padding:12px 16px 12px 20px;border-bottom:1px solid var(--line-strong)}
 /* The header carries a title, two segmented controls, the source line and the
@@ -69,6 +74,57 @@ REPO_CSS = r"""
 .repo-sleeve[aria-selected="true"],.repo-sleeve.new{background:#F0F4FB;box-shadow:inset 3px 0 0 var(--accent)}
 .repo-sleeve .warn,.repo-pick .warn{color:#B45309;font-weight:600}
 .repo-none{margin:10px 16px;font-size:13px;color:var(--ink-3)}
+/* ── the sleeve list's own controls (A1, C1) ──
+   The book strip moved here from the console header, where it was a second
+   segmented control identical to the view switch; and the search that the
+   library of 101 sleeves had never had sits under it. */
+.repo-list{display:flex;flex-direction:column}
+.repo-books{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px 0}
+.repo-book{appearance:none;border:1px solid var(--line-strong);background:var(--surface);
+  border-radius:12px;padding:3px 9px;font-family:var(--f-num);font-size:11.5px;color:var(--ink-2);
+  cursor:pointer;white-space:nowrap;line-height:1.5}
+.repo-book:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
+.repo-book[aria-pressed="true"]{background:#16243A;border-color:#16243A;color:#fff;font-weight:700}
+.repo-book:disabled{opacity:.45;cursor:default}
+.repo-book:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.repo-find{display:flex;align-items:center;gap:6px;margin:8px 12px 6px;padding:0 8px;
+  border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink-3)}
+.repo-find input{border:0;background:none;font:inherit;font-size:13px;color:var(--ink);
+  padding:6px 0;width:100%;outline:none;min-width:0}
+.repo-find input::-webkit-search-cancel-button{-webkit-appearance:none}
+.repo-find kbd{font-family:var(--f-num);font-size:10.5px;border:1px solid var(--line-strong);
+  border-radius:3px;padding:0 5px;color:var(--ink-3);background:var(--surface-2)}
+.repo-find:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.18)}
+.repo-hits{margin:2px 16px 4px;font-family:var(--f-num);font-size:11.5px;color:var(--ink-3)}
+/* ── the editor's own actions (A2) ──
+   Archiving and adding an edition act on the sleeve being edited, so they sit
+   where it is named rather than in the footer beside Save. */
+.repo-ed-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px;
+  padding-bottom:10px;border-bottom:1px solid var(--line)}
+.repo-ed-where{flex:1 1 auto;min-width:0;font-family:var(--f-num);font-size:11.5px;
+  letter-spacing:.06em;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.repo-ed-act{appearance:none;border:1px solid var(--line-strong);background:var(--surface);
+  border-radius:4px;padding:4px 9px;font-family:var(--f-num);font-size:11.5px;color:var(--ink-2);cursor:pointer}
+.repo-ed-act:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
+.repo-ed-act.danger{color:#9B1C1C;border-color:#F1B8B2}
+.repo-ed-act.danger:hover:not(:disabled){background:#FDE8E8;border-color:#9B1C1C;color:#9B1C1C}
+.repo-ed-act:disabled{opacity:.5;cursor:default}
+.repo-ed-act:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.repo-ed-top.is-confirm{background:#FDE8E8;border:1px solid #F1B8B2;border-radius:5px;
+  padding:10px 12px;margin-bottom:14px}
+.repo-ed-warn{flex:1 1 220px;font-size:13px;color:#7A1D1D}
+.repo-ed-top.is-confirm .btn{padding:5px 11px;font-size:12px}
+/* a draft that outlived a reload (F1) */
+.repo-kept{background:#E3EBFA;border-color:#B9CDF0!important;color:#1E4FA3}
+.repo-kept .btn{padding:4px 10px;font-size:12px}
+/* what the draft's state is, in the footer (F2) */
+.repo-state{font-family:var(--f-num);font-size:12px;white-space:nowrap;color:var(--ink-3)}
+.repo-state.is-dirty{color:#B45309;font-weight:700}
+.repo-state.is-saved{color:#176A33}
+/* the register: when and who are one cell (D3) */
+.reg-tbl td.reg-when{white-space:nowrap;line-height:1.3}
+.reg-tbl td.reg-when small{display:block;font-family:var(--f-num);font-size:11px;color:var(--ink-3)}
+.reg-tbl td.reg-pwa{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .repo-ed{padding:14px 20px 12px;gap:12px}
 .repo-frow{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:14px}
 .repo-fld{display:grid;gap:5px}
@@ -389,6 +445,44 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .tier-admin:hover{color:#fff;border-color:var(--rail-input-border,#52739C)}
 .tier-admin:focus-visible{outline:2px solid var(--rail-focus,#8FB4FF);outline-offset:1px}
 .tier-h-r{display:flex;align-items:center;gap:9px}
+/* ── the landing page's way into the library (D106) ──
+   Aligned to the hero's own measure rather than bled to the edges: it is a
+   footnote to the page, not a second surface laid over it. The role comes
+   first and the destinations follow, so the strip explains its own presence
+   before it offers anything.
+
+   Everything here is inside #lpadmin, which is hidden outright for a
+   non-admin, so none of it can leave a gap behind. */
+/* In the landing grid's foot row, so it lines up with the copy above but
+   sits at the bottom of the page rather than 38px under the last line of it.
+   The margin is a floor for a short viewport, not the spacing itself (D108). */
+.lp-admin{display:flex;align-items:center;gap:10px 22px;flex-wrap:wrap;
+  width:100%;max-width:1120px;margin:56px auto 0;padding:14px 0 0;
+  border-top:1px solid var(--line-strong)}
+.lp-admin[hidden]{display:none}
+.lp-admin-who{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink-2)}
+.lp-admin-who b{color:var(--ink);font-weight:600}
+.lp-admin-role{font-family:var(--f-num);font-size:9.5px;font-weight:700;letter-spacing:.13em;
+  text-transform:uppercase;background:#16243A;color:#fff;border-radius:3px;padding:2px 7px;white-space:nowrap}
+/* The destinations sit at the far end, so the eye reads role first and the
+   two groups cannot be mistaken for one list. */
+.lp-admin-links{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;margin-left:auto}
+.lp-admin-dot{color:var(--line-mid)}
+.lp-admin-links a{font-size:13.5px;color:var(--ink-2);text-decoration:none;
+  border-bottom:1px solid transparent;padding-bottom:1px;transition:color 120ms linear}
+.lp-admin-links a:hover{color:var(--accent);border-bottom-color:rgba(31,95,191,.4)}
+.lp-admin-links a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+/* Narrow, the two groups stack and the destinations lead: on a tablet the
+   role is reassurance and the links are the reason the strip is there. */
+@media (max-width:640px){
+  .lp-admin{gap:9px;margin:36px auto 0}
+  .lp-admin-links{margin-left:0;order:-1;width:100%;gap:6px 16px}
+  .lp-admin-links a{font-size:14.5px}
+  /* The separators go once the row can wrap: a dot is bound to its
+     neighbours by nothing, so a wrap leaves one stranded at the end of a
+     line. The gap separates them well enough on its own. */
+  .lp-admin-dot{display:none}
+}
 /* ── the catalogue view (D58), laid out as the terminal (D63) ──
    A facet rail, a dense table with the figures on the right, a tray of pins
    that opens into a comparison, a side panel on demand. Density is the
@@ -442,6 +536,15 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .cat-facets-clear{margin:12px 14px 0}
 .cat-tblwrap{overflow:auto;min-height:0}
 .cat-tblwrap:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* the catalogue's own table (the archive and the register borrow the class):
+   the header, and banded the band under it, stand over the rows, and a row
+   the keyboard scrolls to has to come to rest clear of them */
+.cat-tblwrap.cat-main{scroll-padding-top:30px}
+.cat-tblwrap.cat-main.grouped{scroll-padding-top:62px}
+/* a whole number of pixels, where the type alone comes to 29.6: the bands
+   hold under it at a fixed offset, and rows that start between pixels blur
+   their rules */
+.cat-main .cat-tbl thead th{height:30px}
 .cat-tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px}
 .cat-tbl.comfortable{font-size:13px}
 .cat-tbl th{position:sticky;top:0;background:var(--surface-2);border-bottom:1px solid var(--line-strong);
@@ -457,6 +560,13 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .cat-sort:hover{color:var(--ink)}
 .cat-sort.on{color:#1E4FA3}
 .cat-sort.drv{font-style:italic;color:var(--ink-2)}
+/* a header says it sorts before it has (D99): the arrows hang off the label,
+   out of the flow, so a column is no wider for being pointed at */
+.cat-sort .lb{position:relative;display:inline-flex;align-items:baseline;gap:4px}
+.cat-sort:not(.on) .lb::after{content:"↕";position:absolute;left:calc(100% + 2px);top:0;opacity:0;font-size:10px;
+  letter-spacing:0;font-weight:400;font-style:normal;transition:opacity 120ms linear}
+.cat-tbl th:hover .cat-sort:not(.on) .lb::after,.cat-sort:not(.on):focus-visible .lb::after{opacity:.75}
+.cat-sort:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .cat-tbl td{padding:0 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle;color:var(--ink);
   height:34px}
 .cat-tbl.comfortable td{height:40px}
@@ -467,14 +577,45 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
   font-weight:500;box-shadow:inset -1px 0 0 var(--line)}
 .cat-tbl td.nm b{font-weight:500}
 .cat-tbl td.mute{color:var(--ink-3)}
+/* ── the table says what it can do (D99) ──
+   Rows open a panel, boxes pin, headers sort and the keyboard does all of
+   it; this is where that shows. One order of precedence, held throughout:
+   the sorted column's tint is the weakest mark, then the cursor, then a pin,
+   then the open row - and the pointer, while it is there, over all of them. */
+/* the chevron at the row's end: this opens. Pinned to the right edge, as
+   the pin box and the name are to the left. */
+.cat-tbl th.go,.cat-tbl td.go{position:sticky;right:0;width:30px;min-width:30px;padding:0 9px 0 0;text-align:right}
+.cat-tbl td.go{background:var(--surface);z-index:1}
+.cat-tbl td.go span{opacity:0;color:var(--accent);font-size:17px;font-weight:700;line-height:1;transition:opacity 120ms linear}
+.cat-tbl tr[data-catrow]:hover td.go span,.cat-tbl tr.cur td.go span,.cat-tbl tr.on td.go span{opacity:1}
+/* the header over the bands, and its two pinned corners over the header */
+.cat-tbl thead th{z-index:3}
+.cat-tbl thead th.pinc,.cat-tbl thead th.go{z-index:4}
+/* the sorted column, its whole height: found from anywhere in the table,
+   not only from its header. Opaque, because the name column is pinned and
+   rows pass beneath it. */
+.cat-tbl td.srt{background-color:#F3F7FD}
+.cat-tbl th.srt{box-shadow:inset 0 -2px 0 var(--accent)}
 .cat-tbl tr[data-catrow]{cursor:pointer}
-.cat-tbl tr[data-catrow]:hover td{background:var(--row-hover,var(--surface-2))}
-.cat-tbl tr[data-catrow]:hover td.nm,.cat-tbl tr[data-catrow]:hover td.pinc{background:var(--row-hover,var(--surface-2))}
-.cat-tbl tr.pin td{background:#F0F4FB}
+.cat-tbl tr[data-catrow]:hover td{background-color:#EAF1FB}
+.cat-tbl tr[data-catrow]:not(.pin):not(.cur):hover td.pinc{box-shadow:inset 3px 0 0 var(--line-mid)}
+.cat-tbl tr[data-catrow]:hover .pinbox{border-color:var(--accent)}
+/* The cursor's two lines are strips of background, not inset shadows: the
+   columns' widths are fractions of a pixel, and an inset shadow on a cell
+   that starts between pixels leaks a hairline of its colour down the cell's
+   side - a rule between every column of the one row the eye is on. The
+   states below set a colour and nothing else, so the strips survive them. */
+.cat-tbl tr.cur td{background-color:#F5F8FD;box-shadow:none;
+  background-image:linear-gradient(var(--accent),var(--accent)),linear-gradient(var(--accent),var(--accent));
+  background-size:100% 1px;background-position:0 0,0 100%;background-repeat:no-repeat}
+.cat-tbl tr.cur td.pinc{box-shadow:inset 3px 0 0 var(--accent)}
+.cat-tbl tr.pin td{background-color:#F0F4FB}
 .cat-tbl tr.pin td.pinc{box-shadow:inset 3px 0 0 var(--accent)}
-.cat-tbl tr.cur td{box-shadow:inset 0 -1px 0 var(--accent),inset 0 1px 0 var(--accent)}
-.cat-tbl tr.cur td.pinc{box-shadow:inset 3px 0 0 var(--accent),inset 0 -1px 0 var(--accent),inset 0 1px 0 var(--accent)}
-.cat-tbl tr.on td{background:#E3EBFA}
+.cat-tbl tr.on td{background-color:#E3EBFA}
+/* the open row stays the open row under the pointer: deeper, never paler */
+.cat-tbl tr.on[data-catrow]:hover td{background-color:#DCE6F8}
+/* the keyboard's row is the cursor's row, and the cursor's marks are its focus ring */
+.cat-tbl tr[data-catrow]:focus{outline:none}
 .cat-tbl tr.dim td:not(.pinc){color:var(--ink-3)}
 .cat-tbl tr.dim td.nm b{color:var(--ink-2)}
 .cat-tbl td.pos{color:#176A33}
@@ -494,8 +635,39 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .pinbox.on{background:var(--accent);border-color:var(--accent)}
 .pinbox.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .pinbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* the shadow that says the table carries on to the right (D99): over the
+   rows rather than behind them, so a pinned or pointed-at row does not break
+   it, and placed by the page against the chevron column and any scrollbar */
+.cat-more{position:absolute;top:0;bottom:0;right:30px;width:14px;pointer-events:none;z-index:3;opacity:0;
+  background:radial-gradient(farthest-side at 100% 50%,rgba(12,24,44,.24),rgba(12,24,44,0));transition:opacity 150ms linear}
+.cat-more.on{opacity:1}
+/* ── rows banded by sleeve category (D100) ──
+   A band holds under the header until the next arrives. It laps the header
+   by a pixel, and sits beneath it, so no display scaling can open a gap for
+   the rows to show through. */
+.cat-tbl tr.cat-band{cursor:pointer}
+.cat-tbl tr.cat-band th{top:29px;z-index:2;height:32px;padding:0;background:#E9EEF5;text-align:left;
+  border-bottom:1px solid var(--line-strong);box-shadow:inset 0 1px 0 var(--line-strong)}
+.cat-tbl tr.cat-band:hover th{background:#DFE6F0}
+.cat-fold{appearance:none;border:0;background:none;font:inherit;color:var(--ink);cursor:pointer;
+  position:sticky;left:0;display:inline-flex;align-items:baseline;gap:12px;padding:0 12px;height:31px;line-height:31px}
+.cat-fold:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.cat-fold b{font-weight:600;font-size:13px}
+.cat-fold .n,.cat-fold .rng{font-family:var(--f-num);font-size:12px;color:var(--ink-2)}
+.cat-fold .cst{font-family:var(--f-num);font-size:11px;font-weight:700;color:#92600A;background:#FEF3C7;border-radius:8px;
+  padding:0 7px;line-height:16px}
+.cat-fold .car{display:inline-block;width:10px;font-size:11px;color:var(--ink-2);transition:transform 150ms linear}
+.cat-band.shut .car{transform:rotate(-90deg)}
+/* the keys, above the tray (D99) */
+.cat-keys{flex:0 0 auto;display:flex;align-items:center;gap:3px 16px;flex-wrap:wrap;padding:5px 16px;
+  border-top:1px solid var(--line-strong);background:var(--surface-2);font-size:12px;color:var(--ink-2)}
+.cat-keys .ttl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink)}
+.cat-keys .k{white-space:nowrap}
+.cat-keys kbd{font-family:var(--f-num);font-size:10.5px;border:1px solid var(--line-strong);border-radius:3px;padding:0 5px;
+  color:var(--ink);background:var(--surface);margin-right:4px}
 /* the tray, in the footer */
 .repo-f.cat-f{padding:8px 16px;gap:12px}
+.cat-keys + .repo-f.cat-f{border-top-color:var(--line)}
 .cat-tray{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 .cat-tray .ttl{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink)}
 .cat-tray .pins{display:flex;gap:6px;flex-wrap:wrap}

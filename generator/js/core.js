@@ -134,6 +134,23 @@ function availabilitySet() {
   return state._avail;
 }
 function available(k) { return !!availabilitySet()[keyStr(k)]; }
+/* Why a level cannot be had (C6). "Unavailable" reads as an outage; what is
+   actually true is narrower and usually fixable, and the availability set
+   already knows it: the same level exists with the exclusion the other way,
+   or under another allocation, or not at all on this basis and type. */
+function whyUnavailable(allocationType, excludeRealAssets, risk) {
+  var probe = buildKey(allocationType, excludeRealAssets, risk);
+  if (!probe || available(probe)) return '';
+  if (reAllowed(allocationType) && available(buildKey(allocationType, !excludeRealAssets, risk))) {
+    return excludeRealAssets ? 'not offered ex-RAs' : 'only offered ex-RAs';
+  }
+  var others = allocationChoices(risk).filter(function (t) {
+    return t !== allocationType
+      && (available(buildKey(t, false, risk)) || available(buildKey(t, true, risk)));
+  });
+  if (others.length) return 'not offered as ' + allocationType;
+  return 'not offered for ' + (state.variant || 'this type') + ' in ' + state.basis.currency;
+}
 function used(k) {
   return state.columns.some(function (c) { return keyEq(c.key, k); });
 }
@@ -330,12 +347,14 @@ async function fetchSchema() {
 function pruneUnavailableColumns() {
   if (!schemaReady()) return;
   var survivors = [];
-  state.columns.forEach(function (col) {
+  state.columns.forEach(function (col, i) {
     if (available(col.key)) { survivors.push(col); return; }
     abortColumn(col);
     announce('assertive', fullName(col.key)
       + ' is not available under the current mandate and basis and has been removed.');
-    deleteColumnOnServer(col.key);
+    /* never the base: the store refuses to remove it, and it has no need to
+       be removed - the next base recorded takes its place (D102) */
+    if (i > 0) deleteColumnOnServer(col.key);
   });
   state.columns = survivors;
 }
@@ -451,8 +470,8 @@ function removeComparison(index) {
 }
 
 function deleteColumnOnServer(key) {
-  if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId)
+  if (!state.scenarioId) return Promise.resolve();
+  return apiFetch('/scenario/' + encodeURIComponent(state.scenarioId)
     + '/portfolio/' + encodeURIComponent(keyStr(key)), { method: 'DELETE' })
     .catch(function (err) {
       if (err && err.message) showAlert('error', err.message);
@@ -466,17 +485,29 @@ function retryColumn(index) {
   refresh();
 }
 
+/* The same combination at the nearest risk level the schema does offer.
+   Used when a base edit names something unavailable, and when a currency
+   change leaves the base's own combination behind. */
+function nearestAvailable(key) {
+  var risks = opt('options.riskLevels', []);
+  var holdsAllocation = !!key.allocationType;
+  for (var i = 0; i < risks.length; i++) {
+    /* A level that holds no allocation type is a different kind of book, not
+       a nearer one: an all-equity level ignores the allocation entirely, so
+       without this a withdrawn Core column fell all the way to All Equity -
+       which holds no alternatives at all - and called it the nearest thing. */
+    if (holdsAllocation === isAllEquityRisk(risks[i])) continue;
+    var probe = buildKey(key.allocationType, key.excludeRealAssets, risks[i]);
+    if (probe && available(probe)) return probe;
+  }
+  return null;
+}
+
 /* Changing the base replaces column one (spec 11.5). */
 function setBase(key) {
   if (!schemaReady() || !canEdit()) return false;
   if (!available(key)) {
-    /* fall to the first risk level the combination offers */
-    var risks = opt('options.riskLevels', []);
-    var fallen = null;
-    for (var i = 0; i < risks.length; i++) {
-      var probe = buildKey(key.allocationType, key.excludeRealAssets, risks[i]);
-      if (probe && available(probe)) { fallen = probe; break; }
-    }
+    var fallen = nearestAvailable(key);      /* the first risk level it offers */
     if (!fallen) return false;
     key = fallen;
   }
@@ -496,9 +527,12 @@ function setBase(key) {
   var rest = state.columns.slice(1).filter(function (c) {
     if (keyEq(c.key, key)) {
       abortColumn(c);
-      deleteColumnOnServer(c.key);
+      /* No DELETE: recording a base drops a comparison that duplicates it, in
+         the same write. Sending both raced - whichever arrived second lost,
+         and if that was the DELETE the store refused it, because by then the
+         key it named was the base. */
       announce('assertive', headerName(c.key)
-        + ' was removed as a comparison because it is now the base.');
+        + ' was removed as a comparison because it is now the proposed portfolio.');
       return false;
     }
     return true;
@@ -582,16 +616,47 @@ async function confirmBasisChange() {
     refresh();
     return;
   }
-  var survivors = [];
+  /* A key carries its currency, so every column has to be re-keyed into the
+     new one before it can be asked whether it still exists. Asking with the
+     OLD key - "USD|Moderate|Core|0" against the CHF availability set - never
+     matched, so a currency change dropped every column, including the base;
+     and removing the base is the one thing the store refuses, so the change
+     ended in an error banner over an empty document. What it should do, and
+     now does, is rebuild the same combinations in the new currency (11.4). */
+  var moved = [];
+  var lost = [];
   state.columns.forEach(function (col) {
-    if (available(col.key)) { survivors.push(col); return; }
+    var key = buildKey(col.key.allocationType, col.key.excludeRealAssets, col.key.riskLevel);
+    if (key && available(key)) moved.push({ col: col, key: key, was: col.key });
+    else lost.push(col);
+  });
+  /* The base leads: if its combination is not offered in the new currency it
+     falls to the nearest risk level that is, the way a base edit does (D54),
+     rather than taking the comparisons down with it. */
+  if (state.columns.length && (!moved.length || moved[0].col !== state.columns[0])) {
+    var first = state.columns[0];
+    var fallen = nearestAvailable(first.key);
+    if (fallen) {
+      moved.unshift({ col: first, key: fallen, was: first.key });
+      lost = lost.filter(function (c) { return c !== first; });
+      announce('assertive', headerName(first.key) + ' is not available in '
+        + state.basis.currency + '; ' + headerName(fallen) + ' is proposed instead.');
+    }
+  }
+  lost.forEach(function (col) {
     abortColumn(col);
     announce('assertive', headerName(col.key) + ' is not available in '
       + state.basis.currency + ' and has been removed.');
-    deleteColumnOnServer(col.key);
   });
-  state.columns = survivors;
+  /* The stale keys go first, so recording the new ones cannot meet a full
+     set of comparison slots - and never the base's, which the store replaces
+     of its own accord when the new one is recorded. */
+  var stale = state.columns.slice(1).map(function (col) { return col.key; });
+  await Promise.all(stale.map(deleteColumnOnServer));
+  moved.forEach(function (m) { m.col.key = m.key; });
+  state.columns = moved.map(function (m) { return m.col; });
   state.columns.forEach(function (col) { startResolve(col); });
+  settleRebuilding();                /* nothing survived: the spinner stops here */
   state.sleeveLib = {};              /* the library may differ under the new basis */
   revalidateSleeves();
   refresh();
@@ -708,9 +773,9 @@ async function setVariant(name) {
      comparisons anchored to nothing - the same rule the store applies, so the
      two never diverge. */
   if (hadBase && state.columns.indexOf(hadBase) === -1 && state.columns.length) {
-    state.columns.slice().forEach(function (col) {
+    state.columns.slice().forEach(function (col, i) {
       abortColumn(col);
-      deleteColumnOnServer(col.key);
+      if (i > 0) deleteColumnOnServer(col.key);      /* never the base (D102) */
     });
     state.columns = [];
   }
@@ -1190,8 +1255,8 @@ function setBaseCollapsed(on, quiet) {
   state.baseCollapsed = on;
   state.baseRoll = on ? 'up' : 'down';
   if (!quiet) {
-    announce('polite', on ? 'Base portfolio settings hidden.'
-                          : 'Base portfolio settings shown.');
+    announce('polite', on ? 'Proposed portfolio settings hidden.'
+                          : 'Proposed portfolio settings shown.');
   }
 }
 
@@ -1274,7 +1339,7 @@ function renderBase() {
         var ok = probe ? available(probe) : true;
         return '<option value="' + esc(r) + '"'
           + (r === risk ? ' selected' : '') + (ok ? '' : ' disabled') + '>'
-          + esc(riskLabel(r)) + (ok ? '' : ' — unavailable') + '</option>';
+          + esc(riskLabel(r)) + (ok ? '' : ' — ' + esc(whyUnavailable(allocationType, exRA, r))) + '</option>';
       }).join('');
 
   var raNote = '';
@@ -1294,13 +1359,13 @@ function renderBase() {
   /* The heading carries the chevron, so the tier can be reopened wherever it
      was rolled up; the controls go in .tier-body, which is the thing that
      rolls. aria-expanded and aria-controls carry the state to a reader. */
-  el.innerHTML = '<div class="tier-h"><h3 id="basetitle">Base portfolio</h3>'
+  el.innerHTML = '<div class="tier-h"><h3 id="basetitle">Proposed portfolio</h3>'
     + '<button type="button" class="tier-roll" id="baseroll"'
     + ' aria-expanded="' + (state.baseCollapsed ? 'false' : 'true') + '"'
     + ' aria-controls="basebody" aria-label="'
-    + (state.baseCollapsed ? 'Show' : 'Hide') + ' the base portfolio settings"'
+    + (state.baseCollapsed ? 'Show' : 'Hide') + ' the proposed portfolio settings"'
     + ' title="' + (state.baseCollapsed ? 'Show' : 'Hide')
-    + ' the base portfolio settings"><span aria-hidden="true">&#8250;</span>'
+    + ' the proposed portfolio settings"><span aria-hidden="true">&#8250;</span>'
     + '</button></div>'
     + '<div class="tier-body" id="basebody">'
     + '<div class="basis" style="grid-template-columns:1fr">'
@@ -1325,24 +1390,6 @@ function renderBase() {
     + (raNote ? '<p class="chk-note" id="bprenote">' + raNote + '</p>' : '')
     + '</div></div>';
   applyBaseRoll();
-}
-
-function renderBuilt() {
-  var el = document.getElementById('built'); if (!el) return;
-  el.innerHTML = state.columns.map(function (col, i) {
-    var status = col.status === 'loading' ? ' <span class="built-status">building…</span>'
-      : col.status === 'error' ? ' <span class="built-status err">failed</span>' : '';
-    return '<div class="built-row"><span class="nm">' + esc(headerName(col.key)) + status + '</span>'
-      + (i === 0 ? '<span class="tag">Base</span>'
-                 : '<button type="button" class="rm" data-i="' + i + '" aria-label="Remove '
-                   + esc(headerName(col.key)) + '">×</button>')
-      + '</div>';
-  }).join('');
-  var count = document.getElementById('count');
-  if (count) {
-    count.textContent = (state.columns.length ? state.columns.length - 1 : 0)
-      + ' of ' + (opt('rules.maxPortfolios', 4) - 1);
-  }
 }
 
 /* Nothing renders above the allocation table. The strip that used to carry
@@ -1449,16 +1496,20 @@ function metricCell(col, kind) {
 var METRIC_ROWS = [['Estimated Mean Return', 'ret'], ['Sharpe Ratio', 'sharpe'],
                    ['Volatility', 'vol']];
 
-/* The base column is headed "Proposed Portfolio" rather than its derived name
-   plus a Base chip: it is the portfolio being proposed to the client, and the
-   comparisons are what it is proposed against. The derived name is still
-   available - as the hover tooltip, and as the aria-label, so it reaches
-   assistive tech without a hover. */
-var BASE_COLUMN_TITLE = 'Proposed Portfolio';
+/* The first column is the portfolio being proposed to the client, and the
+   comparisons are what it is proposed against. It says so in a line over its
+   name, and it carries its name as every other column does (A2): a name that
+   lived only in a tooltip could not be read on touch, nor in a screenshot.
+
+   Every column also has a mark - P, then 1, 2, 3 - and the same mark is the
+   portfolio's dot on the risk and return chart (D1), so the chart can be read
+   against the table without a legend of names. */
+var BASE_COLUMN_TITLE = 'Proposed';
+function columnMark(i) { return i === 0 ? 'P' : String(i); }
 
 function columnHeadCell(col, i, scope) {
   var isBase = (i === 0);
-  var label = isBase ? BASE_COLUMN_TITLE : headerName(col.key);
+  var label = headerName(col.key);
   var extra = '';
   if (col.status === 'loading' && col.skel) extra = '<span class="col-ellipsis" aria-hidden="true">…</span>';
   if (col.status === 'error') {
@@ -1478,7 +1529,10 @@ function columnHeadCell(col, i, scope) {
     + (col.status === 'loading' ? ' aria-busy="true"' : '')
     + ' title="' + esc(fullName(col.key)) + '"'
     + ' aria-label="' + esc(fullName(col.key)) + '">'
-    + '<span class="col-head">' + esc(label) + extra + remove + '</span></th>';
+    + '<span class="col-head"><span class="col-mark' + (isBase ? ' is-prop' : '') + '" aria-hidden="true">'
+    + columnMark(i) + '</span><span class="col-nm">'
+    + (isBase ? '<small class="col-role">' + BASE_COLUMN_TITLE + '</small>' : '')
+    + esc(label) + '</span>' + extra + remove + '</span></th>';
 }
 
 /* ---- guiding the first build (D91) ---------------------------------------
@@ -1520,11 +1574,11 @@ function setupNext() {
   }
   if (!p.riskLevel) {
     return { id: 'bpr', n: 3, total: total, title: 'Risk level',
-             text: 'The base portfolio’s level of risk. Every comparison is measured against it.' };
+             text: 'The proposed portfolio’s level of risk. Every comparison is measured against it.' };
   }
   if (!p.allocationType && total === 4) {
     return { id: 'bpa', n: 4, total: total, title: 'Allocation',
-             text: 'The base portfolio builds as soon as this is chosen.' };
+             text: 'The proposed portfolio builds as soon as this is chosen.' };
   }
   return null;            /* answered, and either building or unavailable */
 }
@@ -1550,7 +1604,7 @@ function renderGuide() {
           : '<span class="guide-wide">In the scenario panel, on the left.</span>')
       + '<span class="guide-narrow">In the scenario panel above.</span></p>';
   } else if (card) {
-    card.innerHTML = '<h3>Choose a base portfolio</h3>'
+    card.innerHTML = '<h3>Choose the portfolio to propose</h3>'
       + '<p>Choose a risk level and allocation in the scenario panel to build the first column.</p>';
   }
   if (!next) placeGuide(false);           /* take the line down now, not next frame */
@@ -1873,9 +1927,17 @@ function fadeValue(wrap) {
   window.clearTimeout(wrap._fadeTimer);
   /* the cleanup has to outlast the fade, or it strips the transition
      mid-flight and the value snaps to full opacity */
+  /* and it is marked, for a moment (F1): the commonest change of all is the
+     same rows with different numbers - hedging toggled, real assets excluded
+     - and a handful of figures out of a hundred moved with nothing to say
+     which. The class is dropped and re-added so a second change restarts it. */
+  wrap.classList.remove('chg');
+  void wrap.offsetWidth;
+  wrap.classList.add('chg');
   wrap._fadeTimer = window.setTimeout(function () {
     wrap.style.transition = '';
     wrap.style.opacity = '';
+    wrap.classList.remove('chg');
   }, 2000);
 }
 
@@ -2003,10 +2065,21 @@ function sizeFixedColumns(table, dataCells, skip) {
   table.style.setProperty('--fixed-c1', 'auto');
   table.style.setProperty('--fixed-col', 'auto');
   table.style.tableLayout = 'auto';
-  table.style.width = 'auto';
+  /* max-content, not auto: an auto table is shrink-to-fit, and in a narrow
+     wrapper it took the shortfall out of the one column that can give - the
+     labels, whose wrapper is max-width:100% - so the measure came back short
+     and the labels were clipped ("Investment Grade Fixe"). What is wanted is
+     what the labels need; whether it fits is decided below (H3). */
+  table.style.width = 'max-content';
   table.style.minWidth = '0';
 
   var headerWidth = heads[0].getBoundingClientRect().width;
+  /* Narrow, a long label - "Private Equity & Other Private Assets" - pinned and
+     unwrapped took most of the window and left a sliver for the figures. It
+     is capped, and the stylesheet lets it wrap there (H3). */
+  if (window.matchMedia && window.matchMedia('(max-width:700px)').matches) {
+    headerWidth = Math.min(headerWidth, Math.floor(available * 0.44));
+  }
   var skipped = skip ? table.querySelector(skip) : null;
   /* the + column's own declared width, not what auto layout hands it */
   var skippedWidth = skipped
@@ -2181,7 +2254,7 @@ function sizeRiskColumns(table) {
   table.style.removeProperty('--risk-c1');
   table.style.removeProperty('--risk-col');
   table.style.tableLayout = 'auto';
-  table.style.width = 'auto';
+  table.style.width = 'max-content';        /* as sizeFixedColumns, and for its reason */
   table.style.minWidth = '0';
 
   /* The widest thing column one has to hold. Section bands span the whole
@@ -2196,6 +2269,9 @@ function sizeRiskColumns(table) {
   }
   if (widest <= 0) { table.style.tableLayout = ''; table.style.width = ''; return; }
   var headWidth = Math.ceil(widest) + RISK_HEAD_GUTTER;
+  if (window.matchMedia && window.matchMedia('(max-width:700px)').matches) {
+    headWidth = Math.min(headWidth, Math.floor(available * 0.44));      /* the label cap, narrow (H3) */
+  }
 
   var dataCols = 0;
   var headRow = table.querySelector('thead tr:first-child');
@@ -2262,16 +2338,18 @@ function renderRisk() {
             + cellFn(col) + '</span></td>';
         }).join('') + '</tr>';
   }
-  function pairRow(cls, label, pairFn) {
-    return '<tr class="' + cls + '"><th scope="row"><span class="cw">'
+  /* keyed and wrapped like every other row, so a figure that changes under
+     the reader is faded in and marked here too (F1) */
+  function pairRow(cls, label, pairFn, key) {
+    return '<tr class="' + cls + '"' + (key ? ' data-rk="' + esc(key) + '"' : '') + '><th scope="row"><span class="cw">'
       + esc(label) + '</span></th>'
       + state.columns.map(function (col) {
           if (col.status === 'loading' && !holdsPreviousData(col)) {
-            var skel = col.skel ? '<span class="skel"></span>' : '';
+            var skel = '<span class="cw">' + (col.skel ? '<span class="skel"></span>' : '') + '</span>';
             return '<td class="num">' + skel + '</td><td class="num">' + skel + '</td>';
           }
           if (col.status === 'error') {
-            return '<td class="num">—</td><td class="num">—</td>';
+            return '<td class="num"><span class="cw">—</span></td><td class="num"><span class="cw">—</span></td>';
           }
           return pairFn(col);
         }).join('') + '</tr>';
@@ -2311,15 +2389,15 @@ function renderRisk() {
      colour is never the only channel (spec 13.4). Probabilities take neither
      - a high probability of loss is not a "positive" number. */
   function pairCells(entry, probability, signed) {
-    if (!entry) return '<td class="num">\u2014</td><td class="num">\u2014</td>';
+    if (!entry) return '<td class="num"><span class="cw">\u2014</span></td><td class="num"><span class="cw">\u2014</span></td>';
     var digits = probability ? 1 : 2;
     function cls(value) {
       if (!signed) return 'num';        /* only the stress rows are coloured */
       if (value < 0) return 'num neg';
       return value > 0 ? 'num pos' : 'num';
     }
-    return '<td class="' + cls(entry.nominalPct) + '">' + num(entry.nominalPct, digits, '%') + '</td>'
-         + '<td class="' + cls(entry.realPct) + '">' + num(entry.realPct, digits, '%') + '</td>';
+    return '<td class="' + cls(entry.nominalPct) + '"><span class="cw">' + num(entry.nominalPct, digits, '%') + '</span></td>'
+         + '<td class="' + cls(entry.realPct) + '"><span class="cw">' + num(entry.realPct, digits, '%') + '</span></td>';
   }
 
   html += band('Predicted Performance Over Stress Periods');
@@ -2331,7 +2409,7 @@ function renderRisk() {
   stressLabels.forEach(function (label, i) {
     html += pairRow('asset' + (i % 2 ? ' alt' : ''), label, function (col) {
       return pairCells(findEntry(col, 'stress', label), false, true);
-    });
+    }, 'rs:' + label);
   });
 
   /* Risk premia are grouped by measure - Value at Risk, Conditional Value at
@@ -2377,7 +2455,7 @@ function renderRisk() {
               && premiaHorizonOf(candidate) === horizon) found = candidate;
         });
         return pairCells(found, found && found.kind === 'probability', false);
-      });
+      }, 'rp:' + group + ':' + horizon);
     });
   });
   /* Same treatment as the allocation table: the category rows here come and
@@ -2438,7 +2516,8 @@ function renderCharts() {
   var key2 = document.getElementById('viz-key2');
   if (key2) {
     key2.innerHTML = '<i><span class="sw" style="background:#16243A;border-radius:50%"></span>'
-      + 'Base</i><i><span class="sw" style="background:#1F5FBF;border-radius:50%"></span>Comparison</i>';
+      + 'Proposed</i><i><span class="sw" style="background:#1F5FBF;border-radius:50%"></span>Comparison</i>'
+      + '<i class="viz-note">Marks match the table’s columns</i>';
   }
 
   var comp = document.getElementById('viz-comp');
@@ -2462,7 +2541,7 @@ function renderCharts() {
     var colW = Math.max(30, Math.min(96, slot - 28));
     var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Allocation by '
       + 'category for ' + n + ' portfolio' + (n > 1 ? 's' : '')
-      + '. The allocation table below carries the exact values.">';
+      + '. The allocation table carries the exact values.">';
     [0, 25, 50, 75, 100].forEach(function (t) {
       var y = top + plotH - plotH * t / 100;
       svg += '<line class="gl" x1="' + padL + '" y1="' + y + '" x2="' + (W - padR)
@@ -2540,18 +2619,50 @@ function renderCharts() {
       + 'Volatility %</text>'
       + '<text class="tick" transform="translate(12,' + ((pT + H2 - pB) / 2) + ') rotate(-90)"'
       + ' text-anchor="middle">Estimated mean return %</text>';
-    ready.forEach(function (col) {
-      var isBase = (state.columns.indexOf(col) === 0);
-      var x = X(col.data.metrics.volatilityPct), y = Y(col.data.metrics.estimatedReturnPct);
-      svg2 += '<circle class="dot" cx="' + x + '" cy="' + y + '" r="' + (isBase ? 7.5 : 6) + '"'
-        + ' fill="' + (isBase ? '#16243A' : '#1F5FBF') + '"'
-        + ' data-tip="' + esc(headerName(col.key)) + '|vol '
-        + col.data.metrics.volatilityPct.toFixed(2) + '% · return '
-        + col.data.metrics.estimatedReturnPct.toFixed(2) + '%"></circle>';
-      var above = (y > pT + 28);
-      var label = headerName(col.key);
-      svg2 += '<text class="plbl" x="' + x + '" y="' + (above ? y - 13 : y + 20)
-        + '" text-anchor="middle">' + esc(label.length > 20 ? label.slice(0, 19) + '…' : label) + '</text>';
+    /* Each portfolio is its column's mark in a disc (D1): P, then 1, 2, 3. A
+       name floated over each dot collided as soon as two portfolios sat close -
+       and the commonest comparison, a book against its own ex-RAs, sits very
+       close. A disc that would cover another is moved aside on a short leader
+       instead, its true point left where it belongs, so nothing is misplaced
+       to be made legible. A line from the proposed portfolio to each
+       comparison draws the direction of the trade. */
+    var marks = ready.map(function (col) {
+      var at = state.columns.indexOf(col);
+      return { col: col, at: at, x: X(col.data.metrics.volatilityPct), y: Y(col.data.metrics.estimatedReturnPct) };
+    });
+    var prop = marks.filter(function (m) { return m.at === 0; })[0] || null;
+    var placed = [];
+    var R = 9, GAP = 2 * R + 2;
+    var tries = [[0, 0], [22, 0], [-22, 0], [0, -22], [0, 22], [16, -16], [-16, -16], [16, 16], [-16, 16]];
+    /* the proposed portfolio takes its own point first; the others move round it */
+    marks.slice().sort(function (a, b) { return a.at - b.at; }).forEach(function (m) {
+      for (var t = 0; t < tries.length; t++) {
+        var bx = m.x + tries[t][0], by = m.y + tries[t][1];
+        var clash = placed.some(function (q) { return Math.abs(q.bx - bx) < GAP && Math.abs(q.by - by) < GAP; });
+        var inside = bx > pL + R && bx < W2 - pR - R && by > pT + R && by < H2 - pB - R;
+        if (!clash && (inside || t === 0)) { m.bx = bx; m.by = by; break; }
+      }
+      if (m.bx === undefined) { m.bx = m.x; m.by = m.y; }
+      placed.push(m);
+    });
+    if (prop) {
+      marks.forEach(function (m) {
+        if (m === prop) return;
+        svg2 += '<line class="rr-link" x1="' + prop.x + '" y1="' + prop.y + '" x2="' + m.x + '" y2="' + m.y + '"/>';
+      });
+    }
+    marks.forEach(function (m) {
+      var isBase = (m.at === 0), fill = isBase ? '#16243A' : '#1F5FBF';
+      if (m.bx !== m.x || m.by !== m.y) {
+        svg2 += '<line class="rr-lead" x1="' + m.x + '" y1="' + m.y + '" x2="' + m.bx + '" y2="' + m.by + '"/>'
+          + '<circle cx="' + m.x + '" cy="' + m.y + '" r="2.5" fill="' + fill + '"/>';
+      }
+      svg2 += '<circle class="dot" cx="' + m.bx + '" cy="' + m.by + '" r="' + R + '" fill="' + fill + '"'
+        + ' data-tip="' + esc(headerName(m.col.key)) + '|vol '
+        + m.col.data.metrics.volatilityPct.toFixed(2) + '% · return '
+        + m.col.data.metrics.estimatedReturnPct.toFixed(2) + '%"></circle>'
+        + '<text class="rr-mark" x="' + m.bx + '" y="' + (m.by + 3.6) + '" text-anchor="middle">'
+        + columnMark(m.at) + '</text>';
     });
     rr.innerHTML = svg2 + '</svg>';
   }
@@ -2647,7 +2758,7 @@ function renderDialog() {
   var dis = draft.saving ? ' disabled' : '';
   host.innerHTML =
       '<div class="scrim" data-scrim></div>'
-    + '<div class="dialog' + (first ? ' start' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
+    + '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
@@ -2674,21 +2785,22 @@ function renderDialog() {
         ? '<span class="field-hint">Type at least two characters.</span>' : '')
     + '</div>'
     + (err ? '<p class="md-err" id="mderr" role="alert">' + esc(err.msg) + '</p>' : '')
-    /* The landing card seats three actions: Continue then Cancel, far left as
-       a group, and Create Account Opening Request right (D76). Edit mandate
-       keeps its right-aligned pair. */
+    /* Both cards carry the same right-aligned pair. The account opening
+       request used to be a third button on this line, where its only
+       neighbours were Continue and Cancel - a terminal action on a delivered
+       proposal sitting among the controls for starting one (D107). */
+    + '<div class="dlg-actions">'
+    + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
+    + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
+    + (draft.saving ? 'Working…' : (first ? 'Continue' : 'Save mandate')) + '</button></div>'
+    /* Below the rule, and only on the landing card: the other job someone may
+       have come for, named by its precondition so it cannot be read as a
+       second way to start. The landing page carries the same door (D107). */
     + (first
-        ? '<div class="dlg-actions split"><div class="dlg-grp">'
-          + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
-          + (draft.saving ? 'Working…' : 'Continue') + '</button>'
-          + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
-          + '</div>'
-          + '<button type="button" class="btn btn-ghost" id="dlgaccount"' + dis + '>'
-          + 'Create Account Opening Request</button></div>'
-        : '<div class="dlg-actions">'
-          + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
-          + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
-          + (draft.saving ? 'Working…' : 'Save mandate') + '</button></div>')
+        ? '<p class="dlg-aside">Proposal already delivered? '
+          + '<button type="button" class="btn-inline" id="dlgaccount"' + dis + '>'
+          + 'Open an account against it</button></p>'
+        : '')
     + '</div>';
 }
 
@@ -2708,6 +2820,7 @@ function setBackgroundInert(on) {
    ========================================================================== */
 var account = null;                 /* the account dialog's working copy */
 var acOpener = null;
+var acDraftBack = null;             /* the mandate the card held when it stood down */
 var UID_PATTERN = /^pr_[0-9a-f]{12}$/;
 var UID_SHAPE = 'A Proposal UID is pr_ followed by twelve letters or digits.';
 
@@ -2733,10 +2846,21 @@ function acFieldId(key) {
   return spec ? spec.id : null;
 }
 
-function openAccountDialog() {
+function openAccountDialog(opener) {
   if (!canEdit()) return;
-  acOpener = dlgOpener;               /* the landing button that opened the card */
-  if (draft) { draft = null; renderDialog(); }    /* the card gives way, no focus bounce */
+  acOpener = opener || dlgOpener;     /* the control to hand focus back to */
+  /* One modal at a time, so the card stands down - but what the user typed
+     into it is kept and put back when this dialog closes. Discarding it cost
+     three filled fields for one mis-click (D107). */
+  if (draft) {
+    if (draft.searchTimer) clearTimeout(draft.searchTimer);
+    if (draft.searchAbort) { try { draft.searchAbort.abort(); } catch (e) {} }
+    draft.searchTimer = null; draft.searchAbort = null;
+    draft.open = false; draft.idx = -1; draft.searching = false;
+    acDraftBack = draft;
+    draft = null;
+    renderDialog();
+  }
   account = {
     uid: '', status: 'idle',          /* 'idle'|'looking'|'found'|'notfound'|'malformed'|'error' */
     message: '', proposal: null, requests: [],
@@ -2755,7 +2879,17 @@ function closeAccountDialog() {
   if (!account) return;
   if (account.timer) clearTimeout(account.timer);
   account = null;
+  /* Restore before rendering, so the background never comes out of inert for
+     the one frame between the two dialogs. */
+  if (acDraftBack) { draft = acDraftBack; acDraftBack = null; }
   renderAccountDialog();
+  if (draft) {
+    renderDialog();
+    /* The button that opened this was destroyed with the card; the re-rendered
+       card carries a fresh one, and that is where focus belongs. */
+    var again = document.getElementById('dlgaccount');
+    if (again) { again.focus(); return; }
+  }
   var back = (acOpener && acOpener.isConnected) ? acOpener : document.getElementById('startbtn');
   if (back && !back.closest('[hidden]')) back.focus();
 }
@@ -3254,6 +3388,140 @@ function renderService() {
 }
 
 /* ---- refresh ------------------------------------------------------------ */
+/* ---- the way on (B4) ------------------------------------------------------
+   The document used to end under the risk dashboard, with the only door to
+   step 2 back at the top of it. The foot says what is being proposed and
+   carries the way forward - through the step nav's own button, so whatever
+   that does (the first visit's greeting, D97) happens here too. */
+function renderNext() {
+  var el = document.getElementById('aa-next'); if (!el) return;
+  var base = state.columns[0] || null;
+  if (state.phase !== 'workspace' || !base) { el.hidden = true; el.innerHTML = ''; return; }
+  var busy = state.columns.some(function (c) { return c.status === 'loading'; });
+  var ready = base.status === 'ready';
+  var n = state.columns.length - 1;
+  el.hidden = false;
+  el.innerHTML = '<p class="aa-next-txt"><span>Proposing</span> <b>' + esc(fullName(base.key)) + '</b>'
+    + '<span> · ' + esc(state.basis.hedging) + ' · ' + (n ? n + ' comparison' + (n === 1 ? '' : 's') : 'no comparisons yet') + '</span></p>'
+    + '<button type="button" class="btn btn-primary" id="aa-go"' + (ready && !busy ? '' : ' disabled') + '>'
+    + (busy ? 'Building…' : (ready ? 'Continue to Implementation →' : 'The proposed portfolio did not build')) + '</button>';
+}
+
+/* ---- the rail, narrow, once the work in it is done (H2) --------------------
+   Below the stacking breakpoint the whole rail sits above the document, so a
+   finished decision - basis, type, level, allocation - filled the first
+   screen and the comparison was a scroll away. Once the proposed portfolio
+   exists, step 1 folds the rail to one line that says what was chosen, and
+   Edit opens it again. Step 2 keeps the whole rail: its pickers are the work
+   there. Wide, none of this applies and the line is not shown. */
+var railEditing = false;
+function renderRailSummary() {
+  var el = document.getElementById('railsum'); if (!el) return;
+  var base = state.columns[0] || null;
+  var on = state.phase === 'workspace' && state.step === 'aa' && !!base;
+  document.body.classList.toggle('rail-summary', on);
+  document.body.classList.toggle('rail-editing', on && railEditing);
+  if (!on) { el.innerHTML = ''; railEditing = false; return; }
+  el.innerHTML = '<span class="rail-sum-txt"><b>' + esc(fullName(base.key)) + '</b>'
+    + '<span> · ' + esc(state.basis.hedging) + (state.variant ? ' · ' + esc(state.variant) : '') + '</span></span>'
+    + '<button type="button" class="tier-edit" id="railsum-edit" aria-expanded="' + railEditing + '"'
+    + ' aria-controls="rail-tiers">' + (railEditing ? 'Done' : 'Edit') + '</button>';
+}
+
+/* ---- what stands over the tables as they scroll (B1, H3) -------------------
+   The column heads were sticky in the stylesheet and never stuck: a table's
+   wrapper scrolls sideways, which makes it the box a sticky cell sticks to,
+   and that box never scrolls down. Halfway through the risk dashboard its
+   eight columns of figures had no names.
+
+   So the heads are docked instead: one bar, fixed under whatever is already
+   held at the top of the window, shown while a table's own head is above it
+   and the table is still passing. It is drawn from the live head cells as
+   measured, so it follows the table sideways, the pinned first column stays
+   pinned, and both tables share it - they are the same comparison. It is
+   aria-hidden: the real heads are in the tables, and would be heard twice.
+
+   The same pass places the shadow at a table's right edge while there are
+   columns beyond it (H3) - the catalogue's device (D99), for the same reason:
+   narrow, nothing said the table carried on. */
+/* Step 1 compares two tables that share their columns, so one docked bar
+   serves both; step 2 has one table of its own, whose header is sticky in the
+   stylesheet and, for the same reason theirs were, never sticks (A3). */
+function dockTables() {
+  return state.step === 'impl' ? ['implTbl'] : ['alloc', 'risk'];
+}
+function heldAtTop() {
+  /* the bottom of anything already stuck to the top of the window */
+  var held = 0;
+  ['degraded', 'railsum'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el || el.hidden || !el.offsetParent) return;
+    var box = (id === 'railsum' ? el.closest('.rail') : el).getBoundingClientRect();
+    var style = getComputedStyle(id === 'railsum' ? el.closest('.rail') : el).position;
+    if ((style === 'sticky' || style === 'fixed') && box.top <= 1 && box.bottom > held) held = box.bottom;
+  });
+  return held;
+}
+function placeChrome() {
+  var dock = document.getElementById('coldock');
+  var view = document.getElementById(state.step === 'impl' ? 'view-impl-wrap' : 'view-aa');
+  var live = !!view && !view.hidden && state.phase === 'workspace';
+  var top = live ? heldAtTop() : 0;
+  var shown = null;
+  dockTables().forEach(function (id) {
+    var table = document.getElementById(id), wrap = table && table.parentNode;
+    var edge = document.getElementById(id + '-more');
+    if (!table || !wrap || !live || wrap.hidden) { if (edge) edge.classList.remove('on'); return; }
+    if (edge) {
+      var sec = edge.parentNode.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+      edge.style.top = (w.top - sec.top) + 'px';
+      edge.style.height = wrap.clientHeight + 'px';
+      edge.style.left = (w.left - sec.left + wrap.clientWidth - edge.offsetWidth) + 'px';
+      edge.classList.toggle('on', wrap.scrollWidth - wrap.clientWidth - wrap.scrollLeft > 1);
+    }
+    var head = table.querySelector('thead tr');
+    if (!head || shown) return;
+    var h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+    if (h.bottom < top + 1 && t.bottom > top + h.height + 40) shown = { wrap: wrap, head: head, height: h.height };
+  });
+  if (!dock) return;
+  if (!shown) { dock.hidden = true; return; }
+  var box = shown.wrap.getBoundingClientRect();
+  dock.hidden = false;
+  dock.style.top = top + 'px';
+  dock.style.left = box.left + 'px';
+  dock.style.width = shown.wrap.clientWidth + 'px';
+  dock.style.height = shown.height + 'px';
+  var cells = [].slice.call(shown.head.children), html = '';
+  /* A column pinned in the table has to be pinned in the dock as well, and
+     painted last, so the scrolling ones pass beneath it rather than over it.
+     Which those are is read off the table - step 1 pins one, step 2 pins the
+     category and the product (A3) - rather than being named here. */
+  var loose = [], fixed = [];
+  cells.forEach(function (th) {
+    if (th.classList.contains('addcol')) return;
+    (th.classList.contains('rowhead') || th.classList.contains('prodcol') ? fixed : loose).push(th);
+  });
+  loose.concat(fixed).forEach(function (th) {
+    var r = th.getBoundingClientRect();
+    var mark = th.querySelector('.col-mark'), name = th.querySelector('.col-nm');
+    html += '<span class="dock-cell' + (fixed.indexOf(th) !== -1 ? ' is-fixed' : '')
+      + (th.classList.contains('txt') || th.classList.contains('rowhead') ? ' is-txt' : '')
+      + '" style="left:' + (r.left - box.left) + 'px;width:' + r.width + 'px">'
+      + (mark ? mark.outerHTML : '') + (name ? name.outerHTML : (th.querySelector('.sr-only') ? '' : esc(th.textContent))) + '</span>';
+  });
+  if (dock._html !== html) { dock.innerHTML = html; dock._html = html; }
+}
+var chromeQueued = false;
+function queueChrome() {
+  if (chromeQueued) return;
+  chromeQueued = true;
+  /* a timer, not an animation frame: a frame never fires in a background tab */
+  window.setTimeout(function () { chromeQueued = false; placeChrome(); }, 16);
+}
+document.addEventListener('scroll', queueChrome, true);      /* the window's, and a wrapper's own */
+window.addEventListener('resize', queueChrome);
+
 function refresh() {
   saveSnapshot();                        /* the last good render is the fallback */
   preserveFocus(function () {
@@ -3264,7 +3532,6 @@ function refresh() {
     renderBasis();
     renderBase();
     if (picker && picker.render) picker.render();
-    renderBuilt();
     renderAlloc();
     renderGuide();
     renderRisk();
@@ -3273,10 +3540,15 @@ function refresh() {
     renderService();
     renderResolving();
     renderFooter();
+    renderNext();
+    renderRailSummary();
     extras.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } });
     sizeComparisonTables();
   });
   focusGuide();
+  placeChrome();
+  /* and again once the columns have finished moving to their new widths */
+  window.setTimeout(placeChrome, 480);
 }
 
 /* ---- shared tooltip for both charts ------------------------------------- */
@@ -3302,6 +3574,19 @@ document.addEventListener('mouseleave', function () { vizTip.classList.remove('o
    Events - delegated at the document, never bound to re-rendered nodes.
    ========================================================================== */
 document.addEventListener('click', function (e) {
+  if (e.target.id === 'aa-go') {
+    /* the step nav's own button, so the first visit is greeted as it is from there (D97) */
+    var tab = document.getElementById('tab-impl');
+    if (tab && !tab.disabled) { tab.click(); window.scrollTo(0, 0); tab.focus({ preventScroll: true }); }
+    return;
+  }
+  if (e.target.id === 'railsum-edit') {
+    railEditing = !railEditing;
+    renderRailSummary(); queueChrome();
+    var back = document.getElementById('railsum-edit');
+    if (back) back.focus();
+    return;
+  }
   if (e.target.id === 'startbtn' || e.target.id === 'mdedit') {
     openMandateDialog(e.target); return;
   }
@@ -3321,7 +3606,9 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'dlgcancel' || e.target.id === 'dlgclose') {
     closeMandateDialog(); return;
   }
-  if (e.target.id === 'dlgaccount') { openAccountDialog(); return; }
+  if (e.target.id === 'dlgaccount' || e.target.id === 'lpaccount') {
+    openAccountDialog(e.target); return;
+  }
   if (e.target.id === 'accancel' || e.target.id === 'acclose' || e.target.id === 'acdone') {
     if (!(account && account.submitting)) closeAccountDialog();
     return;
@@ -3591,6 +3878,7 @@ return {
   headerName: headerName,
   fullName: fullName,
   available: available,
+  whyUnavailable: whyUnavailable,
   used: used,
   slotsLeft: slotsLeft,
   reAllowed: reAllowed,

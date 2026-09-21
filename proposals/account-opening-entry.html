@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Where account opening begins</title>
+<style>
+:root{
+  --bg:#FBFCFE;--surface:#fff;--s2:#F0F2F5;--ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;--line3:#C2CBD6;
+  --accent:#1F5FBF;--accent2:#446cce;--navy:#16243A;
+  --neg:#B42318;--pos:#176A33;--amber:#B45309;--amber-bg:#FEF3C7;
+  --cat1:#2a78d6;--cat2:#eb6834;--cat3:#1baf7a;--cat4:#eda100;--cat5:#e87ba4;--cat6:#4a3aa7;--cat7:#e34948;
+  --num:"GS Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"GS Sans","Goldman Sans",Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:225px minmax(0,1fr);gap:46px}
+header.top{background:var(--navy);color:#fff;padding:54px 0 42px;margin-bottom:38px}
+header.top .wrap{display:block}
+.kick{font:700 12px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:#F3C46B;margin:0 0 14px}
+h1{font:400 clamp(30px,5vw,42px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 14px;text-wrap:balance}
+header.top p{max-width:72ch;color:#B6C2D2;margin:0 0 9px}
+header.top code{background:#22314A;color:#CBDAEC;padding:2px 5px;border-radius:3px;font:13px var(--num)}
+header.top .quote{border-left:3px solid #3B4F6C;padding:2px 0 2px 16px;margin:20px 0 0;color:#D6DFEA;font-style:italic;max-width:74ch}
+nav.toc{position:sticky;top:20px;align-self:start;font-size:13.5px;max-height:calc(100vh - 40px);overflow:auto;padding-bottom:20px}
+nav.toc p{font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--line);color:var(--ink2);text-decoration:none;transition:.12s}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--accent)}
+nav.toc a b{font-family:var(--num);color:var(--ink3);font-weight:700;margin-right:7px}
+main{min-width:0;padding-bottom:90px}
+h2{font:400 clamp(24px,3.4vw,30px)/1.18 var(--body);letter-spacing:-.02em;margin:56px 0 8px;text-wrap:balance}
+h2:first-child{margin-top:0}
+h2 small{display:block;font:700 11.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3{font:600 17.5px/1.35 var(--body);margin:0;letter-spacing:-.005em}
+h4.sub{font:600 13px/1.4 var(--body);margin:22px 0 6px;color:var(--ink)}
+.lede{color:var(--ink2);max-width:70ch;margin:0 0 20px}
+p{max-width:72ch}
+code{font:13.5px var(--num);background:var(--s2);padding:2px 6px;border-radius:3px;color:var(--navy);letter-spacing:.01em}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:20px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:16px 18px}
+.fact b{display:block;font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:7px}
+.fact p{margin:0;font-size:14.5px;line-height:1.5;max-width:none}
+.fact p+p{margin-top:8px}
+.fact.yes{border-left:3px solid var(--pos)}
+.fact.no{border-left:3px solid var(--neg)}
+.fact.warn{border-left:3px solid var(--amber)}
+.src{display:block;margin-top:9px;font:11.5px var(--num);color:var(--ink3);letter-spacing:.02em}
+.scroller{overflow-x:auto;margin:20px 0;background:var(--surface);border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:700px}
+th{font:700 11px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:12px 15px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:12px 15px;border-top:1px solid var(--line);vertical-align:top}
+tr.pickrow td{background:#F5F8FD}
+td.opt{font:700 13px var(--num);color:var(--accent);white-space:nowrap}
+.tick{color:var(--pos);font-weight:700}.cross{color:var(--neg);font-weight:700}.part{color:var(--amber);font-weight:700}
+/* option cards */
+.opt{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:22px 24px 20px;margin:16px 0;scroll-margin-top:20px}
+.opt.pick{border:1px solid var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.08)}
+.opt.drop{background:#FCFCFD;border-style:dashed}
+.opt-h{display:flex;gap:13px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.opt-h .n{font:700 13px/1 var(--num);color:#fff;background:var(--navy);border-radius:5px;padding:6px 8px;letter-spacing:.04em}
+.opt.pick .opt-h .n{background:var(--accent)}
+.opt.drop .opt-h .n{background:var(--ink3)}
+.opt-h h3{flex:1 1 230px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font:700 10.5px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--s2);color:var(--ink2)}
+.tag.s{background:#E7F4EC;color:var(--pos)}.tag.m{background:var(--amber-bg);color:var(--amber)}
+.tag.l{background:#F3E8FF;color:#6B21A8}.tag.rec{background:#E3EBFA;color:#1E4FA3}
+.opt p.sum{color:var(--ink2);margin:0 0 4px;max-width:68ch}
+.pro-con{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px 26px;margin:14px 0 0}
+.pro-con h4{font:700 10.5px/1 var(--num);letter-spacing:.13em;text-transform:uppercase;margin:0 0 7px}
+.pro-con .g h4{color:var(--pos)}.pro-con .c h4{color:var(--amber)}
+.pro-con ul{margin:0;padding-left:17px;font-size:14.5px;color:var(--ink2)}
+.pro-con li{margin:4px 0}
+.build{margin:14px 0 0;padding:12px 15px;background:var(--s2);border-radius:7px;font-size:13.5px;color:var(--ink2);max-width:none}
+.build b{font:700 10.5px var(--num);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:5px}
+/* ── rendered examples, in the tool's own idiom ── */
+.demo{border:1px dashed var(--line3);border-radius:10px;background:#fff;overflow:hidden;margin:16px 0 4px}
+.demo-l{font:700 10.5px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);
+  padding:10px 14px;background:var(--s2);border-bottom:1px dashed var(--line3)}
+.pad{padding:24px 26px;background:var(--bg)}
+/* landing page */
+.lp{padding:28px 32px 30px;position:relative;background:var(--bg)}
+.lp-eyebrow{font:600 10px/1 var(--num);letter-spacing:.24em;text-transform:uppercase;color:var(--ink3);margin:0 0 16px}
+.lp-eyebrow b{color:var(--accent);font-weight:700}
+.lp-title{font-weight:400;font-size:clamp(26px,4.2vw,40px);line-height:.96;letter-spacing:-.045em;color:var(--ink);margin:0}
+.lp-title span{display:block}
+.lp-title .ac{color:var(--accent2)}
+.lp-spec{display:flex;gap:2px;height:11px;border-radius:2px;overflow:hidden;margin:16px 0 0;max-width:620px}
+.lp-spec i{flex:1}
+.lp-points{list-style:none;margin:18px 0 20px;padding:0;display:grid;gap:9px}
+.lp-points li{position:relative;padding-left:22px;font-size:14.5px;color:var(--ink2)}
+.lp-points li::before{content:"";position:absolute;left:0;top:.5em;width:8px;height:8px;background:var(--accent)}
+.lp-cta{display:inline-flex;align-items:center;gap:12px;background:var(--accent);color:#fff;
+  padding:13px 26px;font-size:15px;border:0}
+.lp-cta::after{content:"\2192"}
+.lp-second{display:inline-flex;align-items:center;gap:10px;background:#fff;color:var(--navy);
+  padding:13px 22px;font-size:15px;border:1px solid var(--line2)}
+.lp-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.lp-hint{font-size:13px;color:var(--ink3);margin:10px 0 0}
+.adm-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--navy);color:#CBD6E4;
+  padding:9px 16px;font-size:13.5px;margin-top:22px;border-radius:5px}
+.adm-strip .lbl{font:700 10px var(--num);letter-spacing:.15em;text-transform:uppercase;color:#8FA2BC}
+.adm-strip a{color:#fff;text-decoration:none;border-bottom:1px solid #3B4F6C;padding-bottom:1px}
+.adm-strip .sp{flex:1}
+/* modal card, as the tool draws it */
+.card{background:#fff;border-radius:10px;box-shadow:0 18px 50px rgba(16,24,40,.16);border:1px solid var(--line);
+  padding:24px 26px 20px;max-width:430px;position:relative}
+.card.wide{max-width:600px}
+.card .x{position:absolute;top:10px;right:13px;color:var(--ink3);font-size:19px;line-height:1}
+.card h3.shout{font:400 26px/1.15 var(--body);letter-spacing:-.03em;margin:0 0 16px}
+.fld{margin:0 0 13px}
+.fld label{display:block;font-size:12.5px;color:var(--ink2);margin-bottom:5px}
+.fld .box{border:1px solid var(--line2);border-radius:4px;padding:9px 11px;font-size:14.5px;color:var(--ink);background:#fff}
+.fld .box.ph{color:var(--ink3)}
+.fld .hint{font-size:12px;color:var(--ink3);margin-top:4px}
+.acts{display:flex;gap:9px;align-items:center;margin-top:18px}
+.acts.split{justify-content:space-between}
+.grp{display:flex;gap:9px}
+.btn{font:500 13.5px var(--body);padding:9px 17px;border-radius:4px;border:1px solid var(--line2);background:#fff;color:var(--ink);white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--accent)}
+.btn.odd{border-color:var(--neg);color:var(--neg);background:#FEF3F2}
+.btn.sm{font-size:12.5px;padding:7px 13px}
+/* flow diagram */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:18px 0}
+.step{flex:1 1 150px;min-width:150px;border:1px solid var(--line2);background:#fff;padding:12px 14px;position:relative}
+.step+.step{border-left:0}
+.step:first-child{border-radius:7px 0 0 7px}
+.step:last-child{border-radius:0 7px 7px 0}
+.step b{display:block;font:700 10px var(--num);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px}
+.step span{font-size:13.5px;color:var(--ink);display:block;line-height:1.4}
+.step.bad{background:#FEF3F2;border-color:#F3C1BC}
+.step.bad b{color:var(--neg)}
+.step.good{background:#F1F8F3;border-color:#BEDFC8}
+.step.good b{color:var(--pos)}
+@media (max-width:640px){.flow{display:grid;grid-template-columns:1fr}
+  .step{border-left:1px solid var(--line2)!important;border-radius:0!important;border-top:0}
+  .step:first-child{border-top:1px solid var(--line2);border-radius:7px 7px 0 0!important}
+  .step:last-child{border-radius:0 0 7px 7px!important}}
+/* completion panel */
+.done{border:1px solid #BEDFC8;background:#F1F8F3;border-radius:9px;padding:18px 20px;max-width:560px}
+.done .tick-big{color:var(--pos);font-size:19px;font-weight:700;margin-bottom:6px}
+.done h4{margin:0 0 3px;font:600 16px var(--body)}
+.done p{margin:0 0 12px;font-size:14px;color:var(--ink2);max-width:none}
+.uid{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line2);border-radius:6px;
+  padding:10px 12px;margin:0 0 13px;flex-wrap:wrap}
+.uid .k{font:700 10px var(--num);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3)}
+.uid .v{font:600 15px var(--num);color:var(--navy);letter-spacing:.03em;flex:1 1 auto}
+/* picker list */
+.plist{border:1px solid var(--line2);border-radius:8px;background:#fff;overflow:hidden;max-width:620px}
+.prow{display:flex;gap:14px;align-items:center;padding:12px 15px;border-top:1px solid var(--line);flex-wrap:wrap}
+.prow:first-child{border-top:0}
+.prow.on{background:#E9F0FB}
+.prow .who{flex:1 1 180px;min-width:0}
+.prow .who b{display:block;font-size:14.5px;font-weight:600}
+.prow .who small{font:12px var(--num);color:var(--ink3);letter-spacing:.02em}
+.prow .amt{font:600 14px var(--num);color:var(--navy);font-variant-numeric:tabular-nums;white-space:nowrap}
+.badge{font:700 10px var(--num);letter-spacing:.1em;text-transform:uppercase;padding:4px 8px;border-radius:10px;white-space:nowrap}
+.badge.open{background:#E7F4EC;color:var(--pos)}
+.badge.has{background:var(--s2);color:var(--ink3)}
+.psearch{padding:10px 15px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink3);background:var(--s2)}
+/* register row */
+.reg{border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:#fff}
+.reghead{display:flex;gap:14px;padding:9px 15px;background:var(--s2);font:700 10px var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+.regrow{display:flex;gap:14px;padding:11px 15px;border-top:1px solid var(--line);font-size:13.5px;align-items:center}
+.reg .c1{flex:0 0 132px;font:600 12.5px var(--num);color:var(--accent);letter-spacing:.02em}
+.reg .c2{flex:1 1 130px;min-width:0}
+.reg .c3{flex:0 0 96px;font-family:var(--num);font-variant-numeric:tabular-nums;text-align:right}
+.reg .c4{flex:0 0 132px;text-align:right}
+.note{border-left:3px solid #B7862A;background:#FFFBF0;padding:13px 17px;border-radius:0 7px 7px 0;font-size:14.5px;color:var(--ink2);margin:18px 0}
+.note.blue{border-left-color:var(--accent);background:#F2F6FD}
+.note.red{border-left-color:var(--neg);background:#FEF6F5}
+.note p{max-width:none;margin:0}
+.note p+p{margin-top:9px}
+.note b.hd{display:block;font:700 10.5px var(--num);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
+ol.seq{counter-reset:s;list-style:none;padding:0;margin:18px 0}
+ol.seq li{position:relative;padding:0 0 0 44px;margin:0 0 16px;max-width:70ch}
+ol.seq li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:28px;height:28px;
+  border-radius:50%;background:var(--navy);color:#fff;font:700 13px/28px var(--num);text-align:center}
+ol.seq li b{display:block;font-weight:600}
+ol.seq li span{color:var(--ink2);font-size:14.5px}
+ul.q{padding-left:18px;color:var(--ink2);font-size:15px}
+ul.q li{margin:9px 0;max-width:70ch}
+ul.q li b{color:var(--ink);font-weight:600}
+footer{color:var(--ink3);font-size:13.5px;border-top:1px solid var(--line);padding-top:19px;margin-top:52px}
+footer p{max-width:none}
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;max-height:none;margin-bottom:30px;columns:2}
+  header.top{padding:38px 0 30px}
+}
+@media (max-width:560px){
+  .wrap{padding:0 16px}
+  nav.toc{columns:1}
+  .lp,.pad{padding:18px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="kick">Proposal &middot; Account opening</p>
+    <h1>Where account opening begins</h1>
+    <p>Today the account opening request is a third button inside the <em>Start a proposal</em> card &mdash; a card whose entire subject is beginning something that the account request requires to have already finished. Seven options for putting the entry where the work actually is, with one recommendation.</p>
+    <p class="quote">&ldquo;&hellip;this sits in a start proposal card, which makes no sense because opening account is in some ways independent to starting a proposal scenario, in fact it IMPLIES that has already been done, since the account opening request requires a proposal uid.&rdquo;</p>
+  </div>
+</header>
+
+<div class="wrap">
+<nav class="toc">
+  <p>Contents</p>
+  <a href="#s1"><b>01</b>The complaint, stated exactly</a>
+  <a href="#s2"><b>02</b>What the code does today</a>
+  <a href="#s3"><b>03</b>Diagnosis: three faults</a>
+  <a href="#s4"><b>04</b>What a fix has to satisfy</a>
+  <a href="#s5"><b>05</b>Option 1 &middot; Hand over the UID</a>
+  <a href="#s6"><b>06</b>Option 2 &middot; A second front door</a>
+  <a href="#s7"><b>07</b>Option 3 &middot; Pick, don't type</a>
+  <a href="#s8"><b>08</b>Option 4 &middot; From the register</a>
+  <a href="#s9"><b>09</b>Option 5 &middot; A link that carries it</a>
+  <a href="#s10"><b>10</b>Option 6 &middot; A fourth step</a>
+  <a href="#s11"><b>11</b>Option 7 &middot; Minimum change</a>
+  <a href="#s12"><b>12</b>Side by side</a>
+  <a href="#s13"><b>13</b>Recommendation</a>
+  <a href="#s14"><b>14</b>Decisions I need</a>
+</nav>
+
+<main>
+
+<h2 id="s1"><small>01</small>The complaint, stated exactly</h2>
+<p class="lede">The path a PWA walks today to raise an account opening request, and where it goes wrong.</p>
+
+<div class="flow">
+  <div class="step"><b>Step 1</b><span>Land on the home page</span></div>
+  <div class="step bad"><b>Step 2 &middot; wrong</b><span>Press <em>Start Here</em> &mdash; the control for beginning a proposal</span></div>
+  <div class="step bad"><b>Step 3 &middot; wrong</b><span>Inside the <em>Start a proposal</em> card, ignore the mandate fields and press the third button</span></div>
+  <div class="step bad"><b>Step 4 &middot; wrong</b><span>Type a 12&ndash;hex Proposal UID the tool never showed you</span></div>
+  <div class="step"><b>Step 5</b><span>Fill nine fields and submit</span></div>
+</div>
+
+<p>Three of the five steps are wrong, and they are wrong in different ways. Step 2 asks the user to declare they are starting a proposal when they are not. Step 3 buries a terminal action among the controls of an opening one. Step 4 asks for a fact the user can only get by going to their downloads folder and reading a filename.</p>
+
+<div class="demo">
+  <div class="demo-l">Today &mdash; the landing card, as <code>renderDialog()</code> draws it</div>
+  <div class="pad" style="display:flex;justify-content:center">
+    <div class="card">
+      <span class="x">&times;</span>
+      <h3 class="shout">Start a proposal</h3>
+      <div class="fld"><label>Top Account Size ($AUS)</label><div class="box ph">&nbsp;</div></div>
+      <div class="fld"><label>Mandate size</label><div class="box ph">&nbsp;</div><div class="hint">Minimum $5,000,000</div></div>
+      <div class="fld"><label>Primary PWA</label><div class="box ph">&nbsp;</div></div>
+      <div class="acts split">
+        <div class="grp">
+          <span class="btn pri">Continue</span>
+          <span class="btn ghost">Cancel</span>
+        </div>
+        <span class="btn odd">Create Account Opening Request</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="lp-hint">The third button is a sibling of <em>Continue</em>. It is also the only route to the account form anywhere in the product &mdash; and pressing it throws away whatever the user had typed into the three fields above it.</p>
+
+<h2 id="s2"><small>02</small>What the code does today</h2>
+<p class="lede">Six facts, each read off the source rather than assumed. They decide which options are cheap and which are not.</p>
+
+<div class="grid3">
+  <div class="fact no">
+    <b>One door, and it is the wrong one</b>
+    <p><code>id="dlgaccount"</code> is emitted only in the <code>first</code> branch &mdash; the landing variant of the card. <em>Edit mandate</em> does not carry it; no step, rail or menu carries it. Miss that button and the feature does not exist.</p>
+    <span class="src">core.js &middot; renderDialog()</span>
+  </div>
+  <div class="fact no">
+    <b>Opening it destroys work</b>
+    <p><code>if (draft) { draft = null; renderDialog(); }</code> &mdash; the mandate draft is discarded with no warning. A mis-click costs the three fields the user just filled.</p>
+    <span class="src">core.js &middot; openAccountDialog()</span>
+  </div>
+  <div class="fact warn">
+    <b>The tool already knows the UID &mdash; and drops it</b>
+    <p>The export response carries <code>X-Proposal-Id</code>, and the UID sits inside the filename the page already parses into a local variable. Both are discarded; the page announces &ldquo;Workbook downloaded.&rdquo; and nothing more.</p>
+    <span class="src">dashboardRouter.py &middot; implementation.js &middot; exportWorkbook()</span>
+  </div>
+  <div class="fact no">
+    <b>The 404 sends you to a filename</b>
+    <p>A UID that does not resolve returns: <em>&ldquo;Check the end of the workbook's name or cell B1 of its Implementation sheet.&rdquo;</em> That is the product telling the user to go and read a spreadsheet to operate the product.</p>
+    <span class="src">dashboardRouter.py &middot; lookupProposal()</span>
+  </div>
+  <div class="fact no">
+    <b>A PWA cannot list their own proposals</b>
+    <p><code>GET /scenario/repository/proposals</code> &mdash; the register &mdash; is <code>requireAdmin</code>. There is no caller-scoped list. <strong>This is the structural reason the UID must be typed at all.</strong></p>
+    <span class="src">dashboardRouter.py</span>
+  </div>
+  <div class="fact warn">
+    <b>One request per proposal &mdash; invisibly</b>
+    <p>A second request is refused naming the first (D76). But nothing in the UI &mdash; not even the admin console &mdash; shows which proposals already have a request, so the refusal only ever arrives as a surprise at submit time.</p>
+    <span class="src">accountRequests.py &middot; repository.js (no account view)</span>
+  </div>
+</div>
+
+<div class="note red">
+  <b class="hd">Worth fixing while we are here</b>
+  <p><code>GET /scenario/proposals/{proposalId}</code> and <code>GET /scenario/account-requests/{requestId}</code> carry <strong>no auth dependency at all</strong>. Today the UID is effectively the only secret protecting a proposal's client name, mandate size and sleeve list &mdash; and that UID is printed in a filename that travels by email. Any option below that touches this route should put <code>requireAuth</code> on it.</p>
+</div>
+
+<div class="note blue">
+  <b class="hd">One scenario mints many proposals</b>
+  <p><code>proposalRegister.newProposalId()</code> runs on <em>every</em> export, so a scenario exported three times has produced three distinct proposals, each with its own UID and register row. The unit the account request attaches to is the <strong>proposal</strong>, not the scenario. This rules out one otherwise-tempting option (see 6) and shapes what the picker in option 3 must list.</p>
+</div>
+
+<h2 id="s3"><small>03</small>Diagnosis: three faults, not one</h2>
+<p class="lede">Moving the button fixes one of them. It is worth being clear which.</p>
+
+<div class="grid3">
+  <div class="fact">
+    <b>Fault A &middot; Placement</b>
+    <p>A terminal action sits among the controls of an opening one, where its only available neighbours are <em>Continue</em> and <em>Cancel</em>. This is the fault you named.</p>
+  </div>
+  <div class="fact">
+    <b>Fault B &middot; Timing</b>
+    <p>The action is offered at the one moment it can never be used &mdash; before any proposal exists &mdash; and withheld at the one moment it always can: the second after an export mints a UID.</p>
+  </div>
+  <div class="fact">
+    <b>Fault C &middot; Identity</b>
+    <p>The UID is a handle the system owns and the user does not. Asking for it as free text makes the user the courier of the system's own primary key.</p>
+  </div>
+</div>
+
+<p>Fault B is the cheapest to fix and probably removes most of the pain on its own: a PWA who has just exported never has to find a UID again. Fault C is what makes the flow survivable weeks later, when the proposal has gone to the client and the request comes back. Fault A is a five-minute move once B and C give the action somewhere honest to live.</p>
+
+<h2 id="s4"><small>04</small>What a fix has to satisfy</h2>
+<p class="lede">Constraints the options are scored against, drawn from the model rather than from taste.</p>
+
+<ol class="seq">
+  <li><b>It must work cold.</b><span>A request may be raised weeks after delivery, in a fresh session, with no scenario loaded. Any design that only works inside a live scenario fails the main case.</span></li>
+  <li><b>It must work warm.</b><span>The commonest case is almost certainly &ldquo;I just exported and I want the account opened.&rdquo; That path should require no UID at all.</span></li>
+  <li><b>It must not claim a proposal exists when it does not.</b><span>The entry must read as an action on delivered work, never as an alternative way to start.</span></li>
+  <li><b>One per proposal must be visible before submit.</b><span>The D76 refusal should be surfaced as state, not delivered as an error after nine fields.</span></li>
+  <li><b>It must stay usable by a PWA.</b><span>Admin-only is not a solution; the person raising the request is the advisor, not the console operator.</span></li>
+</ol>
+
+<h2 id="s5"><small>05</small>Option 1 &middot; Hand over the UID at the moment it is minted</h2>
+
+<div class="opt pick" id="o1">
+  <div class="opt-h">
+    <span class="n">01</span>
+    <h3>The export completes into a handover panel</h3>
+    <div class="tags"><span class="tag s">Small</span><span class="tag rec">Recommended</span><span class="tag">Front end only</span></div>
+  </div>
+  <p class="sum">A successful export currently ends in a six-word announcement. Instead, the export button's place is taken by a completion panel that states the Proposal UID, offers to copy it, and offers the account opening request as the obvious next action &mdash; opening the form with the UID already resolved, skipping the lookup entirely.</p>
+
+  <div class="demo">
+    <div class="demo-l">Step 2 &middot; after a successful export</div>
+    <div class="pad">
+      <div class="done">
+        <div class="tick-big">&#10003;</div>
+        <h4>Proposal delivered</h4>
+        <p>PMG_Scenario_USD_Hedged_2026&#8209;09&#8209;21_pr_bafdb99b80ba.xlsx has downloaded. The workbook is protected; the Proposal UID below identifies it for the rest of its life.</p>
+        <div class="uid">
+          <span class="k">Proposal UID</span>
+          <span class="v">pr_bafdb99b80ba</span>
+          <span class="btn sm">Copy</span>
+        </div>
+        <div class="acts" style="margin-top:0">
+          <span class="btn pri">Start account opening request</span>
+          <span class="btn">Export again</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Fixes fault B outright, for what is likely the majority path.</li>
+      <li>The UID stops being a secret the user has to go and find.</li>
+      <li>Gives the export an ending. Today it just stops.</li>
+      <li>Nothing to type, so nothing to mistype: the 422/404 branches never fire on this path.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Does nothing for the cold case &mdash; a request raised next month still needs a route.</li>
+      <li>The account dialog is defined in <code>core.js</code> and opened from the landing card; it needs a way in from step 2.</li>
+      <li>One more state in the export gate to design and test.</li>
+    </ul></div>
+  </div>
+
+  <div class="build"><b>Build</b>
+    Read <code>resp.headers.get('X-Proposal-Id')</code> in <code>exportWorkbook()</code> (the value is already on the wire), store it on <code>App.exporting()</code>, and render the panel in place of the export control. Expose <code>openAccountDialog(uid)</code> so a supplied UID lands in <code>account.uid</code> and goes straight to <code>status:'looking'</code>. No backend change whatsoever.
+  </div>
+</div>
+
+<h2 id="s6"><small>06</small>Option 2 &middot; A second front door on the landing page</h2>
+
+<div class="opt pick" id="o2">
+  <div class="opt-h">
+    <span class="n">02</span>
+    <h3>Two peer entries, not one nested inside the other</h3>
+    <div class="tags"><span class="tag s">Small</span><span class="tag rec">Recommended</span><span class="tag">Front end only</span></div>
+  </div>
+  <p class="sum">Promote the action out of the card and onto the landing page itself, as a quieter sibling of <em>Start Here</em>. Two doors, plainly labelled by what lies behind each: one begins a proposal, the other acts on a proposal already delivered. The button leaves the <em>Start a proposal</em> card entirely.</p>
+
+  <div class="demo">
+    <div class="demo-l">Landing page &mdash; two entries</div>
+    <div class="lp">
+      <p class="lp-eyebrow">Portfolio Management Group &middot; <b>Proposal Tool</b></p>
+      <h1 class="lp-title"><span>Build a portfolio</span><span class="ac">proposal</span></h1>
+      <div class="lp-spec">
+        <i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i>
+        <i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i>
+        <i style="background:var(--cat7)"></i>
+      </div>
+      <ul class="lp-points">
+        <li>Set the mandate, choose the allocation, price the implementation</li>
+        <li>Export a protected workbook with a permanent Proposal UID</li>
+      </ul>
+      <div class="lp-row">
+        <span class="lp-cta">Start Here</span>
+        <span class="lp-second">Open an account</span>
+      </div>
+      <p class="lp-hint">Already delivered a proposal? Raise the account opening request against it &mdash; no new scenario needed.</p>
+      <div class="adm-strip">
+        <span class="lbl">Admin</span><span>f.barker</span><span class="sp"></span>
+        <a href="#">Sleeves</a><a href="#">Catalogue</a><a href="#">Archive</a><a href="#">Activity</a><a href="#">Proposals</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Fixes fault A directly, and is the option that most literally answers the complaint.</li>
+      <li>Makes the feature discoverable &mdash; today it is hidden one level down behind a control that means something else.</li>
+      <li>Reads correctly: the label names a delivered proposal, so it cannot be mistaken for a way to start one.</li>
+      <li>Sits naturally beside the D106 admin strip; the landing page becomes the product's real hall, with three ways out by role.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>On its own it still drops the user onto a blank UID field &mdash; fault C untouched.</li>
+      <li>Adds weight to a landing page that currently has one clean call to action.</li>
+      <li>Needs a decision on whether the second door is visible to everyone or only to users who have exported something.</li>
+    </ul></div>
+  </div>
+
+  <div class="build"><b>Build</b>
+    Markup in <code>build_styles.py</code> beside <code>.lp-cta</code>; a <code>.lp-second</code> rule in the landing CSS; one click handler calling <code>openAccountDialog()</code>. Delete the <code>dlgaccount</code> branch from <code>renderDialog()</code> and the &ldquo;three actions&rdquo; comment with it, which also removes the draft-discarding line.
+  </div>
+</div>
+
+<h2 id="s7"><small>07</small>Option 3 &middot; Pick a proposal, don't type its key</h2>
+
+<div class="opt pick" id="o3">
+  <div class="opt-h">
+    <span class="n">03</span>
+    <h3>Your delivered proposals, as a list</h3>
+    <div class="tags"><span class="tag m">Medium</span><span class="tag rec">Recommended</span><span class="tag">Backend change</span></div>
+  </div>
+  <p class="sum">The reason the flow demands a UID is that the register is admin-only, so the advisor has no way to see their own work. Add a caller-scoped list &mdash; <code>GET /scenario/proposals/mine</code> &mdash; and the first screen of the account flow becomes a short list of proposals you delivered, each showing whether a request already exists. Typing a UID survives as the fallback for a proposal that is not yours.</p>
+
+  <div class="demo">
+    <div class="demo-l">Account opening &mdash; first screen, replacing the blank UID field</div>
+    <div class="pad" style="display:flex;justify-content:center">
+      <div class="card wide">
+        <span class="x">&times;</span>
+        <h3 class="shout">Open an account</h3>
+        <p style="font-size:14px;color:var(--ink2);margin:0 0 14px">Choose the delivered proposal this account is being opened against.</p>
+        <div class="plist">
+          <div class="psearch">Filter by client or UID&hellip;</div>
+          <div class="prow on">
+            <div class="who"><b>Ashworth Family Trust</b><small>pr_bafdb99b80ba &middot; 21 Sep 2026 &middot; USD Hedged &middot; Level 4</small></div>
+            <span class="amt">$25,000,000</span>
+            <span class="badge open">No request yet</span>
+          </div>
+          <div class="prow">
+            <div class="who"><b>Kelmarsh Holdings Pty</b><small>pr_7c41e0a9d2f8 &middot; 18 Sep 2026 &middot; AUD Unhedged &middot; Level 3</small></div>
+            <span class="amt">$12,500,000</span>
+            <span class="badge has">Request AR-0041</span>
+          </div>
+          <div class="prow">
+            <div class="who"><b>Ashworth Family Trust</b><small>pr_10d6b2ce4401 &middot; 12 Sep 2026 &middot; USD Hedged &middot; Level 4</small></div>
+            <span class="amt">$25,000,000</span>
+            <span class="badge has">Superseded</span>
+          </div>
+        </div>
+        <div class="acts split">
+          <span class="btn ghost">I have a UID instead</span>
+          <span class="btn pri">Continue</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Fixes fault C, and is the only option that makes the cold case pleasant.</li>
+      <li>Surfaces the one-per-proposal rule <em>before</em> the form, as a badge rather than a submit-time refusal (requirement 4).</li>
+      <li>Disambiguates re-exports: three proposals from one scenario are three rows with three dates, so the advisor picks the one actually sent.</li>
+      <li>Removes the 422/404 paths from the common case.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>A new endpoint and an authorisation decision &mdash; see &ldquo;Decisions I need&rdquo;.</li>
+      <li>Most work of any option here: a new screen, a new list state, and tests for the scoping.</li>
+      <li>An advisor who covers for a colleague on leave needs the UID fallback, so that path cannot be deleted.</li>
+    </ul></div>
+  </div>
+
+  <div class="build"><b>Build</b>
+    A <code>requireAuth</code> route filtering the register on the caller &mdash; the row already carries <code>exportedBy</code>, <code>createdBy</code> and <code>primaryPwa</code>, so scoping is a predicate, not a schema change. Join <code>forProposal()</code> per row for the badge. Front end: a list state ahead of <code>AC_FIELDS</code>, with <code>acuid</code> demoted to a fallback. Add <code>requireAuth</code> to <code>lookupProposal</code> in the same change.
+  </div>
+</div>
+
+<h2 id="s8"><small>08</small>Option 4 &middot; Start it from the Proposals register</h2>
+
+<div class="opt" id="o4">
+  <div class="opt-h">
+    <span class="n">04</span>
+    <h3>A row action in the admin console</h3>
+    <div class="tags"><span class="tag s">Small</span><span class="tag">Admin only</span></div>
+  </div>
+  <p class="sum">The console's Proposals register is already exactly the list an account request would be raised against. Give each row an <em>Account request</em> action that opens the form pre-resolved, and add a column showing which proposals already have one &mdash; the register's most obvious missing fact.</p>
+
+  <div class="demo">
+    <div class="demo-l">Repository console &middot; Proposals</div>
+    <div class="pad">
+      <div class="reg">
+        <div class="reghead"><span class="c1">Proposal UID</span><span class="c2">Client / PWA</span><span class="c3">Mandate</span><span class="c4">Account request</span></div>
+        <div class="regrow"><span class="c1">pr_bafdb99b80ba</span><span class="c2">Ashworth Family Trust<br><small style="color:var(--ink3)">j.mercer &middot; 21 Sep</small></span><span class="c3">$25,000,000</span><span class="c4"><span class="btn sm">Raise</span></span></div>
+        <div class="regrow"><span class="c1">pr_7c41e0a9d2f8</span><span class="c2">Kelmarsh Holdings Pty<br><small style="color:var(--ink3)">a.dunne &middot; 18 Sep</small></span><span class="c3">$12,500,000</span><span class="c4"><span class="badge has">AR-0041</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Completes the console: today an admin cannot see account requests at all.</li>
+      <li>Gives the desk a way to raise a request on an advisor's behalf without asking them for a UID.</li>
+      <li>Very cheap once option 3's join exists &mdash; it is the same data in a different frame.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Fails requirement 5 on its own: the PWA still has no route.</li>
+      <li>Does not answer the complaint &mdash; the landing card is untouched.</li>
+      <li>Invites requests raised by someone who did not write the proposal, which may not be what Onboarding wants.</li>
+    </ul></div>
+  </div>
+
+  <div class="build"><b>Build</b>
+    A column and a row action in <code>repository.js</code>, plus a request lookup on the register response. Best taken as a follow-on to option 3, whose backend join it reuses.
+  </div>
+</div>
+
+<h2 id="s9"><small>09</small>Option 5 &middot; A link that carries the UID</h2>
+
+<div class="opt" id="o5">
+  <div class="opt-h">
+    <span class="n">05</span>
+    <h3>Deep link into the form, pre-resolved</h3>
+    <div class="tags"><span class="tag s">Small</span><span class="tag">Rider</span></div>
+  </div>
+  <p class="sum">Make <code>proposalTool.html#account/pr_bafdb99b80ba</code> open the account form with that proposal already looked up. The link then goes wherever the UID goes: the completion panel's <em>Copy link</em>, a cell on the workbook's Implementation sheet beside B1, and any email that forwards the proposal onward.</p>
+
+  <div class="demo">
+    <div class="demo-l">The same UID, three carriers</div>
+    <div class="pad">
+      <div class="uid" style="max-width:560px"><span class="k">Workbook</span><span class="v" style="font-size:13px">PMG_Scenario_USD_Hedged_2026&#8209;09&#8209;21_<b>pr_bafdb99b80ba</b>.xlsx</span></div>
+      <div class="uid" style="max-width:560px"><span class="k">Sheet B1</span><span class="v" style="font-size:13px">pr_bafdb99b80ba</span></div>
+      <div class="uid" style="max-width:560px"><span class="k">Link</span><span class="v" style="font-size:13px">&hellip;/proposalTool.html#account/pr_bafdb99b80ba</span><span class="btn sm">Copy</span></div>
+    </div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Makes hand-off work: the advisor forwards a link, not an instruction to read a filename.</li>
+      <li>Nearly free &mdash; the hash router already dispatches <code>#repository</code>.</li>
+      <li>Turns cell B1 from a fact into a control.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Puts the UID in a URL, where it lands in history and in mail archives &mdash; which is only acceptable once <code>lookupProposal</code> requires auth.</li>
+      <li>A link in the workbook means a workbook change, and the sheet is now protected.</li>
+      <li>Solves nothing by itself; it is a carrier for options 1 and 2.</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2 id="s10"><small>10</small>Option 6 &middot; Make it a fourth step</h2>
+
+<div class="opt drop" id="o6">
+  <div class="opt-h">
+    <span class="n">06</span>
+    <h3>Step 4 &middot; Account opening, inside the scenario</h3>
+    <div class="tags"><span class="tag l">Large</span><span class="tag">Not recommended</span></div>
+  </div>
+  <p class="sum">Extend the stepper: asset allocation, implementation, then account opening, unlocked once an export has happened. Superficially the tidiest story &mdash; one continuous workflow from mandate to open account.</p>
+
+  <div class="flow">
+    <div class="step"><b>Step 1</b><span>Asset allocation</span></div>
+    <div class="step"><b>Step 2</b><span>Implementation</span></div>
+    <div class="step bad"><b>Step 3 &middot; doesn't fit</b><span>Account opening</span></div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>One legible narrative, with the request where the work ends.</li>
+      <li>Reuses the stepper, the rail and the gate pattern already built.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li><strong>Fails requirement 1.</strong> The commonest real case is a request raised long after the scenario was last opened.</li>
+      <li>A scenario is not a proposal: each export mints a new UID, so &ldquo;the&rdquo; proposal of a scenario is ambiguous by construction.</li>
+      <li>The request is one-per-proposal and permanent; a scenario is a working document that keeps changing under it.</li>
+      <li>Makes the step-3 state depend on register history, which the scenario store does not hold.</li>
+    </ul></div>
+  </div>
+  <div class="note" style="margin-bottom:0"><p><b>Verdict:</b> the attraction is real but the model does not support it. Option 1 delivers the same &ldquo;the work continues&rdquo; feeling without pretending the request belongs to the scenario.</p></div>
+</div>
+
+<h2 id="s11"><small>11</small>Option 7 &middot; Minimum change</h2>
+
+<div class="opt" id="o7">
+  <div class="opt-h">
+    <span class="n">07</span>
+    <h3>Move the button, rename it, stop destroying the draft</h3>
+    <div class="tags"><span class="tag s">Tiny</span><span class="tag">Baseline</span></div>
+  </div>
+  <p class="sum">If only one thing ships: take the button out of the actions row, put it below a rule at the foot of the card as a plainly separate thing, rename it <em>Open an account for a delivered proposal</em>, and preserve the mandate draft when it is pressed.</p>
+
+  <div class="demo">
+    <div class="demo-l">Start a proposal &mdash; the action demoted and separated</div>
+    <div class="pad" style="display:flex;justify-content:center">
+      <div class="card">
+        <span class="x">&times;</span>
+        <h3 class="shout">Start a proposal</h3>
+        <div class="fld"><label>Top Account Size ($AUS)</label><div class="box ph">&nbsp;</div></div>
+        <div class="fld"><label>Mandate size</label><div class="box ph">&nbsp;</div><div class="hint">Minimum $5,000,000</div></div>
+        <div class="fld"><label>Primary PWA</label><div class="box ph">&nbsp;</div></div>
+        <div class="acts" style="justify-content:flex-end">
+          <span class="btn ghost">Cancel</span>
+          <span class="btn pri">Continue</span>
+        </div>
+        <div style="border-top:1px solid var(--line);margin-top:18px;padding-top:14px;font-size:13.5px;color:var(--ink2)">
+          Proposal already delivered? <a href="#o7">Open an account against it</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pro-con">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>An hour's work; removes the &ldquo;makes no sense&rdquo; adjacency and the draft-destruction bug.</li>
+      <li>The label now states the precondition, so the action stops implying it starts anything.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Still behind <em>Start Here</em>: to act on a delivered proposal you must first press the control for starting a new one.</li>
+      <li>Faults B and C untouched.</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2 id="s12"><small>12</small>Side by side</h2>
+
+<div class="scroller">
+<table>
+  <thead><tr>
+    <th>Option</th><th>Starts from</th><th>Works cold</th><th>UID typed</th><th>Backend</th><th>Effort</th><th>Answers the complaint</th>
+  </tr></thead>
+  <tbody>
+    <tr class="pickrow"><td class="opt">01 Handover</td><td>End of export</td><td class="cross">no</td><td class="tick">never</td><td>none</td><td>Small</td><td class="part">indirectly &mdash; removes the need</td></tr>
+    <tr class="pickrow"><td class="opt">02 Second door</td><td>Landing page</td><td class="tick">yes</td><td class="cross">yes</td><td>none</td><td>Small</td><td class="tick">directly</td></tr>
+    <tr class="pickrow"><td class="opt">03 Picker</td><td>Either door</td><td class="tick">yes</td><td class="tick">fallback only</td><td>new route</td><td>Medium</td><td class="tick">directly</td></tr>
+    <tr><td class="opt">04 Register</td><td>Admin console</td><td class="tick">yes</td><td class="tick">no</td><td>join</td><td>Small</td><td class="cross">not for the PWA</td></tr>
+    <tr><td class="opt">05 Deep link</td><td>Anywhere</td><td class="tick">yes</td><td class="tick">no</td><td>auth fix</td><td>Small</td><td class="part">as a carrier</td></tr>
+    <tr><td class="opt">06 Fourth step</td><td>Inside a scenario</td><td class="cross">no</td><td class="tick">no</td><td>state</td><td>Large</td><td class="cross">breaks the model</td></tr>
+    <tr><td class="opt">07 Minimum</td><td>Start&nbsp;Here &rarr; card</td><td class="tick">yes</td><td class="cross">yes</td><td>none</td><td>Tiny</td><td class="part">partly</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="s13"><small>13</small>Recommendation</h2>
+<p class="lede">Options 1, 2 and 3, in that order &mdash; they attack the three faults one each, and each is useful on the day it ships.</p>
+
+<ol class="seq">
+  <li><b>Ship option 1 first.</b><span>It is the cheapest thing here, needs no backend work at all, and almost certainly removes most of the pain: the advisor who has just exported is handed the UID and a button, and never goes looking for either. The value is already on the wire &mdash; today the page reads the header's neighbour and throws this one away.</span></li>
+  <li><b>Then option 2, absorbing option 7.</b><span>Move the action out of the <em>Start a proposal</em> card and onto the landing page as a named second door. This is the literal answer to the complaint, and it retires the draft-destroying line at the top of <code>openAccountDialog()</code>. If the second door feels heavy on a landing page you like as it is, fall back to option 7's foot-of-card treatment &mdash; but the door is better.</span></li>
+  <li><b>Then option 3, with the auth fix.</b><span>The caller-scoped list is the only thing that makes the cold path pleasant, and it is the change that lets the one-per-proposal rule show up as a badge instead of an error. Take <code>requireAuth</code> on <code>lookupProposal</code> and <code>account-requests/{id}</code> in the same commit &mdash; adding a picker while a UID in a filename remains the only protection would be the wrong order.</span></li>
+  <li><b>Take option 5 as a rider on 1 and 3.</b><span>Once the picker exists and the lookup requires auth, the deep link costs an hour and makes hand-off work by mail.</span></li>
+  <li><b>Take option 4 when the console next gets attention.</b><span>It reuses option 3's join and fixes a real gap &mdash; an admin cannot currently see a single account request &mdash; but it is not on the critical path for the complaint.</span></li>
+</ol>
+
+<div class="note blue">
+  <b class="hd">After all three</b>
+  <p>The warm path is: export &rarr; <em>Start account opening request</em> &rarr; nine fields &rarr; done. No UID, no landing page, no card.</p>
+  <p>The cold path is: land &rarr; <em>Open an account</em> &rarr; pick the proposal from your list &rarr; nine fields &rarr; done. Still no UID.</p>
+  <p>The UID field survives for the case it was actually right for all along: a proposal that is not yours, handed to you by someone who has it.</p>
+</div>
+
+<h2 id="s14"><small>14</small>Decisions I need</h2>
+
+<ul class="q">
+  <li><b>Whose proposals go in the list?</b> The register row carries <code>exportedBy</code>, <code>createdBy</code> and <code>primaryPwa</code>, and they are not always the same person. My instinct is <code>primaryPwa</code> OR <code>exportedBy</code> &mdash; the advisor the mandate names, plus whoever actually produced the file &mdash; so cover works without a team model. Say if it should be narrower.</li>
+  <li><b>Should the second door be visible to everyone?</b> A user who has never exported anything would open it onto an empty list. Showing it always is honest and teaches the feature exists; hiding it until the register has a row for you is tidier. I would show it always, with an empty state that explains the precondition.</li>
+  <li><b>Does a re-export supersede the earlier proposal?</b> Today three exports leave three live rows and a request may be raised against any of them. The picker will make that visible for the first time, and it may not be what you want. If later exports should retire earlier ones, that is a register rule, not a UI one &mdash; the mock in option 3 shows a <em>Superseded</em> badge on the assumption you might want it.</li>
+  <li><b>May someone raise a request against a proposal they did not write?</b> Option 4 assumes yes for admins. If Onboarding requires the raiser to be the proposal's advisor, the UID fallback needs a matching check on <code>POST /scenario/account-requests</code>, which it does not have today.</li>
+  <li><b>Where does a submitted request live afterwards?</b> The receipt is shown once and then gone &mdash; there is no way back to a request except by knowing its id, and no screen lists them. Worth deciding now whether the picker's badge should link through to the request.</li>
+</ul>
+
+<footer>
+  <p>Epsilon Phi &middot; Proposal Tool &middot; account opening entry points. Written against the source on branch <code>sleeve-editions</code>, 21 September 2026. Every claim in section 02 is read from <code>generator/js/core.js</code>, <code>generator/js/implementation.js</code>, <code>generator/js/repository.js</code>, <code>service/cyrus_pmg/pmgService/dashboardRouter.py</code>, <code>scenario/accountRequests.py</code> and <code>scenario/rules.py</code>. Mock-ups are static renderings, not screenshots.</p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

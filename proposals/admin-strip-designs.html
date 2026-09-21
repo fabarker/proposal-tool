@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ten strips along the foot</title>
+<style>
+:root{
+  --bg:#FBFCFE;--surface:#fff;--s2:#F0F2F5;--ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;--line3:#C2CBD6;
+  --accent:#1F5FBF;--accent2:#446cce;--navy:#16243A;
+  --neg:#B42318;--pos:#176A33;--amber:#B45309;--amber-bg:#FEF3C7;
+  --cat1:#2a78d6;--cat2:#eb6834;--cat3:#1baf7a;--cat4:#eda100;--cat5:#e87ba4;--cat6:#4a3aa7;--cat7:#e34948;
+  --num:"GS Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"GS Sans","Goldman Sans",Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:210px minmax(0,1fr);gap:44px}
+header.top{background:var(--navy);color:#fff;padding:52px 0 40px;margin-bottom:36px}
+header.top .wrap{display:block}
+.kick{font:700 12px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:#F3C46B;margin:0 0 14px}
+h1{font:400 clamp(30px,5vw,42px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 14px;text-wrap:balance}
+header.top p{max-width:72ch;color:#B6C2D2;margin:0 0 9px}
+header.top code{background:#22314A;color:#CBDAEC;padding:2px 5px;border-radius:3px;font:13px var(--num)}
+nav.toc{position:sticky;top:20px;align-self:start;font-size:13.5px;max-height:calc(100vh - 40px);overflow:auto;padding-bottom:20px}
+nav.toc p{font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--line);color:var(--ink2);text-decoration:none;line-height:1.3}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--accent)}
+nav.toc a b{font-family:var(--num);color:var(--ink3);font-weight:700;margin-right:7px}
+main{min-width:0;padding-bottom:90px}
+h2{font:400 clamp(23px,3.2vw,28px)/1.18 var(--body);letter-spacing:-.02em;margin:52px 0 8px;text-wrap:balance}
+h2:first-child{margin-top:0}
+h2 small{display:block;font:700 11.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3{font:600 17px/1.35 var(--body);margin:0;letter-spacing:-.005em}
+.lede{color:var(--ink2);max-width:70ch;margin:0 0 20px}
+code{font:13.5px var(--num);background:var(--s2);padding:2px 6px;border-radius:3px;color:var(--navy)}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px;margin:20px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:15px 17px}
+.fact b{display:block;font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px}
+.fact p{margin:0;font-size:14.5px;line-height:1.5}
+.scroller{overflow-x:auto;margin:20px 0;background:var(--surface);border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:600px}
+th{font:700 11px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 14px;background:var(--s2)}
+td{padding:11px 14px;border-top:1px solid var(--line);vertical-align:top}
+td.n{font:700 13px var(--num);color:var(--accent);white-space:nowrap}
+.hi{color:var(--pos);font-weight:700}.lo{color:var(--amber);font-weight:700}.mid{color:var(--ink2)}
+/* variant card */
+.v{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:20px 22px 18px;margin:16px 0;scroll-margin-top:18px}
+.v.pick{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.08)}
+.v-h{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.v-h .num{font:700 13px/1 var(--num);color:#fff;background:var(--navy);border-radius:5px;padding:6px 8px}
+.v.pick .v-h .num{background:var(--accent)}
+.v-h h3{flex:1 1 220px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font:700 10.5px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--s2);color:var(--ink2);white-space:nowrap}
+.tag.quiet{background:#EEF1F4;color:var(--ink2)}.tag.loud{background:var(--navy);color:#fff}
+.tag.rec{background:#E3EBFA;color:#1E4FA3}
+.v p.sum{color:var(--ink2);margin:0 0 2px;max-width:68ch;font-size:15.5px}
+.pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:10px 24px;margin:13px 0 0}
+.pc h4{font:700 10.5px/1 var(--num);letter-spacing:.13em;text-transform:uppercase;margin:0 0 6px}
+.pc .g h4{color:var(--pos)}.pc .c h4{color:var(--amber)}
+.pc ul{margin:0;padding-left:16px;font-size:14.5px;color:var(--ink2)}
+.pc li{margin:3px 0}
+
+/* ── the landing frame every strip is shown inside ── */
+.demo{border:1px dashed var(--line3);border-radius:10px;overflow:hidden;margin:15px 0 3px;background:#fff}
+.demo-l{font:700 10.5px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);
+  padding:9px 13px;background:var(--s2);border-bottom:1px dashed var(--line3)}
+.lp{padding:24px 28px 0;position:relative;background:var(--bg)}
+.lp-rule{height:2px;background:var(--navy);margin:0 0 13px}
+.lp-eyebrow{font:600 9.5px/1 var(--num);letter-spacing:.24em;text-transform:uppercase;color:var(--ink3);margin:0 0 14px}
+.lp-eyebrow b{color:var(--accent);font-weight:700}
+.lp-title{font-weight:400;font-size:clamp(24px,3.4vw,33px);line-height:.97;letter-spacing:-.045em;color:var(--ink);margin:0}
+.lp-title span{display:block}
+.lp-title .ac{color:var(--accent2)}
+.lp-spec{display:flex;gap:2px;height:9px;border-radius:2px;overflow:hidden;margin:14px 0 0;max-width:560px}
+.lp-spec i{flex:1}
+.lp-cta{display:inline-flex;align-items:center;gap:11px;background:var(--accent);color:#fff;padding:11px 22px;font-size:14.5px;margin:18px 0 0}
+.lp-cta::after{content:"\2192"}
+.lp-foot{margin-top:22px}
+.bleed{margin-left:-28px;margin-right:-28px}
+.userchip{position:absolute;top:12px;right:14px;background:#E7F4EC;color:var(--pos);border-radius:14px;padding:3px 10px;font-size:12px}
+
+/* ── shared strip furniture ── */
+.slabel{font:700 9.5px var(--num);letter-spacing:.17em;text-transform:uppercase;white-space:nowrap}
+.sdot{opacity:.35}
+.sicon{width:15px;height:15px;flex:0 0 auto;display:block}
+.smeta{font:11.5px var(--num);white-space:nowrap}
+
+/* 1 hairline */
+.s1{border-top:1px solid var(--line2);padding:13px 0 22px;display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap}
+.s1 .slabel{color:var(--ink3)}
+.s1 a{color:var(--ink2);text-decoration:none;font-size:14px;border-bottom:1px solid transparent;padding-bottom:1px}
+.s1 a:hover{color:var(--accent);border-bottom-color:rgba(31,95,191,.4)}
+.s1 .smeta{color:var(--ink3);margin-left:auto}
+
+/* 2 dark band */
+.s2b{background:var(--navy);color:#CBD6E4;padding:11px 28px;display:flex;align-items:center;gap:9px 14px;flex-wrap:wrap}
+.s2b .slabel{color:#8FA2BC}
+.s2b a{color:#fff;text-decoration:none;font-size:14px;border-bottom:1px solid #3B4F6C;padding-bottom:1px}
+.s2b a:hover{border-bottom-color:#fff}
+.s2b .smeta{color:#8FA2BC;margin-left:auto}
+
+/* 3 chips */
+.s3{border-top:1px solid var(--line2);padding:15px 0 22px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.s3 .slabel{color:var(--ink3);margin-right:4px}
+.s3 a{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line2);border-radius:14px;
+  padding:5px 13px;font-size:13.5px;color:var(--ink2);text-decoration:none}
+.s3 a:hover{border-color:var(--accent);color:var(--accent)}
+.s3 a .c{font:700 11px var(--num);color:var(--ink3)}
+
+/* 4 tiles */
+.s4{border-top:1px solid var(--line2);padding:16px 0 22px}
+.s4 .slabel{color:var(--ink3);display:block;margin-bottom:11px}
+.s4 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:9px}
+.s4 a{border:1px solid var(--line2);background:#fff;border-radius:7px;padding:11px 13px;text-decoration:none;display:grid;gap:1px}
+.s4 a:hover{border-color:var(--accent)}
+.s4 .n2{font:700 18px var(--num);color:var(--navy);font-variant-numeric:tabular-nums;line-height:1.1}
+.s4 b{font-size:13.5px;color:var(--ink);font-weight:600}
+.s4 small{font:11px var(--num);color:var(--ink3)}
+
+/* 5 collapsed */
+.s5{border-top:1px solid var(--line2);padding:13px 0 22px}
+.s5 summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:9px;font-size:14px;color:var(--ink2)}
+.s5 summary::-webkit-details-marker{display:none}
+.s5 .car{font:11px var(--num);color:var(--ink3);transition:transform .15s}
+.s5[open] .car{transform:rotate(90deg)}
+.s5 .slabel{color:var(--ink3)}
+.s5 .inner{display:flex;align-items:center;gap:8px 15px;flex-wrap:wrap;margin-top:11px}
+.s5 .inner a{color:var(--ink2);text-decoration:none;font-size:14px;border-bottom:1px solid transparent;padding-bottom:1px}
+.s5 .inner a:hover{color:var(--accent);border-bottom-color:rgba(31,95,191,.4)}
+
+/* 6 primary + secondary */
+.s6{border-top:1px solid var(--line2);padding:16px 0 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.s6 .go{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--navy);color:var(--navy);
+  background:#fff;padding:10px 17px;font-size:14px;font-weight:600;text-decoration:none}
+.s6 .go:hover{background:var(--navy);color:#fff}
+.s6 .rest{display:flex;align-items:center;gap:7px 13px;flex-wrap:wrap}
+.s6 .rest a{color:var(--ink3);text-decoration:none;font-size:13px;border-bottom:1px solid transparent}
+.s6 .rest a:hover{color:var(--accent);border-bottom-color:rgba(31,95,191,.4)}
+
+/* 7 sticky */
+.s7wrap{position:relative;padding-bottom:44px}
+.s7{position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);
+  border-top:1px solid var(--line2);padding:10px 28px;display:flex;align-items:center;gap:9px 14px;flex-wrap:wrap}
+.s7 .slabel{color:var(--ink3)}
+.s7 a{color:var(--ink2);text-decoration:none;font-size:13.5px}
+.s7 a:hover{color:var(--accent)}
+.s7 .smeta{color:var(--ink3);margin-left:auto}
+
+/* 8 icon row */
+.s8{border-top:1px solid var(--line2);padding:16px 0 22px}
+.s8 .slabel{color:var(--ink3);display:block;margin-bottom:12px}
+.s8 .row{display:flex;gap:10px;flex-wrap:wrap}
+.s8 a{display:grid;justify-items:center;gap:6px;text-decoration:none;color:var(--ink2);
+  border:1px solid transparent;border-radius:8px;padding:9px 14px;min-width:82px}
+.s8 a:hover{border-color:var(--line2);background:#fff;color:var(--accent)}
+.s8 a span{font-size:12.5px;font-weight:600}
+.s8 .sicon{width:20px;height:20px}
+
+/* 9 split */
+.s9{border-top:1px solid var(--line2);padding:14px 0 22px;display:flex;align-items:center;gap:12px 22px;flex-wrap:wrap}
+.s9 .who{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink2)}
+.s9 .role{font:700 9.5px var(--num);letter-spacing:.13em;text-transform:uppercase;background:var(--navy);color:#fff;border-radius:3px;padding:2px 7px}
+.s9 .links{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;margin-left:auto}
+.s9 .links a{color:var(--ink2);text-decoration:none;font-size:13.5px;border-bottom:1px solid transparent;padding-bottom:1px}
+.s9 .links a:hover{color:var(--accent);border-bottom-color:rgba(31,95,191,.4)}
+
+/* 10 last touched */
+.s10{border-top:1px solid var(--line2);padding:15px 0 22px;display:grid;gap:10px}
+.s10 .lead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px;color:var(--ink2)}
+.s10 .pulse{width:7px;height:7px;border-radius:50%;background:var(--pos);flex:0 0 auto}
+.s10 .lead b{color:var(--ink);font-weight:600}
+.s10 .lead .when{font:11.5px var(--num);color:var(--ink3)}
+.s10 .links{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap}
+.s10 .links a{color:var(--ink2);text-decoration:none;font-size:13.5px;border-bottom:1px solid transparent;padding-bottom:1px}
+.s10 .links a:hover{color:var(--accent);border-bottom-color:rgba(31,95,191,.4)}
+.s10 .slabel{color:var(--ink3)}
+
+.note{border-left:3px solid #B7862A;background:#FFFBF0;padding:12px 16px;border-radius:0 7px 7px 0;font-size:14.5px;color:var(--ink2);margin:19px 0}
+.note.blue{border-left-color:var(--accent);background:#F2F6FD}
+.phone{max-width:390px;border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--bg)}
+.phone .lp{padding:18px 16px 0}
+.phone .bleed{margin-left:-16px;margin-right:-16px}
+footer{color:var(--ink3);font-size:13.5px;border-top:1px solid var(--line);padding-top:18px;margin-top:50px}
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr;gap:0}
+  nav.toc{position:static;max-height:none;margin-bottom:28px;columns:2}
+  .lp{padding:18px 16px 0}.bleed{margin-left:-16px;margin-right:-16px}
+  .s2b,.s7{padding-left:16px;padding-right:16px}
+}
+@media print{nav.toc{display:none}.wrap{display:block}.v,.demo{break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap">
+  <p class="kick">Proposal Tool · design options</p>
+  <h1>Ten strips along the foot</h1>
+  <p>Option 3 from the entry-point review, taken ten ways. Same five destinations, same admin-only gate, same place on the page — ten different answers to how loud it should be and how much it should say.</p>
+  <p>Each is rendered below the real landing hero, at the real type and colour, carrying the live figures: 101 sleeves, 73 products, 14 proposals, 104 versions on record.</p>
+</div></header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#fixed"><b>·</b>What is fixed</a>
+  <a href="#compare"><b>·</b>The ten, compared</a>
+  <a href="#d1"><b>1</b>Hairline rule</a>
+  <a href="#d2"><b>2</b>Dark band</a>
+  <a href="#d3"><b>3</b>Chips</a>
+  <a href="#d4"><b>4</b>Counted tiles</a>
+  <a href="#d5"><b>5</b>Collapsed</a>
+  <a href="#d6"><b>6</b>One door, four side doors</a>
+  <a href="#d7"><b>7</b>Sticky to the window</a>
+  <a href="#d8"><b>8</b>Icon row</a>
+  <a href="#d9"><b>9</b>Who you are, what you may do</a>
+  <a href="#d10"><b>10</b>Last touched</a>
+  <a href="#phone"><b>·</b>At phone width</a>
+  <a href="#rec"><b>·</b>What I would build</a>
+</nav>
+
+<main>
+
+<h2 id="fixed"><small>First</small>What is fixed across all ten</h2>
+<p class="lede">These are ten treatments of one decision that has already been made. Everything below varies only in weight, shape and how much it says.</p>
+<div class="grid3">
+  <div class="fact"><b>Five destinations</b><p>Sleeves, Catalogue, Archive, Activity, Proposals — each deep-linking to <code>#repository</code>, <code>#catalogue</code>, <code>#archive</code>, <code>#activity</code>, <code>#proposals</code>, which already restore their own filters.</p></div>
+  <div class="fact"><b>One gate</b><p>Rendered only when <code>capabilities.canAdmin</code> is true. A non-admin sees today’s page with nothing missing — no gap, no placeholder, no empty bordered strip.</p></div>
+  <div class="fact"><b>One position</b><p>Below the hero, at the foot of the landing content. Only variant 7 leaves the flow, and it says so.</p></div>
+</div>
+<div class="note blue">Two things to hold in mind while comparing. <b>The landing page is client-facing</b> — a PWA may have it open with someone looking over their shoulder, so admin furniture should not announce itself. And <b>the counts are free</b>: the schema the landing already fetches carries the store’s totals, so any variant that shows numbers costs no extra call.</div>
+
+<h2 id="compare"><small>Second</small>The ten, compared</h2>
+<div class="scroller"><table>
+  <thead><tr><th>#</th><th>Treatment</th><th>Visual weight</th><th>Says what it holds</th><th>Carries state</th><th>Height at rest</th></tr></thead>
+  <tbody>
+    <tr><td class="n">1</td><td>Hairline rule, inline links</td><td class="hi">Lightest</td><td class="mid">Names only</td><td class="mid">One line of store stats</td><td>~48px</td></tr>
+    <tr><td class="n">2</td><td>Dark full-bleed band</td><td class="lo">Heaviest</td><td class="mid">Names only</td><td class="mid">One line of store stats</td><td>~44px</td></tr>
+    <tr><td class="n">3</td><td>Chips</td><td class="mid">Light</td><td class="hi">Names + counts</td><td class="hi">Per destination</td><td>~54px</td></tr>
+    <tr><td class="n">4</td><td>Counted tiles</td><td class="lo">Heavy</td><td class="hi">Names + counts + context</td><td class="hi">Per destination</td><td>~110px</td></tr>
+    <tr><td class="n">5</td><td>Collapsed to one line</td><td class="hi">Lightest at rest</td><td class="mid">Hidden until opened</td><td class="mid">Count of tools only</td><td>~42px</td></tr>
+    <tr><td class="n">6</td><td>One door, four side doors</td><td class="mid">Medium</td><td class="hi">Ranked</td><td class="mid">None</td><td>~62px</td></tr>
+    <tr><td class="n">7</td><td>Sticky to the window</td><td class="mid">Medium, but permanent</td><td class="mid">Names only</td><td class="mid">One line</td><td>~40px, always</td></tr>
+    <tr><td class="n">8</td><td>Icon row</td><td class="mid">Medium</td><td class="hi">Names + glyphs</td><td class="mid">None</td><td>~86px</td></tr>
+    <tr><td class="n">9</td><td>Identity left, links right</td><td class="mid">Light</td><td class="mid">Names only</td><td class="hi">Who you are signed in as</td><td>~50px</td></tr>
+    <tr><td class="n">10</td><td>Last touched, then links</td><td class="mid">Light</td><td class="mid">Names only</td><td class="hi">The most recent change</td><td>~76px</td></tr>
+  </tbody>
+</table></div>
+
+<!-- 1 -->
+<h2 id="d1"><small>Design 1</small>Hairline rule</h2>
+<section class="v">
+  <div class="v-h"><span class="num">1</span><h3>A rule, a label, five words</h3><div class="tags"><span class="tag quiet">Quietest</span></div></div>
+  <p class="sum">The least a strip can be and still be a strip. One hairline, aligned to the hero’s own measure, and the five names as plain links. It reads as part of the document rather than as a bar bolted to it.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div class="s1">
+        <span class="slabel">Library</span>
+        <a href="#d1">Sleeves</a><span class="sdot">·</span>
+        <a href="#d1">Catalogue</a><span class="sdot">·</span>
+        <a href="#d1">Archive</a><span class="sdot">·</span>
+        <a href="#d1">Activity</a><span class="sdot">·</span>
+        <a href="#d1">Proposals</a>
+        <span class="smeta">101 sleeves · 104 versions on record</span>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Costs the hero nothing; the page still reads as one call to action.</li><li>Nothing to learn — it is a run of links under a rule.</li><li>Trivial to build and to remove.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>Quiet enough to be missed on a first visit, which is the visit that matters.</li><li>Five equal names give no clue which one anybody wants.</li></ul></div>
+  </div>
+</section>
+
+<!-- 2 -->
+<h2 id="d2"><small>Design 2</small>Dark band</h2>
+<section class="v">
+  <div class="v-h"><span class="num">2</span><h3>Full-bleed, in the rail’s navy</h3><div class="tags"><span class="tag loud">Loudest</span></div></div>
+  <p class="sum">Edge to edge in the same navy the rail and the admin bar already use, so it reads as “the admin surface” rather than as part of the client-facing page. Impossible to miss.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div class="lp-foot bleed">
+        <div class="s2b">
+          <span class="slabel">Library</span>
+          <a href="#d2">Sleeves</a><span class="sdot">·</span>
+          <a href="#d2">Catalogue</a><span class="sdot">·</span>
+          <a href="#d2">Archive</a><span class="sdot">·</span>
+          <a href="#d2">Activity</a><span class="sdot">·</span>
+          <a href="#d2">Proposals</a>
+          <span class="smeta">sleeves.db · 101 sleeves · 104 versions</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Found on the first visit, every time.</li><li>The navy already means “admin” in this product — the rail, its admin bar, the table bands.</li><li>Full-bleed separates it from the hero’s measure, so it never looks like part of the pitch.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>A dark band under a deliberately airy hero is the loudest thing on the page.</li><li>Visible to whoever is looking over the PWA’s shoulder, which is the one audience it is not for.</li></ul></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<h2 id="d3"><small>Design 3</small>Chips</h2>
+<section class="v">
+  <div class="v-h"><span class="num">3</span><h3>The tool’s own chip idiom, with counts</h3><div class="tags"><span class="tag quiet">Light</span></div></div>
+  <p class="sum">The same rounded chips the catalogue’s facets and the sleeve list’s book strip already use, so it is a control language the admin has met. Each carries its own count, which turns five names into five answers.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div class="s3">
+        <span class="slabel">Library</span>
+        <a href="#d3">Sleeves <span class="c">101</span></a>
+        <a href="#d3">Catalogue <span class="c">73</span></a>
+        <a href="#d3">Archive <span class="c">0</span></a>
+        <a href="#d3">Activity <span class="c">104</span></a>
+        <a href="#d3">Proposals <span class="c">14</span></a>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Reads as a set of controls, not a sitemap — clickability is obvious.</li><li>The counts say what is behind each door before it is opened.</li><li>Borrows a pattern already used twice inside the console.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li><em>Archive 0</em> advertises an empty room; a zero may need to read as a dash.</li><li>Five bordered objects in a row is more ink than the page is used to.</li></ul></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<h2 id="d4"><small>Design 4</small>Counted tiles</h2>
+<section class="v">
+  <div class="v-h"><span class="num">4</span><h3>A number, a name, a line of context</h3><div class="tags"><span class="tag loud">Heavy</span></div></div>
+  <p class="sum">The strip becomes a small dashboard. Each destination leads with its figure, so the admin learns the state of the library before deciding where to go — and the figures are the reason to go.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <span class="lp-cta">Start Here</span>
+      <div class="s4">
+        <span class="slabel">Library</span>
+        <div class="row">
+          <a href="#d4"><span class="n2">101</span><b>Sleeves</b><small>4 books · 7 categories</small></a>
+          <a href="#d4"><span class="n2">73</span><b>Catalogue</b><small>as of 6 Sept</small></a>
+          <a href="#d4"><span class="n2">0</span><b>Archive</b><small>nothing removed</small></a>
+          <a href="#d4"><span class="n2">3</span><b>Activity</b><small>changes, 30 days</small></a>
+          <a href="#d4"><span class="n2">14</span><b>Proposals</b><small>265 KB on record</small></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Answers <em>what is the state of the library</em> without a click.</li><li><em>3 changes in 30 days</em> is a standing invitation to notice something unexpected.</li><li>Each tile is a large, unmissable target.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>At ~110px it is no longer a strip; it competes with the hero.</li><li>Five tiles of equal weight where only two get daily use.</li><li>Closest of the ten to just building the admin landing page instead.</li></ul></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<h2 id="d5"><small>Design 5</small>Collapsed</h2>
+<section class="v">
+  <div class="v-h"><span class="num">5</span><h3>One line, until it is wanted</h3><div class="tags"><span class="tag quiet">Quietest at rest</span></div></div>
+  <p class="sum">A single summary line that opens in place. At rest it spends one row; opened, it is design 1. Built on <code>&lt;details&gt;</code>, so it works with no script and remembers nothing.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered · try it, it opens</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <details class="s5">
+        <summary><span class="car">›</span><span class="slabel">Library</span> <span>5 places to look · 101 sleeves</span></summary>
+        <div class="inner">
+          <a href="#d5">Sleeves</a><span class="sdot">·</span>
+          <a href="#d5">Catalogue</a><span class="sdot">·</span>
+          <a href="#d5">Archive</a><span class="sdot">·</span>
+          <a href="#d5">Activity</a><span class="sdot">·</span>
+          <a href="#d5">Proposals</a>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>The smallest resting footprint of any variant that still names itself.</li><li>Native disclosure: keyboard, screen readers and no-JS all work for free.</li><li>Scales if the console ever gains a sixth view.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>Two clicks to reach a view, every time, for a daily user.</li><li>Collapsed state is not remembered, so the admin who always opens it always opens it.</li><li>Hides exactly the thing the brief asked to make visible.</li></ul></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<h2 id="d6"><small>Design 6</small>One door, four side doors</h2>
+<section class="v">
+  <div class="v-h"><span class="num">6</span><h3>Rank them, because they are not equal</h3><div class="tags"><span class="tag quiet">Medium</span></div></div>
+  <p class="sum">Sleeves is where most library work happens; the other four are occasional. So one real button and four quiet links, rather than five things pretending to be equally likely.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div class="s6">
+        <a class="go" href="#d6">Sleeve repository →</a>
+        <div class="rest">
+          <a href="#d6">Catalogue</a><span class="sdot">·</span>
+          <a href="#d6">Archive</a><span class="sdot">·</span>
+          <a href="#d6">Activity</a><span class="sdot">·</span>
+          <a href="#d6">Proposals</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Encodes something true: the five are not equally likely.</li><li>The outlined button is findable without being loud, and the four links cost almost nothing beside it.</li><li>Matches the <em>Start Here</em> shape, so the page reads as two ranked paths.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>A second bordered button near the primary one competes with it.</li><li>The ranking is an assumption — worth checking against who actually uses what.</li></ul></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<h2 id="d7"><small>Design 7</small>Sticky to the window</h2>
+<section class="v">
+  <div class="v-h"><span class="num">7</span><h3>Pinned to the bottom edge, not to the content</h3><div class="tags"><span class="tag quiet">Medium, permanent</span></div></div>
+  <p class="sum">A translucent bar fixed to the foot of the viewport, so it never scrolls away. The only variant that is not part of the document, and the only one that would still be there on a short window.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered · the bar sits on the window, not the page</p>
+    <div class="lp s7wrap">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div style="height:26px"></div>
+      <div class="s7 bleed" style="margin:0">
+        <span class="slabel">Library</span>
+        <a href="#d7">Sleeves</a><span class="sdot">·</span>
+        <a href="#d7">Catalogue</a><span class="sdot">·</span>
+        <a href="#d7">Archive</a><span class="sdot">·</span>
+        <a href="#d7">Activity</a><span class="sdot">·</span>
+        <a href="#d7">Proposals</a>
+        <span class="smeta">101 sleeves</span>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Never below the fold, whatever the window height — the failure mode every other footer has.</li><li>Translucent, so it reads as chrome rather than as content.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>Permanently occupies the bottom of a hero built to breathe.</li><li>Needs <code>env(safe-area-inset-bottom)</code> handling, and covers content on short screens.</li><li>A fixed bar on a page with one screen of content is machinery for a problem the page does not have.</li></ul></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<h2 id="d8"><small>Design 8</small>Icon row</h2>
+<section class="v">
+  <div class="v-h"><span class="num">8</span><h3>The rail’s own glyphs, promoted</h3><div class="tags"><span class="tag quiet">Medium</span></div></div>
+  <p class="sum">Two of these glyphs already exist in the page — the stack for sleeves and the grid for the catalogue, defined once and used by the rail. This gives all five a mark, so the strip is recognisable before it is read.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <span class="lp-cta">Start Here</span>
+      <div class="s8">
+        <span class="slabel">Library</span>
+        <div class="row">
+          <a href="#d8"><svg class="sicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.2 17.5 6 10 9.8 2.5 6z"/><path d="M2.5 10 10 13.8 17.5 10"/><path d="M2.5 14 10 17.8 17.5 14"/></svg><span>Sleeves</span></a>
+          <a href="#d8"><svg class="sicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M2.5 7.6h15M8 7.6V17M2.5 12.3h15"/></svg><span>Catalogue</span></a>
+          <a href="#d8"><svg class="sicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="4" rx="1"/><path d="M4 8v7.5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8.2 11.5h3.6"/></svg><span>Archive</span></a>
+          <a href="#d8"><svg class="sicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.3"/><path d="M10 5.6V10l3 1.9"/></svg><span>Activity</span></a>
+          <a href="#d8"><svg class="sicon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2.8h6.4L15.5 7v10.2H5z"/><path d="M11.2 2.8V7h4.1M7.6 11h5M7.6 14h3.4"/></svg><span>Proposals</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Recognisable at a glance once learned, and the two existing glyphs already carry meaning here.</li><li>Large, comfortable targets — the best of the ten on touch.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>Three new glyphs to draw, and an archive box and a clock are not strong signs for <em>Archive</em> and <em>Activity</em>.</li><li>Tallest variant except the tiles, for information the words already carry.</li></ul></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<h2 id="d9"><small>Design 9</small>Who you are, what you may do</h2>
+<section class="v">
+  <div class="v-h"><span class="num">9</span><h3>Frame it as a consequence of the role</h3><div class="tags"><span class="tag quiet">Light</span></div></div>
+  <p class="sum">The strip says why it is there: you are signed in as an admin, so these are open to you. It answers the question a new admin actually has — <em>am I supposed to be able to see this?</em></p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div class="s9">
+        <span class="who"><span class="role">Admin</span> Signed in as <b>fbarker</b></span>
+        <span class="links">
+          <a href="#d9">Sleeves</a><span class="sdot">·</span>
+          <a href="#d9">Catalogue</a><span class="sdot">·</span>
+          <a href="#d9">Archive</a><span class="sdot">·</span>
+          <a href="#d9">Activity</a><span class="sdot">·</span>
+          <a href="#d9">Proposals</a>
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>Explains itself. A strip that appears for some people and not others should say why.</li><li>Makes the role visible, which matters in a tool where the role changes what the page contains.</li><li>Useful on a shared machine: it says whose session this is.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>Duplicates the host’s own user chip, a few pixels away.</li><li>Spends half the strip on identity rather than on destinations.</li></ul></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<h2 id="d10"><small>Design 10</small>Last touched</h2>
+<section class="v">
+  <div class="v-h"><span class="num">10</span><h3>Lead with what changed, then the ways in</h3><div class="tags"><span class="tag quiet">Light</span></div></div>
+  <p class="sum">The strip opens with the most recent thing that happened to the library and links straight to it. The five names follow. It turns a menu into a reason to look.</p>
+  <div class="demo">
+    <p class="demo-l">Rendered</p>
+    <div class="lp">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <span class="lp-cta">Start Here</span>
+      <div class="s10">
+        <span class="lead"><span class="pulse"></span>Last change: <b>SMA Only</b> edited by fbarker <span class="when">12 Sept 2026, 10:40</span> <a href="#d10" style="font-size:13px">Open it →</a></span>
+        <span class="links">
+          <span class="slabel">Library</span>
+          <a href="#d10">Sleeves</a><span class="sdot">·</span>
+          <a href="#d10">Catalogue</a><span class="sdot">·</span>
+          <a href="#d10">Archive</a><span class="sdot">·</span>
+          <a href="#d10">Activity</a><span class="sdot">·</span>
+          <a href="#d10">Proposals</a>
+        </span>
+      </div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Gains</h4><ul><li>The only variant that gives a reason to click rather than a list of places.</li><li>An unexpected name or author is spotted on arrival — which is what an audit trail is for.</li><li>Resuming yesterday’s work is one click, not three.</li></ul></div>
+    <div class="c"><h4>Costs</h4><ul><li>Needs the activity feed’s newest entry on the landing page — one call it does not make today.</li><li>Two lines, and the top one is only interesting when something has changed recently.</li><li>Names a person on a client-facing screen.</li></ul></div>
+  </div>
+</section>
+
+<h2 id="phone"><small>All ten have to survive this</small>At phone width</h2>
+<p class="lede">The landing page is used on tablets in meetings, so every variant needs a ~390px answer. Most wrap without help; three need a decision. Shown here at real width.</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin:18px 0">
+  <div class="demo phone">
+    <p class="demo-l">1 · hairline wraps to two rows</p>
+    <div class="lp">
+      <div class="lp-rule"></div>
+      <h3 class="lp-title" style="font-size:22px"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <span class="lp-cta" style="padding:9px 16px;font-size:13.5px">Start Here</span>
+      <div class="s1" style="padding-bottom:16px">
+        <span class="slabel">Library</span>
+        <a href="#phone">Sleeves</a><span class="sdot">·</span><a href="#phone">Catalogue</a><span class="sdot">·</span>
+        <a href="#phone">Archive</a><span class="sdot">·</span><a href="#phone">Activity</a><span class="sdot">·</span><a href="#phone">Proposals</a>
+      </div>
+    </div>
+  </div>
+  <div class="demo phone">
+    <p class="demo-l">4 · tiles become two columns, 220px tall</p>
+    <div class="lp">
+      <div class="lp-rule"></div>
+      <h3 class="lp-title" style="font-size:22px"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <span class="lp-cta" style="padding:9px 16px;font-size:13.5px">Start Here</span>
+      <div class="s4" style="padding-bottom:16px">
+        <span class="slabel">Library</span>
+        <div class="row" style="grid-template-columns:1fr 1fr">
+          <a href="#phone"><span class="n2">101</span><b>Sleeves</b><small>4 books</small></a>
+          <a href="#phone"><span class="n2">73</span><b>Catalogue</b><small>6 Sept</small></a>
+          <a href="#phone"><span class="n2">0</span><b>Archive</b><small>nothing removed</small></a>
+          <a href="#phone"><span class="n2">14</span><b>Proposals</b><small>on record</small></a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="demo phone">
+    <p class="demo-l">5 · collapsed is unchanged, which is its argument</p>
+    <div class="lp">
+      <div class="lp-rule"></div>
+      <h3 class="lp-title" style="font-size:22px"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <span class="lp-cta" style="padding:9px 16px;font-size:13.5px">Start Here</span>
+      <details class="s5" style="padding-bottom:16px">
+        <summary><span class="car">›</span><span class="slabel">Library</span> <span>5 places to look</span></summary>
+        <div class="inner">
+          <a href="#phone">Sleeves</a><span class="sdot">·</span><a href="#phone">Catalogue</a><span class="sdot">·</span>
+          <a href="#phone">Archive</a><span class="sdot">·</span><a href="#phone">Activity</a><span class="sdot">·</span><a href="#phone">Proposals</a>
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+<div class="note">The three that need a decision: <b>4</b> reflows to two columns and roughly doubles in height, which at phone width is most of a screen. <b>7</b> must add <code>env(safe-area-inset-bottom)</code> or it sits under the home indicator. <b>8</b>’s five icon targets wrap to two rows, which is fine, but the row then costs more than the words would have.</div>
+
+<h2 id="rec"><small>Finally</small>What I would build</h2>
+<p class="lede">Design 3, with one borrowing from 10.</p>
+<section class="v pick">
+  <div class="v-h"><span class="num">3</span><h3>Chips, with the counts — and a last-change line if the call is cheap</h3><div class="tags"><span class="tag rec">Recommended</span></div></div>
+  <p class="sum">The chips are the only variant that is both unmistakably clickable and quiet enough for a client-facing page, and they speak a control language the admin has already met twice inside the console. The counts turn five names into five answers at no extra cost, since the schema the landing already fetches carries the store totals.</p>
+  <div class="demo">
+    <p class="demo-l">Recommended · chips, with design 10’s lead line</p>
+    <div class="lp" style="padding-bottom:6px">
+      <span class="userchip">fbarker</span>
+      <div class="lp-rule"></div>
+      <p class="lp-eyebrow">An ISG <b>Cyrus</b> Application</p>
+      <h3 class="lp-title"><span>Portfolio Management Group</span><span class="ac">Proposal Tool</span></h3>
+      <div class="lp-spec"><i style="background:var(--cat1)"></i><i style="background:var(--cat2)"></i><i style="background:var(--cat3)"></i><i style="background:var(--cat4)"></i><i style="background:var(--cat5)"></i><i style="background:var(--cat6)"></i><i style="background:var(--cat7)"></i></div>
+      <span class="lp-cta">Start Here</span>
+      <div class="s3" style="padding-bottom:10px">
+        <span class="slabel">Library</span>
+        <a href="#rec">Sleeves <span class="c">101</span></a>
+        <a href="#rec">Catalogue <span class="c">73</span></a>
+        <a href="#rec">Archive <span class="c">—</span></a>
+        <a href="#rec">Activity <span class="c">104</span></a>
+        <a href="#rec">Proposals <span class="c">14</span></a>
+      </div>
+      <p style="margin:0 0 20px;font-size:13px;color:var(--ink3)">Last change: <b style="color:var(--ink2);font-weight:600">SMA Only</b>, 12 Sept</p>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>Why this one</h4><ul>
+      <li>Obviously clickable without being loud — the failure of 1 and 5, avoided without the cost of 2 and 4.</li>
+      <li>Already a pattern in this product, so nothing new to learn or to style.</li>
+      <li>Wraps cleanly at phone width with no special case.</li>
+    </ul></div>
+    <div class="c"><h4>Two decisions it needs</h4><ul>
+      <li><b>Zero reads as a dash.</b> <em>Archive 0</em> advertises an empty room; an em dash says “nothing here” without making it a headline.</li>
+      <li><b>The last-change line is optional.</b> It is the best idea in the ten, but it needs the newest activity entry on the landing page. If that call is not cheap, ship the chips and add the line later — they are independent.</li>
+    </ul></div>
+  </div>
+</section>
+
+<footer>
+  Companion to <code>admin-entry-from-landing.html</code>. Rendered in the landing page’s own type, colour and spacing; figures are the live ones (101 sleeves, 73 products, 0 archived, 104 versions, 14 proposals, catalogue as of 6 Sept 2026, last change SMA Only on 12 Sept). Design 5 is interactive — its disclosure really opens. No existing files were changed.
+</footer>
+
+</main>
+</div>
+</body>
+</html>

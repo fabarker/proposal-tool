@@ -228,6 +228,23 @@ function availabilitySet() {
   return state._avail;
 }
 function available(k) { return !!availabilitySet()[keyStr(k)]; }
+/* Why a level cannot be had (C6). "Unavailable" reads as an outage; what is
+   actually true is narrower and usually fixable, and the availability set
+   already knows it: the same level exists with the exclusion the other way,
+   or under another allocation, or not at all on this basis and type. */
+function whyUnavailable(allocationType, excludeRealAssets, risk) {
+  var probe = buildKey(allocationType, excludeRealAssets, risk);
+  if (!probe || available(probe)) return '';
+  if (reAllowed(allocationType) && available(buildKey(allocationType, !excludeRealAssets, risk))) {
+    return excludeRealAssets ? 'not offered ex-RAs' : 'only offered ex-RAs';
+  }
+  var others = allocationChoices(risk).filter(function (t) {
+    return t !== allocationType
+      && (available(buildKey(t, false, risk)) || available(buildKey(t, true, risk)));
+  });
+  if (others.length) return 'not offered as ' + allocationType;
+  return 'not offered for ' + (state.variant || 'this type') + ' in ' + state.basis.currency;
+}
 function used(k) {
   return state.columns.some(function (c) { return keyEq(c.key, k); });
 }
@@ -424,12 +441,14 @@ async function fetchSchema() {
 function pruneUnavailableColumns() {
   if (!schemaReady()) return;
   var survivors = [];
-  state.columns.forEach(function (col) {
+  state.columns.forEach(function (col, i) {
     if (available(col.key)) { survivors.push(col); return; }
     abortColumn(col);
     announce('assertive', fullName(col.key)
       + ' is not available under the current mandate and basis and has been removed.');
-    deleteColumnOnServer(col.key);
+    /* never the base: the store refuses to remove it, and it has no need to
+       be removed - the next base recorded takes its place (D102) */
+    if (i > 0) deleteColumnOnServer(col.key);
   });
   state.columns = survivors;
 }
@@ -545,8 +564,8 @@ function removeComparison(index) {
 }
 
 function deleteColumnOnServer(key) {
-  if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId)
+  if (!state.scenarioId) return Promise.resolve();
+  return apiFetch('/scenario/' + encodeURIComponent(state.scenarioId)
     + '/portfolio/' + encodeURIComponent(keyStr(key)), { method: 'DELETE' })
     .catch(function (err) {
       if (err && err.message) showAlert('error', err.message);
@@ -560,17 +579,29 @@ function retryColumn(index) {
   refresh();
 }
 
+/* The same combination at the nearest risk level the schema does offer.
+   Used when a base edit names something unavailable, and when a currency
+   change leaves the base's own combination behind. */
+function nearestAvailable(key) {
+  var risks = opt('options.riskLevels', []);
+  var holdsAllocation = !!key.allocationType;
+  for (var i = 0; i < risks.length; i++) {
+    /* A level that holds no allocation type is a different kind of book, not
+       a nearer one: an all-equity level ignores the allocation entirely, so
+       without this a withdrawn Core column fell all the way to All Equity -
+       which holds no alternatives at all - and called it the nearest thing. */
+    if (holdsAllocation === isAllEquityRisk(risks[i])) continue;
+    var probe = buildKey(key.allocationType, key.excludeRealAssets, risks[i]);
+    if (probe && available(probe)) return probe;
+  }
+  return null;
+}
+
 /* Changing the base replaces column one (spec 11.5). */
 function setBase(key) {
   if (!schemaReady() || !canEdit()) return false;
   if (!available(key)) {
-    /* fall to the first risk level the combination offers */
-    var risks = opt('options.riskLevels', []);
-    var fallen = null;
-    for (var i = 0; i < risks.length; i++) {
-      var probe = buildKey(key.allocationType, key.excludeRealAssets, risks[i]);
-      if (probe && available(probe)) { fallen = probe; break; }
-    }
+    var fallen = nearestAvailable(key);      /* the first risk level it offers */
     if (!fallen) return false;
     key = fallen;
   }
@@ -590,9 +621,12 @@ function setBase(key) {
   var rest = state.columns.slice(1).filter(function (c) {
     if (keyEq(c.key, key)) {
       abortColumn(c);
-      deleteColumnOnServer(c.key);
+      /* No DELETE: recording a base drops a comparison that duplicates it, in
+         the same write. Sending both raced - whichever arrived second lost,
+         and if that was the DELETE the store refused it, because by then the
+         key it named was the base. */
       announce('assertive', headerName(c.key)
-        + ' was removed as a comparison because it is now the base.');
+        + ' was removed as a comparison because it is now the proposed portfolio.');
       return false;
     }
     return true;
@@ -676,16 +710,47 @@ async function confirmBasisChange() {
     refresh();
     return;
   }
-  var survivors = [];
+  /* A key carries its currency, so every column has to be re-keyed into the
+     new one before it can be asked whether it still exists. Asking with the
+     OLD key - "USD|Moderate|Core|0" against the CHF availability set - never
+     matched, so a currency change dropped every column, including the base;
+     and removing the base is the one thing the store refuses, so the change
+     ended in an error banner over an empty document. What it should do, and
+     now does, is rebuild the same combinations in the new currency (11.4). */
+  var moved = [];
+  var lost = [];
   state.columns.forEach(function (col) {
-    if (available(col.key)) { survivors.push(col); return; }
+    var key = buildKey(col.key.allocationType, col.key.excludeRealAssets, col.key.riskLevel);
+    if (key && available(key)) moved.push({ col: col, key: key, was: col.key });
+    else lost.push(col);
+  });
+  /* The base leads: if its combination is not offered in the new currency it
+     falls to the nearest risk level that is, the way a base edit does (D54),
+     rather than taking the comparisons down with it. */
+  if (state.columns.length && (!moved.length || moved[0].col !== state.columns[0])) {
+    var first = state.columns[0];
+    var fallen = nearestAvailable(first.key);
+    if (fallen) {
+      moved.unshift({ col: first, key: fallen, was: first.key });
+      lost = lost.filter(function (c) { return c !== first; });
+      announce('assertive', headerName(first.key) + ' is not available in '
+        + state.basis.currency + '; ' + headerName(fallen) + ' is proposed instead.');
+    }
+  }
+  lost.forEach(function (col) {
     abortColumn(col);
     announce('assertive', headerName(col.key) + ' is not available in '
       + state.basis.currency + ' and has been removed.');
-    deleteColumnOnServer(col.key);
   });
-  state.columns = survivors;
+  /* The stale keys go first, so recording the new ones cannot meet a full
+     set of comparison slots - and never the base's, which the store replaces
+     of its own accord when the new one is recorded. */
+  var stale = state.columns.slice(1).map(function (col) { return col.key; });
+  await Promise.all(stale.map(deleteColumnOnServer));
+  moved.forEach(function (m) { m.col.key = m.key; });
+  state.columns = moved.map(function (m) { return m.col; });
   state.columns.forEach(function (col) { startResolve(col); });
+  settleRebuilding();                /* nothing survived: the spinner stops here */
   state.sleeveLib = {};              /* the library may differ under the new basis */
   revalidateSleeves();
   refresh();
@@ -802,9 +867,9 @@ async function setVariant(name) {
      comparisons anchored to nothing - the same rule the store applies, so the
      two never diverge. */
   if (hadBase && state.columns.indexOf(hadBase) === -1 && state.columns.length) {
-    state.columns.slice().forEach(function (col) {
+    state.columns.slice().forEach(function (col, i) {
       abortColumn(col);
-      deleteColumnOnServer(col.key);
+      if (i > 0) deleteColumnOnServer(col.key);      /* never the base (D102) */
     });
     state.columns = [];
   }
@@ -1284,8 +1349,8 @@ function setBaseCollapsed(on, quiet) {
   state.baseCollapsed = on;
   state.baseRoll = on ? 'up' : 'down';
   if (!quiet) {
-    announce('polite', on ? 'Base portfolio settings hidden.'
-                          : 'Base portfolio settings shown.');
+    announce('polite', on ? 'Proposed portfolio settings hidden.'
+                          : 'Proposed portfolio settings shown.');
   }
 }
 
@@ -1368,7 +1433,7 @@ function renderBase() {
         var ok = probe ? available(probe) : true;
         return '<option value="' + esc(r) + '"'
           + (r === risk ? ' selected' : '') + (ok ? '' : ' disabled') + '>'
-          + esc(riskLabel(r)) + (ok ? '' : ' — unavailable') + '</option>';
+          + esc(riskLabel(r)) + (ok ? '' : ' — ' + esc(whyUnavailable(allocationType, exRA, r))) + '</option>';
       }).join('');
 
   var raNote = '';
@@ -1388,13 +1453,13 @@ function renderBase() {
   /* The heading carries the chevron, so the tier can be reopened wherever it
      was rolled up; the controls go in .tier-body, which is the thing that
      rolls. aria-expanded and aria-controls carry the state to a reader. */
-  el.innerHTML = '<div class="tier-h"><h3 id="basetitle">Base portfolio</h3>'
+  el.innerHTML = '<div class="tier-h"><h3 id="basetitle">Proposed portfolio</h3>'
     + '<button type="button" class="tier-roll" id="baseroll"'
     + ' aria-expanded="' + (state.baseCollapsed ? 'false' : 'true') + '"'
     + ' aria-controls="basebody" aria-label="'
-    + (state.baseCollapsed ? 'Show' : 'Hide') + ' the base portfolio settings"'
+    + (state.baseCollapsed ? 'Show' : 'Hide') + ' the proposed portfolio settings"'
     + ' title="' + (state.baseCollapsed ? 'Show' : 'Hide')
-    + ' the base portfolio settings"><span aria-hidden="true">&#8250;</span>'
+    + ' the proposed portfolio settings"><span aria-hidden="true">&#8250;</span>'
     + '</button></div>'
     + '<div class="tier-body" id="basebody">'
     + '<div class="basis" style="grid-template-columns:1fr">'
@@ -1419,24 +1484,6 @@ function renderBase() {
     + (raNote ? '<p class="chk-note" id="bprenote">' + raNote + '</p>' : '')
     + '</div></div>';
   applyBaseRoll();
-}
-
-function renderBuilt() {
-  var el = document.getElementById('built'); if (!el) return;
-  el.innerHTML = state.columns.map(function (col, i) {
-    var status = col.status === 'loading' ? ' <span class="built-status">building…</span>'
-      : col.status === 'error' ? ' <span class="built-status err">failed</span>' : '';
-    return '<div class="built-row"><span class="nm">' + esc(headerName(col.key)) + status + '</span>'
-      + (i === 0 ? '<span class="tag">Base</span>'
-                 : '<button type="button" class="rm" data-i="' + i + '" aria-label="Remove '
-                   + esc(headerName(col.key)) + '">×</button>')
-      + '</div>';
-  }).join('');
-  var count = document.getElementById('count');
-  if (count) {
-    count.textContent = (state.columns.length ? state.columns.length - 1 : 0)
-      + ' of ' + (opt('rules.maxPortfolios', 4) - 1);
-  }
 }
 
 /* Nothing renders above the allocation table. The strip that used to carry
@@ -1543,16 +1590,20 @@ function metricCell(col, kind) {
 var METRIC_ROWS = [['Estimated Mean Return', 'ret'], ['Sharpe Ratio', 'sharpe'],
                    ['Volatility', 'vol']];
 
-/* The base column is headed "Proposed Portfolio" rather than its derived name
-   plus a Base chip: it is the portfolio being proposed to the client, and the
-   comparisons are what it is proposed against. The derived name is still
-   available - as the hover tooltip, and as the aria-label, so it reaches
-   assistive tech without a hover. */
-var BASE_COLUMN_TITLE = 'Proposed Portfolio';
+/* The first column is the portfolio being proposed to the client, and the
+   comparisons are what it is proposed against. It says so in a line over its
+   name, and it carries its name as every other column does (A2): a name that
+   lived only in a tooltip could not be read on touch, nor in a screenshot.
+
+   Every column also has a mark - P, then 1, 2, 3 - and the same mark is the
+   portfolio's dot on the risk and return chart (D1), so the chart can be read
+   against the table without a legend of names. */
+var BASE_COLUMN_TITLE = 'Proposed';
+function columnMark(i) { return i === 0 ? 'P' : String(i); }
 
 function columnHeadCell(col, i, scope) {
   var isBase = (i === 0);
-  var label = isBase ? BASE_COLUMN_TITLE : headerName(col.key);
+  var label = headerName(col.key);
   var extra = '';
   if (col.status === 'loading' && col.skel) extra = '<span class="col-ellipsis" aria-hidden="true">…</span>';
   if (col.status === 'error') {
@@ -1572,7 +1623,10 @@ function columnHeadCell(col, i, scope) {
     + (col.status === 'loading' ? ' aria-busy="true"' : '')
     + ' title="' + esc(fullName(col.key)) + '"'
     + ' aria-label="' + esc(fullName(col.key)) + '">'
-    + '<span class="col-head">' + esc(label) + extra + remove + '</span></th>';
+    + '<span class="col-head"><span class="col-mark' + (isBase ? ' is-prop' : '') + '" aria-hidden="true">'
+    + columnMark(i) + '</span><span class="col-nm">'
+    + (isBase ? '<small class="col-role">' + BASE_COLUMN_TITLE + '</small>' : '')
+    + esc(label) + '</span>' + extra + remove + '</span></th>';
 }
 
 /* ---- guiding the first build (D91) ---------------------------------------
@@ -1614,11 +1668,11 @@ function setupNext() {
   }
   if (!p.riskLevel) {
     return { id: 'bpr', n: 3, total: total, title: 'Risk level',
-             text: 'The base portfolio’s level of risk. Every comparison is measured against it.' };
+             text: 'The proposed portfolio’s level of risk. Every comparison is measured against it.' };
   }
   if (!p.allocationType && total === 4) {
     return { id: 'bpa', n: 4, total: total, title: 'Allocation',
-             text: 'The base portfolio builds as soon as this is chosen.' };
+             text: 'The proposed portfolio builds as soon as this is chosen.' };
   }
   return null;            /* answered, and either building or unavailable */
 }
@@ -1644,7 +1698,7 @@ function renderGuide() {
           : '<span class="guide-wide">In the scenario panel, on the left.</span>')
       + '<span class="guide-narrow">In the scenario panel above.</span></p>';
   } else if (card) {
-    card.innerHTML = '<h3>Choose a base portfolio</h3>'
+    card.innerHTML = '<h3>Choose the portfolio to propose</h3>'
       + '<p>Choose a risk level and allocation in the scenario panel to build the first column.</p>';
   }
   if (!next) placeGuide(false);           /* take the line down now, not next frame */
@@ -1967,9 +2021,17 @@ function fadeValue(wrap) {
   window.clearTimeout(wrap._fadeTimer);
   /* the cleanup has to outlast the fade, or it strips the transition
      mid-flight and the value snaps to full opacity */
+  /* and it is marked, for a moment (F1): the commonest change of all is the
+     same rows with different numbers - hedging toggled, real assets excluded
+     - and a handful of figures out of a hundred moved with nothing to say
+     which. The class is dropped and re-added so a second change restarts it. */
+  wrap.classList.remove('chg');
+  void wrap.offsetWidth;
+  wrap.classList.add('chg');
   wrap._fadeTimer = window.setTimeout(function () {
     wrap.style.transition = '';
     wrap.style.opacity = '';
+    wrap.classList.remove('chg');
   }, 2000);
 }
 
@@ -2097,10 +2159,21 @@ function sizeFixedColumns(table, dataCells, skip) {
   table.style.setProperty('--fixed-c1', 'auto');
   table.style.setProperty('--fixed-col', 'auto');
   table.style.tableLayout = 'auto';
-  table.style.width = 'auto';
+  /* max-content, not auto: an auto table is shrink-to-fit, and in a narrow
+     wrapper it took the shortfall out of the one column that can give - the
+     labels, whose wrapper is max-width:100% - so the measure came back short
+     and the labels were clipped ("Investment Grade Fixe"). What is wanted is
+     what the labels need; whether it fits is decided below (H3). */
+  table.style.width = 'max-content';
   table.style.minWidth = '0';
 
   var headerWidth = heads[0].getBoundingClientRect().width;
+  /* Narrow, a long label - "Private Equity & Other Private Assets" - pinned and
+     unwrapped took most of the window and left a sliver for the figures. It
+     is capped, and the stylesheet lets it wrap there (H3). */
+  if (window.matchMedia && window.matchMedia('(max-width:700px)').matches) {
+    headerWidth = Math.min(headerWidth, Math.floor(available * 0.44));
+  }
   var skipped = skip ? table.querySelector(skip) : null;
   /* the + column's own declared width, not what auto layout hands it */
   var skippedWidth = skipped
@@ -2275,7 +2348,7 @@ function sizeRiskColumns(table) {
   table.style.removeProperty('--risk-c1');
   table.style.removeProperty('--risk-col');
   table.style.tableLayout = 'auto';
-  table.style.width = 'auto';
+  table.style.width = 'max-content';        /* as sizeFixedColumns, and for its reason */
   table.style.minWidth = '0';
 
   /* The widest thing column one has to hold. Section bands span the whole
@@ -2290,6 +2363,9 @@ function sizeRiskColumns(table) {
   }
   if (widest <= 0) { table.style.tableLayout = ''; table.style.width = ''; return; }
   var headWidth = Math.ceil(widest) + RISK_HEAD_GUTTER;
+  if (window.matchMedia && window.matchMedia('(max-width:700px)').matches) {
+    headWidth = Math.min(headWidth, Math.floor(available * 0.44));      /* the label cap, narrow (H3) */
+  }
 
   var dataCols = 0;
   var headRow = table.querySelector('thead tr:first-child');
@@ -2356,16 +2432,18 @@ function renderRisk() {
             + cellFn(col) + '</span></td>';
         }).join('') + '</tr>';
   }
-  function pairRow(cls, label, pairFn) {
-    return '<tr class="' + cls + '"><th scope="row"><span class="cw">'
+  /* keyed and wrapped like every other row, so a figure that changes under
+     the reader is faded in and marked here too (F1) */
+  function pairRow(cls, label, pairFn, key) {
+    return '<tr class="' + cls + '"' + (key ? ' data-rk="' + esc(key) + '"' : '') + '><th scope="row"><span class="cw">'
       + esc(label) + '</span></th>'
       + state.columns.map(function (col) {
           if (col.status === 'loading' && !holdsPreviousData(col)) {
-            var skel = col.skel ? '<span class="skel"></span>' : '';
+            var skel = '<span class="cw">' + (col.skel ? '<span class="skel"></span>' : '') + '</span>';
             return '<td class="num">' + skel + '</td><td class="num">' + skel + '</td>';
           }
           if (col.status === 'error') {
-            return '<td class="num">—</td><td class="num">—</td>';
+            return '<td class="num"><span class="cw">—</span></td><td class="num"><span class="cw">—</span></td>';
           }
           return pairFn(col);
         }).join('') + '</tr>';
@@ -2405,15 +2483,15 @@ function renderRisk() {
      colour is never the only channel (spec 13.4). Probabilities take neither
      - a high probability of loss is not a "positive" number. */
   function pairCells(entry, probability, signed) {
-    if (!entry) return '<td class="num">\u2014</td><td class="num">\u2014</td>';
+    if (!entry) return '<td class="num"><span class="cw">\u2014</span></td><td class="num"><span class="cw">\u2014</span></td>';
     var digits = probability ? 1 : 2;
     function cls(value) {
       if (!signed) return 'num';        /* only the stress rows are coloured */
       if (value < 0) return 'num neg';
       return value > 0 ? 'num pos' : 'num';
     }
-    return '<td class="' + cls(entry.nominalPct) + '">' + num(entry.nominalPct, digits, '%') + '</td>'
-         + '<td class="' + cls(entry.realPct) + '">' + num(entry.realPct, digits, '%') + '</td>';
+    return '<td class="' + cls(entry.nominalPct) + '"><span class="cw">' + num(entry.nominalPct, digits, '%') + '</span></td>'
+         + '<td class="' + cls(entry.realPct) + '"><span class="cw">' + num(entry.realPct, digits, '%') + '</span></td>';
   }
 
   html += band('Predicted Performance Over Stress Periods');
@@ -2425,7 +2503,7 @@ function renderRisk() {
   stressLabels.forEach(function (label, i) {
     html += pairRow('asset' + (i % 2 ? ' alt' : ''), label, function (col) {
       return pairCells(findEntry(col, 'stress', label), false, true);
-    });
+    }, 'rs:' + label);
   });
 
   /* Risk premia are grouped by measure - Value at Risk, Conditional Value at
@@ -2471,7 +2549,7 @@ function renderRisk() {
               && premiaHorizonOf(candidate) === horizon) found = candidate;
         });
         return pairCells(found, found && found.kind === 'probability', false);
-      });
+      }, 'rp:' + group + ':' + horizon);
     });
   });
   /* Same treatment as the allocation table: the category rows here come and
@@ -2532,7 +2610,8 @@ function renderCharts() {
   var key2 = document.getElementById('viz-key2');
   if (key2) {
     key2.innerHTML = '<i><span class="sw" style="background:#16243A;border-radius:50%"></span>'
-      + 'Base</i><i><span class="sw" style="background:#1F5FBF;border-radius:50%"></span>Comparison</i>';
+      + 'Proposed</i><i><span class="sw" style="background:#1F5FBF;border-radius:50%"></span>Comparison</i>'
+      + '<i class="viz-note">Marks match the table’s columns</i>';
   }
 
   var comp = document.getElementById('viz-comp');
@@ -2556,7 +2635,7 @@ function renderCharts() {
     var colW = Math.max(30, Math.min(96, slot - 28));
     var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Allocation by '
       + 'category for ' + n + ' portfolio' + (n > 1 ? 's' : '')
-      + '. The allocation table below carries the exact values.">';
+      + '. The allocation table carries the exact values.">';
     [0, 25, 50, 75, 100].forEach(function (t) {
       var y = top + plotH - plotH * t / 100;
       svg += '<line class="gl" x1="' + padL + '" y1="' + y + '" x2="' + (W - padR)
@@ -2634,18 +2713,50 @@ function renderCharts() {
       + 'Volatility %</text>'
       + '<text class="tick" transform="translate(12,' + ((pT + H2 - pB) / 2) + ') rotate(-90)"'
       + ' text-anchor="middle">Estimated mean return %</text>';
-    ready.forEach(function (col) {
-      var isBase = (state.columns.indexOf(col) === 0);
-      var x = X(col.data.metrics.volatilityPct), y = Y(col.data.metrics.estimatedReturnPct);
-      svg2 += '<circle class="dot" cx="' + x + '" cy="' + y + '" r="' + (isBase ? 7.5 : 6) + '"'
-        + ' fill="' + (isBase ? '#16243A' : '#1F5FBF') + '"'
-        + ' data-tip="' + esc(headerName(col.key)) + '|vol '
-        + col.data.metrics.volatilityPct.toFixed(2) + '% · return '
-        + col.data.metrics.estimatedReturnPct.toFixed(2) + '%"></circle>';
-      var above = (y > pT + 28);
-      var label = headerName(col.key);
-      svg2 += '<text class="plbl" x="' + x + '" y="' + (above ? y - 13 : y + 20)
-        + '" text-anchor="middle">' + esc(label.length > 20 ? label.slice(0, 19) + '…' : label) + '</text>';
+    /* Each portfolio is its column's mark in a disc (D1): P, then 1, 2, 3. A
+       name floated over each dot collided as soon as two portfolios sat close -
+       and the commonest comparison, a book against its own ex-RAs, sits very
+       close. A disc that would cover another is moved aside on a short leader
+       instead, its true point left where it belongs, so nothing is misplaced
+       to be made legible. A line from the proposed portfolio to each
+       comparison draws the direction of the trade. */
+    var marks = ready.map(function (col) {
+      var at = state.columns.indexOf(col);
+      return { col: col, at: at, x: X(col.data.metrics.volatilityPct), y: Y(col.data.metrics.estimatedReturnPct) };
+    });
+    var prop = marks.filter(function (m) { return m.at === 0; })[0] || null;
+    var placed = [];
+    var R = 9, GAP = 2 * R + 2;
+    var tries = [[0, 0], [22, 0], [-22, 0], [0, -22], [0, 22], [16, -16], [-16, -16], [16, 16], [-16, 16]];
+    /* the proposed portfolio takes its own point first; the others move round it */
+    marks.slice().sort(function (a, b) { return a.at - b.at; }).forEach(function (m) {
+      for (var t = 0; t < tries.length; t++) {
+        var bx = m.x + tries[t][0], by = m.y + tries[t][1];
+        var clash = placed.some(function (q) { return Math.abs(q.bx - bx) < GAP && Math.abs(q.by - by) < GAP; });
+        var inside = bx > pL + R && bx < W2 - pR - R && by > pT + R && by < H2 - pB - R;
+        if (!clash && (inside || t === 0)) { m.bx = bx; m.by = by; break; }
+      }
+      if (m.bx === undefined) { m.bx = m.x; m.by = m.y; }
+      placed.push(m);
+    });
+    if (prop) {
+      marks.forEach(function (m) {
+        if (m === prop) return;
+        svg2 += '<line class="rr-link" x1="' + prop.x + '" y1="' + prop.y + '" x2="' + m.x + '" y2="' + m.y + '"/>';
+      });
+    }
+    marks.forEach(function (m) {
+      var isBase = (m.at === 0), fill = isBase ? '#16243A' : '#1F5FBF';
+      if (m.bx !== m.x || m.by !== m.y) {
+        svg2 += '<line class="rr-lead" x1="' + m.x + '" y1="' + m.y + '" x2="' + m.bx + '" y2="' + m.by + '"/>'
+          + '<circle cx="' + m.x + '" cy="' + m.y + '" r="2.5" fill="' + fill + '"/>';
+      }
+      svg2 += '<circle class="dot" cx="' + m.bx + '" cy="' + m.by + '" r="' + R + '" fill="' + fill + '"'
+        + ' data-tip="' + esc(headerName(m.col.key)) + '|vol '
+        + m.col.data.metrics.volatilityPct.toFixed(2) + '% · return '
+        + m.col.data.metrics.estimatedReturnPct.toFixed(2) + '%"></circle>'
+        + '<text class="rr-mark" x="' + m.bx + '" y="' + (m.by + 3.6) + '" text-anchor="middle">'
+        + columnMark(m.at) + '</text>';
     });
     rr.innerHTML = svg2 + '</svg>';
   }
@@ -2741,7 +2852,7 @@ function renderDialog() {
   var dis = draft.saving ? ' disabled' : '';
   host.innerHTML =
       '<div class="scrim" data-scrim></div>'
-    + '<div class="dialog' + (first ? ' start' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
+    + '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">'
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
@@ -2768,21 +2879,22 @@ function renderDialog() {
         ? '<span class="field-hint">Type at least two characters.</span>' : '')
     + '</div>'
     + (err ? '<p class="md-err" id="mderr" role="alert">' + esc(err.msg) + '</p>' : '')
-    /* The landing card seats three actions: Continue then Cancel, far left as
-       a group, and Create Account Opening Request right (D76). Edit mandate
-       keeps its right-aligned pair. */
+    /* Both cards carry the same right-aligned pair. The account opening
+       request used to be a third button on this line, where its only
+       neighbours were Continue and Cancel - a terminal action on a delivered
+       proposal sitting among the controls for starting one (D107). */
+    + '<div class="dlg-actions">'
+    + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
+    + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
+    + (draft.saving ? 'Working…' : (first ? 'Continue' : 'Save mandate')) + '</button></div>'
+    /* Below the rule, and only on the landing card: the other job someone may
+       have come for, named by its precondition so it cannot be read as a
+       second way to start. The landing page carries the same door (D107). */
     + (first
-        ? '<div class="dlg-actions split"><div class="dlg-grp">'
-          + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
-          + (draft.saving ? 'Working…' : 'Continue') + '</button>'
-          + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
-          + '</div>'
-          + '<button type="button" class="btn btn-ghost" id="dlgaccount"' + dis + '>'
-          + 'Create Account Opening Request</button></div>'
-        : '<div class="dlg-actions">'
-          + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
-          + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
-          + (draft.saving ? 'Working…' : 'Save mandate') + '</button></div>')
+        ? '<p class="dlg-aside">Proposal already delivered? '
+          + '<button type="button" class="btn-inline" id="dlgaccount"' + dis + '>'
+          + 'Open an account against it</button></p>'
+        : '')
     + '</div>';
 }
 
@@ -2802,6 +2914,7 @@ function setBackgroundInert(on) {
    ========================================================================== */
 var account = null;                 /* the account dialog's working copy */
 var acOpener = null;
+var acDraftBack = null;             /* the mandate the card held when it stood down */
 var UID_PATTERN = /^pr_[0-9a-f]{12}$/;
 var UID_SHAPE = 'A Proposal UID is pr_ followed by twelve letters or digits.';
 
@@ -2827,10 +2940,21 @@ function acFieldId(key) {
   return spec ? spec.id : null;
 }
 
-function openAccountDialog() {
+function openAccountDialog(opener) {
   if (!canEdit()) return;
-  acOpener = dlgOpener;               /* the landing button that opened the card */
-  if (draft) { draft = null; renderDialog(); }    /* the card gives way, no focus bounce */
+  acOpener = opener || dlgOpener;     /* the control to hand focus back to */
+  /* One modal at a time, so the card stands down - but what the user typed
+     into it is kept and put back when this dialog closes. Discarding it cost
+     three filled fields for one mis-click (D107). */
+  if (draft) {
+    if (draft.searchTimer) clearTimeout(draft.searchTimer);
+    if (draft.searchAbort) { try { draft.searchAbort.abort(); } catch (e) {} }
+    draft.searchTimer = null; draft.searchAbort = null;
+    draft.open = false; draft.idx = -1; draft.searching = false;
+    acDraftBack = draft;
+    draft = null;
+    renderDialog();
+  }
   account = {
     uid: '', status: 'idle',          /* 'idle'|'looking'|'found'|'notfound'|'malformed'|'error' */
     message: '', proposal: null, requests: [],
@@ -2849,7 +2973,17 @@ function closeAccountDialog() {
   if (!account) return;
   if (account.timer) clearTimeout(account.timer);
   account = null;
+  /* Restore before rendering, so the background never comes out of inert for
+     the one frame between the two dialogs. */
+  if (acDraftBack) { draft = acDraftBack; acDraftBack = null; }
   renderAccountDialog();
+  if (draft) {
+    renderDialog();
+    /* The button that opened this was destroyed with the card; the re-rendered
+       card carries a fresh one, and that is where focus belongs. */
+    var again = document.getElementById('dlgaccount');
+    if (again) { again.focus(); return; }
+  }
   var back = (acOpener && acOpener.isConnected) ? acOpener : document.getElementById('startbtn');
   if (back && !back.closest('[hidden]')) back.focus();
 }
@@ -3348,6 +3482,140 @@ function renderService() {
 }
 
 /* ---- refresh ------------------------------------------------------------ */
+/* ---- the way on (B4) ------------------------------------------------------
+   The document used to end under the risk dashboard, with the only door to
+   step 2 back at the top of it. The foot says what is being proposed and
+   carries the way forward - through the step nav's own button, so whatever
+   that does (the first visit's greeting, D97) happens here too. */
+function renderNext() {
+  var el = document.getElementById('aa-next'); if (!el) return;
+  var base = state.columns[0] || null;
+  if (state.phase !== 'workspace' || !base) { el.hidden = true; el.innerHTML = ''; return; }
+  var busy = state.columns.some(function (c) { return c.status === 'loading'; });
+  var ready = base.status === 'ready';
+  var n = state.columns.length - 1;
+  el.hidden = false;
+  el.innerHTML = '<p class="aa-next-txt"><span>Proposing</span> <b>' + esc(fullName(base.key)) + '</b>'
+    + '<span> · ' + esc(state.basis.hedging) + ' · ' + (n ? n + ' comparison' + (n === 1 ? '' : 's') : 'no comparisons yet') + '</span></p>'
+    + '<button type="button" class="btn btn-primary" id="aa-go"' + (ready && !busy ? '' : ' disabled') + '>'
+    + (busy ? 'Building…' : (ready ? 'Continue to Implementation →' : 'The proposed portfolio did not build')) + '</button>';
+}
+
+/* ---- the rail, narrow, once the work in it is done (H2) --------------------
+   Below the stacking breakpoint the whole rail sits above the document, so a
+   finished decision - basis, type, level, allocation - filled the first
+   screen and the comparison was a scroll away. Once the proposed portfolio
+   exists, step 1 folds the rail to one line that says what was chosen, and
+   Edit opens it again. Step 2 keeps the whole rail: its pickers are the work
+   there. Wide, none of this applies and the line is not shown. */
+var railEditing = false;
+function renderRailSummary() {
+  var el = document.getElementById('railsum'); if (!el) return;
+  var base = state.columns[0] || null;
+  var on = state.phase === 'workspace' && state.step === 'aa' && !!base;
+  document.body.classList.toggle('rail-summary', on);
+  document.body.classList.toggle('rail-editing', on && railEditing);
+  if (!on) { el.innerHTML = ''; railEditing = false; return; }
+  el.innerHTML = '<span class="rail-sum-txt"><b>' + esc(fullName(base.key)) + '</b>'
+    + '<span> · ' + esc(state.basis.hedging) + (state.variant ? ' · ' + esc(state.variant) : '') + '</span></span>'
+    + '<button type="button" class="tier-edit" id="railsum-edit" aria-expanded="' + railEditing + '"'
+    + ' aria-controls="rail-tiers">' + (railEditing ? 'Done' : 'Edit') + '</button>';
+}
+
+/* ---- what stands over the tables as they scroll (B1, H3) -------------------
+   The column heads were sticky in the stylesheet and never stuck: a table's
+   wrapper scrolls sideways, which makes it the box a sticky cell sticks to,
+   and that box never scrolls down. Halfway through the risk dashboard its
+   eight columns of figures had no names.
+
+   So the heads are docked instead: one bar, fixed under whatever is already
+   held at the top of the window, shown while a table's own head is above it
+   and the table is still passing. It is drawn from the live head cells as
+   measured, so it follows the table sideways, the pinned first column stays
+   pinned, and both tables share it - they are the same comparison. It is
+   aria-hidden: the real heads are in the tables, and would be heard twice.
+
+   The same pass places the shadow at a table's right edge while there are
+   columns beyond it (H3) - the catalogue's device (D99), for the same reason:
+   narrow, nothing said the table carried on. */
+/* Step 1 compares two tables that share their columns, so one docked bar
+   serves both; step 2 has one table of its own, whose header is sticky in the
+   stylesheet and, for the same reason theirs were, never sticks (A3). */
+function dockTables() {
+  return state.step === 'impl' ? ['implTbl'] : ['alloc', 'risk'];
+}
+function heldAtTop() {
+  /* the bottom of anything already stuck to the top of the window */
+  var held = 0;
+  ['degraded', 'railsum'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el || el.hidden || !el.offsetParent) return;
+    var box = (id === 'railsum' ? el.closest('.rail') : el).getBoundingClientRect();
+    var style = getComputedStyle(id === 'railsum' ? el.closest('.rail') : el).position;
+    if ((style === 'sticky' || style === 'fixed') && box.top <= 1 && box.bottom > held) held = box.bottom;
+  });
+  return held;
+}
+function placeChrome() {
+  var dock = document.getElementById('coldock');
+  var view = document.getElementById(state.step === 'impl' ? 'view-impl-wrap' : 'view-aa');
+  var live = !!view && !view.hidden && state.phase === 'workspace';
+  var top = live ? heldAtTop() : 0;
+  var shown = null;
+  dockTables().forEach(function (id) {
+    var table = document.getElementById(id), wrap = table && table.parentNode;
+    var edge = document.getElementById(id + '-more');
+    if (!table || !wrap || !live || wrap.hidden) { if (edge) edge.classList.remove('on'); return; }
+    if (edge) {
+      var sec = edge.parentNode.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+      edge.style.top = (w.top - sec.top) + 'px';
+      edge.style.height = wrap.clientHeight + 'px';
+      edge.style.left = (w.left - sec.left + wrap.clientWidth - edge.offsetWidth) + 'px';
+      edge.classList.toggle('on', wrap.scrollWidth - wrap.clientWidth - wrap.scrollLeft > 1);
+    }
+    var head = table.querySelector('thead tr');
+    if (!head || shown) return;
+    var h = head.getBoundingClientRect(), t = table.getBoundingClientRect();
+    if (h.bottom < top + 1 && t.bottom > top + h.height + 40) shown = { wrap: wrap, head: head, height: h.height };
+  });
+  if (!dock) return;
+  if (!shown) { dock.hidden = true; return; }
+  var box = shown.wrap.getBoundingClientRect();
+  dock.hidden = false;
+  dock.style.top = top + 'px';
+  dock.style.left = box.left + 'px';
+  dock.style.width = shown.wrap.clientWidth + 'px';
+  dock.style.height = shown.height + 'px';
+  var cells = [].slice.call(shown.head.children), html = '';
+  /* A column pinned in the table has to be pinned in the dock as well, and
+     painted last, so the scrolling ones pass beneath it rather than over it.
+     Which those are is read off the table - step 1 pins one, step 2 pins the
+     category and the product (A3) - rather than being named here. */
+  var loose = [], fixed = [];
+  cells.forEach(function (th) {
+    if (th.classList.contains('addcol')) return;
+    (th.classList.contains('rowhead') || th.classList.contains('prodcol') ? fixed : loose).push(th);
+  });
+  loose.concat(fixed).forEach(function (th) {
+    var r = th.getBoundingClientRect();
+    var mark = th.querySelector('.col-mark'), name = th.querySelector('.col-nm');
+    html += '<span class="dock-cell' + (fixed.indexOf(th) !== -1 ? ' is-fixed' : '')
+      + (th.classList.contains('txt') || th.classList.contains('rowhead') ? ' is-txt' : '')
+      + '" style="left:' + (r.left - box.left) + 'px;width:' + r.width + 'px">'
+      + (mark ? mark.outerHTML : '') + (name ? name.outerHTML : (th.querySelector('.sr-only') ? '' : esc(th.textContent))) + '</span>';
+  });
+  if (dock._html !== html) { dock.innerHTML = html; dock._html = html; }
+}
+var chromeQueued = false;
+function queueChrome() {
+  if (chromeQueued) return;
+  chromeQueued = true;
+  /* a timer, not an animation frame: a frame never fires in a background tab */
+  window.setTimeout(function () { chromeQueued = false; placeChrome(); }, 16);
+}
+document.addEventListener('scroll', queueChrome, true);      /* the window's, and a wrapper's own */
+window.addEventListener('resize', queueChrome);
+
 function refresh() {
   saveSnapshot();                        /* the last good render is the fallback */
   preserveFocus(function () {
@@ -3358,7 +3626,6 @@ function refresh() {
     renderBasis();
     renderBase();
     if (picker && picker.render) picker.render();
-    renderBuilt();
     renderAlloc();
     renderGuide();
     renderRisk();
@@ -3367,10 +3634,15 @@ function refresh() {
     renderService();
     renderResolving();
     renderFooter();
+    renderNext();
+    renderRailSummary();
     extras.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } });
     sizeComparisonTables();
   });
   focusGuide();
+  placeChrome();
+  /* and again once the columns have finished moving to their new widths */
+  window.setTimeout(placeChrome, 480);
 }
 
 /* ---- shared tooltip for both charts ------------------------------------- */
@@ -3396,6 +3668,19 @@ document.addEventListener('mouseleave', function () { vizTip.classList.remove('o
    Events - delegated at the document, never bound to re-rendered nodes.
    ========================================================================== */
 document.addEventListener('click', function (e) {
+  if (e.target.id === 'aa-go') {
+    /* the step nav's own button, so the first visit is greeted as it is from there (D97) */
+    var tab = document.getElementById('tab-impl');
+    if (tab && !tab.disabled) { tab.click(); window.scrollTo(0, 0); tab.focus({ preventScroll: true }); }
+    return;
+  }
+  if (e.target.id === 'railsum-edit') {
+    railEditing = !railEditing;
+    renderRailSummary(); queueChrome();
+    var back = document.getElementById('railsum-edit');
+    if (back) back.focus();
+    return;
+  }
   if (e.target.id === 'startbtn' || e.target.id === 'mdedit') {
     openMandateDialog(e.target); return;
   }
@@ -3415,7 +3700,9 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'dlgcancel' || e.target.id === 'dlgclose') {
     closeMandateDialog(); return;
   }
-  if (e.target.id === 'dlgaccount') { openAccountDialog(); return; }
+  if (e.target.id === 'dlgaccount' || e.target.id === 'lpaccount') {
+    openAccountDialog(e.target); return;
+  }
   if (e.target.id === 'accancel' || e.target.id === 'acclose' || e.target.id === 'acdone') {
     if (!(account && account.submitting)) closeAccountDialog();
     return;
@@ -3685,6 +3972,7 @@ return {
   headerName: headerName,
   fullName: fullName,
   available: available,
+  whyUnavailable: whyUnavailable,
   used: used,
   slotsLeft: slotsLeft,
   reAllowed: reAllowed,
@@ -3786,7 +4074,8 @@ function paint() {
   if (left <= 0) {
     pop.innerHTML = '<button type="button" class="pop-close" aria-label="Close">×</button>'
       + '<h4>Add comparison</h4>'
-      + '<p class="pop-full">All three comparison slots are in use. Remove one from the rail '
+      + '<p class="pop-full">Every comparison slot is in use - all '
+      + (App.opt('rules.maxPortfolios', 4) - 1) + '. Remove one with the × on its column '
       + 'to free a slot.</p>'
       + '<div class="pop-actions"><button type="button" class="btn btn-ghost" id="pdone">'
       + 'Done</button></div>';
@@ -3808,7 +4097,7 @@ function paint() {
         var why = '';
         var enabled = true;
         if (probe) {
-          if (!App.available(probe)) { enabled = false; why = ' — unavailable'; }
+          if (!App.available(probe)) { enabled = false; why = ' — ' + App.whyUnavailable(cur.allocationType, cur.excludeRealAssets, r); }
           else if (App.used(probe)) { enabled = false; why = ' — already added'; }
         }
         return '<option value="' + App.esc(r) + '"' + (r === cur.riskLevel ? ' selected' : '')
@@ -3820,6 +4109,10 @@ function paint() {
     + '<p class="slots">' + left + ' slot' + (left === 1 ? '' : 's') + ' remaining'
     + (justAdded ? ' · <span class="pop-added">' + App.esc(justAdded) + ' added</span>' : '')
     + '</p>'
+    /* risk, then allocation, then the exclusion: the rail's order, and the
+       order the portfolio's name is read in (C1, D54) */
+    + '<div class="field"><label for="pr">Risk Level</label><select id="pr">'
+    + riskOptions + '</select></div>'
     + '<div class="field"><label for="pa">Allocation</label><select id="pa"'
     + (allEquity ? ' disabled' : '') + '>' + allocationOptions + '</select></div>'
     + '<div class="chk"><input type="checkbox" id="pre"'
@@ -3833,8 +4126,6 @@ function paint() {
         : (cur.allocationType && !canRA)
         ? '<p class="chk-note" id="prenote">Not available — ' + App.esc(cur.allocationType)
           + ' holds no real assets.</p>' : '')
-    + '<div class="field"><label for="pr">Risk Level</label><select id="pr">'
-    + riskOptions + '</select></div>'
     + '<div class="pop-actions">'
     + '<button type="button" class="btn btn-primary" id="padd"' + (ok ? '' : ' disabled') + '>'
     + 'Add to table</button>'
@@ -3859,7 +4150,7 @@ function open(button) {
   } else {
     pop.style.top = ''; pop.style.left = '';
   }
-  var field = pop.querySelector('#pa');
+  var field = pop.querySelector('#pr');
   if (field) field.focus();
 }
 
@@ -3880,18 +4171,29 @@ document.addEventListener('click', function (e) {
   if (pop.classList.contains('on')) close();
 });
 
+/* paint() replaces the controls; the one in use keeps the focus */
+function refocus(id) { var el = pop.querySelector('#' + id); if (el && !el.disabled) el.focus(); }
+
 pop.addEventListener('change', function (e) {
   if (e.target.id === 'pa') {
     cur.allocationType = e.target.value;
     cur.excludeRealAssets = false;
     justAdded = '';
-    paint();
-    var risk = pop.querySelector('#pr');
-    if (risk && cur.allocationType && !cur.riskLevel) risk.focus();
+    paint(); refocus('pa');
     return;
   }
-  if (e.target.id === 'pre') { cur.excludeRealAssets = e.target.checked; paint(); return; }
-  if (e.target.id === 'pr') { cur.riskLevel = e.target.value || ''; paint(); return; }
+  if (e.target.id === 'pre') { cur.excludeRealAssets = e.target.checked; paint(); refocus('pre'); return; }
+  if (e.target.id === 'pr') {
+    cur.riskLevel = e.target.value || '';
+    /* an allocation the new level does not hold is no longer an answer */
+    if (cur.allocationType && App.allocationChoices(cur.riskLevel).indexOf(cur.allocationType) < 0) {
+      cur.allocationType = ''; cur.excludeRealAssets = false;
+    }
+    paint();
+    /* on to the allocation when the level needs one and has none yet */
+    refocus(cur.riskLevel && !cur.allocationType && !App.isAllEquityRisk(cur.riskLevel) ? 'pa' : 'pr');
+    return;
+  }
 });
 
 pop.addEventListener('click', function (e) {
@@ -4147,18 +4449,32 @@ var IMPL_TEXT_COLUMNS = ['Ticker', 'Style', 'Vehicle', 'Share class',
 
 /* Every column of the screen's table, in order - the thing both spans below
    have to add up to. */
+/* Notional sits beside Allocation (A2): they are one fact in two units, and
+   at opposite ends of a table this wide the money was only ever reached by
+   scrolling. The minimum stays on the right, and the position that breaches
+   it says so beside its own notional instead. */
 function implScreenColumns(fees) {
-  return ['Categories & Asset Classes', 'Products', 'Allocation (%)']
+  return ['Asset Class', 'Products', 'Allocation (%)', 'Notional']
     .concat(IMPL_TEXT_COLUMNS)
     .concat(['Prod cost'])
     .concat(fees ? ['Mgmt fee', 'Wtd fee'] : [])
-    .concat(['Min Investment', 'Notional']);
+    .concat(['Min Investment']);
 }
 
-/* A category band leaves the descriptive columns empty and keeps its own
-   Product cost cell; the total also swallows Product cost, having none. */
+/* A category band leaves the descriptive columns empty and fills its own
+   Product cost and Mgmt fee cells (A4); the total swallows Product cost,
+   having none of its own. */
 function implBandSpan() { return IMPL_TEXT_COLUMNS.length; }
 function implTotalSpan() { return IMPL_TEXT_COLUMNS.length + 1; }
+
+/* An auto-attached sleeve is marked with a labelled glyph rather than an
+   emoji (G2): emoji are announced inconsistently - "locked", the codepoint,
+   or nothing - and this is the only thing on screen that explains why two
+   categories have no picker in the rail. */
+var LOCK_SVG = '<svg class="pill-lock" viewBox="0 0 12 12" role="img"'
+  + ' aria-label="attached by rule"><path d="M3.4 5.2V3.8a2.6 2.6 0 0 1 5.2 0v1.4"'
+  + ' fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  + '<rect x="2.3" y="5.2" width="7.4" height="5.3" rx="1.1" fill="currentColor"/></svg>';
 
 function feeText(pct) { return pct === null ? '—' : App.num(pct, 2, '%'); }
 function bpText(bp) { return bp === null ? '—' : App.num(bp, 1, 'bp'); }
@@ -4704,10 +5020,8 @@ function feeFields() {
     + (onCustom ? '' : segment(points, curPoint, curSource, 'data-feepoint',
               function (point, source) { return idFor(source, point); }, 'Fee Level point'))
     + '<p class="vr-note">' + feePricingNote(tier) + '</p>'
+    + feeOutcomeLine()
     + (onCustom ? customRailBlock() : '')
-    /* the flag is about the delivered card; custom rates are the PWA's */
-    + (App.opt('fees.placeholder', false) && !onCustom
-        ? '<p class="fee-flag">Placeholder rates, not the published schedule.</p>' : '')
     + feeCardLine()
     + (marginalBuildUp()
         ? '<button type="button" class="btn btn-ghost fee-view" data-priceview>'
@@ -4720,8 +5034,7 @@ function feeFields() {
 /* Under the custom level: the rows this book holds and what each carries,
    and the way back into the card. A fee group with no products in the model
    is not listed - it prices nothing here - and one with products and no rate
-   is marked, since its products are unpriced. The card still shows every
-   row, so a rate can be entered ahead of a sleeve that would need it. */
+   is marked, since its products are unpriced. The card lists the same rows. */
 function customRailBlock() {
   var schedule = App.feeSchedule();
   var html = '';
@@ -4769,10 +5082,29 @@ function feePricingNote(tier) {
 }
 
 /* The card's own line under the level: which delivery priced this book. */
-function feeCardLine() {
-  var delivery = App.opt('fees.delivery', null) || {};
-  return '<p class="fee-card">Card ' + App.esc(delivery.version || 'unversioned') + '</p>';
+/* The card's delivery version used to print here as "Card 0.0-placeholder",
+   a build identifier sitting where a PWA looks for a price (F3). Nothing is
+   printed here now, and the version is not printed in the card's own header
+   either (D104). */
+/* What the level actually costs, where the level is chosen (F2). Management,
+   PMG and Custom are picked in the rail and their whole effect was one figure
+   in a column off the right edge of a table below the fold - the only control
+   here with no visible consequence. The money matters more than the basis
+   points to the conversation this proposal is written for. */
+function feeOutcomeLine() {
+  var groups = rows();
+  var t = totals(groups);
+  if (t.bp === null) {
+    return '<p class="fee-outcome none">Not yet priced \u2014 every product needs a rate.</p>';
+  }
+  var mandate = App.mandateSize();
+  var annual = (typeof mandate === 'number') ? mandate * t.bp / 10000 : null;
+  return '<p class="fee-outcome"><b>' + App.esc(bpText(t.bp)) + '</b>'
+    + (annual === null ? '' : '<span>' + App.esc(money(annual)) + ' a year</span>')
+    + '<small>on the model as it stands</small></p>';
 }
+
+function feeCardLine() { return ''; }
 
 /* ---- the rate card viewer (D55) -------------------------------------------
    Every cell at one tier or one fee group, read only. The card is what the
@@ -4819,6 +5151,30 @@ async function loadFeeCard() {
   renderFeePanel();
 }
 
+/* Which of the card's ladders this proposal actually prices on: the chosen
+   schedule, and under one that prices by fee group, the group carrying the
+   most weight in the model - the rate most of the money is paying. */
+function pricedGroupIndex(card) {
+  var schedule = App.feeSchedule();
+  if (!schedule || !card || !card.groups) return -1;
+  var mine = [];
+  card.groups.forEach(function (g, i) { if (g.schedule === schedule) mine.push(i); });
+  if (!mine.length) return -1;
+  if (mine.length === 1) return mine[0];
+  var weight = {};
+  rows().forEach(function (group) {
+    group.items.forEach(function (item) {
+      weight[item.feeGroup] = (weight[item.feeGroup] || 0) + item.weight;
+    });
+  });
+  var best = mine[0], most = -1;
+  mine.forEach(function (i) {
+    var w = weight[card.groups[i].feeGroup] || 0;
+    if (w > most) { most = w; best = i; }
+  });
+  return best;
+}
+
 async function openFeePanel(groupName) {
   var tier = App.opt('fees.tier', null);
   feePanel.open = true;
@@ -4834,6 +5190,15 @@ async function openFeePanel(groupName) {
   if (groupName && feePanel.card) {
     var at = feePanel.card.groups.findIndex(function (g) { return g.feeGroup === groupName; });
     if (at !== -1) { feePanel.pivot = 'group'; feePanel.group = at; renderFeePanel(); }
+  } else if (feePanel.card) {
+    /* Opened from the rail, the card shows the ladder this proposal is
+       priced on (F1). It used to open on whatever was first in its own list -
+       CASP, while the rail said RDR - with nothing to say it was not what the
+       client is paying, and both are plausible five-tier grids. */
+    var here = pricedGroupIndex(feePanel.card);
+    if (here !== -1 && here !== feePanel.group) {
+      feePanel.pivot = 'group'; feePanel.group = here; renderFeePanel();
+    }
   }
   var sel = document.getElementById('feeaxis');
   if (sel) sel.focus();
@@ -4894,7 +5259,6 @@ function renderFeePanel() {
   App.setBackgroundInert(true);
   var card = feePanel.card;
   var delivery = (card && card.delivery) || App.opt('fees.delivery', {}) || {};
-  var placeholder = App.opt('fees.placeholder', false);
 
   /* The level this mandate prices at - the scenario's own, or the framework's
      default when none is chosen yet. It is one column of the grid, and the
@@ -4983,12 +5347,13 @@ function renderFeePanel() {
     + '<button type="button" class="dlg-close" id="feeclose" aria-label="Close">×</button>'
     + '<div class="rc-head">'
     + '<h2 id="feeTitle">Fee card</h2>'
+    /* The delivery's version and origin are not printed (D104): in a
+       development build they name the card as a placeholder, which is a fact
+       about the environment rather than about the price. The as-of date is
+       the card's own and stays. */
     + '<p class="rc-meta">'
-    + '<span>Delivery <b>' + App.esc(delivery.version || 'unversioned') + '</b></span>'
     + (delivery.asOf ? '<span>as of <b>' + App.esc(delivery.asOf) + '</b></span>' : '')
-    + (delivery.source ? '<span>from <b>' + App.esc(delivery.source) + '</b></span>' : '')
     + '</p>'
-    + (placeholder ? '<span class="rc-flag">Placeholder rates</span>' : '')
     + '</div>'
     + controls
     + table
@@ -5080,7 +5445,6 @@ function renderPricePanel() {
   var level = (App.feeLevel && App.feeLevel()) || App.opt('fees.defaultLevel', null);
   var sums = priceBuildUp(build, level);
   var delivery = App.opt('fees.delivery', {}) || {};
-  var placeholder = App.opt('fees.placeholder', false);
   var schedule = (build && build.schedule) || (App.feeSchedule && App.feeSchedule()) || '';
 
   var body = '<p class="rc-loading">There is no mandate size to price yet.</p>';
@@ -5131,9 +5495,7 @@ function renderPricePanel() {
     + '<p class="rc-meta">'
     + '<span>Schedule <b>' + App.esc(schedule) + '</b></span>'
     + '<span>Level <b>' + App.esc(level || '\u2014') + '</b></span>'
-    + '<span>Card <b>' + App.esc(delivery.version || 'unversioned') + '</b></span>'
     + '</p>'
-    + (placeholder ? '<span class="rc-flag">Placeholder rates</span>' : '')
     + '</div>'
     + '<p class="pb-sub">' + App.esc(schedule) + ' is priced marginally: no single tier sets '
     + 'the rate, so this is the whole of the calculation.</p>'
@@ -5145,6 +5507,108 @@ function renderPricePanel() {
     + '</div></div>';
 }
 
+
+/* ---- the greeting on the first visit to step 2 (D97) ----------------------
+   The first time in a browser session that a PWA opens Implementation from
+   the step nav, the document dims, the rail stays lit, and a card against the
+   rail's edge says what the step asks for and lists this portfolio's
+   categories. It is the one dialog in the tool that Escape and an outside
+   click do not close (spec 13.2): the whole point is to be read once, so OK
+   is the only way out, and OK hands focus to the picker the guide has marked
+   (D95) rather than merely closing.
+
+   Skipped when there is nothing to ask for - every category already has a
+   sleeve, or the base or the variant is not ready to pick against - whatever
+   the flag says. */
+var GREET_KEY = 'pmg.proposalTool.implGreeted';
+var greetPanel = { open: false, armed: false };
+var greetedHere = false;                 /* stands in where storage is refused */
+
+function greeted() {
+  if (greetedHere) return true;
+  try { return window.sessionStorage.getItem(GREET_KEY) === '1'; } catch (e) { return false; }
+}
+function markGreeted() {
+  greetedHere = true;
+  try { window.sessionStorage.setItem(GREET_KEY, '1'); } catch (e) {}
+}
+
+/* The categories this card is about: the ones a PWA picks for, in the rail's
+   own order. Empty when there is nothing to say. */
+function greetCategories() {
+  var base = App.base();
+  if (!base || base.status !== 'ready' || !App.variant() || !App.canEdit()) return [];
+  return sleeveCategories(baseCategories()).filter(function (c) { return !isAuto(c.name); });
+}
+
+function renderGreetPanel() {
+  var host = document.getElementById('greetDialog'); if (!host) return;
+  var live = greetPanel.open ? greetCategories() : [];
+  var left = live.filter(function (c) { return !sleeveFor(c.name); }).length;
+  if (!greetPanel.open || !live.length || !left) {
+    if (greetPanel.open) { greetPanel.open = false; markGreeted(); }
+    host.innerHTML = ''; host.hidden = true;
+    document.body.classList.remove('greeting');
+    if (!feePanel.open && !pricePanel.open && !customPanel.open) App.setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  document.body.classList.add('greeting');
+  App.setBackgroundInert(true);
+
+  var list = live.map(function (c) {
+    var chosen = sleeveFor(c.name);
+    return '<li><b>' + App.esc(c.name) + '</b><i>'
+      + (chosen ? '✓ ' + App.esc(chosen.name || chosen) : App.num(c.weightPct, 1, '%'))
+      + '</i></li>';
+  }).join('');
+
+  host.innerHTML =
+      '<div class="scrim greet-scrim" data-greetscrim></div>'
+    + '<div class="dialog greet" role="dialog" aria-modal="true" aria-labelledby="greetTitle">'
+    + '<p class="greet-eyebrow">Step 2 of 2 · Implementation</p>'
+    + '<h2 id="greetTitle">Sleeves are chosen in the panel on the left</h2>'
+    + '<p class="greet-lede">Choose a <b>sleeve</b> for each category of this portfolio, in the '
+    + 'panel beside this card. Each is a set of products PMG has put together for that category, '
+    + 'and the implementation table fills in as you go.</p>'
+    + '<ul class="greet-cats">' + list + '</ul>'
+    + '<p class="greet-left">' + left + ' of ' + live.length + ' still need one. The first is '
+    + 'marked when this closes.</p>'
+    + '<div class="greet-acts"><button type="button" class="btn btn-primary" id="greetok">'
+    + 'Choose the first sleeve</button></div></div>';
+  var ok = document.getElementById('greetok');
+  if (ok) ok.focus();
+}
+
+function closeGreetPanel() {
+  if (!greetPanel.open) return;
+  greetPanel.open = false;
+  markGreeted();
+  renderGreetPanel();
+  /* The handover: focus the picker the guide has marked (D95), or - on a
+     scenario whose guide has already finished - the first one still empty,
+     which is the same control the card was pointing at. */
+  var next = document.querySelector('.rail .sl-row.is-next select')
+    || document.querySelector('.rail .sl-row:not(.done) select');
+  if (next && !next.disabled) {
+    void next.offsetWidth;
+    next.focus();
+    if (document.activeElement !== next) {
+      window.setTimeout(function () { if (document.contains(next)) next.focus(); }, 0);
+    }
+  }
+}
+
+/* Focus stays inside the card: it has one control, so Tab returns to it. */
+document.addEventListener('keydown', function (e) {
+  if (!greetPanel.open) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return; }
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    var ok = document.getElementById('greetok');
+    if (ok) ok.focus();
+  }
+}, true);
 
 /* ---- guiding the sleeves (D95) -------------------------------------------
    The base portfolio's controls are guided one at a time (D91); the sleeve
@@ -5291,9 +5755,13 @@ function renderCustomPanel() {
       }).join('');
     }).join('') + '</tr>';
 
+  /* only the rows this book holds: a fee group with no products in the
+     model prices nothing here, so it is not offered a rate */
   var body = feeSchedules().map(function (entry) {
     var on = entry.id === schedule;
-    return customRowsFor(entry.id).map(function (r, ix) {
+    return customRowsFor(entry.id).filter(function (r) {
+      return r.group ? counts[r.group] : held;
+    }).map(function (r, ix) {
       var ref = customReference(entry.id, r.group) || {};
       var key = customRowKey(entry.id, r.group);
       var value = customRate(entry.id, r.group, draft);
@@ -5315,7 +5783,7 @@ function renderCustomPanel() {
       var input = '<td class="cust rc-grp' + (bad ? ' bad' : '') + '">'
         + '<input type="text" inputmode="decimal" class="cf-in" id="cf-' + key.replace(/\W/g, '_') + '"'
         + ' data-crate="' + App.esc(key) + '" value="' + (value === null ? '' : value.toFixed(2) + '%') + '"'
-        + (on ? '' : ' disabled') + ' placeholder="' + (on ? (n ? '—' : 'optional') : '') + '"'
+        + (on ? '' : ' disabled') + ' placeholder="' + (on ? '\u2014' : '') + '"'
         + ' aria-label="Custom rate for ' + App.esc(entry.id + (r.group ? ' ' + r.group : '')) + '"'
         + (on && room ? ' title="Between ' + room.low.toFixed(2) + '% and ' + room.high.toFixed(2) + '%"' : '')
         + (on ? '' : ' title="Choose ' + App.esc(entry.id) + ' in the rail to price by '
@@ -5370,8 +5838,7 @@ function renderCustomPanel() {
     + '<p class="rc-meta"><span>Schedule <b>' + App.esc(schedule) + '</b></span>'
     + (tier ? '<span>Tier <b>' + App.esc(tier.id + ' · ' + tier.label) + '</b></span>' : '')
     + '<span>Mandate <b>' + App.esc(money(App.mandateSize())) + '</b></span>'
-    + '<span>Card <b>' + App.esc(delivery.version || 'unversioned') + '</b></span></p>'
-    + (App.opt('fees.placeholder', false) ? '<span class="rc-flag">Placeholder rates</span>' : '')
+    + '</p>'
     + '</div>'
     + '<p class="pb-sub">The delivered rates at every level, for reference: a flat schedule at this '
     + 'mandate’s tier, a marginal one blended for this mandate. Enter one rate per '
@@ -5411,6 +5878,44 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
+/* ---- what a sleeve costs, before it is chosen (C2) ------------------------
+   Choosing between SMA Only, Mutual Funds and Passive is the central act of
+   this screen, and it was made blind: the consequence only appeared after the
+   choice, in a table whose cost columns are off the right edge. Every figure
+   needed is already here - the same product costs and the same managementFee
+   the table's own wtdBp is built from.
+
+   The weight is the category's current weight, so the notionals are what this
+   sleeve would hold if it were attached now; the line says "at this weight"
+   rather than pretending to be a forecast. */
+function sleeveShape(sleeve, weightPct) {
+  var products = (sleeve && sleeve.products) || [];
+  if (!products.length) return null;
+  var priced = App.includeFees() && !!App.feeSchedule();
+  var cost = 0, known = true, below = 0;
+  var mandate = App.mandateSize();
+  products.forEach(function (product) {
+    var mgmt = priced ? managementFee(product.feeGroup) : 0;
+    if (mgmt === null) known = false; else cost += product.weight * (product.productCost + mgmt);
+    if (typeof mandate === 'number' && product.minimumInvestment) {
+      var notional = mandate * (weightPct / 100) * product.weight;
+      if (notional < product.minimumInvestment) below += 1;
+    }
+  });
+  return { count: products.length, cost: known ? cost : null, priced: priced, below: below };
+}
+
+function sleeveShapeText(shape) {
+  if (!shape) return '';
+  return '<span class="sl-shape">'
+    + '<span>' + shape.count + ' product' + (shape.count === 1 ? '' : 's') + '</span>'
+    + (shape.cost === null ? ''
+        : '<span>' + (shape.priced ? 'all-in ' : 'cost ') + App.num(shape.cost, 2, '%') + '</span>')
+    + (shape.below
+        ? '<span class="bad">' + shape.below + ' below minimum</span>' : '')
+    + '</span>';
+}
+
 function renderRail() {
   var el = document.getElementById('tier-sleeves'); if (!el) return;
   if (App.step() !== 'impl' || App.phase() !== 'workspace') { el.hidden = true; return; }
@@ -5426,7 +5931,7 @@ function renderRail() {
   /* The admin shortcut sits on the heading rather than on every picker row:
      one control for the tier, opening the repository on the implementation
      type already chosen, rather than five that each say the same thing (D62). */
-  var head = '<div class="tier-h"><h3>Sleeves</h3><span class="tier-h-r">'
+  var head = '<div class="tier-h"><h3>Asset Class Implementation</h3><span class="tier-h-r">'
     + (chosenVariant && base && base.status === 'ready'
         ? '<span class="tier-count">' + counts.filled + ' of ' + counts.total + '</span>'
         : '')
@@ -5442,14 +5947,14 @@ function renderRail() {
      the base is still resolving, and taking them away when the base fails
      would lose an answer the PWA had already given. */
   if (!base) {
-    el.innerHTML = head + '<p class="field-note">Build a base portfolio first.</p>'
+    el.innerHTML = head + '<p class="field-note">Build the proposed portfolio first.</p>'
       + overlayFields() + feeFields();
     return;
   }
   if (base.status !== 'ready') {
     el.innerHTML = head + '<p class="field-note">' + (base.status === 'error'
-        ? 'The base portfolio could not be built. Retry it from the allocation step.'
-        : 'Resolving the base portfolio…') + '</p>' + overlayFields() + feeFields();
+        ? 'The proposed portfolio could not be built. Retry it from the allocation step.'
+        : 'Resolving the proposed portfolio…') + '</p>' + overlayFields() + feeFields();
     return;
   }
   var html = head;
@@ -5461,7 +5966,7 @@ function renderRail() {
        a variant, and step 2 is gated on a portfolio - but a hand-edited or
        part-migrated scenario could arrive here, so it says where to go. */
     el.innerHTML = html + '<p class="field-note">No implementation variant is '
-      + 'set. Choose one with the base portfolio on the allocation step; it '
+      + 'set. Choose one with the proposed portfolio on the allocation step; it '
       + 'decides which sleeves each category offers and what they hold.</p>'
       + overlayFields() + feeFields();
     return;
@@ -5498,12 +6003,15 @@ function renderRail() {
     }
     html += '<div class="sl-row' + (chosen ? ' done' : '') + (i === next ? ' is-next' : '') + '">'
       + '<span class="cat"><b><label for="sl' + i + '">' + App.esc(category.name) + '</label></b>'
-      + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select + '</div>';
+      + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select
+      + (chosen ? sleeveShapeText(sleeveShape(chosen, category.weightPct)) : '') + '</div>';
   });
+  /* The count is already beside the heading; the bar is the only thing this
+     adds, so the sentence that repeated both is gone (D2). */
   var progressPct = counts.total ? Math.round(counts.filled / counts.total * 100) : 0;
-  html += '</div><p class="sl-progress">' + counts.filled + ' of ' + counts.total
-    + ' categories have a sleeve.'
-    + '<span class="sl-bar"><i style="width:' + progressPct + '%"></i></span></p>';
+  html += '</div><p class="sl-progress"><span class="sl-bar" role="img" aria-label="'
+    + counts.filled + ' of ' + counts.total + ' categories have a sleeve">'
+    + '<i style="width:' + progressPct + '%"></i></span></p>';
   html += overlayFields() + feeFields();
   el.innerHTML = html;
 }
@@ -5641,6 +6149,121 @@ function renderDonuts(groups, done) {
 }
 
 /* ---- the document (spec 9.3) -------------------------------------------- */
+/* ---- the export gate, said once (D2, B3, B4) -----------------------------
+   The head, the strip under the table and the card at the foot all report
+   this. It used to be computed inline where the card is drawn, so the head
+   could only ever repeat the sleeve count and the one fact that mattered -
+   that the file cannot be produced - was reachable only by scrolling past
+   five doughnuts.
+
+   The blocked text names its products as buttons that go to their rows (B3):
+   the card sits several screens below the table it is talking about, and the
+   reader had to find the rows by eye among twenty. Nothing is truncated any
+   more either - hiding the fourth of four meant the product a reader could
+   not see was the one they could not go and look at. */
+function rowAnchor(category, name) { return category + '|' + name; }
+
+function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
+  var breached = breaches(groups);
+  var reason = null, blocking = false;
+  if (!App.canExport()) reason = 'Export is not available for your role.';
+  else if (!App.variant()) reason = 'Choose an implementation variant first.';
+  /* Only a proposal that includes fees needs a schedule: one that does not
+     exports a sheet with no fee column to price (D52). */
+  else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
+  /* under the custom level a row without a rate leaves its products unpriced (D96) */
+  else if (fees && isCustomLevel() && customUnpriced(groups).length) {
+    reason = 'Set a custom rate for every fee group in the model: '
+      + customUnpriced(groups).join(', ') + ' still to set.';
+  }
+  else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
+  else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
+  /* A hard block: a position below the product's minimum cannot be bought,
+     so the materials cannot be produced. The server refuses it too. */
+  else if (breached.length) {
+    blocking = true;
+    reason = breached.length === 1
+      ? breached[0].name + ' in ' + breached[0].category + ' is below mandate minimum ('
+        + money(breached[0].notional) + ' against a ' + money(breached[0].minimum)
+        + ' minimum). Raise the mandate or change the sleeve.'
+      : breached.length + ' positions are below mandate minimum: '
+        + breached.map(function (b) { return b.name; }).join(', ')
+        + '. Raise the mandate or change the sleeve.';
+  }
+
+  var tone, headline, html;
+  if (exporting.status === 'working') {
+    tone = ''; headline = 'Preparing…';
+    html = App.esc('The server is generating the workbook from the persisted scenario.');
+  } else if (exporting.status === 'error') {
+    tone = 'error'; headline = 'Export failed';
+    html = App.esc(exporting.error || 'Export failed.');
+  } else if (blocking) {
+    tone = 'error';
+    headline = breached.length + ' below minimum';
+    /* each named product is the way to its row */
+    var links = breached.map(function (b) {
+      return '<button type="button" class="gate-go" data-implgo="'
+        + App.esc(rowAnchor(b.category, b.name)) + '">' + App.esc(b.name) + '</button>';
+    }).join(', ');
+    html = breached.length === 1
+      ? links + ' in ' + App.esc(breached[0].category) + ' is below mandate minimum ('
+        + App.esc(money(breached[0].notional)) + ' against a '
+        + App.esc(money(breached[0].minimum)) + ' minimum). Raise the mandate or change the sleeve.'
+      : breached.length + ' positions are below mandate minimum: ' + links
+        + '. Raise the mandate or change the sleeve.';
+  } else if (reason) {
+    tone = 'blocked';
+    headline = done ? 'Blocked' : 'Not ready';
+    html = App.esc(reason);
+  } else {
+    tone = 'ready'; headline = 'Ready to download';
+    html = App.esc('Ready — every category is implemented and the scenario is saved.');
+  }
+  return { reason: reason, blocking: blocking, tone: tone, headline: headline,
+           html: html, disabled: !!reason || exporting.status === 'working' };
+}
+
+/* Take the reader to the row a gate names (B3), and leave it lit long enough
+   to be found. The docked header stands over the table, so the row is put
+   below it rather than under it. */
+function showImplRow(anchor) {
+  var row = document.querySelector('[data-implrow="' + String(anchor).replace(/"/g, '\\"') + '"]');
+  if (!row) return;
+  var wrap = row.closest('.tblwrap');
+  if (wrap && wrap.scrollLeft > 0) wrap.scrollLeft = 0;      /* the name is pinned; the rest is not */
+  row.scrollIntoView({ block: 'center', inline: 'nearest' });
+  row.classList.remove('lit');
+  void row.offsetWidth;
+  row.classList.add('lit');
+  window.clearTimeout(showImplRow._t);
+  showImplRow._t = window.setTimeout(function () { row.classList.remove('lit'); }, 2400);
+}
+
+/* The table is where a sleeve is seen to be wrong; the picker that can change
+   it is in the rail (C3). The rail scrolls, never the document. */
+function focusSleevePicker(category) {
+  var select = document.querySelector('.sl-row select[data-cat="'
+    + String(category).replace(/"/g, '\\"') + '"]');
+  if (!select) return;
+  var rail = document.querySelector('.rail');
+  if (rail && rail.scrollHeight > rail.clientHeight) {
+    var row = select.closest('.sl-row');
+    var top = row.getBoundingClientRect().top - rail.getBoundingClientRect().top + rail.scrollTop;
+    var brand = document.querySelector('.rail-brand');
+    rail.scrollTop = Math.max(0, top - (brand ? brand.offsetHeight : 0) - 12);
+  }
+  select.focus({ preventScroll: true });
+  var row2 = select.closest('.sl-row');
+  if (row2) {
+    row2.classList.remove('lit');
+    void row2.offsetWidth;
+    row2.classList.add('lit');
+    window.clearTimeout(focusSleevePicker._t);
+    focusSleevePicker._t = window.setTimeout(function () { row2.classList.remove('lit'); }, 2400);
+  }
+}
+
 function renderView() {
   var el = document.getElementById('view-impl'); if (!el) return;
   var wrap = document.getElementById('view-impl-wrap');
@@ -5653,7 +6276,10 @@ function renderView() {
     var base = App.base();
     var ready = !!(base && base.status === 'ready');
     nav.querySelectorAll('.step').forEach(function (b) {
-      b.setAttribute('aria-selected', String(b.dataset.step === App.step()));
+      var on = b.dataset.step === App.step();
+      b.setAttribute('aria-selected', String(on));
+      /* one tab stop for the pair; the arrow keys move within it (G1) */
+      b.tabIndex = on ? 0 : -1;
       if (b.dataset.step !== 'impl') return;
       b.disabled = !ready;
       b.classList.toggle('step-beckon', ready && !App.implSeen());
@@ -5668,18 +6294,18 @@ function renderView() {
 
   var base = App.base();
   if (!base) {
-    el.innerHTML = '<div class="impl-empty"><h3>No base portfolio yet</h3>'
-      + '<p>Choose an allocation and risk level in the rail to build the base portfolio, '
+    el.innerHTML = '<div class="impl-empty"><h3>No proposed portfolio yet</h3>'
+      + '<p>Choose an allocation and risk level in the rail to build the proposed portfolio, '
       + 'then attach a sleeve to each of its categories.</p></div>';
     return;
   }
   if (base.status === 'loading') {
-    el.innerHTML = '<div class="impl-empty"><h3>Resolving the base portfolio…</h3>'
-      + '<p>The implementation model builds from the base portfolio’s categories.</p></div>';
+    el.innerHTML = '<div class="impl-empty"><h3>Resolving the proposed portfolio…</h3>'
+      + '<p>The implementation model builds from the proposed portfolio’s categories.</p></div>';
     return;
   }
   if (base.status === 'error') {
-    el.innerHTML = '<div class="impl-empty"><h3>The base portfolio could not be built</h3>'
+    el.innerHTML = '<div class="impl-empty"><h3>The proposed portfolio could not be built</h3>'
       + '<p>Retry it from the allocation step; the implementation model needs its categories.</p></div>';
     return;
   }
@@ -5711,21 +6337,28 @@ function renderView() {
       + inner + '</span></td>' : '';
   }
 
+  /* The gate is worked out before anything is drawn, because the head, the
+     strip under the table and the export card all say the same thing and must
+     not be able to disagree (D2, B4). */
+  var gate = exportGate(groups, t, done, columnsBusy, fees, schedule, exporting);
+
   /* The same stage block step 1 carries: eyebrow, title, standfirst. The
      "Implementing X against a mandate of Y" line becomes the standfirst
      rather than sitting as a second note, so the two steps open identically. */
   var html = '<div class="impl-head"><div>'
-    + '<p class="eyebrow">Step 2 of 2</p>'
     + '<h2 class="stage-title">Portfolio Implementation</h2>'
     + '<p class="stage-sub">Implementing <strong>'
     + App.esc(base.data.name) + '</strong> against a mandate of '
     + money(App.mandateSize()) + '.</p>'
     + '</div>'
-    /* v2's completion summary in place of the pill: it reported only two
-       states, where this shows how far along the model is at a glance. */
+    /* The count, and then the thing that actually gates the download (D2).
+       Three indicators used to report the same easy fact and none the hard
+       one: with every sleeve attached all three read "4 of 4" and the screen
+       looked finished while the export was blocked. */
     + '<div class="completion-summary">'
-    + '<div class="completion-line"><span>Implementation progress</span>'
-    + '<strong>' + counts.filled + ' of ' + counts.total + '</strong></div>'
+    + '<div class="completion-line"><span>' + counts.filled + ' of ' + counts.total
+    + ' sleeves</span><strong class="cs-state ' + gate.tone + '">'
+    + App.esc(gate.headline) + '</strong></div>'
     + '<div class="progress-track' + (done ? ' is-done' : '') + '" role="img" aria-label="'
     + counts.filled + ' of ' + counts.total + ' categories implemented"><i style="--progress:'
     + (counts.total ? Math.round(counts.filled / counts.total * 100) : 0) + '%"></i></div>'
@@ -5733,11 +6366,12 @@ function renderView() {
 
   html += '<div class="tblwrap" tabindex="0" aria-label="Implementation model, scrolls horizontally">'
     + '<table class="tbl impl' + (fees ? '' : ' no-fees')
-    + (fees && feeReveal ? ' fees-in' : '') + '">'
+    + (fees && feeReveal ? ' fees-in' : '') + '" id="implTbl">'
     + '<caption class="sr-only">Implementation model by product</caption><thead><tr>'
-    + '<th scope="col" class="rowhead txt">Categories &amp; Asset Classes</th>'
+    + '<th scope="col" class="rowhead txt">Asset Class</th>'
     + '<th scope="col" class="txt prodcol">Products</th>'
     + '<th scope="col" class="num">Allocation (%)</th>'
+    + '<th scope="col" class="num">Notional</th>'
     + IMPL_TEXT_COLUMNS.map(function (name) {
         return '<th scope="col" class="txt">' + App.esc(name) + '</th>';
       }).join('')
@@ -5747,45 +6381,86 @@ function renderView() {
           + '<th scope="col" class="num fee-col"><span class="fcw">Wtd fee</span></th>'
         : '')
     + '<th scope="col" class="num">Min Investment</th>'
-    + '<th scope="col" class="num">Notional</th>'
     + '</tr></thead><tbody>';
 
   groups.forEach(function (group) {
     var groupBp = 0, groupNotional = 0, groupWeight = 0;
+    /* The band's own figures (A4): what this category costs, weighted by what
+       it holds. Six bands used to spend a whole row saying almost nothing, in
+       a table short of width - and a sleeve, not a product, is the unit a PWA
+       actually trades, so the band is where "what does this cost me" belongs. */
+    var groupCostWt = 0, groupMgmtWt = 0, groupMgmtKnown = true;
     group.items.forEach(function (item) {
       groupNotional += item.notional; groupWeight += item.weight;
+      groupCostWt += item.cost * item.weight;
+      if (item.mgmt === null) groupMgmtKnown = false; else groupMgmtWt += item.mgmt * item.weight;
       if (groupBp !== null) groupBp = item.wtdBp === null ? null : groupBp + item.wtdBp;
     });
-    var shownWeight = group.items.length ? groupWeight : group.weightPct;
-    var shownNotional = group.items.length ? groupNotional
+    var held = group.items.length;
+    var bandCost = (held && groupWeight) ? groupCostWt / groupWeight : null;
+    var bandMgmt = (held && groupWeight && groupMgmtKnown) ? groupMgmtWt / groupWeight : null;
+    var shownWeight = held ? groupWeight : group.weightPct;
+    var shownNotional = held ? groupNotional
       : Math.round(App.mandateSize() * group.weightPct / 100 / ROUND_TO) * ROUND_TO;
+    /* The pill is the way back to the picker that set it (C3): the table is
+       where a sleeve is seen to be wrong, and removing it - the only thing
+       that could be done here - empties the category and blocks the export. */
+    var pillInner = App.esc(group.sleeve)
+      + (held ? '<small class="pc" aria-label="' + held + ' product'
+                + (held === 1 ? '' : 's') + '">' + held + '</small>' : '');
+    var pill;
+    if (group.auto) {
+      /* Attached by rule, not by choice (spec 2.6): no picker to go to, no
+         remove control, and a labelled mark rather than an emoji (G2). */
+      pill = '<span class="pill p-sleeve is-auto" title="Attached by rule; this category is not chosen">'
+        + pillInner + LOCK_SVG + '</span>';
+    } else {
+      pill = '<span class="pill p-sleeve">'
+        + (App.canEdit()
+            ? '<button type="button" class="pill-go" data-gosleeve="' + App.esc(group.category) + '"'
+              + ' title="Change the ' + App.esc(group.category) + ' sleeve"'
+              + ' aria-label="Change the ' + App.esc(group.category) + ' sleeve, currently '
+              + App.esc(group.sleeve) + '">' + pillInner + '</button>'
+            : pillInner)
+        + (App.canEdit()
+            ? '<button type="button" class="pill-x" data-rmsleeve="'
+              + App.esc(group.category) + '" aria-label="Remove the '
+              + App.esc(group.sleeve) + ' sleeve from '
+              + App.esc(group.category) + '">&#215;</button>'
+            : '')
+        + '</span>';
+    }
     html += '<tr class="cat"><th scope="row">' + App.esc(group.category) + '</th>'
       + '<td class="txt prodcol">' + (group.sleeve
-          ? '<span class="pill p-sleeve">' + App.esc(group.sleeve)
-            /* The auto category keeps its padlock and gets no remove control:
-               its sleeve is attached by rule, not by choice (spec 2.6). */
-            + (group.auto ? ' 🔒'
-                : (App.canEdit()
-                    ? '<button type="button" class="pill-x" data-rmsleeve="'
-                      + App.esc(group.category) + '" aria-label="Remove the '
-                      + App.esc(group.sleeve) + ' sleeve from '
-                      + App.esc(group.category) + '">&#215;</button>'
-                    : ''))
-            + '</span>'
+          ? pill
           : '<span class="bdg b-warn">No sleeve attached</span>') + '</td>'
       + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
+      + '<td class="num">' + money(shownNotional) + '</td>'
       + '<td colspan="' + implBandSpan() + '"></td>'
-      + '<td class="num"></td>'
-      + feeCell('num', '')
-      + feeCell('num', group.items.length ? bpText(groupBp) : '')
-      + '<td class="num"></td>'
-      + '<td class="num">' + money(shownNotional) + '</td></tr>';
+      + '<td class="num">' + (bandCost === null ? '' : App.num(bandCost, 2, '%')) + '</td>'
+      + feeCell('num', bandMgmt === null ? '' : App.num(bandMgmt, 2, '%'))
+      + feeCell('num', held ? bpText(groupBp) : '')
+      + '<td class="num"></td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
-        + (item.belowMinimum ? ' below-min' : '') + '"><th scope="row">'
+        + (item.belowMinimum ? ' below-min' : '') + '"'
+        + ' data-implrow="' + App.esc(rowAnchor(group.category, item.name)) + '"'
+        + '><th scope="row">'
         + App.esc(item.assetClass) + '</th>'
-        + '<td class="txt prodcol">' + App.esc(item.name) + '</td>'
+        /* The breach says so beside the name, in the pinned column (B2): the
+           row's pink fill was the only carrier of it at rest, and the badge
+           that explained it sat 753px to the right. */
+        + '<td class="txt prodcol">' + App.esc(item.name)
+        + (item.belowMinimum
+            ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
+              + App.esc(money(item.notional)) + ', below its '
+              + App.esc(money(item.minimumInvestment)) + ' minimum">below min</span>' : '')
+        + '</td>'
         + '<td class="num">' + App.num(item.weight, 2, '%') + '</td>'
+        + '<td class="num">' + money(item.notional)
+        + (item.belowMinimum
+            ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')
+        + '</td>'
         + '<td class="txt tick">' + App.esc(item.ticker) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
@@ -5799,12 +6474,7 @@ function renderView() {
             ? feeCell('num', feeText(item.mgmt)) + feeCell('num', bpText(item.wtdBp))
             : '')
         + '<td class="num">' + (typeof item.minimumInvestment === 'number'
-            ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>') + '</td>'
-        + '<td class="num">' + money(item.notional)
-        + (item.belowMinimum
-            ? ' <span class="bdg b-breach" title="' + App.esc(item.name)
-              + ' is below its ' + App.esc(money(item.minimumInvestment))
-              + ' minimum">below mandate minimum</span>' : '')
+            ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>')
         + '</td></tr>';
     });
   });
@@ -5812,63 +6482,31 @@ function renderView() {
      has none of; the Mgmt fee cell after it is the total's own, since a
      marginal schedule restates its blend where a reader looks for a total
      (D83) and a flat one leaves it empty, having no single rate to state. */
-  html += '<tr class="grand"><th scope="row">Total</th>'
+  /* What the row actually totals (D1). Every other total in this product sums
+     to 100, so a navy band reading "Total 10.20%" - the two auto overlays, on
+     a step 2 nobody has started - read as a portfolio that does not add up,
+     which is the most alarming possible way to say "you have not begun". */
+  var restPct = Math.max(0, 100 - t.weight);
+  html += '<tr class="grand"><th scope="row">Implemented total</th>'
     + '<td class="prodcol"></td>'
-    + '<td class="num">' + App.num(t.weight, 2, '%') + '</td>'
+    + '<td class="num">' + App.num(t.weight, 2, '%')
+    + (done ? '' : '<small class="of-all">of 100%</small>') + '</td>'
+    + '<td class="num">' + money(t.notional)
+    + (done ? '' : '<small class="of-all">' + App.num(restPct, 2, '%')
+        + ' not yet implemented</small>') + '</td>'
     + '<td colspan="' + implTotalSpan() + '"></td>'
     + feeCell('num', feeText(effectiveFee()))
     + feeCell('num', bpText(t.bp))
-    + '<td class="num"></td>'
-    + '<td class="num">' + money(t.notional) + '</td></tr>';
-  html += '</tbody></table></div>';
+    + '<td class="num"></td></tr>';
+  html += '</tbody></table></div>'
+    /* the shadow that says the table carries on to the right (A3, H3) */
+    + '<span class="tbl-more" id="implTbl-more" aria-hidden="true"></span>';
+  /* The consequence of the change just made, under the thing it was made to
+     (B4). The card at the foot then confirms rather than discloses. */
+  html += '<p class="impl-state ' + gate.tone + '" role="status">'
+    + '<b>' + App.esc(gate.headline) + '</b>' + gate.html + '</p>';
   html += renderDonuts(groups, done);
 
-  var breached = breaches(groups);
-  var breachBlocked = false;
-  var reason = null;
-  if (!App.canExport()) reason = 'Export is not available for your role.';
-  else if (!App.variant()) reason = 'Choose an implementation variant first.';
-  /* Only a proposal that includes fees needs a schedule: one that does not
-     exports a sheet with no fee column to price (D52). */
-  else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
-  /* under the custom level a row without a rate leaves its products unpriced (D96) */
-  else if (fees && isCustomLevel() && customUnpriced(groups).length) {
-    reason = 'Set a custom rate for every fee group in the model: '
-      + customUnpriced(groups).join(', ') + ' still to set.';
-  }
-  else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
-  else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
-  /* A hard block: a position below the product's minimum cannot be bought,
-     so the materials cannot be produced. The server refuses it too. */
-  else if (breached.length) {
-    breachBlocked = true;
-    reason = breached.length === 1
-      ? breached[0].name + ' in ' + breached[0].category + ' is below mandate minimum ('
-        + money(breached[0].notional) + ' against a ' + money(breached[0].minimum)
-        + ' minimum). Raise the mandate, change the sleeve, or drop the product.'
-      : breached.length + ' positions are below mandate minimum: '
-        + breached.slice(0, 3).map(function (b) { return b.name; }).join(', ')
-        + (breached.length > 3 ? ' and ' + (breached.length - 3) + ' more' : '')
-        + '. Raise the mandate, change the sleeve, or drop the products.';
-  }
-  var disabled = !!reason || exporting.status === 'working';
-  /* v2's export card in place of the bare button. The gate keeps its three
-     voices - working, blocked, failed - and stays wired to the button through
-     aria-describedby, so the reason still reaches assistive tech (spec 8.2). */
-  var gateClass = 'export-gate';
-  var gateText = '';
-  if (exporting.status === 'working') {
-    gateText = 'The server is generating the workbook from the persisted scenario.';
-  } else if (exporting.status === 'error') {
-    gateClass += ' error';
-    gateText = exporting.error || 'Export failed.';
-  } else if (reason) {
-    gateClass += breachBlocked ? ' error' : ' blocked';
-    gateText = reason;
-  } else {
-    gateClass += ' ready';
-    gateText = 'Ready — every category is implemented and the scenario is saved.';
-  }
   html += '<section class="export-card" aria-labelledby="exporttitle">'
     + '<div class="export-icon" aria-hidden="true"><span>X</span></div>'
     + '<div class="export-copy">'
@@ -5876,11 +6514,11 @@ function renderView() {
     + '<h3 id="exporttitle">Download the proposal workbook</h3>'
     + '<p>Generates Portfolios, Risk Dashboard and Implementation sheets from the '
     + 'persisted scenario and the current SAA analytics.</p>'
-    + '<p class="' + gateClass + '" id="implgate">' + App.esc(gateText) + '</p>'
+    + '<p class="export-gate ' + gate.tone + '" id="implgate">' + gate.html + '</p>'
     + '</div>'
     + '<button type="button" class="btn btn-export" id="implexport"'
-    + (disabled ? ' disabled' : '') + ' aria-describedby="implgate"'
-    + (reason ? ' title="' + App.esc(reason) + '"' : '') + '>'
+    + (gate.disabled ? ' disabled' : '') + ' aria-describedby="implgate"'
+    + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
     + (exporting.status === 'working' ? 'Preparing…' : 'Download Excel') + '</button>'
     + '</section>';
   el.innerHTML = html;
@@ -5998,13 +6636,27 @@ document.addEventListener('change', function (e) {
 });
 document.addEventListener('click', function (e) {
   var step = e.target.closest ? e.target.closest('.step') : null;
-  if (step) { App.setStep(step.dataset.step); return; }
+  if (step) {
+    /* the first visit this session, by the step nav, is greeted (D97) */
+    if (step.dataset.step === 'impl' && App.step() !== 'impl' && !greeted()) {
+      greetPanel.open = true;
+    }
+    App.setStep(step.dataset.step);
+    return;
+  }
+  if (e.target.id === 'greetok') { closeGreetPanel(); return; }
   /* the rate card panel (D55) */
   if (e.target.closest && e.target.closest('[data-openrepo]')) {
     var at = e.target.closest('[data-openrepo]');
     if (App.openRepository) App.openRepository(at, 'sleeves', { variant: App.variant() });
     return;
   }
+  /* a named product in the gate goes to its row (B3) */
+  var goRow = e.target.closest ? e.target.closest('[data-implgo]') : null;
+  if (goRow) { showImplRow(goRow.dataset.implgo); return; }
+  /* the sleeve pill goes to the picker that set it (C3) */
+  var goSleeve = e.target.closest ? e.target.closest('[data-gosleeve]') : null;
+  if (goSleeve) { focusSleevePicker(goSleeve.dataset.gosleeve); return; }
   /* the custom fee card (D96) */
   if (e.target.closest && e.target.closest('[data-customview]')) { openCustomPanel(); return; }
   if (e.target.id === 'customclose' || e.target.id === 'customcancel'
@@ -6104,6 +6756,7 @@ App.addRenderer(function () {
   ensureLibraries();
   renderRail();
   renderView();
+  renderGreetPanel();
   /* Both painted from the same one-shot, so it is cleared once, here, and
      the classes it wrote are stripped when they have finished playing. The
      rail follows the block it just opened. */
@@ -6148,6 +6801,10 @@ var repo = {
   open: false, view: 'sleeves', busy: false, saving: false, error: null, data: null,
   variant: null, category: null, sleeveId: null,
   draft: null, dirty: false, fieldError: null,
+  savedAt: null,               /* when the open draft was last written, for the footer (F2) */
+  kept: null,                  /* an unsaved draft that outlived a reload (F1) */
+  query: '',                   /* searching the sleeve list, across every book (C1) */
+  edMenu: false,               /* the editor's own action menu is open */
   picker: null,                /* { row, query, index } while a row's picker is open */
   confirmDelete: false,
   leaving: null,               /* { to, variant, category, fresh } | { close } while unsaved changes block a move */
@@ -6179,8 +6836,11 @@ var cat = {
   sort: { key: 'allIn', dir: 'asc' }, /* null = the delivery's own order */
   hidden: [],                        /* column keys taken away by the picker */
   density: 'dense',                  /* 'dense' | 'comfortable' */
+  group: false,                      /* the rows banded by sleeve category (D100) */
+  folded: [],                        /* the categories whose bands are shut */
   pins: [],                          /* productIds in the tray */
   cursor: null,                      /* the row the keyboard is on */
+  cursorBand: null,                  /* and, banded, which band's copy of it */
   detail: null,                      /* the product open in the side panel */
   compare: false,                    /* the pinned products, lined up */
   openChip: null                     /* 'cols' while the column picker is open */
@@ -6427,6 +7087,34 @@ function catBest(pinned) {
   });
   return best;
 }
+function catGroups(rows, order, chosen) {
+  /* the rows banded by sleeve category (D100), the bands in the order given
+     and each saying what it holds: how many, the all-in range, how many are
+     not dealt daily. The rows keep the order they came in, so a sort applies
+     within a band. Category is a join: a product two categories hold stands
+     in both bands, and with a category filter in force only the chosen
+     categories make bands - a band the filter did not ask for would be noise. */
+  var at = function (key) { var i = (order || []).indexOf(key); return i === -1 ? 1e9 : i; };
+  var index = {}, out = [];
+  (rows || []).forEach(function (row) {
+    var keys = catValuesOf(row, 'category');
+    if (chosen && chosen.length) keys = keys.filter(function (k) { return chosen.indexOf(k) !== -1; });
+    keys.forEach(function (key) {
+      var g = index[key];
+      if (!g) { g = index[key] = { key: key, rows: [], lo: null, hi: null, notDaily: 0 }; out.push(g); }
+      g.rows.push(row);
+      if (typeof row.allIn === 'number' && isFinite(row.allIn)) {
+        if (g.lo === null || row.allIn < g.lo) g.lo = row.allIn;
+        if (g.hi === null || row.allIn > g.hi) g.hi = row.allIn;
+      }
+      var liquidity = String(row.p.liquidity || '').toLowerCase();
+      if (liquidity && liquidity !== 'daily') g.notDaily += 1;
+    });
+  });
+  return out.sort(function (a, b) {
+    return (at(a.key) - at(b.key)) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  });
+}
 /* catalogue-helpers-end */
 
 var catRowCache = null;
@@ -6571,6 +7259,10 @@ function catHash() {
   else if (!(cat.sort.key === 'allIn' && cat.sort.dir === 'asc')) q.set('sort', cat.sort.key + ':' + cat.sort.dir);
   if (cat.hidden.length) q.set('hide', cat.hidden.join(','));
   if (cat.density !== 'dense') q.set('d', cat.density);
+  if (cat.group) {
+    q.set('group', 'category');
+    if (cat.folded.length) q.set('fold', cat.folded.join('|'));
+  }
   if (cat.pins.length) q.set('pins', cat.pins.join(','));
   if (cat.compare) q.set('cmp', '1');
   var str = q.toString();
@@ -6588,6 +7280,8 @@ function catFromHash(hash) {
   else if (sort && sort.indexOf(':') !== -1) cat.sort = { key: sort.split(':')[0], dir: sort.split(':')[1] === 'desc' ? 'desc' : 'asc' };
   cat.hidden = (q.get('hide') || '').split(',').filter(Boolean);
   cat.density = q.get('d') === 'comfortable' ? 'comfortable' : 'dense';
+  cat.group = q.get('group') === 'category';
+  cat.folded = cat.group ? (q.get('fold') || '').split('|').filter(Boolean) : [];
   cat.pins = (q.get('pins') || '').split(',').filter(Boolean);
   cat.compare = q.get('cmp') === '1';
 }
@@ -6749,6 +7443,8 @@ function loadDraft(sleeveId, create, edition) {
   repo.sleeveId = entry ? entry.id : null;
   repo.draft = entry ? draftFrom(entry) : newDraft(create, edition);
   repo.dirty = false; repo.fieldError = null; repo.picker = null;
+  repo.savedAt = null; repo.edMenu = false;
+  repo.kept = keptDraftFor(repo.draft);        /* a copy that outlived a reload (F1) */
   repo.confirmDelete = false; repo.leaving = null; repo.menu = null;
   /* an existing edition already knows how many portfolios it names */
   repo.preview = entry && entry.rules && entry.rules.length ? { applies: entry.applies } : null;
@@ -6804,7 +7500,10 @@ function applyTarget(t) {
 }
 function selectSleeve(id) {
   if (id === repo.sleeveId && repo.draft && repo.draft.id === id) return;
-  goTo({ to: id });
+  /* a search hit can live under another category or book, so following it
+     moves both - and the row said where it was going (C1) */
+  var entry = sleeveById(id);
+  goTo(entry ? { to: id, category: entry.category, variant: entry.variant } : { to: id });
 }
 
 /* From the feed to the thing it names: a live sleeve opens in the editor with
@@ -6828,6 +7527,9 @@ function openRevisionFrom(sleeveId, revisionNumber, archived) {
 function resolveLeaving(discard) {
   var leaving = repo.leaving; repo.leaving = null;
   if (!discard || !leaving) { render(); return; }
+  /* discarding means discarding: the copy kept against a reload goes with the
+     changes, or reopening the sleeve would offer back what was just refused (F1) */
+  repo.kept = null; forgetKeptDraft();
   if (leaving.close) { closeRepository(true); return; }
   repo.dirty = false;
   applyTarget(leaving);
@@ -6887,9 +7589,15 @@ async function saveDraft() {
          the one revision the person looking at it just made */
       if (trailOpen) { repo.historyOpen = true; repo.openRevision = null; loadHistory(here.id); }
       if (act.loaded) act.loaded = false;
+      repo.savedAt = new Date().toISOString();
+      repo.kept = null; forgetKeptDraft();     /* it is in the store now (F1) */
+      /* the outcome, not just the redraw (G2): the revision it became is the
+         part an admin checks, and it is the part a screen reader could not see */
       App.announce('polite', madeAll.length > 1
-        ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types.'
-        : 'Saved ' + last.name + (last.label ? ' (' + last.label + ' edition)' : '') + '.');
+        ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types, revision '
+          + (last.revisions || 1) + '.'
+        : 'Saved ' + last.name + (last.label ? ' (' + last.label + ' edition)' : '')
+          + ' · revision ' + (last.revisions || 1) + '.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -6992,7 +7700,8 @@ async function removeFromCategory(sleeveId) {
         loadDraft(left[0] ? left[0].id : null);
       }
       forgetLibrary(gone.category);
-      App.announce('polite', gone.name + ' removed from ' + gone.category + '.');
+      App.announce('polite', gone.name + ' archived from ' + gone.category
+        + '. It keeps its history and can be restored from the Archive.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -7188,6 +7897,43 @@ function fieldErr(field) {
   return fe && fe.field === field ? '<p class="md-err" role="alert">' + esc(fe.message) + '</p>' : '';
 }
 
+/* The actions that act on THIS sleeve, in the editor where it is named (A2).
+   They used to sit in the footer, where Archive shared an edge with Save -
+   the one control pressed constantly beside the one that cannot be undone
+   from the keyboard. The confirmation stays where the trigger is, rather
+   than appearing at the other end of the dialog. */
+/* A draft that outlived a reload, offered back rather than restored behind
+   the admin's back: what is on screen is what the store holds, and taking it
+   away without asking would be its own kind of loss (F1). */
+function keptNoticeHtml() {
+  if (!repo.kept || repo.dirty) return '';
+  return '<div class="repo-notice repo-kept" role="status">'
+    + '<span>Unsaved changes to this sleeve were kept from ' + esc(clockTime(repo.kept.at)) + '.</span>'
+    + '<button type="button" class="btn" data-repokeptrestore>Restore them</button>'
+    + '<button type="button" class="btn btn-ghost" data-repokeptdrop>Discard</button></div>';
+}
+
+function editorTopHtml(entry, fixed) {
+  if (!entry) return '';
+  var where = '<span class="repo-ed-where">' + esc(entry.category) + ' \u00b7 ' + esc(entry.variant) + '</span>';
+  if (repo.confirmDelete) {
+    return '<div class="repo-ed-top is-confirm">'
+      + '<span class="repo-ed-warn">Archive <b>' + esc(entry.name) + '</b>? It keeps its history and can be '
+      + 'restored from the Archive.</span>'
+      + '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
+      + '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>'
+      + 'Confirm archive</button></div>';
+  }
+  return '<div class="repo-ed-top">' + where
+    + '<button type="button" class="repo-ed-act" data-repoedition="' + entry.id + '"'
+    + (repo.saving ? ' disabled' : '')
+    + ' title="Another edition of ' + esc(entry.name) + ', for particular portfolios">+ Add edition</button>'
+    + (fixed ? ''
+        : '<button type="button" class="repo-ed-act danger" data-repodelete' + (repo.saving ? ' disabled' : '')
+          + '>Archive this sleeve\u2026</button>')
+    + '</div>';
+}
+
 function editorHtml() {
   var d = repo.draft;
   if (!d) return '<p class="repo-empty">Choose a sleeve, or start a new one.</p>';
@@ -7275,6 +8021,8 @@ function editorHtml() {
     + '<div id="repoApplies">' + appliesHtml() + '</div>'
     + fieldErr('rules') + '</div>';
   return ''
+    + editorTopHtml(entry, fixed)
+    + keptNoticeHtml()
     + serverProblems
     + '<div class="repo-frow">'
     + nameField
@@ -7374,14 +8122,34 @@ async function loadHistory(sleeveId) {
     repo.error = null;
   } catch (err) { repo.error = err.message; }
   repo.historyBusy = false; render();
+  if (repo.historyOpen) showHistory();          /* the rows have landed (B1) */
 }
 
 function toggleHistory(sleeveId) {
   repo.historyOpen = !repo.historyOpen;
   repo.openRevision = null;
   if (!repo.historyOpen) { render(); return; }
-  if (repo.history && repo.history.sleeveId === sleeveId) { render(); return; }
+  if (repo.history && repo.history.sleeveId === sleeveId) { render(); showHistory(); return; }
   loadHistory(sleeveId);
+}
+
+/* The record sits at the foot of the editor, which scrolls on its own: on a
+   saved sleeve the panel opened 740px down a 654px pane, so the button
+   flipped, the fetch ran, the rows rendered, and nothing moved (B1). A
+   control that looks broken is worse than one that is missing, because it
+   gets pressed again. */
+function showHistory() {
+  var pane = document.querySelector('.repo-ed');
+  var panel = document.querySelector('.repo-hist');
+  if (!pane || !panel) return;
+  var top = panel.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+  /* Set directly rather than smoothly: a smooth scroll is driven by animation
+     frames, which do not run in a background tab, so the panel would open and
+     the pane would silently stay where it was - the exact failure this is
+     here to fix. The panel is a disclosure; arriving at it is the point. */
+  pane.scrollTop = Math.max(0, top - 8);
+  var head = panel.querySelector('.repo-hist-h, h4, button');
+  if (head && head.focus) head.focus({ preventScroll: true });
 }
 
 /* Both of these change the library, so both re-read it rather than patching
@@ -7474,6 +8242,110 @@ function sleeveMenuHtml() {
     + '</div>';
 }
 
+/* ---- searching the library (C1) -----------------------------------------
+   101 sleeves live behind 7 categories x 4 books, and the only way to reach
+   one whose book you had forgotten was to click until it appeared. The
+   catalogue next door answers the same shape of question with a search box,
+   so this is that: name, edition label and PRODUCT name, across everything.
+
+   Product matters as much as name - "which sleeves hold GSAM Short Duration"
+   is the question asked when a product is being retired, and the console
+   could not answer it at all. */
+function sleeveHits() {
+  var q = repo.query.trim().toLowerCase();
+  if (!q) return [];
+  var out = [];
+  (repo.data.sleeves || []).forEach(function (s) {
+    var why = null;
+    if ((s.name || '').toLowerCase().indexOf(q) !== -1) why = '';
+    else if ((s.label || '').toLowerCase().indexOf(q) !== -1) why = 'edition ' + s.label;
+    else {
+      var hit = (s.products || []).filter(function (r) {
+        return r.product && (r.product.name || '').toLowerCase().indexOf(q) !== -1;
+      })[0];
+      if (hit) why = 'holds ' + hit.product.name;
+    }
+    if (why !== null) out.push({ s: s, why: why });
+  });
+  /* the book in hand first, then by category, so a hit where you already are
+     does not sit below twenty that are not */
+  var order = repo.data.categories;
+  return out.sort(function (a, b) {
+    var av = a.s.variant === repo.variant ? 0 : 1, bv = b.s.variant === repo.variant ? 0 : 1;
+    if (av !== bv) return av - bv;
+    var ac = order.indexOf(a.s.category), bc = order.indexOf(b.s.category);
+    if (ac !== bc) return ac - bc;
+    return a.s.name < b.s.name ? -1 : a.s.name > b.s.name ? 1 : 0;
+  });
+}
+
+function sleeveHitsHtml() {
+  var hits = sleeveHits();
+  if (!hits.length) {
+    return '<p class="repo-none">Nothing matches \u201c' + esc(repo.query.trim())
+      + '\u201d in any category or book.</p>';
+  }
+  return '<p class="repo-hits">' + hits.length + ' sleeve' + (hits.length === 1 ? '' : 's')
+    + ' match</p>'
+    + hits.map(function (h) {
+        var s = h.s;
+        return '<button type="button" class="repo-sleeve" data-reposleeve="' + s.id + '"'
+          + ' aria-selected="' + (s.id === repo.sleeveId ? 'true' : 'false') + '">'
+          + '<b>' + esc(s.name) + (s.label ? ' <span class="repo-fixed">' + esc(s.label) + '</span>' : '')
+          + (s.problems && s.problems.length
+              ? ' <span class="warn">' + s.problems.length + ' problem'
+                + (s.problems.length === 1 ? '' : 's') + '</span>' : '')
+          + '</b>'
+          /* where it lives, because following a hit moves the category and
+             the book under the admin: saying so makes that read as navigation */
+          + '<small>' + esc(s.category) + ' \u00b7 ' + esc(s.variant)
+          + (h.why ? ' \u00b7 ' + esc(h.why) : '') + '</small></button>';
+      }).join('');
+}
+
+/* The sleeves of the category and book in hand, editions of one name
+   gathered under it (D89). Its own function because the search redraws just
+   this part, leaving the box the query was typed into alone (C1). */
+function sleeveRowHtml(s, grouped) {
+  var vehicles = [];
+  s.products.forEach(function (r) {
+    if (r.product && vehicles.indexOf(r.product.vehicle) === -1) vehicles.push(r.product.vehicle);
+  });
+  var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
+    + (vehicles.length ? ' \u00b7 ' + vehicles.join(', ') : '')
+    + ' \u00b7 saved ' + shortDate(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '');
+  var head = grouped
+    ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
+                  : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
+    : esc(s.name) + (s.fallback ? '' : ' <span class="repo-fixed">' + esc(s.label) + '</span>');
+  return '<button type="button" class="repo-sleeve' + (grouped ? ' ed' : '') + '" data-reposleeve="' + s.id + '"'
+    + ' aria-selected="' + (s.id === repo.sleeveId && !(repo.draft && repo.draft.id === null) ? 'true' : 'false') + '">'
+    + '<b>' + head + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem'
+        + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
+    + '<small>' + esc(sub) + '</small></button>';
+}
+
+function sleeveListHtml() {
+  var offered = sleevesIn(repo.variant, repo.category);
+  var groups = [], byName = {};
+  offered.forEach(function (s) {
+    if (!byName[s.name]) { byName[s.name] = []; groups.push(s.name); }
+    byName[s.name].push(s);
+  });
+  var list = groups.map(function (name) {
+    var eds = byName[name];
+    if (eds.length === 1) return sleeveRowHtml(eds[0], false);
+    return '<div class="repo-grp"><b>' + esc(name) + '</b><small>' + eds.length + ' editions</small></div>'
+      + eds.map(function (s) { return sleeveRowHtml(s, true); }).join('');
+  }).join('') || '<p class="repo-none">No sleeve under ' + esc(repo.variant) + ' yet.</p>';
+  if (repo.draft && repo.draft.id === null) {
+    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve')
+      + (repo.draft.edition ? ' <span class="repo-fixed">' + (esc(repo.draft.label) || 'new edition') + '</span>' : '')
+      + '</b><small>unsaved</small></div>';
+  }
+  return list;
+}
+
 function sleevesViewHtml() {
   var d = repo.data;
   var cats = d.categories.map(function (c) {
@@ -7483,46 +8355,32 @@ function sleevesViewHtml() {
       + (isFixed(c) ? ' <span class="repo-fixed">fixed</span>' : '')
       + '<span class="n">' + n + '</span></button>';
   }).join('');
-  var offered = sleevesIn(repo.variant, repo.category);
-  /* editions of one name sit together under it (D89); a name with a single
-     fallback reads exactly as a sleeve always did */
-  var groups = [], byName = {};
-  offered.forEach(function (s) {
-    if (!byName[s.name]) { byName[s.name] = []; groups.push(s.name); }
-    byName[s.name].push(s);
-  });
-  var newDisabled = isFixed(repo.category) && groups.length >= 1;
-  var rowHtml = function (s, grouped) {
-    var vehicles = [];
-    s.products.forEach(function (r) { if (r.product && vehicles.indexOf(r.product.vehicle) === -1) vehicles.push(r.product.vehicle); });
-    var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
-      + (vehicles.length ? ' · ' + vehicles.join(', ') : '')
-      + ' · saved ' + shortDate(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '');
-    var head = grouped
-      ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
-                    : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
-      : esc(s.name) + (s.fallback ? '' : ' <span class="repo-fixed">' + esc(s.label) + '</span>');
-    return '<button type="button" class="repo-sleeve' + (grouped ? ' ed' : '') + '" data-reposleeve="' + s.id + '"'
-      + ' aria-selected="' + (s.id === repo.sleeveId && !(repo.draft && repo.draft.id === null) ? 'true' : 'false') + '">'
-      + '<b>' + head + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem' + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
-      + '<small>' + esc(sub) + '</small></button>';
-  };
-  var list = groups.map(function (name) {
-    var eds = byName[name];
-    if (eds.length === 1) return rowHtml(eds[0], false);
-    return '<div class="repo-grp"><b>' + esc(name) + '</b><small>' + eds.length + ' editions</small></div>'
-      + eds.map(function (s) { return rowHtml(s, true); }).join('');
-  }).join('') || '<p class="repo-none">No sleeve under ' + esc(repo.variant) + ' yet.</p>';
-  if (repo.draft && repo.draft.id === null) {
-    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve')
-      + (repo.draft.edition ? ' <span class="repo-fixed">' + (esc(repo.draft.label) || 'new edition') + '</span>' : '')
-      + '</b><small>unsaved</small></div>';
-  }
+  var newDisabled = isFixed(repo.category)
+    && sleevesIn(repo.variant, repo.category).length >= 1;
+  /* Searching (C1) replaces the list rather than filtering it in place: a hit
+     may live under another category or book, and the point of asking is that
+     you do not remember which. */
+  var searching = !!repo.query.trim();
+  var body = searching ? sleeveHitsHtml() : sleeveListHtml();
   return '<div class="repo-b">'
     + '<div class="repo-pane"><div class="repo-pane-h">Categories</div>' + cats + '</div>'
-    + '<div class="repo-pane"><div class="repo-pane-h">' + esc(repo.category)
-    + '<button type="button" class="btn" data-reponew' + (newDisabled ? ' disabled title="A fixed category holds exactly one sleeve"' : '') + '>+ New sleeve</button></div>'
-    + list + '</div>'
+    + '<div class="repo-pane repo-list">'
+    + '<div class="repo-pane-h">' + (searching ? 'Search results' : esc(repo.category))
+    + '<button type="button" class="btn" data-reponew'
+    + (newDisabled && !searching ? ' disabled title="A fixed category holds exactly one sleeve"' : '')
+    + '>+ New sleeve</button></div>'
+    /* the book strip belongs to this list, not to the console's header (A1) */
+    + '<div class="repo-books" role="group" aria-label="Implementation type">'
+    + d.variants.map(function (v) {
+        return '<button type="button" class="repo-book" data-repovariant="' + esc(v) + '"'
+          + ' aria-pressed="' + (v === repo.variant ? 'true' : 'false') + '"'
+          + (searching ? ' disabled' : '') + '>' + esc(v) + '</button>';
+      }).join('') + '</div>'
+    + '<label class="repo-find"><span aria-hidden="true">\u2315</span>'
+    + '<input type="search" id="repoFind" placeholder="Search every book\u2026" autocomplete="off"'
+    + ' aria-label="Search sleeves by name, edition or product, across every category and book"'
+    + ' value="' + esc(repo.query) + '"><kbd aria-hidden="true">/</kbd></label>'
+    + body + '</div>'
     + '<div class="repo-pane repo-ed">' + editorHtml() + '</div>'
     + '</div>' + sleeveMenuHtml();
 }
@@ -7607,7 +8465,11 @@ function arcCountText() {
 function arcHeadHtml() {
   var visible = arcVisible();
   var allOn = visible.length > 0 && visible.every(function (r) { return arc.selected.indexOf(r.s.id) !== -1; });
-  return '<tr><th class="pinc"><input type="checkbox" data-arcselall aria-label="Select every shown sleeve"' + (allOn ? ' checked' : '') + (visible.length ? '' : ' disabled') + '></th>'
+  return '<tr><th class="pinc">'
+    + (visible.length
+        ? '<input type="checkbox" data-arcselall aria-label="Select every shown sleeve"'
+          + (allOn ? ' checked' : '') + '>' : '')
+    + '</th>'
     + ARC_COLUMNS.map(function (c) {
         var sorted = arc.sort.key === c.key;
         return '<th' + (c.num ? ' class="num"' : '') + ' aria-sort="' + (sorted ? (arc.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
@@ -7699,7 +8561,11 @@ function arcFooterHtml() {
          + '<button type="button" class="btn" data-arcclearsel>Clear</button>'
          + '<button type="button" class="btn btn-primary" data-arcrestoresel' + (repo.saving ? ' disabled' : '') + '>'
          + (repo.saving ? 'Restoring…' : 'Restore ' + n + ' sleeve' + (n === 1 ? '' : 's')) + '</button>'
-       : '<span class="repo-src">Tick sleeves to restore several at once</span>')
+       /* the hint only where there is something to tick (E3): under an empty
+          table, beside a count of zero, it described a control that was not
+          there */
+       : (archivedSleeves().length
+            ? '<span class="repo-src">Tick sleeves to restore several at once</span>' : ''))
     + '</div>';
 }
 
@@ -7909,11 +8775,24 @@ function regFacetOptions(facet, chosen, any) {
 function regFiltersInForce() {
   return !!(reg.query.trim() || reg.exportedBy || reg.primaryPwa || reg.currency || reg.variant || reg.range !== '90d');
 }
-function money(n) {
-  if (typeof n !== 'number') return '—';
-  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
-  if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
-  return '$' + Math.round(n);
+/* A figure in the currency it was agreed in (D1). The register is the record
+   of what was delivered to a client, and it printed every proposal in dollars
+   - a GBP mandate as $200.0m, with "GBP" in the next column along. The row
+   carries its currency, so the only thing missing was asking for it.
+
+   A currency with no unambiguous symbol prints its ISO code instead: better a
+   reader who has to think than one who is quietly told the wrong thing. */
+var CURRENCY_MARK = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0', JPY: '\u00a5' };
+function mark(currency) {
+  if (!currency) return '';
+  return CURRENCY_MARK[currency] || (currency + '\u00a0');
+}
+function money(n, currency) {
+  if (typeof n !== 'number') return '\u2014';
+  var m = mark(currency);
+  if (n >= 1e6) return m + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
+  if (n >= 1e3) return m + Math.round(n / 1e3) + 'k';
+  return m + Math.round(n);
 }
 function regToolbarHtml() {
   return '<div class="cat-tools reg-tools">'
@@ -7929,15 +8808,18 @@ function regToolbarHtml() {
     + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/proposals.csv?' + regParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
     + '</div>';
 }
+/* Exported and By are one cell (D3): on a real register both repeat - one
+   desk, a handful of PWAs - and giving two identity columns the same weight
+   as the portfolio and the price spent the width on what varies least. */
 function regHeadHtml() {
-  return '<tr><th>Exported</th><th>By</th><th>Primary PWA</th><th class="num">Mandate</th>'
+  return '<tr><th>Exported</th><th>Primary PWA</th><th class="num">Mandate</th>'
     + '<th>Basis</th><th>Book</th><th>Proposal portfolio</th><th>Pricing</th><th></th></tr>';
 }
 function regBodyHtml() {
-  if (!reg.loaded && reg.busy) return '<tr><td colspan="9" class="cat-empty">Reading the register…</td></tr>';
-  if (reg.error && !reg.entries.length) return '<tr><td colspan="9" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
+  if (!reg.loaded && reg.busy) return '<tr><td colspan="8" class="cat-empty">Reading the register…</td></tr>';
+  if (reg.error && !reg.entries.length) return '<tr><td colspan="8" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
   if (!reg.entries.length) {
-    return '<tr><td colspan="9" class="cat-empty">No proposal on record'
+    return '<tr><td colspan="8" class="cat-empty">No proposal on record'
       + (reg.range !== 'all' ? ' in the ' + esc(REG_RANGES.filter(function (r) { return r[0] === reg.range; })[0][1].toLowerCase()) : '')
       + ' with the filters in force.'
       + (regFiltersInForce() ? ' <button type="button" class="cat-clear" data-regclear>Clear the filters</button>' : '')
@@ -7950,10 +8832,10 @@ function regBodyHtml() {
     if (e.sequence > 1) flags.push('<span class="arc-badge acc">#' + e.sequence + '</span>');
     if (e.tacticalTilt) flags.push('<span class="arc-badge mute">tilt</span>');
     return '<tr data-regrow="' + esc(e.proposalId) + '" class="' + (reg.detail === e.proposalId ? 'on' : '') + '" aria-selected="' + (reg.detail === e.proposalId) + '">'
-      + '<td>' + esc(when) + '</td>'
-      + '<td>' + esc(e.exportedBy) + '</td>'
-      + '<td><b>' + esc(e.primaryPwa) + '</b></td>'
-      + '<td class="num">' + money(e.mandateSize) + '</td>'
+      + '<td class="reg-when">' + esc(when)
+      + '<small>' + esc(e.exportedBy) + '</small></td>'
+      + '<td class="reg-pwa"><b>' + esc(e.primaryPwa) + '</b></td>'
+      + '<td class="num">' + money(e.mandateSize, e.currency) + '</td>'
       + '<td>' + esc(e.currency) + ' · ' + esc(e.hedging) + '</td>'
       + '<td>' + esc(e.variant) + '</td>'
       + '<td>' + esc((e.baseKey || '').split('|').slice(1, 3).join(' ')) + '</td>'
@@ -7985,6 +8867,7 @@ function regAllocationHtml(record) {
     + '<tbody>' + rows + '</tbody></table>';
 }
 function regImplementedHtml(record) {
+  var ccy = record.currency;                   /* the proposal's own (D1) */
   var groups = record.implemented || [];
   if (!groups.length) return '<p class="repo-none">No implemented model recorded.</p>';
   var pins = {};
@@ -7999,7 +8882,7 @@ function regImplementedHtml(record) {
       rows += '<tr><td class="sub">' + esc(it.name || it.productId) + '</td><td></td>'
         + '<td class="mut">' + esc([it.ticker, it.vehicle].filter(Boolean).join(' · ') || '—') + '</td>'
         + '<td class="num">' + money2(it.printedPct) + '%</td>'
-        + '<td class="num">' + money(it.notional) + '</td></tr>';
+        + '<td class="num">' + money(it.notional, ccy) + '</td></tr>';
     });
   });
   return '<table class="cat-tbl dense reg-pic"><thead><tr><th>Category / product</th><th>Sleeve</th>'
@@ -8016,7 +8899,7 @@ function regDetailHtml() {
   var moved = pins.filter(function (p) { return p.moved || p.archived; }).length;
   return '<div class="arc-detail reg-detail" id="regDetail">'
     + '<div class="arc-dh"><div>'
-    + '<h3>' + esc(r.primaryPwa) + ' · ' + money(r.mandateSize) + '</h3>'
+    + '<h3>' + esc(r.primaryPwa) + ' \u00b7 ' + money(r.mandateSize, r.currency) + '</h3>'
     + '<p>' + esc(r.currency) + ' · ' + esc(r.hedging) + ' · ' + esc(r.variant)
     + ' · ' + esc((r.baseKey || '').split('|').slice(1, 3).join(' '))
     + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '')
@@ -8042,7 +8925,7 @@ function registerViewHtml() {
     + '<div class="cat-tblwrap arc-tblwrap" tabindex="0" aria-label="Proposal register, scrolls">'
     + '<table class="cat-tbl dense arc-tbl reg-tbl"><thead>' + regHeadHtml() + '</thead>'
     + '<tbody id="regBody">' + regBodyHtml()
-    + (reg.next ? '<tr><td colspan="9" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
+    + (reg.next ? '<tr><td colspan="8" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
     + '</tbody></table></div>'
     + regDetailHtml()
     + '</div>';
@@ -8073,6 +8956,33 @@ function catVisible() { return catSort(catFilter(catRows(), cat), cat.sort); }
 function catColumns() {
   return CAT_COLUMNS.filter(function (c) { return c.fixed || cat.hidden.indexOf(c.key) === -1; });
 }
+/* Banded (D100): the visible rows under their sleeve categories, in the
+   repository's own order, the unplaced last. */
+function catBandOrder() { return repo.data.categories.concat([UNPLACED]); }
+function catBands() { return catGroups(catVisible(), catBandOrder(), cat.filters.category); }
+function catShut(key) { return cat.folded.indexOf(key) !== -1; }
+/* every row the table holds, in the order it holds them, each with the band
+   it stands in and whether that band is shut - what the keyboard walks */
+function catEntries() {
+  if (!cat.group) return catVisible().map(function (row) { return { row: row, band: null, shut: false }; });
+  var out = [];
+  catBands().forEach(function (g) {
+    var shut = catShut(g.key);
+    g.rows.forEach(function (row) { out.push({ row: row, band: g.key, shut: shut }); });
+  });
+  return out;
+}
+/* which entry the cursor is on: the product, and banded, its copy in the
+   band the cursor was put in - or the first copy, when that is not known */
+function catCursorAt(entries) {
+  var first = -1;
+  for (var i = 0; i < entries.length; i += 1) {
+    if (entries[i].row.p.productId !== cat.cursor) continue;
+    if (entries[i].band === cat.cursorBand) return i;
+    if (first === -1) first = i;
+  }
+  return first;
+}
 function catFiltersInForce() {
   var n = cat.query.trim() ? 1 : 0;
   for (var f in cat.filters) if (cat.filters[f] && cat.filters[f].length) n += 1;
@@ -8099,6 +9009,78 @@ function liqClass(v) {
   return ' slow';
 }
 
+/* ---- the catalogue, as a file (H2) ---------------------------------------
+   Three of the four tables export and the one that did not was the one with
+   the search, the facets, the column picker and the grouping - the view most
+   likely to be the answer to "send me the list", whose only alternative was
+   a screenshot.
+
+   Built here rather than on the server on purpose: every one of those filters
+   is client state, so the server would have to reimplement the lot and the
+   two would drift. What is written is exactly what is on screen, in the order
+   it is on screen, with the columns that are on screen.
+
+   Excel decides a field's type from the text, so a ticker like SEP1 must not
+   arrive as a date: every text field is quoted, and the reader is told what
+   the figures are priced at rather than left to guess. */
+function catCsvCell(row, c) {
+  var p = row.p;
+  switch (c.key) {
+    case 'mgmt': return row.mgmt === null ? '' : row.mgmt.toFixed(2);
+    case 'allIn': return (typeof row.allIn === 'number') ? row.allIn.toFixed(2) : '';
+    case 'net': return row.net === null ? '' : row.net.toFixed(2);
+    case 'used': return String(row.used);
+    case 'productCost': case 'distributionYield':
+      return (typeof p[c.key] === 'number') ? p[c.key].toFixed(2) : '';
+    case 'minimumInvestment':
+      return (typeof p.minimumInvestment === 'number') ? String(p.minimumInvestment) : '';
+    default: return p[c.key] == null ? '' : String(p[c.key]);
+  }
+}
+
+function catCsv() {
+  var cols = catColumns();
+  var quote = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+  var lines = [];
+  var grouped = cat.group;
+  var head = (grouped ? ['Category'] : []).concat(cols.map(function (c) { return c.label; }));
+  lines.push(head.map(quote).join(','));
+  var put = function (row, band) {
+    lines.push((grouped ? [quote(band)] : [])
+      .concat(cols.map(function (c) {
+        var v = catCsvCell(row, c);
+        /* a figure goes bare so a spreadsheet adds it up; text is quoted so it
+           is never read as a date */
+        return CAT_NUMERIC[c.key] && v !== '' ? v : quote(v);
+      })).join(','));
+  };
+  if (grouped) catBands().forEach(function (g) { g.rows.forEach(function (r) { put(r, g.key); }); });
+  else catVisible().forEach(function (r) { put(r, ''); });
+  return lines.join('\r\n') + '\r\n';
+}
+
+function catCsvName() {
+  var bits = ['catalogue'];
+  if (cat.query.trim()) bits.push(cat.query.trim().replace(/[^A-Za-z0-9]+/g, '-'));
+  Object.keys(cat.filters).forEach(function (f) {
+    if (cat.filters[f] && cat.filters[f].length) {
+      bits.push(cat.filters[f].join('-').replace(/[^A-Za-z0-9]+/g, '-'));
+    }
+  });
+  bits.push(new Date().toISOString().slice(0, 10));
+  return bits.join('_').slice(0, 120) + '.csv';
+}
+
+function downloadCatalogue() {
+  var blob = new Blob(['\ufeff' + catCsv()], { type: 'text/csv;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = catCsvName();
+  document.body.appendChild(a); a.click(); a.remove();
+  window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  App.announce('polite', catVisible().length + ' products written to ' + a.download + '.');
+}
+
 function catToolbarHtml() {
   return '<div class="cat-tools">'
     + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
@@ -8108,6 +9090,12 @@ function catToolbarHtml() {
     + '<button type="button" role="tab" data-catdensity="dense" aria-selected="' + (cat.density === 'dense') + '">Dense</button>'
     + '<button type="button" role="tab" data-catdensity="comfortable" aria-selected="' + (cat.density !== 'dense') + '">Comfortable</button>'
     + '</div>'
+    /* one ranked list, or the same rows banded by sleeve category (D100) */
+    + '<div class="repo-seg cat-density" role="tablist" aria-label="Rows">'
+    + '<button type="button" role="tab" id="catFlat" data-catgroup="flat" aria-selected="' + !cat.group + '">Flat</button>'
+    + '<button type="button" role="tab" id="catByCategory" data-catgroup="category" aria-selected="' + cat.group + '">By category</button>'
+    + '</div>'
+    + '<span id="catFoldAll">' + catFoldAllHtml() + '</span>'
     + '<span class="cat-chipwrap">'
     + '<button type="button" class="cat-chip' + (cat.hidden.length ? ' on' : '') + '" data-catcols aria-expanded="' + (cat.openChip === 'cols') + '">Columns'
     + (cat.hidden.length ? ' <b>' + (CAT_COLUMNS.length - cat.hidden.length) + ' of ' + CAT_COLUMNS.length + '</b>' : '') + ' <span class="car">▾</span></button>'
@@ -8121,15 +9109,27 @@ function catToolbarHtml() {
           + (cat.hidden.length ? '<button type="button" class="cat-clear" data-catshowall>Show all</button>' : '')
           + '</div>' : '')
     + '</span>'
+    + '<button type="button" class="btn arc-export" data-catcsv'
+    + (catVisible().length ? '' : ' disabled') + '>Export CSV</button>'
     + '<span class="cat-count" id="catCount">' + catCountText() + '</span>'
     + '</div>';
+}
+
+/* every band at once: with eight of them, one at a time is a chore */
+function catFoldAllHtml() {
+  if (!cat.group || cat.compare) return '';
+  var bands = catBands(); if (bands.length < 2) return '';
+  var allShut = bands.every(function (g) { return catShut(g.key); });
+  return '<button type="button" class="cat-clear" id="catFoldAllBtn" data-catfoldall="' + (allShut ? 'open' : 'shut') + '">'
+    + (allShut ? 'Open all' : 'Fold all') + '</button>';
 }
 
 function catCountText() {
   var n = catVisible().length, all = repo.data.products.length;
   var priced = catPricedLabel();
   return (n === all ? all + ' products' : 'Showing ' + n + ' of ' + all)
-    + (cat.sort ? ' · sorted by ' + esc(catColumnLabel(cat.sort.key)) + (cat.sort.dir === 'desc' ? ' ↓' : ' ↑') : '')
+    + (cat.sort ? ' · sorted by ' + esc(catColumnLabel(cat.sort.key)) + (cat.sort.dir === 'desc' ? ' ↓' : ' ↑')
+        + (cat.group ? ' within category' : '') : '')
     + (priced ? ' · priced ' + esc(priced) : ' · unpriced — no mandate open')
     + (catFiltersInForce() ? ' · <button type="button" class="cat-clear" data-catclearall>Clear</button>' : '');
 }
@@ -8160,60 +9160,104 @@ function catFacetsHtml() {
     + '</div>';
 }
 
+/* The table says what it can do (D99): the sorted column carries a class its
+   whole height, a header shows it can sort before it has, and every row ends
+   in a cell that says it opens. */
 function catHeadHtml() {
   var tier = catTierId();
   return '<tr><th class="pinc"></th>' + catColumns().map(function (c) {
     var sorted = cat.sort && cat.sort.key === c.key;
-    return '<th' + (c.num ? ' class="num"' : '') + ' aria-sort="' + (sorted ? (cat.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
+    var cls = (c.num ? 'num' : '') + (sorted ? ' srt' : '');
+    return '<th' + (cls ? ' class="' + cls.trim() + '"' : '') + ' aria-sort="' + (sorted ? (cat.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
       + '<button type="button" class="cat-sort' + (sorted ? ' on' : '') + (c.derived ? ' drv' : '') + '" data-catsort="' + c.key + '"'
-      + (c.derived ? ' title="Derived: distribution yield less all-in cost"' : '') + '>' + esc(c.label)
-      + (c.tier ? '<small>' + (tier ? '@' + esc(tier) : 'no tier') + '</small>' : '')
+      + (c.derived ? ' title="Derived: distribution yield less all-in cost"' : '') + '><span class="lb">' + esc(c.label)
+      + (c.tier ? '<small>' + (tier ? '@' + esc(tier) : 'no tier') + '</small>' : '') + '</span>'
       + (sorted ? (cat.sort.dir === 'desc' ? ' ▼' : ' ▲') : '') + '</button></th>';
-  }).join('') + '</tr>';
+  }).join('') + '<th class="go"></th></tr>';
 }
 
-function catCellHtml(row, c) {
+function catCellHtml(row, c, sorted) {
   var p = row.p;
+  var td = function (cls, html) {
+    var all = (cls + (sorted ? ' srt' : '')).trim();
+    return '<td' + (all ? ' class="' + all + '"' : '') + '>' + html + '</td>';
+  };
   switch (c.key) {
-    case 'ticker': return '<td class="tk">' + esc(p.ticker) + '</td>';
-    case 'name': return '<td class="nm"><b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Minimum above the open mandate">min ' + esc(catMoney(p.minimumInvestment)) + '</span>' : '') + '</b></td>';
-    case 'vehicle': return '<td><span class="veh">' + esc(p.vehicle) + '</span></td>';
-    case 'liquidity': return '<td><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></td>';
-    case 'productCost': return '<td class="num">' + catFigure(p.productCost, 2) + '</td>';
-    case 'mgmt': return '<td class="num mute">' + catFigure(row.mgmt, 2) + '</td>';
-    case 'allIn': return '<td class="num"><b>' + catFigure(row.allIn, 2) + '</b></td>';
-    case 'distributionYield': return '<td class="num">' + catFigure(p.distributionYield, 2) + '</td>';
-    case 'net': return '<td class="num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')) + '">'
-      + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</td>';
-    case 'minimumInvestment': return '<td class="num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute') + '">' + esc(catMoney(p.minimumInvestment)) + '</td>';
-    case 'used': return '<td class="num used' + (row.used ? '' : ' zero') + '">' + row.used + '</td>';
-    default: return '<td class="mute">' + esc(p[c.key]) + '</td>';
+    case 'ticker': return td('tk', esc(p.ticker));
+    case 'name': return td('nm', '<b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Minimum above the open mandate">min ' + esc(catMoney(p.minimumInvestment)) + '</span>' : '') + '</b>');
+    case 'vehicle': return td('', '<span class="veh">' + esc(p.vehicle) + '</span>');
+    case 'liquidity': return td('', '<span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span>');
+    case 'productCost': return td('num', catFigure(p.productCost, 2));
+    case 'mgmt': return td('num mute', catFigure(row.mgmt, 2));
+    case 'allIn': return td('num', '<b>' + catFigure(row.allIn, 2) + '</b>');
+    case 'distributionYield': return td('num', catFigure(p.distributionYield, 2));
+    case 'net': return td('num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')),
+      row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2));
+    case 'minimumInvestment': return td('num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(p.minimumInvestment)));
+    case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
+    default: return td('mute', esc(p[c.key]));
   }
 }
 
+/* a band (D100): the category, and what can be said of it before a row is
+   read. The whole band is the button that folds it. */
+function catBandHtml(g, span) {
+  var shut = catShut(g.key), n = g.rows.length, at = catBandOrder().indexOf(g.key);
+  return '<tr class="cat-band' + (shut ? ' shut' : '') + '" data-catfold="' + esc(g.key) + '"><th colspan="' + span + '" scope="rowgroup">'
+    + '<button type="button" class="cat-fold"' + (at === -1 ? '' : ' id="catFold' + at + '"') + ' aria-expanded="' + !shut + '">'
+    + '<span class="car" aria-hidden="true">▾</span><b>' + esc(g.key) + '</b>'
+    + '<span class="n">' + n + ' product' + (n === 1 ? '' : 's') + '</span>'
+    + (g.lo === null ? '' : '<span class="rng">all-in ' + catFigure(g.lo, 2) + (g.hi > g.lo ? '–' + catFigure(g.hi, 2) : '') + '</span>')
+    + (g.notDaily ? '<span class="cst">' + g.notDaily + ' not daily</span>' : '')
+    + '</button></th></tr>';
+}
+
+function catRowHtml(row, cols, band, isCursor) {
+  var id = row.p.productId, pinned = cat.pins.indexOf(id) !== -1;
+  var sortKey = cat.sort ? cat.sort.key : null;
+  return '<tr data-catrow="' + esc(id) + '"' + (band === null ? '' : ' data-catband="' + esc(band) + '"')
+    + ' class="' + (pinned ? 'pin' : '') + (isCursor ? ' cur' : '')
+    + (id === cat.detail ? ' on' : '') + (row.tooBig ? ' dim' : '') + '" tabindex="-1" aria-selected="' + (id === cat.detail) + '">'
+    + '<td class="pinc"><button type="button" class="pinbox' + (pinned ? ' on' : '') + '" data-catpin="' + esc(id) + '"'
+    + ' title="' + (pinned ? 'Unpin' : 'Pin to compare') + '"'
+    + ' aria-label="' + (pinned ? 'Unpin' : 'Pin') + ' ' + esc(row.p.name) + '" aria-pressed="' + pinned + '"></button></td>'
+    + cols.map(function (c) { return catCellHtml(row, c, c.key === sortKey); }).join('')
+    + '<td class="go"><span aria-hidden="true">›</span></td></tr>';
+}
+
+/* the table's bodies: one for the flat list, or one per band, so a band's
+   header is the header of a row group and says so */
 function catBodyHtml() {
-  var rows = catVisible();
-  if (!rows.length) {
-    return '<tr><td colspan="' + (catColumns().length + 1) + '" class="cat-empty">No product matches'
+  var entries = catEntries();
+  var cols = catColumns(), span = cols.length + 2;      /* the pin cell, the columns, the chevron */
+  if (!entries.length) {
+    return '<tbody><tr><td colspan="' + span + '" class="cat-empty">No product matches'
       + (cat.query.trim() ? ' <b>“' + esc(cat.query.trim()) + '”</b>' : '') + ' with the filters in force. '
       + '<button type="button" class="cat-clear" data-catclearall>Clear the filters</button> · '
-      + repo.data.products.length + ' in the catalogue.</td></tr>';
+      + repo.data.products.length + ' in the catalogue.</td></tr></tbody>';
   }
-  var cols = catColumns();
-  return rows.map(function (row) {
-    var id = row.p.productId, pinned = cat.pins.indexOf(id) !== -1;
-    return '<tr data-catrow="' + esc(id) + '" class="' + (pinned ? 'pin' : '') + (id === cat.cursor ? ' cur' : '')
-      + (id === cat.detail ? ' on' : '') + (row.tooBig ? ' dim' : '') + '" tabindex="-1" aria-selected="' + (id === cat.detail) + '">'
-      + '<td class="pinc"><button type="button" class="pinbox' + (pinned ? ' on' : '') + '" data-catpin="' + esc(id) + '"'
-      + ' aria-label="' + (pinned ? 'Unpin' : 'Pin') + ' ' + esc(row.p.name) + '" aria-pressed="' + pinned + '"></button></td>'
-      + cols.map(function (c) { return catCellHtml(row, c); }).join('') + '</tr>';
+  var cursorAt = cat.cursor ? catCursorAt(entries) : -1;
+  if (!cat.group) {
+    return '<tbody>' + entries.map(function (e, i) { return catRowHtml(e.row, cols, null, i === cursorAt); }).join('') + '</tbody>';
+  }
+  var i = 0;
+  return catBands().map(function (g) {
+    var shut = catShut(g.key);
+    var rows = g.rows.map(function (row) {
+      var html = shut ? '' : catRowHtml(row, cols, g.key, i === cursorAt);
+      i += 1;
+      return html;
+    }).join('');
+    return '<tbody>' + catBandHtml(g, span) + rows + '</tbody>';
   }).join('');
 }
 
 function catTableHtml() {
-  return '<div class="cat-tblwrap" id="catTblWrap" tabindex="0" aria-label="Product catalogue, scrolls">'
-    + '<table class="cat-tbl ' + esc(cat.density) + '"><thead>' + catHeadHtml() + '</thead>'
-    + '<tbody id="catBody">' + catBodyHtml() + '</tbody></table></div>';
+  return '<div class="cat-tblwrap cat-main' + (cat.group ? ' grouped' : '') + '" id="catTblWrap" tabindex="0" aria-label="Product catalogue, scrolls">'
+    + '<table class="cat-tbl ' + esc(cat.density) + (cat.group ? ' grouped' : '') + '" id="catTbl"><thead>' + catHeadHtml() + '</thead>'
+    + catBodyHtml() + '</table></div>'
+    /* the shadow that says the table carries on to the right (D99) */
+    + '<span class="cat-more" id="catMore" aria-hidden="true"></span>';
 }
 
 function catCompareHtml() {
@@ -8320,6 +9364,21 @@ function catTrayHtml() {
     + '</div>';
 }
 
+/* The keys, where they can be seen (D99): the view was always driven from
+   the keyboard, and said so nowhere. Only the keys that do something from
+   where the reader is. */
+function catKeysHtml() {
+  var keys = cat.compare
+    ? [['/', 'search'], ['c', 'back to the list'], ['esc', 'back']]
+    : [['/', 'search'], ['↑ ↓', 'move'], ['space', 'pin'], ['enter', 'open'], ['c', 'compare'], ['g', 'group'], ['esc', 'back']];
+  return '<div class="cat-keys" id="catKeys"><span class="ttl">Keys</span>'
+    + keys.map(function (k) {
+        return '<span class="k">' + k[0].split(' ').map(function (cap) { return '<kbd>' + esc(cap) + '</kbd>'; }).join('')
+          + esc(k[1]) + '</span>';
+      }).join('')
+    + '</div>';
+}
+
 function catalogueViewHtml() {
   return catToolbarHtml() + catOrphansHtml()
     + '<div class="cat-b">' + catFacetsHtml()
@@ -8333,21 +9392,147 @@ function catTogglePin(id) {
   if (at === -1) cat.pins.push(id); else cat.pins.splice(at, 1);
   if (!cat.pins.length) cat.compare = false;
 }
+/* the cursor's row, as drawn: banded, a product two categories hold is on
+   the page twice, and only one copy is the cursor's */
+function catCursorRow() {
+  return cat.cursor ? document.querySelector('#catTbl tr.cur[data-catrow]') : null;
+}
 function catFocusCursor() {
-  var row = cat.cursor && document.querySelector('[data-catrow="' + cat.cursor.replace(/"/g, '\\"') + '"]');
-  if (row && row.focus) row.focus();
+  var row = catCursorRow();
+  if (row && row.focus) row.focus({ preventScroll: true });
 }
 function catMoveCursor(step) {
-  var ids = catVisible().map(function (r) { return r.p.productId; });
-  if (!ids.length) return;
-  var at = ids.indexOf(cat.cursor);
-  var next = at === -1 ? (step > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, at + step));
-  cat.cursor = ids[next];
+  /* over every row the table holds, shut bands included, so a cursor left
+     inside a band that was then folded moves on from where it was */
+  var entries = catEntries();
+  var at = catCursorAt(entries), next = at;
+  if (at === -1) next = step > 0 ? -1 : entries.length;
+  do { next += step; } while (entries[next] && entries[next].shut);
+  if (!entries[next]) {
+    if (at !== -1 && !entries[at].shut) return;     /* already at the end */
+    /* nothing open that way: the nearest open row the other way, if any */
+    next = at === -1 ? (step > 0 ? entries.length : -1) : at;
+    do { next -= step; } while (entries[next] && entries[next].shut);
+    if (!entries[next]) return;
+  }
+  cat.cursor = entries[next].row.p.productId;
+  cat.cursorBand = entries[next].band;
   if (cat.detail) cat.detail = cat.cursor;      /* an open panel follows the cursor */
   render(); catScrollCursorIntoView(); catFocusCursor();
 }
+function catSetGroup(on) {
+  cat.group = !!on;
+  cat.cursorBand = null;
+  /* a new order: from the top, or - with a row under the cursor - wherever
+     that row has gone */
+  render(); catScrollTo(0); catScrollCursorIntoView('center');
+}
+/* fold or open one band, or all of them. A band folded from deep inside its
+   rows would leave the reader looking at whatever slid up from below; the
+   band is brought back under the header instead. */
+function catFold(key, shut) {
+  var want = shut === undefined ? !catShut(key) : shut;
+  cat.folded = cat.folded.filter(function (k) { return k !== key; });
+  if (want) cat.folded.push(key);
+  render();
+  if (!want) return;
+  var band = [].slice.call(document.querySelectorAll('#catTbl tr.cat-band')).filter(function (tr) {
+    return tr.dataset.catfold === key;
+  })[0];
+  if (band) catBandIntoView(band);
+}
+/* a band the scroll has left behind is still on show, held under the header:
+   brought back to where it starts, so what follows it is what follows it */
+function catBandIntoView(band) {
+  var wrap = document.getElementById('catTblWrap'), head = document.querySelector('#catTbl thead');
+  if (!wrap || !head || !band) return;
+  var top = band.parentNode.offsetTop - head.offsetHeight;   /* the scroll that puts the band under the header */
+  if (top < wrap.scrollTop) catScrollTo(top);
+}
+function catFoldAll(shut) {
+  cat.folded = shut ? catBands().map(function (g) { return g.key; }) : [];
+  render(); catScrollTo(0);
+}
 
 /* ---- rendering: the dialog --------------------------------------------- */
+/* Whether there is anything to save, said in the footer rather than left to
+   the Save button's enabled state (F2). An enabled button is a weak signal
+   for state in an editor whose draft survives a lot of navigation - and it
+   made the leaving notice abrupt, because the first mention of unsaved work
+   was a warning about losing it. */
+function saveStateHtml() {
+  if (!repo.draft) return '';
+  if (repo.saving) return '<span class="repo-state">Saving…</span>';
+  if (repo.dirty) return '<span class="repo-state is-dirty">Unsaved changes</span>';
+  if (repo.savedAt) {
+    return '<span class="repo-state is-saved">Saved ' + esc(clockTime(repo.savedAt)) + '</span>';
+  }
+  return '';
+}
+function clockTime(iso) {
+  var t = new Date(iso);
+  if (isNaN(t.getTime())) return '';
+  return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
+}
+
+/* ---- unsaved work, across a reload (F1) ----------------------------------
+   Switching view, closing the dialog and moving to another sleeve were all
+   guarded, named the sleeve and offered Discard. The fourth exit - a refresh,
+   a closed tab, a crash - lost a twelve-product sleeve silently, while the
+   proposal tool beside it snapshots its own state on every render. Two
+   halves: the browser's own prompt, and a copy kept locally so the answer to
+   "did I lose it" is no rather than a prompt.
+
+   Keyed by what the draft IS, so a draft of one sleeve cannot be offered back
+   over another. Wrapped, because storage throws in a private window. */
+var DRAFT_KEY = 'pmg.repository.draft';
+
+function draftKeyFor(d) {
+  if (!d) return null;
+  if (d.id) return 'sleeve:' + d.id;
+  if (d.edition) return 'edition:' + d.edition.ofId;
+  return 'new:' + (d.category || repo.category) + '|' + (repo.variant || '');
+}
+
+/* Written while there is something to lose, and cleared only by the three
+   things that mean it is no longer wanted: a save, a discard, and the admin
+   turning the offer down. Clearing it merely because the draft in hand is
+   clean would erase it on the first render after the reload it exists for. */
+function keepDraft() {
+  if (!repo.draft || !repo.dirty) return;
+  try {
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      key: draftKeyFor(repo.draft), at: new Date().toISOString(),
+      category: repo.category, variant: repo.variant, draft: repo.draft
+    }));
+  } catch (e) { /* private window, or full: the prompt still stands */ }
+}
+
+function forgetKeptDraft() {
+  try { window.localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+}
+
+/* Offered back only for the draft it was taken from, and only when what is
+   on screen has not itself been edited. */
+function keptDraftFor(d) {
+  var want = draftKeyFor(d);
+  if (!want) return null;
+  try {
+    var raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    var held = JSON.parse(raw);
+    return (held && held.key === want && held.draft) ? held : null;
+  } catch (e) { return null; }
+}
+
+window.addEventListener('beforeunload', function (e) {
+  if (!repo.open || !repo.dirty) return;
+  keepDraft();
+  e.preventDefault();
+  e.returnValue = '';           /* the wording is the browser's, not ours */
+  return '';
+});
+
 function render() {
   var host = document.getElementById('repoDialog'); if (!host) return;
   if (!repo.open) {
@@ -8356,31 +9541,38 @@ function render() {
   host.hidden = false;
   App.setBackgroundInert(true);
   var focused = document.activeElement && document.activeElement.id;
+  var putBack = catScrollKeep();
   var d = repo.data;
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals';
   var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister;
 
+  /* One tab strip in the header, and it navigates (A1). The implementation
+     type used to sit beside it, identical in shape and selected state but
+     filtering rather than navigating - and it existed on one view of five, so
+     the header changed size as you moved. It is a property of the sleeve
+     list, so it has moved onto the sleeve list's own header. */
+  var VIEWS = [['sleeves', 'Sleeves', onSleeves, 0],
+               ['catalogue', 'Catalogue', onCatalogue, 0],
+               ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
+               ['activity', 'Activity', onActivity, 0],
+               ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0]];
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
-    + '<button type="button" role="tab" data-repoview="sleeves" aria-selected="' + onSleeves + '">Sleeves</button>'
-    + '<button type="button" role="tab" data-repoview="catalogue" aria-selected="' + onCatalogue + '">Catalogue</button>'
-    + '<button type="button" role="tab" data-repoview="archive" aria-selected="' + onArchive + '">Archive'
-    + (d && archivedSleeves().length ? '<span class="n">' + archivedSleeves().length + '</span>' : '') + '</button>'
-    + '<button type="button" role="tab" data-repoview="activity" aria-selected="' + onActivity + '">Activity</button>'
-    + '<button type="button" role="tab" data-repoview="proposals" aria-selected="' + onRegister + '">Proposals'
-    + (d && d.register && d.register.proposals ? '<span class="n">' + d.register.proposals + '</span>' : '') + '</button>'
+    + VIEWS.map(function (v) {
+        /* the pair is one tab stop; the arrows move within it (G1) */
+        return '<button type="button" role="tab" id="repotab-' + v[0] + '"'
+          + ' data-repoview="' + v[0] + '" aria-selected="' + v[2] + '"'
+          + ' aria-controls="repoPanel" tabindex="' + (v[2] ? '0' : '-1') + '">' + esc(v[1])
+          + (v[3] ? '<span class="n">' + v[3] + '</span>' : '') + '</button>';
+      }).join('')
     + '</div>';
-  if (d && onSleeves) {
-    header += '<div class="repo-seg" role="tablist" aria-label="Implementation type">'
-      + d.variants.map(function (v) {
-          return '<button type="button" role="tab" data-repovariant="' + esc(v) + '"'
-            + ' aria-selected="' + (v === repo.variant ? 'true' : 'false') + '">' + esc(v) + '</button>';
-        }).join('') + '</div>';
-  }
   if (d) {
-    header += '<span class="repo-src">' + esc(shortDate(d.catalogue.modified)) + '</span>';
+    /* what the date is OF (A3): it is the product catalogue's, and on the
+       sleeves view it sat directly over a sleeve carrying its own saved-on
+       line, where an unlabelled date reads as that sleeve's */
+    header += '<span class="repo-src">Catalogue as of ' + esc(shortDate(d.catalogue.modified)) + '</span>';
   }
   header += '<button type="button" class="dlg-close" id="repoclose" data-repoclose aria-label="Close">×</button></div>';
 
@@ -8415,12 +9607,16 @@ function render() {
   } else if (onRegister && d) {
     footer = regFooterHtml();
   } else if (onCatalogue && d) {
-    footer = '<div class="repo-f cat-f">' + catTrayHtml()
+    footer = catKeysHtml()
+      + '<div class="repo-f cat-f">' + catTrayHtml()
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
       + '</div>';
   } else {
-    var onRemoved = false;
-    var canSave = !onRemoved && !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
+    /* One primary action on the right, and nothing destructive beside it
+       (A2). Archiving and adding an edition act on the sleeve being edited,
+       so they have moved into the editor where that sleeve is named; what is
+       left here is the library's own provenance and Save. */
+    var canSave = !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
     footer = '<div class="repo-f">'
       + (d ? '<button type="button" class="btn btn-create" data-repocreate'
           + (repo.saving ? ' disabled' : '') + '>+ Create sleeve</button>' : '')
@@ -8429,33 +9625,30 @@ function render() {
           + (d.store.archived ? ' · ' + d.store.archived + ' archived' : '') + '</span>' : '')
       + '<span class="spacer"></span>'
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
-      + (!onRemoved && repo.draft && repo.draft.id
-          ? '<button type="button" class="btn" data-repoedition="' + repo.draft.id + '"' + (repo.saving ? ' disabled' : '')
-            + ' title="Another edition of ' + esc(repo.draft.name) + ', for particular portfolios">+ Add edition</button>'
-          : '')
-      + (!onRemoved && repo.draft && repo.draft.id && !isFixed(repo.category)
-          ? (repo.confirmDelete
-              ? '<span class="repo-src">It keeps its history and can be restored from the Archive.</span>'
-                + '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
-                + '<button type="button" class="btn btn-danger" data-repodelete>Confirm archive</button>'
-              : '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>Archive sleeve</button>')
-          : '')
-      + (onRemoved ? ''
-          : '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
-            + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve'
-               : (repo.draft && repo.draft.edition ? 'Create edition' : 'Save sleeve'))) + '</button>')
+      + saveStateHtml()
+      + '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
+        + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve'
+           : (repo.draft && repo.draft.edition ? 'Create edition' : 'Save sleeve'))) + '</button>'
       + '</div>';
   }
+
+  /* the tabs name this, and it is labelled by whichever is selected (G1) */
+  body = '<div id="repoPanel" role="tabpanel" aria-labelledby="repotab-' + repo.view + '">'
+    + body + '</div>';
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
     + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
+  keepDraft();                  /* the local copy follows the draft (F1) */
+  putBack(); catEdge();
 
   if (focused) {
     var again = document.getElementById(focused);
     if (again && again.focus) {
-      again.focus();
+      /* the catalogue has just put its own scroll back, and a band's button
+         taking focus must not move it again */
+      again.focus(onCatalogue ? { preventScroll: true } : undefined);
       if ((again.id === 'repoSearch' || again.id === 'catSearch' || again.id === 'arcSearch' || again.id === 'actSearch' || again.id === 'regSearch') && again.setSelectionRange && again.type !== 'search') {
         var end = again.value.length; again.setSelectionRange(end, end);
       }
@@ -8467,6 +9660,11 @@ function updateTotals() {
   var tot = document.getElementById('repoTotal'); if (tot) tot.innerHTML = totalHtml();
   var save = document.querySelector('[data-reposave]');
   if (save) save.disabled = !(repo.dirty && !draftProblems().length && !repo.saving);
+  /* typing is a partial redraw, so the footer's marker has to be told (F2) */
+  var state = document.querySelector('.repo-f .repo-state');
+  if (state) state.outerHTML = saveStateHtml();
+  else if (save) save.insertAdjacentHTML('beforebegin', saveStateHtml());
+  keepDraft();
   var probs = document.querySelector('.repo-problems');
   if (probs) probs.remove();
 }
@@ -8479,24 +9677,101 @@ function updatePickerList() {
 /* typing in the catalogue's search redraws the rows, the facet counts, the
    count line and the tray - never the search box, so the caret stays put */
 function updateCatalogue() {
-  var body = document.getElementById('catBody'); if (body) body.innerHTML = catBodyHtml();
+  var putBack = catScrollKeep();
+  var table = document.getElementById('catTbl');
+  if (table) {
+    [].slice.call(table.tBodies).forEach(function (b) { table.removeChild(b); });
+    table.insertAdjacentHTML('beforeend', catBodyHtml());
+  }
   var facets = document.getElementById('catFacets'); if (facets) facets.outerHTML = catFacetsHtml();
   var count = document.getElementById('catCount'); if (count) count.innerHTML = catCountText();
+  var foldAll = document.getElementById('catFoldAll'); if (foldAll) foldAll.innerHTML = catFoldAllHtml();
   var tray = document.getElementById('catTray'); if (tray) tray.outerHTML = catTrayHtml();
   syncHash();
+  putBack(); catEdge();
 }
-function catScrollCursorIntoView() {
-  var row = cat.cursor && document.querySelector('[data-catrow="' + cat.cursor.replace(/"/g, '\\"') + '"]');
-  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+/* A redraw replaces the boxes that scroll, and a new box starts at its top:
+   a pin far down the list, or a facet ticked at the foot of the rail, threw
+   the reader back to the start. What was scrolled is put back where it was. */
+function catScrollKeep() {
+  var saved = ['catTblWrap', 'catFacets'].map(function (id) {
+    var el = document.getElementById(id);
+    return el ? { id: id, top: el.scrollTop, left: el.scrollLeft } : null;
+  });
+  return function () {
+    saved.forEach(function (s) {
+      var el = s && document.getElementById(s.id);
+      if (el) { el.scrollTop = s.top; el.scrollLeft = s.left; }
+    });
+  };
+}
+function catScrollTo(top) {
+  var wrap = document.getElementById('catTblWrap'); if (wrap) wrap.scrollTop = Math.max(0, top);
+}
+/* the header, and banded the band under it, stand over the rows: the
+   stylesheet's scroll-padding keeps the cursor's row clear of both */
+function catScrollCursorIntoView(block) {
+  var row = catCursorRow();
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: block || 'nearest', inline: 'nearest' });
+}
+/* The shadow at the table's right edge (D99), for as long as there are
+   columns beyond it. Placed from the box as measured, so it sits inside a
+   classic scrollbar and against the chevron column, whatever their widths. */
+function catEdge() {
+  var wrap = document.getElementById('catTblWrap'), edge = document.getElementById('catMore');
+  if (!wrap || !edge) return;
+  var go = wrap.querySelector('th.go');
+  edge.style.right = (wrap.offsetWidth - wrap.clientWidth + (go ? go.offsetWidth : 0)) + 'px';
+  edge.style.bottom = (wrap.offsetHeight - wrap.clientHeight) + 'px';
+  edge.classList.toggle('on', wrap.scrollWidth - wrap.clientWidth - wrap.scrollLeft > 1);
 }
 
 /* ---- the entry points --------------------------------------------------- */
+/* ---- the way in from the landing page (D106) ------------------------------
+   The console has never needed a scenario - it opens cold at #repository and
+   works - but the only visible entry was the rail's admin bar, and the rail
+   is display:none on the landing page. So an admin arriving to maintain the
+   library had to know a URL fragment, or start a proposal they did not want
+   in order to reveal the way to the thing they did.
+
+   The strip says whose session this is before it says what the session
+   opens: a row that appears for some people and not others should explain
+   why it is there, and on a shared machine it also answers "am I still
+   signed in as them". The five views are named rather than hidden behind one
+   "Repository" link, because the admin knows which of them they came for. */
+var LANDING_VIEWS = [
+  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['archive', 'Archive'],
+  ['activity', 'Activity'], ['proposals', 'Proposals']
+];
+
+function renderLandingAdmin(show) {
+  var host = document.getElementById('lpadmin'); if (!host) return;
+  /* Only on the landing page: in the workspace the rail carries the same two
+     entry points, and a second copy under the document would be furniture. */
+  var on = show && App.phase() !== 'workspace';
+  host.hidden = !on;
+  if (!on) { host.innerHTML = ''; return; }
+  var who = App.opt('capabilities.user', '');
+  var html = '<div class="lp-admin-who"><span class="lp-admin-role">Admin</span>'
+    + (who ? '<span>Signed in as <b>' + esc(who) + '</b></span>'
+           : '<span>You can maintain the library</span>')
+    + '</div>'
+    + '<nav class="lp-admin-links" aria-label="The library">'
+    + LANDING_VIEWS.map(function (v, i) {
+        return (i ? '<span class="lp-admin-dot" aria-hidden="true">\u00b7</span>' : '')
+          + '<a href="#' + v[0] + '" data-repoopen="' + v[0] + '">' + esc(v[1]) + '</a>';
+      }).join('')
+    + '</nav>';
+  if (host.innerHTML !== html) host.innerHTML = html;
+}
+
 function renderEntryLinks() {
   var show = canAdmin();
   /* the whole bar, not the individual buttons: an empty bordered strip would
      be worse than no strip (D62) */
   var bar = document.getElementById('railadmin');
   if (bar) bar.hidden = !show;
+  renderLandingAdmin(show);
   if (!repo.bootChecked && (typeof App.schemaReady !== 'function' || App.schemaReady())) {
     repo.bootChecked = true;
     if (show && window.location.hash.indexOf('#repository') === 0) openRepository(null, 'sleeves');
@@ -8537,15 +9812,26 @@ function renderEntryLinks() {
 document.addEventListener('click', function (e) {
   var t = e.target.closest ? e.target.closest('#repolink, #catlink') : null;
   if (t) { e.preventDefault(); openRepository(t, t.id.indexOf('cat') !== -1 ? 'catalogue' : 'sleeves'); return; }
+  /* the landing strip (D106). Real anchors carrying the same hashes the
+     console already answers to, so a middle click opens a second tab and a
+     copied link works - the handler only saves the round trip. */
+  var go = e.target.closest ? e.target.closest('[data-repoopen]') : null;
+  if (go) {
+    e.preventDefault();
+    var view = go.dataset.repoopen;
+    openRepository(go, view === 'repository' ? 'sleeves' : view);
+    return;
+  }
   var host = document.getElementById('repoDialog');
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],[data-repocat],[data-reposleeve],'
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-repodelete],[data-repocanceldelete],[data-repokeep],[data-repodiscard],'
-    + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],'
+    + '[data-repokeptrestore],[data-repokeptdrop],'
+    + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
-    + '[data-catrow],[data-catopen],[data-catfee],'
+    + '[data-catrow],[data-catopen],[data-catfee],[data-catgroup],[data-catfold],[data-catfoldall],'
     + '[data-repocreate],[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
@@ -8566,8 +9852,13 @@ document.addEventListener('click', function (e) {
   if (ds.repovariant !== undefined) { goTo({ variant: ds.repovariant }); return; }
   if (ds.repocat !== undefined) { goTo({ category: ds.repocat }); return; }
   if (ds.reposleeve !== undefined) { selectSleeve(parseInt(ds.reposleeve, 10)); return; }
-  if (ds.reponew !== undefined) { goTo({ fresh: true }); return; }
-  if (ds.repocreate !== undefined) { goTo({ fresh: true, create: true }); return; }
+  /* One create path (B2). Two buttons a verb apart used to make forms that
+     differed in which fields existed, with nothing on screen to say which was
+     which; now both open the create form, which arrives with the category and
+     the book already filled in from wherever the admin was standing. */
+  if (ds.reponew !== undefined || ds.repocreate !== undefined) {
+    goTo({ fresh: true, create: true }); return;
+  }
   if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
   /* editions (D89) */
   if (ds.repoedition !== undefined) {
@@ -8641,19 +9932,34 @@ document.addEventListener('click', function (e) {
   if (ds.reposave !== undefined) { saveDraft(); return; }
   if (ds.repodelete !== undefined) { deleteCurrent(); return; }
   if (ds.repocanceldelete !== undefined) { repo.confirmDelete = false; render(); return; }
+  if (ds.repokeptrestore !== undefined) {
+    var held = repo.kept; repo.kept = null;
+    if (held && held.draft) {
+      repo.draft = held.draft; repo.dirty = true;
+      App.announce('polite', 'Unsaved changes restored.');
+    }
+    render(); return;
+  }
+  if (ds.repokeptdrop !== undefined) { repo.kept = null; forgetKeptDraft(); render(); return; }
   if (ds.repokeep !== undefined) { resolveLeaving(false); return; }
   if (ds.repodiscard !== undefined) { resolveLeaving(true); return; }
   /* the catalogue (D63) */
+  if (ds.catcsv !== undefined) { downloadCatalogue(); return; }
   if (ds.catcols !== undefined) { cat.openChip = cat.openChip === 'cols' ? null : 'cols'; render(); return; }
   if (ds.catshowall !== undefined) { cat.hidden = []; render(); return; }
   if (ds.catdensity !== undefined) { cat.density = ds.catdensity === 'comfortable' ? 'comfortable' : 'dense'; render(); return; }
+  if (ds.catgroup !== undefined) { catSetGroup(ds.catgroup === 'category'); return; }
+  if (ds.catfoldall !== undefined) { catFoldAll(ds.catfoldall === 'shut'); return; }
+  if (ds.catfold !== undefined) { catFold(ds.catfold); return; }
   if (ds.catclearall !== undefined) { cat.query = ''; cat.filters = {}; cat.openChip = null; render(); return; }
   if (ds.catsort !== undefined) {
     /* ascending, then descending, then back to the delivery's own order */
     if (!cat.sort || cat.sort.key !== ds.catsort) cat.sort = { key: ds.catsort, dir: 'asc' };
     else if (cat.sort.dir === 'asc') cat.sort.dir = 'desc';
     else cat.sort = null;
-    render(); return;
+    /* a new order reads from the top - and stays on the column that was
+       clicked, however far along the table it is */
+    render(); catScrollTo(0); return;
   }
   if (ds.catpin !== undefined) { catTogglePin(ds.catpin); render(); return; }
   if (ds.catunpin !== undefined) {
@@ -8666,6 +9972,7 @@ document.addEventListener('click', function (e) {
   if (ds.catdetailclose !== undefined) { cat.detail = null; render(); catFocusCursor(); return; }
   if (ds.catrow !== undefined) {
     cat.cursor = ds.catrow;
+    cat.cursorBand = ds.catband === undefined ? null : ds.catband;
     cat.detail = cat.detail === ds.catrow ? null : ds.catrow;
     render(); return;
   }
@@ -8802,6 +10109,22 @@ document.addEventListener('input', function (e) {
   }
 });
 
+/* The sleeve search redraws the list and the pane heading, never the box, so
+   the caret stays where it was typed (C1). */
+document.addEventListener('input', function (e) {
+  if (!repo.open || repo.view !== 'sleeves' || !e.target || e.target.id !== 'repoFind') return;
+  repo.query = e.target.value;
+  var pane = document.querySelector('.repo-list'); if (!pane) return;
+  var head = pane.querySelector('.repo-pane-h');
+  var searching = !!repo.query.trim();
+  if (head) head.firstChild.nodeValue = searching ? 'Search results' : repo.category;
+  pane.querySelectorAll('.repo-book').forEach(function (b) { b.disabled = searching; });
+  var keep = pane.querySelector('.repo-find');
+  var after = keep && keep.nextSibling;
+  while (after) { var next = after.nextSibling; after.remove(); after = next; }
+  keep.insertAdjacentHTML('afterend', searching ? sleeveHitsHtml() : sleeveListHtml());
+});
+
 /* Capture phase, on purpose: the fee card's own Escape handler was
    registered first and hides the card synchronously, and a bubbling handler
    here would then find no card open and close this dialog as well. Seen
@@ -8852,11 +10175,16 @@ document.addEventListener('keydown', function (e) {
       return;
     }
     if (!inField) {
+      /* space and enter on a button are that button's: a header sorts, a
+         band folds, a pin box pins. Anywhere else they are the cursor row's. */
+      var onButton = e.target && e.target.tagName === 'BUTTON';
+      var plain = !e.metaKey && !e.ctrlKey && !e.altKey;
       if (e.key === 'ArrowDown') { e.preventDefault(); catMoveCursor(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); catMoveCursor(-1); return; }
-      if (e.key === ' ' && cat.cursor) { e.preventDefault(); catTogglePin(cat.cursor); render(); catFocusCursor(); return; }
-      if (e.key === 'Enter' && cat.cursor && !cat.compare) { e.preventDefault(); cat.detail = cat.detail === cat.cursor ? null : cat.cursor; render(); catFocusCursor(); return; }
-      if ((e.key === 'c' || e.key === 'C') && (cat.pins.length || cat.compare)) { e.preventDefault(); cat.compare = !cat.compare; cat.detail = null; render(); return; }
+      if (e.key === ' ' && cat.cursor && !onButton) { e.preventDefault(); catTogglePin(cat.cursor); render(); catFocusCursor(); return; }
+      if (e.key === 'Enter' && cat.cursor && !cat.compare && !onButton) { e.preventDefault(); cat.detail = cat.detail === cat.cursor ? null : cat.cursor; render(); catFocusCursor(); return; }
+      if ((e.key === 'c' || e.key === 'C') && plain && (cat.pins.length || cat.compare)) { e.preventDefault(); cat.compare = !cat.compare; cat.detail = null; render(); return; }
+      if ((e.key === 'g' || e.key === 'G') && plain && !cat.compare) { e.preventDefault(); catSetGroup(!cat.group); return; }
     }
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -8866,6 +10194,18 @@ document.addEventListener('keydown', function (e) {
       closeRepository(false); return;
     }
     return;
+  }
+  if (repo.view === 'sleeves') {
+    var find = document.getElementById('repoFind');
+    var typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT'
+                              || e.target.tagName === 'TEXTAREA');
+    if (e.key === '/' && !typing && find) { e.preventDefault(); find.focus(); find.select(); return; }
+    if (e.key === 'Escape' && find && e.target === find) {
+      e.preventDefault(); e.stopPropagation();
+      if (repo.query) { repo.query = ''; find.value = ''; render(); }
+      else find.blur();
+      return;
+    }
   }
   if (e.key === 'Escape') {
     /* the fee card, if open above this dialog, takes the key first */
@@ -8881,6 +10221,24 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Enter' && (e.target.id === 'repoName' || e.target.id === 'repoLabel')) { e.preventDefault(); saveDraft(); }
 }, true);
+
+/* The catalogue's edge shadow follows its table's scroll (D99). A scroll does
+   not bubble, and every redraw makes a new box to listen on, so it is caught
+   on the way down instead. */
+document.addEventListener('scroll', function (e) {
+  if (repo.open && e.target && e.target.id === 'catTblWrap') catEdge();
+}, true);
+/* Every band the scroll has passed is held under the header, beneath the one
+   on show - and the Tab key still reaches it there. Focus is never left on a
+   band that cannot be seen: the keyboard's arrival brings it back. */
+document.addEventListener('focusin', function (e) {
+  var el = e.target;
+  if (!repo.open || !el.classList || !el.classList.contains('cat-fold')) return;
+  if (el.matches && el.matches(':focus-visible')) catBandIntoView(el.closest('tr'));
+});
+window.addEventListener('resize', function () {
+  if (repo.open && repo.view === 'catalogue') catEdge();
+});
 
 App.addRenderer(renderEntryLinks);
 App.openRepository = openRepository;

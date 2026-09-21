@@ -227,18 +227,32 @@ var IMPL_TEXT_COLUMNS = ['Ticker', 'Style', 'Vehicle', 'Share class',
 
 /* Every column of the screen's table, in order - the thing both spans below
    have to add up to. */
+/* Notional sits beside Allocation (A2): they are one fact in two units, and
+   at opposite ends of a table this wide the money was only ever reached by
+   scrolling. The minimum stays on the right, and the position that breaches
+   it says so beside its own notional instead. */
 function implScreenColumns(fees) {
-  return ['Categories & Asset Classes', 'Products', 'Allocation (%)']
+  return ['Asset Class', 'Products', 'Allocation (%)', 'Notional']
     .concat(IMPL_TEXT_COLUMNS)
     .concat(['Prod cost'])
     .concat(fees ? ['Mgmt fee', 'Wtd fee'] : [])
-    .concat(['Min Investment', 'Notional']);
+    .concat(['Min Investment']);
 }
 
-/* A category band leaves the descriptive columns empty and keeps its own
-   Product cost cell; the total also swallows Product cost, having none. */
+/* A category band leaves the descriptive columns empty and fills its own
+   Product cost and Mgmt fee cells (A4); the total swallows Product cost,
+   having none of its own. */
 function implBandSpan() { return IMPL_TEXT_COLUMNS.length; }
 function implTotalSpan() { return IMPL_TEXT_COLUMNS.length + 1; }
+
+/* An auto-attached sleeve is marked with a labelled glyph rather than an
+   emoji (G2): emoji are announced inconsistently - "locked", the codepoint,
+   or nothing - and this is the only thing on screen that explains why two
+   categories have no picker in the rail. */
+var LOCK_SVG = '<svg class="pill-lock" viewBox="0 0 12 12" role="img"'
+  + ' aria-label="attached by rule"><path d="M3.4 5.2V3.8a2.6 2.6 0 0 1 5.2 0v1.4"'
+  + ' fill="none" stroke="currentColor" stroke-width="1.3"/>'
+  + '<rect x="2.3" y="5.2" width="7.4" height="5.3" rx="1.1" fill="currentColor"/></svg>';
 
 function feeText(pct) { return pct === null ? '—' : App.num(pct, 2, '%'); }
 function bpText(bp) { return bp === null ? '—' : App.num(bp, 1, 'bp'); }
@@ -784,10 +798,8 @@ function feeFields() {
     + (onCustom ? '' : segment(points, curPoint, curSource, 'data-feepoint',
               function (point, source) { return idFor(source, point); }, 'Fee Level point'))
     + '<p class="vr-note">' + feePricingNote(tier) + '</p>'
+    + feeOutcomeLine()
     + (onCustom ? customRailBlock() : '')
-    /* the flag is about the delivered card; custom rates are the PWA's */
-    + (App.opt('fees.placeholder', false) && !onCustom
-        ? '<p class="fee-flag">Placeholder rates, not the published schedule.</p>' : '')
     + feeCardLine()
     + (marginalBuildUp()
         ? '<button type="button" class="btn btn-ghost fee-view" data-priceview>'
@@ -800,8 +812,7 @@ function feeFields() {
 /* Under the custom level: the rows this book holds and what each carries,
    and the way back into the card. A fee group with no products in the model
    is not listed - it prices nothing here - and one with products and no rate
-   is marked, since its products are unpriced. The card still shows every
-   row, so a rate can be entered ahead of a sleeve that would need it. */
+   is marked, since its products are unpriced. The card lists the same rows. */
 function customRailBlock() {
   var schedule = App.feeSchedule();
   var html = '';
@@ -849,10 +860,29 @@ function feePricingNote(tier) {
 }
 
 /* The card's own line under the level: which delivery priced this book. */
-function feeCardLine() {
-  var delivery = App.opt('fees.delivery', null) || {};
-  return '<p class="fee-card">Card ' + App.esc(delivery.version || 'unversioned') + '</p>';
+/* The card's delivery version used to print here as "Card 0.0-placeholder",
+   a build identifier sitting where a PWA looks for a price (F3). Nothing is
+   printed here now, and the version is not printed in the card's own header
+   either (D104). */
+/* What the level actually costs, where the level is chosen (F2). Management,
+   PMG and Custom are picked in the rail and their whole effect was one figure
+   in a column off the right edge of a table below the fold - the only control
+   here with no visible consequence. The money matters more than the basis
+   points to the conversation this proposal is written for. */
+function feeOutcomeLine() {
+  var groups = rows();
+  var t = totals(groups);
+  if (t.bp === null) {
+    return '<p class="fee-outcome none">Not yet priced \u2014 every product needs a rate.</p>';
+  }
+  var mandate = App.mandateSize();
+  var annual = (typeof mandate === 'number') ? mandate * t.bp / 10000 : null;
+  return '<p class="fee-outcome"><b>' + App.esc(bpText(t.bp)) + '</b>'
+    + (annual === null ? '' : '<span>' + App.esc(money(annual)) + ' a year</span>')
+    + '<small>on the model as it stands</small></p>';
 }
+
+function feeCardLine() { return ''; }
 
 /* ---- the rate card viewer (D55) -------------------------------------------
    Every cell at one tier or one fee group, read only. The card is what the
@@ -899,6 +929,30 @@ async function loadFeeCard() {
   renderFeePanel();
 }
 
+/* Which of the card's ladders this proposal actually prices on: the chosen
+   schedule, and under one that prices by fee group, the group carrying the
+   most weight in the model - the rate most of the money is paying. */
+function pricedGroupIndex(card) {
+  var schedule = App.feeSchedule();
+  if (!schedule || !card || !card.groups) return -1;
+  var mine = [];
+  card.groups.forEach(function (g, i) { if (g.schedule === schedule) mine.push(i); });
+  if (!mine.length) return -1;
+  if (mine.length === 1) return mine[0];
+  var weight = {};
+  rows().forEach(function (group) {
+    group.items.forEach(function (item) {
+      weight[item.feeGroup] = (weight[item.feeGroup] || 0) + item.weight;
+    });
+  });
+  var best = mine[0], most = -1;
+  mine.forEach(function (i) {
+    var w = weight[card.groups[i].feeGroup] || 0;
+    if (w > most) { most = w; best = i; }
+  });
+  return best;
+}
+
 async function openFeePanel(groupName) {
   var tier = App.opt('fees.tier', null);
   feePanel.open = true;
@@ -914,6 +968,15 @@ async function openFeePanel(groupName) {
   if (groupName && feePanel.card) {
     var at = feePanel.card.groups.findIndex(function (g) { return g.feeGroup === groupName; });
     if (at !== -1) { feePanel.pivot = 'group'; feePanel.group = at; renderFeePanel(); }
+  } else if (feePanel.card) {
+    /* Opened from the rail, the card shows the ladder this proposal is
+       priced on (F1). It used to open on whatever was first in its own list -
+       CASP, while the rail said RDR - with nothing to say it was not what the
+       client is paying, and both are plausible five-tier grids. */
+    var here = pricedGroupIndex(feePanel.card);
+    if (here !== -1 && here !== feePanel.group) {
+      feePanel.pivot = 'group'; feePanel.group = here; renderFeePanel();
+    }
   }
   var sel = document.getElementById('feeaxis');
   if (sel) sel.focus();
@@ -974,7 +1037,6 @@ function renderFeePanel() {
   App.setBackgroundInert(true);
   var card = feePanel.card;
   var delivery = (card && card.delivery) || App.opt('fees.delivery', {}) || {};
-  var placeholder = App.opt('fees.placeholder', false);
 
   /* The level this mandate prices at - the scenario's own, or the framework's
      default when none is chosen yet. It is one column of the grid, and the
@@ -1063,12 +1125,13 @@ function renderFeePanel() {
     + '<button type="button" class="dlg-close" id="feeclose" aria-label="Close">×</button>'
     + '<div class="rc-head">'
     + '<h2 id="feeTitle">Fee card</h2>'
+    /* The delivery's version and origin are not printed (D104): in a
+       development build they name the card as a placeholder, which is a fact
+       about the environment rather than about the price. The as-of date is
+       the card's own and stays. */
     + '<p class="rc-meta">'
-    + '<span>Delivery <b>' + App.esc(delivery.version || 'unversioned') + '</b></span>'
     + (delivery.asOf ? '<span>as of <b>' + App.esc(delivery.asOf) + '</b></span>' : '')
-    + (delivery.source ? '<span>from <b>' + App.esc(delivery.source) + '</b></span>' : '')
     + '</p>'
-    + (placeholder ? '<span class="rc-flag">Placeholder rates</span>' : '')
     + '</div>'
     + controls
     + table
@@ -1160,7 +1223,6 @@ function renderPricePanel() {
   var level = (App.feeLevel && App.feeLevel()) || App.opt('fees.defaultLevel', null);
   var sums = priceBuildUp(build, level);
   var delivery = App.opt('fees.delivery', {}) || {};
-  var placeholder = App.opt('fees.placeholder', false);
   var schedule = (build && build.schedule) || (App.feeSchedule && App.feeSchedule()) || '';
 
   var body = '<p class="rc-loading">There is no mandate size to price yet.</p>';
@@ -1211,9 +1273,7 @@ function renderPricePanel() {
     + '<p class="rc-meta">'
     + '<span>Schedule <b>' + App.esc(schedule) + '</b></span>'
     + '<span>Level <b>' + App.esc(level || '\u2014') + '</b></span>'
-    + '<span>Card <b>' + App.esc(delivery.version || 'unversioned') + '</b></span>'
     + '</p>'
-    + (placeholder ? '<span class="rc-flag">Placeholder rates</span>' : '')
     + '</div>'
     + '<p class="pb-sub">' + App.esc(schedule) + ' is priced marginally: no single tier sets '
     + 'the rate, so this is the whole of the calculation.</p>'
@@ -1225,6 +1285,108 @@ function renderPricePanel() {
     + '</div></div>';
 }
 
+
+/* ---- the greeting on the first visit to step 2 (D97) ----------------------
+   The first time in a browser session that a PWA opens Implementation from
+   the step nav, the document dims, the rail stays lit, and a card against the
+   rail's edge says what the step asks for and lists this portfolio's
+   categories. It is the one dialog in the tool that Escape and an outside
+   click do not close (spec 13.2): the whole point is to be read once, so OK
+   is the only way out, and OK hands focus to the picker the guide has marked
+   (D95) rather than merely closing.
+
+   Skipped when there is nothing to ask for - every category already has a
+   sleeve, or the base or the variant is not ready to pick against - whatever
+   the flag says. */
+var GREET_KEY = 'pmg.proposalTool.implGreeted';
+var greetPanel = { open: false, armed: false };
+var greetedHere = false;                 /* stands in where storage is refused */
+
+function greeted() {
+  if (greetedHere) return true;
+  try { return window.sessionStorage.getItem(GREET_KEY) === '1'; } catch (e) { return false; }
+}
+function markGreeted() {
+  greetedHere = true;
+  try { window.sessionStorage.setItem(GREET_KEY, '1'); } catch (e) {}
+}
+
+/* The categories this card is about: the ones a PWA picks for, in the rail's
+   own order. Empty when there is nothing to say. */
+function greetCategories() {
+  var base = App.base();
+  if (!base || base.status !== 'ready' || !App.variant() || !App.canEdit()) return [];
+  return sleeveCategories(baseCategories()).filter(function (c) { return !isAuto(c.name); });
+}
+
+function renderGreetPanel() {
+  var host = document.getElementById('greetDialog'); if (!host) return;
+  var live = greetPanel.open ? greetCategories() : [];
+  var left = live.filter(function (c) { return !sleeveFor(c.name); }).length;
+  if (!greetPanel.open || !live.length || !left) {
+    if (greetPanel.open) { greetPanel.open = false; markGreeted(); }
+    host.innerHTML = ''; host.hidden = true;
+    document.body.classList.remove('greeting');
+    if (!feePanel.open && !pricePanel.open && !customPanel.open) App.setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  document.body.classList.add('greeting');
+  App.setBackgroundInert(true);
+
+  var list = live.map(function (c) {
+    var chosen = sleeveFor(c.name);
+    return '<li><b>' + App.esc(c.name) + '</b><i>'
+      + (chosen ? '✓ ' + App.esc(chosen.name || chosen) : App.num(c.weightPct, 1, '%'))
+      + '</i></li>';
+  }).join('');
+
+  host.innerHTML =
+      '<div class="scrim greet-scrim" data-greetscrim></div>'
+    + '<div class="dialog greet" role="dialog" aria-modal="true" aria-labelledby="greetTitle">'
+    + '<p class="greet-eyebrow">Step 2 of 2 · Implementation</p>'
+    + '<h2 id="greetTitle">Sleeves are chosen in the panel on the left</h2>'
+    + '<p class="greet-lede">Choose a <b>sleeve</b> for each category of this portfolio, in the '
+    + 'panel beside this card. Each is a set of products PMG has put together for that category, '
+    + 'and the implementation table fills in as you go.</p>'
+    + '<ul class="greet-cats">' + list + '</ul>'
+    + '<p class="greet-left">' + left + ' of ' + live.length + ' still need one. The first is '
+    + 'marked when this closes.</p>'
+    + '<div class="greet-acts"><button type="button" class="btn btn-primary" id="greetok">'
+    + 'Choose the first sleeve</button></div></div>';
+  var ok = document.getElementById('greetok');
+  if (ok) ok.focus();
+}
+
+function closeGreetPanel() {
+  if (!greetPanel.open) return;
+  greetPanel.open = false;
+  markGreeted();
+  renderGreetPanel();
+  /* The handover: focus the picker the guide has marked (D95), or - on a
+     scenario whose guide has already finished - the first one still empty,
+     which is the same control the card was pointing at. */
+  var next = document.querySelector('.rail .sl-row.is-next select')
+    || document.querySelector('.rail .sl-row:not(.done) select');
+  if (next && !next.disabled) {
+    void next.offsetWidth;
+    next.focus();
+    if (document.activeElement !== next) {
+      window.setTimeout(function () { if (document.contains(next)) next.focus(); }, 0);
+    }
+  }
+}
+
+/* Focus stays inside the card: it has one control, so Tab returns to it. */
+document.addEventListener('keydown', function (e) {
+  if (!greetPanel.open) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return; }
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    var ok = document.getElementById('greetok');
+    if (ok) ok.focus();
+  }
+}, true);
 
 /* ---- guiding the sleeves (D95) -------------------------------------------
    The base portfolio's controls are guided one at a time (D91); the sleeve
@@ -1371,9 +1533,13 @@ function renderCustomPanel() {
       }).join('');
     }).join('') + '</tr>';
 
+  /* only the rows this book holds: a fee group with no products in the
+     model prices nothing here, so it is not offered a rate */
   var body = feeSchedules().map(function (entry) {
     var on = entry.id === schedule;
-    return customRowsFor(entry.id).map(function (r, ix) {
+    return customRowsFor(entry.id).filter(function (r) {
+      return r.group ? counts[r.group] : held;
+    }).map(function (r, ix) {
       var ref = customReference(entry.id, r.group) || {};
       var key = customRowKey(entry.id, r.group);
       var value = customRate(entry.id, r.group, draft);
@@ -1395,7 +1561,7 @@ function renderCustomPanel() {
       var input = '<td class="cust rc-grp' + (bad ? ' bad' : '') + '">'
         + '<input type="text" inputmode="decimal" class="cf-in" id="cf-' + key.replace(/\W/g, '_') + '"'
         + ' data-crate="' + App.esc(key) + '" value="' + (value === null ? '' : value.toFixed(2) + '%') + '"'
-        + (on ? '' : ' disabled') + ' placeholder="' + (on ? (n ? '—' : 'optional') : '') + '"'
+        + (on ? '' : ' disabled') + ' placeholder="' + (on ? '\u2014' : '') + '"'
         + ' aria-label="Custom rate for ' + App.esc(entry.id + (r.group ? ' ' + r.group : '')) + '"'
         + (on && room ? ' title="Between ' + room.low.toFixed(2) + '% and ' + room.high.toFixed(2) + '%"' : '')
         + (on ? '' : ' title="Choose ' + App.esc(entry.id) + ' in the rail to price by '
@@ -1450,8 +1616,7 @@ function renderCustomPanel() {
     + '<p class="rc-meta"><span>Schedule <b>' + App.esc(schedule) + '</b></span>'
     + (tier ? '<span>Tier <b>' + App.esc(tier.id + ' · ' + tier.label) + '</b></span>' : '')
     + '<span>Mandate <b>' + App.esc(money(App.mandateSize())) + '</b></span>'
-    + '<span>Card <b>' + App.esc(delivery.version || 'unversioned') + '</b></span></p>'
-    + (App.opt('fees.placeholder', false) ? '<span class="rc-flag">Placeholder rates</span>' : '')
+    + '</p>'
     + '</div>'
     + '<p class="pb-sub">The delivered rates at every level, for reference: a flat schedule at this '
     + 'mandate’s tier, a marginal one blended for this mandate. Enter one rate per '
@@ -1491,6 +1656,44 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
+/* ---- what a sleeve costs, before it is chosen (C2) ------------------------
+   Choosing between SMA Only, Mutual Funds and Passive is the central act of
+   this screen, and it was made blind: the consequence only appeared after the
+   choice, in a table whose cost columns are off the right edge. Every figure
+   needed is already here - the same product costs and the same managementFee
+   the table's own wtdBp is built from.
+
+   The weight is the category's current weight, so the notionals are what this
+   sleeve would hold if it were attached now; the line says "at this weight"
+   rather than pretending to be a forecast. */
+function sleeveShape(sleeve, weightPct) {
+  var products = (sleeve && sleeve.products) || [];
+  if (!products.length) return null;
+  var priced = App.includeFees() && !!App.feeSchedule();
+  var cost = 0, known = true, below = 0;
+  var mandate = App.mandateSize();
+  products.forEach(function (product) {
+    var mgmt = priced ? managementFee(product.feeGroup) : 0;
+    if (mgmt === null) known = false; else cost += product.weight * (product.productCost + mgmt);
+    if (typeof mandate === 'number' && product.minimumInvestment) {
+      var notional = mandate * (weightPct / 100) * product.weight;
+      if (notional < product.minimumInvestment) below += 1;
+    }
+  });
+  return { count: products.length, cost: known ? cost : null, priced: priced, below: below };
+}
+
+function sleeveShapeText(shape) {
+  if (!shape) return '';
+  return '<span class="sl-shape">'
+    + '<span>' + shape.count + ' product' + (shape.count === 1 ? '' : 's') + '</span>'
+    + (shape.cost === null ? ''
+        : '<span>' + (shape.priced ? 'all-in ' : 'cost ') + App.num(shape.cost, 2, '%') + '</span>')
+    + (shape.below
+        ? '<span class="bad">' + shape.below + ' below minimum</span>' : '')
+    + '</span>';
+}
+
 function renderRail() {
   var el = document.getElementById('tier-sleeves'); if (!el) return;
   if (App.step() !== 'impl' || App.phase() !== 'workspace') { el.hidden = true; return; }
@@ -1506,7 +1709,7 @@ function renderRail() {
   /* The admin shortcut sits on the heading rather than on every picker row:
      one control for the tier, opening the repository on the implementation
      type already chosen, rather than five that each say the same thing (D62). */
-  var head = '<div class="tier-h"><h3>Sleeves</h3><span class="tier-h-r">'
+  var head = '<div class="tier-h"><h3>Asset Class Implementation</h3><span class="tier-h-r">'
     + (chosenVariant && base && base.status === 'ready'
         ? '<span class="tier-count">' + counts.filled + ' of ' + counts.total + '</span>'
         : '')
@@ -1522,14 +1725,14 @@ function renderRail() {
      the base is still resolving, and taking them away when the base fails
      would lose an answer the PWA had already given. */
   if (!base) {
-    el.innerHTML = head + '<p class="field-note">Build a base portfolio first.</p>'
+    el.innerHTML = head + '<p class="field-note">Build the proposed portfolio first.</p>'
       + overlayFields() + feeFields();
     return;
   }
   if (base.status !== 'ready') {
     el.innerHTML = head + '<p class="field-note">' + (base.status === 'error'
-        ? 'The base portfolio could not be built. Retry it from the allocation step.'
-        : 'Resolving the base portfolio…') + '</p>' + overlayFields() + feeFields();
+        ? 'The proposed portfolio could not be built. Retry it from the allocation step.'
+        : 'Resolving the proposed portfolio…') + '</p>' + overlayFields() + feeFields();
     return;
   }
   var html = head;
@@ -1541,7 +1744,7 @@ function renderRail() {
        a variant, and step 2 is gated on a portfolio - but a hand-edited or
        part-migrated scenario could arrive here, so it says where to go. */
     el.innerHTML = html + '<p class="field-note">No implementation variant is '
-      + 'set. Choose one with the base portfolio on the allocation step; it '
+      + 'set. Choose one with the proposed portfolio on the allocation step; it '
       + 'decides which sleeves each category offers and what they hold.</p>'
       + overlayFields() + feeFields();
     return;
@@ -1578,12 +1781,15 @@ function renderRail() {
     }
     html += '<div class="sl-row' + (chosen ? ' done' : '') + (i === next ? ' is-next' : '') + '">'
       + '<span class="cat"><b><label for="sl' + i + '">' + App.esc(category.name) + '</label></b>'
-      + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select + '</div>';
+      + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select
+      + (chosen ? sleeveShapeText(sleeveShape(chosen, category.weightPct)) : '') + '</div>';
   });
+  /* The count is already beside the heading; the bar is the only thing this
+     adds, so the sentence that repeated both is gone (D2). */
   var progressPct = counts.total ? Math.round(counts.filled / counts.total * 100) : 0;
-  html += '</div><p class="sl-progress">' + counts.filled + ' of ' + counts.total
-    + ' categories have a sleeve.'
-    + '<span class="sl-bar"><i style="width:' + progressPct + '%"></i></span></p>';
+  html += '</div><p class="sl-progress"><span class="sl-bar" role="img" aria-label="'
+    + counts.filled + ' of ' + counts.total + ' categories have a sleeve">'
+    + '<i style="width:' + progressPct + '%"></i></span></p>';
   html += overlayFields() + feeFields();
   el.innerHTML = html;
 }
@@ -1721,6 +1927,121 @@ function renderDonuts(groups, done) {
 }
 
 /* ---- the document (spec 9.3) -------------------------------------------- */
+/* ---- the export gate, said once (D2, B3, B4) -----------------------------
+   The head, the strip under the table and the card at the foot all report
+   this. It used to be computed inline where the card is drawn, so the head
+   could only ever repeat the sleeve count and the one fact that mattered -
+   that the file cannot be produced - was reachable only by scrolling past
+   five doughnuts.
+
+   The blocked text names its products as buttons that go to their rows (B3):
+   the card sits several screens below the table it is talking about, and the
+   reader had to find the rows by eye among twenty. Nothing is truncated any
+   more either - hiding the fourth of four meant the product a reader could
+   not see was the one they could not go and look at. */
+function rowAnchor(category, name) { return category + '|' + name; }
+
+function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
+  var breached = breaches(groups);
+  var reason = null, blocking = false;
+  if (!App.canExport()) reason = 'Export is not available for your role.';
+  else if (!App.variant()) reason = 'Choose an implementation variant first.';
+  /* Only a proposal that includes fees needs a schedule: one that does not
+     exports a sheet with no fee column to price (D52). */
+  else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
+  /* under the custom level a row without a rate leaves its products unpriced (D96) */
+  else if (fees && isCustomLevel() && customUnpriced(groups).length) {
+    reason = 'Set a custom rate for every fee group in the model: '
+      + customUnpriced(groups).join(', ') + ' still to set.';
+  }
+  else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
+  else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
+  /* A hard block: a position below the product's minimum cannot be bought,
+     so the materials cannot be produced. The server refuses it too. */
+  else if (breached.length) {
+    blocking = true;
+    reason = breached.length === 1
+      ? breached[0].name + ' in ' + breached[0].category + ' is below mandate minimum ('
+        + money(breached[0].notional) + ' against a ' + money(breached[0].minimum)
+        + ' minimum). Raise the mandate or change the sleeve.'
+      : breached.length + ' positions are below mandate minimum: '
+        + breached.map(function (b) { return b.name; }).join(', ')
+        + '. Raise the mandate or change the sleeve.';
+  }
+
+  var tone, headline, html;
+  if (exporting.status === 'working') {
+    tone = ''; headline = 'Preparing…';
+    html = App.esc('The server is generating the workbook from the persisted scenario.');
+  } else if (exporting.status === 'error') {
+    tone = 'error'; headline = 'Export failed';
+    html = App.esc(exporting.error || 'Export failed.');
+  } else if (blocking) {
+    tone = 'error';
+    headline = breached.length + ' below minimum';
+    /* each named product is the way to its row */
+    var links = breached.map(function (b) {
+      return '<button type="button" class="gate-go" data-implgo="'
+        + App.esc(rowAnchor(b.category, b.name)) + '">' + App.esc(b.name) + '</button>';
+    }).join(', ');
+    html = breached.length === 1
+      ? links + ' in ' + App.esc(breached[0].category) + ' is below mandate minimum ('
+        + App.esc(money(breached[0].notional)) + ' against a '
+        + App.esc(money(breached[0].minimum)) + ' minimum). Raise the mandate or change the sleeve.'
+      : breached.length + ' positions are below mandate minimum: ' + links
+        + '. Raise the mandate or change the sleeve.';
+  } else if (reason) {
+    tone = 'blocked';
+    headline = done ? 'Blocked' : 'Not ready';
+    html = App.esc(reason);
+  } else {
+    tone = 'ready'; headline = 'Ready to download';
+    html = App.esc('Ready — every category is implemented and the scenario is saved.');
+  }
+  return { reason: reason, blocking: blocking, tone: tone, headline: headline,
+           html: html, disabled: !!reason || exporting.status === 'working' };
+}
+
+/* Take the reader to the row a gate names (B3), and leave it lit long enough
+   to be found. The docked header stands over the table, so the row is put
+   below it rather than under it. */
+function showImplRow(anchor) {
+  var row = document.querySelector('[data-implrow="' + String(anchor).replace(/"/g, '\\"') + '"]');
+  if (!row) return;
+  var wrap = row.closest('.tblwrap');
+  if (wrap && wrap.scrollLeft > 0) wrap.scrollLeft = 0;      /* the name is pinned; the rest is not */
+  row.scrollIntoView({ block: 'center', inline: 'nearest' });
+  row.classList.remove('lit');
+  void row.offsetWidth;
+  row.classList.add('lit');
+  window.clearTimeout(showImplRow._t);
+  showImplRow._t = window.setTimeout(function () { row.classList.remove('lit'); }, 2400);
+}
+
+/* The table is where a sleeve is seen to be wrong; the picker that can change
+   it is in the rail (C3). The rail scrolls, never the document. */
+function focusSleevePicker(category) {
+  var select = document.querySelector('.sl-row select[data-cat="'
+    + String(category).replace(/"/g, '\\"') + '"]');
+  if (!select) return;
+  var rail = document.querySelector('.rail');
+  if (rail && rail.scrollHeight > rail.clientHeight) {
+    var row = select.closest('.sl-row');
+    var top = row.getBoundingClientRect().top - rail.getBoundingClientRect().top + rail.scrollTop;
+    var brand = document.querySelector('.rail-brand');
+    rail.scrollTop = Math.max(0, top - (brand ? brand.offsetHeight : 0) - 12);
+  }
+  select.focus({ preventScroll: true });
+  var row2 = select.closest('.sl-row');
+  if (row2) {
+    row2.classList.remove('lit');
+    void row2.offsetWidth;
+    row2.classList.add('lit');
+    window.clearTimeout(focusSleevePicker._t);
+    focusSleevePicker._t = window.setTimeout(function () { row2.classList.remove('lit'); }, 2400);
+  }
+}
+
 function renderView() {
   var el = document.getElementById('view-impl'); if (!el) return;
   var wrap = document.getElementById('view-impl-wrap');
@@ -1733,7 +2054,10 @@ function renderView() {
     var base = App.base();
     var ready = !!(base && base.status === 'ready');
     nav.querySelectorAll('.step').forEach(function (b) {
-      b.setAttribute('aria-selected', String(b.dataset.step === App.step()));
+      var on = b.dataset.step === App.step();
+      b.setAttribute('aria-selected', String(on));
+      /* one tab stop for the pair; the arrow keys move within it (G1) */
+      b.tabIndex = on ? 0 : -1;
       if (b.dataset.step !== 'impl') return;
       b.disabled = !ready;
       b.classList.toggle('step-beckon', ready && !App.implSeen());
@@ -1748,18 +2072,18 @@ function renderView() {
 
   var base = App.base();
   if (!base) {
-    el.innerHTML = '<div class="impl-empty"><h3>No base portfolio yet</h3>'
-      + '<p>Choose an allocation and risk level in the rail to build the base portfolio, '
+    el.innerHTML = '<div class="impl-empty"><h3>No proposed portfolio yet</h3>'
+      + '<p>Choose an allocation and risk level in the rail to build the proposed portfolio, '
       + 'then attach a sleeve to each of its categories.</p></div>';
     return;
   }
   if (base.status === 'loading') {
-    el.innerHTML = '<div class="impl-empty"><h3>Resolving the base portfolio…</h3>'
-      + '<p>The implementation model builds from the base portfolio’s categories.</p></div>';
+    el.innerHTML = '<div class="impl-empty"><h3>Resolving the proposed portfolio…</h3>'
+      + '<p>The implementation model builds from the proposed portfolio’s categories.</p></div>';
     return;
   }
   if (base.status === 'error') {
-    el.innerHTML = '<div class="impl-empty"><h3>The base portfolio could not be built</h3>'
+    el.innerHTML = '<div class="impl-empty"><h3>The proposed portfolio could not be built</h3>'
       + '<p>Retry it from the allocation step; the implementation model needs its categories.</p></div>';
     return;
   }
@@ -1791,21 +2115,28 @@ function renderView() {
       + inner + '</span></td>' : '';
   }
 
+  /* The gate is worked out before anything is drawn, because the head, the
+     strip under the table and the export card all say the same thing and must
+     not be able to disagree (D2, B4). */
+  var gate = exportGate(groups, t, done, columnsBusy, fees, schedule, exporting);
+
   /* The same stage block step 1 carries: eyebrow, title, standfirst. The
      "Implementing X against a mandate of Y" line becomes the standfirst
      rather than sitting as a second note, so the two steps open identically. */
   var html = '<div class="impl-head"><div>'
-    + '<p class="eyebrow">Step 2 of 2</p>'
     + '<h2 class="stage-title">Portfolio Implementation</h2>'
     + '<p class="stage-sub">Implementing <strong>'
     + App.esc(base.data.name) + '</strong> against a mandate of '
     + money(App.mandateSize()) + '.</p>'
     + '</div>'
-    /* v2's completion summary in place of the pill: it reported only two
-       states, where this shows how far along the model is at a glance. */
+    /* The count, and then the thing that actually gates the download (D2).
+       Three indicators used to report the same easy fact and none the hard
+       one: with every sleeve attached all three read "4 of 4" and the screen
+       looked finished while the export was blocked. */
     + '<div class="completion-summary">'
-    + '<div class="completion-line"><span>Implementation progress</span>'
-    + '<strong>' + counts.filled + ' of ' + counts.total + '</strong></div>'
+    + '<div class="completion-line"><span>' + counts.filled + ' of ' + counts.total
+    + ' sleeves</span><strong class="cs-state ' + gate.tone + '">'
+    + App.esc(gate.headline) + '</strong></div>'
     + '<div class="progress-track' + (done ? ' is-done' : '') + '" role="img" aria-label="'
     + counts.filled + ' of ' + counts.total + ' categories implemented"><i style="--progress:'
     + (counts.total ? Math.round(counts.filled / counts.total * 100) : 0) + '%"></i></div>'
@@ -1813,11 +2144,12 @@ function renderView() {
 
   html += '<div class="tblwrap" tabindex="0" aria-label="Implementation model, scrolls horizontally">'
     + '<table class="tbl impl' + (fees ? '' : ' no-fees')
-    + (fees && feeReveal ? ' fees-in' : '') + '">'
+    + (fees && feeReveal ? ' fees-in' : '') + '" id="implTbl">'
     + '<caption class="sr-only">Implementation model by product</caption><thead><tr>'
-    + '<th scope="col" class="rowhead txt">Categories &amp; Asset Classes</th>'
+    + '<th scope="col" class="rowhead txt">Asset Class</th>'
     + '<th scope="col" class="txt prodcol">Products</th>'
     + '<th scope="col" class="num">Allocation (%)</th>'
+    + '<th scope="col" class="num">Notional</th>'
     + IMPL_TEXT_COLUMNS.map(function (name) {
         return '<th scope="col" class="txt">' + App.esc(name) + '</th>';
       }).join('')
@@ -1827,45 +2159,86 @@ function renderView() {
           + '<th scope="col" class="num fee-col"><span class="fcw">Wtd fee</span></th>'
         : '')
     + '<th scope="col" class="num">Min Investment</th>'
-    + '<th scope="col" class="num">Notional</th>'
     + '</tr></thead><tbody>';
 
   groups.forEach(function (group) {
     var groupBp = 0, groupNotional = 0, groupWeight = 0;
+    /* The band's own figures (A4): what this category costs, weighted by what
+       it holds. Six bands used to spend a whole row saying almost nothing, in
+       a table short of width - and a sleeve, not a product, is the unit a PWA
+       actually trades, so the band is where "what does this cost me" belongs. */
+    var groupCostWt = 0, groupMgmtWt = 0, groupMgmtKnown = true;
     group.items.forEach(function (item) {
       groupNotional += item.notional; groupWeight += item.weight;
+      groupCostWt += item.cost * item.weight;
+      if (item.mgmt === null) groupMgmtKnown = false; else groupMgmtWt += item.mgmt * item.weight;
       if (groupBp !== null) groupBp = item.wtdBp === null ? null : groupBp + item.wtdBp;
     });
-    var shownWeight = group.items.length ? groupWeight : group.weightPct;
-    var shownNotional = group.items.length ? groupNotional
+    var held = group.items.length;
+    var bandCost = (held && groupWeight) ? groupCostWt / groupWeight : null;
+    var bandMgmt = (held && groupWeight && groupMgmtKnown) ? groupMgmtWt / groupWeight : null;
+    var shownWeight = held ? groupWeight : group.weightPct;
+    var shownNotional = held ? groupNotional
       : Math.round(App.mandateSize() * group.weightPct / 100 / ROUND_TO) * ROUND_TO;
+    /* The pill is the way back to the picker that set it (C3): the table is
+       where a sleeve is seen to be wrong, and removing it - the only thing
+       that could be done here - empties the category and blocks the export. */
+    var pillInner = App.esc(group.sleeve)
+      + (held ? '<small class="pc" aria-label="' + held + ' product'
+                + (held === 1 ? '' : 's') + '">' + held + '</small>' : '');
+    var pill;
+    if (group.auto) {
+      /* Attached by rule, not by choice (spec 2.6): no picker to go to, no
+         remove control, and a labelled mark rather than an emoji (G2). */
+      pill = '<span class="pill p-sleeve is-auto" title="Attached by rule; this category is not chosen">'
+        + pillInner + LOCK_SVG + '</span>';
+    } else {
+      pill = '<span class="pill p-sleeve">'
+        + (App.canEdit()
+            ? '<button type="button" class="pill-go" data-gosleeve="' + App.esc(group.category) + '"'
+              + ' title="Change the ' + App.esc(group.category) + ' sleeve"'
+              + ' aria-label="Change the ' + App.esc(group.category) + ' sleeve, currently '
+              + App.esc(group.sleeve) + '">' + pillInner + '</button>'
+            : pillInner)
+        + (App.canEdit()
+            ? '<button type="button" class="pill-x" data-rmsleeve="'
+              + App.esc(group.category) + '" aria-label="Remove the '
+              + App.esc(group.sleeve) + ' sleeve from '
+              + App.esc(group.category) + '">&#215;</button>'
+            : '')
+        + '</span>';
+    }
     html += '<tr class="cat"><th scope="row">' + App.esc(group.category) + '</th>'
       + '<td class="txt prodcol">' + (group.sleeve
-          ? '<span class="pill p-sleeve">' + App.esc(group.sleeve)
-            /* The auto category keeps its padlock and gets no remove control:
-               its sleeve is attached by rule, not by choice (spec 2.6). */
-            + (group.auto ? ' 🔒'
-                : (App.canEdit()
-                    ? '<button type="button" class="pill-x" data-rmsleeve="'
-                      + App.esc(group.category) + '" aria-label="Remove the '
-                      + App.esc(group.sleeve) + ' sleeve from '
-                      + App.esc(group.category) + '">&#215;</button>'
-                    : ''))
-            + '</span>'
+          ? pill
           : '<span class="bdg b-warn">No sleeve attached</span>') + '</td>'
       + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
+      + '<td class="num">' + money(shownNotional) + '</td>'
       + '<td colspan="' + implBandSpan() + '"></td>'
-      + '<td class="num"></td>'
-      + feeCell('num', '')
-      + feeCell('num', group.items.length ? bpText(groupBp) : '')
-      + '<td class="num"></td>'
-      + '<td class="num">' + money(shownNotional) + '</td></tr>';
+      + '<td class="num">' + (bandCost === null ? '' : App.num(bandCost, 2, '%')) + '</td>'
+      + feeCell('num', bandMgmt === null ? '' : App.num(bandMgmt, 2, '%'))
+      + feeCell('num', held ? bpText(groupBp) : '')
+      + '<td class="num"></td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
-        + (item.belowMinimum ? ' below-min' : '') + '"><th scope="row">'
+        + (item.belowMinimum ? ' below-min' : '') + '"'
+        + ' data-implrow="' + App.esc(rowAnchor(group.category, item.name)) + '"'
+        + '><th scope="row">'
         + App.esc(item.assetClass) + '</th>'
-        + '<td class="txt prodcol">' + App.esc(item.name) + '</td>'
+        /* The breach says so beside the name, in the pinned column (B2): the
+           row's pink fill was the only carrier of it at rest, and the badge
+           that explained it sat 753px to the right. */
+        + '<td class="txt prodcol">' + App.esc(item.name)
+        + (item.belowMinimum
+            ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
+              + App.esc(money(item.notional)) + ', below its '
+              + App.esc(money(item.minimumInvestment)) + ' minimum">below min</span>' : '')
+        + '</td>'
         + '<td class="num">' + App.num(item.weight, 2, '%') + '</td>'
+        + '<td class="num">' + money(item.notional)
+        + (item.belowMinimum
+            ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')
+        + '</td>'
         + '<td class="txt tick">' + App.esc(item.ticker) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
@@ -1879,12 +2252,7 @@ function renderView() {
             ? feeCell('num', feeText(item.mgmt)) + feeCell('num', bpText(item.wtdBp))
             : '')
         + '<td class="num">' + (typeof item.minimumInvestment === 'number'
-            ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>') + '</td>'
-        + '<td class="num">' + money(item.notional)
-        + (item.belowMinimum
-            ? ' <span class="bdg b-breach" title="' + App.esc(item.name)
-              + ' is below its ' + App.esc(money(item.minimumInvestment))
-              + ' minimum">below mandate minimum</span>' : '')
+            ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>')
         + '</td></tr>';
     });
   });
@@ -1892,63 +2260,31 @@ function renderView() {
      has none of; the Mgmt fee cell after it is the total's own, since a
      marginal schedule restates its blend where a reader looks for a total
      (D83) and a flat one leaves it empty, having no single rate to state. */
-  html += '<tr class="grand"><th scope="row">Total</th>'
+  /* What the row actually totals (D1). Every other total in this product sums
+     to 100, so a navy band reading "Total 10.20%" - the two auto overlays, on
+     a step 2 nobody has started - read as a portfolio that does not add up,
+     which is the most alarming possible way to say "you have not begun". */
+  var restPct = Math.max(0, 100 - t.weight);
+  html += '<tr class="grand"><th scope="row">Implemented total</th>'
     + '<td class="prodcol"></td>'
-    + '<td class="num">' + App.num(t.weight, 2, '%') + '</td>'
+    + '<td class="num">' + App.num(t.weight, 2, '%')
+    + (done ? '' : '<small class="of-all">of 100%</small>') + '</td>'
+    + '<td class="num">' + money(t.notional)
+    + (done ? '' : '<small class="of-all">' + App.num(restPct, 2, '%')
+        + ' not yet implemented</small>') + '</td>'
     + '<td colspan="' + implTotalSpan() + '"></td>'
     + feeCell('num', feeText(effectiveFee()))
     + feeCell('num', bpText(t.bp))
-    + '<td class="num"></td>'
-    + '<td class="num">' + money(t.notional) + '</td></tr>';
-  html += '</tbody></table></div>';
+    + '<td class="num"></td></tr>';
+  html += '</tbody></table></div>'
+    /* the shadow that says the table carries on to the right (A3, H3) */
+    + '<span class="tbl-more" id="implTbl-more" aria-hidden="true"></span>';
+  /* The consequence of the change just made, under the thing it was made to
+     (B4). The card at the foot then confirms rather than discloses. */
+  html += '<p class="impl-state ' + gate.tone + '" role="status">'
+    + '<b>' + App.esc(gate.headline) + '</b>' + gate.html + '</p>';
   html += renderDonuts(groups, done);
 
-  var breached = breaches(groups);
-  var breachBlocked = false;
-  var reason = null;
-  if (!App.canExport()) reason = 'Export is not available for your role.';
-  else if (!App.variant()) reason = 'Choose an implementation variant first.';
-  /* Only a proposal that includes fees needs a schedule: one that does not
-     exports a sheet with no fee column to price (D52). */
-  else if (fees && !schedule) reason = 'Choose a fee schedule in the rail first.';
-  /* under the custom level a row without a rate leaves its products unpriced (D96) */
-  else if (fees && isCustomLevel() && customUnpriced(groups).length) {
-    reason = 'Set a custom rate for every fee group in the model: '
-      + customUnpriced(groups).join(', ') + ' still to set.';
-  }
-  else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
-  else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
-  /* A hard block: a position below the product's minimum cannot be bought,
-     so the materials cannot be produced. The server refuses it too. */
-  else if (breached.length) {
-    breachBlocked = true;
-    reason = breached.length === 1
-      ? breached[0].name + ' in ' + breached[0].category + ' is below mandate minimum ('
-        + money(breached[0].notional) + ' against a ' + money(breached[0].minimum)
-        + ' minimum). Raise the mandate, change the sleeve, or drop the product.'
-      : breached.length + ' positions are below mandate minimum: '
-        + breached.slice(0, 3).map(function (b) { return b.name; }).join(', ')
-        + (breached.length > 3 ? ' and ' + (breached.length - 3) + ' more' : '')
-        + '. Raise the mandate, change the sleeve, or drop the products.';
-  }
-  var disabled = !!reason || exporting.status === 'working';
-  /* v2's export card in place of the bare button. The gate keeps its three
-     voices - working, blocked, failed - and stays wired to the button through
-     aria-describedby, so the reason still reaches assistive tech (spec 8.2). */
-  var gateClass = 'export-gate';
-  var gateText = '';
-  if (exporting.status === 'working') {
-    gateText = 'The server is generating the workbook from the persisted scenario.';
-  } else if (exporting.status === 'error') {
-    gateClass += ' error';
-    gateText = exporting.error || 'Export failed.';
-  } else if (reason) {
-    gateClass += breachBlocked ? ' error' : ' blocked';
-    gateText = reason;
-  } else {
-    gateClass += ' ready';
-    gateText = 'Ready — every category is implemented and the scenario is saved.';
-  }
   html += '<section class="export-card" aria-labelledby="exporttitle">'
     + '<div class="export-icon" aria-hidden="true"><span>X</span></div>'
     + '<div class="export-copy">'
@@ -1956,11 +2292,11 @@ function renderView() {
     + '<h3 id="exporttitle">Download the proposal workbook</h3>'
     + '<p>Generates Portfolios, Risk Dashboard and Implementation sheets from the '
     + 'persisted scenario and the current SAA analytics.</p>'
-    + '<p class="' + gateClass + '" id="implgate">' + App.esc(gateText) + '</p>'
+    + '<p class="export-gate ' + gate.tone + '" id="implgate">' + gate.html + '</p>'
     + '</div>'
     + '<button type="button" class="btn btn-export" id="implexport"'
-    + (disabled ? ' disabled' : '') + ' aria-describedby="implgate"'
-    + (reason ? ' title="' + App.esc(reason) + '"' : '') + '>'
+    + (gate.disabled ? ' disabled' : '') + ' aria-describedby="implgate"'
+    + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
     + (exporting.status === 'working' ? 'Preparing…' : 'Download Excel') + '</button>'
     + '</section>';
   el.innerHTML = html;
@@ -2078,13 +2414,27 @@ document.addEventListener('change', function (e) {
 });
 document.addEventListener('click', function (e) {
   var step = e.target.closest ? e.target.closest('.step') : null;
-  if (step) { App.setStep(step.dataset.step); return; }
+  if (step) {
+    /* the first visit this session, by the step nav, is greeted (D97) */
+    if (step.dataset.step === 'impl' && App.step() !== 'impl' && !greeted()) {
+      greetPanel.open = true;
+    }
+    App.setStep(step.dataset.step);
+    return;
+  }
+  if (e.target.id === 'greetok') { closeGreetPanel(); return; }
   /* the rate card panel (D55) */
   if (e.target.closest && e.target.closest('[data-openrepo]')) {
     var at = e.target.closest('[data-openrepo]');
     if (App.openRepository) App.openRepository(at, 'sleeves', { variant: App.variant() });
     return;
   }
+  /* a named product in the gate goes to its row (B3) */
+  var goRow = e.target.closest ? e.target.closest('[data-implgo]') : null;
+  if (goRow) { showImplRow(goRow.dataset.implgo); return; }
+  /* the sleeve pill goes to the picker that set it (C3) */
+  var goSleeve = e.target.closest ? e.target.closest('[data-gosleeve]') : null;
+  if (goSleeve) { focusSleevePicker(goSleeve.dataset.gosleeve); return; }
   /* the custom fee card (D96) */
   if (e.target.closest && e.target.closest('[data-customview]')) { openCustomPanel(); return; }
   if (e.target.id === 'customclose' || e.target.id === 'customcancel'
@@ -2184,6 +2534,7 @@ App.addRenderer(function () {
   ensureLibraries();
   renderRail();
   renderView();
+  renderGreetPanel();
   /* Both painted from the same one-shot, so it is cleared once, here, and
      the classes it wrote are stripped when they have finished playing. The
      rail follows the block it just opened. */

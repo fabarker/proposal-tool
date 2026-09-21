@@ -31,6 +31,10 @@ var repo = {
   open: false, view: 'sleeves', busy: false, saving: false, error: null, data: null,
   variant: null, category: null, sleeveId: null,
   draft: null, dirty: false, fieldError: null,
+  savedAt: null,               /* when the open draft was last written, for the footer (F2) */
+  kept: null,                  /* an unsaved draft that outlived a reload (F1) */
+  query: '',                   /* searching the sleeve list, across every book (C1) */
+  edMenu: false,               /* the editor's own action menu is open */
   picker: null,                /* { row, query, index } while a row's picker is open */
   confirmDelete: false,
   leaving: null,               /* { to, variant, category, fresh } | { close } while unsaved changes block a move */
@@ -62,8 +66,11 @@ var cat = {
   sort: { key: 'allIn', dir: 'asc' }, /* null = the delivery's own order */
   hidden: [],                        /* column keys taken away by the picker */
   density: 'dense',                  /* 'dense' | 'comfortable' */
+  group: false,                      /* the rows banded by sleeve category (D100) */
+  folded: [],                        /* the categories whose bands are shut */
   pins: [],                          /* productIds in the tray */
   cursor: null,                      /* the row the keyboard is on */
+  cursorBand: null,                  /* and, banded, which band's copy of it */
   detail: null,                      /* the product open in the side panel */
   compare: false,                    /* the pinned products, lined up */
   openChip: null                     /* 'cols' while the column picker is open */
@@ -310,6 +317,34 @@ function catBest(pinned) {
   });
   return best;
 }
+function catGroups(rows, order, chosen) {
+  /* the rows banded by sleeve category (D100), the bands in the order given
+     and each saying what it holds: how many, the all-in range, how many are
+     not dealt daily. The rows keep the order they came in, so a sort applies
+     within a band. Category is a join: a product two categories hold stands
+     in both bands, and with a category filter in force only the chosen
+     categories make bands - a band the filter did not ask for would be noise. */
+  var at = function (key) { var i = (order || []).indexOf(key); return i === -1 ? 1e9 : i; };
+  var index = {}, out = [];
+  (rows || []).forEach(function (row) {
+    var keys = catValuesOf(row, 'category');
+    if (chosen && chosen.length) keys = keys.filter(function (k) { return chosen.indexOf(k) !== -1; });
+    keys.forEach(function (key) {
+      var g = index[key];
+      if (!g) { g = index[key] = { key: key, rows: [], lo: null, hi: null, notDaily: 0 }; out.push(g); }
+      g.rows.push(row);
+      if (typeof row.allIn === 'number' && isFinite(row.allIn)) {
+        if (g.lo === null || row.allIn < g.lo) g.lo = row.allIn;
+        if (g.hi === null || row.allIn > g.hi) g.hi = row.allIn;
+      }
+      var liquidity = String(row.p.liquidity || '').toLowerCase();
+      if (liquidity && liquidity !== 'daily') g.notDaily += 1;
+    });
+  });
+  return out.sort(function (a, b) {
+    return (at(a.key) - at(b.key)) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  });
+}
 /* catalogue-helpers-end */
 
 var catRowCache = null;
@@ -454,6 +489,10 @@ function catHash() {
   else if (!(cat.sort.key === 'allIn' && cat.sort.dir === 'asc')) q.set('sort', cat.sort.key + ':' + cat.sort.dir);
   if (cat.hidden.length) q.set('hide', cat.hidden.join(','));
   if (cat.density !== 'dense') q.set('d', cat.density);
+  if (cat.group) {
+    q.set('group', 'category');
+    if (cat.folded.length) q.set('fold', cat.folded.join('|'));
+  }
   if (cat.pins.length) q.set('pins', cat.pins.join(','));
   if (cat.compare) q.set('cmp', '1');
   var str = q.toString();
@@ -471,6 +510,8 @@ function catFromHash(hash) {
   else if (sort && sort.indexOf(':') !== -1) cat.sort = { key: sort.split(':')[0], dir: sort.split(':')[1] === 'desc' ? 'desc' : 'asc' };
   cat.hidden = (q.get('hide') || '').split(',').filter(Boolean);
   cat.density = q.get('d') === 'comfortable' ? 'comfortable' : 'dense';
+  cat.group = q.get('group') === 'category';
+  cat.folded = cat.group ? (q.get('fold') || '').split('|').filter(Boolean) : [];
   cat.pins = (q.get('pins') || '').split(',').filter(Boolean);
   cat.compare = q.get('cmp') === '1';
 }
@@ -632,6 +673,8 @@ function loadDraft(sleeveId, create, edition) {
   repo.sleeveId = entry ? entry.id : null;
   repo.draft = entry ? draftFrom(entry) : newDraft(create, edition);
   repo.dirty = false; repo.fieldError = null; repo.picker = null;
+  repo.savedAt = null; repo.edMenu = false;
+  repo.kept = keptDraftFor(repo.draft);        /* a copy that outlived a reload (F1) */
   repo.confirmDelete = false; repo.leaving = null; repo.menu = null;
   /* an existing edition already knows how many portfolios it names */
   repo.preview = entry && entry.rules && entry.rules.length ? { applies: entry.applies } : null;
@@ -687,7 +730,10 @@ function applyTarget(t) {
 }
 function selectSleeve(id) {
   if (id === repo.sleeveId && repo.draft && repo.draft.id === id) return;
-  goTo({ to: id });
+  /* a search hit can live under another category or book, so following it
+     moves both - and the row said where it was going (C1) */
+  var entry = sleeveById(id);
+  goTo(entry ? { to: id, category: entry.category, variant: entry.variant } : { to: id });
 }
 
 /* From the feed to the thing it names: a live sleeve opens in the editor with
@@ -711,6 +757,9 @@ function openRevisionFrom(sleeveId, revisionNumber, archived) {
 function resolveLeaving(discard) {
   var leaving = repo.leaving; repo.leaving = null;
   if (!discard || !leaving) { render(); return; }
+  /* discarding means discarding: the copy kept against a reload goes with the
+     changes, or reopening the sleeve would offer back what was just refused (F1) */
+  repo.kept = null; forgetKeptDraft();
   if (leaving.close) { closeRepository(true); return; }
   repo.dirty = false;
   applyTarget(leaving);
@@ -770,9 +819,15 @@ async function saveDraft() {
          the one revision the person looking at it just made */
       if (trailOpen) { repo.historyOpen = true; repo.openRevision = null; loadHistory(here.id); }
       if (act.loaded) act.loaded = false;
+      repo.savedAt = new Date().toISOString();
+      repo.kept = null; forgetKeptDraft();     /* it is in the store now (F1) */
+      /* the outcome, not just the redraw (G2): the revision it became is the
+         part an admin checks, and it is the part a screen reader could not see */
       App.announce('polite', madeAll.length > 1
-        ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types.'
-        : 'Saved ' + last.name + (last.label ? ' (' + last.label + ' edition)' : '') + '.');
+        ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types, revision '
+          + (last.revisions || 1) + '.'
+        : 'Saved ' + last.name + (last.label ? ' (' + last.label + ' edition)' : '')
+          + ' · revision ' + (last.revisions || 1) + '.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -875,7 +930,8 @@ async function removeFromCategory(sleeveId) {
         loadDraft(left[0] ? left[0].id : null);
       }
       forgetLibrary(gone.category);
-      App.announce('polite', gone.name + ' removed from ' + gone.category + '.');
+      App.announce('polite', gone.name + ' archived from ' + gone.category
+        + '. It keeps its history and can be restored from the Archive.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -1071,6 +1127,43 @@ function fieldErr(field) {
   return fe && fe.field === field ? '<p class="md-err" role="alert">' + esc(fe.message) + '</p>' : '';
 }
 
+/* The actions that act on THIS sleeve, in the editor where it is named (A2).
+   They used to sit in the footer, where Archive shared an edge with Save -
+   the one control pressed constantly beside the one that cannot be undone
+   from the keyboard. The confirmation stays where the trigger is, rather
+   than appearing at the other end of the dialog. */
+/* A draft that outlived a reload, offered back rather than restored behind
+   the admin's back: what is on screen is what the store holds, and taking it
+   away without asking would be its own kind of loss (F1). */
+function keptNoticeHtml() {
+  if (!repo.kept || repo.dirty) return '';
+  return '<div class="repo-notice repo-kept" role="status">'
+    + '<span>Unsaved changes to this sleeve were kept from ' + esc(clockTime(repo.kept.at)) + '.</span>'
+    + '<button type="button" class="btn" data-repokeptrestore>Restore them</button>'
+    + '<button type="button" class="btn btn-ghost" data-repokeptdrop>Discard</button></div>';
+}
+
+function editorTopHtml(entry, fixed) {
+  if (!entry) return '';
+  var where = '<span class="repo-ed-where">' + esc(entry.category) + ' \u00b7 ' + esc(entry.variant) + '</span>';
+  if (repo.confirmDelete) {
+    return '<div class="repo-ed-top is-confirm">'
+      + '<span class="repo-ed-warn">Archive <b>' + esc(entry.name) + '</b>? It keeps its history and can be '
+      + 'restored from the Archive.</span>'
+      + '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
+      + '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>'
+      + 'Confirm archive</button></div>';
+  }
+  return '<div class="repo-ed-top">' + where
+    + '<button type="button" class="repo-ed-act" data-repoedition="' + entry.id + '"'
+    + (repo.saving ? ' disabled' : '')
+    + ' title="Another edition of ' + esc(entry.name) + ', for particular portfolios">+ Add edition</button>'
+    + (fixed ? ''
+        : '<button type="button" class="repo-ed-act danger" data-repodelete' + (repo.saving ? ' disabled' : '')
+          + '>Archive this sleeve\u2026</button>')
+    + '</div>';
+}
+
 function editorHtml() {
   var d = repo.draft;
   if (!d) return '<p class="repo-empty">Choose a sleeve, or start a new one.</p>';
@@ -1158,6 +1251,8 @@ function editorHtml() {
     + '<div id="repoApplies">' + appliesHtml() + '</div>'
     + fieldErr('rules') + '</div>';
   return ''
+    + editorTopHtml(entry, fixed)
+    + keptNoticeHtml()
     + serverProblems
     + '<div class="repo-frow">'
     + nameField
@@ -1257,14 +1352,34 @@ async function loadHistory(sleeveId) {
     repo.error = null;
   } catch (err) { repo.error = err.message; }
   repo.historyBusy = false; render();
+  if (repo.historyOpen) showHistory();          /* the rows have landed (B1) */
 }
 
 function toggleHistory(sleeveId) {
   repo.historyOpen = !repo.historyOpen;
   repo.openRevision = null;
   if (!repo.historyOpen) { render(); return; }
-  if (repo.history && repo.history.sleeveId === sleeveId) { render(); return; }
+  if (repo.history && repo.history.sleeveId === sleeveId) { render(); showHistory(); return; }
   loadHistory(sleeveId);
+}
+
+/* The record sits at the foot of the editor, which scrolls on its own: on a
+   saved sleeve the panel opened 740px down a 654px pane, so the button
+   flipped, the fetch ran, the rows rendered, and nothing moved (B1). A
+   control that looks broken is worse than one that is missing, because it
+   gets pressed again. */
+function showHistory() {
+  var pane = document.querySelector('.repo-ed');
+  var panel = document.querySelector('.repo-hist');
+  if (!pane || !panel) return;
+  var top = panel.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+  /* Set directly rather than smoothly: a smooth scroll is driven by animation
+     frames, which do not run in a background tab, so the panel would open and
+     the pane would silently stay where it was - the exact failure this is
+     here to fix. The panel is a disclosure; arriving at it is the point. */
+  pane.scrollTop = Math.max(0, top - 8);
+  var head = panel.querySelector('.repo-hist-h, h4, button');
+  if (head && head.focus) head.focus({ preventScroll: true });
 }
 
 /* Both of these change the library, so both re-read it rather than patching
@@ -1357,6 +1472,110 @@ function sleeveMenuHtml() {
     + '</div>';
 }
 
+/* ---- searching the library (C1) -----------------------------------------
+   101 sleeves live behind 7 categories x 4 books, and the only way to reach
+   one whose book you had forgotten was to click until it appeared. The
+   catalogue next door answers the same shape of question with a search box,
+   so this is that: name, edition label and PRODUCT name, across everything.
+
+   Product matters as much as name - "which sleeves hold GSAM Short Duration"
+   is the question asked when a product is being retired, and the console
+   could not answer it at all. */
+function sleeveHits() {
+  var q = repo.query.trim().toLowerCase();
+  if (!q) return [];
+  var out = [];
+  (repo.data.sleeves || []).forEach(function (s) {
+    var why = null;
+    if ((s.name || '').toLowerCase().indexOf(q) !== -1) why = '';
+    else if ((s.label || '').toLowerCase().indexOf(q) !== -1) why = 'edition ' + s.label;
+    else {
+      var hit = (s.products || []).filter(function (r) {
+        return r.product && (r.product.name || '').toLowerCase().indexOf(q) !== -1;
+      })[0];
+      if (hit) why = 'holds ' + hit.product.name;
+    }
+    if (why !== null) out.push({ s: s, why: why });
+  });
+  /* the book in hand first, then by category, so a hit where you already are
+     does not sit below twenty that are not */
+  var order = repo.data.categories;
+  return out.sort(function (a, b) {
+    var av = a.s.variant === repo.variant ? 0 : 1, bv = b.s.variant === repo.variant ? 0 : 1;
+    if (av !== bv) return av - bv;
+    var ac = order.indexOf(a.s.category), bc = order.indexOf(b.s.category);
+    if (ac !== bc) return ac - bc;
+    return a.s.name < b.s.name ? -1 : a.s.name > b.s.name ? 1 : 0;
+  });
+}
+
+function sleeveHitsHtml() {
+  var hits = sleeveHits();
+  if (!hits.length) {
+    return '<p class="repo-none">Nothing matches \u201c' + esc(repo.query.trim())
+      + '\u201d in any category or book.</p>';
+  }
+  return '<p class="repo-hits">' + hits.length + ' sleeve' + (hits.length === 1 ? '' : 's')
+    + ' match</p>'
+    + hits.map(function (h) {
+        var s = h.s;
+        return '<button type="button" class="repo-sleeve" data-reposleeve="' + s.id + '"'
+          + ' aria-selected="' + (s.id === repo.sleeveId ? 'true' : 'false') + '">'
+          + '<b>' + esc(s.name) + (s.label ? ' <span class="repo-fixed">' + esc(s.label) + '</span>' : '')
+          + (s.problems && s.problems.length
+              ? ' <span class="warn">' + s.problems.length + ' problem'
+                + (s.problems.length === 1 ? '' : 's') + '</span>' : '')
+          + '</b>'
+          /* where it lives, because following a hit moves the category and
+             the book under the admin: saying so makes that read as navigation */
+          + '<small>' + esc(s.category) + ' \u00b7 ' + esc(s.variant)
+          + (h.why ? ' \u00b7 ' + esc(h.why) : '') + '</small></button>';
+      }).join('');
+}
+
+/* The sleeves of the category and book in hand, editions of one name
+   gathered under it (D89). Its own function because the search redraws just
+   this part, leaving the box the query was typed into alone (C1). */
+function sleeveRowHtml(s, grouped) {
+  var vehicles = [];
+  s.products.forEach(function (r) {
+    if (r.product && vehicles.indexOf(r.product.vehicle) === -1) vehicles.push(r.product.vehicle);
+  });
+  var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
+    + (vehicles.length ? ' \u00b7 ' + vehicles.join(', ') : '')
+    + ' \u00b7 saved ' + shortDate(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '');
+  var head = grouped
+    ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
+                  : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
+    : esc(s.name) + (s.fallback ? '' : ' <span class="repo-fixed">' + esc(s.label) + '</span>');
+  return '<button type="button" class="repo-sleeve' + (grouped ? ' ed' : '') + '" data-reposleeve="' + s.id + '"'
+    + ' aria-selected="' + (s.id === repo.sleeveId && !(repo.draft && repo.draft.id === null) ? 'true' : 'false') + '">'
+    + '<b>' + head + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem'
+        + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
+    + '<small>' + esc(sub) + '</small></button>';
+}
+
+function sleeveListHtml() {
+  var offered = sleevesIn(repo.variant, repo.category);
+  var groups = [], byName = {};
+  offered.forEach(function (s) {
+    if (!byName[s.name]) { byName[s.name] = []; groups.push(s.name); }
+    byName[s.name].push(s);
+  });
+  var list = groups.map(function (name) {
+    var eds = byName[name];
+    if (eds.length === 1) return sleeveRowHtml(eds[0], false);
+    return '<div class="repo-grp"><b>' + esc(name) + '</b><small>' + eds.length + ' editions</small></div>'
+      + eds.map(function (s) { return sleeveRowHtml(s, true); }).join('');
+  }).join('') || '<p class="repo-none">No sleeve under ' + esc(repo.variant) + ' yet.</p>';
+  if (repo.draft && repo.draft.id === null) {
+    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve')
+      + (repo.draft.edition ? ' <span class="repo-fixed">' + (esc(repo.draft.label) || 'new edition') + '</span>' : '')
+      + '</b><small>unsaved</small></div>';
+  }
+  return list;
+}
+
 function sleevesViewHtml() {
   var d = repo.data;
   var cats = d.categories.map(function (c) {
@@ -1366,46 +1585,32 @@ function sleevesViewHtml() {
       + (isFixed(c) ? ' <span class="repo-fixed">fixed</span>' : '')
       + '<span class="n">' + n + '</span></button>';
   }).join('');
-  var offered = sleevesIn(repo.variant, repo.category);
-  /* editions of one name sit together under it (D89); a name with a single
-     fallback reads exactly as a sleeve always did */
-  var groups = [], byName = {};
-  offered.forEach(function (s) {
-    if (!byName[s.name]) { byName[s.name] = []; groups.push(s.name); }
-    byName[s.name].push(s);
-  });
-  var newDisabled = isFixed(repo.category) && groups.length >= 1;
-  var rowHtml = function (s, grouped) {
-    var vehicles = [];
-    s.products.forEach(function (r) { if (r.product && vehicles.indexOf(r.product.vehicle) === -1) vehicles.push(r.product.vehicle); });
-    var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
-      + (vehicles.length ? ' · ' + vehicles.join(', ') : '')
-      + ' · saved ' + shortDate(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '');
-    var head = grouped
-      ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
-                    : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
-      : esc(s.name) + (s.fallback ? '' : ' <span class="repo-fixed">' + esc(s.label) + '</span>');
-    return '<button type="button" class="repo-sleeve' + (grouped ? ' ed' : '') + '" data-reposleeve="' + s.id + '"'
-      + ' aria-selected="' + (s.id === repo.sleeveId && !(repo.draft && repo.draft.id === null) ? 'true' : 'false') + '">'
-      + '<b>' + head + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem' + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
-      + '<small>' + esc(sub) + '</small></button>';
-  };
-  var list = groups.map(function (name) {
-    var eds = byName[name];
-    if (eds.length === 1) return rowHtml(eds[0], false);
-    return '<div class="repo-grp"><b>' + esc(name) + '</b><small>' + eds.length + ' editions</small></div>'
-      + eds.map(function (s) { return rowHtml(s, true); }).join('');
-  }).join('') || '<p class="repo-none">No sleeve under ' + esc(repo.variant) + ' yet.</p>';
-  if (repo.draft && repo.draft.id === null) {
-    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve')
-      + (repo.draft.edition ? ' <span class="repo-fixed">' + (esc(repo.draft.label) || 'new edition') + '</span>' : '')
-      + '</b><small>unsaved</small></div>';
-  }
+  var newDisabled = isFixed(repo.category)
+    && sleevesIn(repo.variant, repo.category).length >= 1;
+  /* Searching (C1) replaces the list rather than filtering it in place: a hit
+     may live under another category or book, and the point of asking is that
+     you do not remember which. */
+  var searching = !!repo.query.trim();
+  var body = searching ? sleeveHitsHtml() : sleeveListHtml();
   return '<div class="repo-b">'
     + '<div class="repo-pane"><div class="repo-pane-h">Categories</div>' + cats + '</div>'
-    + '<div class="repo-pane"><div class="repo-pane-h">' + esc(repo.category)
-    + '<button type="button" class="btn" data-reponew' + (newDisabled ? ' disabled title="A fixed category holds exactly one sleeve"' : '') + '>+ New sleeve</button></div>'
-    + list + '</div>'
+    + '<div class="repo-pane repo-list">'
+    + '<div class="repo-pane-h">' + (searching ? 'Search results' : esc(repo.category))
+    + '<button type="button" class="btn" data-reponew'
+    + (newDisabled && !searching ? ' disabled title="A fixed category holds exactly one sleeve"' : '')
+    + '>+ New sleeve</button></div>'
+    /* the book strip belongs to this list, not to the console's header (A1) */
+    + '<div class="repo-books" role="group" aria-label="Implementation type">'
+    + d.variants.map(function (v) {
+        return '<button type="button" class="repo-book" data-repovariant="' + esc(v) + '"'
+          + ' aria-pressed="' + (v === repo.variant ? 'true' : 'false') + '"'
+          + (searching ? ' disabled' : '') + '>' + esc(v) + '</button>';
+      }).join('') + '</div>'
+    + '<label class="repo-find"><span aria-hidden="true">\u2315</span>'
+    + '<input type="search" id="repoFind" placeholder="Search every book\u2026" autocomplete="off"'
+    + ' aria-label="Search sleeves by name, edition or product, across every category and book"'
+    + ' value="' + esc(repo.query) + '"><kbd aria-hidden="true">/</kbd></label>'
+    + body + '</div>'
     + '<div class="repo-pane repo-ed">' + editorHtml() + '</div>'
     + '</div>' + sleeveMenuHtml();
 }
@@ -1490,7 +1695,11 @@ function arcCountText() {
 function arcHeadHtml() {
   var visible = arcVisible();
   var allOn = visible.length > 0 && visible.every(function (r) { return arc.selected.indexOf(r.s.id) !== -1; });
-  return '<tr><th class="pinc"><input type="checkbox" data-arcselall aria-label="Select every shown sleeve"' + (allOn ? ' checked' : '') + (visible.length ? '' : ' disabled') + '></th>'
+  return '<tr><th class="pinc">'
+    + (visible.length
+        ? '<input type="checkbox" data-arcselall aria-label="Select every shown sleeve"'
+          + (allOn ? ' checked' : '') + '>' : '')
+    + '</th>'
     + ARC_COLUMNS.map(function (c) {
         var sorted = arc.sort.key === c.key;
         return '<th' + (c.num ? ' class="num"' : '') + ' aria-sort="' + (sorted ? (arc.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
@@ -1582,7 +1791,11 @@ function arcFooterHtml() {
          + '<button type="button" class="btn" data-arcclearsel>Clear</button>'
          + '<button type="button" class="btn btn-primary" data-arcrestoresel' + (repo.saving ? ' disabled' : '') + '>'
          + (repo.saving ? 'Restoring…' : 'Restore ' + n + ' sleeve' + (n === 1 ? '' : 's')) + '</button>'
-       : '<span class="repo-src">Tick sleeves to restore several at once</span>')
+       /* the hint only where there is something to tick (E3): under an empty
+          table, beside a count of zero, it described a control that was not
+          there */
+       : (archivedSleeves().length
+            ? '<span class="repo-src">Tick sleeves to restore several at once</span>' : ''))
     + '</div>';
 }
 
@@ -1792,11 +2005,24 @@ function regFacetOptions(facet, chosen, any) {
 function regFiltersInForce() {
   return !!(reg.query.trim() || reg.exportedBy || reg.primaryPwa || reg.currency || reg.variant || reg.range !== '90d');
 }
-function money(n) {
-  if (typeof n !== 'number') return '—';
-  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
-  if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
-  return '$' + Math.round(n);
+/* A figure in the currency it was agreed in (D1). The register is the record
+   of what was delivered to a client, and it printed every proposal in dollars
+   - a GBP mandate as $200.0m, with "GBP" in the next column along. The row
+   carries its currency, so the only thing missing was asking for it.
+
+   A currency with no unambiguous symbol prints its ISO code instead: better a
+   reader who has to think than one who is quietly told the wrong thing. */
+var CURRENCY_MARK = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0', JPY: '\u00a5' };
+function mark(currency) {
+  if (!currency) return '';
+  return CURRENCY_MARK[currency] || (currency + '\u00a0');
+}
+function money(n, currency) {
+  if (typeof n !== 'number') return '\u2014';
+  var m = mark(currency);
+  if (n >= 1e6) return m + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
+  if (n >= 1e3) return m + Math.round(n / 1e3) + 'k';
+  return m + Math.round(n);
 }
 function regToolbarHtml() {
   return '<div class="cat-tools reg-tools">'
@@ -1812,15 +2038,18 @@ function regToolbarHtml() {
     + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/proposals.csv?' + regParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
     + '</div>';
 }
+/* Exported and By are one cell (D3): on a real register both repeat - one
+   desk, a handful of PWAs - and giving two identity columns the same weight
+   as the portfolio and the price spent the width on what varies least. */
 function regHeadHtml() {
-  return '<tr><th>Exported</th><th>By</th><th>Primary PWA</th><th class="num">Mandate</th>'
+  return '<tr><th>Exported</th><th>Primary PWA</th><th class="num">Mandate</th>'
     + '<th>Basis</th><th>Book</th><th>Proposal portfolio</th><th>Pricing</th><th></th></tr>';
 }
 function regBodyHtml() {
-  if (!reg.loaded && reg.busy) return '<tr><td colspan="9" class="cat-empty">Reading the register…</td></tr>';
-  if (reg.error && !reg.entries.length) return '<tr><td colspan="9" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
+  if (!reg.loaded && reg.busy) return '<tr><td colspan="8" class="cat-empty">Reading the register…</td></tr>';
+  if (reg.error && !reg.entries.length) return '<tr><td colspan="8" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
   if (!reg.entries.length) {
-    return '<tr><td colspan="9" class="cat-empty">No proposal on record'
+    return '<tr><td colspan="8" class="cat-empty">No proposal on record'
       + (reg.range !== 'all' ? ' in the ' + esc(REG_RANGES.filter(function (r) { return r[0] === reg.range; })[0][1].toLowerCase()) : '')
       + ' with the filters in force.'
       + (regFiltersInForce() ? ' <button type="button" class="cat-clear" data-regclear>Clear the filters</button>' : '')
@@ -1833,10 +2062,10 @@ function regBodyHtml() {
     if (e.sequence > 1) flags.push('<span class="arc-badge acc">#' + e.sequence + '</span>');
     if (e.tacticalTilt) flags.push('<span class="arc-badge mute">tilt</span>');
     return '<tr data-regrow="' + esc(e.proposalId) + '" class="' + (reg.detail === e.proposalId ? 'on' : '') + '" aria-selected="' + (reg.detail === e.proposalId) + '">'
-      + '<td>' + esc(when) + '</td>'
-      + '<td>' + esc(e.exportedBy) + '</td>'
-      + '<td><b>' + esc(e.primaryPwa) + '</b></td>'
-      + '<td class="num">' + money(e.mandateSize) + '</td>'
+      + '<td class="reg-when">' + esc(when)
+      + '<small>' + esc(e.exportedBy) + '</small></td>'
+      + '<td class="reg-pwa"><b>' + esc(e.primaryPwa) + '</b></td>'
+      + '<td class="num">' + money(e.mandateSize, e.currency) + '</td>'
       + '<td>' + esc(e.currency) + ' · ' + esc(e.hedging) + '</td>'
       + '<td>' + esc(e.variant) + '</td>'
       + '<td>' + esc((e.baseKey || '').split('|').slice(1, 3).join(' ')) + '</td>'
@@ -1868,6 +2097,7 @@ function regAllocationHtml(record) {
     + '<tbody>' + rows + '</tbody></table>';
 }
 function regImplementedHtml(record) {
+  var ccy = record.currency;                   /* the proposal's own (D1) */
   var groups = record.implemented || [];
   if (!groups.length) return '<p class="repo-none">No implemented model recorded.</p>';
   var pins = {};
@@ -1882,7 +2112,7 @@ function regImplementedHtml(record) {
       rows += '<tr><td class="sub">' + esc(it.name || it.productId) + '</td><td></td>'
         + '<td class="mut">' + esc([it.ticker, it.vehicle].filter(Boolean).join(' · ') || '—') + '</td>'
         + '<td class="num">' + money2(it.printedPct) + '%</td>'
-        + '<td class="num">' + money(it.notional) + '</td></tr>';
+        + '<td class="num">' + money(it.notional, ccy) + '</td></tr>';
     });
   });
   return '<table class="cat-tbl dense reg-pic"><thead><tr><th>Category / product</th><th>Sleeve</th>'
@@ -1899,7 +2129,7 @@ function regDetailHtml() {
   var moved = pins.filter(function (p) { return p.moved || p.archived; }).length;
   return '<div class="arc-detail reg-detail" id="regDetail">'
     + '<div class="arc-dh"><div>'
-    + '<h3>' + esc(r.primaryPwa) + ' · ' + money(r.mandateSize) + '</h3>'
+    + '<h3>' + esc(r.primaryPwa) + ' \u00b7 ' + money(r.mandateSize, r.currency) + '</h3>'
     + '<p>' + esc(r.currency) + ' · ' + esc(r.hedging) + ' · ' + esc(r.variant)
     + ' · ' + esc((r.baseKey || '').split('|').slice(1, 3).join(' '))
     + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '')
@@ -1925,7 +2155,7 @@ function registerViewHtml() {
     + '<div class="cat-tblwrap arc-tblwrap" tabindex="0" aria-label="Proposal register, scrolls">'
     + '<table class="cat-tbl dense arc-tbl reg-tbl"><thead>' + regHeadHtml() + '</thead>'
     + '<tbody id="regBody">' + regBodyHtml()
-    + (reg.next ? '<tr><td colspan="9" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
+    + (reg.next ? '<tr><td colspan="8" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
     + '</tbody></table></div>'
     + regDetailHtml()
     + '</div>';
@@ -1956,6 +2186,33 @@ function catVisible() { return catSort(catFilter(catRows(), cat), cat.sort); }
 function catColumns() {
   return CAT_COLUMNS.filter(function (c) { return c.fixed || cat.hidden.indexOf(c.key) === -1; });
 }
+/* Banded (D100): the visible rows under their sleeve categories, in the
+   repository's own order, the unplaced last. */
+function catBandOrder() { return repo.data.categories.concat([UNPLACED]); }
+function catBands() { return catGroups(catVisible(), catBandOrder(), cat.filters.category); }
+function catShut(key) { return cat.folded.indexOf(key) !== -1; }
+/* every row the table holds, in the order it holds them, each with the band
+   it stands in and whether that band is shut - what the keyboard walks */
+function catEntries() {
+  if (!cat.group) return catVisible().map(function (row) { return { row: row, band: null, shut: false }; });
+  var out = [];
+  catBands().forEach(function (g) {
+    var shut = catShut(g.key);
+    g.rows.forEach(function (row) { out.push({ row: row, band: g.key, shut: shut }); });
+  });
+  return out;
+}
+/* which entry the cursor is on: the product, and banded, its copy in the
+   band the cursor was put in - or the first copy, when that is not known */
+function catCursorAt(entries) {
+  var first = -1;
+  for (var i = 0; i < entries.length; i += 1) {
+    if (entries[i].row.p.productId !== cat.cursor) continue;
+    if (entries[i].band === cat.cursorBand) return i;
+    if (first === -1) first = i;
+  }
+  return first;
+}
 function catFiltersInForce() {
   var n = cat.query.trim() ? 1 : 0;
   for (var f in cat.filters) if (cat.filters[f] && cat.filters[f].length) n += 1;
@@ -1982,6 +2239,78 @@ function liqClass(v) {
   return ' slow';
 }
 
+/* ---- the catalogue, as a file (H2) ---------------------------------------
+   Three of the four tables export and the one that did not was the one with
+   the search, the facets, the column picker and the grouping - the view most
+   likely to be the answer to "send me the list", whose only alternative was
+   a screenshot.
+
+   Built here rather than on the server on purpose: every one of those filters
+   is client state, so the server would have to reimplement the lot and the
+   two would drift. What is written is exactly what is on screen, in the order
+   it is on screen, with the columns that are on screen.
+
+   Excel decides a field's type from the text, so a ticker like SEP1 must not
+   arrive as a date: every text field is quoted, and the reader is told what
+   the figures are priced at rather than left to guess. */
+function catCsvCell(row, c) {
+  var p = row.p;
+  switch (c.key) {
+    case 'mgmt': return row.mgmt === null ? '' : row.mgmt.toFixed(2);
+    case 'allIn': return (typeof row.allIn === 'number') ? row.allIn.toFixed(2) : '';
+    case 'net': return row.net === null ? '' : row.net.toFixed(2);
+    case 'used': return String(row.used);
+    case 'productCost': case 'distributionYield':
+      return (typeof p[c.key] === 'number') ? p[c.key].toFixed(2) : '';
+    case 'minimumInvestment':
+      return (typeof p.minimumInvestment === 'number') ? String(p.minimumInvestment) : '';
+    default: return p[c.key] == null ? '' : String(p[c.key]);
+  }
+}
+
+function catCsv() {
+  var cols = catColumns();
+  var quote = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
+  var lines = [];
+  var grouped = cat.group;
+  var head = (grouped ? ['Category'] : []).concat(cols.map(function (c) { return c.label; }));
+  lines.push(head.map(quote).join(','));
+  var put = function (row, band) {
+    lines.push((grouped ? [quote(band)] : [])
+      .concat(cols.map(function (c) {
+        var v = catCsvCell(row, c);
+        /* a figure goes bare so a spreadsheet adds it up; text is quoted so it
+           is never read as a date */
+        return CAT_NUMERIC[c.key] && v !== '' ? v : quote(v);
+      })).join(','));
+  };
+  if (grouped) catBands().forEach(function (g) { g.rows.forEach(function (r) { put(r, g.key); }); });
+  else catVisible().forEach(function (r) { put(r, ''); });
+  return lines.join('\r\n') + '\r\n';
+}
+
+function catCsvName() {
+  var bits = ['catalogue'];
+  if (cat.query.trim()) bits.push(cat.query.trim().replace(/[^A-Za-z0-9]+/g, '-'));
+  Object.keys(cat.filters).forEach(function (f) {
+    if (cat.filters[f] && cat.filters[f].length) {
+      bits.push(cat.filters[f].join('-').replace(/[^A-Za-z0-9]+/g, '-'));
+    }
+  });
+  bits.push(new Date().toISOString().slice(0, 10));
+  return bits.join('_').slice(0, 120) + '.csv';
+}
+
+function downloadCatalogue() {
+  var blob = new Blob(['\ufeff' + catCsv()], { type: 'text/csv;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = catCsvName();
+  document.body.appendChild(a); a.click(); a.remove();
+  window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  App.announce('polite', catVisible().length + ' products written to ' + a.download + '.');
+}
+
 function catToolbarHtml() {
   return '<div class="cat-tools">'
     + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
@@ -1991,6 +2320,12 @@ function catToolbarHtml() {
     + '<button type="button" role="tab" data-catdensity="dense" aria-selected="' + (cat.density === 'dense') + '">Dense</button>'
     + '<button type="button" role="tab" data-catdensity="comfortable" aria-selected="' + (cat.density !== 'dense') + '">Comfortable</button>'
     + '</div>'
+    /* one ranked list, or the same rows banded by sleeve category (D100) */
+    + '<div class="repo-seg cat-density" role="tablist" aria-label="Rows">'
+    + '<button type="button" role="tab" id="catFlat" data-catgroup="flat" aria-selected="' + !cat.group + '">Flat</button>'
+    + '<button type="button" role="tab" id="catByCategory" data-catgroup="category" aria-selected="' + cat.group + '">By category</button>'
+    + '</div>'
+    + '<span id="catFoldAll">' + catFoldAllHtml() + '</span>'
     + '<span class="cat-chipwrap">'
     + '<button type="button" class="cat-chip' + (cat.hidden.length ? ' on' : '') + '" data-catcols aria-expanded="' + (cat.openChip === 'cols') + '">Columns'
     + (cat.hidden.length ? ' <b>' + (CAT_COLUMNS.length - cat.hidden.length) + ' of ' + CAT_COLUMNS.length + '</b>' : '') + ' <span class="car">▾</span></button>'
@@ -2004,15 +2339,27 @@ function catToolbarHtml() {
           + (cat.hidden.length ? '<button type="button" class="cat-clear" data-catshowall>Show all</button>' : '')
           + '</div>' : '')
     + '</span>'
+    + '<button type="button" class="btn arc-export" data-catcsv'
+    + (catVisible().length ? '' : ' disabled') + '>Export CSV</button>'
     + '<span class="cat-count" id="catCount">' + catCountText() + '</span>'
     + '</div>';
+}
+
+/* every band at once: with eight of them, one at a time is a chore */
+function catFoldAllHtml() {
+  if (!cat.group || cat.compare) return '';
+  var bands = catBands(); if (bands.length < 2) return '';
+  var allShut = bands.every(function (g) { return catShut(g.key); });
+  return '<button type="button" class="cat-clear" id="catFoldAllBtn" data-catfoldall="' + (allShut ? 'open' : 'shut') + '">'
+    + (allShut ? 'Open all' : 'Fold all') + '</button>';
 }
 
 function catCountText() {
   var n = catVisible().length, all = repo.data.products.length;
   var priced = catPricedLabel();
   return (n === all ? all + ' products' : 'Showing ' + n + ' of ' + all)
-    + (cat.sort ? ' · sorted by ' + esc(catColumnLabel(cat.sort.key)) + (cat.sort.dir === 'desc' ? ' ↓' : ' ↑') : '')
+    + (cat.sort ? ' · sorted by ' + esc(catColumnLabel(cat.sort.key)) + (cat.sort.dir === 'desc' ? ' ↓' : ' ↑')
+        + (cat.group ? ' within category' : '') : '')
     + (priced ? ' · priced ' + esc(priced) : ' · unpriced — no mandate open')
     + (catFiltersInForce() ? ' · <button type="button" class="cat-clear" data-catclearall>Clear</button>' : '');
 }
@@ -2043,60 +2390,104 @@ function catFacetsHtml() {
     + '</div>';
 }
 
+/* The table says what it can do (D99): the sorted column carries a class its
+   whole height, a header shows it can sort before it has, and every row ends
+   in a cell that says it opens. */
 function catHeadHtml() {
   var tier = catTierId();
   return '<tr><th class="pinc"></th>' + catColumns().map(function (c) {
     var sorted = cat.sort && cat.sort.key === c.key;
-    return '<th' + (c.num ? ' class="num"' : '') + ' aria-sort="' + (sorted ? (cat.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
+    var cls = (c.num ? 'num' : '') + (sorted ? ' srt' : '');
+    return '<th' + (cls ? ' class="' + cls.trim() + '"' : '') + ' aria-sort="' + (sorted ? (cat.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
       + '<button type="button" class="cat-sort' + (sorted ? ' on' : '') + (c.derived ? ' drv' : '') + '" data-catsort="' + c.key + '"'
-      + (c.derived ? ' title="Derived: distribution yield less all-in cost"' : '') + '>' + esc(c.label)
-      + (c.tier ? '<small>' + (tier ? '@' + esc(tier) : 'no tier') + '</small>' : '')
+      + (c.derived ? ' title="Derived: distribution yield less all-in cost"' : '') + '><span class="lb">' + esc(c.label)
+      + (c.tier ? '<small>' + (tier ? '@' + esc(tier) : 'no tier') + '</small>' : '') + '</span>'
       + (sorted ? (cat.sort.dir === 'desc' ? ' ▼' : ' ▲') : '') + '</button></th>';
-  }).join('') + '</tr>';
+  }).join('') + '<th class="go"></th></tr>';
 }
 
-function catCellHtml(row, c) {
+function catCellHtml(row, c, sorted) {
   var p = row.p;
+  var td = function (cls, html) {
+    var all = (cls + (sorted ? ' srt' : '')).trim();
+    return '<td' + (all ? ' class="' + all + '"' : '') + '>' + html + '</td>';
+  };
   switch (c.key) {
-    case 'ticker': return '<td class="tk">' + esc(p.ticker) + '</td>';
-    case 'name': return '<td class="nm"><b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Minimum above the open mandate">min ' + esc(catMoney(p.minimumInvestment)) + '</span>' : '') + '</b></td>';
-    case 'vehicle': return '<td><span class="veh">' + esc(p.vehicle) + '</span></td>';
-    case 'liquidity': return '<td><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></td>';
-    case 'productCost': return '<td class="num">' + catFigure(p.productCost, 2) + '</td>';
-    case 'mgmt': return '<td class="num mute">' + catFigure(row.mgmt, 2) + '</td>';
-    case 'allIn': return '<td class="num"><b>' + catFigure(row.allIn, 2) + '</b></td>';
-    case 'distributionYield': return '<td class="num">' + catFigure(p.distributionYield, 2) + '</td>';
-    case 'net': return '<td class="num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')) + '">'
-      + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</td>';
-    case 'minimumInvestment': return '<td class="num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute') + '">' + esc(catMoney(p.minimumInvestment)) + '</td>';
-    case 'used': return '<td class="num used' + (row.used ? '' : ' zero') + '">' + row.used + '</td>';
-    default: return '<td class="mute">' + esc(p[c.key]) + '</td>';
+    case 'ticker': return td('tk', esc(p.ticker));
+    case 'name': return td('nm', '<b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Minimum above the open mandate">min ' + esc(catMoney(p.minimumInvestment)) + '</span>' : '') + '</b>');
+    case 'vehicle': return td('', '<span class="veh">' + esc(p.vehicle) + '</span>');
+    case 'liquidity': return td('', '<span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span>');
+    case 'productCost': return td('num', catFigure(p.productCost, 2));
+    case 'mgmt': return td('num mute', catFigure(row.mgmt, 2));
+    case 'allIn': return td('num', '<b>' + catFigure(row.allIn, 2) + '</b>');
+    case 'distributionYield': return td('num', catFigure(p.distributionYield, 2));
+    case 'net': return td('num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')),
+      row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2));
+    case 'minimumInvestment': return td('num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(p.minimumInvestment)));
+    case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
+    default: return td('mute', esc(p[c.key]));
   }
 }
 
+/* a band (D100): the category, and what can be said of it before a row is
+   read. The whole band is the button that folds it. */
+function catBandHtml(g, span) {
+  var shut = catShut(g.key), n = g.rows.length, at = catBandOrder().indexOf(g.key);
+  return '<tr class="cat-band' + (shut ? ' shut' : '') + '" data-catfold="' + esc(g.key) + '"><th colspan="' + span + '" scope="rowgroup">'
+    + '<button type="button" class="cat-fold"' + (at === -1 ? '' : ' id="catFold' + at + '"') + ' aria-expanded="' + !shut + '">'
+    + '<span class="car" aria-hidden="true">▾</span><b>' + esc(g.key) + '</b>'
+    + '<span class="n">' + n + ' product' + (n === 1 ? '' : 's') + '</span>'
+    + (g.lo === null ? '' : '<span class="rng">all-in ' + catFigure(g.lo, 2) + (g.hi > g.lo ? '–' + catFigure(g.hi, 2) : '') + '</span>')
+    + (g.notDaily ? '<span class="cst">' + g.notDaily + ' not daily</span>' : '')
+    + '</button></th></tr>';
+}
+
+function catRowHtml(row, cols, band, isCursor) {
+  var id = row.p.productId, pinned = cat.pins.indexOf(id) !== -1;
+  var sortKey = cat.sort ? cat.sort.key : null;
+  return '<tr data-catrow="' + esc(id) + '"' + (band === null ? '' : ' data-catband="' + esc(band) + '"')
+    + ' class="' + (pinned ? 'pin' : '') + (isCursor ? ' cur' : '')
+    + (id === cat.detail ? ' on' : '') + (row.tooBig ? ' dim' : '') + '" tabindex="-1" aria-selected="' + (id === cat.detail) + '">'
+    + '<td class="pinc"><button type="button" class="pinbox' + (pinned ? ' on' : '') + '" data-catpin="' + esc(id) + '"'
+    + ' title="' + (pinned ? 'Unpin' : 'Pin to compare') + '"'
+    + ' aria-label="' + (pinned ? 'Unpin' : 'Pin') + ' ' + esc(row.p.name) + '" aria-pressed="' + pinned + '"></button></td>'
+    + cols.map(function (c) { return catCellHtml(row, c, c.key === sortKey); }).join('')
+    + '<td class="go"><span aria-hidden="true">›</span></td></tr>';
+}
+
+/* the table's bodies: one for the flat list, or one per band, so a band's
+   header is the header of a row group and says so */
 function catBodyHtml() {
-  var rows = catVisible();
-  if (!rows.length) {
-    return '<tr><td colspan="' + (catColumns().length + 1) + '" class="cat-empty">No product matches'
+  var entries = catEntries();
+  var cols = catColumns(), span = cols.length + 2;      /* the pin cell, the columns, the chevron */
+  if (!entries.length) {
+    return '<tbody><tr><td colspan="' + span + '" class="cat-empty">No product matches'
       + (cat.query.trim() ? ' <b>“' + esc(cat.query.trim()) + '”</b>' : '') + ' with the filters in force. '
       + '<button type="button" class="cat-clear" data-catclearall>Clear the filters</button> · '
-      + repo.data.products.length + ' in the catalogue.</td></tr>';
+      + repo.data.products.length + ' in the catalogue.</td></tr></tbody>';
   }
-  var cols = catColumns();
-  return rows.map(function (row) {
-    var id = row.p.productId, pinned = cat.pins.indexOf(id) !== -1;
-    return '<tr data-catrow="' + esc(id) + '" class="' + (pinned ? 'pin' : '') + (id === cat.cursor ? ' cur' : '')
-      + (id === cat.detail ? ' on' : '') + (row.tooBig ? ' dim' : '') + '" tabindex="-1" aria-selected="' + (id === cat.detail) + '">'
-      + '<td class="pinc"><button type="button" class="pinbox' + (pinned ? ' on' : '') + '" data-catpin="' + esc(id) + '"'
-      + ' aria-label="' + (pinned ? 'Unpin' : 'Pin') + ' ' + esc(row.p.name) + '" aria-pressed="' + pinned + '"></button></td>'
-      + cols.map(function (c) { return catCellHtml(row, c); }).join('') + '</tr>';
+  var cursorAt = cat.cursor ? catCursorAt(entries) : -1;
+  if (!cat.group) {
+    return '<tbody>' + entries.map(function (e, i) { return catRowHtml(e.row, cols, null, i === cursorAt); }).join('') + '</tbody>';
+  }
+  var i = 0;
+  return catBands().map(function (g) {
+    var shut = catShut(g.key);
+    var rows = g.rows.map(function (row) {
+      var html = shut ? '' : catRowHtml(row, cols, g.key, i === cursorAt);
+      i += 1;
+      return html;
+    }).join('');
+    return '<tbody>' + catBandHtml(g, span) + rows + '</tbody>';
   }).join('');
 }
 
 function catTableHtml() {
-  return '<div class="cat-tblwrap" id="catTblWrap" tabindex="0" aria-label="Product catalogue, scrolls">'
-    + '<table class="cat-tbl ' + esc(cat.density) + '"><thead>' + catHeadHtml() + '</thead>'
-    + '<tbody id="catBody">' + catBodyHtml() + '</tbody></table></div>';
+  return '<div class="cat-tblwrap cat-main' + (cat.group ? ' grouped' : '') + '" id="catTblWrap" tabindex="0" aria-label="Product catalogue, scrolls">'
+    + '<table class="cat-tbl ' + esc(cat.density) + (cat.group ? ' grouped' : '') + '" id="catTbl"><thead>' + catHeadHtml() + '</thead>'
+    + catBodyHtml() + '</table></div>'
+    /* the shadow that says the table carries on to the right (D99) */
+    + '<span class="cat-more" id="catMore" aria-hidden="true"></span>';
 }
 
 function catCompareHtml() {
@@ -2203,6 +2594,21 @@ function catTrayHtml() {
     + '</div>';
 }
 
+/* The keys, where they can be seen (D99): the view was always driven from
+   the keyboard, and said so nowhere. Only the keys that do something from
+   where the reader is. */
+function catKeysHtml() {
+  var keys = cat.compare
+    ? [['/', 'search'], ['c', 'back to the list'], ['esc', 'back']]
+    : [['/', 'search'], ['↑ ↓', 'move'], ['space', 'pin'], ['enter', 'open'], ['c', 'compare'], ['g', 'group'], ['esc', 'back']];
+  return '<div class="cat-keys" id="catKeys"><span class="ttl">Keys</span>'
+    + keys.map(function (k) {
+        return '<span class="k">' + k[0].split(' ').map(function (cap) { return '<kbd>' + esc(cap) + '</kbd>'; }).join('')
+          + esc(k[1]) + '</span>';
+      }).join('')
+    + '</div>';
+}
+
 function catalogueViewHtml() {
   return catToolbarHtml() + catOrphansHtml()
     + '<div class="cat-b">' + catFacetsHtml()
@@ -2216,21 +2622,147 @@ function catTogglePin(id) {
   if (at === -1) cat.pins.push(id); else cat.pins.splice(at, 1);
   if (!cat.pins.length) cat.compare = false;
 }
+/* the cursor's row, as drawn: banded, a product two categories hold is on
+   the page twice, and only one copy is the cursor's */
+function catCursorRow() {
+  return cat.cursor ? document.querySelector('#catTbl tr.cur[data-catrow]') : null;
+}
 function catFocusCursor() {
-  var row = cat.cursor && document.querySelector('[data-catrow="' + cat.cursor.replace(/"/g, '\\"') + '"]');
-  if (row && row.focus) row.focus();
+  var row = catCursorRow();
+  if (row && row.focus) row.focus({ preventScroll: true });
 }
 function catMoveCursor(step) {
-  var ids = catVisible().map(function (r) { return r.p.productId; });
-  if (!ids.length) return;
-  var at = ids.indexOf(cat.cursor);
-  var next = at === -1 ? (step > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, at + step));
-  cat.cursor = ids[next];
+  /* over every row the table holds, shut bands included, so a cursor left
+     inside a band that was then folded moves on from where it was */
+  var entries = catEntries();
+  var at = catCursorAt(entries), next = at;
+  if (at === -1) next = step > 0 ? -1 : entries.length;
+  do { next += step; } while (entries[next] && entries[next].shut);
+  if (!entries[next]) {
+    if (at !== -1 && !entries[at].shut) return;     /* already at the end */
+    /* nothing open that way: the nearest open row the other way, if any */
+    next = at === -1 ? (step > 0 ? entries.length : -1) : at;
+    do { next -= step; } while (entries[next] && entries[next].shut);
+    if (!entries[next]) return;
+  }
+  cat.cursor = entries[next].row.p.productId;
+  cat.cursorBand = entries[next].band;
   if (cat.detail) cat.detail = cat.cursor;      /* an open panel follows the cursor */
   render(); catScrollCursorIntoView(); catFocusCursor();
 }
+function catSetGroup(on) {
+  cat.group = !!on;
+  cat.cursorBand = null;
+  /* a new order: from the top, or - with a row under the cursor - wherever
+     that row has gone */
+  render(); catScrollTo(0); catScrollCursorIntoView('center');
+}
+/* fold or open one band, or all of them. A band folded from deep inside its
+   rows would leave the reader looking at whatever slid up from below; the
+   band is brought back under the header instead. */
+function catFold(key, shut) {
+  var want = shut === undefined ? !catShut(key) : shut;
+  cat.folded = cat.folded.filter(function (k) { return k !== key; });
+  if (want) cat.folded.push(key);
+  render();
+  if (!want) return;
+  var band = [].slice.call(document.querySelectorAll('#catTbl tr.cat-band')).filter(function (tr) {
+    return tr.dataset.catfold === key;
+  })[0];
+  if (band) catBandIntoView(band);
+}
+/* a band the scroll has left behind is still on show, held under the header:
+   brought back to where it starts, so what follows it is what follows it */
+function catBandIntoView(band) {
+  var wrap = document.getElementById('catTblWrap'), head = document.querySelector('#catTbl thead');
+  if (!wrap || !head || !band) return;
+  var top = band.parentNode.offsetTop - head.offsetHeight;   /* the scroll that puts the band under the header */
+  if (top < wrap.scrollTop) catScrollTo(top);
+}
+function catFoldAll(shut) {
+  cat.folded = shut ? catBands().map(function (g) { return g.key; }) : [];
+  render(); catScrollTo(0);
+}
 
 /* ---- rendering: the dialog --------------------------------------------- */
+/* Whether there is anything to save, said in the footer rather than left to
+   the Save button's enabled state (F2). An enabled button is a weak signal
+   for state in an editor whose draft survives a lot of navigation - and it
+   made the leaving notice abrupt, because the first mention of unsaved work
+   was a warning about losing it. */
+function saveStateHtml() {
+  if (!repo.draft) return '';
+  if (repo.saving) return '<span class="repo-state">Saving…</span>';
+  if (repo.dirty) return '<span class="repo-state is-dirty">Unsaved changes</span>';
+  if (repo.savedAt) {
+    return '<span class="repo-state is-saved">Saved ' + esc(clockTime(repo.savedAt)) + '</span>';
+  }
+  return '';
+}
+function clockTime(iso) {
+  var t = new Date(iso);
+  if (isNaN(t.getTime())) return '';
+  return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
+}
+
+/* ---- unsaved work, across a reload (F1) ----------------------------------
+   Switching view, closing the dialog and moving to another sleeve were all
+   guarded, named the sleeve and offered Discard. The fourth exit - a refresh,
+   a closed tab, a crash - lost a twelve-product sleeve silently, while the
+   proposal tool beside it snapshots its own state on every render. Two
+   halves: the browser's own prompt, and a copy kept locally so the answer to
+   "did I lose it" is no rather than a prompt.
+
+   Keyed by what the draft IS, so a draft of one sleeve cannot be offered back
+   over another. Wrapped, because storage throws in a private window. */
+var DRAFT_KEY = 'pmg.repository.draft';
+
+function draftKeyFor(d) {
+  if (!d) return null;
+  if (d.id) return 'sleeve:' + d.id;
+  if (d.edition) return 'edition:' + d.edition.ofId;
+  return 'new:' + (d.category || repo.category) + '|' + (repo.variant || '');
+}
+
+/* Written while there is something to lose, and cleared only by the three
+   things that mean it is no longer wanted: a save, a discard, and the admin
+   turning the offer down. Clearing it merely because the draft in hand is
+   clean would erase it on the first render after the reload it exists for. */
+function keepDraft() {
+  if (!repo.draft || !repo.dirty) return;
+  try {
+    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      key: draftKeyFor(repo.draft), at: new Date().toISOString(),
+      category: repo.category, variant: repo.variant, draft: repo.draft
+    }));
+  } catch (e) { /* private window, or full: the prompt still stands */ }
+}
+
+function forgetKeptDraft() {
+  try { window.localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+}
+
+/* Offered back only for the draft it was taken from, and only when what is
+   on screen has not itself been edited. */
+function keptDraftFor(d) {
+  var want = draftKeyFor(d);
+  if (!want) return null;
+  try {
+    var raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    var held = JSON.parse(raw);
+    return (held && held.key === want && held.draft) ? held : null;
+  } catch (e) { return null; }
+}
+
+window.addEventListener('beforeunload', function (e) {
+  if (!repo.open || !repo.dirty) return;
+  keepDraft();
+  e.preventDefault();
+  e.returnValue = '';           /* the wording is the browser's, not ours */
+  return '';
+});
+
 function render() {
   var host = document.getElementById('repoDialog'); if (!host) return;
   if (!repo.open) {
@@ -2239,31 +2771,38 @@ function render() {
   host.hidden = false;
   App.setBackgroundInert(true);
   var focused = document.activeElement && document.activeElement.id;
+  var putBack = catScrollKeep();
   var d = repo.data;
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals';
   var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister;
 
+  /* One tab strip in the header, and it navigates (A1). The implementation
+     type used to sit beside it, identical in shape and selected state but
+     filtering rather than navigating - and it existed on one view of five, so
+     the header changed size as you moved. It is a property of the sleeve
+     list, so it has moved onto the sleeve list's own header. */
+  var VIEWS = [['sleeves', 'Sleeves', onSleeves, 0],
+               ['catalogue', 'Catalogue', onCatalogue, 0],
+               ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
+               ['activity', 'Activity', onActivity, 0],
+               ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0]];
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
-    + '<button type="button" role="tab" data-repoview="sleeves" aria-selected="' + onSleeves + '">Sleeves</button>'
-    + '<button type="button" role="tab" data-repoview="catalogue" aria-selected="' + onCatalogue + '">Catalogue</button>'
-    + '<button type="button" role="tab" data-repoview="archive" aria-selected="' + onArchive + '">Archive'
-    + (d && archivedSleeves().length ? '<span class="n">' + archivedSleeves().length + '</span>' : '') + '</button>'
-    + '<button type="button" role="tab" data-repoview="activity" aria-selected="' + onActivity + '">Activity</button>'
-    + '<button type="button" role="tab" data-repoview="proposals" aria-selected="' + onRegister + '">Proposals'
-    + (d && d.register && d.register.proposals ? '<span class="n">' + d.register.proposals + '</span>' : '') + '</button>'
+    + VIEWS.map(function (v) {
+        /* the pair is one tab stop; the arrows move within it (G1) */
+        return '<button type="button" role="tab" id="repotab-' + v[0] + '"'
+          + ' data-repoview="' + v[0] + '" aria-selected="' + v[2] + '"'
+          + ' aria-controls="repoPanel" tabindex="' + (v[2] ? '0' : '-1') + '">' + esc(v[1])
+          + (v[3] ? '<span class="n">' + v[3] + '</span>' : '') + '</button>';
+      }).join('')
     + '</div>';
-  if (d && onSleeves) {
-    header += '<div class="repo-seg" role="tablist" aria-label="Implementation type">'
-      + d.variants.map(function (v) {
-          return '<button type="button" role="tab" data-repovariant="' + esc(v) + '"'
-            + ' aria-selected="' + (v === repo.variant ? 'true' : 'false') + '">' + esc(v) + '</button>';
-        }).join('') + '</div>';
-  }
   if (d) {
-    header += '<span class="repo-src">' + esc(shortDate(d.catalogue.modified)) + '</span>';
+    /* what the date is OF (A3): it is the product catalogue's, and on the
+       sleeves view it sat directly over a sleeve carrying its own saved-on
+       line, where an unlabelled date reads as that sleeve's */
+    header += '<span class="repo-src">Catalogue as of ' + esc(shortDate(d.catalogue.modified)) + '</span>';
   }
   header += '<button type="button" class="dlg-close" id="repoclose" data-repoclose aria-label="Close">×</button></div>';
 
@@ -2298,12 +2837,16 @@ function render() {
   } else if (onRegister && d) {
     footer = regFooterHtml();
   } else if (onCatalogue && d) {
-    footer = '<div class="repo-f cat-f">' + catTrayHtml()
+    footer = catKeysHtml()
+      + '<div class="repo-f cat-f">' + catTrayHtml()
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
       + '</div>';
   } else {
-    var onRemoved = false;
-    var canSave = !onRemoved && !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
+    /* One primary action on the right, and nothing destructive beside it
+       (A2). Archiving and adding an edition act on the sleeve being edited,
+       so they have moved into the editor where that sleeve is named; what is
+       left here is the library's own provenance and Save. */
+    var canSave = !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
     footer = '<div class="repo-f">'
       + (d ? '<button type="button" class="btn btn-create" data-repocreate'
           + (repo.saving ? ' disabled' : '') + '>+ Create sleeve</button>' : '')
@@ -2312,33 +2855,30 @@ function render() {
           + (d.store.archived ? ' · ' + d.store.archived + ' archived' : '') + '</span>' : '')
       + '<span class="spacer"></span>'
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
-      + (!onRemoved && repo.draft && repo.draft.id
-          ? '<button type="button" class="btn" data-repoedition="' + repo.draft.id + '"' + (repo.saving ? ' disabled' : '')
-            + ' title="Another edition of ' + esc(repo.draft.name) + ', for particular portfolios">+ Add edition</button>'
-          : '')
-      + (!onRemoved && repo.draft && repo.draft.id && !isFixed(repo.category)
-          ? (repo.confirmDelete
-              ? '<span class="repo-src">It keeps its history and can be restored from the Archive.</span>'
-                + '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
-                + '<button type="button" class="btn btn-danger" data-repodelete>Confirm archive</button>'
-              : '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>Archive sleeve</button>')
-          : '')
-      + (onRemoved ? ''
-          : '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
-            + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve'
-               : (repo.draft && repo.draft.edition ? 'Create edition' : 'Save sleeve'))) + '</button>')
+      + saveStateHtml()
+      + '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
+        + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve'
+           : (repo.draft && repo.draft.edition ? 'Create edition' : 'Save sleeve'))) + '</button>'
       + '</div>';
   }
+
+  /* the tabs name this, and it is labelled by whichever is selected (G1) */
+  body = '<div id="repoPanel" role="tabpanel" aria-labelledby="repotab-' + repo.view + '">'
+    + body + '</div>';
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
     + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
+  keepDraft();                  /* the local copy follows the draft (F1) */
+  putBack(); catEdge();
 
   if (focused) {
     var again = document.getElementById(focused);
     if (again && again.focus) {
-      again.focus();
+      /* the catalogue has just put its own scroll back, and a band's button
+         taking focus must not move it again */
+      again.focus(onCatalogue ? { preventScroll: true } : undefined);
       if ((again.id === 'repoSearch' || again.id === 'catSearch' || again.id === 'arcSearch' || again.id === 'actSearch' || again.id === 'regSearch') && again.setSelectionRange && again.type !== 'search') {
         var end = again.value.length; again.setSelectionRange(end, end);
       }
@@ -2350,6 +2890,11 @@ function updateTotals() {
   var tot = document.getElementById('repoTotal'); if (tot) tot.innerHTML = totalHtml();
   var save = document.querySelector('[data-reposave]');
   if (save) save.disabled = !(repo.dirty && !draftProblems().length && !repo.saving);
+  /* typing is a partial redraw, so the footer's marker has to be told (F2) */
+  var state = document.querySelector('.repo-f .repo-state');
+  if (state) state.outerHTML = saveStateHtml();
+  else if (save) save.insertAdjacentHTML('beforebegin', saveStateHtml());
+  keepDraft();
   var probs = document.querySelector('.repo-problems');
   if (probs) probs.remove();
 }
@@ -2362,24 +2907,101 @@ function updatePickerList() {
 /* typing in the catalogue's search redraws the rows, the facet counts, the
    count line and the tray - never the search box, so the caret stays put */
 function updateCatalogue() {
-  var body = document.getElementById('catBody'); if (body) body.innerHTML = catBodyHtml();
+  var putBack = catScrollKeep();
+  var table = document.getElementById('catTbl');
+  if (table) {
+    [].slice.call(table.tBodies).forEach(function (b) { table.removeChild(b); });
+    table.insertAdjacentHTML('beforeend', catBodyHtml());
+  }
   var facets = document.getElementById('catFacets'); if (facets) facets.outerHTML = catFacetsHtml();
   var count = document.getElementById('catCount'); if (count) count.innerHTML = catCountText();
+  var foldAll = document.getElementById('catFoldAll'); if (foldAll) foldAll.innerHTML = catFoldAllHtml();
   var tray = document.getElementById('catTray'); if (tray) tray.outerHTML = catTrayHtml();
   syncHash();
+  putBack(); catEdge();
 }
-function catScrollCursorIntoView() {
-  var row = cat.cursor && document.querySelector('[data-catrow="' + cat.cursor.replace(/"/g, '\\"') + '"]');
-  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+/* A redraw replaces the boxes that scroll, and a new box starts at its top:
+   a pin far down the list, or a facet ticked at the foot of the rail, threw
+   the reader back to the start. What was scrolled is put back where it was. */
+function catScrollKeep() {
+  var saved = ['catTblWrap', 'catFacets'].map(function (id) {
+    var el = document.getElementById(id);
+    return el ? { id: id, top: el.scrollTop, left: el.scrollLeft } : null;
+  });
+  return function () {
+    saved.forEach(function (s) {
+      var el = s && document.getElementById(s.id);
+      if (el) { el.scrollTop = s.top; el.scrollLeft = s.left; }
+    });
+  };
+}
+function catScrollTo(top) {
+  var wrap = document.getElementById('catTblWrap'); if (wrap) wrap.scrollTop = Math.max(0, top);
+}
+/* the header, and banded the band under it, stand over the rows: the
+   stylesheet's scroll-padding keeps the cursor's row clear of both */
+function catScrollCursorIntoView(block) {
+  var row = catCursorRow();
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: block || 'nearest', inline: 'nearest' });
+}
+/* The shadow at the table's right edge (D99), for as long as there are
+   columns beyond it. Placed from the box as measured, so it sits inside a
+   classic scrollbar and against the chevron column, whatever their widths. */
+function catEdge() {
+  var wrap = document.getElementById('catTblWrap'), edge = document.getElementById('catMore');
+  if (!wrap || !edge) return;
+  var go = wrap.querySelector('th.go');
+  edge.style.right = (wrap.offsetWidth - wrap.clientWidth + (go ? go.offsetWidth : 0)) + 'px';
+  edge.style.bottom = (wrap.offsetHeight - wrap.clientHeight) + 'px';
+  edge.classList.toggle('on', wrap.scrollWidth - wrap.clientWidth - wrap.scrollLeft > 1);
 }
 
 /* ---- the entry points --------------------------------------------------- */
+/* ---- the way in from the landing page (D106) ------------------------------
+   The console has never needed a scenario - it opens cold at #repository and
+   works - but the only visible entry was the rail's admin bar, and the rail
+   is display:none on the landing page. So an admin arriving to maintain the
+   library had to know a URL fragment, or start a proposal they did not want
+   in order to reveal the way to the thing they did.
+
+   The strip says whose session this is before it says what the session
+   opens: a row that appears for some people and not others should explain
+   why it is there, and on a shared machine it also answers "am I still
+   signed in as them". The five views are named rather than hidden behind one
+   "Repository" link, because the admin knows which of them they came for. */
+var LANDING_VIEWS = [
+  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['archive', 'Archive'],
+  ['activity', 'Activity'], ['proposals', 'Proposals']
+];
+
+function renderLandingAdmin(show) {
+  var host = document.getElementById('lpadmin'); if (!host) return;
+  /* Only on the landing page: in the workspace the rail carries the same two
+     entry points, and a second copy under the document would be furniture. */
+  var on = show && App.phase() !== 'workspace';
+  host.hidden = !on;
+  if (!on) { host.innerHTML = ''; return; }
+  var who = App.opt('capabilities.user', '');
+  var html = '<div class="lp-admin-who"><span class="lp-admin-role">Admin</span>'
+    + (who ? '<span>Signed in as <b>' + esc(who) + '</b></span>'
+           : '<span>You can maintain the library</span>')
+    + '</div>'
+    + '<nav class="lp-admin-links" aria-label="The library">'
+    + LANDING_VIEWS.map(function (v, i) {
+        return (i ? '<span class="lp-admin-dot" aria-hidden="true">\u00b7</span>' : '')
+          + '<a href="#' + v[0] + '" data-repoopen="' + v[0] + '">' + esc(v[1]) + '</a>';
+      }).join('')
+    + '</nav>';
+  if (host.innerHTML !== html) host.innerHTML = html;
+}
+
 function renderEntryLinks() {
   var show = canAdmin();
   /* the whole bar, not the individual buttons: an empty bordered strip would
      be worse than no strip (D62) */
   var bar = document.getElementById('railadmin');
   if (bar) bar.hidden = !show;
+  renderLandingAdmin(show);
   if (!repo.bootChecked && (typeof App.schemaReady !== 'function' || App.schemaReady())) {
     repo.bootChecked = true;
     if (show && window.location.hash.indexOf('#repository') === 0) openRepository(null, 'sleeves');
@@ -2420,15 +3042,26 @@ function renderEntryLinks() {
 document.addEventListener('click', function (e) {
   var t = e.target.closest ? e.target.closest('#repolink, #catlink') : null;
   if (t) { e.preventDefault(); openRepository(t, t.id.indexOf('cat') !== -1 ? 'catalogue' : 'sleeves'); return; }
+  /* the landing strip (D106). Real anchors carrying the same hashes the
+     console already answers to, so a middle click opens a second tab and a
+     copied link works - the handler only saves the round trip. */
+  var go = e.target.closest ? e.target.closest('[data-repoopen]') : null;
+  if (go) {
+    e.preventDefault();
+    var view = go.dataset.repoopen;
+    openRepository(go, view === 'repository' ? 'sleeves' : view);
+    return;
+  }
   var host = document.getElementById('repoDialog');
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],[data-repocat],[data-reposleeve],'
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-repodelete],[data-repocanceldelete],[data-repokeep],[data-repodiscard],'
-    + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],'
+    + '[data-repokeptrestore],[data-repokeptdrop],'
+    + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
-    + '[data-catrow],[data-catopen],[data-catfee],'
+    + '[data-catrow],[data-catopen],[data-catfee],[data-catgroup],[data-catfold],[data-catfoldall],'
     + '[data-repocreate],[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
@@ -2449,8 +3082,13 @@ document.addEventListener('click', function (e) {
   if (ds.repovariant !== undefined) { goTo({ variant: ds.repovariant }); return; }
   if (ds.repocat !== undefined) { goTo({ category: ds.repocat }); return; }
   if (ds.reposleeve !== undefined) { selectSleeve(parseInt(ds.reposleeve, 10)); return; }
-  if (ds.reponew !== undefined) { goTo({ fresh: true }); return; }
-  if (ds.repocreate !== undefined) { goTo({ fresh: true, create: true }); return; }
+  /* One create path (B2). Two buttons a verb apart used to make forms that
+     differed in which fields existed, with nothing on screen to say which was
+     which; now both open the create form, which arrives with the category and
+     the book already filled in from wherever the admin was standing. */
+  if (ds.reponew !== undefined || ds.repocreate !== undefined) {
+    goTo({ fresh: true, create: true }); return;
+  }
   if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
   /* editions (D89) */
   if (ds.repoedition !== undefined) {
@@ -2524,19 +3162,34 @@ document.addEventListener('click', function (e) {
   if (ds.reposave !== undefined) { saveDraft(); return; }
   if (ds.repodelete !== undefined) { deleteCurrent(); return; }
   if (ds.repocanceldelete !== undefined) { repo.confirmDelete = false; render(); return; }
+  if (ds.repokeptrestore !== undefined) {
+    var held = repo.kept; repo.kept = null;
+    if (held && held.draft) {
+      repo.draft = held.draft; repo.dirty = true;
+      App.announce('polite', 'Unsaved changes restored.');
+    }
+    render(); return;
+  }
+  if (ds.repokeptdrop !== undefined) { repo.kept = null; forgetKeptDraft(); render(); return; }
   if (ds.repokeep !== undefined) { resolveLeaving(false); return; }
   if (ds.repodiscard !== undefined) { resolveLeaving(true); return; }
   /* the catalogue (D63) */
+  if (ds.catcsv !== undefined) { downloadCatalogue(); return; }
   if (ds.catcols !== undefined) { cat.openChip = cat.openChip === 'cols' ? null : 'cols'; render(); return; }
   if (ds.catshowall !== undefined) { cat.hidden = []; render(); return; }
   if (ds.catdensity !== undefined) { cat.density = ds.catdensity === 'comfortable' ? 'comfortable' : 'dense'; render(); return; }
+  if (ds.catgroup !== undefined) { catSetGroup(ds.catgroup === 'category'); return; }
+  if (ds.catfoldall !== undefined) { catFoldAll(ds.catfoldall === 'shut'); return; }
+  if (ds.catfold !== undefined) { catFold(ds.catfold); return; }
   if (ds.catclearall !== undefined) { cat.query = ''; cat.filters = {}; cat.openChip = null; render(); return; }
   if (ds.catsort !== undefined) {
     /* ascending, then descending, then back to the delivery's own order */
     if (!cat.sort || cat.sort.key !== ds.catsort) cat.sort = { key: ds.catsort, dir: 'asc' };
     else if (cat.sort.dir === 'asc') cat.sort.dir = 'desc';
     else cat.sort = null;
-    render(); return;
+    /* a new order reads from the top - and stays on the column that was
+       clicked, however far along the table it is */
+    render(); catScrollTo(0); return;
   }
   if (ds.catpin !== undefined) { catTogglePin(ds.catpin); render(); return; }
   if (ds.catunpin !== undefined) {
@@ -2549,6 +3202,7 @@ document.addEventListener('click', function (e) {
   if (ds.catdetailclose !== undefined) { cat.detail = null; render(); catFocusCursor(); return; }
   if (ds.catrow !== undefined) {
     cat.cursor = ds.catrow;
+    cat.cursorBand = ds.catband === undefined ? null : ds.catband;
     cat.detail = cat.detail === ds.catrow ? null : ds.catrow;
     render(); return;
   }
@@ -2685,6 +3339,22 @@ document.addEventListener('input', function (e) {
   }
 });
 
+/* The sleeve search redraws the list and the pane heading, never the box, so
+   the caret stays where it was typed (C1). */
+document.addEventListener('input', function (e) {
+  if (!repo.open || repo.view !== 'sleeves' || !e.target || e.target.id !== 'repoFind') return;
+  repo.query = e.target.value;
+  var pane = document.querySelector('.repo-list'); if (!pane) return;
+  var head = pane.querySelector('.repo-pane-h');
+  var searching = !!repo.query.trim();
+  if (head) head.firstChild.nodeValue = searching ? 'Search results' : repo.category;
+  pane.querySelectorAll('.repo-book').forEach(function (b) { b.disabled = searching; });
+  var keep = pane.querySelector('.repo-find');
+  var after = keep && keep.nextSibling;
+  while (after) { var next = after.nextSibling; after.remove(); after = next; }
+  keep.insertAdjacentHTML('afterend', searching ? sleeveHitsHtml() : sleeveListHtml());
+});
+
 /* Capture phase, on purpose: the fee card's own Escape handler was
    registered first and hides the card synchronously, and a bubbling handler
    here would then find no card open and close this dialog as well. Seen
@@ -2735,11 +3405,16 @@ document.addEventListener('keydown', function (e) {
       return;
     }
     if (!inField) {
+      /* space and enter on a button are that button's: a header sorts, a
+         band folds, a pin box pins. Anywhere else they are the cursor row's. */
+      var onButton = e.target && e.target.tagName === 'BUTTON';
+      var plain = !e.metaKey && !e.ctrlKey && !e.altKey;
       if (e.key === 'ArrowDown') { e.preventDefault(); catMoveCursor(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); catMoveCursor(-1); return; }
-      if (e.key === ' ' && cat.cursor) { e.preventDefault(); catTogglePin(cat.cursor); render(); catFocusCursor(); return; }
-      if (e.key === 'Enter' && cat.cursor && !cat.compare) { e.preventDefault(); cat.detail = cat.detail === cat.cursor ? null : cat.cursor; render(); catFocusCursor(); return; }
-      if ((e.key === 'c' || e.key === 'C') && (cat.pins.length || cat.compare)) { e.preventDefault(); cat.compare = !cat.compare; cat.detail = null; render(); return; }
+      if (e.key === ' ' && cat.cursor && !onButton) { e.preventDefault(); catTogglePin(cat.cursor); render(); catFocusCursor(); return; }
+      if (e.key === 'Enter' && cat.cursor && !cat.compare && !onButton) { e.preventDefault(); cat.detail = cat.detail === cat.cursor ? null : cat.cursor; render(); catFocusCursor(); return; }
+      if ((e.key === 'c' || e.key === 'C') && plain && (cat.pins.length || cat.compare)) { e.preventDefault(); cat.compare = !cat.compare; cat.detail = null; render(); return; }
+      if ((e.key === 'g' || e.key === 'G') && plain && !cat.compare) { e.preventDefault(); catSetGroup(!cat.group); return; }
     }
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -2749,6 +3424,18 @@ document.addEventListener('keydown', function (e) {
       closeRepository(false); return;
     }
     return;
+  }
+  if (repo.view === 'sleeves') {
+    var find = document.getElementById('repoFind');
+    var typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT'
+                              || e.target.tagName === 'TEXTAREA');
+    if (e.key === '/' && !typing && find) { e.preventDefault(); find.focus(); find.select(); return; }
+    if (e.key === 'Escape' && find && e.target === find) {
+      e.preventDefault(); e.stopPropagation();
+      if (repo.query) { repo.query = ''; find.value = ''; render(); }
+      else find.blur();
+      return;
+    }
   }
   if (e.key === 'Escape') {
     /* the fee card, if open above this dialog, takes the key first */
@@ -2764,6 +3451,24 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Enter' && (e.target.id === 'repoName' || e.target.id === 'repoLabel')) { e.preventDefault(); saveDraft(); }
 }, true);
+
+/* The catalogue's edge shadow follows its table's scroll (D99). A scroll does
+   not bubble, and every redraw makes a new box to listen on, so it is caught
+   on the way down instead. */
+document.addEventListener('scroll', function (e) {
+  if (repo.open && e.target && e.target.id === 'catTblWrap') catEdge();
+}, true);
+/* Every band the scroll has passed is held under the header, beneath the one
+   on show - and the Tab key still reaches it there. Focus is never left on a
+   band that cannot be seen: the keyboard's arrival brings it back. */
+document.addEventListener('focusin', function (e) {
+  var el = e.target;
+  if (!repo.open || !el.classList || !el.classList.contains('cat-fold')) return;
+  if (el.matches && el.matches(':focus-visible')) catBandIntoView(el.closest('tr'));
+});
+window.addEventListener('resize', function () {
+  if (repo.open && repo.view === 'catalogue') catEdge();
+});
 
 App.addRenderer(renderEntryLinks);
 App.openRepository = openRepository;

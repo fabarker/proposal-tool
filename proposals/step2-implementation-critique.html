@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Step 2 · Implementation — a critique</title>
+<style>
+:root{--bg:#FBFCFE;--surface:#fff;--s2:#F0F2F5;--ink:#1C2733;--ink2:#4B5A6A;--ink3:#6B7A8A;--line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--navy:#12233F;--gold:#B7862A;--neg:#B42318;--pos:#1A7F37;--amber:#92600A;--amberbg:#FEF3C7;
+  --num:"GS Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;--body:"GS Sans",Roboto,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px}
+header.top{background:var(--navy);color:#fff;padding:56px 0 44px;margin-bottom:40px}
+header.top .wrap{display:block}
+.eyebrow{font:700 12px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:#F3C46B;margin:0 0 14px}
+h1{font:400 40px/1.12 var(--num);margin:0 0 14px;letter-spacing:.005em}
+header.top p{max-width:72ch;color:#B6C2D2;margin:0}
+header.top code{background:#1D2F4B;color:#dbe5f3;padding:2px 5px;border-radius:3px;font-size:13px}
+nav.toc{position:sticky;top:20px;align-self:start;font-size:13.5px;max-height:calc(100vh - 40px);overflow:auto;padding-bottom:20px}
+nav.toc p{font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--line);color:var(--ink2);text-decoration:none}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--accent)}
+nav.toc a b{font-family:var(--num);color:var(--ink3);font-weight:700;margin-right:6px}
+main{min-width:0;padding-bottom:96px}
+h2{font:400 28px/1.2 var(--num);margin:56px 0 6px;padding-top:8px}
+h2:first-child{margin-top:0}
+h2 small{display:block;font:700 11.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+.lede{color:var(--ink2);max-width:72ch;margin:0 0 20px}
+h3{font:600 17px/1.35 var(--body);margin:0}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.fact b{display:block;font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px}
+.fact p{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink)}
+.bars{margin:20px 0 8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px 20px}
+.bars h4{margin:0 0 4px;font:600 15px var(--body)}
+.bars p.k{margin:0 0 14px;font-size:13.5px;color:var(--ink3)}
+.bar{display:flex;height:34px;border-radius:4px;overflow:hidden;font:700 11px/34px var(--num);letter-spacing:.06em;text-align:center;color:#fff}
+.bar span{display:block;white-space:nowrap;overflow:hidden}
+.b1{background:#16243A}.b2{background:#3E5C86}.b3{background:#9AA9BC;color:#1C2733}.b4{background:#C0392B}
+.barkey{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--ink2)}
+.barkey i{font-style:normal;display:inline-flex;align-items:center;gap:6px}
+.barkey u{width:11px;height:11px;border-radius:2px;display:inline-block;text-decoration:none}
+.fold{position:relative;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line2);font-size:12.5px;color:var(--neg);font-weight:600}
+ol.friction{margin:14px 0 0;padding:0;list-style:none;counter-reset:f}
+ol.friction li{counter-increment:f;position:relative;padding:12px 0 12px 44px;border-top:1px solid var(--line);font-size:15px}
+ol.friction li::before{content:counter(f);position:absolute;left:0;top:12px;width:28px;height:28px;border-radius:50%;background:var(--navy);color:#fff;
+  font:700 13px/28px var(--num);text-align:center}
+ol.friction b{font-weight:600}
+table.top5{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+table.top5 th{font:700 11px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 14px;background:var(--s2)}
+table.top5 td{padding:11px 14px;border-top:1px solid var(--line);vertical-align:top}
+table.top5 td:first-child{font:700 14px var(--num);color:var(--accent);white-space:nowrap}
+.rec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px 18px;margin:14px 0;scroll-margin-top:16px}
+.rec-h{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px}
+.rec-h .id{font:700 13px/1 var(--num);color:#fff;background:var(--accent);border-radius:4px;padding:5px 7px;letter-spacing:.04em}
+.rec-h h3{flex:1;min-width:240px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font:700 10.5px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--s2);color:var(--ink2);white-space:nowrap}
+.tag.hi{background:#E3EBFA;color:#1E4FA3}.tag.bug{background:#FDE8E8;color:#9B1C1C}.tag.s{background:#E7F4EC;color:#176A33}.tag.m{background:var(--amberbg);color:var(--amber)}.tag.l{background:#F3E8FF;color:#6B21A8}
+dl.r{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px 16px;margin:0;font-size:15px}
+dl.r dt{font:700 11px/1.9 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+dl.r dd{margin:0}
+dl.r dd.trade{color:var(--ink2);font-size:14.5px}
+code{font:13px/1 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--s2);padding:2px 5px;border-radius:3px;color:#16243A}
+.mock{margin:14px 0 2px;border:1px dashed var(--line2);border-radius:8px;padding:14px;background:#FCFDFE;overflow-x:auto}
+.mock-l{font:700 10.5px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+.m-tbl{border-collapse:collapse;font:13.5px var(--num);min-width:540px;width:100%}
+.m-tbl th,.m-tbl td{padding:5px 10px;text-align:right;white-space:nowrap}
+.m-tbl th:first-child,.m-tbl td:first-child{text-align:left}
+.m-tbl thead th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);border-bottom:2px solid var(--line2);vertical-align:bottom}
+.m-tbl tr.cat td,.m-tbl tr.cat th{font-weight:700;background:#E9EDF2}
+.m-tbl tr.bad td,.m-tbl tr.bad th{background:#FDE8E8;color:#7A1D1D}
+.m-tbl .n1{display:block;font-weight:600;font-size:13.5px}
+.m-tbl .n2{display:block;font-size:11.5px;color:var(--ink3);margin-top:1px;letter-spacing:.01em}
+.m-tbl tr.tot td,.m-tbl tr.tot th{background:#16243A;color:#fff;font-weight:700}
+.chipx{display:inline-block;font:700 9.5px/15px var(--num);letter-spacing:.08em;text-transform:uppercase;background:#FBD0D0;color:#8A1C1C;border-radius:8px;padding:0 6px;margin-left:6px;vertical-align:1px}
+.m-card{background:#fff;border:1px solid var(--line2);border-left:4px solid var(--neg);border-radius:6px;padding:16px 18px;font-size:14px}
+.m-card h4{margin:0 0 4px;font:600 16px var(--body)}
+.m-card p{margin:0 0 10px;color:var(--ink2)}
+.m-card .hl{color:var(--neg);font-weight:650}
+.m-card .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.m-btn{background:var(--accent);color:#fff;border-radius:4px;padding:7px 12px;font:700 11.5px var(--num);letter-spacing:.08em;text-transform:uppercase;display:inline-block}
+.m-btn.g{background:#fff;color:var(--accent);border:1px solid var(--line2)}
+.m-sel{background:#1D2F4B;border:1px solid #52739C;border-radius:5px;padding:9px 12px;color:#fff;font:14px var(--body);display:flex;justify-content:space-between;gap:10px}
+.m-rail{background:#12233F;border-radius:6px;padding:14px 16px;max-width:330px}
+.m-rail .lbl{font:13px var(--body);color:#B6C2D2;display:flex;justify-content:space-between;margin-bottom:5px}
+.m-rail .lbl b{color:#fff;font-weight:600}
+.m-rail .sub{font:12px var(--num);color:#7E90A8;margin-top:6px;display:flex;gap:12px}
+.note{border-left:3px solid var(--gold);background:#FFFBF0;padding:12px 16px;border-radius:0 6px 6px 0;font-size:14.5px;color:var(--ink2);margin:18px 0}
+.keep li{margin:6px 0}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:18px;margin-top:56px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:0}nav.toc{position:static;max-height:none;margin-bottom:32px;columns:2}.grid3{grid-template-columns:1fr}h1{font-size:32px}dl.r{grid-template-columns:1fr;gap:2px}dl.r dt{margin-top:8px}}
+@media print{nav.toc{display:none}.wrap{display:block}.rec{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <p class="eyebrow">Proposal Tool · design critique</p>
+  <h1>Step 2 — Portfolio Implementation</h1>
+  <p>What the screen is for, where it slows its user down, and 23 specific changes. Read from the generator source (<code>implementation.js</code>, <code>implementation.py</code>) and measured in the running tool on <code>USD Moderate Core</code> with all four sleeves attached, fees on, RDR · Custom.</p>
+</div></header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#read"><b>·</b>Reading the screen</a>
+  <a href="#width"><b>·</b>Where the width goes</a>
+  <a href="#friction"><b>·</b>Where the friction is</a>
+  <a href="#top5"><b>·</b>If you do five things</a>
+  <a href="#table"><b>A</b>The model table</a>
+  <a href="#block"><b>B</b>Blockers</a>
+  <a href="#rail"><b>C</b>The rail</a>
+  <a href="#orient"><b>D</b>Progress &amp; totals</a>
+  <a href="#viz"><b>E</b>The doughnuts</a>
+  <a href="#fees"><b>F</b>Pricing</a>
+  <a href="#a11y"><b>G</b>Accessibility</a>
+  <a href="#resp"><b>H</b>Responsive</a>
+  <a href="#keep"><b>·</b>What to leave alone</a>
+</nav>
+
+<main>
+<h2 id="read"><small>Part one</small>Reading the screen</h2>
+<p class="lede">The rail carries a sleeve picker per category, two overlay tick boxes and the whole pricing block. The document carries a fifteen-column model table, five composition doughnuts, and an export card. It is the second of two steps and it ends in a file.</p>
+<div class="grid3">
+  <div class="fact"><b>Who</b><p>The same PWA or analyst who built the allocation in step 1 — now turning it into something that can actually be bought and quoted.</p></div>
+  <div class="fact"><b>The task</b><p>Attach a sleeve to every category, settle the overlays and the price, clear every blocker, download the workbook. The Excel file is the deliverable; this screen exists to produce it.</p></div>
+  <div class="fact"><b>What makes it different from step 1</b><p>Step 1 asks for a <em>judgment</em> — which portfolio. Step 2 asks for <em>completion</em>: fill every slot, satisfy every constraint, ship. So its two jobs are <strong>showing progress</strong> and <strong>clearing blockers</strong>.</p></div>
+</div>
+<p class="lede">It does the first job three times over and the second one badly. Nearly every recommendation below moves weight from decoration onto the blocker, and onto the figures a PWA is here to read.</p>
+
+<h2 id="width"><small>Part two</small>Where the width goes</h2>
+<p class="lede">Measured on the live page at a 1,230px document width — a 15" laptop with the rail open. The table asks for <strong>1,983px</strong>, so <strong>753px is off-screen</strong>, and the part that is off-screen is the part with the money in it.</p>
+<div class="bars">
+  <h4>The implementation table, 1,983px of it</h4>
+  <p class="k">Column widths as rendered, fees on, four sleeves attached.</p>
+  <div class="bar">
+    <span class="b1" style="width:22.6%">Categories + Products · 449px</span>
+    <span class="b2" style="width:7.5%">Alloc 148</span>
+    <span class="b3" style="width:33.3%">Seven descriptive columns · 660px</span>
+    <span class="b4" style="width:36.6%">Cost · Mgmt · Wtd · Min · Notional · 726px</span>
+  </div>
+  <div class="fold">▲ everything from here rightwards is past the fold at 1,230px — the fold falls inside the descriptive block</div>
+  <div class="barkey">
+    <i><u class="b1"></u>Pinned. Always visible, 36% of the visible width</i>
+    <i><u class="b3"></u>Ticker, Style, Vehicle, Share class, Source, Liquidity, Exp ccy</i>
+    <i><u class="b4"></u>Never visible at rest</i>
+  </div>
+</div>
+<p class="lede">A PWA opens step 2 and sees categories, products, allocation, and seven attributes. <strong>Product cost, management fee, weighted fee, minimum investment and notional are all past the right edge.</strong> The five columns that decide whether this proposal is any good are the five you cannot see without scrolling sideways — and the header scrolls away vertically at the same time.</p>
+
+<h2 id="friction"><small>Part three</small>Where the friction is</h2>
+<ol class="friction">
+  <li><b>The money is off-screen and the header is gone.</b> 753px hidden to the right; and <code>.tbl.impl thead th</code> is <code>position:sticky;top:0</code> inside an <code>overflow-x:auto</code> wrapper, which makes that wrapper the scrollport — so it never sticks. Twenty rows, 613px tall: by the Hedge Funds band you have neither column names nor figures.</li>
+  <li><b>A blocked export names three remedies and one of them does not exist.</b> “Raise the mandate, change the sleeve, or drop the products.” There is no control anywhere on this page that drops a product from a sleeve. A sleeve is atomic.</li>
+  <li><b>The blocker is stated 753px away from the rows it names.</b> Four rows tint pink; the <code>below mandate minimum</code> badge sits in the Notional cell, off-screen. At rest, the breach is communicated by background colour alone.</li>
+  <li><b>Nothing says whether the remedy is realistic.</b> The four breaches here would clear at mandates of $40.9m, $52.6m, $75.9m and <strong>$92.1m</strong> against a $10m mandate. “Raise the mandate” is not the answer and the screen could say so — it has every number it needs.</li>
+  <li><b>“Total” is not a total.</b> With only the auto overlays attached, a bold navy band reads <strong>Total 10.20%</strong>. That looks like a portfolio that does not add up, not like “10.2% implemented so far”.</li>
+  <li><b>Pricing lives below the fold of a 1,552px rail in a 928px window.</b> Include Fees, schedule, level, the custom rates and their editor are all past the four sleeve pickers. Changing a fee level means scrolling the rail every time.</li>
+  <li><b>The fee card opens on the wrong schedule.</b> The rail prices this proposal on <strong>RDR</strong>; <em>View fee card</em> opens with its own selector on <strong>CASP · one rate for every product</strong>, the first entry in its list, with nothing to say it is not what you are paying.</li>
+  <li><b>Progress is announced three times and none of them mentions the blocker.</b> A rail count, a rail bar with a sentence, and a header count with a bar — while the one fact that matters (four positions cannot be bought) appears only at the very bottom of the page.</li>
+</ol>
+
+<h2 id="top5"><small>Part four</small>If you only do five things</h2>
+<table class="top5">
+  <thead><tr><th>Rec</th><th>Change</th><th>Why it's first</th></tr></thead>
+  <tbody>
+    <tr><td>A1</td><td>Fold the seven descriptive columns under the product name</td><td>Recovers 660px and brings every money column on screen at today's width. The doughnuts already summarise exactly those seven fields.</td></tr>
+    <tr><td>B1</td><td>Say what the mandate would have to be, and offer the two remedies that exist</td><td>Turns a dead end into one number. Cheap — the arithmetic is already on the page.</td></tr>
+    <tr><td>A4</td><td>Dock this table's header too</td><td>The mechanism already exists and covers only the step-1 tables. Nearly free.</td></tr>
+    <tr><td>B2</td><td>Put the breach chip beside the product name, in the pinned column</td><td>The blocker becomes visible where the eye already is, not 753px away.</td></tr>
+    <tr><td>C2</td><td>Show what each sleeve costs and holds, in the picker</td><td>The central choice on this screen is currently made blind.</td></tr>
+  </tbody>
+</table>
+<div class="note">Tags: <span class="tag s">S</span> under a day, <span class="tag m">M</span> a few days, <span class="tag l">L</span> a week or more · <span class="tag hi">High impact</span> · <span class="tag bug">Defect</span> means it is wrong today, not merely improvable.</div>
+
+<!-- ───────────── A ───────────── -->
+<h2 id="table"><small>A · The model table</small>Bring the figures back on screen</h2>
+
+<section class="rec" id="A1"><div class="rec-h"><span class="id">A1</span><h3>Fold Ticker, Style, Vehicle, Share class, Source, Liquidity and Exposure under the product name</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>IMPL_TEXT_COLUMNS</code> and the seven <code>&lt;td class="txt"&gt;</code> cells per row in <code>renderView()</code>; <code>.tbl.impl{min-width:1690px}</code>.</dd>
+<dt>Change</dt><dd>One specification line under the name, in a fixed order: <em>ticker · class · vehicle · style · share · source · exposure · liquidity</em>. Fifteen columns become eight; the table needs about 1,320px instead of 1,983px, which fits at today's width with the fee columns on. Rows go from 26px to about 44px.</dd>
+<dt>Why</dt><dd>Those seven columns cost 660px — a third of the table — to carry attributes that almost never decide anything on their own, and they are what pushes cost, fee, minimum and notional past the fold. The argument is stronger here than on the allocation table, because <strong>this page already summarises those exact seven fields</strong> in the five doughnuts beneath it. The table is carrying them per row <em>and</em> in aggregate; only one of those needs to be a column.</dd>
+<dt>Tradeoff</dt><dd class="trade">You lose the ability to run your eye down <em>the vehicle column</em>. The doughnuts answer that in aggregate and the workbook keeps the columns, so what is lost is per-row scanning of a secondary attribute. Rows get taller: about 14 on screen instead of 20. I would take that trade — a shorter table you can read beats a longer one you cannot.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · folded rows, money in view</p>
+<table class="m-tbl"><thead><tr><th>Categories &amp; products</th><th>Alloc %</th><th>Notional</th><th>Prod cost</th><th>Mgmt fee</th><th>Wtd fee</th><th>Min</th></tr></thead>
+<tbody>
+<tr class="cat"><th>Investment Grade Fixed Income · SMA Only</th><td>27.16%</td><td>$2,716,000</td><td></td><td></td><td>17.2bp</td><td></td></tr>
+<tr class="bad"><th><span class="n1">GSAM Core Municipal SMA <span class="chipx">below min</span></span><span class="n2">— · Municipals · SMA · Active · Dis · Internal · USD · Daily</span></th><td>12.22%</td><td>$1,222,000</td><td>0.25%</td><td>0.38%</td><td>7.7bp</td><td>$5,000,000</td></tr>
+<tr><th><span class="n1">GSAM Short Duration SMA</span><span class="n2">— · Short Duration · SMA · Active · Dis · Internal · USD · Daily</span></th><td>5.43%</td><td>$543,000</td><td>0.22%</td><td>0.38%</td><td>3.3bp</td><td>$5,000,000</td></tr>
+<tr class="tot"><th>Implemented total</th><td>100.00%</td><td>$10,000,000</td><td></td><td>—</td><td>74.8bp</td><td></td></tr>
+</tbody></table></div>
+</section>
+
+<section class="rec" id="A2"><div class="rec-h"><span class="id">A2</span><h3>Move Notional next to Allocation</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Column order in <code>renderView()</code>'s <code>&lt;thead&gt;</code> and row builders.</dd>
+<dt>Change</dt><dd>Categories · Products · <strong>Allocation · Notional</strong> · cost · fees · minimum.</dd>
+<dt>Why</dt><dd>Allocation % and Notional are one fact in two units, and they are currently at opposite ends of a 1,983px table — Notional is the widest column at 277px and sits last. Put beside its percentage, the money reads without a journey, and <em>notional against minimum</em> — the comparison the whole breach rule turns on — becomes two adjacent columns rather than one at each end.</dd>
+<dt>Tradeoff</dt><dd class="trade">The workbook's sheet has its own order. I would let the screen differ: this is the same screen-versus-report split already recorded for other surfaces.</dd>
+</dl></section>
+
+<section class="rec" id="A3"><div class="rec-h"><span class="id">A3</span><h3>Dock this table's column headers</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl.impl thead th{position:sticky;top:0}</code> inside <code>.tblwrap{overflow-x:auto}</code>; <code>DOCK_TABLES</code> in <code>core.js</code>.</dd>
+<dt>Change</dt><dd>The sticky rule is inert for the same reason it was on the allocation and risk tables — the horizontally scrolling wrapper becomes the sticky scrollport, and it never scrolls vertically. The docked-header mechanism already exists and lists only <code>['alloc','risk']</code>. Add the implementation table, and give it the same right-edge shadow.</dd>
+<dt>Why</dt><dd>Twenty rows over 613px with fifteen columns, and by the time you are at Hedge Funds the header is gone. It is worse here than in step 1 because the columns are less guessable: <em>Prod cost</em>, <em>Mgmt fee</em> and <em>Wtd fee</em> are three adjacent numbers in three different units.</dd>
+<dt>Tradeoff</dt><dd class="trade">The dock draws from the live header cells, so folding the columns (A1) changes what it draws without any extra work. Do A1 first if both are planned.</dd>
+</dl></section>
+
+<section class="rec" id="A4"><div class="rec-h"><span class="id">A4</span><h3>Give the category band its own figures instead of six empty cells</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>tr.cat</code> in <code>renderView()</code>: <code>&lt;td colspan="implBandSpan()"&gt;&lt;/td&gt;</code> plus three more empty cells.</dd>
+<dt>Change</dt><dd>Put the band's own roll-up where the columns already are: weighted product cost, the sleeve's blended management fee, the count of products, and the notional it already shows. It carries Wtd fee and Notional today and nothing else.</dd>
+<dt>Why</dt><dd>Six categories each spend a full row saying almost nothing, in a table that is short of width and tall with rows. “What does this category cost me” is the question a band is best placed to answer, and it is the unit a PWA actually trades — they swap a <em>sleeve</em>, not a product.</dd>
+</dl></section>
+
+<!-- ───────────── B ───────────── -->
+<h2 id="block"><small>B · Blockers</small>The one thing standing between this screen and its file</h2>
+
+<section class="rec" id="B1"><div class="rec-h"><span class="id">B1</span><h3>Say what the mandate would have to be, and offer only remedies that exist</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag bug">Defect</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The <code>breached</code> branch in <code>renderView()</code> and the <code>.export-gate</code> copy.</dd>
+<dt>Change</dt><dd>For each breach the page already holds the weight and the minimum, so the mandate that would clear it is <code>minimum ÷ weight</code>. State the largest, name the categories to change, and give two buttons: <em>Edit the mandate</em> (opens the mandate dialog) and <em>Change the sleeve</em> (focuses that category's picker). Drop “or drop the products”.</dd>
+<dt>Why</dt><dd>On the scenario I measured, the four breaches clear at $40.9m, $52.6m, $75.9m and $92.1m against a $10m mandate. A PWA reading “raise the mandate” has no way to know they would need to multiply it by nine — so they try it, fail, and try again. One computed number turns a guessing game into a decision: <em>this sleeve cannot be held at this size; change the sleeve</em>. And “drop the products” should not be offered at all, because nothing on this page can do it.</dd>
+<dt>Tradeoff</dt><dd class="trade">The ÷weight figure assumes the weight stays put as the mandate grows, which is true here — weights are fractions of the mandate. Word it as “about”, and it is honest.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · the export card, blocked</p>
+<div class="m-card"><h4>Four positions cannot be bought at this mandate</h4>
+<p><span class="hl">GSAM Short Duration SMA</span> needs $5,000,000 and would hold $543,000. Clearing all four needs a mandate of about <span class="hl">$92m</span>; this one is $10m — so these sleeves cannot be held at this size.</p>
+<p style="font-size:13px">Affected: <b>Investment Grade Fixed Income</b> (3 products) · <b>Hedge Funds</b> (1)</p>
+<div class="acts"><span class="m-btn">Change the Investment Grade sleeve</span><span class="m-btn g">Change the Hedge Funds sleeve</span><span class="m-btn g">Edit the mandate</span></div></div></div>
+</section>
+
+<section class="rec" id="B2"><div class="rec-h"><span class="id">B2</span><h3>Put the breach chip beside the product name, in the pinned column</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The <code>item.belowMinimum</code> badge, currently appended inside the Notional cell; <code>tr.below-min</code>'s pink fill.</dd>
+<dt>Change</dt><dd>A short <code>below min</code> chip after the product name in the <code>.prodcol</code> cell, which is pinned and therefore always on screen. Keep the figures in the Notional cell where they belong; shorten the long badge to a tooltip there.</dd>
+<dt>Why</dt><dd>At rest the reader sees four pink rows and no reason — the explanation is 753px to the right. Even after A1 brings the money into view, the chip belongs next to the thing it is about. It also removes a WCAG 1.4.1 problem: right now, in the default viewport, the only carrier of that information is a background colour.</dd>
+</dl></section>
+
+<section class="rec" id="B3"><div class="rec-h"><span class="id">B3</span><h3>Make the named products in the export card jump to their rows</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The breach list in the gate text; the “and 1 more” truncation.</dd>
+<dt>Change</dt><dd>Render each name as a button that scrolls its row into view and flashes it. Drop the truncation — with four items there is no reason to hide the fourth, and hiding it means the one product the reader cannot see is the one they cannot go and look at.</dd>
+<dt>Why</dt><dd>The card is at the bottom of a long page and names rows several screens up. Today the reader has to scroll back and find them by eye among twenty.</dd>
+</dl></section>
+
+<section class="rec" id="B4"><div class="rec-h"><span class="id">B4</span><h3>Surface the blocker under the table, not only at the foot of the page</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>New strip between the table and <code>.impl-viz</code>; the existing <code>.export-gate</code> text.</dd>
+<dt>Change</dt><dd>A single line directly under the model: <em>“Ready to download”</em>, or the blocker in one sentence with the same two buttons. The export card keeps its full copy.</dd>
+<dt>Why</dt><dd>The reader's attention is on the table — that is where they just changed something. The consequence of that change is currently below five doughnut cards and a horizontal rule. A status line where the work happens closes the loop; the card at the foot is then a confirmation rather than a discovery.</dd>
+</dl></section>
+
+<!-- ───────────── C ───────────── -->
+<h2 id="rail"><small>C · The rail</small>A 1,552px scroll in a 928px window</h2>
+
+<section class="rec" id="C1"><div class="rec-h"><span class="id">C1</span><h3>Collapse the sleeve list once it is complete, so pricing is reachable</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>#tier-sleeves</code>: four pickers, two overlays, then the whole <code>.fee-group</code>.</dd>
+<dt>Change</dt><dd>When every category has a sleeve, roll the picker list into a summary — <em>“4 of 4 · SMA Only, Mutual Funds, Passive, HFM &amp; ART”</em> with an <em>Edit</em>, the pattern the base tier already uses. Pricing then sits on the first screen of the rail instead of the second.</dd>
+<dt>Why</dt><dd>The rail is 1,552px in a 928px viewport. Everything about price — the toggle, the card, the schedule, the level, five custom rates and their editor — is past the fold, behind four selects that are finished. Pricing is the part a PWA revisits; sleeves are the part they set once.</dd>
+<dt>Tradeoff</dt><dd class="trade">One click to change a sleeve later. Worth it: the sleeve is also changeable from the table's pill (C3), and the overlays stay visible.</dd>
+</dl></section>
+
+<section class="rec" id="C2"><div class="rec-h"><span class="id">C2</span><h3>Show what a sleeve costs and holds, in the picker</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.sl-row</code> in <code>renderRail()</code>; the sleeve library entries already carry their products.</dd>
+<dt>Change</dt><dd>Under each select, a line for the sleeve now chosen: product count, weighted all-in cost, and a flag when any product's minimum is above what this category's weight would buy. The same figures in the option labels where they fit.</dd>
+<dt>Why</dt><dd>Choosing between <em>SMA Only</em>, <em>Mutual Funds</em> and <em>Passive</em> is the central act of this screen, and it is currently made blind: the consequence only appears after the choice, in a table whose cost columns are off-screen. Every number needed is already client-side — <code>managementFee()</code> and the products' own costs are what the table's own <code>wtdBp</code> is built from.</dd>
+<dt>Tradeoff</dt><dd class="trade">A cost shown before the model is rebuilt is an estimate at that category's current weight; say “at this weight”. Still far better than nothing.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · a picker that says what it is choosing</p>
+<div class="m-rail">
+  <div class="lbl"><span>Investment Grade Fixed Income</span><b>27.2%</b></div>
+  <div class="m-sel"><span>SMA Only</span><span>⌄</span></div>
+  <div class="sub"><span>3 products</span><span>all-in 0.63%</span><span style="color:#F3A9A2">3 below minimum</span></div>
+</div></div>
+</section>
+
+<section class="rec" id="C3"><div class="rec-h"><span class="id">C3</span><h3>Make the table's sleeve pill change the sleeve, not only remove it</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.pill.p-sleeve</code> with its <code>data-rmsleeve</code> ×, in each <code>tr.cat</code>.</dd>
+<dt>Change</dt><dd>Make the pill itself a button that focuses and opens that category's picker in the rail. Keep the × for removal.</dd>
+<dt>Why</dt><dd>The table is where a PWA sees that a sleeve is wrong; the only thing they can do there is delete it, which empties the category and blocks the export. The natural action — swap it — sends them to the rail to find the right select among four. One of the two things you can do to a sleeve is available in both places; the other, in neither.</dd>
+</dl></section>
+
+<!-- ───────────── D ───────────── -->
+<h2 id="orient"><small>D · Progress &amp; totals</small>Say one thing once, and say the right thing</h2>
+
+<section class="rec" id="D1"><div class="rec-h"><span class="id">D1</span><h3>Label the total row for what it is</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>tr.grand</code>: <code>&lt;th&gt;Total&lt;/th&gt;</code> and <code>t.weight</code>.</dd>
+<dt>Change</dt><dd>Call it <strong>Implemented total</strong>, and while the model is incomplete print the weight as <em>“10.20% of 100%”</em> with the remainder named beside it — <em>“89.80% not yet implemented”</em>.</dd>
+<dt>Why</dt><dd>On a fresh step 2 with only the auto overlays attached, a heavy navy band reads <strong>Total 10.20%</strong>. Every other total in this product sums to 100, so this one reads as a portfolio that does not add up — the most alarming possible way to say “you have not started yet”. It is also the first thing a new user sees on this screen.</dd>
+</dl></section>
+
+<section class="rec" id="D2"><div class="rec-h"><span class="id">D2</span><h3>One progress statement, and let it carry the blocker</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.completion-summary</code> in the document head; <code>.tier-count</code> and <code>.sl-progress</code> in the rail.</dd>
+<dt>Change</dt><dd>Keep the rail's count beside the <em>Sleeves</em> heading and the bar under the list; drop the sentence that repeats them. In the document head, replace the count with the state that actually gates the download: <em>“4 of 4 sleeves · 4 positions below minimum”</em>, in the gate's own colour.</dd>
+<dt>Why</dt><dd>Three progress indicators say the same easy thing, and the hard thing is said once, at the bottom. When everything is attached, all three read 4 of 4 and the screen looks finished — while the export is blocked.</dd>
+</dl></section>
+
+<!-- ───────────── E ───────────── -->
+<h2 id="viz"><small>E · The doughnuts</small>Five cards of equal weight, unequal value</h2>
+
+<section class="rec" id="E1"><div class="rec-h"><span class="id">E1</span><h3>Collapse a single-slice doughnut to a sentence</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>renderDonuts()</code> / <code>DONUT_DIMENSIONS</code>.</dd>
+<dt>Change</dt><dd>When a dimension has one value, draw no ring: print <em>“Source — all Internal”</em> in the card. With two or more, keep the doughnut.</dd>
+<dt>Why</dt><dd>On the measured model, Source is 100% Internal: a full, confident ring carrying one bit of information, given the same 196px and the same visual weight as Vehicle's genuine three-way split. On a fresh step 2 — overlays only — <em>all five</em> are single-value rings reading 100%, which is the least informative the block can be at the exact moment it is most prominent.</dd>
+</dl></section>
+
+<section class="rec" id="E2"><div class="rec-h"><span class="id">E2</span><h3>Fold the block until the model is complete</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The <code>.impl-viz</code> section and its <code>done</code> flag, which today only changes the note.</dd>
+<dt>Change</dt><dd>While incomplete, collapse it to its heading and the note that already exists (“across the 10.20% attached so far”), open on click. Expanded by default once complete.</dd>
+<dt>Why</dt><dd>Composition of a fifth of a portfolio is not a useful read, and the block sits between the table and the export card — so while the model is unfinished it pushes the deliverable, and the reason it is blocked, further off screen. The honest note under the heading is an admission that the charts are premature; act on it.</dd>
+<dt>Tradeoff</dt><dd class="trade">Some will want the composition mid-build to sanity-check a sleeve. A disclosure keeps that one click away rather than removing it.</dd>
+</dl></section>
+
+<!-- ───────────── F ───────────── -->
+<h2 id="fees"><small>F · Pricing</small>Where the price is set and where it is felt</h2>
+
+<section class="rec" id="F1"><div class="rec-h"><span class="id">F1</span><h3>Open the fee card on the schedule the proposal is priced on</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>#feeaxis</code> in <code>renderFeePanel()</code> — its options are <em>CASP · one rate for every product</em>, then <em>RDR · Passive</em>, <em>RDR · Core Active</em>, and so on; it opens at index 0.</dd>
+<dt>Change</dt><dd>Select the entry matching <code>App.feeSchedule()</code>, and under a per-group schedule the fee group with the most weight in the model. Mark the row the proposal prices at, as the tier row already is.</dd>
+<dt>Why</dt><dd>With RDR chosen in the rail, <em>View fee card</em> opens on CASP's table with nothing saying so. A PWA opening the card to check what a client is paying reads the wrong grid — and both grids are plausible five-tier tables of floors, targets and ceilings, so there is no cue that it is wrong.</dd>
+</dl></section>
+
+<section class="rec" id="F2"><div class="rec-h"><span class="id">F2</span><h3>Put the resulting fee beside the control that sets it</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The Fee Level segmented control in <code>feeFields()</code>; <code>totals().bp</code> is already computed each render.</dd>
+<dt>Change</dt><dd>Under the level, the model's weighted fee and what it is in money — <em>“74.8bp · $74,800 a year”</em> — updating as the level changes. Show the delta against the previously chosen level for a moment after a change.</dd>
+<dt>Why</dt><dd>Management, PMG and Custom are chosen in the rail; their entire effect is one number in a column that is off-screen, in a table below the fold. The control that moves the client's fee is the only control here with no visible consequence. The money figure matters more than the basis points to the conversation this proposal is for.</dd>
+</dl></section>
+
+<section class="rec" id="F3"><div class="rec-h"><span class="id">F3</span><h3>Take the delivery version out of the rail</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>feeCardLine()</code> — renders <em>“Card 0.0-placeholder”</em> at the foot of the pricing block.</dd>
+<dt>Change</dt><dd>Keep it inside the fee card, where the header already carries the delivery, the as-of date and the placeholder warning. In the rail, if anything, show only the warning.</dd>
+<dt>Why</dt><dd>“Card 0.0-placeholder” is a build identifier sitting where a PWA looks for a price. The same fact is stated properly one click away, with a date and a coloured flag.</dd>
+</dl></section>
+
+<!-- ───────────── G ───────────── -->
+<h2 id="a11y"><small>G · Accessibility</small>Specific gaps</h2>
+
+<section class="rec" id="G1"><div class="rec-h"><span class="id">G1</span><h3>A breach must not be colour alone in the default viewport</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl.impl tr.below-min</code> (a <code>#FDE8E8</code> fill) and the badge inside the Notional cell, 753px to the right.</dd>
+<dt>Change</dt><dd>B2 fixes it — the chip beside the pinned product name. Until then, at minimum give the row a left edge rule and a <code>&lt;th&gt;</code>-side marker.</dd>
+<dt>Why</dt><dd>As it stands, without scrolling sideways, “this position cannot be bought” is carried by a pale pink background and nothing else. WCAG 1.4.1, and the pink is subtle enough to be missed on a dim projector in a meeting room.</dd>
+</dl></section>
+
+<section class="rec" id="G2"><div class="rec-h"><span class="id">G2</span><h3>Replace the padlock emoji on auto-attached sleeves</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The <code>' 🔒'</code> appended to the sleeve pill for an auto category, with no label.</dd>
+<dt>Change</dt><dd>An inline SVG with <code>role="img"</code> and a label — “attached by rule” — or simply the words. Give the pill a <code>title</code> saying why it cannot be changed.</dd>
+<dt>Why</dt><dd>Emoji are announced inconsistently across screen readers and platforms: “locked”, “lock”, the raw codepoint, or nothing. It is also the only explanation on screen for why two categories have no picker in the rail — worth spelling out for everyone, not just for assistive tech.</dd>
+</dl></section>
+
+<section class="rec" id="G3"><div class="rec-h"><span class="id">G3</span><h3>Announce the model's state when it changes, not just its parts</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The live regions in <code>core.js</code>; the gate text in <code>renderView()</code>.</dd>
+<dt>Change</dt><dd>On attaching or removing a sleeve, announce the consequence as well as the act: <em>“Passive attached to Public Equity. 4 of 4 categories. Export blocked: 4 positions below minimum.”</em></dd>
+<dt>Why</dt><dd>A sighted user learns the export is blocked by seeing the card change colour at the foot of the page. A screen-reader user has no equivalent, and the gate text is only read when focus reaches the download button — by which point the reason is several hundred words away from the action that caused it.</dd>
+</dl></section>
+
+<!-- ───────────── H ───────────── -->
+<h2 id="resp"><small>H · Responsive</small>Two pinned columns take half the screen</h2>
+
+<section class="rec" id="H1"><div class="rec-h"><span class="id">H1</span><h3>Unpin the Products column below the stacking breakpoint</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl.impl .prodcol{position:sticky;left:var(--impl-c1,248px)}</code> and <code>publishPinnedColumnWidth()</code>.</dd>
+<dt>Change</dt><dd>Under about 1,000px, pin only the first column and cap it; let Products scroll with the rest. Cap the first column the way the allocation table now does and let its labels wrap.</dd>
+<dt>Why</dt><dd>At an 840px document width the two pinned columns measure 449px — 53% of everything visible — while 1,143px of the table is hidden. Two frozen columns and a 391px window onto thirteen more is not a table you can read; it is two labels and a peephole.</dd>
+</dl></section>
+
+<section class="rec" id="H2"><div class="rec-h"><span class="id">H2</span><h3>Reconsider keeping the whole rail on step 2 when narrow</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The narrow rail summary, which deliberately applies to step 1 only — “step 2 keeps the whole rail: its pickers are the work there”.</dd>
+<dt>Change</dt><dd>Apply it once every sleeve is attached, with the summary line reading the sleeve count and the fee level. Before that, keep the full rail — the reasoning for step 1 holds while there is still something to pick.</dd>
+<dt>Why</dt><dd>At 896px the rail stacks above the document at its full 1,552px, so a finished set of controls occupies nearly two screens before the model begins. The condition that justified the exception — that the pickers are the work — stops being true the moment they are all answered, which is exactly when C1 would have collapsed them anyway.</dd>
+<dt>Tradeoff</dt><dd class="trade">Pricing then lives behind the summary's <em>Edit</em> on a tablet. Acceptable if F2 puts the resulting fee in the summary line, so the number is visible even when the control is not.</dd>
+</dl></section>
+
+<h2 id="keep"><small>Finally</small>What to leave alone</h2>
+<p class="lede">This screen gets several hard things right. None of the changes above should cost them.</p>
+<ul class="keep">
+  <li><strong>The export gate's three voices</strong> — working, blocked, failed — wired to the button through <code>aria-describedby</code>, with the button disabled rather than hidden. The wording is the problem, not the mechanism.</li>
+  <li><strong>The breach is a hard block, enforced on the server too.</strong> A position below its minimum cannot be bought, so the materials cannot be produced. Exactly right, and worth the friction.</li>
+  <li><strong>Weights round to exactly 100.00</strong> by largest remainder, and rows that print as zero are dropped after the rounding so the column still closes. The sum can be checked by hand, which is the whole point of a deliverable.</li>
+  <li><strong>The doughnuts take colour from the value's name, not the slice's position</strong> — the same rule the category charts follow, so Passive keeps its hue when it overtakes Active.</li>
+  <li><strong>Shares are of what is attached, and the note says so.</strong> An unfinished model is not allowed to imply it is finished. E2 acts on that honesty rather than contradicting it.</li>
+  <li><strong>The fee card is read-only and says so</strong>, and its tier row is marked <em>this mandate</em>. The card is a delivery; nothing here should be able to edit it.</li>
+  <li><strong>The fee layer's reveal</strong> — rail block and table columns animating together in one pass, with a real leave animation before the cells are destroyed. Fiddly, and it works.</li>
+</ul>
+
+<footer>Measured on branch <code>sleeve-editions</code> at a 1,230px document width, scenario <code>USD Moderate Core</code>, four sleeves attached, fees on, RDR · Custom. Mock-ups are illustrative; the figures in them are the measured ones. No existing files were changed.</footer>
+</main>
+</div>
+</body>
+</html>

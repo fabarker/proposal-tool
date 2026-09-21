@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ten Doors</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --pg:#FBFCFE;--card:#FFFFFF;--sunk:#F2F4F7;
+  --ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--navy:#16243A;--on-accent:#FFFFFF;
+  --pos:#176A33;--amber:#B45309;--neg:#B42318;
+  --pick:#E3EBFA;--pick-ink:#1E4FA3;
+  --hdr-bg:#16243A;--hdr-ink:#FFFFFF;--hdr-kick:#F3C46B;
+  --badge-bg:#16243A;--badge-ink:#FFFFFF;
+  /* the product's own palette - fixed, because the mock-ups depict a
+     light-only application and must not follow this page's theme */
+  --p-bg:#FBFCFE;--p-surface:#FFFFFF;--p-ink:#1C2733;--p-ink2:#5B6B7C;--p-ink3:#8494A4;
+  --p-line:#EEF1F4;--p-line-strong:#D4DAE2;--p-accent:#1F5FBF;--p-navy:#16243A;
+  --p-title:#152135;
+  --cat1:#2a78d6;--cat2:#eb6834;--cat3:#1baf7a;--cat4:#eda100;
+  --cat5:#e87ba4;--cat6:#4a3aa7;--cat7:#e34948;
+  --num:'Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  --body:'Roboto',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+    --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+    --line:#28313D;--line2:#36414F;
+    --accent:#7FA9F0;--navy:#C7D4E6;--on-accent:#11161D;
+    --pos:#6FCB8F;--amber:#E0A93F;--neg:#F08C82;
+    --pick:#1C2B42;--pick-ink:#9DBEF2;
+    --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+    --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+  }
+}
+:root[data-theme="dark"]{
+  --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+  --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+  --line:#28313D;--line2:#36414F;
+  --accent:#7FA9F0;--navy:#C7D4E6;--on-accent:#11161D;
+  --pos:#6FCB8F;--amber:#E0A93F;--neg:#F08C82;
+  --pick:#1C2B42;--pick-ink:#9DBEF2;
+  --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+  --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--ink);font:16px/1.6 var(--body);
+  -webkit-text-size-adjust:100%}
+.wrap{max-width:820px;margin:0 auto;padding-inline:20px}
+
+header.top{background:var(--hdr-bg);color:var(--hdr-ink);padding-block:40px 34px;
+  margin-bottom:30px}
+header.top .kick{font:700 11px/1 var(--num);letter-spacing:.18em;text-transform:uppercase;
+  color:var(--hdr-kick);margin:0 0 12px}
+header.top h1{font:400 clamp(29px,7vw,40px)/1.08 var(--body);letter-spacing:-.025em;
+  margin:0 0 12px;text-wrap:balance}
+header.top p{margin:0;max-width:60ch;opacity:.82;font-size:15.5px}
+
+h2{font:400 clamp(21px,5vw,27px)/1.2 var(--body);letter-spacing:-.02em;margin:44px 0 6px;
+  text-wrap:balance}
+h2 small{display:block;font:700 10.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:8px}
+p.lede{color:var(--ink2);margin:0 0 18px;max-width:64ch}
+code{font:13px var(--num);background:var(--sunk);padding:2px 6px;border-radius:3px;
+  color:var(--ink);letter-spacing:.01em;word-break:break-word}
+
+.howto{border-left:3px solid var(--accent);background:var(--sunk);padding:14px 16px;
+  border-radius:0 7px 7px 0;font-size:14.5px;color:var(--ink2);margin:0 0 6px}
+.howto p{margin:0;max-width:none}
+.howto p+p{margin-top:8px}
+.howto b{color:var(--ink)}
+
+/* ── a card per treatment ── */
+.door-card{background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:18px 18px 16px;margin:14px 0;scroll-margin-top:16px}
+.door-card.now{border-style:dashed;background:transparent}
+.door-card.rec{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.09)}
+.dc-h{display:flex;gap:11px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px}
+.dc-h .n{font:700 12px/1 var(--num);color:var(--badge-ink);background:var(--badge-bg);
+  border-radius:5px;padding:6px 8px;letter-spacing:.05em;flex:none}
+.door-card.rec .dc-h .n{background:var(--accent);color:var(--on-accent)}
+.door-card.now .dc-h .n{background:var(--ink2);color:var(--on-accent)}
+.dc-h h3{font:600 17px/1.3 var(--body);margin:0;letter-spacing:-.005em;flex:1 1 150px}
+.chip{font:700 10px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;
+  border-radius:10px;background:var(--sunk);color:var(--ink2);flex:none}
+.chip.rec{background:var(--pick);color:var(--pick-ink)}
+.why{color:var(--ink2);font-size:14.5px;margin:0 0 13px;max-width:62ch}
+.hov{font-size:13px;color:var(--ink3);margin:11px 0 0}
+.hov b{font:700 9.5px var(--num);letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);
+  margin-right:7px}
+.css{margin:10px 0 0;padding:11px 13px;background:var(--sunk);border-radius:6px;
+  font:12.5px/1.65 var(--num);color:var(--ink2);overflow-x:auto;white-space:pre;letter-spacing:.01em}
+
+/* ── the stage: the product's own ground, at the product's own size ── */
+.stage{background:var(--p-bg);border:1px solid var(--line2);border-radius:8px;
+  padding:20px 18px;display:flex;align-items:stretch;gap:18px;overflow-x:auto;
+  -webkit-overflow-scrolling:touch}
+.pbtn{font-family:var(--num);font-weight:700;font-size:15px;letter-spacing:.02em;
+  padding:12px 30px;border-radius:0;border:1px solid transparent;background:none;
+  line-height:1.4;white-space:nowrap;display:inline-flex;align-items:center;
+  cursor:pointer;transition:.15s;flex:none;position:relative}
+.pcta{font-size:16px;padding:12px 28px 12px 34px;gap:14px;background:var(--p-accent);
+  color:#fff;border-color:var(--p-accent);
+  box-shadow:0 12px 30px -10px rgba(31,95,191,.55)}
+.pcta::after{content:"\2192";font-family:var(--body);font-weight:400}
+.door{margin-left:auto}
+
+/* 00 as built */
+.d0{background:var(--p-surface);color:var(--p-navy);border-color:var(--p-line-strong)}
+.d0:hover{border-color:var(--p-accent);color:var(--p-accent)}
+/* 01 navy outline */
+.d1{background:var(--p-surface);color:var(--p-navy);border:1.5px solid var(--p-navy)}
+.d1:hover{background:var(--p-navy);color:#fff}
+/* 02 navy solid */
+.d2{background:var(--p-navy);color:#fff;border-color:var(--p-navy)}
+.d2:hover{background:#22344F;border-color:#22344F}
+/* 03 accent outline */
+.d3{background:var(--p-surface);color:var(--p-accent);border:1.5px solid var(--p-accent)}
+.d3:hover{background:var(--p-accent);color:#fff}
+/* 04 accent tint */
+.d4{background:#E9F0FB;color:#1A4FA0;border-color:#E9F0FB}
+.d4:hover{background:#DCE7F8;color:#164486}
+/* 05 graphite solid */
+.d5{background:#4A5A6B;color:#fff;border-color:#4A5A6B}
+.d5:hover{background:#3B4959;border-color:#3B4959}
+/* 06 underline only */
+.d6{background:none;color:var(--p-navy);border-color:transparent;padding-inline:4px;
+  text-decoration:underline;text-decoration-color:var(--p-accent);text-decoration-thickness:2px;
+  text-underline-offset:6px}
+.d6:hover{color:var(--p-accent)}
+/* 07 accent left rule */
+.d7{background:var(--p-surface);color:var(--p-navy);border-color:transparent;
+  border-left:3px solid var(--p-accent);padding-left:22px}
+.d7:hover{background:#F4F8FE;color:var(--p-accent)}
+/* 08 spectrum top edge */
+.d8{background:var(--p-surface);color:var(--p-navy);border-color:var(--p-line-strong);
+  padding-top:15px}
+.d8::before{content:"";position:absolute;left:-1px;right:-1px;top:-1px;height:4px;
+  background:linear-gradient(to right,
+    var(--cat1) 0 14.28%,var(--cat2) 14.28% 28.57%,var(--cat3) 28.57% 42.85%,
+    var(--cat4) 42.85% 57.14%,var(--cat5) 57.14% 71.42%,var(--cat6) 71.42% 85.71%,
+    var(--cat7) 85.71% 100%)}
+.d8:hover{border-color:var(--p-ink3)}
+/* 09 gold outline */
+.d9{background:var(--p-surface);color:#8A6520;border:1.5px solid #B7862A}
+.d9:hover{background:#B7862A;color:#fff;border-color:#B7862A}
+/* 10 ghost, framed on hover */
+.d10{background:none;color:var(--p-ink2);border-color:transparent}
+.d10:hover{background:var(--p-surface);color:var(--p-navy);border-color:var(--p-line-strong)}
+
+/* ── the comparison table ── */
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:18px 0;
+  background:var(--card);border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+th{font:700 10px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);
+  text-align:left;padding:11px 13px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:11px 13px;border-top:1px solid var(--line);vertical-align:top}
+td.k{font:700 12px var(--num);color:var(--accent);white-space:nowrap}
+tr.hi td{background:var(--pick)}
+.sw{display:inline-block;width:13px;height:13px;border-radius:3px;vertical-align:-2px;
+  margin-right:6px;border:1px solid rgba(0,0,0,.14)}
+
+ul.q{padding-left:18px;color:var(--ink2);font-size:15px;margin:14px 0}
+ul.q li{margin:9px 0;max-width:62ch}
+ul.q li b{color:var(--ink);font-weight:600}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:16px;
+  margin-top:44px;padding-bottom:34px}
+footer p{margin:0;max-width:none}
+
+@media (max-width:520px){
+  .stage{padding:14px 12px;gap:12px}
+  .door-card{padding:15px 14px 14px}
+  .dc-h h3{flex-basis:100%}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="kick">Landing page &middot; the second door</p>
+    <h1>Ten doors</h1>
+    <p>Ten treatments for <b>Open an Account</b>, each drawn at real size beside the real
+      <b>Start Here</b>, on the page&rsquo;s own ground. Pick by number.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="howto">
+  <p><b>How to read these.</b> Every strip below is the landing page&rsquo;s lower half at
+    1&#8239;:&#8239;1 &mdash; same 50px height, same padding, same square corners, same
+    <code>#FBFCFE</code> ground. The door is pushed to the right edge exactly as it is on the page.</p>
+  <p>On a desktop you can hover each one to see its pressed-state colour; on a phone the
+    <b>Hover</b> line under each card says what it does.</p>
+</div>
+
+<h2><small>Where we are</small>As built today</h2>
+<div class="door-card now" id="d0">
+  <div class="dc-h"><span class="n">NOW</span><h3>White, hairline border</h3>
+    <span class="chip">Current</span></div>
+  <p class="why">A plain surface with the page&rsquo;s standard <code>#D4DAE2</code> hairline. It is
+    correct but anonymous &mdash; at a glance it reads as a disabled control or a form field rather
+    than a way in. That is what we are fixing.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d0">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> border and text go accent blue.</p>
+</div>
+
+<h2><small>The ten</small>Suggestions</h2>
+<p class="lede">Roughly ordered from most conservative to most distinctive. Three are solid, four
+  are outlined, three are minimal.</p>
+
+<div class="door-card rec" id="d1">
+  <div class="dc-h"><span class="n">01</span><h3>Navy outline</h3>
+    <span class="chip rec">Recommended</span></div>
+  <p class="why">Borrows the page&rsquo;s own darkest ink &mdash; the 2px rule above the eyebrow and
+    the title itself are both this navy &mdash; so it introduces no new colour at all. A 1.5px edge
+    instead of 1px gives it enough weight to read as deliberate rather than defaulted.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d1">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> fills solid navy, text goes white.</p>
+  <div class="css">.lp-second{background:var(--surface);color:#16243A;
+  border:1.5px solid #16243A}
+.lp-second:hover{background:#16243A;color:#fff;
+  border-color:#16243A}</div>
+</div>
+
+<div class="door-card" id="d2">
+  <div class="dc-h"><span class="n">02</span><h3>Navy solid</h3>
+    <span class="chip">Heavy</span></div>
+  <p class="why">Equal visual weight to <b>Start Here</b> but a different colour, so the two read as
+    a genuine pair of choices rather than an action and its shadow. The cost is real: two filled
+    buttons at opposite ends of the column compete, and the blue one stops being obviously first.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d2">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> lifts one step to <code>#22344F</code>.</p>
+  <div class="css">.lp-second{background:#16243A;color:#fff;
+  border-color:#16243A}
+.lp-second:hover{background:#22344F;
+  border-color:#22344F}</div>
+</div>
+
+<div class="door-card" id="d3">
+  <div class="dc-h"><span class="n">03</span><h3>Accent outline</h3>
+    <span class="chip">Classic secondary</span></div>
+  <p class="why">The textbook pairing: same colour family as the primary, hollow instead of filled.
+    Unambiguous hierarchy, and the two obviously belong together. The catch is that <em>belonging
+    together</em> is slightly the wrong message &mdash; these are different jobs, not two grades of
+    the same one.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d3">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> fills accent blue, text goes white.</p>
+  <div class="css">.lp-second{background:var(--surface);color:var(--accent);
+  border:1.5px solid var(--accent)}
+.lp-second:hover{background:var(--accent);color:#fff}</div>
+</div>
+
+<div class="door-card" id="d4">
+  <div class="dc-h"><span class="n">04</span><h3>Accent tint, no border</h3>
+    <span class="chip">Soft</span></div>
+  <p class="why">A pale blue surface instead of an outline. Nothing on the page goes grey and
+    hairline-thin, which is the failure mode of the current treatment on a near-white ground. Reads
+    as a surface you press rather than a box you enter.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d4">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> deepens to <code>#DCE7F8</code>.</p>
+  <div class="css">.lp-second{background:#E9F0FB;color:#1A4FA0;
+  border-color:#E9F0FB}
+.lp-second:hover{background:#DCE7F8;color:#164486}</div>
+</div>
+
+<div class="door-card" id="d5">
+  <div class="dc-h"><span class="n">05</span><h3>Graphite solid</h3>
+    <span class="chip">Heavy</span><span class="chip">Neutral</span></div>
+  <p class="why">Solid weight without navy&rsquo;s formality. It steps out of the blue family
+    entirely, so the accent stays unambiguously the primary&rsquo;s property. Quieter than 02 while
+    still being a filled button.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d5">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> darkens to <code>#3B4959</code>.</p>
+  <div class="css">.lp-second{background:#4A5A6B;color:#fff;
+  border-color:#4A5A6B}
+.lp-second:hover{background:#3B4959;border-color:#3B4959}</div>
+</div>
+
+<div class="door-card" id="d6">
+  <div class="dc-h"><span class="n">06</span><h3>Underline only</h3>
+    <span class="chip">Minimal</span></div>
+  <p class="why">No box at all &mdash; the label with a 2px accent rule beneath it. The lower half
+    drops to one button and one line of text, which is the quietest this can get while still
+    pointing at the right edge. The risk is real: with nothing enclosing it and 700px of space to
+    its left, it may not read as pressable.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d6">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> text goes accent blue, underline stays.</p>
+  <div class="css">.lp-second{background:none;border-color:transparent;
+  color:#16243A;padding-inline:4px;
+  text-decoration:underline;
+  text-decoration-color:var(--accent);
+  text-decoration-thickness:2px;
+  text-underline-offset:6px}</div>
+</div>
+
+<div class="door-card" id="d7">
+  <div class="dc-h"><span class="n">07</span><h3>Accent left rule</h3>
+    <span class="chip">Minimal</span></div>
+  <p class="why">A box that is only a box on one side. The 3px bar echoes the square accent markers
+    on the two bullet points directly above it and the colour bar above those &mdash; the page
+    already speaks in short rectilinear marks, and this is one more.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d7">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> faint blue wash behind, text goes accent.</p>
+  <div class="css">.lp-second{background:var(--surface);
+  border-color:transparent;color:#16243A;
+  border-left:3px solid var(--accent);padding-left:22px}
+.lp-second:hover{background:#F4F8FE;color:var(--accent)}</div>
+</div>
+
+<div class="door-card" id="d8">
+  <div class="dc-h"><span class="n">08</span><h3>Spectrum top edge</h3>
+    <span class="chip">Distinctive</span></div>
+  <p class="why">A 4px strip across the top in all seven category colours, tying the button to the
+    colour bar directly above it &mdash; the one piece of identity the page owns. Unmistakably this
+    product and nothing else. It is also the only option here that could date badly, or read as
+    decorative on a button that is not about categories.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d8">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> hairline darkens to <code>#8494A4</code>; the strip holds.</p>
+  <div class="css">.lp-second{background:var(--surface);color:#16243A;
+  border-color:var(--line-strong);
+  padding-top:15px;position:relative}
+.lp-second::before{content:"";position:absolute;
+  left:-1px;right:-1px;top:-1px;height:4px;
+  background:linear-gradient(to right,
+    var(--cat-1) 0 14.28%, ... var(--cat-7) 85.71% 100%)}</div>
+</div>
+
+<div class="door-card" id="d9">
+  <div class="dc-h"><span class="n">09</span><h3>Gold outline</h3>
+    <span class="chip">Distinctive</span><span class="chip">New colour</span></div>
+  <p class="why">A warm counterpoint that says <em>different track</em> without raising its voice.
+    The tool has no gold anywhere else, which is both the appeal and the cost &mdash; it introduces
+    a colour the design system would then have to account for.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d9">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> fills gold, text goes white.</p>
+  <div class="css">.lp-second{background:var(--surface);color:#8A6520;
+  border:1.5px solid #B7862A}
+.lp-second:hover{background:#B7862A;color:#fff}</div>
+</div>
+
+<div class="door-card" id="d10">
+  <div class="dc-h"><span class="n">10</span><h3>Ghost, framed on hover</h3>
+    <span class="chip">Minimal</span></div>
+  <p class="why">At rest it is only a label in secondary ink at the right edge; it becomes a button
+    the moment you reach for it. The lightest possible footprint, and it keeps the lower half
+    visually down to one object. Same discoverability risk as 06, slightly worse &mdash; there is
+    not even an underline to mark it as live.</p>
+  <div class="stage">
+    <button type="button" class="pbtn pcta">Start Here</button>
+    <button type="button" class="pbtn door d10">Open an Account</button>
+  </div>
+  <p class="hov"><b>Hover</b> white fill and the standard hairline appear.</p>
+  <div class="css">.lp-second{background:none;color:var(--ink-2);
+  border-color:transparent}
+.lp-second:hover{background:var(--surface);
+  color:#16243A;border-color:var(--line-strong)}</div>
+</div>
+
+<h2><small>Side by side</small>What each one costs</h2>
+
+<div class="scroller">
+<table>
+  <thead><tr><th>&nbsp;</th><th>Treatment</th><th>Weight</th><th>New colour</th><th>Reads as pressable</th><th>Main risk</th></tr></thead>
+  <tbody>
+    <tr><td class="k">NOW</td><td><span class="sw" style="background:#fff"></span>White hairline</td><td>Light</td><td>No</td><td>Weakly</td><td>Anonymous</td></tr>
+    <tr class="hi"><td class="k">01</td><td><span class="sw" style="background:#16243A"></span>Navy outline</td><td>Medium</td><td>No</td><td>Yes</td><td>Understated on a busy day</td></tr>
+    <tr><td class="k">02</td><td><span class="sw" style="background:#16243A"></span>Navy solid</td><td>Heavy</td><td>No</td><td>Yes</td><td>Competes with the primary</td></tr>
+    <tr><td class="k">03</td><td><span class="sw" style="background:#1F5FBF"></span>Accent outline</td><td>Medium</td><td>No</td><td>Yes</td><td>Implies the same job</td></tr>
+    <tr><td class="k">04</td><td><span class="sw" style="background:#E9F0FB"></span>Accent tint</td><td>Medium</td><td>No</td><td>Yes</td><td>Can look like a notice</td></tr>
+    <tr><td class="k">05</td><td><span class="sw" style="background:#4A5A6B"></span>Graphite solid</td><td>Heavy</td><td>Yes</td><td>Yes</td><td>Grey reads as disabled</td></tr>
+    <tr><td class="k">06</td><td><span class="sw" style="background:#1F5FBF"></span>Underline only</td><td>Light</td><td>No</td><td>Maybe</td><td>Easily missed</td></tr>
+    <tr><td class="k">07</td><td><span class="sw" style="background:#1F5FBF"></span>Accent left rule</td><td>Light</td><td>No</td><td>Maybe</td><td>Unbalanced at the right edge</td></tr>
+    <tr><td class="k">08</td><td><span class="sw" style="background:linear-gradient(to right,#2a78d6,#1baf7a,#eda100,#e34948)"></span>Spectrum edge</td><td>Medium</td><td>No</td><td>Yes</td><td>Decorative, could date</td></tr>
+    <tr><td class="k">09</td><td><span class="sw" style="background:#B7862A"></span>Gold outline</td><td>Medium</td><td>Yes</td><td>Yes</td><td>A colour to maintain</td></tr>
+    <tr><td class="k">10</td><td><span class="sw" style="background:#5B6B7C"></span>Ghost on hover</td><td>Lightest</td><td>No</td><td>No</td><td>Invisible on touch</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><small>If you want one</small>What I&rsquo;d pick</h2>
+<p class="lede"><b>01, navy outline.</b> It is the only option that adds weight without adding a
+  colour: navy is already the page&rsquo;s rule and its title, so the lower half gains definition
+  and the palette stays at two. It also keeps the hierarchy honest &mdash; blue means <em>go</em>
+  and belongs to <b>Start Here</b>, while navy means <em>this is the other thing</em>.</p>
+<p class="lede">If you want the page to have a signature rather than just be correct, <b>08</b> is
+  the one worth the argument. If you think the second door is currently too loud for how rarely it
+  is used, <b>07</b> is the honest way down &mdash; not <b>10</b>, which disappears entirely on a
+  touch screen.</p>
+
+<h2><small>Worth deciding</small>Two things these don&rsquo;t settle</h2>
+<ul class="q">
+  <li><b>The label.</b> Every mock-up says <em>Open an Account</em>. Since the caption came off,
+    nothing on the landing page says this needs a delivered proposal. <em>Open an Account</em> is
+    the shortest honest label; <em>Account Opening Request</em> is the accurate one and about 40%
+    wider.</li>
+  <li><b>Whether it should pulse.</b> <b>Start Here</b> carries a slow shadow pulse and an expanding
+    halo. Nothing here borrows it, on purpose &mdash; two pulsing buttons is one too many &mdash;
+    but a single quiet lift on hover would be cheap to add to whichever you pick.</li>
+</ul>
+
+<footer>
+  <p>Epsilon Phi &middot; Proposal Tool &middot; landing page, second door. Drawn against the built
+    CSS on branch <code>sleeve-editions</code>, 21 September 2026. Colours are the tool&rsquo;s own
+    tokens; type is Roboto Condensed standing in for GS Sans Condensed, so the letterforms are
+    close but not exact.</p>
+</footer>
+
+</div>
+
+</body>
+</html>

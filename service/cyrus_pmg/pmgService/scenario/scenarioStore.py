@@ -232,11 +232,15 @@ def recordColumn(scenarioId: str, key: PortfolioKey, role: str) -> dict:
 
 
 def removeColumn(scenarioId: str, key: PortfolioKey) -> dict:
-    """Remove a comparison column. The base cannot be removed (spec 2.7)."""
+    """Remove a comparison column. The proposed portfolio cannot be removed (spec 2.7).
+
+    A page never asks: it replaces the proposed portfolio by recording a new
+    one, which this module does in a single write (D102).
+    """
     keyStr = key.toStr()
     with _lock:
         state = getScenario(scenarioId)
         if keyStr == state['base']:
-            raise ValidationError('key', 'The base portfolio cannot be removed.')
+            raise ValidationError('key', 'The proposed portfolio cannot be removed.')
         state['comparisons'] = [c for c in state['comparisons'] if c != keyStr]
         return _save(state)

@@ -39,7 +39,8 @@ function paint() {
   if (left <= 0) {
     pop.innerHTML = '<button type="button" class="pop-close" aria-label="Close">×</button>'
       + '<h4>Add comparison</h4>'
-      + '<p class="pop-full">All three comparison slots are in use. Remove one from the rail '
+      + '<p class="pop-full">Every comparison slot is in use - all '
+      + (App.opt('rules.maxPortfolios', 4) - 1) + '. Remove one with the × on its column '
       + 'to free a slot.</p>'
       + '<div class="pop-actions"><button type="button" class="btn btn-ghost" id="pdone">'
       + 'Done</button></div>';
@@ -61,7 +62,7 @@ function paint() {
         var why = '';
         var enabled = true;
         if (probe) {
-          if (!App.available(probe)) { enabled = false; why = ' — unavailable'; }
+          if (!App.available(probe)) { enabled = false; why = ' — ' + App.whyUnavailable(cur.allocationType, cur.excludeRealAssets, r); }
           else if (App.used(probe)) { enabled = false; why = ' — already added'; }
         }
         return '<option value="' + App.esc(r) + '"' + (r === cur.riskLevel ? ' selected' : '')
@@ -73,6 +74,10 @@ function paint() {
     + '<p class="slots">' + left + ' slot' + (left === 1 ? '' : 's') + ' remaining'
     + (justAdded ? ' · <span class="pop-added">' + App.esc(justAdded) + ' added</span>' : '')
     + '</p>'
+    /* risk, then allocation, then the exclusion: the rail's order, and the
+       order the portfolio's name is read in (C1, D54) */
+    + '<div class="field"><label for="pr">Risk Level</label><select id="pr">'
+    + riskOptions + '</select></div>'
     + '<div class="field"><label for="pa">Allocation</label><select id="pa"'
     + (allEquity ? ' disabled' : '') + '>' + allocationOptions + '</select></div>'
     + '<div class="chk"><input type="checkbox" id="pre"'
@@ -86,8 +91,6 @@ function paint() {
         : (cur.allocationType && !canRA)
         ? '<p class="chk-note" id="prenote">Not available — ' + App.esc(cur.allocationType)
           + ' holds no real assets.</p>' : '')
-    + '<div class="field"><label for="pr">Risk Level</label><select id="pr">'
-    + riskOptions + '</select></div>'
     + '<div class="pop-actions">'
     + '<button type="button" class="btn btn-primary" id="padd"' + (ok ? '' : ' disabled') + '>'
     + 'Add to table</button>'
@@ -112,7 +115,7 @@ function open(button) {
   } else {
     pop.style.top = ''; pop.style.left = '';
   }
-  var field = pop.querySelector('#pa');
+  var field = pop.querySelector('#pr');
   if (field) field.focus();
 }
 
@@ -133,18 +136,29 @@ document.addEventListener('click', function (e) {
   if (pop.classList.contains('on')) close();
 });
 
+/* paint() replaces the controls; the one in use keeps the focus */
+function refocus(id) { var el = pop.querySelector('#' + id); if (el && !el.disabled) el.focus(); }
+
 pop.addEventListener('change', function (e) {
   if (e.target.id === 'pa') {
     cur.allocationType = e.target.value;
     cur.excludeRealAssets = false;
     justAdded = '';
-    paint();
-    var risk = pop.querySelector('#pr');
-    if (risk && cur.allocationType && !cur.riskLevel) risk.focus();
+    paint(); refocus('pa');
     return;
   }
-  if (e.target.id === 'pre') { cur.excludeRealAssets = e.target.checked; paint(); return; }
-  if (e.target.id === 'pr') { cur.riskLevel = e.target.value || ''; paint(); return; }
+  if (e.target.id === 'pre') { cur.excludeRealAssets = e.target.checked; paint(); refocus('pre'); return; }
+  if (e.target.id === 'pr') {
+    cur.riskLevel = e.target.value || '';
+    /* an allocation the new level does not hold is no longer an answer */
+    if (cur.allocationType && App.allocationChoices(cur.riskLevel).indexOf(cur.allocationType) < 0) {
+      cur.allocationType = ''; cur.excludeRealAssets = false;
+    }
+    paint();
+    /* on to the allocation when the level needs one and has none yet */
+    refocus(cur.riskLevel && !cur.allocationType && !App.isAllEquityRisk(cur.riskLevel) ? 'pa' : 'pr');
+    return;
+  }
 });
 
 pop.addEventListener('click', function (e) {

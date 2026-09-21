@@ -194,12 +194,15 @@ h2{font-size:clamp(18.5px,1.9vw,23px);letter-spacing:var(--head-ls,-.01em)}
    rather than a synthesised one. Colour is not in v2's rule either; it
    inherits, and ours inherits the same near-black navy from the theme.
    Specificity (0,1,1) carries it over the h1,h2 and h2 rules above. */
-h2.stage-title{font-family:var(--f-num);font-size:39px;font-weight:480;
-  letter-spacing:-.012em;line-height:1.08;margin:0}
+h2.stage-title{font-family:var(--f-num);font-size:26px;font-weight:480;
+  letter-spacing:-.008em;line-height:1.15;margin:0}
 /* Its standfirst, from the same v2 rule set (.stage-heading>div>p:last-child):
    750px measure, 10px above, 16px, muted - our --ink-2 in place of v2's
    --muted, the two being the same grey to within a point per channel. */
-.stage-sub{max-width:750px;margin:10px 0 0;color:var(--ink-2);font-size:16px}
+/* The standfirst rides the title's own line (B3): this is a working surface
+   opened again and again, and its title is wayfinding, not a headline. */
+.stage-sub{max-width:750px;margin:6px 0 0;color:var(--ink-2);font-size:15px}
+.stage-title .stage-sub{margin:0 0 0 10px;color:var(--ink-3);font-weight:400;letter-spacing:0;white-space:nowrap}
 /* v2's .eyebrow, with its .stage-heading margin override folded in - ours only
    ever appears above a stage title. --accent stands in for v2's --blue-600,
    the two being the same mid blue in the same role. */
@@ -208,7 +211,7 @@ h2.stage-title{font-family:var(--f-num);font-size:39px;font-weight:480;
 /* The stage heading stands off its table further than a section head does:
    it is a 39px title with a standfirst under it, not a 23px label. Scoped so
    At a glance and Risk dashboard keep the 14px of .sec-head. */
-.sec-head.stage-head{margin-bottom:30px;position:relative}
+.sec-head.stage-head{margin-bottom:14px;position:relative}
 /* The waiting indicator. Absolutely positioned on purpose: the pill it
    replaces lived in the notices strip, which is hidden when empty, so every
    resolve grew the strip - its own height plus a 20-30px margin - and pushed
@@ -218,7 +221,7 @@ h2.stage-title{font-family:var(--f-num);font-size:39px;font-weight:480;
   border:2px solid var(--line-strong);border-top-color:var(--accent);
   border-radius:50%;animation:resolvespin .7s linear infinite}
 @keyframes resolvespin{to{transform:rotate(360deg)}}
-@media (max-width:640px){h2.stage-title{font-size:32px}.stage-sub{font-size:14px}}
+@media (max-width:640px){h2.stage-title{font-size:22px}.stage-sub{font-size:13.5px}.stage-title .stage-sub{display:block;margin:2px 0 0;white-space:normal}}
 .sec-note{font-size:14.5px;color:var(--ink-3);max-width:52ch}
 .lede{font-size:16.5px;color:var(--ink-2);max-width:62ch;margin:10px 0 0}
 
@@ -380,6 +383,9 @@ tr.cat th,tr.cat td{font-weight:700;color:var(--ink);background:var(--cat-bg);
    the columns in auto layout, and a block child would claim the whole column
    and wreck the measurement. */
 .cw{display:inline-block;vertical-align:top;overflow:hidden;max-width:100%}
+/* a figure that has just changed (F1): ruled in the accent, and let go */
+.cw.chg{animation:cwchg 1.8s ease-out}
+@keyframes cwchg{0%,35%{box-shadow:inset 0 -2px 0 var(--accent)}100%{box-shadow:inset 0 -2px 0 rgba(31,95,191,0)}}
 tr.asset th{padding-left:16px}
 tr.asset td,tr.asset th{color:var(--ink-row,var(--ink-2))}
 tr.total th,tr.total td{font-weight:800;color:var(--ink);background:var(--cat-bg);
@@ -600,6 +606,15 @@ main{display:block}
    with its own line box. A flex row centres the two on each other exactly. */
 .col-head{display:inline-flex;align-items:center;justify-content:flex-end;gap:1px;
   max-width:100%;text-align:right}
+/* A column's mark and name (A2, D1). The mark is the portfolio's disc on the
+   risk and return chart, in the chart's two colours, so the two are read
+   against each other; the proposed column says what it is over its name. */
+.col-mark{flex:0 0 auto;width:17px;height:17px;border-radius:50%;margin-right:6px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:#1F5FBF;color:#fff;font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:0;line-height:1}
+.col-mark.is-prop{background:#16243A}
+.col-nm{display:inline-block;text-align:right;min-width:0}
+.col-role{display:block;font-size:9.5px;font-weight:700;letter-spacing:.16em;color:var(--accent);line-height:1.2;margin-bottom:1px}
 .col-rm{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
   width:24px;height:24px;padding:0;margin:0 -4px 0 1px;
   border:0;border-radius:3px;background:none;color:var(--neg,#B42318);
@@ -608,6 +623,45 @@ main{display:block}
 .col-rm:hover{background:var(--surface-2)}
 .col-rm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
+/* ── the docked column heads (B1) ── */
+.col-dock{position:fixed;z-index:50;overflow:hidden;pointer-events:none;
+  background:var(--head-bg);border-bottom:2px solid var(--line-strong);box-shadow:0 6px 14px -8px rgba(16,24,40,.28)}
+.col-dock[hidden]{display:none}
+.dock-cell{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:flex-end;
+  padding:var(--cell-pad);padding-top:0;padding-bottom:0;box-sizing:border-box;white-space:normal;line-height:1.2;overflow:hidden;
+  font-family:var(--f-display);font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--head-ink)}
+.dock-cell.is-txt{justify-content:flex-start}
+.dock-cell.is-fixed{background:var(--head-bg);z-index:1}
+/* ── a table that carries on to the right (H3) ── */
+.sec{position:relative}
+.tbl-more{position:absolute;width:14px;pointer-events:none;z-index:4;opacity:0;transition:opacity 150ms linear;
+  background:radial-gradient(farthest-side at 100% 50%,rgba(12,24,44,.24),rgba(12,24,44,0))}
+.tbl-more.on{opacity:1}
+/* ── the way on (B4) ── */
+.aa-next{display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap;margin-top:34px;padding:14px 18px;
+  background:var(--surface);border:1px solid var(--line-strong);border-top:2px solid var(--accent);border-radius:var(--radius)}
+.aa-next[hidden]{display:none}
+.aa-next-txt{margin:0;flex:1 1 260px;font-size:14.5px;color:var(--ink-2)}
+.aa-next-txt b{color:var(--ink);font-weight:600}
+/* ── the rail as one line, narrow (H2) ── */
+.rail-sum{display:none}
+@media (max-width:1039px){
+  body.rail-summary .rail{position:sticky;top:0;z-index:58}
+  /* clear of the host's user chip, fixed at the window's top right */
+  body.rail-summary .rail-sum{display:flex;align-items:center;gap:12px;padding:10px 104px 10px 16px}
+  .rail-sum-txt{flex:1;min-width:0;font-size:13.5px;color:var(--rail-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rail-sum-txt b{color:var(--rail-ink);font-weight:600}
+  body.rail-summary:not(.rail-editing) .rail-brand,
+  body.rail-summary:not(.rail-editing) .rail-tiers,
+  body.rail-summary:not(.rail-editing) .rail-admin-bar{display:none}
+  /* open for editing it is a long form again, and must scroll with the page */
+  body.rail-summary.rail-editing .rail{position:static}
+}
+/* ── narrow tables: the label column wraps inside its cap (H3) ── */
+@media (max-width:700px){
+  .tbl tbody th,.tbl tbody th .cw{white-space:normal}
+  .tbl tbody th{line-height:1.25}
+}
 /* Collapsing the rail. It folds to a strip that still carries the control, so
    the way back is always in view, and the document reclaims the width. */
 .rail-brand{position:relative;padding-right:44px}
@@ -713,13 +767,12 @@ RAIL_CSS = """
   background:var(--rail-bg);z-index:2}
 .rail-brand>b{display:block;font-family:var(--f-num);font-size:22px;color:var(--rail-ink);
   font-weight:var(--brand-weight,700);letter-spacing:-.01em}
-/* The product line under the group name is styled to match the
-   placeholder-rates flag exactly, on request: the same 12px semibold gold at
-   the same line height, sentence case and unspaced, inheriting the body face
-   as the flag does. It mirrors .fee-flag in implementation.py, and the values
-   are repeated rather than shared so that restyling the warning does not
-   silently restyle the brand. display:block is the one addition, and is
-   structural - .fee-flag is a <p>, this a <span>. */
+/* The product line under the group name was styled to match the
+   placeholder-rates flag exactly, on request: the same semibold gold at the
+   same line height, sentence case and unspaced, inheriting the body face. The
+   values were repeated rather than shared so that restyling the warning could
+   not silently restyle the brand - which is why this survives the flag's own
+   removal (D104) unchanged. */
 .rail-brand>span{display:block;margin:2px 0 0;font-size:15px;font-weight:600;
   color:var(--rail-eyebrow,#F3C46B);line-height:1.4}
 .rail-body{padding:16px 20px 30px;flex:1}
@@ -753,7 +806,7 @@ RAIL_CSS = """
 .rail-foot{padding:14px 20px;border-top:1px solid var(--rail-line);font-family:var(--f-num);
   font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--rail-ink-3)}
 body.has-rail .shell{margin-left:var(--rail-w);max-width:1320px}
-@media (max-width:1040px){
+@media (max-width:1039px){
   .rail{position:static;width:auto;border-right:none;border-bottom:1px solid var(--rail-line-strong)}
   .rail-brand{position:static}
   .rail .fieldgrid{grid-template-columns:repeat(auto-fit,minmax(205px,1fr))}
@@ -808,6 +861,9 @@ PAGE_SHELL = """<!doctype html>
             aria-controls="rail-tiers" aria-label="Collapse the scenario panel"
             title="Collapse the scenario panel"><span aria-hidden="true">&#171;</span></button>
   </div>
+  <!-- Narrow, on step 1, once the proposed portfolio exists: the rail as one
+       line (H2). Not shown wide. -->
+  <div class="rail-sum" id="railsum"></div>
   <div class="rail-tiers" id="rail-tiers">
     <div class="tier" id="tier-mandate"></div>
     <div class="tier" id="tier-basis"></div>
@@ -908,25 +964,42 @@ PAGE_SHELL = """<!doctype html>
             <li>Compare Different Portfolio Allocation and Implementation Options</li>
             <li>Finesse Pricing Levels via a Range of Pre-Set Plans or Set Your Own Bespoke Pricing</li>
           </ul>
-          <button type="button" class="btn btn-primary lp-cta" id="startbtn">Start Here</button>
+          <!-- Two doors, not one nested inside the other. Start Here begins a
+               proposal; Open an Account acts on one already delivered, which is
+               a different job with the opposite precondition - it needs a
+               Proposal UID, so a proposal must already exist (D107). -->
+          <div class="lp-doors">
+            <button type="button" class="btn btn-primary lp-cta" id="startbtn">Start Here</button>
+            <button type="button" class="btn lp-second" id="lpaccount">Open an Account</button>
+          </div>
         </div>
       </div>
     </div>
+    <!-- The library, for an admin who came to maintain it rather than to
+         write a proposal (D106). Written by renderEntryLinks and hidden
+         outright for everyone else: an empty strip would be worse than no
+         strip, which is the rule D62 set for the rail's own bar.
+         It sits in the landing grid's own foot row, outside .lp-inner, so it
+         reads as the page's footer rather than as one more line in the stack
+         above it (D108). -->
+    <div class="lp-admin" id="lpadmin" hidden></div>
   </section>
 
   <div class="steps" id="steps" role="tablist" aria-label="Scenario steps">
-    <button type="button" class="step" data-step="aa" role="tab" aria-selected="true">
+    <button type="button" class="step" id="tab-aa" data-step="aa" role="tab" aria-selected="true"
+            aria-controls="view-aa">
       <span class="step-index" aria-hidden="true">1</span>
       <span class="step-label"><strong>Asset allocation</strong><small>Build &amp; compare</small></span>
     </button>
     <span class="step-connector" aria-hidden="true"></span>
-    <button type="button" class="step" data-step="impl" role="tab" aria-selected="false">
+    <button type="button" class="step" id="tab-impl" data-step="impl" role="tab" aria-selected="false"
+            aria-controls="view-impl-wrap" tabindex="-1">
       <span class="step-index" aria-hidden="true">2</span>
       <span class="step-label"><strong>Implementation</strong><small>Sleeves &amp; export</small></span>
     </button>
   </div>
 
-<div id="view-aa">
+<div id="view-aa" role="tabpanel" aria-labelledby="tab-aa">
 {chrome}
 
   <!-- Mandate set, no base chosen yet: the guide writes this card, names the
@@ -936,14 +1009,13 @@ PAGE_SHELL = """<!doctype html>
   <section class="sec">
     <div class="sec-head stage-head">
       <div>
-        <p class="eyebrow">Step 1 of 2</p>
-        <h2 class="stage-title">Strategic Asset Allocation</h2>
-        <p class="stage-sub">Comparing Portfolio Risk and Return Characteristics</p>
+        <h2 class="stage-title">Strategic Asset Allocation <span class="stage-sub">Comparing risk and return</span></h2>
       </div>
       <span class="resolving" id="resolving" aria-hidden="true" hidden></span>
     </div>
     <div class="tblwrap accent-top" tabindex="0" aria-label="Allocation table, scrolls horizontally">
       <table class="tbl alloc" id="alloc"></table></div>
+    <span class="tbl-more" id="alloc-more" aria-hidden="true"></span>
   </section>
 
   <section class="sec viz">
@@ -971,11 +1043,20 @@ PAGE_SHELL = """<!doctype html>
     </div>
     <div class="tblwrap" tabindex="0" aria-label="Risk dashboard, scrolls horizontally">
       <table class="tbl risk" id="risk"></table></div>
+    <span class="tbl-more" id="risk-more" aria-hidden="true"></span>
   </section>
+
+  <!-- The way on (B4): what is being proposed, and the door to step 2, where
+       the reader finishes rather than only where they began. -->
+  <div class="aa-next" id="aa-next" hidden></div>
 {postamble}
 </div>
 
-<div id="view-impl-wrap" hidden>
+<!-- The column heads, docked while a table passes beneath them (B1). Drawn
+     from the live heads; hidden from assistive tech, which has the real ones. -->
+<div class="col-dock" id="coldock" aria-hidden="true" hidden></div>
+
+<div id="view-impl-wrap" role="tabpanel" aria-labelledby="tab-impl" hidden>
   <section class="sec" id="view-impl"></section>
 </div>
 
@@ -993,6 +1074,7 @@ PAGE_SHELL = """<!doctype html>
 <div id="feeDialog" hidden></div>
 <div id="priceDialog" hidden></div>
 <div id="customDialog" hidden></div>
+<div id="greetDialog" hidden></div>
 <div id="repoDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>

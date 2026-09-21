@@ -1298,7 +1298,10 @@ async function apiFetch(path, opts) {
     disabled and unmarked: two marks competing say nothing about which to answer first.
     Answering the basis enables the base tier and moves the mark to Implementation Type, then
     Risk Level, then Allocation; resolving an allocation reveals the document and unlocks step 2,
-    which then pulses until it is opened. On step 2 the sleeve pickers are guided the same way:
+    which then pulses until it is opened. The first time in a browser session that step 2 is opened
+    from the step nav, the document dims, the rail stays lit, and a card against it says that sleeves
+    are chosen there and which categories still need one; only its OK closes it, and OK moves focus to
+    the first picker (D97). On step 2 the sleeve pickers are guided the same way:
     the first without a sleeve is marked, and the mark and focus move down the rail as each is
     answered, until every category has one &mdash; once per scenario (D95). How the next control is shown, and how focus follows
     it, is &sect;10.2. The scenario
@@ -1489,7 +1492,7 @@ async function apiFetch(path, opts) {
           rule; any column now invalid is <strong>dropped with an announcement</strong>.</td></tr>
       <tr><td><strong>Scenario basis</strong></td><td>Currency, Hedging</td>
         <td><strong>Rebuilds every column</strong> &mdash; confirmation required, &sect;11.4</td></tr>
-      <tr><td><strong>Base portfolio</strong></td>
+      <tr><td><strong>Proposed portfolio</strong> <em>(was Base portfolio, D101)</em></td>
         <td>Allocation select, Exclude RE tick box, Exclude TAA tick box, Risk level</td>
         <td>Replaces column 1. A comparison duplicating it is dropped. <strong>Invalidates any
           implementation</strong> (&sect;11.6).</td></tr>
@@ -1665,6 +1668,15 @@ portfolio total fee = Σ weighted fee</code></pre>
   </table></div>
   <p><strong>Notional is taken against the mandate size, not the top account size.</strong></p>
 
+  <div class="rule"><p><strong>The workbook locks its figures, not its presentation.</strong>
+    Every sheet is protected, so no cell can be edited; <strong>formatting, column widths, row
+    heights, sorting and filtering stay available</strong>, since none of them changes a number.
+    It is <strong>password protected</strong> (D104). The password is a convention, not a secret:
+    Excel stores a 16-bit hash, the file is a zip, and nothing in the workbook is encrypted. What
+    it buys is that unprotecting a delivered sheet is deliberate rather than accidental &mdash; the
+    point remains that a figure edited by accident must not come back quoted as ours. Every sheet
+    carries it, including the hidden chart data. Deviations D98, D104.</p></div>
+
   <h3><span class="n">8.5</span>Composition doughnuts</h3>
   <p>A row of five small multiples between the table and the download, showing how the
     implemented money divides across each product attribute: <em>Style</em>, <em>Vehicle</em>,
@@ -1716,10 +1728,19 @@ portfolio total fee = Σ weighted fee</code></pre>
   <ul>
     <li>First column <code>position: sticky; left: 0</code> with a right rule.</li>
     <li><code>thead th</code> is <code>position: sticky; top: 0</code>.</li>
-    <li>The base column is headed <strong>Proposed Portfolio</strong> &mdash; it is the portfolio
-      being proposed, and the comparisons are what it is proposed against. Its derived name is
-      the hover tooltip and the <code>aria-label</code>, so it reaches assistive tech without a
-      hover. <em>Was: the derived name plus a <code>.b-bind</code> chip reading Base.</em></li>
+    <li>The first column is the portfolio being proposed, and the comparisons are what it is
+      proposed against. It says <strong>Proposed</strong> in a line over its derived name, which it
+      carries in full as every other column does (D101); the rail's tier and the chart legend use
+      the same word, and &ldquo;base&rdquo; is not shown anywhere. Every column has a mark &mdash;
+      <strong>P</strong>, then 1, 2, 3 &mdash; repeated as the portfolio's disc on the risk and return
+      chart. <em>Was: headed &ldquo;Proposed Portfolio&rdquo;, the derived name only a
+      tooltip.</em></li>
+    <li>The column heads are <strong>docked</strong> under the top of the window while a table
+      passes beneath them (D101): one bar for both tables, drawn from the live heads as measured,
+      <code>aria-hidden</code>. The stylesheet's sticky heads never engaged, because the table's
+      wrapper scrolls sideways and so is the box they stick to.</li>
+    <li>The document ends in a bar that names what is being proposed and carries
+      <strong>Continue to Implementation</strong>, which presses the step nav's own button (D101).</li>
     <li><strong>Every portfolio column is exactly the same width</strong>, capped at 260px and
       floored at 120px; the row header sizes to its longest label. A comparison table whose
       columns differ in width reads as though the numbers differ in kind, and an uncapped
@@ -1807,14 +1828,18 @@ portfolio total fee = Σ weighted fee</code></pre>
   </ul>
 
   <h3><span class="n">9.3</span>Implementation table</h3>
-  <p>Thirteen columns. Minimum width <strong>1690px</strong>, so it scrolls horizontally on anything
-    short of a wide desktop.</p>
+  <p>Fifteen columns. Minimum width <strong>1690px</strong>, so it scrolls horizontally on anything
+    short of a wide desktop &mdash; which is why the order matters, and why the column headers are
+    docked under the top of the window while the table passes beneath them (D103), the same bar
+    step 1 uses. The table also carries the right-edge shadow while columns lie beyond it.</p>
   <div class="tw"><table>
     <thead><tr><th>#</th><th>Column</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td><strong>Categories &amp; Asset Classes</strong></td>
+      <tr><td>1</td><td><strong>Asset Class</strong></td>
         <td>Row header. <code>category</code> on category rows, <code>reporting_name</code> indented on
-        product rows (&sect;2.2). Never the asset code.
+        product rows (&sect;2.2). Never the asset code. <em>Was: Categories &amp; Asset Classes
+        (D104); the workbook's own Implementation sheet keeps that heading, the two lists being
+        separate on purpose (D74, D78).</em>
           <strong>Pinned</strong>, sized to its longest label
           (<em>was: 248px</em>)</td></tr>
       <tr><td>2</td><td><strong>Products</strong></td>
@@ -1824,22 +1849,35 @@ portfolio total fee = Σ weighted fee</code></pre>
           publishes it as <code>--impl-c1</code>, which this column's <code>left</code> reads.
           248px survives as the fallback until the first measurement lands.</td></tr>
       <tr><td>3</td><td>Allocation (%)</td><td>2dp, largest-remainder rounded</td></tr>
-      <tr><td>4</td><td>Ticker</td><td>Em dash where the vehicle has none</td></tr>
-      <tr><td>5</td><td>Style</td><td>Pill: Active / Passive</td></tr>
-      <tr><td>6</td><td>Vehicle</td><td>Pill: SMA / ETF / Mutual Fund</td></tr>
-      <tr><td>7</td><td>Source</td><td>Pill: Internal / External</td></tr>
-      <tr><td>8</td><td>Liquidity</td><td>Daily / Monthly / Quarterly / Drawdown</td></tr>
-      <tr><td>9</td><td>Exposure ccy</td><td>USD / EUR / Local</td></tr>
-      <tr><td>10</td><td>Cost</td><td>2dp %</td></tr>
-      <tr><td>11</td><td>Mgmt fee</td><td>2dp %</td></tr>
-      <tr><td>12</td><td>Wtd fee</td><td>bp to 1dp</td></tr>
-      <tr><td>13</td><td>Notional</td><td>Derived from the printed weight</td></tr>
+      <tr><td>4</td><td><strong>Notional</strong></td>
+        <td>Derived from the printed weight. <strong>Beside its own percentage</strong> (D103):
+          the two are one fact in two units, and at opposite ends of a table this wide the money
+          was only ever reached by scrolling. A position below its minimum prints that minimum
+          under its notional, so the comparison the breach rule turns on is one cell.
+          <em>Was: the last column.</em></td></tr>
+      <tr><td>5</td><td>Ticker</td><td>Em dash where the vehicle has none</td></tr>
+      <tr><td>6</td><td>Style</td><td>Pill: Active / Passive</td></tr>
+      <tr><td>7</td><td>Vehicle</td><td>Pill: SMA / ETF / Mutual Fund</td></tr>
+      <tr><td>8</td><td>Share class</td><td>Dis / Acc; em dash where the vehicle has none</td></tr>
+      <tr><td>9</td><td>Source</td><td>Pill: Internal / External</td></tr>
+      <tr><td>10</td><td>Liquidity</td><td>Daily / Monthly / Quarterly / Drawdown</td></tr>
+      <tr><td>11</td><td>Exposure ccy</td><td>USD / EUR / Local</td></tr>
+      <tr><td>12</td><td>Prod cost</td><td>2dp %</td></tr>
+      <tr><td>13</td><td>Mgmt fee</td><td>2dp %</td></tr>
+      <tr><td>14</td><td>Wtd fee</td><td>bp to 1dp</td></tr>
+      <tr><td>15</td><td>Min Investment</td><td>The product’s own minimum; em dash where it has none</td></tr>
     </tbody>
   </table></div>
-  <p><strong>Both identity columns are pinned</strong>, so category, asset class and product name
-    stay visible while the attribute and money columns scroll. Category rows span columns 3&ndash;9
-    for the sleeve name; the grand total row spans 3&ndash;11. <strong>Every row occupies exactly 13
-    grid columns</strong> &mdash; assert it.</p>
+  <p><strong>Both identity columns are pinned</strong> above 1040px, so category, asset class and
+    product name stay visible while the attribute and money columns scroll. <strong>Below it only
+    the first is</strong> (D103): the pair measured 449px at an 840px document, 53% of everything
+    visible, leaving a 391px window onto thirteen more columns; the category column is capped at
+    34vw there and wraps.</p>
+  <p>A category band fills its own Product cost and Mgmt fee cells with the weighted figures for
+    what it holds, and names its product count beside the sleeve (D103) &mdash; it used to leave
+    six cells empty. Its sleeve name is the way back to the picker that set it. The grand total is
+    headed <strong>Implemented total</strong> and, while the model is incomplete, says what it is a
+    total of. <strong>Every row occupies exactly 15 grid columns</strong> &mdash; assert it.</p>
 
   <h3><span class="n">9.4</span>Sleeve picker</h3>
   <p>One <code>&lt;select&gt;</code> per category in the rail, labelled with the category name and
@@ -1848,8 +1886,12 @@ portfolio total fee = Σ weighted fee</code></pre>
   <ul>
     <li>Placeholder option: <em>&ldquo;Select a sleeve&hellip;&rdquo;</em>.</li>
     <li>A filled row is visually distinguished from an unfilled one.</li>
-    <li>Beneath: <em>&ldquo;<em>n</em> of <em>m</em> categories have a sleeve&rdquo;</em> and a
-      progress bar.</li>
+    <li>Beneath each select, what the chosen sleeve <strong>holds and costs</strong> at that
+      category's weight (D103): the product count, the weighted all-in, and a count of positions
+      below their minimum. <strong>The options carry the sleeve name alone</strong> &mdash; the
+      cost was tried in the labels and taken out again (D104).</li>
+    <li>Beneath the list: a progress bar. The count sits beside the <em>Sleeves</em> heading, and
+      the sentence that repeated both is gone (D103).</li>
   </ul>
 
   <h3><span class="n">9.5</span>Charts</h3>
@@ -1860,9 +1902,10 @@ portfolio total fee = Σ weighted fee</code></pre>
     <em>Edit custom fees</em> beneath it after. The fee card viewer's by-tier grid, pinned to this
     mandate, with one column added on the right.</p>
   <ul>
-    <li><strong>Rows:</strong> CASP as one row, then RDR with a row per fee group, each stating
-      how many of the model's products it prices. The chosen schedule's rows are live; the other
-      schedule's are shown for reference with their Custom cell inert.</li>
+    <li><strong>Rows:</strong> CASP as one row, then RDR with a row per fee group the model
+      holds, each stating how many of its products it prices; a fee group with no products is not
+      listed, on the card or in the rail. The chosen schedule's rows are live; the other schedule's
+      are shown for reference with their Custom cell inert.</li>
     <li><strong>Reference columns:</strong> Management and PMG at Floor, Target and Ceiling, as
       this mandate prices them: RDR at its tier, CASP blended. On a live row each is a button that
       copies its rate into the Custom cell.</li>
@@ -2039,9 +2082,17 @@ portfolio total fee = Σ weighted fee</code></pre>
   <p>One role. <strong>Do not build a permissions system</strong> &mdash; build the seam for one:</p>
   <ul>
     <li><code>capabilities()</code> returns <code>{canExport, canEdit}</code>. Today the adapter
-      hardcodes both to <code>true</code>.</li>
+      hardcodes both to <code>true</code>. The router stamps two more on the way out:
+      <code>canAdmin</code>, from who is asking (D57), and <code>user</code>, so a page can name the
+      session before the repository payload that also carries it has been fetched (D106).</li>
     <li>A capability that is <code>false</code> renders the control <strong>disabled with a reason
       tooltip</strong>, never hidden. A hidden control is indistinguishable from a broken one.</li>
+    <li><strong>The admin entry points are the exception</strong>, and are hidden outright: the rail's
+      admin bar (D62) and the landing page's library strip (D106). A disabled control explains a
+      permission the holder might gain; these name a role a PWA will never have, so a disabled one
+      would only advertise a door that is not theirs. Where they are hidden they are also
+      <em>emptied</em> — an empty bordered strip is worse than no strip — and the page is exactly
+      the page a non-admin has always had.</li>
     <li>Unauthenticated is not a UI state &mdash; the host's <code>before_request</code> gate handles
       it before the page is reached.</li>
   </ul>
@@ -2111,23 +2162,35 @@ portfolio total fee = Σ weighted fee</code></pre>
     <li>An inline confirmation appears in the tier: <em>&ldquo;Rebuild 4 portfolios in
       CHF?&rdquo;</em> with <strong>Rebuild</strong> and <strong>Cancel</strong>. Cancel restores the
       previous value.</li>
-    <li>On Rebuild: fetch the new schema first. Any combination unavailable under the new basis is
-      <strong>dropped and named</strong> &mdash; <em>&ldquo;Ex Alts Low Vol is not available in CHF
-      and has been removed.&rdquo;</em></li>
+    <li>On Rebuild: fetch the new schema first. <strong>A key carries its currency</strong>, so
+      every column is re-keyed into the new one before it is asked whether it still exists &mdash;
+      asking with the old key can only ever say no (D102). Any combination unavailable under the new
+      basis is then <strong>dropped and named</strong> &mdash; <em>&ldquo;Ex Alts Low Vol is not
+      available in CHF and has been removed.&rdquo;</em></li>
+    <li>If the <strong>proposed portfolio's own</strong> combination is not offered, it falls to the
+      nearest risk level that offers it and says so, rather than taking the comparisons with it. The
+      fallback stays within the same kind of book: a level that holds no allocation type at all is a
+      different book, not a nearer one (D102).</li>
     <li>Surviving columns enter <code>loading</code> together and re-resolve, keeping their
-      allocation, exclusions and risk level. Order is preserved; the base stays the base.</li>
+      allocation, exclusions and risk level. Order is preserved; the proposed portfolio stays first.
+      The stale <em>comparison</em> keys are removed from the store before the new ones are recorded,
+      so the cap cannot be met twice; the proposed portfolio's is never removed &mdash; recording the
+      new one replaces it in the same write.</li>
     <li><strong>Any attached sleeves are invalidated</strong> (&sect;11.6).</li>
   </ol>
 
   <h3><span class="n">11.5</span>Changing the base</h3>
   <ol class="body">
     <li>Column 0 is replaced and re-resolves.</li>
-    <li>If a comparison now duplicates the new base it is <strong>removed and announced</strong>
-      &mdash; silent disappearance of a column the user built is unacceptable.</li>
+    <li>If a comparison now duplicates the new proposed portfolio it is <strong>removed and
+      announced</strong> &mdash; silent disappearance of a column the user built is unacceptable.
+      The removal is the store's own, in the write that records the new one: the page does not also
+      send a deletion, because the two raced and whichever arrived second lost (D102).</li>
     <li>Comparisons are otherwise untouched; they are independent combinations.</li>
     <li>Changing the Allocation select recomputes the Exclude RE tick box: if the new allocation
       cannot hold real estate, the box becomes checked and disabled.</li>
-    <li>If the current risk level is unavailable for the new allocation, fall to the first that is.</li>
+    <li>If the current risk level is unavailable for the new allocation, fall to the first that is,
+      within the same kind of book (D102).</li>
   </ol>
 
   <h3><span class="n">11.6</span>Invalidating the implementation</h3>
@@ -2177,9 +2240,9 @@ portfolio total fee = Σ weighted fee</code></pre>
   <ul>
     <li>Remove works on any comparison in any state, <strong>including one still loading</strong>
       &mdash; abort the in-flight request rather than waiting. It is offered in two places: the
-      rail's built list, and a <code>&times;</code> in the column's own header.</li>
-    <li>The base cannot be removed. Its row shows the <strong>Base</strong> chip where the remove
-      control would be, not a disabled control.</li>
+      <code>&times;</code> in the column's own header. <em>The rail's built list is gone
+      (D101); the popover's copy points at the column.</em></li>
+    <li>The proposed portfolio cannot be removed, only changed: its column has no remove control.</li>
     <li>On load with a scenario id, <code>GET /api/scenario/{id}</code> restores mandate, basis,
       columns and sleeves. Columns come back <code>loading</code> and re-resolve.</li>
   </ul>
@@ -2202,9 +2265,12 @@ portfolio total fee = Σ weighted fee</code></pre>
         <td>Stacked, full width</td></tr>
       <tr><td><strong>&lt; 1040px</strong></td>
         <td><strong>Static block above the document.</strong> Full width, bottom rule instead of
-          right rule. Field grid returns to multi-column; buttons stop being full-width.</td>
+          right rule. Field grid returns to multi-column; buttons stop being full-width. On step 1, once the
+          proposed portfolio exists, it folds to <strong>one sticky line</strong> &mdash; name, hedging, type,
+          <em>Edit</em> &mdash; and <em>Edit</em> opens it again (D101).</td>
         <td>Full width, no offset</td>
-        <td>Horizontal scroll; sticky columns essential</td>
+        <td>Horizontal scroll; sticky columns essential; a shadow at the right edge while columns lie
+          beyond it; at 700px and under the label column is capped at 44% and wraps (D101)</td>
         <td>Stacked, full width</td></tr>
     </tbody>
   </table></div>
@@ -2264,9 +2330,10 @@ portfolio total fee = Σ weighted fee</code></pre>
       unlabelled spans would be noise. The landing itself is a single
       <code>&lt;h1&gt;</code> and one button.</li>
     <li>The step nav is <code>role="tablist"</code> with <code>role="tab"</code> and
-      <code>aria-selected</code>; arrow keys move between tabs.</li>
-    <li>The base column is headed <em>Proposed Portfolio</em> visually, but carries its derived
-      name as the <code>aria-label</code> &mdash; the name is not hover-only.</li>
+      <code>aria-selected</code>; arrow keys move between tabs. Each tab names its panel with
+      <code>aria-controls</code>, each view is a <code>role="tabpanel"</code> labelled by its tab,
+      and the pair is one tab stop (roving <code>tabindex</code>) (D101).</li>
+    <li>The proposed column's derived name is visible text, and its <code>aria-label</code>.</li>
     <li>Currency amounts carry <code>inputmode="numeric"</code>, not <code>type="number"</code>
       &mdash; number inputs reject formatted values and add spinners nobody wants.</li>
     <li>The tick boxes are real <code>&lt;input type="checkbox"&gt;</code> with
@@ -2281,6 +2348,9 @@ portfolio total fee = Σ weighted fee</code></pre>
       <tr><td>Global</td><td>Skip link to <code>&lt;main&gt;</code> as the first focusable element.</td></tr>
       <tr><td>Step nav</td><td>Arrow keys move between tabs; Enter or Space activates.</td></tr>
       <tr><td>Modal dialog</td><td>Focus moves in, is trapped, returns to the invoker. Escape closes.</td></tr>
+      <tr><td>Step-2 greeting</td><td>The one exception: Escape and a scrim click do <em>not</em> close it,
+        and Tab returns to its single control. OK closes it and moves focus to the first sleeve
+        picker still to be answered. Once per session, on a step-nav click only. Deviation D97.</td></tr>
       <tr><td>First build</td><td>The mandate dialog's first Continue sends focus to Base
         Currency, not back to the landing's button, which has gone. Until the base exists each
         answer moves focus to the next control (&sect;10.2), and only when focus is still in the

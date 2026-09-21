@@ -1,0 +1,593 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementation Welcome</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --accent-ink:#FFFFFF; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --tint:#EEF2F9; --good:#1E6B45; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#8E2A2A; --bad-tint:#F8E7E7; --code:#F1F3F7;
+  --f-display:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+    --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+    --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+    --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+  --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55}
+a{color:var(--accent)}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:28px;padding-block:40px 96px}
+@media (max-width:700px){.wrap{padding-inline:16px;padding-block:28px 72px}}
+.prose{max-width:70ch}
+.mast{border-bottom:2px solid var(--navy);padding-bottom:22px;margin-bottom:44px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(34px,4.6vw,52px);line-height:1.05;margin:0 0 14px;color:var(--navy);text-wrap:balance;letter-spacing:-.01em}
+.sub{font-size:18px;color:var(--ink-2);max-width:66ch;margin:0 0 18px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+h2{font-family:var(--f-display);font-weight:500;font-size:clamp(26px,3vw,34px);line-height:1.15;color:var(--navy);margin:64px 0 12px;text-wrap:balance;scroll-margin-top:20px}
+h3{font-size:19px;font-weight:600;margin:0 0 6px;color:var(--ink);text-wrap:balance}
+p{margin:0 0 14px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--code);padding:1px 5px;border-radius:3px}
+.toc{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin:14px 0 0;padding:0;list-style:none}
+.toc a{text-decoration:none;color:var(--ink-2)} .toc a:hover{color:var(--accent)}
+.toc b{font-family:var(--f-mono);font-size:12px;color:var(--accent);margin-right:5px}
+.anat{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:18px 0 0}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+.rule h3{font-size:15px;margin-bottom:5px}
+.rule p{font-size:14px;color:var(--ink-2);margin:0 0 6px}
+.rule p:last-child{margin:0}
+.idea{margin:70px 0 0;padding-top:26px;border-top:1px solid var(--line-strong);scroll-margin-top:20px}
+.idea-head{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin:0 0 8px}
+.idea-head .id{font-family:var(--f-mono);font-size:13px;font-weight:600;color:var(--accent-ink);background:var(--accent);border-radius:3px;padding:1px 7px}
+.idea-head h2{margin:0;font-size:clamp(24px,2.6vw,30px)}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.tag{font-size:12px;font-weight:600;border-radius:10px;padding:1px 9px;border:1px solid var(--line-strong);color:var(--ink-2);background:var(--surface)}
+.tag.good{background:var(--good-tint);color:var(--good);border-color:transparent}
+.tag.warn{background:var(--warn-tint);color:var(--warn);border-color:transparent}
+.tag.bad{background:var(--bad-tint);color:var(--bad);border-color:transparent}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px 36px;margin:18px 0 0}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.cols h4{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px;font-weight:700}
+.cols ul{margin:0;padding-left:18px;font-size:14.5px;color:var(--ink-2)}
+.cols li{margin:0 0 6px}
+.cmp-wrap{overflow-x:auto;margin:18px 0 0;border:1px solid var(--line);border-radius:6px}
+.cmp{border-collapse:collapse;width:100%;min-width:760px;font-size:14px;background:var(--surface)}
+.cmp th,.cmp td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.cmp thead th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700;background:var(--tint)}
+.cmp tbody tr:last-child td,.cmp tbody tr:last-child th{border-bottom:0}
+.cmp tbody th{font-weight:600;white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
+.d-y{background:var(--good)} .d-p{background:var(--warn)} .d-n{background:var(--line-strong)}
+.rec{background:var(--surface);border:1px solid var(--line-strong);border-left:4px solid var(--accent);border-radius:6px;padding:20px 22px;margin:20px 0 0}
+.rec p:last-child{margin:0}
+ol.plan{padding-left:22px;margin:14px 0 0}
+ol.plan li{margin:0 0 12px;padding-left:4px}
+ol.plan li b{display:block}
+ol.plan li span{color:var(--ink-2);font-size:14.5px}
+ol.dq{padding-left:20px;margin:12px 0 0}
+ol.dq li{margin:0 0 10px}
+
+/* the live mock-up frame */
+.demo{margin:20px 0 0}
+.demo-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+.demo-bar .lbl{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-right:auto}
+.demo-bar button{font:600 13px var(--f-body);border-radius:4px;padding:5px 12px;cursor:pointer;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink)}
+.demo-bar button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.demo-bar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.demo-scroll{overflow-x:auto;border-radius:8px;border:1px solid var(--line-strong)}
+.demo-cap{font-size:13px;color:var(--ink-3);margin:8px 0 0}
+
+/* ── the mock: the tool's own tokens ── */
+.mock{--p-bg:#FBFCFE;--p-surface:#FFFFFF;--p-ink:#1C2733;--p-ink2:#5B6B7C;--p-ink3:#8494A4;
+  --p-line:#EEF1F4;--p-line-strong:#D4DAE2;--p-line-mid:#AFBAC7;--p-accent:#1F5FBF;
+  --r-bg:#12233f;--r-line:#233754;--r-ink:#FFFFFF;--r-ink2:#B6C2D2;--r-ink3:#7E90A8;
+  --r-input:#1D2F4B;--r-input-border:#52739C;--r-focus:#8FB4FF;--r-eyebrow:#F3C46B;--r-accent:#2A6AD0;
+  position:relative;display:grid;grid-template-columns:250px minmax(0,1fr);min-width:820px;height:540px;
+  background:var(--p-bg);color:var(--p-ink);font-family:var(--f-body);font-size:13px;line-height:1.4;overflow:hidden}
+.m-rail{background:var(--r-bg);color:var(--r-ink);border-right:1px solid var(--r-line);overflow-y:auto;position:relative}
+.m-brand{padding:12px 16px 10px;border-bottom:1px solid var(--r-line)}
+.m-brand b{display:block;font-size:14px;font-weight:700} .m-brand span{display:block;font-size:11.5px;font-weight:600;color:var(--r-eyebrow)}
+.m-tier{padding:11px 16px 9px;border-bottom:1px solid var(--r-line)}
+.m-tier h4{margin:0 0 8px;font:700 9.5px var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--r-ink3);display:flex;justify-content:space-between}
+.m-tier dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:1px 8px;font-size:11.5px}
+.m-tier dt{color:var(--r-ink2)} .m-tier dd{margin:0;color:var(--r-ink);text-align:right}
+.m-sl{margin:0 0 9px}
+.m-sl label{display:block;font-size:11.5px;font-weight:600;color:var(--r-ink2);margin:0 0 4px;display:flex;justify-content:space-between}
+.m-sl label i{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--r-ink3)}
+.m-sl select{appearance:none;-webkit-appearance:none;width:100%;height:30px;padding:0 26px 0 9px;border-radius:4px;
+  font:500 12.5px var(--f-body);color:var(--r-ink);background-color:var(--r-input);border:1px solid var(--r-input-border);cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238FA2BC' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center}
+.m-sl select:focus-visible{outline:none;border-color:var(--r-focus);box-shadow:0 0 0 3px rgba(143,180,255,.4)}
+.m-sl.is-next select{border-color:var(--r-focus);box-shadow:0 0 0 3px rgba(143,180,255,.28)}
+.m-sl.done label{color:var(--r-ink)}
+.m-prog{font-size:11.5px;color:var(--r-ink2);margin:8px 0 0}
+.m-bar{height:4px;border-radius:2px;background:#22334E;overflow:hidden;margin:6px 0 0}
+.m-bar i{display:block;height:100%;background:var(--r-accent);transition:width .4s ease}
+
+.m-layer{display:contents}
+.m-doc{padding:0;overflow:auto;position:relative}
+.m-steps{display:flex;align-items:center;gap:10px;padding:12px 22px 10px;border-bottom:1px solid var(--p-line);font-size:12px;color:var(--p-ink3)}
+.m-steps button{display:flex;align-items:center;gap:8px;background:none;border:0;font:inherit;cursor:pointer;color:inherit;padding:2px 4px;border-radius:4px}
+.m-steps button:focus-visible{outline:2px solid var(--p-accent);outline-offset:2px}
+.m-steps b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--p-line-strong);font:700 11px var(--f-mono)}
+.m-steps .on{color:var(--p-ink);font-weight:600} .m-steps .on b{background:#16243A;border-color:#16243A;color:#fff}
+.m-steps hr{width:40px;border:0;border-top:1px solid var(--p-line-strong);margin:0}
+.m-body{padding:16px 22px 22px}
+.m-eyebrow{margin:0 0 2px;font:700 9.5px var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--p-ink3)}
+.m-title{margin:0 0 2px;font-size:21px;font-weight:500;letter-spacing:-.01em;color:#16243A}
+.m-sub{margin:0 0 14px;font-size:12px;color:var(--p-ink2)}
+.m-tbl{border-collapse:collapse;background:var(--p-surface);border:1px solid var(--p-line-strong);font-size:11.5px;width:100%}
+.m-tbl th,.m-tbl td{padding:4px 10px;text-align:left;white-space:nowrap}
+.m-tbl thead th{border-bottom:1px solid var(--p-ink);font:700 9.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--p-ink2)}
+.m-tbl tbody tr+tr th,.m-tbl tbody tr+tr td{border-top:1px solid var(--p-line)}
+.m-tbl tr.cat th,.m-tbl tr.cat td{background:#F0F2F5;font-weight:700}
+.m-tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.m-tbl .pill{display:inline-block;font:600 9.5px var(--f-mono);border-radius:8px;padding:0 6px;background:#FEF3C7;color:#92600A;border:1px solid #F3D48A}
+.m-tbl .pill.ok{background:#EEF1F4;color:#5B6B7C;border-color:#D8DEE6}
+
+/* the greeting card itself */
+.m-scrim{position:absolute;inset:0;background:rgba(16,24,40,.42);z-index:20;animation:mfade .25s ease-out}
+.m-scrim.deep{background:rgba(9,20,40,.62)}
+@keyframes mfade{from{opacity:0}to{opacity:1}}
+.m-card{position:absolute;z-index:21;background:#fff;border:1px solid var(--p-line-strong);border-radius:6px;
+  box-shadow:0 24px 60px -12px rgba(16,24,40,.45);padding:22px 24px 18px;width:min(420px,calc(100% - 40px));
+  top:50%;left:50%;transform:translate(-50%,-50%);animation:mpop .28s cubic-bezier(.2,.9,.3,1.1)}
+@keyframes mpop{from{opacity:0;transform:translate(-50%,-46%) scale(.97)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+.m-card h5{margin:0 0 10px;font-family:var(--f-display);font-size:19px;font-weight:500;color:#16243A}
+.m-card p{margin:0 0 12px;font-size:13px;color:var(--p-ink2);line-height:1.55}
+.m-card p b{color:var(--p-ink)}
+.m-card .eyebrow2{font:700 9.5px var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--p-accent);margin:0 0 6px}
+.m-card .acts{display:flex;justify-content:flex-end;gap:8px;margin:16px 0 0}
+.m-card .acts.spread{justify-content:space-between;align-items:center}
+.m-card button.ok{font:700 10.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;border-radius:4px;
+  padding:8px 18px;cursor:pointer;border:1px solid var(--p-accent);background:var(--p-accent);color:#fff}
+.m-card button.ok:focus-visible{outline:2px solid #16243A;outline-offset:2px}
+.m-card button.ghost{font:700 10.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;border-radius:4px;
+  padding:8px 14px;cursor:pointer;border:1px solid var(--p-line-strong);background:#fff;color:var(--p-ink2)}
+.m-card .chk{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--p-ink3)}
+.m-card ol{margin:0 0 4px;padding-left:20px;font-size:12.5px;color:var(--p-ink2)}
+.m-card ol li{margin:0 0 6px} .m-card ol li b{color:var(--p-ink)}
+.m-card ul.cats{list-style:none;margin:0 0 6px;padding:0;display:grid;gap:4px;font-size:12.5px}
+.m-card ul.cats li{display:flex;justify-content:space-between;gap:10px;padding:5px 9px;background:#F5F7FA;border-radius:4px;color:var(--p-ink2)}
+.m-card ul.cats li b{color:var(--p-ink);font-weight:600}
+.m-card ul.cats li i{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--p-ink3)}
+.m-arrow{display:inline-block;color:var(--p-accent);font-weight:700}
+.m-mini{display:grid;grid-template-columns:76px 1fr;gap:10px;align-items:center;background:#F5F7FA;border-radius:5px;padding:10px;margin:0 0 12px}
+.m-mini .rail-mini{background:#12233f;border-radius:4px;padding:6px 5px;display:grid;gap:4px}
+.m-mini .rail-mini i{display:block;height:7px;border-radius:2px;background:#2E4468}
+.m-mini .rail-mini i.lit{background:#8FB4FF}
+.m-mini p{margin:0;font-size:11.5px;color:var(--p-ink2)}
+
+/* D: spotlight — the rail stays lit, everything else dims */
+.m-doc.dim::after{content:"";position:absolute;inset:0;background:rgba(9,20,40,.62);z-index:20;animation:mfade .25s ease-out}
+.mock.spot .m-rail{box-shadow:0 0 0 2px var(--r-focus),8px 0 30px rgba(143,180,255,.3);z-index:22}
+.m-card.at-rail{top:118px;left:270px;transform:none;width:min(360px,calc(100% - 290px));animation:mslide .3s cubic-bezier(.2,.9,.3,1.1)}
+@keyframes mslide{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+.m-card.at-rail::before{content:"";position:absolute;left:-9px;top:34px;width:16px;height:16px;background:#fff;
+  border-left:1px solid var(--p-line-strong);border-bottom:1px solid var(--p-line-strong);transform:rotate(45deg)}
+
+.m-toast{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;z-index:21;background:#16243A;color:#fff;
+  border-radius:6px;padding:11px 16px;font-size:12.5px;display:flex;align-items:center;gap:14px;box-shadow:0 12px 30px rgba(9,20,40,.35)}
+.m-toast button{font:700 10px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;background:#2A6AD0;border:0;color:#fff;border-radius:3px;padding:5px 11px;cursor:pointer}
+.m-flag{background:#FFFBEB;border:1px solid #F3D48A;border-left:3px solid #B45309;border-radius:4px;padding:10px 12px;margin:0 0 14px;font-size:12.5px;color:#4A3B10;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.m-flag button{font:700 10px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;background:#fff;border:1px solid #D4A017;color:#92600A;border-radius:3px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Proposal Tool · Design proposal for review</p>
+    <h1>Welcoming the implementation step</h1>
+    <p class="sub">The first time in a session that a PWA opens Implementation, dim the workspace and hold them at a card explaining that sleeves are chosen in the rail. Five ways to do it, each with a working mock-up, plus the rules a blocking modal has to follow.</p>
+    <div class="meta"><span><b>Scope</b> step 2, on arrival</span><span><b>Branch</b> sleeve-editions</span><span><b>Status</b> for review, nothing built</span></div>
+  </header>
+
+  <section class="prose">
+    <h2 style="margin-top:0">What happens today</h2>
+    <p>Clicking <b>Implementation</b> swaps the document for the implementation table and replaces the rail's base-portfolio tier with the <b>Sleeves</b> tier. Nothing announces that change. Since D95 the first empty sleeve picker carries the guide's mark and focus moves down the rail as each is answered, but a PWA looking at the document may not notice a mark in the panel beside it.</p>
+    <p>The request: a modal on the first visit per session, dismissed only by <b>OK</b>.</p>
+  </section>
+
+  <section class="prose">
+    <h2>The mock-ups</h2>
+    <p>Each mock is the workspace at the moment of the click. Press <b>Click “Implementation”</b> to replay the arrival; the card behaves as it would in the tool — Escape and clicks outside do nothing, only <b>OK</b> closes it, and focus is held inside until it does. All five share the trigger and the trap; they differ in what the card says and where it sits.</p>
+    <ul class="toc">
+      <li><a href="#idea-a"><b>A</b>The plain card</a></li>
+      <li><a href="#idea-b"><b>B</b>The card that lists this portfolio's categories</a></li>
+      <li><a href="#idea-c"><b>C</b>The three-step card</a></li>
+      <li><a href="#idea-d"><b>D</b>Spotlight the rail, card beside it</a></li>
+      <li><a href="#idea-e"><b>E</b>Card, then hand over to the guide</a></li>
+      <li><a href="#alts">Two non-blocking alternatives</a></li>
+    </ul>
+  </section>
+
+  <article class="idea" id="idea-a">
+    <div class="idea-head"><span class="id">A</span><h2>The plain card</h2></div>
+    <div class="tags"><span class="tag good">Smallest build</span><span class="tag">Centred</span><span class="tag">Static copy</span></div>
+    <p class="prose">A centred card over a dimmed workspace: a heading, two sentences, and <b>OK</b>. It says where the sleeve pickers are and what they do. Nothing about it depends on the portfolio, so it is one block of copy and a flag.</p>
+    <div class="demo" data-variant="A"></div>
+    <div class="cols">
+      <div><h4>How it works</h4><ul>
+        <li>Shown once per browser session (<code>sessionStorage</code>), on a click in the step nav, never on a reload that lands on step 2.</li>
+        <li>Scrim plus <code>role="dialog" aria-modal="true"</code>; the rail and document go <code>inert</code>, as they do for the mandate dialog.</li>
+        <li>OK is the only way out. Escape and outside clicks are ignored, and focus returns to the rail's first picker.</li>
+      </ul></div>
+      <div><h4>Watch for</h4><ul>
+        <li>It says "categories" in the abstract while the categories are on screen behind it. B fixes that.</li>
+        <li>A modal that cannot be escaped is unusual: it needs a reason a reader can see, which is why the copy names what to do next rather than welcoming them.</li>
+      </ul></div>
+    </div>
+  </article>
+
+  <article class="idea" id="idea-b">
+    <div class="idea-head"><span class="id">B</span><h2>The card that lists this portfolio's categories</h2></div>
+    <div class="tags"><span class="tag good">Small build</span><span class="tag">Centred</span><span class="tag">Reads the model</span></div>
+    <p class="prose">The same card, but the body is the four categories this base portfolio actually holds, with their weights, and a line saying how many need a sleeve. The PWA reads the work before doing it, and the card is visibly about their proposal rather than about the tool.</p>
+    <div class="demo" data-variant="B"></div>
+    <div class="cols">
+      <div><h4>How it works</h4><ul>
+        <li>The list is <code>sleeveCategories(baseCategories())</code> minus the auto-attached ones — the same list the rail draws.</li>
+        <li>A category already answered (a rehydrated scenario, or a second visit in a new session) shows a tick, and the count says "2 of 4 still need one".</li>
+      </ul></div>
+      <div><h4>Watch for</h4><ul>
+        <li>Seven categories at the widest make a long card. It scrolls, or the list caps and says "and 3 more".</li>
+        <li>If every category already has a sleeve, the card has nothing to ask for — it should not appear at all.</li>
+      </ul></div>
+    </div>
+  </article>
+
+  <article class="idea" id="idea-c">
+    <div class="idea-head"><span class="id">C</span><h2>The three-step card</h2></div>
+    <div class="tags"><span class="tag">Small build</span><span class="tag">Centred</span><span class="tag warn">More reading</span></div>
+    <p class="prose">A numbered summary of the whole step: attach a sleeve to each category, price the model if the proposal shows fees, download the workbook. It answers "what am I doing here" rather than only "what do I do now".</p>
+    <div class="demo" data-variant="C"></div>
+    <div class="cols">
+      <div><h4>How it works</h4><ul>
+        <li>Static copy, three items, the first one emphasised as the immediate task.</li>
+        <li>Pairs with a <em>Show this again</em> control in the rail if a PWA wants it back.</li>
+      </ul></div>
+      <div><h4>Watch for</h4><ul>
+        <li>Three things to read before the first click. For a PWA on their tenth proposal that is two too many, and they see it every session.</li>
+        <li>Steps 2 and 3 are not blocked on anything; describing them here risks reading as a checklist that must be done in order.</li>
+      </ul></div>
+    </div>
+  </article>
+
+  <article class="idea" id="idea-d">
+    <div class="idea-head"><span class="id">D</span><h2>Spotlight the rail, card beside it</h2></div>
+    <div class="tags"><span class="tag good">Medium build</span><span class="tag good">Strongest pointer</span><span class="tag warn">Narrow screens</span></div>
+    <p class="prose">Only the document dims. The rail stays lit, with a ring around it, and the card sits against the rail's edge with a pointer into it. The thing being talked about is the only thing the PWA can see clearly, so the card barely has to say where to look.</p>
+    <div class="demo" data-variant="D"></div>
+    <div class="cols">
+      <div><h4>How it works</h4><ul>
+        <li>The scrim covers the document only; the rail is raised above it and ringed in <code>--rail-focus</code>, the colour the guide already uses.</li>
+        <li>The card is positioned against the rail with a pointer, and the OK button is still the only way out.</li>
+        <li>The rail is lit but still inert — nothing behind the card is clickable until OK.</li>
+      </ul></div>
+      <div><h4>Watch for</h4><ul>
+        <li>Below 1040px the rail stacks above the document, so the card has no side to sit on: it falls back to A's centred position and the spotlight covers the panel above instead.</li>
+        <li>Lighting the rail while keeping it inert can read as "click here" — the card has to say OK first, which it does.</li>
+      </ul></div>
+    </div>
+  </article>
+
+  <article class="idea" id="idea-e">
+    <div class="idea-head"><span class="id">E</span><h2>Card, then hand over to the guide</h2></div>
+    <div class="tags"><span class="tag good">Small build</span><span class="tag good">Joins up with D95</span><span class="tag">Recommended</span></div>
+    <p class="prose">B's card, and OK is a handover: the card closes, the rail's first empty picker takes focus and its mark, and the document says which category is being answered. The modal stops being a notice and becomes the first move of the flow the tool already has.</p>
+    <div class="demo" data-variant="E"></div>
+    <div class="cols">
+      <div><h4>How it works</h4><ul>
+        <li>OK reads <b>Choose the first sleeve</b>, and closing focuses the picker D95 has marked — the same helper, so the two can never disagree about which is first.</li>
+        <li>If every category already has a sleeve, the card does not appear; there is nothing to hand over to.</li>
+      </ul></div>
+      <div><h4>Watch for</h4><ul>
+        <li>Focus landing in a native select means the next keypress may open it — which is the intent here, but it is a change in where the keyboard is pointing and should be announced.</li>
+      </ul></div>
+    </div>
+    <h3 style="margin:34px 0 8px;font-size:17px">E with D&rsquo;s spotlight</h3>
+    <p class="prose">The same card and the same handover, with only the document dimmed: the rail
+      stays lit and ringed, and the card sits against its edge with a pointer into it. This is the
+      combination recommended below, without F&rsquo;s strip.</p>
+    <div class="demo" data-variant="ED"></div>
+    <p class="demo-cap">OK still hands focus to the first picker; the rail is lit but inert until then.</p>
+  </article>
+
+  <section id="alts">
+    <h2>Two non-blocking alternatives</h2>
+    <p class="prose">Both were mocked for comparison. Neither meets the "forced to click OK" requirement, and both are here because a blocking modal on every session is the strongest instrument available and it is worth seeing what the weaker ones look like.</p>
+    <div class="demo" data-variant="F"></div>
+    <p class="demo-cap"><b>F · A strip above the table.</b> Always present until every category has a sleeve, so it teaches by staying rather than by blocking. It cannot be missed on arrival but it can be ignored forever.</p>
+    <div class="demo" data-variant="G"></div>
+    <p class="demo-cap"><b>G · A toast at the foot.</b> Dismisses itself after eight seconds. Cheapest and least intrusive; also the easiest to miss, which is the thing this proposal is trying to fix.</p>
+  </section>
+
+  <section>
+    <h2 id="rules">Rules, whichever is chosen</h2>
+    <div class="anat">
+      <div class="rule"><h3>Once per session</h3><p><code>sessionStorage</code>, one key, with an in-page fallback where storage is refused. A new tab greets again; a reload in the same tab does not.</p></div>
+      <div class="rule"><h3>Only on a click</h3><p>The step nav's Implementation button. A reload that lands on step 2, or a rehydrated scenario that was left there, shows nothing — the PWA did not just arrive.</p></div>
+      <div class="rule"><h3>Nothing to say, nothing shown</h3><p>If every category already has a sleeve, there is no instruction to give and the card is skipped, whatever the flag says.</p></div>
+      <div class="rule"><h3>OK is the only exit</h3><p>Escape and outside clicks are ignored, and the card has no close button. This is a deliberate departure from every other dialog in the tool (§13), which is why it is once per session and never on a return visit.</p></div>
+      <div class="rule"><h3>Focus is trapped and returned</h3><p>Focus moves to OK on open and is held inside the card. On close it goes to the rail's first empty picker (E), or back to the step-nav button that opened it.</p></div>
+      <div class="rule"><h3>It is announced</h3><p><code>role="dialog" aria-modal="true"</code>, labelled by its heading, with the rail and document <code>inert</code> — the same handling the mandate dialog and the fee cards use.</p></div>
+      <div class="rule"><h3>Motion</h3><p>A short fade on the scrim and a small scale on the card, as the other dialogs have. It plays on every platform (D90).</p></div>
+      <div class="rule"><h3>A way back to it</h3><p>Optional: a quiet <em>What is this step?</em> link under the sleeves tier heading reopens the card any time, which makes dismissing it cheap.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 id="compare">Side by side</h2>
+    <div class="cmp-wrap"><table class="cmp">
+      <thead><tr><th scope="col">Idea</th><th scope="col">Points at the rail</th><th scope="col">About this proposal</th><th scope="col">Reading</th><th scope="col">Blocks</th><th scope="col">Build</th><th scope="col">Verdict</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">A · Plain card</th><td><span class="dot d-p"></span>In words</td><td><span class="dot d-n"></span>No</td><td>2 lines</td><td><span class="dot d-y"></span>Yes</td><td>Small</td><td>The floor</td></tr>
+        <tr><th scope="row">B · Lists categories</th><td><span class="dot d-p"></span>In words</td><td><span class="dot d-y"></span>Yes</td><td>2 lines + list</td><td><span class="dot d-y"></span>Yes</td><td>Small</td><td>Take it</td></tr>
+        <tr><th scope="row">C · Three steps</th><td><span class="dot d-p"></span>In words</td><td><span class="dot d-n"></span>No</td><td>3 items</td><td><span class="dot d-y"></span>Yes</td><td>Small</td><td>Skip</td></tr>
+        <tr><th scope="row">D · Spotlight</th><td><span class="dot d-y"></span>Literally</td><td><span class="dot d-p"></span>Can</td><td>2 lines</td><td><span class="dot d-y"></span>Yes</td><td>Medium</td><td>Strong option</td></tr>
+        <tr><th scope="row">E · Hands to the guide</th><td><span class="dot d-y"></span>By focus</td><td><span class="dot d-y"></span>Yes</td><td>2 lines + list</td><td><span class="dot d-y"></span>Yes</td><td>Small</td><td><b>Recommended</b></td></tr>
+        <tr><th scope="row">F · Strip</th><td><span class="dot d-p"></span>In words</td><td><span class="dot d-y"></span>Yes</td><td>1 line</td><td><span class="dot d-n"></span>No</td><td>Small</td><td>Good companion</td></tr>
+        <tr><th scope="row">G · Toast</th><td><span class="dot d-p"></span>In words</td><td><span class="dot d-n"></span>No</td><td>1 line</td><td><span class="dot d-n"></span>No</td><td>Small</td><td>Skip</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2 id="recommend">Recommended: E, with D's spotlight if you want it louder</h2>
+    <div class="rec prose">
+      <p><b>E</b> is B's card — the categories this portfolio holds, and how many need a sleeve — with OK reading <b>Choose the first sleeve</b> and handing focus to the picker the guide has already marked. It blocks as asked, it is about the proposal on screen rather than about the tool, and it ends by putting the PWA's cursor on the first thing to do. <b>D's spotlight</b> is a single extra rule on the scrim and a raised rail; it can be added to E without changing the copy, and it is the right call if the rail is being missed even after the card.</p>
+      <p>I would also take <b>F</b> as a companion: the card teaches once per session, the strip stays until the work is done, and the two never contradict each other because both read the same count.</p>
+    </div>
+    <div class="demo" data-variant="REC"></div>
+    <p class="demo-cap">E with D's spotlight, and F's strip left behind after OK. Press <b>Click “Implementation”</b> to replay.</p>
+
+    <h2 id="plan" style="font-size:26px;margin-top:48px">How it would be built</h2>
+    <ol class="plan prose">
+      <li><b>The flag</b><span><code>sessionStorage</code> key <code>pmg.proposalTool.implGreeted</code>, with an in-page fallback, set when the card is dismissed. Read in the step-nav click handler in <code>js/implementation.js</code>, beside where D94's flash used to be armed.</span></li>
+      <li><b>The panel</b><span>A fourth host beside <code>#mandateDialog</code>, <code>#feeDialog</code> and <code>#customDialog</code>, rendered by <code>renderGreetPanel()</code>. It reuses <code>.scrim</code> and <code>.dialog</code>, adds no close button, and ignores Escape and scrim clicks — the one dialog in the tool that does.</span></li>
+      <li><b>The body</b><span>The categories come from the same helper the rail uses, so the card and the rail cannot disagree. Skipped entirely when none needs a sleeve.</span></li>
+      <li><b>The handover</b><span>OK closes, then focuses the picker <code>sleeveNext()</code> marks (D95), through the same <code>focusOnClose</code> flush the fee dialogs use.</span></li>
+      <li><b>Record it</b><span>Spec §7.1 (the arrival sequence) and §13.2 (the one dialog Escape does not close), plus a DEVIATIONS entry.</span></li>
+    </ol>
+
+    <h2 id="questions" style="font-size:26px;margin-top:48px">For you to decide</h2>
+    <ol class="dq prose">
+      <li><b>Spotlight or plain dim?</b> E alone, or E with D's lit rail.</li>
+      <li><b>Once per session, or once per scenario?</b> Per session as asked. Per scenario (like D95's guide) would greet a PWA once for each proposal they build, which is more often.</li>
+      <li><b>A way back to it?</b> A <em>What is this step?</em> link in the sleeves tier, or nothing.</li>
+      <li><b>Should F's strip ship too?</b> It is the part that keeps working after the card is gone.</li>
+      <li><b>The copy.</b> The mock-ups use my wording; it is the cheapest thing to change and the most worth getting right.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+(function () {
+  var CATS = [
+    { name: 'Investment Grade Fixed Income', w: '27.2%', sleeve: null },
+    { name: 'Other Fixed Income', w: '9.9%', sleeve: null },
+    { name: 'Public Equity', w: '41.8%', sleeve: null },
+    { name: 'Hedge Funds', w: '11.0%', sleeve: null }
+  ];
+  var SLEEVES = {
+    'Investment Grade Fixed Income': ['SMA Only', 'SMA & ETFs', 'ETFs Only'],
+    'Other Fixed Income': ['Mutual Funds', 'GPP'],
+    'Public Equity': ['Passive', 'Active Passive', 'Global Active'],
+    'Hedge Funds': ['HFM & ART', 'HFO & ART', 'HFO Only']
+  };
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function railHTML(d) {
+    var s = d.s;
+    var h = '<div class="m-brand"><b>Portfolio Management Group</b><span>Proposal Tool</span></div>'
+      + '<div class="m-tier"><h4>Mandate</h4><dl><dt>Mandate size</dt><dd>$10,000,000</dd>'
+      + '<dt>Primary PWA</dt><dd>A. Castellanos</dd></dl></div>';
+    if (s.step === 'impl') {
+      var filled = s.sleeves.filter(Boolean).length;
+      var nextIx = s.sleeves.indexOf(null);
+      h += '<div class="m-tier"><h4>Sleeves <span>' + filled + ' of 4</span></h4>';
+      CATS.forEach(function (c, i) {
+        var chosen = s.sleeves[i];
+        var mark = (!s.card && i === nextIx) ? ' is-next' : '';
+        h += '<div class="m-sl' + (chosen ? ' done' : '') + mark + '">'
+          + '<label for="' + d.id + '-sl' + i + '">' + esc(c.name) + '<i>' + c.w + '</i></label>'
+          + '<select id="' + d.id + '-sl' + i + '" data-sl="' + i + '">'
+          + '<option value="">Select a sleeve…</option>'
+          + SLEEVES[c.name].map(function (n) {
+              return '<option' + (n === chosen ? ' selected' : '') + '>' + esc(n) + '</option>';
+            }).join('') + '</select></div>';
+      });
+      h += '<p class="m-prog">' + filled + ' of 4 categories have a sleeve.'
+        + '<span class="m-bar"><i style="width:' + (filled / 4 * 100) + '%"></i></span></p></div>';
+    } else {
+      h += '<div class="m-tier"><h4>Base portfolio</h4><dl><dt>Type</dt><dd>PMG Multi-Asset</dd>'
+        + '<dt>Risk level</dt><dd>Moderate</dd><dt>Allocation</dt><dd>Core</dd></dl></div>';
+    }
+    return h;
+  }
+
+  function docHTML(d) {
+    var s = d.s;
+    var steps = '<div class="m-steps">'
+      + '<button type="button" class="' + (s.step === 'aa' ? 'on' : '') + '" data-step="aa"><b>1</b>Asset allocation</button><hr>'
+      + '<button type="button" class="' + (s.step === 'impl' ? 'on' : '') + '" data-step="impl"><b>2</b>Implementation</button></div>';
+    if (s.step === 'aa') {
+      return steps + '<div class="m-body"><p class="m-eyebrow">Step 1 of 2</p>'
+        + '<h3 class="m-title">Strategic Asset Allocation</h3>'
+        + '<p class="m-sub">Comparing Portfolio Risk and Return Characteristics</p>'
+        + '<table class="m-tbl"><thead><tr><th>Asset class</th><th class="num">USD Moderate Core</th></tr></thead><tbody>'
+        + CATS.map(function (c) { return '<tr><th>' + esc(c.name) + '</th><td class="num">' + c.w + '</td></tr>'; }).join('')
+        + '<tr class="cat"><th>Total</th><td class="num">100.00%</td></tr></tbody></table></div>';
+    }
+    var filled = s.sleeves.filter(Boolean).length;
+    var strip = (d.v.strip && !s.card && filled < 4)
+      ? '<div class="m-flag"><span>Attach a sleeve to each category in the panel on the left — '
+        + (4 - filled) + ' of 4 still need one.</span>'
+        + '<button type="button" data-go>Go to the first</button></div>' : '';
+    return steps + '<div class="m-body"><p class="m-eyebrow">Step 2 of 2</p>'
+      + '<h3 class="m-title">Portfolio Implementation</h3>'
+      + '<p class="m-sub">Implementing <b>USD Moderate Core</b> against a mandate of $10,000,000.</p>'
+      + strip
+      + '<table class="m-tbl"><thead><tr><th>Categories &amp; asset classes</th><th>Products</th><th class="num">Allocation</th></tr></thead><tbody>'
+      + CATS.map(function (c, i) {
+          return '<tr class="cat"><th>' + esc(c.name) + '</th><td>'
+            + (s.sleeves[i] ? '<span class="pill ok">' + esc(s.sleeves[i]) + '</span>' : '<span class="pill">No sleeve attached</span>')
+            + '</td><td class="num">' + c.w + '</td></tr>';
+        }).join('')
+      + '</tbody></table></div>';
+  }
+
+  function cardHTML(d) {
+    var s = d.s, v = d.v;
+    var left = CATS.filter(function (c, i) { return !s.sleeves[i]; }).length;
+    var body, ok = 'OK', acts = '';
+    if (v.kind === 'plain') {
+      body = '<p>This step builds the <b>implemented model</b>: the products your client will actually hold.</p>'
+        + '<p>Choose a <b>sleeve</b> for each asset-class category in the <b>panel on the left</b>. '
+        + 'The table fills in as you go, and the workbook can be downloaded once every category has one.</p>';
+    } else if (v.kind === 'list') {
+      body = '<p>Choose a <b>sleeve</b> for each category of this portfolio, in the <b>panel on the left</b>. '
+        + 'Each sleeve is a set of products PMG has put together for that category.</p>'
+        + '<ul class="cats">' + CATS.map(function (c, i) {
+            return '<li><b>' + esc(c.name) + '</b><i>' + (s.sleeves[i] ? '✓ ' + esc(s.sleeves[i]) : c.w) + '</i></li>';
+          }).join('') + '</ul>'
+        + '<p style="margin-top:10px">' + left + ' of 4 still need one.</p>';
+    } else if (v.kind === 'steps') {
+      body = '<ol><li><b>Attach a sleeve to each of the 4 categories</b> in the panel on the left.</li>'
+        + '<li>Price the model, if the proposal shows fees.</li>'
+        + '<li>Download the proposal workbook.</li></ol>'
+        + '<p style="margin-top:12px">The download stays disabled until every category has a sleeve.</p>';
+    } else if (v.kind === 'spot') {
+      body = '<div class="m-mini"><div class="rail-mini"><i class="lit"></i><i></i><i></i><i></i></div>'
+        + '<p>The panel is lit while you read this.</p></div>'
+        + '<p>Choose a <b>sleeve</b> for each of this portfolio’s <b>4 categories</b> in the panel beside this card. '
+        + 'The implementation table fills in as you go.</p>';
+    } else {   /* handover */
+      body = '<p>Choose a <b>sleeve</b> for each category of this portfolio, in the <b>panel on the left</b>. '
+        + 'Each is a set of products PMG has put together for that category.</p>'
+        + '<ul class="cats">' + CATS.map(function (c, i) {
+            return '<li><b>' + esc(c.name) + '</b><i>' + (s.sleeves[i] ? '✓ ' + esc(s.sleeves[i]) : c.w) + '</i></li>';
+          }).join('') + '</ul>'
+        + '<p style="margin-top:10px">' + left + ' of 4 still need one. The first is marked when this closes.</p>';
+      ok = 'Choose the first sleeve';
+    }
+    if (v.again) {
+      acts = '<span class="chk"><input type="checkbox" id="' + d.id + '-again"> <label for="' + d.id + '-again">Don’t show this again</label></span>';
+    }
+    return '<div class="m-scrim' + (v.spotlight ? ' deep' : '') + '" data-scrim></div>'
+      + '<div class="m-card' + (v.spotlight ? ' at-rail' : '') + '" role="dialog" aria-modal="true" aria-labelledby="' + d.id + '-h">'
+      + '<p class="eyebrow2">Step 2 of 2 · Implementation</p>'
+      + '<h5 id="' + d.id + '-h">Sleeves are chosen in the panel on the left</h5>'
+      + body
+      + '<div class="acts' + (acts ? ' spread' : '') + '">' + acts
+      + '<button type="button" class="ok" data-ok>' + esc(ok) + '</button></div></div>';
+  }
+
+  function render(d) {
+    var s = d.s;
+    d.rail.innerHTML = railHTML(d);
+    d.doc.innerHTML = docHTML(d);
+    d.mock.classList.toggle('spot', !!(s.card && d.v.spotlight));
+    d.doc.classList.toggle('dim', !!(s.card && d.v.spotlight));
+    d.layer.innerHTML = s.card ? cardHTML(d) : (s.toast
+      ? '<div class="m-toast">Choose a sleeve for each category in the panel on the left.'
+        + '<button type="button" data-ok>Got it</button></div>' : '');
+    /* inert while the card is up, as the tool does */
+    [d.rail, d.doc].forEach(function (node) { if ('inert' in node) node.inert = !!s.card; });
+    if (s.card) {
+      var ok = d.layer.querySelector('[data-ok]');
+      if (ok && d.focusOnRender) ok.focus();
+    }
+    d.focusOnRender = false;
+  }
+
+  function greet(d) {
+    var s = d.s;
+    s.step = 'impl';
+    if (d.v.kind === 'toast') { s.toast = true; window.setTimeout(function () { if (d.s.toast) { d.s.toast = false; render(d); } }, 8000); }
+    else if (d.v.kind !== 'strip') { s.card = true; d.focusOnRender = true; }
+    render(d);
+  }
+
+  function mount(el, i) {
+    var name = el.getAttribute('data-variant');
+    var V = {
+      A: { kind: 'plain' }, B: { kind: 'list' }, C: { kind: 'steps', again: true },
+      D: { kind: 'spot', spotlight: true }, E: { kind: 'handover', handover: true },
+      ED: { kind: 'handover', handover: true, spotlight: true },
+      F: { kind: 'strip', strip: true }, G: { kind: 'toast' },
+      REC: { kind: 'handover', handover: true, spotlight: true, strip: true }
+    };
+    var v = V[name];
+    var labels = { F: 'alternative · a strip, no modal', G: 'alternative · a toast, no modal',
+                   ED: 'idea E with idea D’s spotlight', REC: 'recommended · E + D + F' };
+    el.innerHTML = '<div class="demo-bar"><span class="lbl">Live mock-up · ' + (labels[name] || 'idea ' + name) + '</span>'
+      + '<button type="button" class="primary" data-act="greet">Click “Implementation”</button>'
+      + '<button type="button" data-act="reset">Reset</button></div>'
+      + '<div class="demo-scroll"><div class="mock"><aside class="m-rail" aria-label="Rail (mock-up)"></aside>'
+      + '<div class="m-doc"></div><div class="m-layer"></div></div></div>';
+    var d = { id: 'g' + i + name, v: v, s: { step: 'aa', card: false, toast: false, sleeves: [null, null, null, null] } };
+    d.mock = el.querySelector('.mock'); d.rail = el.querySelector('.m-rail');
+    d.doc = el.querySelector('.m-doc'); d.layer = el.querySelector('.m-layer');
+    render(d);
+
+    el.querySelector('[data-act=greet]').addEventListener('click', function () {
+      d.s = { step: 'aa', card: false, toast: false, sleeves: [null, null, null, null] };
+      render(d);
+      window.setTimeout(function () { greet(d); }, 120);
+    });
+    el.querySelector('[data-act=reset]').addEventListener('click', function () {
+      d.s = { step: 'aa', card: false, toast: false, sleeves: [null, null, null, null] };
+      render(d);
+    });
+
+    d.mock.addEventListener('click', function (e) {
+      var t = e.target.closest('button'); if (!t) return;
+      if (t.dataset.ok !== undefined) {
+        d.s.card = false; d.s.toast = false;
+        render(d);
+        if (v.handover || v.strip) {
+          var next = d.rail.querySelector('.m-sl.is-next select');
+          if (next) { void next.offsetWidth; next.focus(); }
+        }
+        return;
+      }
+      if (t.dataset.go !== undefined) {
+        var sel = d.rail.querySelector('.m-sl.is-next select');
+        if (sel) sel.focus();
+        return;
+      }
+      if (t.dataset.step) {
+        if (d.s.card) return;                       /* blocked, as it would be */
+        if (t.dataset.step === 'impl' && d.s.step !== 'impl') { greet(d); return; }
+        d.s.step = t.dataset.step; render(d);
+      }
+    });
+    d.mock.addEventListener('change', function (e) {
+      var ix = e.target.dataset.sl; if (ix === undefined) return;
+      d.s.sleeves[+ix] = e.target.value || null;
+      render(d);
+      var next = d.rail.querySelector('.m-sl.is-next select');
+      if (next) next.focus();
+    });
+    /* Escape and outside clicks do nothing while the card is up */
+    d.mock.addEventListener('keydown', function (e) { if (d.s.card && e.key === 'Escape') e.preventDefault(); });
+  }
+  document.querySelectorAll('.demo[data-variant]').forEach(mount);
+})();
+</script>

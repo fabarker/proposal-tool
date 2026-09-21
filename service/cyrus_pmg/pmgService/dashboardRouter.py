@@ -152,6 +152,10 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
         # admin flag must not be the next caller's.
         capabilities = dict(schema.get('capabilities') or {})
         capabilities['canAdmin'] = isAdmin(caller)
+        # ...and who they are, so the landing page can say whose session this
+        # is beside what the role opens (D106). The repository payload already
+        # carried it, but that is only fetched once the console is open.
+        capabilities['user'] = caller.kerberos
         schema['capabilities'] = capabilities
         # The account opening form's option lists ride the schema, so the
         # page renders what the server says and never lists of its own (D76).

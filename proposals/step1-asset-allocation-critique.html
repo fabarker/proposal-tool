@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Step 1 · Asset allocation — a critique</title>
+<style>
+:root{--bg:#FBFCFE;--surface:#fff;--s2:#F0F2F5;--ink:#1C2733;--ink2:#4B5A6A;--ink3:#6B7A8A;--line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--navy:#12233F;--gold:#B7862A;--neg:#B42318;--pos:#1A7F37;--amber:#92600A;--amberbg:#FEF3C7;
+  --num:"GS Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;--body:"GS Sans",Roboto,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px}
+header.top{background:var(--navy);color:#fff;padding:56px 0 44px;margin-bottom:40px}
+header.top .wrap{display:block}
+.eyebrow{font:700 12px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:#F3C46B;margin:0 0 14px}
+h1{font:400 40px/1.12 var(--num);margin:0 0 14px;letter-spacing:.005em}
+header.top p{max-width:70ch;color:#B6C2D2;margin:0}
+nav.toc{position:sticky;top:20px;align-self:start;font-size:13.5px;max-height:calc(100vh - 40px);overflow:auto;padding-bottom:20px}
+nav.toc p{font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--line);color:var(--ink2);text-decoration:none}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--accent)}
+nav.toc a b{font-family:var(--num);color:var(--ink3);font-weight:700;margin-right:6px}
+main{min-width:0;padding-bottom:96px}
+h2{font:400 28px/1.2 var(--num);margin:56px 0 6px;padding-top:8px}
+h2:first-child{margin-top:0}
+h2 small{display:block;font:700 11.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+.lede{color:var(--ink2);max-width:72ch;margin:0 0 20px}
+h3{font:600 17px/1.35 var(--body);margin:0}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.fact b{display:block;font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px}
+.fact p{margin:0;font-size:14.5px;line-height:1.5;color:var(--ink)}
+ol.friction{margin:14px 0 0;padding:0;list-style:none;counter-reset:f}
+ol.friction li{counter-increment:f;position:relative;padding:12px 0 12px 44px;border-top:1px solid var(--line);font-size:15px}
+ol.friction li::before{content:counter(f);position:absolute;left:0;top:12px;width:28px;height:28px;border-radius:50%;background:var(--navy);color:#fff;
+  font:700 13px/28px var(--num);text-align:center}
+ol.friction b{font-weight:600}
+table.top5{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+table.top5 th{font:700 11px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 14px;background:var(--s2)}
+table.top5 td{padding:11px 14px;border-top:1px solid var(--line);vertical-align:top}
+table.top5 td:first-child{font:700 14px var(--num);color:var(--accent);white-space:nowrap}
+.rec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px 18px;margin:14px 0;scroll-margin-top:16px}
+.rec-h{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px}
+.rec-h .id{font:700 13px/1 var(--num);color:#fff;background:var(--accent);border-radius:4px;padding:5px 7px;letter-spacing:.04em}
+.rec-h h3{flex:1;min-width:240px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font:700 10.5px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--s2);color:var(--ink2);white-space:nowrap}
+.tag.hi{background:#E3EBFA;color:#1E4FA3}.tag.bug{background:#FDE8E8;color:#9B1C1C}.tag.s{background:#E7F4EC;color:#176A33}.tag.m{background:var(--amberbg);color:var(--amber)}.tag.l{background:#F3E8FF;color:#6B21A8}
+dl.r{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px 16px;margin:0;font-size:15px}
+dl.r dt{font:700 11px/1.9 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+dl.r dd{margin:0}
+dl.r dd.trade{color:var(--ink2);font-size:14.5px}
+code{font:13px/1 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--s2);padding:2px 5px;border-radius:3px;color:#16243A}
+.mock{margin:14px 0 2px;border:1px dashed var(--line2);border-radius:8px;padding:14px;background:#FCFDFE;overflow-x:auto}
+.mock-l{font:700 10.5px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+.m-tbl{border-collapse:collapse;font:14px var(--num);min-width:520px;width:100%}
+.m-tbl th,.m-tbl td{padding:4px 12px;text-align:right;white-space:nowrap}
+.m-tbl th:first-child,.m-tbl td:first-child{text-align:left}
+.m-tbl thead th{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);border-bottom:2px solid var(--line2);vertical-align:bottom}
+.m-tbl thead th small{display:block;font-weight:400;letter-spacing:.02em;text-transform:none;color:var(--ink3);font-size:11.5px}
+.m-tbl tr.cat td{font-weight:700;background:#E9EDF2}
+.m-tbl tr.met td{font-weight:700;background:var(--s2)}
+.m-tbl .d{font-size:12.5px;color:var(--ink3);padding-left:0;width:56px}
+.m-tbl .d.up{color:var(--pos)}.m-tbl .d.dn{color:var(--neg)}
+.m-tbl .prop{background:rgba(31,95,191,.06);box-shadow:inset 2px 0 0 var(--accent)}
+.m-tbl tr.cat td.prop{background:#DDE6F4}
+.chip{display:inline-block;font:700 10px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;background:var(--accent);color:#fff;border-radius:3px;padding:3px 5px;margin-left:6px;vertical-align:1px}
+.m-bar{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line2);border-radius:6px;padding:8px 14px;font:13.5px var(--num);box-shadow:0 2px 8px rgba(16,24,40,.08)}
+.m-bar b{font-weight:700}.m-bar span{color:var(--ink2)}.m-bar .sp{flex:1}
+.m-btn{background:var(--accent);color:#fff;border-radius:4px;padding:7px 12px;font:700 12px var(--num);letter-spacing:.08em;text-transform:uppercase}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:4px;overflow:hidden;font:700 11px var(--num);letter-spacing:.08em;text-transform:uppercase}
+.seg span{padding:6px 10px;color:var(--ink2)}.seg span.on{background:#16243A;color:#fff}
+.note{border-left:3px solid var(--gold);background:#FFFBF0;padding:12px 16px;border-radius:0 6px 6px 0;font-size:14.5px;color:var(--ink2);margin:18px 0}
+.keep li{margin:6px 0}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:18px;margin-top:56px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:0}nav.toc{position:static;max-height:none;margin-bottom:32px;columns:2}.grid3{grid-template-columns:1fr}h1{font-size:32px}dl.r{grid-template-columns:1fr;gap:2px}dl.r dt{margin-top:8px}}
+@media print{nav.toc{display:none}.wrap{display:block}.rec{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <p class="eyebrow">Proposal Tool · design critique</p>
+  <h1>Step 1 — Strategic Asset Allocation</h1>
+  <p>What the screen is for, where it slows its user down, and 24 specific changes. Studied from the generator source (<code style="background:#1D2F4B;color:#dbe5f3">core.js</code>, <code style="background:#1D2F4B;color:#dbe5f3">picker.js</code>, <code style="background:#1D2F4B;color:#dbe5f3">build_styles.py</code>) rather than screenshots, so element names below are the real ones.</p>
+</div></header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#read"><b>·</b>Reading the screen</a>
+  <a href="#friction"><b>·</b>Where the friction is</a>
+  <a href="#top5"><b>·</b>If you do five things</a>
+  <a href="#compare"><b>A</b>The comparison itself</a>
+  <a href="#layout"><b>B</b>Layout &amp; hierarchy</a>
+  <a href="#rail"><b>C</b>The rail &amp; the picker</a>
+  <a href="#charts"><b>D</b>Charts</a>
+  <a href="#risk"><b>E</b>Risk dashboard</a>
+  <a href="#motion"><b>F</b>Motion &amp; feedback</a>
+  <a href="#a11y"><b>G</b>Accessibility</a>
+  <a href="#resp"><b>H</b>Responsive</a>
+  <a href="#keep"><b>·</b>What to leave alone</a>
+</nav>
+
+<main>
+<h2 id="read"><small>Part one</small>Reading the screen</h2>
+<p class="lede">A navy rail of selects on the left; on the right a long document: an allocation table of up to four portfolio columns, two charts, then a risk dashboard with Nominal/Real pairs. It is the first of two steps; the second attaches products and fees and exports a workbook.</p>
+<div class="grid3">
+  <div class="fact"><b>Who</b><p>A private wealth advisor (PWA) or their analyst, mid-preparation for a client meeting. Expert in the vocabulary (Core, ex-RAs, CVaR); not an expert in this tool, which they open a few times a month.</p></div>
+  <div class="fact"><b>The task</b><p>Pick the portfolio to <em>propose</em>, then line up to three alternatives beside it so they can say “here is what one notch more risk buys you.” The output is a judgment: <em>which one, and why not the others</em>.</p></div>
+  <div class="fact"><b>What success looks like</b><p>Under two minutes from mandate to a defensible four-column comparison, with the differences already visible — and a clear door to step 2.</p></div>
+</div>
+<p class="lede">The screen is very good at the <em>build</em> half of that job — the guided first build, availability-aware selects, animated row changes and per-column failure are all careful work. It is weaker at the <em>compare</em> half, which is the half the heading promises (“Comparing Portfolio Risk and Return Characteristics”). Almost every recommendation below pushes weight from building to comparing.</p>
+
+<h2 id="friction"><small>Part two</small>Where the friction is</h2>
+<ol class="friction">
+  <li><b>The comparison is done in the reader's head.</b> Four columns of absolute weights. To learn that ex-RAs moves 6 points from Other Private Assets into Public Equity you subtract, row by row, across ~25 rows. Nothing on the screen is a difference.</li>
+  <li><b>Column identity is lost on scroll.</b> <code>.tbl thead th</code> is <code>position:sticky;top:0</code>, but its scroll container is <code>.tblwrap</code> (<code>overflow-x:auto</code>), which never scrolls vertically — so the header never sticks to the viewport. Halfway down the risk dashboard, “which column is Moderate-Aggressive?” has no answer on screen.</li>
+  <li><b>One portfolio, three names.</b> The rail calls it <em>Base portfolio</em>, the table heads it <em>Proposed Portfolio</em>, the scatter legend says <em>Base</em>. And the proposed column hides its own derived name behind a <code>title</code> tooltip, so the one portfolio that matters most is the only one whose identity you can't read.</li>
+  <li><b>The key numbers are at the bottom of a table you must scroll.</b> Return, Sharpe and Volatility — the three figures the client conversation is about — sit under ~25 weight rows, and again inside the risk dashboard. There is no at-a-glance read.</li>
+  <li><b>No way to change your mind cheaply.</b> If a comparison turns out to be the better proposal, there is no “propose this one instead”; you re-enter it in the rail and re-add the old base through the picker. Columns can't be reordered either.</li>
+  <li><b>The way forward is behind you.</b> After the risk dashboard the page simply ends. The only route to step 2 is the step nav at the top of a long document.</li>
+  <li><b>The two builders disagree.</b> The rail asks Type → Risk → Allocation → Exclude; the “+” popover asks Allocation → Exclude → Risk. Same decision, different order, and the popover's full-state copy points at a rail list that no longer exists.</li>
+</ol>
+
+<h2 id="top5"><small>Part three</small>If you only do five things</h2>
+<table class="top5">
+  <thead><tr><th>Rec</th><th>Change</th><th>Why it's first</th></tr></thead>
+  <tbody>
+    <tr><td>A1</td><td>Difference-vs-proposed mode on both tables</td><td>Turns the screen from a lookup into an argument. Biggest single gain for the actual task.</td></tr>
+    <tr><td>B1</td><td>Make column headers genuinely sticky (one docked header)</td><td>It's a bug against the screen's own intent, and the risk dashboard is unreadable past the fold without it.</td></tr>
+    <tr><td>A2</td><td>Name the proposed column; one word for it everywhere</td><td>Trivial to do, removes a daily ambiguity.</td></tr>
+    <tr><td>B2</td><td>Metric summary strip above the table</td><td>Puts the three numbers the meeting is about in the first 200px.</td></tr>
+    <tr><td>B4</td><td>Continue bar at the foot → Implementation</td><td>Closes the flow; costs an hour.</td></tr>
+  </tbody>
+</table>
+<div class="note">Tags on each card: <span class="tag s">S</span> under a day, <span class="tag m">M</span> a few days, <span class="tag l">L</span> a week or more · <span class="tag hi">High impact</span> · <span class="tag bug">Defect</span> means it is wrong today, not merely improvable.</div>
+
+<!-- ───────────── A ───────────── -->
+<h2 id="compare"><small>A · The comparison itself</small>Make the screen do the subtraction</h2>
+
+<section class="rec" id="A1"><div class="rec-h"><span class="id">A1</span><h3>Add a “Weights | Difference” switch to the allocation table and risk dashboard</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>#alloc</code> and <code>#risk</code> comparison cells, produced by <code>cellFor()</code>, <code>metricCell()</code> and <code>pairCells()</code>.</dd>
+<dt>Change</dt><dd>Put a two-state segmented control in <code>.stage-head</code>, right-aligned where <code>.resolving</code> sits now. In <em>Difference</em>, comparison cells show signed points against the proposed column (<code>+6.0</code>, <code>−2.5</code>, a blank for zero), proposed stays absolute. Colour only beyond ±0.05 so noise stays grey. Persist the choice in the scenario snapshot.</dd>
+<dt>Why</dt><dd>The sentence the PWA needs is “ex-RAs shifts six points of private assets into public equity for 40bp less volatility.” Today that sentence costs ~25 subtractions. In difference mode it is readable in one pass, and blank rows show at a glance where two portfolios are <em>identical</em> — which is most rows.</dd>
+<dt>Tradeoff</dt><dd class="trade">I'd make it a mode, not extra columns. A permanent Δ sub-column doubles the width of a table that already needs <code>min-width:850px</code>, and at four portfolios you'd be scrolling sideways on a laptop. The cost of a mode is that a screenshot in Difference can be misread as weights — so tint the header row and suffix comparison heads with “vs proposed” while it's on.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch · difference mode</p>
+<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><span class="seg"><span>Weights</span><span class="on">Difference</span></span></div>
+<table class="m-tbl"><thead><tr><th>Asset class</th><th class="prop">Proposed<small>Moderate Core</small></th><th>Mod-Aggressive Core<small>vs proposed</small></th><th>Moderate Core ex-RAs<small>vs proposed</small></th></tr></thead>
+<tbody><tr class="cat"><td>Public Equity</td><td class="prop">38.0%</td><td style="color:var(--pos)">+9.0</td><td style="color:var(--pos)">+6.0</td></tr>
+<tr><td style="padding-left:24px">US Large Cap</td><td class="prop">18.5%</td><td style="color:var(--pos)">+4.5</td><td style="color:var(--pos)">+3.0</td></tr>
+<tr><td style="padding-left:24px">Emerging Markets</td><td class="prop">4.0%</td><td style="color:var(--pos)">+1.5</td><td></td></tr>
+<tr class="cat"><td>Other Private Assets</td><td class="prop">6.0%</td><td></td><td style="color:var(--neg)">−6.0</td></tr>
+<tr class="met"><td>Volatility</td><td class="prop">7.03%</td><td style="color:var(--ink)">+1.92</td><td style="color:var(--ink)">−0.41</td></tr></tbody></table></div>
+</section>
+
+<section class="rec" id="A2"><div class="rec-h"><span class="id">A2</span><h3>Show the proposed column's real name, and call it one thing everywhere</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>columnHeadCell()</code> / <code>BASE_COLUMN_TITLE</code>; the rail heading in <code>renderBase()</code> (“Base portfolio”); the scatter legend in <code>renderCharts()</code> (“Base”, “Comparison”).</dd>
+<dt>Change</dt><dd>Two-line head for column one: a small <em>PROPOSED</em> chip over the derived name (“Moderate Core”) — the same <code>headerName()</code> string the other columns get. Rename the rail tier to <em>Proposed portfolio</em> and the legend entry to <em>Proposed</em>. Retire “base” from the UI entirely (keep it in code).</dd>
+<dt>Why</dt><dd>The name currently lives only in a <code>title</code> attribute: invisible on touch, slow on hover, absent from a screenshot pasted into an email. And three words for one thing makes a new user wonder whether “base” and “proposed” are different portfolios. The code comment's reasoning for the rename was right; it just wasn't carried to the rail and the chart.</dd>
+<dt>Tradeoff</dt><dd class="trade">Two-line heads add ~14px to the header. Worth it: the head is the only place column identity lives.</dd>
+</dl></section>
+
+<section class="rec" id="A3"><div class="rec-h"><span class="id">A3</span><h3>Give the proposed column a standing visual identity, down its whole height</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>First data column of <code>.tbl.alloc</code> and the first Nominal/Real pair of <code>.tbl.risk</code>.</dd>
+<dt>Change</dt><dd>A 2px accent rule on the column's left edge plus a ~5% accent wash (<code>rgba(31,95,191,.05)</code>), composited under the existing <code>tr.cat</code>/<code>tr.metric</code> fills. Use the same navy <code>#16243A</code> the scatter already uses for the proposed dot as the chip colour so table and chart agree.</dd>
+<dt>Why</dt><dd>All four columns are currently typographically identical. “Proposed vs the rest” is <em>the</em> structure of this screen and it's carried only by position. This also pays for B1: when the header docks, the wash keeps the anchor column findable mid-scroll.</dd>
+</dl></section>
+
+<section class="rec" id="A4"><div class="rec-h"><span class="id">A4</span><h3>“Propose this instead” on every comparison column</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.col-head</code> on comparison columns, beside <code>.col-rm</code>.</dd>
+<dt>Change</dt><dd>Replace the lone × with a small kebab (or reveal two 24px glyphs on header hover/focus): <em>Propose this instead</em> and <em>Remove</em>. Promoting swaps column 0 and column <em>i</em>, writes the new key into the rail's selects, and keeps the old proposal as a comparison. Both columns are already resolved, so it needs no fetch — animate it as a swap.</dd>
+<dt>Why</dt><dd>The whole point of comparing is that you might change your mind. Today that costs: re-pick three selects in the rail (which rebuilds), then re-add the old base via the popover. It also matters downstream — step 2 implements column 0, so the wrong portfolio in that slot is an expensive mistake to discover late.</dd>
+<dt>Tradeoff</dt><dd class="trade">If sleeves were already chosen in step 2, promotion must run the same <code>revalidateSleeves()</code> path as a base change and say so (“2 sleeves no longer apply”). I'd still ship it; hiding the capability doesn't remove the need.</dd>
+</dl></section>
+
+<section class="rec" id="A5"><div class="rec-h"><span class="id">A5</span><h3>Reorder the metric rows: Return, Volatility, Sharpe</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>METRIC_ROWS</code> — currently Return, <em>Sharpe</em>, Volatility.</dd>
+<dt>Change</dt><dd>Return → Volatility → Sharpe Ratio, in both tables.</dd>
+<dt>Why</dt><dd>Sharpe is derived from the other two; putting it between them makes the eye jump over the ratio to find the denominator. It also mismatches the scatter card beneath, which is literally titled “Return against volatility”.</dd>
+<dt>Tradeoff</dt><dd class="trade">If the legacy PDF report uses today's order and the workbook must match it, keep the workbook and change only the screen — but I'd check whether anyone is attached to that order first.</dd>
+</dl></section>
+
+<section class="rec" id="A6"><div class="rec-h"><span class="id">A6</span><h3>Distinguish “not held” from “rounds to zero”</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>pct1()</code> (dash under 0.05) and <code>cellFor()</code> (returns <code>'—'</code> when an asset is absent from a held category, <code>''</code> when the whole category is absent).</dd>
+<dt>Change</dt><dd>Absent → leave blank everywhere. Held but under 0.05% → <code>&lt;0.1%</code> in <code>--ink-3</code>. Reserve the em dash for a failed column only.</dd>
+<dt>Why</dt><dd>One glyph currently means three things: not in this book, present-but-tiny, and the service failed. In an ex-RAs comparison the distinction between “excluded” and “negligible” is the whole story. Blank cells also make difference mode (A1) read cleanly.</dd>
+</dl></section>
+
+<!-- ───────────── B ───────────── -->
+<h2 id="layout"><small>B · Layout &amp; hierarchy</small>Spend the first screen on the answer</h2>
+
+<section class="rec" id="B1"><div class="rec-h"><span class="id">B1</span><h3>Make the column headers actually stick</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl thead th{position:sticky;top:0}</code> inside <code>.tblwrap{overflow-x:auto}</code>.</dd>
+<dt>Change</dt><dd>The sticky rule is inert: an <code>overflow-x:auto</code> ancestor becomes the sticky containing scrollport, and it never scrolls vertically. Two fixes, pick by width: <strong>(a)</strong> at ≥1040px, where the tables rarely overflow sideways, set <code>.tblwrap{overflow-x:clip}</code> (or <code>visible</code>) so <code>top:0</code> resolves against the page; <strong>(b)</strong> more robust — render one docked header bar, <code>position:fixed</code> under the step nav, that appears once the alloc <code>thead</code> leaves the viewport, mirrors the column names/widths from <code>sizeComparisonTables()</code>, and serves <em>both</em> tables since they share columns.</dd>
+<dt>Why</dt><dd>The risk dashboard is ~30 rows of unlabelled number pairs once its head scrolls off. With four portfolios that's eight anonymous columns. The author clearly intended sticky heads; they just don't engage.</dd>
+<dt>Tradeoff</dt><dd class="trade">I'd do (b). It survives the narrow layout where horizontal scroll is unavoidable (sync its <code>scrollLeft</code> with the focused table), and one shared header reinforces that the two tables are the same comparison. It's more code than a one-line CSS change, and it needs <code>aria-hidden</code> so screen readers don't hear the heads twice.</dd>
+</dl></section>
+
+<section class="rec" id="B2"><div class="rec-h"><span class="id">B2</span><h3>A metric summary strip above the allocation table</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>New, between <code>.stage-head</code> and <code>.tblwrap.accent-top</code>.</dd>
+<dt>Change</dt><dd>One compact card per column, aligned to the table's column grid (reuse the widths <code>sizeFixedColumns()</code> computes): name, then Return · Volatility · Sharpe in <code>--f-num</code> at ~20px, with the delta vs proposed in small type beneath each comparison figure. The cards double as B1's docked header when scrolled.</dd>
+<dt>Why</dt><dd>These three figures decide the conversation and they are currently the <em>last</em> three rows of a 30-row table, then repeated in the dashboard. Leading with them means the first screenful answers “what does one notch of risk buy?” and the weights below become the explanation rather than the preamble.</dd>
+<dt>Tradeoff</dt><dd class="trade">It's a third place those numbers appear. I'd resolve that by removing them from the <em>risk dashboard's</em> “Factor Based Risk Analytics” band (see E2), not from the allocation table, whose metric rows mirror the workbook.</dd>
+</dl></section>
+
+<section class="rec" id="B3"><div class="rec-h"><span class="id">B3</span><h3>Shrink the stage head; drop “Step 1 of 2”</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.eyebrow</code> “Step 1 of 2”, <code>h2.stage-title</code> at 39px, <code>.stage-sub</code> at 16px.</dd>
+<dt>Change</dt><dd>Remove the eyebrow (the step nav 40px above says the same thing with more authority). Title to ~26px. Fold the sub into the title line in <code>--ink-2</code>, or drop it. Net: ~70px returned to the table.</dd>
+<dt>Why</dt><dd>On a 768px-tall laptop the step nav + eyebrow + 39px title + standfirst consume roughly a quarter of the viewport before any data. This is a working tool opened repeatedly, not a landing page; its title is wayfinding, not a headline. The landing view already does the brand moment.</dd>
+<dt>Tradeoff</dt><dd class="trade">The large condensed title is part of the product's look. Keep the face and weight, lose the size.</dd>
+</dl></section>
+
+<section class="rec" id="B4"><div class="rec-h"><span class="id">B4</span><h3>A “Continue to Implementation” bar at the end of the document</h3><div class="tags"><span class="tag hi">High impact</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>New, after the risk dashboard <code>.sec</code> inside <code>#view-aa</code>.</dd>
+<dt>Change</dt><dd>A quiet full-width bar: left, a one-line recap (“Proposing <b>USD Moderate Core</b> · 2 comparisons”); right, a primary button <em>Continue to Implementation →</em> that calls the same handler as <code>[data-step="impl"]</code> (so the D97 greeting still fires). Disabled with a reason while any column is <code>loading</code>.</dd>
+<dt>Why</dt><dd>The page currently just stops. A first-time user who has read to the bottom has to realise the two circles at the very top are the navigation and scroll back to them. Every stepper needs a forward control where the reader finishes, not only where they start.</dd>
+</dl>
+<div class="mock"><p class="mock-l">Sketch</p><div class="m-bar"><span>Proposing</span><b>USD Moderate Core</b><span>· 2 comparisons · hedged</span><span class="sp"></span><span class="m-btn">Continue to Implementation →</span></div></div>
+</section>
+
+<section class="rec" id="B5"><div class="rec-h"><span class="id">B5</span><h3>Move the charts under the summary, or collapse them by default</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.sec.viz</code>, currently between the two tables.</dd>
+<dt>Change</dt><dd>My preference: keep the scatter, put it <em>beside</em> the B2 strip at wide widths (it is the picture of those same numbers), and demote the stacked bars to a disclosure under the allocation table.</dd>
+<dt>Why</dt><dd>Two ~300px cards split the comparison into two tables a screen apart, which is what makes column identity so fragile (B1). The scatter earns its place — it shows dominance at a glance. The stacked bars mostly restate the category rows with less precision.</dd>
+<dt>Tradeoff</dt><dd class="trade">Judgment call. If PWAs screenshot the stacked bars for client decks, leave them visible and just reorder. Worth asking two users before moving.</dd>
+</dl></section>
+
+<!-- ───────────── C ───────────── -->
+<h2 id="rail"><small>C · The rail &amp; the “+” popover</small>One way to describe a portfolio</h2>
+
+<section class="rec" id="C1"><div class="rec-h"><span class="id">C1</span><h3>Same field order in the rail and the popover</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>renderBase()</code>: Type → Risk → Allocation → Exclude. <code>picker.js paint()</code>: Allocation → Exclude → Risk.</dd>
+<dt>Change</dt><dd>Make the popover Risk → Allocation → Exclude, matching the rail and matching <code>headerName()</code>'s output order (“Moderate-Aggressive · Core · ex-RAs”).</dd>
+<dt>Why</dt><dd>The rail's order was reasoned (D54: an all-equity risk level has no allocation, so allocation is a consequence of risk). The popover predates that and wasn't updated — so in the popover, picking Allocation first and then an all-equity risk level silently greys out what you just chose.</dd>
+</dl></section>
+
+<section class="rec" id="C2"><div class="rec-h"><span class="id">C2</span><h3>Pre-fill the popover with the most likely comparison</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>picker.js</code> <code>cur</code> on <code>open()</code>.</dd>
+<dt>Change</dt><dd>Seed it with the proposed key moved one risk level up (if available and unused; else one down). After “Add to table”, advance to the next unused neighbour rather than leaving the just-added, now-disabled combination selected.</dd>
+<dt>Why</dt><dd>The overwhelmingly common comparison is “same book, adjacent risk”. Today that's three interactions per column from a blank form; pre-filled it's one click each, and the popover already stays open for repeat adds — this makes that design pay off.</dd>
+<dt>Tradeoff</dt><dd class="trade">A default nudges behaviour. That's fine here: it's a suggestion in an editable form, and adjacent-risk is the honest comparison to show a client.</dd>
+</dl></section>
+
+<section class="rec" id="C3"><div class="rec-h"><span class="id">C3</span><h3>Fix the stale full-state copy, and the dead list behind it</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Popover text “All three comparison slots are in use. Remove one <em>from the rail</em>…”, and <code>renderBuilt()</code> writing to <code>#built</code>/<code>#count</code>, which no longer exist in the markup.</dd>
+<dt>Change</dt><dd>Copy → “Remove one with the × on its column.” Delete <code>renderBuilt()</code> or restore the list (see C4). Also don't hardcode “three”: read <code>rules.maxPortfolios − 1</code>.</dd>
+<dt>Why</dt><dd>Instructions that point at a control that isn't there are worse than none.</dd>
+</dl></section>
+
+<section class="rec" id="C4"><div class="rec-h"><span class="id">C4</span><h3>Show a ghost “add” column instead of a bare “+”, with the slot count</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>th.addcol</code> / <code>#plusbtn.plus</code> and the empty <code>td.addcol</code> cells beneath it.</dd>
+<dt>Change</dt><dd>Render the add column at the same width as a data column, dashed border, centred label “+ Add comparison” with “2 of 3 free” beneath. When only the proposed column exists, give it one line of purpose: “Line up an alternative to show what changes.”</dd>
+<dt>Why</dt><dd>A lone “+” glyph in a header cell is the entry point to the screen's core activity and it's the quietest thing on it. After the carefully guided first build (D91), guidance simply stops — a new user has one column and no hint that comparing is the point. The slot count currently appears only <em>inside</em> the popover.</dd>
+<dt>Tradeoff</dt><dd class="trade">Costs a column of width when three real ones are present; at that point collapse it back to the narrow “+”.</dd>
+</dl></section>
+
+<section class="rec" id="C5"><div class="rec-h"><span class="id">C5</span><h3>Summarise the rail once built, rather than leaving five live selects open</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>#tier-basis</code> and <code>#tier-base</code>; the existing <code>.tier-roll</code> chevron and the Mandate tier's <code>dl.summary</code> + <em>Edit</em> pattern.</dd>
+<dt>Change</dt><dd>After the first successful build, roll Scenario basis and Proposed portfolio up into the same read-only summary the Mandate tier uses (“USD · Hedged”, “PMG Multi-Asset · Moderate · Core”), each with <em>Edit</em>. You already built the roll mechanism for step 2 — use it in step 1 too.</dd>
+<dt>Why</dt><dd>Once the portfolio exists, each of those selects is a one-click destructive rebuild of everything on screen (the basis at least confirms; the base selects don't). Leaving them armed, permanently, at the top of the rail invites accidents and spends the rail's prime space on a finished task. Summary-then-edit also makes the rail consistent across its three tiers.</dd>
+<dt>Tradeoff</dt><dd class="trade">One extra click for someone exploring many bases. Mitigate: A4 (promote) and C2 (pre-filled popover) become the fast path for exploration, which is where it belongs.</dd>
+</dl></section>
+
+<section class="rec" id="C6"><div class="rec-h"><span class="id">C6</span><h3>Say <em>why</em> an option is unavailable</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Risk options suffixed “— unavailable” in both <code>renderBase()</code> and the popover.</dd>
+<dt>Change</dt><dd>Name the cause you already know: “— not offered in Irish Onshore”, “— needs an allocation with alternatives”. Where the list is long, group with <code>&lt;optgroup label="Not available for this type"&gt;</code> at the bottom so live choices come first.</dd>
+<dt>Why</dt><dd>“Unavailable” reads as an outage. The user can fix it (change type) if told what's gating it.</dd>
+</dl></section>
+
+<!-- ───────────── D ───────────── -->
+<h2 id="charts"><small>D · Charts</small>Let the pictures identify portfolios</h2>
+
+<section class="rec" id="D1"><div class="rec-h"><span class="id">D1</span><h3>Scatter: distinguish the comparisons, and stop labels colliding</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>#viz-rr</code> in <code>renderCharts()</code>: every comparison is the same <code>#1F5FBF</code> dot, labels centred above, truncated at 20 characters.</dd>
+<dt>Change</dt><dd>Number the columns (P, 1, 2, 3), print the number <em>inside</em> each dot, and carry the same numbers into the table heads and the B2 strip; drop the floating text labels or keep them only when there's room. Add a faint connector from the proposed dot to each comparison so direction (“more return, more risk”) is drawn, not inferred.</dd>
+<dt>Why</dt><dd>The most common comparison — Moderate Core vs Moderate Core ex-RAs — produces two dots a few pixels apart with overlapping, truncated labels (“Moderate-Aggressiv…”). Three identical blue dots with a two-entry legend (“Base / Comparison”) can't tell you which is which. Numbered marks are collision-proof and colour-independent.</dd>
+<dt>Tradeoff</dt><dd class="trade">Don't assign each portfolio a colour: the seven <code>--cat-*</code> category colours already own colour on this page, and a second categorical palette next to the stacked bars would confuse both.</dd>
+</dl></section>
+
+<section class="rec" id="D2"><div class="rec-h"><span class="id">D2</span><h3>Link chart and table on hover/focus</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>Stacked segments in <code>#viz-comp</code>, legend items in <code>#viz-key</code>, <code>tr.cat</code> rows in <code>#alloc</code>; dots in <code>#viz-rr</code> and table columns.</dd>
+<dt>Change</dt><dd>Hovering or focusing a category (segment, legend chip or table row) dims the other six in the bars and applies <code>--row-hover</code> to that row. Hovering a dot or a bar applies the A3 wash to that column. Put a small <code>--cat-n</code> swatch in each <code>tr.cat</code> row head so the table is its own legend.</dd>
+<dt>Why</dt><dd>The colour mapping is by name and stable (nice), but the only place it's decoded is a legend above the chart. Seven muted hues in a stack are hard to match by eye; brushing makes the chart an index into the table rather than a separate artefact.</dd>
+</dl></section>
+
+<section class="rec" id="D3"><div class="rec-h"><span class="id">D3</span><h3>Correct the chart's spoken description</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>aria-label</code> on the bars SVG: “The allocation table <em>below</em> carries the exact values.”</dd>
+<dt>Change</dt><dd>The table is above. Say “the allocation table” and link it (<code>aria-describedby</code> → the table's caption).</dd>
+<dt>Why</dt><dd>A screen-reader user sent the wrong way finds the risk dashboard instead.</dd>
+</dl></section>
+
+<!-- ───────────── E ───────────── -->
+<h2 id="risk"><small>E · Risk dashboard</small>Thirty rows that need structure</h2>
+
+<section class="rec" id="E1"><div class="rec-h"><span class="id">E1</span><h3>Bind each Nominal/Real pair visually to its portfolio</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl.risk</code> data columns. Today only the spanning cells of the first band (<code>.span2</code>) carry a left rule; the paired Nominal/Real cells below it carry none.</dd>
+<dt>Change</dt><dd>A 1px <code>--line-strong</code> rule on the left of every portfolio's <em>Nominal</em> column, full height; tighten padding <em>within</em> a pair and widen it <em>between</em> pairs. Print Real in <code>--ink-2</code> so Nominal leads.</dd>
+<dt>Why</dt><dd>Eight equal-width, equally spaced numeric columns read as eight things. The grouping exists only in a header that (B1) scrolls away. Gestalt proximity does this for free.</dd>
+</dl></section>
+
+<section class="rec" id="E2"><div class="rec-h"><span class="id">E2</span><h3>Drop the duplicated weights from “Factor Based Risk Analytics”</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>First band of <code>renderRisk()</code>: re-prints every category weight from <code>unionRows()</code> plus all three <code>METRIC_ROWS</code>.</dd>
+<dt>Change</dt><dd>On screen, start the dashboard at “Predicted Performance Over Stress Periods”. Keep the band in the exported workbook, where the sheet must stand alone.</dd>
+<dt>Why</dt><dd>It's ~10 rows identical to numbers one screen up, under a heading (“Factor Based Risk Analytics”) that promises something else. Removing it brings the stress rows — the genuinely new information — a third of a screen closer.</dd>
+<dt>Tradeoff</dt><dd class="trade">Breaks strict screen/report parity, which this project values (G6). I'd accept it: the screen is one document, the workbook is separate sheets. If parity wins, at least collapse the band by default.</dd>
+</dl></section>
+
+<section class="rec" id="E3"><div class="rec-h"><span class="id">E3</span><h3>Make the stress rows scannable: in-cell bars, and mark the worst</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>pairCells(…, signed=true)</code> — red/green text only.</dd>
+<dt>Change</dt><dd>A thin bar behind each stress figure, scaled to the largest absolute value in the band, growing left from the cell's right edge for losses. In each row, bold the best (least negative) portfolio. Add a date range to each crisis label as secondary text if the payload has it.</dd>
+<dt>Why</dt><dd>Nine crises × up to eight columns of two-decimal negatives is a wall; the question is “which of my portfolios holds up, and how much worse is 2008 than 2020?” — a magnitude question that bars answer pre-attentively. Colour alone can't, because nearly every cell is red.</dd>
+<dt>Tradeoff</dt><dd class="trade">Bars add ink to a deliberately restrained table. Keep them at ~8% opacity of <code>--neg</code>; they should be felt more than seen.</dd>
+</dl></section>
+
+<section class="rec" id="E4"><div class="rec-h"><span class="id">E4</span><h3>Let bands fold, and explain the jargon in place</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>tr.band</code> rows (Stress Periods, Value at Risk, Conditional VaR, Probability of Loss).</dd>
+<dt>Change</dt><dd>Turn each band into a disclosure button (you now have the exact pattern in the catalogue's <code>.cat-fold</code> — reuse it, including the keyboard handling). Add a one-line definition as secondary text on the band: “Conditional VaR — average loss in the worst 5% of outcomes.”</dd>
+<dt>Why</dt><dd>PWAs know VaR; the analyst preparing the deck may not know which confidence level this one is, and the client certainly will ask. The definition belongs where the number is, not in a guide.</dd>
+</dl></section>
+
+<!-- ───────────── F ───────────── -->
+<h2 id="motion"><small>F · Motion &amp; feedback</small>The motion is good; aim it at the right moments</h2>
+
+<section class="rec" id="F1"><div class="rec-h"><span class="id">F1</span><h3>Flash what changed after a rebuild, not just rows that came and went</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>animateRowChanges()</code> / <code>fadeValue()</code>.</dd>
+<dt>Change</dt><dd>When a column re-resolves while <code>holdsPreviousData()</code> is true (e.g. hedging toggled, Exclude Real Assets ticked), diff old vs new per cell and give changed figures a 1.2s accent underline that fades. Unchanged cells don't move.</dd>
+<dt>Why</dt><dd>Row entry/exit is handled beautifully, but the far more common event is <em>same rows, different numbers</em>. Toggling hedging changes perhaps six figures out of a hundred, and right now the user has to remember the old ones to notice.</dd>
+<dt>Tradeoff</dt><dd class="trade">You've removed <code>prefers-reduced-motion</code> handling (D90). A colour fade isn't motion in the vestibular sense, so this stays within that decision.</dd>
+</dl></section>
+
+<section class="rec" id="F2"><div class="rec-h"><span class="id">F2</span><h3>Undo on column removal</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.col-rm</code> → <code>removeComparison()</code>.</dd>
+<dt>Change</dt><dd>On remove, show a 6-second toast in the polite live region: “Removed Moderate-Aggressive Core · <u>Undo</u>”. Hold the resolved column in memory so undo is instant; defer <code>deleteColumnOnServer()</code> until the toast expires.</dd>
+<dt>Why</dt><dd>The × is a 24px target sitting 1px from the column name, and it's the only red thing in the header. Mis-clicks cost a popover round-trip and a fetch. Undo is cheaper than a confirm dialog and doesn't slow the deliberate case.</dd>
+</dl></section>
+
+<section class="rec" id="F3"><div class="rec-h"><span class="id">F3</span><h3>A persistent “saved” signal</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The spot <code>.resolving</code> occupies in <code>.stage-head</code>; <code>saveSnapshot()</code>/<code>persistBasis()</code>.</dd>
+<dt>Change</dt><dd>When idle, show “Saved · 14:02” in <code>--ink-3</code> there; swap to the spinner while resolving; “Not saved — read only” in the degraded state.</dd>
+<dt>Why</dt><dd>The scenario autosaves, but the user can't know that — there's no Save button and no indication. People about to close a tab before a client meeting need that reassurance; your degraded banner already proves you think about this moment.</dd>
+</dl></section>
+
+<!-- ───────────── G ───────────── -->
+<h2 id="a11y"><small>G · Accessibility</small>Specific gaps in an otherwise careful build</h2>
+
+<section class="rec" id="G1"><div class="rec-h"><span class="id">G1</span><h3>Finish the tab pattern on the step nav — or stop claiming it</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>#steps[role=tablist]</code> with <code>role=tab</code> buttons; <code>#view-aa</code> and <code>#view-impl-wrap</code> have no <code>role=tabpanel</code>, no <code>aria-controls</code>/<code>aria-labelledby</code>, and both tabs stay in the Tab order (no roving <code>tabindex</code>).</dd>
+<dt>Change</dt><dd>Add the panel roles and relationships and roving tabindex (arrow keys are already handled). Alternatively — and I think more honestly — make it <code>&lt;nav&gt;</code> with <code>aria-current="step"</code>: these are sequential steps with a gated greeting, not peer tabs.</dd>
+<dt>Why</dt><dd>A half-implemented tablist tells a screen reader “tab 1 of 2” and then offers no panel to move to.</dd>
+</dl></section>
+
+<section class="rec" id="G2"><div class="rec-h"><span class="id">G2</span><h3>Make the scatter's data reachable without a mouse</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>circle.dot[data-tip]</code> — tooltip on hover only; the SVG is a single <code>role="img"</code>.</dd>
+<dt>Change</dt><dd>Give each dot <code>tabindex="0"</code>, <code>role="img"</code> and an <code>aria-label</code> (“Moderate Core: volatility 7.03%, return 5.41%”), show the tip on focus, and change the wrapper to <code>role="group"</code>. With D1's numbering the label can lead with the number.</dd>
+<dt>Why</dt><dd>Keyboard and touch users currently get no values from the chart at all; the label tells them to go read the table.</dd>
+</dl></section>
+
+<section class="rec" id="G3"><div class="rec-h"><span class="id">G3</span><h3>Signed figures need more than red and green</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl td.pos{#1A7F37}</code> / <code>td.neg{#B42318}</code> in the stress band.</dd>
+<dt>Change</dt><dd>Always print the sign — a true minus (U+2212) and an explicit <code>+</code> — via <code>num()</code> when <code>signed</code>. Check the green on the <code>.alt</code> stripe and <code>--row-hover</code> backgrounds; <code>#1A7F37</code> is ~4.9:1 on white but drops on tinted rows.</dd>
+<dt>Why</dt><dd>Red/green is the commonest colour-vision deficiency, among a user base that skews male. A hyphen-minus in a condensed face at 15px is easy to miss; with the sign explicit the colour becomes reinforcement, which is what it should be. Difference mode (A1) depends on this too.</dd>
+</dl></section>
+
+<section class="rec" id="G4"><div class="rec-h"><span class="id">G4</span><h3>Announce which column a cell belongs to in the risk table</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>nominalRealStrip()</code> emits <code>&lt;th scope="col"&gt;Nominal&lt;/th&gt;</code> mid-<code>tbody</code>; portfolio heads use <code>scope="colgroup"</code> but there are no <code>&lt;colgroup&gt;</code> elements per portfolio (one flat colgroup of <code>n×2</code> cols).</dd>
+<dt>Change</dt><dd>Emit one <code>&lt;colgroup span="2"&gt;</code> per portfolio, give each portfolio <code>th</code> an <code>id</code>, and put <code>headers="p2 nom"</code> on data cells in the paired bands.</dd>
+<dt>Why</dt><dd>As built, a screen reader in a stress cell hears “Nominal, −18.42%” with no portfolio name — <code>scope="colgroup"</code> has no colgroup to resolve against. It's the non-visual version of B1.</dd>
+</dl></section>
+
+<!-- ───────────── H ───────────── -->
+<h2 id="resp"><small>H · Responsive</small>Below 1040px the rail eats the screen</h2>
+
+<section class="rec" id="H1"><div class="rec-h"><span class="id">H1</span><h3>Reconcile the two breakpoints</h3><div class="tags"><span class="tag bug">Defect</span><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd>The rail stacks at <code>max-width:1040px</code>; the guide, picker sheet and wire use <code>max-width:1039px</code> / <code>GUIDE_WIDE = min-width:1040px</code>.</dd>
+<dt>Change</dt><dd>One custom property / one constant; make every rule <code>1039</code>.</dd>
+<dt>Why</dt><dd>At exactly 1040px wide the rail is stacked above the document <em>and</em> the guide believes it is beside it, so the dashed wire is drawn to a field that isn't where the geometry assumes. 1040 is a plausible window width (half of a 2080 display, or an iPad Pro in split view).</dd>
+</dl></section>
+
+<section class="rec" id="H2"><div class="rec-h"><span class="id">H2</span><h3>Narrow: collapse the rail to a summary bar after the first build</h3><div class="tags"><span class="tag m">M</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.rail{position:static}</code> under 1040px — the full rail (brand, mandate, basis, five base controls, admin bar) sits above the document.</dd>
+<dt>Change</dt><dd>Once a base exists, render the narrow rail as a single sticky line — “USD · Hedged · Moderate Core · <u>Edit</u>” — that opens the full rail as a sheet, the same way the picker already becomes <code>.pop.sheet</code>. Before a base exists, keep today's behaviour; the guided build needs the fields in view.</dd>
+<dt>Why</dt><dd>On a tablet in a client meeting, the entire first screen is form controls for a decision already made, and the comparison — the thing you'd turn the tablet around to show — is a full scroll away. C5 gives you the summary content for free.</dd>
+</dl></section>
+
+<section class="rec" id="H3"><div class="rec-h"><span class="id">H3</span><h3>Narrow tables: fix the label column width and signal the overflow</h3><div class="tags"><span class="tag s">S</span></div></div>
+<dl class="r">
+<dt>Element</dt><dd><code>.tbl{min-width:850px}</code> (740px under 900) inside <code>.tblwrap</code>; sticky <code>tbody th</code> with <code>white-space:nowrap</code>.</dd>
+<dt>Change</dt><dd>Under 700px cap the sticky label column at ~44% of the viewport with <code>white-space:normal</code> and a 2-line clamp; add the right-edge scroll shadow you just built for the catalogue (<code>catEdge()</code> generalises directly). Consider a “Proposed + one” mode that shows two columns with a selector for the second.</dd>
+<dt>Why</dt><dd>“Private Equity &amp; Other Private Assets”, unwrapped and sticky, can occupy most of a phone-width viewport, leaving a sliver for the numbers and no cue that there are three more columns to the right. You solved exactly this affordance problem yesterday in the catalogue.</dd>
+</dl></section>
+
+<h2 id="keep"><small>Finally</small>What to leave alone</h2>
+<p class="lede">Things this screen does better than most tools of its kind — don't let the changes above erode them.</p>
+<ul class="keep">
+  <li><strong>The guided first build</strong> (card, wire, moving focus). It's the best onboarding moment in the product. C4 extends its spirit; nothing should replace it.</li>
+  <li><strong>Availability-aware selects</strong> that disable rather than hide impossible combinations. C6 only asks them to explain themselves.</li>
+  <li><strong>Per-column loading and failure</strong> with Retry on the column itself, and old data held while a rebuild resolves. This is why the screen never feels broken.</li>
+  <li><strong>Colour by category name, never position</strong>, and colour reserved for categories. D1 deliberately avoids adding a second palette.</li>
+  <li><strong>The basis-change confirm</strong> inline in the rail, stating the consequence (“Rebuild 3 portfolios in EUR?”). Right weight, right place.</li>
+  <li><strong>The restrained table typography</strong> — condensed numerals, tinted category rows, heavy total. It looks like the document it will become. The job is structure, not decoration.</li>
+</ul>
+
+<footer>Based on the generator source on branch <code>sleeve-editions</code>. Mock-ups are illustrative, with invented figures. No existing files were changed.</footer>
+</main>
+</div>
+</body>
+</html>

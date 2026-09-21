@@ -7,6 +7,7 @@ run would be. Tests that write clean up after themselves.
 
 import csv
 import os
+import re
 import sqlite3
 
 import pytest
@@ -390,9 +391,15 @@ def test_schema_tells_the_page_whether_the_caller_is_an_admin(monkeypatch):
     assert admin['capabilities']['canAdmin'] is True
     assert editor['capabilities']['canAdmin'] is False
     assert admin['capabilities']['canEdit'] is True, 'the existing capabilities survive'
-    # and the stamp did not leak into whatever the port hands back
+    # ...and who they are, so the landing page can name the session it is
+    # offering the library to (D106). The repository payload carried this
+    # already, but that is only fetched once the console is open.
+    assert admin['capabilities']['user'] == 'alice'
+    assert editor['capabilities']['user'] == 'bob'
+    # and neither stamp leaked into whatever the port hands back
     again = dashboardRouter.getScenarioSchema(_request('bob'), caller=_caller('bob'))
     assert again['capabilities']['canAdmin'] is False
+    assert again['capabilities']['user'] == 'bob'
 
 
 def test_every_repository_route_requires_the_admin_role():
@@ -492,9 +499,9 @@ def test_a_dropped_product_is_reported_by_product_with_the_sleeves_it_breaks(tmp
 
 def test_catalogue_helpers_mirror_the_rules_they_implement():
     """The view's pure functions - the join, the enrichment, the derived
-    figures, the faceted counts, the filter, the sort and the best-per-row
-    marking - run through node against fixture data, the way the rounding and
-    tilt mirrors are proved (D63)."""
+    figures, the faceted counts, the filter, the sort, the best-per-row
+    marking and the banding by category (D100) - run through node against
+    fixture data, the way the rounding and tilt mirrors are proved (D63)."""
     import json
     import shutil
     import subprocess
@@ -532,6 +539,13 @@ const rows = catEnrich(products, sleeves, mgmt, 2000000);
 const ids = rs => rs.map(r => r.p.productId);
 const run = (state, sort) => ids(catSort(catFilter(rows, state), sort));
 const none = { query: '', filters: {} };
+// the banded view (D100): in rows2, product a is held by an Equity sleeve as well
+const sleeves2 = sleeves.concat([{ id: 3, variant: 'T1', category: 'Equity', name: 'S3',
+                                  products: [{ productId: 'a', weight: 1.0 }] }]);
+const rows2 = catEnrich(products, sleeves2, mgmt, 2000000);
+const onlyEquity = { query: '', filters: { category: ['Equity'] } };
+const bands = (rs, order, chosen) => catGroups(rs, order, chosen).map(g => ({
+  key: g.key, ids: ids(g.rows), lo: +g.lo.toFixed(2), hi: +g.hi.toFixed(2), notDaily: g.notDaily }));
 process.stdout.write(JSON.stringify({
   join: catJoin(sleeves),
   enriched: rows.map(r => ({ id: r.p.productId, used: r.used, cats: r.categories, books: r.books, mgmt: r.mgmt,
@@ -548,6 +562,12 @@ process.stdout.write(JSON.stringify({
   yieldAsc: run(none, { key: 'distributionYield', dir: 'asc' }),
   minAsc: run(none, { key: 'minimumInvestment', dir: 'asc' }),
   best: catBest(rows),
+  banded: bands(catSort(rows, { key: 'allIn', dir: 'desc' }), ['Fixed Income', 'Not yet placed']),
+  bandOrder: bands(rows, ['Not yet placed', 'Fixed Income']).map(g => g.key),
+  twice: bands(rows2, ['Equity', 'Fixed Income', 'Not yet placed']),
+  chosen: bands(catFilter(rows2, onlyEquity), ['Equity', 'Fixed Income', 'Not yet placed'], ['Equity']),
+  unlisted: bands(rows2, ['Not yet placed']).map(g => g.key),
+  nothing: catGroups([], ['Fixed Income']),
 }));
 ''' % (json.dumps(productsFx), json.dumps(sleevesFx), json.dumps(facets))
     out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
@@ -574,6 +594,20 @@ process.stdout.write(JSON.stringify({
     assert got['yieldDesc'] == ['b', 'a', 'c'] and got['yieldAsc'] == ['a', 'b', 'c'], 'a blank sorts last either way'
     assert got['minAsc'] == ['c', 'b', 'a']
     assert got['best'] == {'productCost': 'a', 'mgmt': 'a', 'allIn': 'a', 'distributionYield': 'b', 'net': 'b'}
+    # banded by category (D100): the bands in the order given, the rows in the
+    # order they came in - so a sort applies within a band - and each band with
+    # its count, its all-in range and how many of its products are not daily
+    assert got['banded'] == [
+        {'key': 'Fixed Income', 'ids': ['b', 'a'], 'lo': 0.40, 'hi': 0.60, 'notDaily': 0},
+        {'key': 'Not yet placed', 'ids': ['c'], 'lo': 1.42, 'hi': 1.42, 'notDaily': 1}]
+    assert got['bandOrder'] == ['Not yet placed', 'Fixed Income'], 'the order is the one handed in, not first come'
+    # category is a join: a product two categories hold stands in both bands ...
+    assert [(g['key'], g['ids']) for g in got['twice']] == [
+        ('Equity', ['a']), ('Fixed Income', ['a', 'b']), ('Not yet placed', ['c'])]
+    # ... and with a category filter in force, only the chosen categories make bands
+    assert [(g['key'], g['ids']) for g in got['chosen']] == [('Equity', ['a'])]
+    assert got['unlisted'] == ['Not yet placed', 'Equity', 'Fixed Income'], 'a category the order does not name comes after, by name'
+    assert got['nothing'] == []
 # ---- creating under several books, and copying between them (D61) ----------------
 
 def test_one_definition_can_be_created_under_several_types_at_once():
@@ -1226,3 +1260,315 @@ def test_the_mirror_hands_out_the_shape_the_host_hands_out(monkeypatch):
         assert isinstance(sleeveRepo.history(entry['id'])[0]['actor'], str)
     finally:
         sleeveRepo.deleteSleeve(entry['id'], user='alice')
+
+
+def test_a_currency_change_moves_the_columns_it_can_and_falls_back_for_the_rest():
+    """A portfolio key carries its currency, so changing the base currency
+    re-keys every column (D102).
+
+    The old code asked whether the OLD key was available under the NEW
+    currency's schema - "USD|Moderate|Core|0" against a CHF availability set -
+    which never matched, so a currency change dropped every column including
+    the proposed portfolio, and removing that is the one thing the store
+    refuses. The rules the fix rests on, in node: the same combination in the
+    new currency, and the nearest risk level offering it when it has none."""
+    import json
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'core.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+
+    def pull(name):
+        start = source.index('function ' + name + '(')
+        return source[start:source.index('\n}\n', start) + 3]
+
+    helpers = ''.join(pull(n) for n in
+                      ('keyStr', 'typesForRisk', 'isAllEquityRisk', 'reAllowed',
+                       'buildKey', 'nearestAvailable'))
+    # Low Vol and Moderate are offered in GBP; Moderate-Aggressive is not, and
+    # All Equity holds no allocation type at all, so it keys without one.
+    schema = {
+        'options': {
+            'riskLevels': ['LowVol', 'Moderate', 'ModAgg', 'All Equity'],
+            'allocations': ['Core', 'Full'],
+            'allocationTypesByRisk': {'LowVol': ['Core', 'Full'], 'Moderate': ['Core', 'Full'],
+                                      'ModAgg': ['Core', 'Full'], 'All Equity': []},
+            'reAllowed': ['Full'],
+        },
+        'availability': ['GBP|LowVol|Core|0', 'GBP|Moderate|Core|0', 'GBP|Full|NA|NA',
+                         'GBP|Moderate|Full|1', 'GBP|All Equity|NA|NA', 'USD|ModAgg|Core|0'],
+    }
+    script = helpers + '''
+const SCHEMA = %s;
+var state = { basis: { currency: 'GBP' } };
+function opt(path, fallback) {
+  var at = SCHEMA;
+  var parts = path.split('.');
+  for (var i = 0; i < parts.length; i++) {
+    if (at === null || at === undefined || !(parts[i] in at)) return fallback;
+    at = at[parts[i]];
+  }
+  return at === undefined ? fallback : at;
+}
+const AVAIL = {};
+SCHEMA.availability.forEach(function (k) { AVAIL[k] = 1; });
+function available(k) { return !!AVAIL[keyStr(k)]; }
+/* the move confirmBasisChange makes: the same combination, new currency */
+const move = k => buildKey(k.allocationType, k.excludeRealAssets, k.riskLevel);
+const usd = (risk, alloc, ex) => ({ currency: 'USD', riskLevel: risk,
+                                    allocationType: alloc, excludeRealAssets: !!ex });
+process.stdout.write(JSON.stringify({
+  oldKeyIsNeverAvailable: available(usd('Moderate', 'Core')),
+  moved: keyStr(move(usd('Moderate', 'Core'))),
+  movedIsAvailable: available(move(usd('Moderate', 'Core'))),
+  exclusionKept: keyStr(move(usd('Moderate', 'Full', true))),
+  allEquityKeepsNoAllocation: keyStr(move({ currency: 'USD', riskLevel: 'All Equity',
+                                            allocationType: null, excludeRealAssets: null })),
+  withdrawn: available(move(usd('ModAgg', 'Core'))),
+  fellTo: keyStr(nearestAvailable(move(usd('ModAgg', 'Core')))),
+  nothingOffersIt: nearestAvailable({ currency: 'GBP', riskLevel: 'Moderate',
+                                      allocationType: 'Nonesuch', excludeRealAssets: false }),
+}));
+''' % json.dumps(schema)
+    out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
+    got = json.loads(out.stdout)
+    assert got['oldKeyIsNeverAvailable'] is False, \
+        'the old currency\'s key cannot be found in the new currency: this was the bug'
+    assert got['moved'] == 'GBP|Moderate|Core|0' and got['movedIsAvailable'] is True
+    assert got['exclusionKept'] == 'GBP|Moderate|Full|1', 'the exclusion travels with the column'
+    assert got['allEquityKeepsNoAllocation'] == 'GBP|All Equity|NA|NA'
+    # a combination the new currency does not offer falls to the nearest level
+    assert got['withdrawn'] is False
+    assert got['fellTo'] == 'GBP|LowVol|Core|0', 'the first risk level the combination offers'
+    assert got['nothingOffersIt'] is None, 'and nothing is invented when none does'
+
+
+def test_the_page_never_asks_the_store_to_remove_the_proposed_portfolio():
+    """The store refuses it (spec 2.7), so every request is a 422 in the
+    user's face. Three paths used to send one: a basis change, a prune, and a
+    base edit that promoted a comparison - the last racing its own POST, which
+    already drops the duplicate in the same write (D102)."""
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'core.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+
+    def body(name):
+        start = source.index('function ' + name + '(')
+        return source[start:source.index('\n}\n', start)]
+
+    # a basis change removes the stale COMPARISON keys only
+    basis = body('confirmBasisChange')
+    assert 'state.columns.slice(1).map(function (col) { return col.key; })' in basis
+    assert basis.count('deleteColumnOnServer') == 1, \
+        'one removal path, over the comparisons, and nothing else'
+    # the two sweeps that drop unavailable columns skip index 0
+    for name in ('pruneUnavailableColumns', 'setVariant'):
+        for line in body(name).splitlines():
+            if 'deleteColumnOnServer' in line:
+                assert 'i > 0' in line, name + ' must not remove the proposed portfolio'
+    # promoting a comparison is a single recorded write
+    assert 'deleteColumnOnServer' not in body('setBase'), \
+        'recording a base drops a comparison that duplicates it; sending both raced'
+
+
+def test_a_sleeve_says_what_it_holds_and_costs_before_it_is_chosen():
+    """Choosing between SMA Only, Mutual Funds and Passive is the central act
+    of step 2, and it was made blind: the consequence appeared only after the
+    choice, in a table whose cost columns are off the right edge (D103).
+
+    The picker now states, per sleeve, what it holds and what it would cost at
+    the category's current weight - built from the same product costs and the
+    same managementFee the table's own weighted fee is built from. Run in node
+    against the extracted source."""
+    import json
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'implementation.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('function sleeveShape(')
+    fn = source[start:source.index('\n}\n', start) + 3]
+
+    # A $10m mandate and a category at 40%, so the sleeve holds $4m: the 5% leg
+    # is $200,000 against a $1m minimum and breaches it; the 45% leg is
+    # $1,800,000 and clears its $250,000 minimum - but would not at a tenth of
+    # the weight, which is the point of asking per category.
+    sleeve = {'products': [
+        {'weight': 0.50, 'productCost': 0.10, 'feeGroup': 'Passive', 'minimumInvestment': None},
+        {'weight': 0.45, 'productCost': 0.30, 'feeGroup': 'Core Active', 'minimumInvestment': 250_000},
+        {'weight': 0.05, 'productCost': 0.90, 'feeGroup': 'Alternatives', 'minimumInvestment': 1_000_000},
+    ]}
+    script = fn + '''
+const MGMT = { Passive: 0.09, 'Core Active': 0.38, Alternatives: 0.76 };
+function managementFee(group) { return group in MGMT ? MGMT[group] : null; }
+const SLEEVE = %s;
+let priced = true, schedule = 'RDR';
+var App = { includeFees: () => priced, feeSchedule: () => schedule, mandateSize: () => 10000000 };
+const on = sleeveShape(SLEEVE, 40);
+priced = false;
+const off = sleeveShape(SLEEVE, 40);
+priced = true;
+const small = sleeveShape(SLEEVE, 4);           /* the whole sleeve is $400k */
+process.stdout.write(JSON.stringify({
+  on: { count: on.count, cost: +on.cost.toFixed(4), priced: on.priced, below: on.below },
+  off: { cost: +off.cost.toFixed(4), priced: off.priced, below: off.below },
+  smallBelow: small.below,
+  empty: sleeveShape({ products: [] }, 40),
+  unpriced: sleeveShape({ products: [{ weight: 1, productCost: 0.1, feeGroup: 'Nonesuch' }] }, 40).cost,
+}));
+''' % json.dumps(sleeve)
+    got = json.loads(subprocess.run([node, '-e', script], capture_output=True,
+                                    text=True, check=True).stdout)
+    # all-in is the weight-weighted sum of product cost plus its management fee
+    allIn = 0.50 * (0.10 + 0.09) + 0.45 * (0.30 + 0.38) + 0.05 * (0.90 + 0.76)
+    assert got['on'] == {'count': 3, 'cost': round(allIn, 4), 'priced': True, 'below': 1}
+    # unpriced, it is the product cost alone - and says so by not being "all-in"
+    assert got['off']['priced'] is False
+    assert got['off']['cost'] == round(0.50 * 0.10 + 0.45 * 0.30 + 0.05 * 0.90, 4)
+    assert got['off']['below'] == 1, 'a minimum does not depend on the fee level'
+    # at a tenth of the weight, the leg that cleared its $250,000 minimum no longer does
+    assert got['smallBelow'] == 2
+    assert got['empty'] is None, 'a sleeve with no products has nothing to say'
+    assert got['unpriced'] is None, 'an unresolvable fee gives no figure, never a guessed one'
+
+
+def test_step_two_says_its_state_once_and_in_three_places():
+    """The head, the strip under the table and the export card all report the
+    same gate (D103). It used to be worked out inline where the card is drawn,
+    so the head could only repeat the sleeve count and the one fact that
+    mattered - that the file cannot be produced - sat below five doughnuts."""
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'implementation.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+    view = source[source.index('function renderView()'):]
+    assert view.count('exportGate(') == 1, 'worked out once'
+    for used in ('gate.headline', 'gate.html', 'gate.tone', 'gate.disabled'):
+        assert used in view, used
+    # the head, the strip and the card each read it
+    assert 'cs-state ' in view and 'impl-state ' in view and 'export-gate ' in view
+    # nothing is truncated out of the blocked list any more, and the remedy it
+    # names has to be one this page can actually carry out
+    gate = source[source.index('function exportGate('):source.index('function renderView()')]
+    assert 'and 1 more' not in gate and "' more'" not in gate
+    assert 'drop the product' not in gate, 'nothing here can drop a product from a sleeve'
+    assert 'data-implgo=' in gate, 'each named product is the way to its row'
+
+
+def test_the_register_prints_a_proposal_in_its_own_currency():
+    """The register is the record of what was delivered to a client, and it
+    printed every figure in dollars: a GBP mandate as $200.0m with "GBP" in
+    the next column, and its notionals to match (D105).
+
+    money() now takes the currency the row already carries. Run in node
+    against the extracted source."""
+    import json
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('var CURRENCY_MARK')
+    fn = source[start:source.index('\n}\n', source.index('function money(', start)) + 3]
+    script = fn + '''
+process.stdout.write(JSON.stringify({
+  gbp: [money(200000000, 'GBP'), money(52400000, 'GBP'), money(7700, 'GBP'), money(120, 'GBP')],
+  usd: money(500000000, 'USD'),
+  eur: money(250000, 'EUR'),
+  chf: money(4000000, 'CHF'),
+  unknown: money(1000000, 'SGD'),
+  none: money(1000000),
+  blank: money(null, 'GBP'),
+}));
+'''
+    got = json.loads(subprocess.run([node, '-e', script], capture_output=True,
+                                    text=True, check=True).stdout)
+    assert got['gbp'] == ['£200.0m', '£52.4m', '£8k', '£120']
+    assert got['usd'] == '$500.0m'
+    assert got['eur'] == '€250k'
+    # a currency whose symbol would be ambiguous prints its code instead: better
+    # a reader who has to think than one quietly told the wrong thing
+    assert got['chf'].startswith('CHF') and got['chf'].endswith('4.0m')
+    assert got['unknown'].startswith('SGD') and got['unknown'].endswith('1.0m')
+    assert got['none'] == '1.0m', 'no currency means no mark, never a guessed one'
+    assert got['blank'] == '—'
+
+    # and every caller passes one: a bare money(x) in the register would be the
+    # defect coming back
+    for call in re.findall(r'\bmoney\(([^()]*)\)', source):
+        if call.strip() in ('n, currency', ''):
+            continue
+        assert ',' in call, 'money() called without a currency: ' + call
+
+
+def test_an_unsaved_sleeve_survives_the_exit_that_was_not_guarded():
+    """Switching view, closing the dialog and moving to another sleeve were
+    all guarded; a reload was not, and lost the draft silently (D105).
+
+    The kept copy is written while there is something to lose and cleared only
+    by the three things that mean it is no longer wanted - a save, a discard,
+    and the admin turning the offer down. Clearing it whenever the draft in
+    hand is clean would erase it on the first render after the reload it
+    exists for, which is how it was first written."""
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+
+    def body(name):
+        start = source.index('function ' + name + '(')
+        return source[start:source.index('\n}\n', start)]
+
+    assert "window.addEventListener('beforeunload'" in source
+    keep = body('keepDraft')
+    assert '!repo.dirty) return' in keep, 'written only while there is something to lose'
+    assert 'removeItem' not in keep, 'a clean draft must not erase the kept copy'
+    # the three that do clear it
+    assert 'forgetKeptDraft()' in body('resolveLeaving'), 'discarding discards'
+    assert 'forgetKeptDraft()' in source[source.index('async function saveDraft('):
+                                         source.index('async function deleteCurrent(')], 'a save means it is in the store'
+    turnedDown = source.index('ds.repokeptdrop')
+    assert 'forgetKeptDraft()' in source[turnedDown:turnedDown + 200], 'turning it down clears it'
+    # storage throws in a private window, and the console must still work
+    assert keep.count('try {') == 1 and 'catch' in keep
+
+
+def test_the_landing_offers_the_library_to_an_admin_and_to_nobody_else():
+    """The console never needed a scenario - it opens cold at #repository and
+    works - but the only visible entry was the rail's admin bar, and the rail
+    is display:none on the landing page (D106).
+
+    The strip that fixes that is gated the way the rail's bar is: rendered
+    whole or not at all, so a non-admin's landing page has no gap where it
+    would have been."""
+    js = os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js')
+    with open(js, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('function renderLandingAdmin(')
+    body = source[start:source.index('\n}\n', start)]
+    # gated on the role, and on being on the landing page rather than in a
+    # workspace where the rail already carries the same entry points
+    assert "App.phase() !== 'workspace'" in body
+    assert 'host.hidden = !on' in body and "host.innerHTML = ''" in body, \
+        'hidden AND emptied: a strip with nothing in it is worse than no strip'
+    # every view is reachable, not just the two the rail's glyphs offer
+    views = re.search(r'var LANDING_VIEWS = \[(.*?)\];', source, re.S).group(1)
+    for view in ('repository', 'catalogue', 'archive', 'activity', 'proposals'):
+        assert "'" + view + "'" in views, view
+    # real anchors carrying the hashes the console already answers to, so a
+    # middle click opens a second tab and a copied link still works
+    assert "'<a href=\"#' + v[0] + '\" data-repoopen=\"' + v[0] + '\">'" in body
+
+    shell = os.path.join(HERE, '..', '..', 'generator', 'build_styles.py')
+    with open(shell, encoding='utf-8') as fh:
+        page = fh.read()
+    assert '<div class="lp-admin" id="lpadmin" hidden></div>' in page, \
+        'it starts hidden, so it can never flash before the schema says who is asking'
