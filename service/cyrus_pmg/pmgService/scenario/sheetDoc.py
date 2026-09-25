@@ -21,6 +21,7 @@ the production styling tests held the fourth.
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal, ROUND_HALF_UP
 
 from . import fees
 from . import portfolio_weights as pw
@@ -818,3 +819,143 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         for column in text:
             doc.cell(rowIndex, column).align = {'horizontal': 'left'}
     return doc, headerRow, totalRow
+
+
+# --------------------------------------------------------------------- #
+# Phase 2 (D120): the two pieces a second renderer needs and Excel does
+# not - rendering a number format to text, and cutting a Doc into pages.
+# --------------------------------------------------------------------- #
+
+#: every number format a builder is allowed to use. renderNumber covers
+#: exactly this set and refuses anything else, so a new format cannot slip
+#: into the report without the deck learning to display it.
+NUMBER_FORMATS = ('General', '0.00%', '0.0%', '0%', '0.0', '0.00',
+                  '$#,##0', 'mmm-yy')
+
+#: English month abbreviations, spelt out so 'mmm-yy' cannot drift with the
+#: host's locale the way strftime('%b') would.
+_MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+
+
+def _fixed(value, places: int) -> str:
+    """*value* to *places* decimal places, rounding halves away from zero -
+    which is Excel's rounding, and not Python's round(). Scaling and
+    quantising happen in Decimal via repr, so 0.2405 x 100 is 24.05 and not
+    24.049999999999997."""
+    quantum = Decimal(1).scaleb(-places)
+    return str(Decimal(repr(float(value))).quantize(quantum, rounding=ROUND_HALF_UP))
+
+
+def renderNumber(value, fmt) -> str:
+    """The text Excel displays for *value* under *fmt* (D120).
+
+    A PowerPoint table cell holds text, so what Excel resolves at display
+    time this function resolves at build time. None renders as the empty
+    string; a str passes through whatever the format says (as in Excel,
+    where text ignores a numeric format); an unknown format raises, because
+    silently guessing a display is how the two files would drift apart.
+
+    The sign rides the value, digits ride the rounded magnitude - so a tiny
+    negative that rounds to nothing still shows its minus ('-0.0%'), exactly
+    as Excel prints it, and exactly why the stress rule reads the raw value
+    rather than the printed one.
+    """
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if fmt is None or fmt == 'General':
+        if isinstance(value, bool):
+            return 'TRUE' if value else 'FALSE'
+        if isinstance(value, float) and value == int(value):
+            return str(int(value))
+        return str(value)
+    if fmt == 'mmm-yy':
+        if isinstance(value, datetime.date):
+            return '{}-{:02d}'.format(_MONTHS[value.month - 1], value.year % 100)
+        return str(value)
+    if fmt in ('0.00%', '0.0%', '0%'):
+        places = len(fmt) - 3 if '.' in fmt else 0
+        scaled = Decimal(repr(float(value))) * 100
+        quantum = Decimal(1).scaleb(-places)
+        return str(scaled.quantize(quantum, rounding=ROUND_HALF_UP)) + '%'
+    if fmt in ('0.0', '0.00'):
+        return _fixed(value, len(fmt) - 2)
+    if fmt == '$#,##0':
+        magnitude = Decimal(repr(abs(float(value)))).quantize(
+            Decimal(1), rounding=ROUND_HALF_UP)
+        return ('-' if float(value) < 0 else '') + '$' + '{:,}'.format(int(magnitude))
+    raise ValueError('renderNumber does not know the format {!r}'.format(fmt))
+
+
+#: Excel's default row height, for a row the builder left unsized.
+DEFAULT_ROW_PT = 15.0
+
+
+class Page:
+    """One slide's worth of a Doc: the header rows a page repeats, and the
+    body rows it shows, both in reading order."""
+
+    __slots__ = ('header', 'body')
+
+    def __init__(self, header, body):
+        self.header = list(header)
+        self.body = list(body)
+
+
+def paginate(doc: SheetDoc, budgetPt: float, headerRows=(1,),
+             defaultRowPt: float = DEFAULT_ROW_PT):
+    """Cut a Doc into pages of at most *budgetPt* points of rows (D120).
+
+    The workbook's own convention, made explicit: *headerRows* repeat at the
+    top of every page (``print_title_rows``), and a page breaks only above a
+    row the builder marked as a section start - a category band, a risk
+    subhead - so a break never separates a heading from its first line. A
+    stretch with no mark that outgrows the budget splits where it must
+    rather than overflowing the canvas.
+
+    Pure: the Doc is read, never changed, and the same call returns the
+    same pages. Row cost is the builder's height or *defaultRowPt*; the
+    budget includes the repeated headers.
+    """
+    header = list(headerRows)
+    headSet = set(header)
+
+    def cost(index):
+        row = doc.rows.get(index)
+        height = row.height if row is not None and row.height is not None else None
+        return height if height is not None else defaultRowPt
+
+    body = [index for index in sorted(doc.rows) if index not in headSet]
+    if not body:
+        return [Page(header, [])]
+    headCost = sum(cost(index) for index in header)
+
+    pages, current = [], []
+    used = headCost
+    position = 0
+    while position < len(body):
+        index = body[position]
+        rowCost = cost(index)
+        if current and used + rowCost > budgetPt:
+            # break above the LAST section mark inside the page, so the page
+            # ends where a section ended; a page whose only mark is its own
+            # first row has none to give and splits hard
+            split = None
+            for k in range(len(current) - 1, 0, -1):
+                if current[k] in doc.sections:
+                    split = k
+                    break
+            carry = current[split:] if split is not None else []
+            page = current[:split] if split is not None else current
+            pages.append(Page(header, page))
+            current = list(carry)
+            used = headCost + sum(cost(x) for x in current)
+            continue                     # the row that overflowed goes again
+        current.append(index)
+        used += rowCost
+        position += 1
+    if current:
+        pages.append(Page(header, current))
+    return pages

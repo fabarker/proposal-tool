@@ -85,9 +85,12 @@ def test_the_builders_import_no_file_format():
     for banned in ('openpyxl', 'pptx', 'xlsxwriter'):
         assert not any(name == banned or name.startswith(banned + '.')
                        for name in imported), (banned, sorted(imported))
-    # and nothing sideways: the module reaches only its own package's data
-    assert all(name.startswith(('datetime', 'fees', 'portfolio_weights', ''))
-               for name in imported), sorted(imported)
+    # and nothing sideways: the exact import surface, pinned. A new import
+    # here is a design event, and this list is where it gets reviewed.
+    assert imported == {'__future__', '__future__.annotations',
+                        'datetime', 'decimal',
+                        'decimal.Decimal', 'decimal.ROUND_HALF_UP',
+                        '', '.fees', '.portfolio_weights'}, sorted(imported)
 
 
 def test_the_excel_writers_hold_no_styling_literal_of_their_own():
@@ -163,3 +166,127 @@ def test_a_doc_renders_the_same_sheet_twice():
                     a.fill.fgColor.rgb if a.fill.patternType else None) == \
                    (b.value, b.number_format, b.font.name, b.font.bold,
                     b.fill.fgColor.rgb if b.fill.patternType else None)
+
+
+# --------------------------------------------------------------------- #
+# Phase 2 (D120): renderNumber and paginate.
+# --------------------------------------------------------------------- #
+
+import datetime
+
+import pytest
+
+
+def test_render_number_displays_what_excel_displays():
+    """One expectation per format the builders use, values hand-checked
+    against Excel's display of the same cell."""
+    rn = sheetDoc.renderNumber
+    # percents scale in Decimal, so 0.2405 x 100 is 24.05, not 24.049999...
+    assert rn(0.2405, '0.00%') == '24.05%'
+    assert rn(0.34, '0.0%') == '34.0%'
+    assert rn(-0.177, '0.0%') == '-17.7%'
+    assert rn(1.0, '0%') == '100%'
+    assert rn(0.005996386355446893, '0.0%') == '0.6%'
+    # the sign rides the value: a tiny negative keeps its minus, as in Excel
+    assert rn(-0.0004, '0.0%') == '-0.0%'
+    # plain decimals round halves away from zero - Excel's rounding
+    assert rn(8.36, '0.0') == '8.4'
+    assert rn(34.0, '0.0') == '34.0'
+    assert rn(0.125, '0.00') == '0.13'
+    assert rn(0.4755554160115003, '0.00') == '0.48'
+    # money: grouped, rounded to the unit, sign before the $
+    assert rn(25000000.0, '$#,##0') == '$25,000,000'
+    assert rn(787500.0, '$#,##0') == '$787,500'
+    assert rn(1202500.5, '$#,##0') == '$1,202,501'
+    assert rn(-1234, '$#,##0') == '-$1,234'
+    # dates, locale-proof
+    assert rn(datetime.datetime(1973, 2, 28), 'mmm-yy') == 'Feb-73'
+    assert rn(datetime.datetime(2025, 4, 30), 'mmm-yy') == 'Apr-25'
+    # General: what the sheets actually put under it
+    assert rn(0, 'General') == '0'
+    assert rn(0.0, 'General') == '0'
+    assert rn(None, '0.0%') == ''
+    # text ignores a numeric format, as in Excel
+    assert rn('Total', '$#,##0') == 'Total'
+    with pytest.raises(ValueError):
+        rn(1.0, '#,##0.00')
+
+
+def test_every_format_a_builder_uses_is_renderable():
+    """The catalogue is closed: a builder cannot introduce a number format
+    the deck does not know how to display. Walks every cell of the golden
+    Docs and renders it."""
+    docs, _, _ = _docs()
+    seen = set()
+    for doc in docs.values():
+        for row in doc.rows.values():
+            for cell in row.cells.values():
+                if cell.fmt is not None:
+                    assert cell.fmt in sheetDoc.NUMBER_FORMATS, (doc.name, cell.fmt)
+                    seen.add(cell.fmt)
+                sheetDoc.renderNumber(cell.value, cell.fmt)   # must not raise
+    assert '0.00%' in seen and '$#,##0' in seen and 'mmm-yy' in seen
+
+
+def _syntheticDoc(rows, sections, heights=None):
+    doc = sheetDoc.SheetDoc('test')
+    for index in rows:
+        doc.cell(index, 1).value = 'r%d' % index
+        if heights and index in heights:
+            doc.row(index).height = heights[index]
+    doc.sections.update(sections)
+    return doc
+
+
+def test_paginate_breaks_only_at_section_marks():
+    """Budget for three body rows a page; sections at 2, 5 and 8 - the
+    breaks land exactly on them, and the header repeats on every page."""
+    doc = _syntheticDoc(range(1, 11), sections={2, 5, 8})
+    pages = sheetDoc.paginate(doc, budgetPt=60.0)             # 15 header + 3 rows
+    assert [p.body for p in pages] == [[2, 3, 4], [5, 6, 7], [8, 9, 10]]
+    assert all(p.header == [1] for p in pages)
+
+
+def test_paginate_walks_back_to_the_last_section_mark():
+    """Room for three rows but the section starts mid-page: the break moves
+    back so the section head starts the next page with its lines."""
+    doc = _syntheticDoc(range(1, 8), sections={2, 4})
+    pages = sheetDoc.paginate(doc, budgetPt=60.0)
+    assert [p.body for p in pages] == [[2, 3], [4, 5, 6], [7]]
+
+
+def test_paginate_splits_hard_when_a_section_outgrows_the_budget():
+    """No mark inside the window: the stretch splits where it must rather
+    than overflowing the canvas, and no row is lost or repeated."""
+    doc = _syntheticDoc(range(1, 12), sections={2})
+    pages = sheetDoc.paginate(doc, budgetPt=60.0)
+    flat = [index for page in pages for index in page.body]
+    assert flat == list(range(2, 12))
+    assert all(len(p.body) <= 3 for p in pages)
+
+
+def test_paginate_counts_heights_not_rows():
+    """A 49-point header row costs what it costs: the budget is points, the
+    way a canvas actually fills."""
+    doc = _syntheticDoc(range(1, 6), sections={2}, heights={2: 49.0})
+    pages = sheetDoc.paginate(doc, budgetPt=80.0)             # 15 + 49 + 15 = 79
+    assert pages[0].body == [2, 3]
+    assert pages[1].body == [4, 5]
+
+
+def test_paginate_is_pure_and_covers_every_row_once():
+    """The real Docs: nothing mutated, every body row on exactly one page,
+    reading order preserved - with a one-page degenerate case."""
+    docs, headerRow, _ = _docs()
+    impl = docs['Implementation']
+    before = _dump(impl)
+    headers = tuple(range(1, headerRow + 1))
+    pages = sheetDoc.paginate(impl, budgetPt=220.0, headerRows=headers)
+    assert _dump(impl) == before, 'paginate must not touch the Doc'
+    flat = [index for page in pages for index in page.body]
+    assert flat == [index for index in sorted(impl.rows) if index > headerRow]
+    assert len(pages) > 1
+    # a break lands on a category band wherever one was available
+    assert all(page.body[0] in impl.sections for page in pages[1:])
+    whole = sheetDoc.paginate(impl, budgetPt=1e6, headerRows=headers)
+    assert len(whole) == 1 and whole[0].body == flat
