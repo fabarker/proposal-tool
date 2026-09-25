@@ -768,6 +768,20 @@ def listArchived(variant: str = None) -> list:
         conn.close()
 
 
+def revisionMap() -> dict:
+    """sleeveId -> (revisions, archived) for every sleeve the library holds.
+    Two reads and no hydration: the register asks this of the whole library at
+    once, where asking a sleeve at a time is a query per pinned sleeve per
+    proposal (D116)."""
+    conn = _connect()
+    try:
+        counts = _revisionCounts(conn)
+        return {row['id']: (counts.get(row['id'], 0), bool(row['deletedAt']))
+                for row in conn.execute('SELECT id, deletedAt FROM sleeves')}
+    finally:
+        conn.close()
+
+
 def getSleeve(sleeveId: int):
     conn = _connect()
     try:

@@ -389,6 +389,23 @@ def _where(exportedBy=None, primaryPwa=None, currency=None, variant=None,
     return (' AND '.join(clauses) or '1 = 1'), args
 
 
+def _computed(conn, movedOnly=False, noAccountOnly=False):
+    """The two views that cannot be a WHERE on a column (D116): sleeves the
+    library has moved past, and proposals with no account opening request.
+    Both resolve to a set of ids, so they become one IN clause that every
+    part of the answer - the page, the total, the facets, the summary and the
+    CSV - is built with, rather than a filter applied to the page alone."""
+    if not movedOnly and not noAccountOnly:
+        return '', []
+    ids = set(movedCounts(conn)) if movedOnly else None
+    if noAccountOnly:
+        without = {r[0] for r in conn.execute('SELECT proposalId FROM proposals')} - requestedIds(conn)
+        ids = without if ids is None else (ids & without)
+    if not ids:
+        return ' AND 0 = 1', []
+    return ' AND p.proposalId IN ({})'.format(','.join('?' * len(ids))), sorted(ids)
+
+
 def _cursorClause(before):
     if not before or '|' not in before:
         return '1 = 1', []
@@ -396,8 +413,98 @@ def _cursorClause(before):
     return '(p.exportedAt < ? OR (p.exportedAt = ? AND p.proposalId < ?))', [at, at, ident]
 
 
+#: the saved views the console offers, in the order it shows them (D116).
+#: Each is a predicate over the register as a whole, not another filter on
+#: the one in force - pressing one replaces the filters rather than adding to
+#: them, which is what makes the counts readable.
+VIEW_KEYS = ('recent', 'week', 'mine', 'moved', 'noAccount', 'all')
+
+
+def movedCounts(conn=None) -> dict:
+    """proposalId -> how many of its pinned sleeves the library has moved past
+    or archived since delivery. One read of the pins against one map of the
+    library, rather than a lookup per pin (D116)."""
+    own = conn is None
+    conn = conn or _connect()
+    try:
+        current = sleeveRepo.revisionMap()
+        out = {}
+        for row in conn.execute('SELECT proposalId, sleeveId, revision FROM proposalSleeves'):
+            if row['sleeveId'] is None or row['revision'] is None:
+                continue
+            now = current.get(row['sleeveId'])
+            if now is None:
+                continue
+            revisions, archived = now
+            if archived or revisions != row['revision']:
+                out[row['proposalId']] = out.get(row['proposalId'], 0) + 1
+        return out
+    finally:
+        if own:
+            conn.close()
+
+
+def requestedIds(conn=None) -> set:
+    """The proposals that already have an account opening request (D76). The
+    requests live in this same file, so this is a read rather than a call -
+    and an empty set while no request has ever been made, because the table is
+    created by the module that writes it."""
+    own = conn is None
+    conn = conn or _connect()
+    try:
+        try:
+            return {r[0] for r in conn.execute('SELECT DISTINCT proposalId FROM accountRequests')}
+        except sqlite3.OperationalError:
+            return set()
+    finally:
+        if own:
+            conn.close()
+
+
+def _summarise(conn, where, args) -> dict:
+    """What the rows in force come to: how many, what they are worth in each
+    currency they were agreed in, how many advisors, and the span of dates.
+    Totals are never added across currencies (D1)."""
+    row = conn.execute(
+        'SELECT COUNT(*) AS n, COUNT(DISTINCT p.primaryPwa) AS pwas, '
+        'MIN(p.exportedAt) AS first, MAX(p.exportedAt) AS last '
+        'FROM proposals p WHERE {}'.format(where), args).fetchone()
+    totals = [{'currency': r['currency'], 'total': r['total']} for r in conn.execute(
+        'SELECT p.currency AS currency, SUM(p.mandateSize) AS total FROM proposals p '
+        'WHERE {} GROUP BY p.currency ORDER BY total DESC'.format(where), args)]
+    return {'proposals': row['n'], 'pwas': row['pwas'], 'totals': totals,
+            'earliest': row['first'] or '', 'latest': row['last'] or ''}
+
+
+def viewCounts(user: str = '') -> dict:
+    """How many proposals each saved view holds, over the whole register. The
+    counts are the point: *3 with sleeves moved* is worth reading before it is
+    pressed (D116)."""
+    conn = _connect()
+    try:
+        def ago(days):
+            return (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat(timespec='seconds')
+        week = ago(7)
+        total = conn.execute('SELECT COUNT(*) FROM proposals').fetchone()[0]
+        ids = {r[0] for r in conn.execute('SELECT proposalId FROM proposals')}
+        return {
+            'recent': conn.execute('SELECT COUNT(*) FROM proposals WHERE exportedAt >= ?',
+                                   (ago(90),)).fetchone()[0],
+            'week': conn.execute('SELECT COUNT(*) FROM proposals WHERE exportedAt >= ?',
+                                 (week,)).fetchone()[0],
+            'mine': conn.execute('SELECT COUNT(*) FROM proposals WHERE exportedBy = ?',
+                                 (user,)).fetchone()[0] if user else 0,
+            'moved': len(movedCounts(conn)),
+            'noAccount': len(ids - requestedIds(conn)),
+            'all': total,
+        }
+    finally:
+        conn.close()
+
+
 def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
-                  since=None, until=None, query='', limit=100, before=None) -> dict:
+                  since=None, until=None, query='', limit=100, before=None,
+                  movedOnly=False, noAccountOnly=False) -> dict:
     """A page of the register, newest first, with the counts that frame it.
     Facets count over the rows that pass every OTHER filter (D63)."""
     limit = max(1, min(int(limit or 100), LIST_LIMIT_MAX))
@@ -406,6 +513,8 @@ def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
     cursorSql, cursorArgs = _cursorClause(before)
     conn = _connect()
     try:
+        extra, extraArgs = _computed(conn, movedOnly, noAccountOnly)
+        where, args = where + extra, args + extraArgs
         rows = conn.execute(
             'SELECT {} FROM proposals p WHERE {} AND {} ORDER BY p.exportedAt DESC, '
             'p.proposalId DESC LIMIT ?'.format(
@@ -418,11 +527,20 @@ def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
                 {'category': s['category'], 'sleeve': s['sleeveName'], 'revision': s['revision']}
                 for s in conn.execute('SELECT category, sleeveName, revision FROM proposalSleeves '
                                       'WHERE proposalId = ? ORDER BY rowid', (entry['proposalId'],))]
+        # what has happened since delivery, for the whole page at once: which
+        # pins the library has moved past, and which proposals have an account
+        # opening request. Both were readable only inside one record (D116).
+        moved = movedCounts(conn)
+        requested = requestedIds(conn)
+        for entry in entries:
+            entry['moved'] = moved.get(entry['proposalId'], 0)
+            entry['accountRequested'] = entry['proposalId'] in requested
         nextCursor = entries[-1]['cursor'] if len(rows) > limit and entries else None
 
         def count(dimension):
             w, a = _where(exportedBy, primaryPwa, currency, variant, since, until, query,
                           exclude=dimension)
+            w, a = w + extra, a + extraArgs
             return {r['k']: r['n'] for r in conn.execute(
                 'SELECT p.{} AS k, COUNT(*) AS n FROM proposals p WHERE {} '
                 'GROUP BY k ORDER BY n DESC, k'.format(dimension, w), a)}
@@ -430,6 +548,7 @@ def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
         total = conn.execute('SELECT COUNT(*) FROM proposals p WHERE {}'.format(where),
                              args).fetchone()[0]
         return {'entries': entries, 'next': nextCursor, 'total': total,
+                'summary': _summarise(conn, where, args),
                 'facets': {d: count(d) for d in ('exportedBy', 'primaryPwa', 'currency', 'variant')}}
     finally:
         conn.close()

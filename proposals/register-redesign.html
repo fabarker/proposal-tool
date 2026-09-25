@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Register, Redrawn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --pg:#FBFCFE;--card:#FFFFFF;--sunk:#F2F4F7;
+  --ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--on-accent:#FFFFFF;
+  --pick:#E3EBFA;--pick-ink:#1E4FA3;
+  --pos:#176A33;--warn:#B45309;--warn-bg:#FEF3C7;--neg:#B42318;
+  --hdr-bg:#16243A;--hdr-ink:#FFFFFF;--hdr-kick:#F3C46B;
+  --badge-bg:#16243A;--badge-ink:#FFFFFF;
+  /* the console's own palette: fixed, because the mock-ups depict a
+     light-only application and must not follow this page's theme */
+  --c-bg:#FBFCFE;--c-surface:#FFFFFF;--c-surface2:#F0F2F5;
+  --c-ink:#1C2733;--c-ink2:#5B6B7C;--c-ink3:#8494A4;
+  --c-line:#EEF1F4;--c-line2:#D4DAE2;--c-accent:#1F5FBF;--c-navy:#16243A;
+  --c-pos:#176A33;--c-pos-bg:#EAF5EE;--c-warn:#7A4A0A;--c-warn-bg:#FEF3C7;
+  --c-pick:#E9F0FB;
+  --num:'Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  --body:'Roboto',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+    --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+    --line:#28313D;--line2:#36414F;
+    --accent:#7FA9F0;--on-accent:#11161D;
+    --pick:#1C2B42;--pick-ink:#9DBEF2;
+    --pos:#6FCB8F;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;
+    --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+    --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+  }
+}
+:root[data-theme="dark"]{
+  --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+  --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+  --line:#28313D;--line2:#36414F;
+  --accent:#7FA9F0;--on-accent:#11161D;
+  --pick:#1C2B42;--pick-ink:#9DBEF2;
+  --pos:#6FCB8F;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;
+  --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+  --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--ink);font:16px/1.6 var(--body);-webkit-text-size-adjust:100%}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px}
+
+header.top{background:var(--hdr-bg);color:var(--hdr-ink);padding-block:42px 36px;margin-bottom:28px}
+header.top .kick{font:700 11px/1 var(--num);letter-spacing:.18em;text-transform:uppercase;color:var(--hdr-kick);margin:0 0 12px}
+header.top h1{font:400 clamp(28px,6.4vw,40px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 12px;text-wrap:balance}
+header.top p{margin:0;max-width:66ch;opacity:.85;font-size:15.5px}
+
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 6px}
+nav.toc a{font:500 13px/1 var(--body);color:var(--ink2);text-decoration:none;border:1px solid var(--line);
+  background:var(--card);padding:8px 11px;border-radius:16px}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+h2{font:400 clamp(22px,5vw,28px)/1.2 var(--body);letter-spacing:-.02em;margin:50px 0 6px;text-wrap:balance;scroll-margin-top:16px}
+h2 small{display:block;font:700 10.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3{font:600 17px/1.3 var(--body);margin:0;letter-spacing:-.005em}
+p{max-width:70ch}
+p.lede{color:var(--ink2);margin:0 0 16px}
+code{font:13px var(--num);background:var(--sunk);padding:2px 6px;border-radius:3px;color:var(--ink);word-break:break-word}
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:13px 15px;border-radius:0 7px 7px 0;font-size:14.5px;color:var(--ink2);margin:16px 0}
+.note.warn{border-left-color:var(--warn)}
+.note p{margin:0;max-width:none}
+.note p+p{margin-top:8px}
+.note b{color:var(--ink)}
+
+/* problems and fixes */
+.plist{display:grid;gap:10px;margin:16px 0}
+.plist > div{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:13px 15px}
+.plist .tag{font:700 10.5px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;background:var(--badge-bg);
+  color:var(--badge-ink);border-radius:5px;padding:6px 7px;align-self:start}
+.plist.fix .tag{background:var(--accent);color:var(--on-accent)}
+.plist b.h{font-weight:600;font-size:15px}
+.plist p{margin:3px 0 0;font-size:14.5px;color:var(--ink2);grid-column:2;max-width:64ch}
+.plist .who{grid-column:2;font:700 10px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);margin-top:7px}
+
+/* option cards */
+.opt{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 20px 18px;margin:18px 0}
+.opt.rec{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.09)}
+.opt-h{display:flex;gap:11px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.opt-h .n{font:700 12px/1 var(--num);color:var(--badge-ink);background:var(--badge-bg);border-radius:5px;padding:6px 8px;letter-spacing:.05em;flex:none}
+.opt.rec .opt-h .n{background:var(--accent);color:var(--on-accent)}
+.opt-h h3{flex:1 1 220px}
+.chip{font:700 10px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--sunk);color:var(--ink2);flex:none}
+.chip.rec{background:var(--pick);color:var(--pick-ink)}
+.opt p.sum{color:var(--ink2);font-size:15px;margin:0 0 4px}
+.pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px 26px;margin:14px 0 0}
+.pc h4{font:700 10.5px/1 var(--num);letter-spacing:.13em;text-transform:uppercase;margin:0 0 7px}
+.pc .g h4{color:var(--pos)}.pc .c h4{color:var(--warn)}
+.pc ul{margin:0;padding-left:17px;font-size:14.5px;color:var(--ink2)}
+.pc li{margin:4px 0}
+
+/* comparison */
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0;background:var(--card);border:1px solid var(--line);border-radius:9px}
+table.cmp{width:100%;border-collapse:collapse;font-size:14px;min-width:620px}
+table.cmp th{font:700 10px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 13px;border-bottom:1px solid var(--line2);white-space:nowrap}
+table.cmp td{padding:10px 13px;border-top:1px solid var(--line);vertical-align:top}
+table.cmp td.k{font:700 12px var(--num);color:var(--accent);white-space:nowrap}
+table.cmp tr.hi td{background:var(--pick)}
+
+/* ── the console, drawn in its own idiom ── */
+.bench{background:linear-gradient(rgba(16,24,40,.3),rgba(16,24,40,.3)),var(--c-bg);border:1px dashed var(--line2);
+  border-radius:10px;padding:16px 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:14px 0 0}
+.benchcap{font-size:13px;color:var(--ink3);margin:8px 0 0}
+.con{background:var(--c-surface);border:1px solid var(--c-line2);border-radius:6px;box-shadow:0 20px 50px -14px rgba(16,24,40,.4);
+  min-width:720px;overflow:hidden;color:var(--c-ink);font-family:var(--body)}
+.con-h{display:flex;align-items:center;gap:14px;padding:9px 14px;border-bottom:1px solid var(--c-line2);background:var(--c-surface)}
+.con-h .t{font:700 11.5px var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--c-navy)}
+.tabs{display:flex;gap:2px;margin-left:4px}
+.tabs span{font:500 12px var(--body);color:var(--c-ink2);padding:6px 11px;border-radius:4px;white-space:nowrap}
+.tabs span.on{background:var(--c-navy);color:#fff;font-weight:600}
+.con-x{margin-left:auto;color:var(--c-ink3);font-size:17px}
+.tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 14px;border-bottom:1px solid var(--c-line);background:var(--c-surface2)}
+.srch{flex:1 1 220px;min-width:150px;display:flex;align-items:center;gap:7px;background:var(--c-surface);border:1px solid var(--c-line2);
+  border-radius:4px;padding:6px 9px;font-size:12.5px;color:var(--c-ink3)}
+.sel{display:flex;align-items:center;gap:6px;background:var(--c-surface);border:1px solid var(--c-line2);border-radius:4px;
+  padding:5px 9px;font-size:12px;color:var(--c-ink2);white-space:nowrap}
+.sel b{font-weight:600;color:var(--c-ink)}
+.sel::after{content:"\25BE";color:var(--c-ink3);font-size:10px}
+.sel.on{border-color:var(--c-accent);background:var(--c-pick);color:var(--c-accent)}
+.cbtn{font:700 10.5px var(--num);letter-spacing:.07em;text-transform:uppercase;padding:7px 12px;border-radius:4px;
+  border:1px solid var(--c-line2);background:var(--c-surface);color:var(--c-ink2);white-space:nowrap}
+.cbtn.pri{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.cbtn.sm{padding:5px 9px}
+/* the table */
+table.reg{width:100%;border-collapse:collapse;font-family:var(--num);font-size:13px;color:var(--c-ink)}
+table.reg th{font:700 9.5px var(--num);letter-spacing:.1em;text-transform:uppercase;color:var(--c-ink3);text-align:left;
+  padding:8px 12px;border-bottom:1px solid var(--c-line2);background:var(--c-surface);white-space:nowrap}
+table.reg td{padding:7px 12px;border-bottom:1px solid var(--c-line);white-space:nowrap;vertical-align:top}
+table.reg td.num,table.reg th.num{text-align:right}
+table.reg tr.on td{background:var(--c-pick)}
+table.reg tr.band td{background:var(--c-surface2);font-weight:600;color:var(--c-ink2);font-size:11.5px;letter-spacing:.04em}
+table.reg small{display:block;font-size:10.5px;color:var(--c-ink3);font-weight:400}
+table.reg b{font-weight:600}
+.mut{color:var(--c-ink3)}
+.bdg{display:inline-block;font:700 9.5px var(--num);letter-spacing:.06em;text-transform:uppercase;padding:2px 5px;border-radius:9px;
+  background:var(--c-surface2);color:var(--c-ink2);vertical-align:1px}
+.bdg.acc{background:var(--c-pick);color:var(--c-accent)}
+.bdg.warn{background:var(--c-warn-bg);color:var(--c-warn)}
+.bdg.ok{background:var(--c-pos-bg);color:var(--c-pos)}
+.uid{font-family:var(--num);font-size:12px;color:var(--c-ink2);letter-spacing:.02em}
+.con-f{display:flex;align-items:center;gap:10px;padding:7px 14px;border-top:1px solid var(--c-line2);background:var(--c-surface2);
+  font:400 11px var(--num);color:var(--c-ink3);flex-wrap:wrap}
+.con-f .sp{flex:1}
+/* the record, as a drawer and as a pane */
+.rec{border-top:1px solid var(--c-line2);background:var(--c-surface);padding:12px 14px}
+.rec-h{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.rec-h h4{margin:0;font:700 15px var(--body);color:var(--c-ink)}
+.rec-h p{margin:2px 0 0;font-size:12px;color:var(--c-ink2);max-width:none}
+.rec-h .prov{font-family:var(--num);font-size:11px;color:var(--c-ink3);margin-top:4px}
+.rec-act{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--c-line2);border-radius:4px;overflow:hidden}
+.seg span{font:500 11px var(--body);padding:5px 10px;color:var(--c-ink2);background:var(--c-surface)}
+.seg span.on{background:var(--c-navy);color:#fff}
+.split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+.split > .pane-r{border-left:1px solid var(--c-line2);background:var(--c-bg)}
+.pane-r .rec{border-top:0;background:transparent}
+.stat{display:flex;gap:16px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--c-line);background:var(--c-surface)}
+.stat div{min-width:0}
+.stat dt{font:500 9.5px var(--num);letter-spacing:.09em;text-transform:uppercase;color:var(--c-ink3);margin:0}
+.stat dd{margin:1px 0 0;font:600 15px var(--num);color:var(--c-ink)}
+.views{display:flex;gap:6px;flex-wrap:wrap;padding:7px 14px;border-bottom:1px solid var(--c-line);background:var(--c-surface)}
+.views span{font:500 11.5px var(--body);padding:5px 10px;border-radius:14px;border:1px solid var(--c-line2);color:var(--c-ink2);white-space:nowrap}
+.views span.on{background:var(--c-navy);border-color:var(--c-navy);color:#fff;font-weight:600}
+.views span.cnt b{font-weight:700}
+/* cards option */
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:12px 14px;background:var(--c-bg)}
+.pcard{background:var(--c-surface);border:1px solid var(--c-line2);border-radius:5px;padding:10px 12px;font-family:var(--num);font-size:12px}
+.pcard .w{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.pcard b.m{font-size:16px;font-weight:700;color:var(--c-ink)}
+.pcard .pwa{font:600 13px var(--body);color:var(--c-ink);margin:3px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .meta{color:var(--c-ink3);font-size:11px}
+.pcard .foot{display:flex;gap:6px;align-items:center;margin-top:8px;padding-top:7px;border-top:1px solid var(--c-line)}
+/* two-line rows */
+table.reg tr.two td{padding-top:9px;padding-bottom:9px}
+.l2{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-top:3px;font-size:11px;color:var(--c-ink3)}
+.l2 em{font-style:normal;color:var(--c-ink2)}
+
+ol.seq{padding-left:20px;margin:14px 0}
+ol.seq li{margin:9px 0;max-width:66ch;color:var(--ink2);font-size:15px}
+ol.seq li b{color:var(--ink);font-weight:600}
+ul.q{padding-left:18px;color:var(--ink2);font-size:15px}
+ul.q li{margin:9px 0;max-width:66ch}
+ul.q li b{color:var(--ink);font-weight:600}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:16px;margin-top:46px;padding-bottom:36px}
+footer p{margin:0;max-width:none}
+@media (max-width:620px){
+  .wrap{padding-inline:16px}
+  .opt{padding:16px 14px 14px}
+  .bench{padding:12px 8px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="kick">Admin repository &middot; Proposals</p>
+    <h1>The register, redrawn</h1>
+    <p>The register is the one permanent record of what was delivered to a client. Five ways to lay it out for the two things people actually come here to do &mdash; find one proposal fast, and read what was in it &mdash; plus the fixes worth making whichever you pick.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" aria-label="Contents">
+  <a href="#now">Today</a><a href="#problems">What gets in the way</a><a href="#fixes">Fixes for any layout</a>
+  <a href="#o1">01</a><a href="#o2">02</a><a href="#o3">03</a><a href="#o4">04</a><a href="#o5">05</a>
+  <a href="#cmp">Side by side</a><a href="#rec">Recommendation</a><a href="#decide">Decisions</a>
+</nav>
+
+<h2 id="now"><small>Where we are</small>The page today</h2>
+<p class="lede">A search box and five dropdowns, a dense table of eight columns newest first, and a drawer that opens underneath when you click a row. Drawn here with real rows from the register.</p>
+
+<div class="bench"><div class="con">
+  <div class="con-h"><span class="t">Repository</span>
+    <span class="tabs"><span>Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span class="on">Proposals</span></span>
+    <span class="con-x">&times;</span></div>
+  <div class="tools">
+    <span class="srch">&#8981; Search PWA, person, sleeve or portfolio&hellip;</span>
+    <span class="sel">By <b>Anyone</b></span><span class="sel">PWA <b>Any PWA</b></span><span class="sel">Currency <b>Any</b></span>
+    <span class="sel">Book <b>All books</b></span><span class="sel">When <b>Last 90 days</b></span>
+    <span class="cbtn">Export CSV</span>
+  </div>
+  <table class="reg">
+    <thead><tr><th>Exported</th><th>Primary PWA</th><th class="num">Mandate</th><th>Basis</th><th>Book</th><th>Proposal portfolio</th><th>Pricing</th><th></th></tr></thead>
+    <tbody>
+      <tr class="on"><td>21 Sep 16:06<small>fbarker</small></td><td><b>S. Ferreira &mdash; Geneva</b></td><td class="num">$49.0m</td><td>USD &middot; Unhedged</td><td>PMG Multi-Asset Portfolio</td><td>Moderate ex-Alts</td><td>RDR &middot; Ceiling</td><td></td></tr>
+      <tr><td>21 Sep 12:35<small>fbarker</small></td><td><b>M. Aldridge &mdash; Zurich</b></td><td class="num">$500000000.0m</td><td>USD &middot; ISG Hedged</td><td>PMG Multi-Asset Portfolio</td><td>Conservative Core</td><td>RDR &middot; Target</td><td></td></tr>
+      <tr><td>21 Sep 12:17<small>fbarker</small></td><td><b>M. Aldridge &mdash; Zurich</b></td><td class="num">&pound;200.0m</td><td>GBP &middot; ISG Hedged</td><td>PMG ESG</td><td>Conservative ex-Alts</td><td>CASP &middot; Custom</td><td></td></tr>
+      <tr><td>20 Sep 22:06<small>fbarker</small></td><td><b>M. Aldridge &mdash; Zurich</b></td><td class="num">&pound;500.0m</td><td>GBP &middot; Hedged</td><td>PMG Multi-Asset Portfolio</td><td>ConsMod Core</td><td><span class="mut">no fees</span></td><td></td></tr>
+    </tbody>
+  </table>
+  <div class="rec">
+    <div class="rec-h"><div>
+      <h4>S. Ferreira &mdash; Geneva &middot; $49.0m</h4>
+      <p>USD &middot; Unhedged &middot; PMG Multi-Asset Portfolio &middot; Moderate ex-Alts &middot; RDR Management Ceiling</p>
+      <p class="prov">pr_1b8285460b7f &middot; exported 21 Sep 16:06 by fbarker &middot; workbook 132 KB &middot; sha 4c1f88a2&hellip;</p>
+    </div><div class="rec-act">
+      <span class="cbtn pri">Download the workbook</span>
+      <span class="seg"><span>Allocation</span><span class="on">Implemented</span></span><span class="con-x">&times;</span>
+    </div></div>
+  </div>
+  <div class="con-f"><span>Register &middot; 34 proposals &middot; 4.1 MB of workbooks &middot; since 2 Jun 2026</span><span class="sp"></span><span>12 of 34 shown &middot; append-only</span></div>
+</div></div>
+<p class="benchcap">Real rows. The second is a genuine record with a mandate of 5&times;10<sup>14</sup> &mdash; see P6.</p>
+
+<h2 id="problems"><small>The read</small>What gets in the way</h2>
+<p class="lede">Two jobs bring people here. <b>Find</b>: someone quotes a UID, a client name or a week, and you need that row. <b>Read</b>: you have the row and need what was delivered &mdash; the basis, the sleeves pinned, the workbook.</p>
+
+<div class="plist">
+  <div><span class="tag">P1</span><b class="h">The Proposal UID is not in the table</b>
+    <p>It is the identifier everything else quotes &mdash; the workbook's file name, cell B1, the account opening request, the 404 message that tells a user to go and find one. In the register it appears only after you have opened a row, and then only as text you must select by hand.</p>
+    <span class="who">Blocks: find</span></div>
+  <div><span class="tag">P2</span><b class="h">Opening a row costs you the list</b>
+    <p>The drawer takes up to 52% of the card's height from the bottom, so a four-row list becomes a two-row list the moment you look at anything. Comparing two proposals means opening, reading, closing, opening.</p>
+    <span class="who">Blocks: read</span></div>
+  <div><span class="tag">P3</span><b class="h">The width goes to what repeats</b>
+    <p>On a real desk the same handful of PWAs and one or two books fill the register. <em>Book</em> prints <em>PMG Multi-Asset Portfolio</em> in full on nearly every row, while <em>Proposal portfolio</em> &mdash; the thing that actually varies &mdash; gets a narrow column of two words.</p>
+    <span class="who">Blocks: find</span></div>
+  <div><span class="tag">P4</span><b class="h">Nothing can be sorted</b>
+    <p>The order is export time, descending, always. "The largest mandate this quarter" or "everything for this PWA oldest first" cannot be asked. The catalogue next door sorts on every column.</p>
+    <span class="who">Blocks: find</span></div>
+  <div><span class="tag">P5</span><b class="h">The warning only exists inside the record</b>
+    <p>Whether a proposal's sleeves have moved or been archived since delivery is the most valuable thing the register knows &mdash; and it is visible only once you open that proposal. You cannot see at a glance which of thirty proposals have drifted.</p>
+    <span class="who">Blocks: find, read</span></div>
+  <div><span class="tag">P6</span><b class="h">Large mandates print as nonsense</b>
+    <p><code>money()</code> stops at <code>m</code>, so a 5&times;10<sup>14</sup> mandate reads <code>$500000000.0m</code>. It is a real row in the register today, and it is wider than the column.</p>
+    <span class="who">Blocks: find, read</span></div>
+  <div><span class="tag">P7</span><b class="h">Five dropdowns, all the same weight</b>
+    <p>By, PWA, Currency, Book, When sit in a row as equals, each needing a click and a read. The common questions &mdash; <em>this week</em>, <em>mine</em>, <em>the big ones</em> &mdash; take three interactions each and cannot be saved.</p>
+    <span class="who">Blocks: find</span></div>
+  <div><span class="tag">P8</span><b class="h">No sense of the whole</b>
+    <p>The footer counts proposals and megabytes. With filters in force nothing says how much mandate they represent, how many PWAs, or what period &mdash; so the register cannot answer a question about a set, only about a row.</p>
+    <span class="who">Blocks: read</span></div>
+</div>
+
+<h2 id="fixes"><small>Whichever you pick</small>Fixes that are layout-independent</h2>
+<p class="lede">These are worth doing under any of the five. Each says what it costs.</p>
+<div class="plist fix">
+  <div><span class="tag">F1</span><b class="h">Put the UID in the table, and make it copy on click</b>
+    <p>A monospaced <code>pr_1b8285460b7f</code> column, click to copy, with a tick confirming. Front end only &mdash; the list already returns it. <em>Answers P1.</em></p></div>
+  <div><span class="tag">F2</span><b class="h">Download the workbook from the row</b>
+    <p>The file is the thing most often wanted, and today it takes two clicks and a drawer. A download control on each row makes it one. Front end only.</p></div>
+  <div><span class="tag">F3</span><b class="h">Sort on Exported, Mandate and PWA</b>
+    <p>The list is already paged by an export-time cursor, so sorting by anything else has to be a server order, not a client one: a <code>sort</code> parameter on the endpoint. Modest backend work. <em>Answers P4.</em></p></div>
+  <div><span class="tag">F4</span><b class="h">Flag moved sleeves in the list</b>
+    <p>The list already returns each proposal's pinned sleeves with their revisions; comparing them to the library's current revisions server-side gives a <em>2 moved</em> badge per row. Modest backend work. <em>Answers P5.</em></p></div>
+  <div><span class="tag">F5</span><b class="h">Teach <code>money()</code> billions and trillions</b>
+    <p><code>bn</code> and <code>tn</code> above <code>m</code>. Six lines, and it fixes the same figure everywhere it appears. <em>Answers P6.</em></p></div>
+  <div><span class="tag">F6</span><b class="h">A summary strip over the table</b>
+    <p>For the rows the filters currently select: how many, total mandate, how many PWAs, the span of dates. Recomputed server-side with the facets. <em>Answers P8.</em></p></div>
+  <div><span class="tag">F7</span><b class="h">Keyboard: <kbd>j</kbd>/<kbd>k</kbd>, <kbd>Enter</kbd>, <kbd>Esc</kbd></b>
+    <p>The catalogue already has a row cursor; the register has none, so a long list can only be used with the mouse. Front end only.</p></div>
+  <div><span class="tag">F8</span><b class="h">Show whether an account has been opened</b>
+    <p>Each proposal takes one account opening request (D76). The register is where you would look to see if it has one &mdash; today nothing in the console shows account requests at all. Needs a join on the account-requests table.</p></div>
+</div>
+
+<h2><small>Five layouts</small>How the page could be laid out</h2>
+<p class="lede">Each mock-up includes the fixes above where they are relevant, so the layouts can be compared as finished pages rather than as sketches.</p>
+
+<!-- 01 -->
+<div class="opt rec" id="o1">
+  <div class="opt-h"><span class="n">01</span><h3>Split: the list keeps its place</h3><span class="chip rec">Recommended</span></div>
+  <p class="sum">The record moves from a drawer at the bottom to a pane on the right. The list narrows to what identifies a proposal &mdash; when, who, how much, the UID &mdash; and everything else moves into the pane, which scrolls on its own. The list never shrinks, so you can run down it reading records as you go.</p>
+  <div class="bench"><div class="con">
+    <div class="con-h"><span class="t">Repository</span>
+      <span class="tabs"><span>Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span class="on">Proposals</span></span><span class="con-x">&times;</span></div>
+    <div class="tools"><span class="srch">&#8981; Search UID, PWA, person, sleeve&hellip;</span>
+      <span class="sel on">When <b>Last 90 days</b></span><span class="sel">PWA <b>Any</b></span><span class="sel">Book <b>All</b></span>
+      <span class="cbtn">Export CSV</span></div>
+    <dl class="stat"><div><dt>Proposals</dt><dd>12</dd></div><div><dt>Total mandate</dt><dd>$1.34bn</dd></div>
+      <div><dt>PWAs</dt><dd>5</dd></div><div><dt>Span</dt><dd>2 Jul &ndash; 21 Sep</dd></div>
+      <div><dt>Sleeves moved</dt><dd>3</dd></div></dl>
+    <div class="split">
+      <div>
+        <table class="reg">
+          <thead><tr><th>Exported &darr;</th><th>Primary PWA</th><th class="num">Mandate</th><th>Proposal UID</th><th></th></tr></thead>
+          <tbody>
+            <tr class="on"><td>21 Sep 16:06<small>fbarker</small></td><td><b>S. Ferreira</b><small>Geneva</small></td><td class="num">$49.0m</td><td class="uid">pr_1b8285460b7f</td><td><span class="bdg ok">acct</span></td></tr>
+            <tr><td>21 Sep 12:35<small>fbarker</small></td><td><b>M. Aldridge</b><small>Zurich</small></td><td class="num">$500.0tn</td><td class="uid">pr_569dd33646b1</td><td></td></tr>
+            <tr><td>21 Sep 12:17<small>fbarker</small></td><td><b>M. Aldridge</b><small>Zurich</small></td><td class="num">&pound;200.0m</td><td class="uid">pr_c8577c6f4720</td><td><span class="bdg warn">2 moved</span></td></tr>
+            <tr><td>20 Sep 22:06<small>fbarker</small></td><td><b>M. Aldridge</b><small>Zurich</small></td><td class="num">&pound;500.0m</td><td class="uid">pr_9854e3657036</td><td></td></tr>
+            <tr><td>20 Sep 12:15<small>fbarker</small></td><td><b>M. Aldridge</b><small>Zurich</small></td><td class="num">$500.0m</td><td class="uid">pr_1d4d7acc1786</td><td><span class="bdg acc">#2</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pane-r"><div class="rec">
+        <div class="rec-h"><div>
+          <h4>S. Ferreira &mdash; Geneva</h4>
+          <p><b>$49.0m</b> &middot; USD &middot; Unhedged &middot; Moderate ex-Alts</p>
+          <p>PMG Multi-Asset Portfolio &middot; RDR Management Ceiling</p>
+          <p class="prov">pr_1b8285460b7f <span class="bdg">copy</span><br>exported 21 Sep 16:06 by fbarker &middot; 132 KB</p>
+        </div><span class="con-x">&times;</span></div>
+        <div class="rec-act" style="margin:10px 0 0"><span class="cbtn pri">Workbook</span>
+          <span class="seg"><span class="on">Implemented</span><span>Allocation</span></span></div>
+        <table class="reg" style="margin-top:10px">
+          <thead><tr><th>Category / product</th><th class="num">Weight</th><th class="num">Notional</th></tr></thead>
+          <tbody>
+            <tr class="band"><td>Public Equity <span class="bdg">r3</span></td><td class="num">42.0%</td><td class="num"></td></tr>
+            <tr><td><span class="mut">Global Core Equity ETF</span></td><td class="num">24.0%</td><td class="num">$11.8m</td></tr>
+            <tr><td><span class="mut">US Quality SMA</span></td><td class="num">18.0%</td><td class="num">$8.8m</td></tr>
+            <tr class="band"><td>Fixed Income <span class="bdg warn">r2 &middot; r4 now</span></td><td class="num">38.0%</td><td class="num"></td></tr>
+            <tr><td><span class="mut">Aggregate Bond Fund</span></td><td class="num">38.0%</td><td class="num">$18.6m</td></tr>
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+    <div class="con-f"><span>Register &middot; 34 proposals &middot; 4.1 MB</span><span class="sp"></span><span>12 of 34 shown &middot; append-only</span></div>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Answers P2 outright: reading a record costs no rows.</li>
+      <li>The card is 1400px wide and the record is a tall, narrow thing &mdash; this is the shape the content already has.</li>
+      <li>Moving Basis, Book, Portfolio and Pricing into the pane frees the list to show the UID and a status column instead (P1, P3).</li>
+      <li>Arrowing down the list with the pane open turns the register into something you can read through.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>The implemented table is wide; in a half-width pane its columns must drop to three.</li>
+      <li>Below about 1100px the split has to fall back to today's drawer.</li>
+      <li>Most work of the five: a second scrolling region, and the pane's own layout.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- 02 -->
+<div class="opt" id="o2">
+  <div class="opt-h"><span class="n">02</span><h3>Banded by day</h3><span class="chip">Small</span></div>
+  <p class="sum">The register is a chronological record, so let it read as one: a band per day &mdash; or per week beyond a month &mdash; carrying the date, the count and the mandate that went out. The same table, grouped, exactly as the catalogue bands by category.</p>
+  <div class="bench"><div class="con">
+    <div class="tools"><span class="srch">&#8981; Search UID, PWA, person, sleeve&hellip;</span>
+      <span class="sel on">When <b>Last 30 days</b></span><span class="sel">PWA <b>Any</b></span>
+      <span class="seg"><span class="on">By day</span><span>Flat</span></span><span class="cbtn">Export CSV</span></div>
+    <table class="reg">
+      <thead><tr><th>Time</th><th>Primary PWA</th><th class="num">Mandate</th><th>Proposal UID</th><th>Portfolio</th><th></th></tr></thead>
+      <tbody>
+        <tr class="band"><td colspan="6">Monday 21 September &middot; 3 proposals &middot; $249.0m</td></tr>
+        <tr><td>16:06<small>fbarker</small></td><td><b>S. Ferreira</b></td><td class="num">$49.0m</td><td class="uid">pr_1b8285460b7f</td><td>Moderate ex-Alts</td><td><span class="bdg ok">acct</span></td></tr>
+        <tr><td>12:35<small>fbarker</small></td><td><b>M. Aldridge</b></td><td class="num">$500.0tn</td><td class="uid">pr_569dd33646b1</td><td>Conservative Core</td><td></td></tr>
+        <tr><td>12:17<small>fbarker</small></td><td><b>M. Aldridge</b></td><td class="num">&pound;200.0m</td><td class="uid">pr_c8577c6f4720</td><td>Conservative ex-Alts</td><td><span class="bdg warn">2 moved</span></td></tr>
+        <tr class="band"><td colspan="6">Sunday 20 September &middot; 2 proposals &middot; &pound;1.0bn</td></tr>
+        <tr><td>22:06<small>fbarker</small></td><td><b>M. Aldridge</b></td><td class="num">&pound;500.0m</td><td class="uid">pr_9854e3657036</td><td>ConsMod Core</td><td></td></tr>
+        <tr><td>12:15<small>fbarker</small></td><td><b>M. Aldridge</b></td><td class="num">$500.0m</td><td class="uid">pr_1d4d7acc1786</td><td>ConsMod ex-Alts</td><td><span class="bdg acc">#2</span></td></tr>
+      </tbody>
+    </table>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Answers <em>what went out this week</em> by reading, with no filter set at all.</li>
+      <li>The date leaves every row, so the first column becomes a narrow time.</li>
+      <li>Reuses the catalogue's banding, including fold-all &mdash; a known pattern and mostly known code (D100).</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Bands take vertical space, and on a busy desk a band per day may hold one row.</li>
+      <li>Does nothing for P2: the record still opens underneath.</li>
+      <li>Bands and sorting by mandate (F3) contradict each other; sorting would have to be within a band.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- 03 -->
+<div class="opt" id="o3">
+  <div class="opt-h"><span class="n">03</span><h3>Two-line rows, expanding in place</h3><span class="chip">Medium</span></div>
+  <p class="sum">Each proposal takes two lines: identity on the first, terms on the second in quieter type. Clicking does not open a drawer &mdash; the row itself expands, pushing the rows below it down, and collapses again. The list is never replaced, only interrupted.</p>
+  <div class="bench"><div class="con">
+    <table class="reg">
+      <thead><tr><th>Proposal</th><th class="num">Mandate</th><th>Delivered</th><th></th></tr></thead>
+      <tbody>
+        <tr class="two on"><td><b>S. Ferreira &mdash; Geneva</b> <span class="bdg ok">acct</span>
+            <div class="l2"><span class="uid">pr_1b8285460b7f</span><em>USD &middot; Unhedged</em><em>Moderate ex-Alts</em><em>PMG Multi-Asset</em><em>RDR &middot; Ceiling</em></div></td>
+          <td class="num"><b>$49.0m</b><small>top $10.0m</small></td><td>21 Sep 16:06<small>fbarker</small></td><td><span class="cbtn sm">Workbook</span></td></tr>
+        <tr><td colspan="4" style="white-space:normal;background:var(--c-bg)">
+          <div class="rec-act" style="margin:0 0 8px"><span class="seg"><span class="on">Implemented</span><span>Allocation</span></span><span class="mut" style="font-size:11px">7 sleeves pinned &middot; 1 moved since</span></div>
+          <table class="reg" style="background:var(--c-surface);border:1px solid var(--c-line2);border-radius:4px">
+            <thead><tr><th>Category / product</th><th>Sleeve</th><th class="num">Weight</th><th class="num">Notional</th></tr></thead>
+            <tbody>
+              <tr class="band"><td>Public Equity</td><td>Global Core <span class="bdg">r3</span></td><td class="num">42.0%</td><td class="num"></td></tr>
+              <tr><td><span class="mut">Global Core Equity ETF</span></td><td></td><td class="num">24.0%</td><td class="num">$11.8m</td></tr>
+              <tr class="band"><td>Fixed Income</td><td>Aggregate <span class="bdg warn">r2 &middot; r4 now</span></td><td class="num">38.0%</td><td class="num"></td></tr>
+            </tbody>
+          </table></td></tr>
+        <tr class="two"><td><b>M. Aldridge &mdash; Zurich</b>
+            <div class="l2"><span class="uid">pr_c8577c6f4720</span><em>GBP &middot; ISG Hedged</em><em>Conservative ex-Alts</em><em>PMG ESG</em><em>CASP &middot; Custom</em></div></td>
+          <td class="num"><b>&pound;200.0m</b><small>top &pound;25.0m</small></td><td>21 Sep 12:17<small>fbarker</small></td><td><span class="cbtn sm">Workbook</span></td></tr>
+      </tbody>
+    </table>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Every field that is in the table today stays visible, without eight columns fighting for width (P3).</li>
+      <li>The record opens where you are looking, and the rows above it never move.</li>
+      <li>Works at any width, so one layout serves the laptop and the 1560px card.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Halves how many proposals fit on screen before anything is opened.</li>
+      <li>Two-line rows scan worse than a grid when you are looking down one column.</li>
+      <li>An expanded row pushes everything below it far down the list.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- 04 -->
+<div class="opt" id="o4">
+  <div class="opt-h"><span class="n">04</span><h3>Saved views first</h3><span class="chip">Small</span><span class="chip">Pairs with any</span></div>
+  <p class="sum">Replace the row of five dropdowns with a row of named views that answer the questions people actually arrive with &mdash; each carrying its own count &mdash; and keep the dropdowns behind a <em>Filter</em> button for everything else. The table underneath is unchanged.</p>
+  <div class="bench"><div class="con">
+    <div class="views"><span class="on cnt">This week <b>5</b></span><span class="cnt">Mine <b>12</b></span><span class="cnt">Sleeves moved <b>3</b></span>
+      <span class="cnt">Over $100m <b>7</b></span><span class="cnt">No account yet <b>9</b></span><span>All time <b>34</b></span></div>
+    <div class="tools"><span class="srch">&#8981; Search UID, PWA, person, sleeve&hellip;</span><span class="sel">Filter</span>
+      <span class="mut" style="font-size:11.5px">This week &middot; 5 proposals &middot; $749.0m &middot; 2 PWAs</span><span class="cbtn">Export CSV</span></div>
+    <table class="reg">
+      <thead><tr><th>Exported &darr;</th><th>Primary PWA</th><th class="num">Mandate</th><th>Proposal UID</th><th>Portfolio</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>21 Sep 16:06<small>fbarker</small></td><td><b>S. Ferreira</b></td><td class="num">$49.0m</td><td class="uid">pr_1b8285460b7f</td><td>Moderate ex-Alts</td><td><span class="bdg ok">acct</span></td></tr>
+        <tr><td>21 Sep 12:17<small>fbarker</small></td><td><b>M. Aldridge</b></td><td class="num">&pound;200.0m</td><td class="uid">pr_c8577c6f4720</td><td>Conservative ex-Alts</td><td><span class="bdg warn">2 moved</span></td></tr>
+      </tbody>
+    </table>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Turns three interactions into one for the questions that are asked most (P7).</li>
+      <li>The counts are information in themselves: <em>3 with sleeves moved</em> is worth knowing before you click it.</li>
+      <li>It is a toolbar change, so it sits on top of any of the other four.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>The counts need a server call per view, or one endpoint returning all of them.</li>
+      <li>Someone has to decide the set of views; wrong ones are clutter.</li>
+      <li><em>Mine</em> means the caller, which the register can do &mdash; but <em>over $100m</em> needs a new filter the endpoint does not have.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- 05 -->
+<div class="opt" id="o5">
+  <div class="opt-h"><span class="n">05</span><h3>Cards</h3><span class="chip">Not recommended</span></div>
+  <p class="sum">One card per proposal in a three-across grid: mandate large, PWA, basis, badges, workbook. Shown for completeness, because it is the obvious modern alternative and worth ruling out deliberately rather than by omission.</p>
+  <div class="bench"><div class="con">
+    <div class="cards">
+      <div class="pcard"><div class="w"><b class="m">$49.0m</b><span class="bdg ok">acct</span></div>
+        <div class="pwa">S. Ferreira &mdash; Geneva</div><div class="meta">USD &middot; Unhedged &middot; Moderate ex-Alts</div>
+        <div class="foot"><span class="uid">pr_1b8285460b7f</span><span class="cbtn sm" style="margin-left:auto">Open</span></div></div>
+      <div class="pcard"><div class="w"><b class="m">&pound;200.0m</b><span class="bdg warn">2 moved</span></div>
+        <div class="pwa">M. Aldridge &mdash; Zurich</div><div class="meta">GBP &middot; ISG Hedged &middot; Conservative ex-Alts</div>
+        <div class="foot"><span class="uid">pr_c8577c6f4720</span><span class="cbtn sm" style="margin-left:auto">Open</span></div></div>
+      <div class="pcard"><div class="w"><b class="m">&pound;500.0m</b></div>
+        <div class="pwa">M. Aldridge &mdash; Zurich</div><div class="meta">GBP &middot; Hedged &middot; ConsMod Core</div>
+        <div class="foot"><span class="uid">pr_9854e3657036</span><span class="cbtn sm" style="margin-left:auto">Open</span></div></div>
+    </div>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>The mandate is unmissable, and each proposal reads as an object.</li>
+      <li>Reflows to any width without a horizontal scroll.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Three proposals per row where the table shows twelve &mdash; the opposite of quick navigation.</li>
+      <li>Nothing lines up, so figures cannot be compared down a column, and sorting becomes pointless.</li>
+      <li>A register is a ledger. Cards say <em>browse</em>; this page is for finding and checking.</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2 id="cmp"><small>Side by side</small>What each layout answers</h2>
+<div class="scroller">
+<table class="cmp">
+  <thead><tr><th>&nbsp;</th><th>Layout</th><th>Rows visible</th><th>Read without losing the list</th><th>Scan a set</th><th>Backend work</th><th>Effort</th></tr></thead>
+  <tbody>
+    <tr><td class="k">NOW</td><td>Table + bottom drawer</td><td>~12, halved when open</td><td>No</td><td>No</td><td>&mdash;</td><td>&mdash;</td></tr>
+    <tr class="hi"><td class="k">01</td><td>Split, record on the right</td><td>~14, unchanged when open</td><td>Yes</td><td>With F6</td><td>F3, F4, F6 optional</td><td>Medium</td></tr>
+    <tr><td class="k">02</td><td>Banded by day</td><td>~10 plus bands</td><td>No</td><td>Yes, by day</td><td>None</td><td>Small</td></tr>
+    <tr><td class="k">03</td><td>Two-line, expands in place</td><td>~6</td><td>Partly</td><td>No</td><td>None</td><td>Medium</td></tr>
+    <tr><td class="k">04</td><td>Saved views + table</td><td>~12</td><td>No</td><td>Yes, by view</td><td>Counts endpoint</td><td>Small</td></tr>
+    <tr><td class="k">05</td><td>Cards</td><td>~6</td><td>No</td><td>No</td><td>None</td><td>Small</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="rec"><small>If you want one</small>Recommendation</h2>
+<p class="lede"><b>01 with 04's saved views on top</b>, and F1, F2, F5 and F7 taken first because they are front-end only.</p>
+<ol class="seq">
+  <li><b>Start with the cheap fixes.</b> The UID column that copies on click, a workbook control on the row, <code>money()</code> taught billions, and a keyboard cursor. No server change, and between them they answer P1, P6 and most of the friction in <em>find</em>.</li>
+  <li><b>Then the split.</b> It is the only option that fixes P2, and the console is already 1400px wide on this view &mdash; the record is a narrow, tall thing next to a list that wants to stay put. Below 1100px it falls back to today's drawer.</li>
+  <li><b>Then saved views.</b> Once the counts endpoint exists, <em>This week</em>, <em>Sleeves moved</em> and <em>No account yet</em> replace three dropdown interactions each with one, and the counts are worth reading on their own.</li>
+  <li><b>F4 and F8 last, together.</b> Both are joins the server does once per page: which sleeves have moved, and which proposals have an account request. They are what turns the register from a list of files into a picture of what is outstanding.</li>
+</ol>
+<p class="lede">If only one thing ships, make it <b>04</b>: it is the smallest change with the largest effect on <em>find</em>, and it does not foreclose any of the others. <b>02</b> is worth adding to whichever layout wins as a toggle rather than a default &mdash; useful for a weekly read, wasteful on a quiet desk.</p>
+
+<h2 id="decide"><small>Worth deciding</small>Open questions</h2>
+<ul class="q">
+  <li><b>Who is this page for?</b> I have assumed an admin checking what was delivered and fetching workbooks. If it is also where someone reports on volumes, F6 grows into a proper summary and 02 becomes more valuable than 01.</li>
+  <li><b>Should the register show account requests at all?</b> F8 assumes yes. It means the console reads a second table, and it makes the register the place you check whether an account was opened &mdash; a job nothing currently does.</li>
+  <li><b>What counts as a saved view?</b> My five are a guess: This week, Mine, Sleeves moved, Over $100m, No account yet. <em>Over $100m</em> needs a mandate filter the endpoint does not have.</li>
+  <li><b>Is the drawer's second picture still wanted?</b> Allocation and Implemented sit behind a toggle. In a right-hand pane there is room to stack them, which would remove a control and a decision.</li>
+</ul>
+
+<footer>
+  <p>Epsilon Phi &middot; Proposal Tool &middot; admin repository, Proposals. Drawn against <code>registerViewHtml</code> and its helpers in <code>generator/js/repository.js</code>, the register endpoints in <code>dashboardRouter.py</code> and <code>scenario/proposalRegister.py</code>, 25 September 2026. The rows in the mock-ups are real records read from <code>var/proposals.db</code>; sleeve and product lines are examples. Type is Roboto Condensed standing in for GS Sans Condensed.</p>
+</footer>
+
+</div>
+
+</body>
+</html>

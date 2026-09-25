@@ -424,6 +424,7 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/activity.csv', ('GET',)),
         ('/scenario/repository/proposals', ('GET',)),
         ('/scenario/repository/proposals.csv', ('GET',)),
+        ('/scenario/repository/proposals/views', ('GET',)),
         ('/scenario/repository/proposals/{proposalId}', ('GET',)),
         ('/scenario/repository/proposals/{proposalId}/workbook', ('GET',)),
     }
@@ -534,35 +535,34 @@ def test_catalogue_helpers_mirror_the_rules_they_implement():
     facets = [{'key': 'category'}, {'key': 'vehicle'}, {'key': 'liquidity'}, {'key': 'book'}]
     script = helpers + '''
 const products = %s, sleeves = %s, facets = %s;
-const mgmt = g => ({ 'Passive': 0.26, 'Core Active': 0.32, 'Alternatives': 0.52 })[g];
-const rows = catEnrich(products, sleeves, mgmt, 2000000);
+const rows = catEnrich(products, sleeves, 2000000);
 const ids = rs => rs.map(r => r.p.productId);
 const run = (state, sort) => ids(catSort(catFilter(rows, state), sort));
 const none = { query: '', filters: {} };
 // the banded view (D100): in rows2, product a is held by an Equity sleeve as well
 const sleeves2 = sleeves.concat([{ id: 3, variant: 'T1', category: 'Equity', name: 'S3',
                                   products: [{ productId: 'a', weight: 1.0 }] }]);
-const rows2 = catEnrich(products, sleeves2, mgmt, 2000000);
+const rows2 = catEnrich(products, sleeves2, 2000000);
 const onlyEquity = { query: '', filters: { category: ['Equity'] } };
 const bands = (rs, order, chosen) => catGroups(rs, order, chosen).map(g => ({
   key: g.key, ids: ids(g.rows), lo: +g.lo.toFixed(2), hi: +g.hi.toFixed(2), notDaily: g.notDaily }));
 process.stdout.write(JSON.stringify({
   join: catJoin(sleeves),
-  enriched: rows.map(r => ({ id: r.p.productId, used: r.used, cats: r.categories, books: r.books, mgmt: r.mgmt,
-                              allIn: +r.allIn.toFixed(2), net: r.net === null ? null : +r.net.toFixed(2), tooBig: r.tooBig })),
-  unpriced: catEnrich(products, sleeves, null, null).map(r => [r.mgmt, +r.allIn.toFixed(2), r.tooBig]),
+  enriched: rows.map(r => ({ id: r.p.productId, used: r.used, cats: r.categories, books: r.books,
+                              keys: Object.keys(r).sort(), net: r.net === null ? null : +r.net.toFixed(2), tooBig: r.tooBig })),
+  noMandate: catEnrich(products, sleeves, null).map(r => r.tooBig),
   facets: catFacets(rows, facets, none, { book: ['T1', 'T2', 'Not yet placed'] }),
   facetsOtherFilters: catFacets(rows, facets, { query: '', filters: { vehicle: ['ETF'] } }, {}),
   byVehicle: run({ query: '', filters: { vehicle: ['SMA', 'ETF'] } }, null),
   byBook: run({ query: '', filters: { book: ['T2'] } }, null),
   unplaced: run({ query: '', filters: { category: ['Not yet placed'] } }, null),
   bySearch: run({ query: 'gam', filters: {} }, null),
-  allInAsc: run(none, { key: 'allIn', dir: 'asc' }),
+  costAsc: run(none, { key: 'productCost', dir: 'asc' }),
   yieldDesc: run(none, { key: 'distributionYield', dir: 'desc' }),
   yieldAsc: run(none, { key: 'distributionYield', dir: 'asc' }),
   minAsc: run(none, { key: 'minimumInvestment', dir: 'asc' }),
   best: catBest(rows),
-  banded: bands(catSort(rows, { key: 'allIn', dir: 'desc' }), ['Fixed Income', 'Not yet placed']),
+  banded: bands(catSort(rows, { key: 'productCost', dir: 'desc' }), ['Fixed Income', 'Not yet placed']),
   bandOrder: bands(rows, ['Not yet placed', 'Fixed Income']).map(g => g.key),
   twice: bands(rows2, ['Equity', 'Fixed Income', 'Not yet placed']),
   chosen: bands(catFilter(rows2, onlyEquity), ['Equity', 'Fixed Income', 'Not yet placed'], ['Equity']),
@@ -575,10 +575,13 @@ process.stdout.write(JSON.stringify({
     assert got['join'] == {'a': {'used': 2, 'categories': ['Fixed Income'], 'books': ['T1', 'T2']},
                            'b': {'used': 1, 'categories': ['Fixed Income'], 'books': ['T1']}}
     a, b, c = got['enriched']
-    assert (a['mgmt'], a['allIn'], a['net']) == (0.26, 0.40, 4.22)
-    assert (b['mgmt'], b['allIn'], b['net'], b['tooBig']) == (0.32, 0.60, 4.25, True), 'a $5m minimum is above a $2m mandate'
+    # product fees only (D114): net is the yield less the product's own cost,
+    # and a row carries no management or all-in figure at all
+    assert a['keys'] == ['books', 'categories', 'net', 'p', 'tooBig', 'used']
+    assert a['net'] == 4.48
+    assert (b['net'], b['tooBig']) == (4.57, True), 'a $5m minimum is above a $2m mandate'
     assert (c['net'], c['used'], c['cats'], c['books']) == (None, 0, [], []), 'no yield means no net; unplaced means empty joins'
-    assert got['unpriced'] == [[None, 0.14, False], [None, 0.28, False], [None, 0.90, False]], 'no schedule: all-in is cost, nothing flagged'
+    assert got['noMandate'] == [False, False, False], 'no mandate open: nothing flagged'
     f = got['facets']
     assert f['category'] == [{'value': 'Fixed Income', 'count': 2}, {'value': 'Not yet placed', 'count': 1}]
     assert f['book'] == [{'value': 'T1', 'count': 2}, {'value': 'T2', 'count': 1}, {'value': 'Not yet placed', 'count': 1}]
@@ -590,16 +593,16 @@ process.stdout.write(JSON.stringify({
     assert g['vehicle'] == [{'value': 'ETF', 'count': 1}, {'value': 'Mutual Fund', 'count': 1}, {'value': 'SMA', 'count': 1}]
     assert got['byVehicle'] == ['a', 'b'] and got['byBook'] == ['a'] and got['unplaced'] == ['c']
     assert got['bySearch'] == ['c']
-    assert got['allInAsc'] == ['a', 'b', 'c']
+    assert got['costAsc'] == ['a', 'b', 'c']
     assert got['yieldDesc'] == ['b', 'a', 'c'] and got['yieldAsc'] == ['a', 'b', 'c'], 'a blank sorts last either way'
     assert got['minAsc'] == ['c', 'b', 'a']
-    assert got['best'] == {'productCost': 'a', 'mgmt': 'a', 'allIn': 'a', 'distributionYield': 'b', 'net': 'b'}
+    assert got['best'] == {'productCost': 'a', 'distributionYield': 'b', 'net': 'b'}
     # banded by category (D100): the bands in the order given, the rows in the
     # order they came in - so a sort applies within a band - and each band with
-    # its count, its all-in range and how many of its products are not daily
+    # its count, its product-cost range and how many of its products are not daily
     assert got['banded'] == [
-        {'key': 'Fixed Income', 'ids': ['b', 'a'], 'lo': 0.40, 'hi': 0.60, 'notDaily': 0},
-        {'key': 'Not yet placed', 'ids': ['c'], 'lo': 1.42, 'hi': 1.42, 'notDaily': 1}]
+        {'key': 'Fixed Income', 'ids': ['b', 'a'], 'lo': 0.14, 'hi': 0.28, 'notDaily': 0},
+        {'key': 'Not yet placed', 'ids': ['c'], 'lo': 0.90, 'hi': 0.90, 'notDaily': 1}]
     assert got['bandOrder'] == ['Not yet placed', 'Fixed Income'], 'the order is the one handed in, not first come'
     # category is a join: a product two categories hold stands in both bands ...
     assert [(g['key'], g['ids']) for g in got['twice']] == [
@@ -608,6 +611,30 @@ process.stdout.write(JSON.stringify({
     assert [(g['key'], g['ids']) for g in got['chosen']] == [('Equity', ['a'])]
     assert got['unlisted'] == ['Not yet placed', 'Equity', 'Fixed Income'], 'a category the order does not name comes after, by name'
     assert got['nothing'] == []
+
+
+def test_the_catalogue_opens_by_category_and_shows_product_fees_only():
+    """D114. The catalogue describes products; a management fee depends on a
+    proposal's schedule, tier and level, so it has no place there. No column,
+    facet, figure, label or link in the catalogue refers to one - and the view
+    opens banded by category, sorted by product cost."""
+    jsPath = os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js')
+    with open(jsPath, encoding='utf-8') as fh:
+        source = fh.read()
+    state = source[source.index('var cat = {'):source.index('};', source.index('var cat = {'))]
+    assert "group: true," in state, 'the catalogue opens by category'
+    assert "sort: { key: 'productCost', dir: 'asc' }" in state
+    columns = source[source.index('var CAT_COLUMNS'):source.index('var CAT_NUMERIC')]
+    facets = source[source.index('var CAT_FACETS'):source.index('var CAT_COLUMNS')]
+    for gone in ("key: 'mgmt'", "key: 'allIn'"):
+        assert gone not in columns, gone
+    assert "key: 'feeGroup'" not in facets
+    for gone in ('App.managementFee', 'data-catfee', 'catTierId', 'catPricedLabel', 'Net of all-in',
+                 'Fee card ·', "'<span class=\"rng\">all-in '"):
+        assert gone not in source, gone
+    # a flat view is the one a link now has to name
+    assert "if (!cat.group) q.set('group', 'flat');" in source
+    assert "cat.group = q.get('group') !== 'flat';" in source
 # ---- creating under several books, and copying between them (D61) ----------------
 
 def test_one_definition_can_be_created_under_several_types_at_once():

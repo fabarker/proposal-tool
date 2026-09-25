@@ -15,7 +15,7 @@ REPO_CSS = r"""
    A three-pane overlay on the dialog base: categories, the sleeves in one,
    the editor for one. Sized to the viewport rather than to its content so
    the panes scroll independently and the footer stays put. */
-.dialog.repo{width:min(1280px,calc(100vw - 32px));height:min(780px,calc(100vh - 32px));
+.dialog.repo{width:min(1280px,calc(100vw - 32px));height:min(940px,calc(100vh - 32px));
   padding:0;display:flex;flex-direction:column;overflow:hidden}
 /* A column of fixed bands around one band that takes the rest. Flex rather
    than a grid template because two of the bands - the unsaved-changes notice,
@@ -49,6 +49,13 @@ REPO_CSS = r"""
 .repo-h .repo-src{margin-left:auto}
 .dialog.repo .dlg-close{position:static;margin-left:4px}
 .repo-b{display:grid;grid-template-columns:232px 300px minmax(0,1fr);min-height:0}
+/* The Sleeves view at the catalogue's width, so switching between the two
+   does not jump, and with the extra room shared by all three panes - the
+   editor, which holds the product table, taking most of it (D115). */
+.dialog.repo.sleeves{width:min(1560px,calc(100vw - 32px))}
+/* only where the card actually gets wider; below that the panes keep their
+   widths, and the 900px rule still narrows them */
+@media (min-width:1320px){.dialog.repo.sleeves .repo-b{grid-template-columns:268px 340px minmax(0,1fr)}}
 .repo-pane{border-right:1px solid var(--line);min-height:0;overflow:auto;display:flex;flex-direction:column}
 .repo-pane:last-child{border-right:0}
 .repo-pane-h{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.14em;
@@ -391,7 +398,9 @@ REPO_CSS = r"""
    pictures behind a segmented toggle and the workbook one click away. The
    pictures are indented tables in their own right, so a category reads as
    a group head and its assets or products as the rows under it. */
-.dialog.repo.register{width:min(1400px,calc(100vw - 32px))}
+/* One width for every view that holds a table, so moving between the tabs
+   never resizes the card (D115, D117). */
+.dialog.repo.register{width:min(1560px,calc(100vw - 32px))}
 .reg-tools .cat-search{flex:0 1 280px;min-width:180px}
 .reg-tbl td b{font-weight:600}
 .reg-tbl td .mut,.reg-tbl .mut{color:var(--ink-3)}
@@ -400,6 +409,58 @@ REPO_CSS = r"""
 .arc-badge.acc{background:#E3EBFA;color:#1E4FA3}
 .arc-badge.mute{background:var(--surface-2);color:var(--ink-2)}
 .arc-badge.warn{background:#FEF3C7;color:#7A4A0A}
+.arc-badge.ok{background:#EAF5EE;color:#176A33}
+
+/* ── the register, laid out as a list and a pane (D116) ── */
+/* The saved views come before the filters: one press for the question people
+   actually arrive with, and the count is worth reading before it is pressed. */
+.reg-views{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px 7px;border-bottom:1px solid var(--line);
+  background:var(--surface)}
+.reg-view{font-family:var(--f-body);font-size:12.5px;padding:6px 11px;border-radius:14px;cursor:pointer;
+  border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-2);white-space:nowrap;transition:.14s}
+.reg-view:hover{border-color:var(--accent);color:var(--accent)}
+.reg-view b{font-family:var(--f-num);font-weight:700;margin-left:6px;color:var(--ink-3)}
+.reg-view.on{background:#16243A;border-color:#16243A;color:#fff;font-weight:600}
+.reg-view.on b{color:#AFC3DE}
+.reg-view:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.reg-filters{border-bottom:1px solid var(--line);background:var(--surface)}
+/* what the rows in force come to, before a row is read */
+.reg-stat{display:flex;gap:10px 26px;flex-wrap:wrap;margin:0;padding:9px 16px;
+  border-bottom:1px solid var(--line);background:var(--surface)}
+.reg-stat div{min-width:0}
+.reg-stat dt{font-family:var(--f-num);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin:0}
+.reg-stat dd{margin:1px 0 0;font-family:var(--f-num);font-size:15px;font-weight:600;color:var(--ink)}
+/* the list and the record, side by side: reading one costs no rows */
+.reg-b{display:grid;grid-template-columns:minmax(0,1fr);min-height:0}
+.reg-b.open{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.reg-b>.reg-list{min-height:0}
+.reg-pane{min-width:0;min-height:0;overflow-y:auto;border-left:1px solid var(--line-strong);background:var(--bg)}
+.reg-pane .reg-detail{max-height:none;border-top:0;background:transparent}
+.reg-pane .arc-dh{flex-direction:column;gap:8px}
+.reg-pane .arc-dact{margin-left:0;justify-content:flex-start}
+.reg-pane .reg-pic-wrap{overflow-x:auto}
+/* the id everything quotes, as a control rather than text to select */
+.reg-uid{font-family:var(--f-num);font-size:12.5px;letter-spacing:.02em;color:var(--ink-2);
+  background:none;border:0;border-bottom:1px dashed var(--line-mid);padding:1px 0;cursor:pointer}
+.reg-uid:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.reg-uid:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.reg-uid.copied{color:#176A33;border-bottom-color:#176A33}
+.reg-uid.copied::after{content:" copied";font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+/* The register has no tick column to borrow a gutter from, so its first
+   cell sat 10px off the card's edge. 16px puts the first column on the same
+   line as the search box, the view chips and the summary above it (D118). */
+.reg-tbl th:first-child,.reg-tbl td:first-child{padding-left:16px}
+.reg-tbl th:last-child,.reg-tbl td:last-child{padding-right:16px}
+.reg-tbl td.reg-size{line-height:1.3}
+.reg-tbl td.reg-size small{display:block;font-family:var(--f-num);font-size:10.5px;color:var(--ink-3);font-weight:400}
+.reg-tbl td.reg-pwa small{display:block;font-family:var(--f-num);font-size:10.5px;color:var(--ink-3)}
+@media (max-width:1100px){
+  /* too narrow for two columns: the record goes back under the table, where
+     it is the only thing that fits */
+  .reg-b.open{grid-template-columns:minmax(0,1fr)}
+  .reg-pane{border-left:0;border-top:1px solid var(--line-strong);max-height:52%}
+}
 .reg-detail{max-height:52%}
 .reg-detail .arc-dact .repo-seg{margin-left:6px}
 .reg-detail .arc-dact .btn-primary{text-decoration:none}

@@ -2917,23 +2917,39 @@ async function lookupProposal(uid, seq) {
   /* No abort: a lookup is a primary-key read, and a stale reply is simply
      ignored by the sequence check - cheaper than teaching apiFetch that an
      abort is not the service going down (D64). */
+  var wasOpen = accountExpanded();
   try {
     var found = await apiFetch('/scenario/proposals/' + encodeURIComponent(uid));
     if (!account || account.seq !== seq) return;
     account.status = 'found'; account.message = '';
     account.proposal = found.proposal; account.requests = found.requests || [];
-    if (!account.fundingTouched && !(account.fields.fundingAmount > 0)) {
+    /* Untouched, the funding follows the proposal - including a new one after
+       Change. Typed, it is the user's and stays. */
+    if (!account.fundingTouched) {
       account.fields.fundingAmount = found.proposal.mandateSize || null;
     }
-    announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
-      + money(found.proposal.mandateSize) + '.');
+    if (account.requests.length) {
+      announce('polite', 'This proposal already has an account opening request, '
+        + account.requests[0].requestId + '.');
+    } else {
+      announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
+        + money(found.proposal.mandateSize) + '.');
+    }
   } catch (err) {
     if (!account || account.seq !== seq) return;
     account.status = (err && err.status === 404) ? 'notfound'
       : (err && err.status === 422) ? 'malformed' : 'error';
     account.message = (err && err.message) || 'The lookup failed.';
   }
-  preserveFocus(renderAccountDialog);
+  /* The UID box is gone once the card grows, so focus moves on to the first
+     thing left to do rather than falling back to the page. */
+  if (!wasOpen && accountExpanded()) {
+    renderAccountDialog();
+    var first = document.getElementById(AC_FIELDS[0].id);
+    if (first) first.focus();
+  } else {
+    preserveFocus(renderAccountDialog);
+  }
 }
 
 function accountMissing() {
@@ -2952,18 +2968,68 @@ function accountReady() {
 
 function accountStatusText() {
   var a = account;
-  if (a.status !== 'found') return 'Enter a Proposal UID to begin.';
-  if (a.requests.length) {
-    var r = a.requests[0];
-    return 'An account opening request already exists for this proposal: ' + r.requestId
-      + ' by ' + r.submittedBy + ' on ' + whenText(r.submittedAt) + '.';
-  }
+  if (a.status === 'idle') return 'Paste the UID to continue.';
+  /* looking, refused or already requested: the line under the UID says it */
+  if (!accountExpanded()) return '';
   var missing = accountMissing();
   if (missing.length) {
     return missing.length + ' required field' + (missing.length === 1 ? '' : 's') + ' remaining: '
       + missing.map(function (m) { return m.label; }).join(', ') + '.';
   }
-  return 'Ready. Submitting records the request against ' + a.proposal.proposalId + '.';
+  /* The PWA and mandate beside the UID: the last thing read before the
+     proposal's one request is spent is the thing the user would check (D111). */
+  var p = a.proposal;
+  return 'Ready. Submitting records the request against ' + p.proposalId
+    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize) + ').';
+}
+
+/* The card opens on the UID alone and grows into the request only when the
+   UID names a proposal that can still take one. Every other outcome - looking,
+   malformed, not found, already requested - is answered in the small card,
+   because there is nothing yet for the user to fill in (D111). */
+function accountExpanded() {
+  return !!(account && !account.receipt && account.status === 'found'
+            && !account.requests.length);
+}
+
+/* Anything the user has typed about the account, so a changed UID can say it
+   was kept. The funding default does not count: the card wrote that. */
+function accountHasDetails() {
+  var f = account.fields;
+  return AC_FIELDS.some(function (spec) {
+    if (spec.kind === 'money') return account.fundingTouched && f[spec.key] > 0;
+    return !!(f[spec.key] && String(f[spec.key]).trim());
+  });
+}
+
+/* Enter looks up at once rather than waiting out the debounce - and looks up
+   again when the box already holds the UID, which is how someone who pressed
+   Change gets back to the proposal they had. */
+function lookupNow() {
+  if (!account || account.submitting) return;
+  var uid = (account.uid || '').toLowerCase();
+  if (!UID_PATTERN.test(uid)) {
+    if (uid) { account.status = 'malformed'; account.message = UID_SHAPE; preserveFocus(renderAccountDialog); }
+    return;
+  }
+  if (account.timer) { clearTimeout(account.timer); account.timer = null; }
+  account.status = 'looking'; account.message = '';
+  preserveFocus(renderAccountDialog);
+  lookupProposal(uid, ++account.seq);
+}
+
+/* Change: back to the small card with the UID selected for editing. What the
+   user typed about the account is kept - the usual reason to change a UID is
+   a typo or the wrong re-export, and the client is the same client (D111). */
+function changeProposal() {
+  if (!account || account.submitting) return;
+  ++account.seq;                      /* a reply still in flight is stale now */
+  if (account.timer) { clearTimeout(account.timer); account.timer = null; }
+  account.status = 'idle'; account.message = ''; account.err = null;
+  account.proposal = null; account.requests = [];
+  renderAccountDialog();
+  var box = document.getElementById('acuid');
+  if (box) { box.focus(); box.select(); }
 }
 
 function whenText(iso) {
@@ -2997,69 +3063,154 @@ function renderAccountDialog() {
   }
   host.hidden = false;
   setBackgroundInert(true);
-  host.innerHTML =
-      '<div class="scrim" data-scrim></div>'
-    + '<div class="dialog account" role="dialog" aria-modal="true" aria-labelledby="acTitle">'
-    + '<button type="button" class="dlg-close" id="acclose" aria-label="Close">×</button>'
-    + (account.receipt ? accountReceiptMarkup() : accountFormMarkup())
-    + '</div>';
+  /* The dialog element survives re-renders - only its contents are replaced -
+     so the change between the small card and the grown one can be one
+     movement, width and height together, rather than a jump (D111). */
+  var box = host.querySelector('.dialog.account');
+  var before = box ? box.getBoundingClientRect() : null;
+  var wasOpen = box ? box.classList.contains('open') : false;
+  if (!box) {
+    host.innerHTML = '<div class="scrim" data-scrim></div>'
+      + '<div class="dialog account" role="dialog" aria-modal="true" aria-labelledby="acTitle"></div>';
+    box = host.querySelector('.dialog.account');
+  }
+  var open = accountExpanded();
+  box.classList.toggle('open', open);
+  box.innerHTML = '<button type="button" class="dlg-close" id="acclose" aria-label="Close">×</button>'
+    + (account.receipt ? accountReceiptMarkup() : accountFormMarkup());
+  if (before && wasOpen !== open && box.animate) {
+    var after = box.getBoundingClientRect();
+    box.style.overflow = 'hidden';
+    var grow = box.animate([
+      { width: before.width + 'px', height: before.height + 'px' },
+      { width: after.width + 'px', height: after.height + 'px' }
+    ], { duration: 260, easing: 'cubic-bezier(.4,0,.2,1)' });
+    grow.onfinish = grow.oncancel = function () { box.style.overflow = ''; };
+    var fresh = open && box.querySelector('.ac-grow');
+    if (fresh && fresh.animate) {
+      fresh.animate([{ opacity: 0 }, { opacity: 1 }],
+                    { duration: 220, delay: 90, easing: 'ease-out', fill: 'backwards' });
+    }
+  }
 }
 
 function accountFormMarkup() {
-  var a = account, p = a.proposal;
-  var found = (a.status === 'found');
+  var a = account;
+  var open = accountExpanded();
   var busy = a.submitting;
-  /* the account fields open only for a proposal that can still be requested */
-  var editable = found && !a.requests.length;
+  var held = a.status === 'found' && a.requests.length;
+  var ready = accountReady() && !busy;
+  var actions;
+  if (open) {
+    actions = '<button type="button" class="btn btn-ghost" id="accancel"' + (busy ? ' disabled' : '') + '>Cancel</button>'
+      + '<button type="button" class="btn btn-primary" id="acsubmit"' + (ready ? '' : ' disabled') + '>'
+      + (busy ? 'Working…' : 'Submit request') + '</button>';
+  } else if (held) {
+    actions = '<button type="button" class="btn btn-link" id="accopy">Copy reference</button>'
+      + '<button type="button" class="btn btn-ghost" id="accancel">Close</button>';
+  } else {
+    /* No disabled Submit waiting below one empty box: there is nothing to
+       submit yet, so the small card offers only the way out. */
+    actions = '<button type="button" class="btn btn-ghost" id="accancel">Cancel</button>';
+  }
+  return '<h2 id="acTitle" class="dlg-shout">Open an Account</h2>'
+    + '<p class="dlg-sub">Start from the proposal the account is for.</p>'
+    + (open ? '<div class="ac-grow">' + accountProposalMarkup(busy) + accountFieldsMarkup(busy) + '</div>'
+            : accountUidMarkup())
+    + (open && a.err ? '<p class="md-err" id="acerr" role="alert">' + esc(a.err.msg) + '</p>' : '')
+    + '<div class="dlg-actions split' + (open ? ' ac-foot' : '') + '">'
+    + '<span class="dlg-status' + (ready ? ' ok' : '') + '" id="acstatus" role="status">'
+    + esc(accountStatusText()) + '</span>'
+    + '<div class="dlg-grp">' + actions + '</div></div>';
+}
+
+/* The small card: the UID box and one line under it, which carries every
+   answer the lookup can give short of a proposal to fill in. */
+function accountUidMarkup() {
+  var a = account;
+  var looking = a.status === 'looking';
+  var bad = a.status === 'notfound' || a.status === 'malformed' || a.status === 'error';
+  var hint;
+  if (looking) {
+    hint = '<span class="field-hint busy" id="achint" role="status">Finding the proposal…</span>';
+  } else if (a.status === 'found' && a.requests.length) {
+    var r = a.requests[0];
+    hint = '<p class="dlg-held" id="achint" role="status"><b>This proposal already has an account '
+      + 'opening request.</b> <code>' + esc(r.requestId) + '</code>, raised by ' + esc(r.submittedBy)
+      + ' on ' + esc(whenText(r.submittedAt)) + '. Each proposal takes one request; quote this '
+      + 'reference to follow it up.</p>';
+  } else if (bad) {
+    hint = '<p class="md-err dlg-uiderr" id="achint" role="alert">' + esc(a.message || UID_SHAPE) + '</p>';
+  } else {
+    hint = '<span class="field-hint" id="achint">The end of the workbook\'s file name, or cell B1 '
+      + 'of its Implementation sheet.'
+      + (accountHasDetails() ? ' <b>Your account details are kept.</b>' : '') + '</span>';
+  }
+  return '<div class="field"><label for="acuid">Proposal UID<span class="req" aria-hidden="true">•</span></label>'
+    + '<div class="ac-uidbox">'
+    + '<input type="text" id="acuid" autocomplete="off" spellcheck="false" autocapitalize="off"'
+    + ' placeholder="pr_…" aria-describedby="achint" aria-required="true" value="' + esc(a.uid) + '"'
+    + (bad ? ' aria-invalid="true"' : '') + '>'
+    + (looking ? '<span class="ac-spin" aria-hidden="true"></span>' : '')
+    + '</div>' + hint + '</div>';
+}
+
+/* The proposal, once found: the UID locked into one line, then the terms as
+   plain text rather than greyed boxes - information to check, not controls
+   switched off - with the sleeves folded behind one line (D111). */
+function accountProposalMarkup(busy) {
+  var p = account.proposal;
+  var terms = [
+    ['Primary PWA', p.primaryPwa],
+    ['Basis', p.currency + ' · ' + p.hedging],
+    ['Mandate size', money(p.mandateSize)],
+    ['Top account size', money(p.topAccountSize)],
+    ['Implementation', p.variant],
+    ['Risk · allocation', riskAllocationText(p)],
+    ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
+    ['Switches', switchesText(p)]
+  ];
+  var sleeves = p.sleeves || [];
+  var names = sleeves.map(function (s) { return s.category; });
+  var preview = names.slice(0, 3).join(', ')
+    + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '');
+  return '<div class="ac-lock">'
+    + '<span class="ac-tick" aria-hidden="true">✓</span>'
+    + '<span class="ac-uid">' + esc(p.proposalId) + '</span>'
+    + '<span class="ac-when">Exported ' + esc(whenText(p.exportedAt)) + ' by ' + esc(p.exportedBy)
+    + (p.sequence > 1 ? ' · proposal #' + p.sequence + ' of its scenario' : '') + '</span>'
+    + '<button type="button" class="btn-inline" id="acchange"' + (busy ? ' disabled' : '')
+    + ' aria-label="Change the Proposal UID">Change</button></div>'
+    + '<div class="dlg-sect">The proposal<span class="dlg-tag">from the register</span></div>'
+    + '<dl class="ac-digest">' + terms.map(function (t) {
+        return '<div><dt>' + esc(t[0]) + '</dt><dd>' + esc(t[1] || '—') + '</dd></div>';
+      }).join('') + '</dl>'
+    + (sleeves.length
+        ? '<details class="ac-sleeves"><summary><b>' + sleeves.length + ' sleeve'
+          + (sleeves.length === 1 ? '' : 's') + '</b><span>' + esc(preview) + '</span></summary>'
+          + '<div class="dlg-sleeves">' + sleeves.map(function (s) {
+              return '<div><span>' + esc(s.category) + '</span><span>' + esc(s.sleeve || '—')
+                + (s.revision ? '<em>r' + esc(String(s.revision)) + '</em>' : '') + '</span></div>';
+            }).join('') + '</div></details>'
+        : '<p class="ac-none">No sleeves recorded.</p>');
+}
+
+function accountFieldsMarkup(busy) {
+  var a = account;
   var errField = a.err && a.err.field;
   function invalid(id) {
     return (errField === id) ? ' aria-invalid="true" aria-describedby="acerr"' : '';
   }
-
-  var uidHint;
-  if (a.status === 'looking') {
-    uidHint = '<span class="field-hint busy" id="achint" role="status">Looking up…</span>';
-  } else if (found) {
-    uidHint = '<span class="field-hint ok" id="achint" role="status">✓ Proposal found · '
-      + esc(p.currency + ' ' + p.hedging) + ' · exported ' + esc(whenText(p.exportedAt))
-      + ' by ' + esc(p.exportedBy)
-      + (p.sequence > 1 ? ' · proposal #' + p.sequence + ' of its scenario' : '') + '</span>';
-  } else if (a.status === 'idle') {
-    uidHint = '<span class="field-hint" id="achint">The last part of the workbook\'s name, '
-      + 'and the first row of its Implementation sheet.</span>';
-  } else {
-    uidHint = '<p class="md-err dlg-uiderr" id="achint" role="alert">' + esc(a.message || UID_SHAPE) + '</p>';
-  }
-
-  /* Filled from the proposal: greyed, visibly filled, not editable. */
-  var ro = [
-    ['Primary PWA', p ? p.primaryPwa : ''],
-    ['Mandate size', p ? money(p.mandateSize) : ''],
-    ['Top account size', p ? money(p.topAccountSize) : ''],
-    ['Basis', p ? p.currency + ' · ' + p.hedging : ''],
-    ['Implementation type', p ? p.variant : ''],
-    ['Risk · allocation', p ? riskAllocationText(p) : ''],
-    ['Fees', p ? (p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees') : ''],
-    ['Switches', p ? switchesText(p) : '']
-  ];
-  var roMarkup = ro.map(function (pair, i) {
-    return '<div class="field"><label for="acro' + i + '">' + esc(pair[0]) + '</label>'
-      + '<input type="text" id="acro' + i + '" class="ro" readonly value="' + esc(pair[1]) + '"></div>';
-  }).join('');
-  var sleeves = (p && p.sleeves && p.sleeves.length)
-    ? p.sleeves.map(function (s) {
-        return '<div><span>' + esc(s.category) + '</span><span>' + esc(s.sleeve || '—')
-          + (s.revision ? '<em>r' + esc(String(s.revision)) + '</em>' : '') + '</span></div>';
-      }).join('')
-    : '<div class="none">' + (p ? 'No sleeves recorded.' : '—') + '</div>';
-
-  var fieldsMarkup = AC_FIELDS.map(function (spec) {
+  return '<div class="dlg-sect">The account</div><div class="dlg-grid">' + AC_FIELDS.map(function (spec) {
     var v = a.fields[spec.key];
+    /* the one field the card filled in says so, until the user makes it theirs */
+    var from = (spec.kind === 'money' && !a.fundingTouched && v > 0)
+      ? '<span class="ac-from" id="acfundfrom">From mandate</span>' : '';
     var label = '<label for="' + spec.id + '">' + esc(spec.label)
-      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + '</label>';
+      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + from + '</label>';
     var common = ' id="' + spec.id + '" data-acf="' + spec.key + '"'
       + (spec.required ? ' aria-required="true"' : '') + invalid(spec.id)
-      + ((editable && !busy) ? '' : ' disabled');
+      + (busy ? ' disabled' : '');
     var control;
     if (spec.kind === 'select') {
       var choices = opt('options.accountRequest.' + spec.options, []);
@@ -3082,33 +3233,7 @@ function accountFormMarkup() {
     }
     return '<div class="field' + (spec.wide ? ' wide' : '') + '">' + label + control
       + (spec.hint ? '<span class="field-hint">' + esc(spec.hint) + '</span>' : '') + '</div>';
-  }).join('');
-
-  var ready = accountReady() && !busy;
-  var uidInvalid = (errField === 'acuid' || a.status === 'notfound' || a.status === 'malformed'
-                    || a.status === 'error');
-  return '<h2 id="acTitle" class="dlg-shout">Account opening request</h2>'
-    + '<p class="dlg-sub">Open an account on the terms of a delivered proposal.</p>'
-    + '<div class="field"><label for="acuid">Proposal UID<span class="req" aria-hidden="true">•</span></label>'
-    + '<input type="text" id="acuid" autocomplete="off" spellcheck="false" autocapitalize="off"'
-    + ' aria-describedby="achint" aria-required="true" value="' + esc(a.uid) + '"'
-    + (uidInvalid ? ' aria-invalid="true"' : '') + (busy ? ' disabled' : '') + '>'
-    + uidHint + '</div>'
-    + '<div class="dlg-sect">From the proposal'
-    + (found ? '<span class="dlg-tag">filled · read only</span>' : '') + '</div>'
-    + '<div class="' + (found ? '' : 'dlg-muted') + '"><div class="dlg-grid">' + roMarkup + '</div>'
-    + '<div class="field"><label>Sleeves</label><div class="dlg-sleeves">' + sleeves + '</div></div></div>'
-    + '<div class="dlg-sect">Account details</div>'
-    + '<div class="' + (editable ? '' : 'dlg-muted') + '"><div class="dlg-grid">' + fieldsMarkup + '</div></div>'
-    + (a.err ? '<p class="md-err" id="acerr" role="alert">' + esc(a.err.msg) + '</p>' : '')
-    + '<div class="dlg-actions split">'
-    + '<span class="dlg-status' + (ready ? ' ok' : '') + '" id="acstatus" role="status">'
-    + esc(accountStatusText()) + '</span>'
-    + '<div class="dlg-grp">'
-    + '<button type="button" class="btn btn-ghost" id="accancel"' + (busy ? ' disabled' : '') + '>Cancel</button>'
-    + '<button type="button" class="btn btn-primary" id="acsubmit"' + (ready ? '' : ' disabled') + '>'
-    + (busy ? 'Working…' : 'Submit request') + '</button>'
-    + '</div></div>';
+  }).join('') + '</div>';
 }
 
 function accountReceiptMarkup() {
@@ -3151,6 +3276,8 @@ function onAccountInput(e) {
   if (spec.kind === 'money') {
     account.fields[key] = parseMoney(t.value) || null;
     account.fundingTouched = true;
+    var from = document.getElementById('acfundfrom');
+    if (from) from.remove();
   } else {
     account.fields[key] = t.value;
   }
@@ -3194,8 +3321,11 @@ async function submitAccountRequest() {
 }
 
 function copyRequestReference(button) {
-  if (!account || !account.receipt) return;
-  var text = account.receipt.requestId;
+  if (!account) return;
+  /* the receipt's reference, or the one already on the proposal (D111) */
+  var text = account.receipt ? account.receipt.requestId
+    : (account.requests.length ? account.requests[0].requestId : '');
+  if (!text) return;
   function done() {
     button.textContent = 'Copied';
     announce('polite', 'Reference ' + text + ' copied.');
@@ -3615,6 +3745,7 @@ document.addEventListener('click', function (e) {
   }
   if (e.target.id === 'acsubmit') { submitAccountRequest(); return; }
   if (e.target.id === 'accopy') { copyRequestReference(e.target); return; }
+  if (e.target.id === 'acchange') { changeProposal(); return; }
   if (e.target.dataset && e.target.dataset.scrim !== undefined) {
     if (draft && !draft.dirty) closeMandateDialog();   /* spec 7.1 dialog rules */
     else if (account && !account.dirty && !account.submitting) closeAccountDialog();
@@ -3706,6 +3837,9 @@ document.addEventListener('keydown', function (e) {
       e.preventDefault();
       if (!account.submitting) closeAccountDialog();
       return;
+    }
+    if (e.key === 'Enter' && e.target && e.target.id === 'acuid') {
+      e.preventDefault(); lookupNow(); return;
     }
     if (e.key === 'Tab') trapFocus(e, document.getElementById('accountDialog'));
     return;

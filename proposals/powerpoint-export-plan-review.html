@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PowerPoint Export Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --pg:#FBFCFE;--card:#FFFFFF;--sunk:#F2F4F7;
+  --ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--on-accent:#FFFFFF;
+  --pick:#E3EBFA;--pick-ink:#1E4FA3;
+  --pos:#176A33;--warn:#B45309;--warn-bg:#FEF3C7;--neg:#B42318;
+  --hdr-bg:#16243A;--hdr-ink:#FFFFFF;--hdr-kick:#F3C46B;
+  --badge-bg:#16243A;--badge-ink:#FFFFFF;
+  /* the workbook's own palette (workbook.py lines 58-91) - fixed, because the
+     mock-ups depict the delivered report and must not follow this page's theme */
+  --wb-navy:#0F243E;--wb-head:#092532;--wb-sub:#092539;--wb-band:#D3DDEA;
+  --wb-heading:#092C61;--wb-breach-bg:#FDE8E8;--wb-breach:#9B1C1C;
+  --wb-low:#C00000;--wb-high:#039644;--wb-neg:#9C0006;--wb-pos:#006100;
+  --c1:#2A78D6;--c2:#EB6834;--c3:#1BAF7A;--c4:#EDA100;--c5:#E87BA4;--c6:#4A3AA7;--c7:#E34948;
+  --num:'Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  --body:'Roboto',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --xl:'Aptos Narrow','Arial Narrow','Roboto Condensed',sans-serif;
+  --xl2:'Calibri Light','Carlito','Roboto',sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+    --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+    --line:#28313D;--line2:#36414F;
+    --accent:#7FA9F0;--on-accent:#11161D;
+    --pick:#1C2B42;--pick-ink:#9DBEF2;
+    --pos:#6FCB8F;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;
+    --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+    --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+  }
+}
+:root[data-theme="dark"]{
+  --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+  --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+  --line:#28313D;--line2:#36414F;
+  --accent:#7FA9F0;--on-accent:#11161D;
+  --pick:#1C2B42;--pick-ink:#9DBEF2;
+  --pos:#6FCB8F;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;
+  --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+  --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--ink);font:16px/1.6 var(--body);-webkit-text-size-adjust:100%}
+.wrap{max-width:1060px;margin:0 auto;padding-inline:20px}
+header.top{background:var(--hdr-bg);color:var(--hdr-ink);padding-block:42px 36px;margin-bottom:28px}
+header.top .kick{font:700 11px/1 var(--num);letter-spacing:.18em;text-transform:uppercase;color:var(--hdr-kick);margin:0 0 12px}
+header.top h1{font:400 clamp(28px,6.4vw,40px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 12px;text-wrap:balance}
+header.top p{margin:0 0 6px;max-width:70ch;opacity:.85;font-size:15.5px}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 6px}
+nav.toc a{font:500 13px/1 var(--body);color:var(--ink2);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:8px 11px;border-radius:16px}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h2{font:400 clamp(22px,5vw,28px)/1.2 var(--body);letter-spacing:-.02em;margin:52px 0 6px;text-wrap:balance;scroll-margin-top:16px}
+h2 small{display:block;font:700 10.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3{font:600 17px/1.3 var(--body);margin:26px 0 6px}
+p{max-width:72ch}
+p.lede{color:var(--ink2);margin:0 0 16px}
+code{font:13px var(--num);background:var(--sunk);padding:2px 6px;border-radius:3px;color:var(--ink);word-break:break-word}
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:13px 15px;border-radius:0 7px 7px 0;font-size:14.5px;color:var(--ink2);margin:16px 0}
+.note.warn{border-left-color:var(--warn)}
+.note p{margin:0;max-width:none}
+.note p+p{margin-top:8px}
+.note b{color:var(--ink)}
+ul.tick{padding-left:18px;color:var(--ink2);font-size:15px}
+ul.tick li{margin:8px 0;max-width:70ch}
+ul.tick li b{color:var(--ink);font-weight:600}
+ol.seq{padding-left:20px;margin:14px 0}
+ol.seq li{margin:10px 0;max-width:70ch;color:var(--ink2);font-size:15px}
+ol.seq li b{color:var(--ink);font-weight:600}
+/* tables */
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0;background:var(--card);border:1px solid var(--line);border-radius:9px}
+table.doc{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+table.doc th{font:700 10px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 13px;border-bottom:1px solid var(--line2);white-space:nowrap}
+table.doc td{padding:10px 13px;border-top:1px solid var(--line);vertical-align:top;font-size:13.5px}
+table.doc td.k{font:700 12px var(--num);color:var(--accent);white-space:nowrap}
+table.doc td code{font-size:12px}
+tr.hi td{background:var(--pick)}
+.risk{font:700 10px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;padding:4px 7px;border-radius:9px;white-space:nowrap}
+.risk.lo{background:#E7F4EC;color:#176A33}.risk.md{background:var(--warn-bg);color:var(--warn)}.risk.hi2{background:#FDE8E8;color:#B42318}
+/* flow diagram */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:16px 0}
+.fstep{flex:1 1 170px;min-width:170px;border:1px solid var(--line2);background:var(--card);padding:11px 13px}
+.fstep+.fstep{border-left:0}
+.fstep:first-child{border-radius:7px 0 0 7px}
+.fstep:last-child{border-radius:0 7px 7px 0}
+.fstep b{display:block;font:700 9.5px var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin-bottom:4px}
+.fstep span{font-size:12.5px;color:var(--ink);display:block;line-height:1.45}
+.fstep span code{font-size:11px}
+.fstep.new{background:var(--pick);border-color:var(--accent)}
+.fstep.new b{color:var(--pick-ink)}
+@media (max-width:640px){.flow{display:grid;grid-template-columns:1fr}
+  .fstep{border-left:1px solid var(--line2)!important;border-radius:0!important;border-top:0}
+  .fstep:first-child{border-top:1px solid var(--line2);border-radius:7px 7px 0 0!important}
+  .fstep:last-child{border-radius:0 0 7px 7px!important}}
+/* IR diagram */
+.ir{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin:18px 0}
+.ir .box{border:1px solid var(--line2);background:var(--card);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--ink2)}
+.ir .box b{display:block;color:var(--ink);font:600 14px var(--body);margin-bottom:4px}
+.ir .box.core{border-color:var(--accent);background:var(--pick);grid-row:span 2}
+.ir .box.core b{color:var(--pick-ink)}
+.ir .arrow{font-size:18px;color:var(--ink3);text-align:center}
+@media (max-width:640px){.ir{grid-template-columns:1fr}.ir .arrow{transform:rotate(90deg)}}
+/* ── slides, drawn in the workbook's own idiom ── */
+.bench{background:linear-gradient(rgba(16,24,40,.28),rgba(16,24,40,.28)),var(--pg);border:1px dashed var(--line2);border-radius:10px;padding:18px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:14px 0 4px}
+.slide{width:900px;aspect-ratio:16/9;flex:none;margin:0 auto;background:#fff;border-radius:3px;
+  box-shadow:0 18px 44px -12px rgba(16,24,40,.5);padding:26px 34px 20px;position:relative;
+  color:#1C2733;font-family:var(--xl2);display:flex;flex-direction:column;overflow:hidden}
+.s-head{font:700 21px/1.15 var(--xl2);color:var(--wb-navy);letter-spacing:-.01em}
+.s-sub{font:400 11.5px/1.4 var(--xl2);color:#4B5A6A;margin-top:3px}
+.s-sub b{font-weight:700;color:var(--wb-navy)}
+.s-rule{height:2.5px;background:var(--wb-navy);margin:8px 0 10px}
+.s-body{flex:1;min-height:0}
+.s-foot{display:flex;gap:14px;justify-content:space-between;align-items:flex-end;margin-top:8px;
+  padding-top:6px;border-top:.5px solid #D4DAE2}
+.s-notes{font:400 8.5px/1.45 var(--xl2);color:#7C8B9C;max-width:74%}
+.s-notes span{display:block}
+.s-pg{font:400 8.5px var(--xl2);color:#7C8B9C;white-space:nowrap;text-align:right}
+/* slide tables */
+table.xl{border-collapse:collapse;width:100%;font-family:var(--xl);color:#1C2733}
+table.xl td,table.xl th{padding:2.5px 7px;font-weight:400;white-space:nowrap}
+table.xl .r{text-align:right}
+table.xl .c{text-align:center}
+/* implementation idiom */
+.impl th{background:var(--wb-head);color:#fff;font:700 10px var(--xl);text-align:left;padding:5px 7px}
+.impl td{font-size:10px;background:#fff}
+.impl tr.band td{background:var(--wb-band);font-weight:700}
+.impl tr.tot td{font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000}
+.impl td.breach{background:var(--wb-breach-bg);color:var(--wb-breach);font-weight:700;font-family:'Calibri',var(--xl2)}
+/* portfolios idiom */
+.port td{font-family:var(--xl2);font-size:11px}
+.port tr.names td{font-weight:700;border-bottom:2px solid #000;padding:8px 7px;text-align:center}
+.port tr.names td:first-child{text-align:left}
+.port tr.cat td{color:var(--wb-heading);font-weight:700;border-top:1px solid #000}
+.port tr.total td{color:var(--wb-heading);font-weight:700;border-top:2px solid #000}
+.port tr.metric td{background:var(--wb-navy);color:#fff;font-family:'Calibri',var(--xl2);padding:5px 7px}
+.port tr.gap td{padding:1.5px}
+.port td.asset{padding-left:18px}
+.port .r{padding-right:26px}
+/* risk idiom */
+.risktbl td{font-size:9.5px;text-align:center;padding:2px 6px}
+.risktbl td:first-child{text-align:left}
+.risktbl tr.names td{background:var(--wb-head);color:#fff}
+.risktbl tr.cat td:first-child,.risktbl tr.met td:first-child{color:var(--wb-heading);font-weight:700}
+.risktbl tr.met td{border-top:1px dotted #A9A9A9}
+.risktbl tr.bandrow td{background:var(--wb-head);color:#fff;text-align:left;font-weight:400;padding:3.5px 6px}
+.risktbl tr.subh td{border-top:1px dotted #A9A9A9}
+.risktbl tr.subh td:first-child{color:var(--wb-sub);font-weight:700}
+.risktbl tr.last td{border-bottom:1px solid #000}
+.neg{color:var(--wb-neg)}.posv{color:var(--wb-pos)}
+/* assumptions idiom */
+.assum td{font-family:'Grotesque',var(--xl2);font-size:9.5px;text-align:center;padding:2.5px 6px}
+.assum td:first-child{text-align:left}
+.assum tr.h1 td{border-bottom:1px solid #000;font-weight:400}
+.assum tr.h2 td{border-bottom:1px solid #000;font-weight:400;white-space:normal;line-height:1.15}
+.assum tr.cat td{font-weight:700;color:var(--wb-navy);border-top:1px solid #C9CDD3}
+.assum td.lo2{color:var(--wb-low)}.assum td.hi3{color:var(--wb-high)}
+.assum tr.cat td.hi3{color:var(--wb-high)}
+/* donuts */
+.donuts{display:flex;gap:26px;justify-content:center;align-items:flex-start;flex-wrap:wrap;padding-top:14px}
+.donut{text-align:center;font-family:var(--xl);font-size:9.5px;color:#4B5A6A}
+.donut .ring{width:108px;height:108px;border-radius:50%;margin:0 auto 7px;position:relative}
+.donut .ring::after{content:"";position:absolute;inset:24px;background:#fff;border-radius:50%}
+.donut b{display:block;font:700 10.5px 'Calibri',var(--xl2);color:var(--wb-navy);margin-bottom:6px}
+.donut .leg{display:block;margin-top:2px}
+.donut .leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px;font-style:normal}
+.slide .cont{font:400 9.5px var(--xl);color:#7C8B9C;padding:4px 7px;font-style:italic}
+.benchcap{font-size:13px;color:var(--ink3);margin:6px 0 0}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:16px;margin-top:48px;padding-bottom:36px}
+footer p{margin:0;max-width:none}
+@media (max-width:640px){.wrap{padding-inline:16px}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="kick">Proposal tool &middot; implementation plan &middot; no code changed</p>
+    <h1>A PowerPoint beside the workbook</h1>
+    <p>A plan for a <b>Download PowerPoint</b> button at the end of the proposal flow: one slide per sheet of the Excel export, the same tables in the same styling, driven by the same engine &mdash; so a styling change made once appears in both files.</p>
+    <p>Grounded in <code>scenario/workbook.py</code> (the writer the brief attaches as <code>w.txt</code>), the export route in <code>dashboardRouter.py</code>, and the golden workbook the suite compares against. Every figure in the slide mock-ups below is real, read from the golden payloads and the baked estimates.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" aria-label="Contents">
+  <a href="#flow">The flow today</a><a href="#anatomy">Inside the writer</a><a href="#coupling">What blocks sharing</a>
+  <a href="#design">The design</a><a href="#surface">Endpoint &amp; button</a><a href="#slides">Slide mock-ups</a>
+  <a href="#risks">Risks to parity</a><a href="#tests">Tests</a><a href="#phases">Phasing</a><a href="#decide">Decisions</a>
+</nav>
+
+<h2 id="flow"><small>01 &middot; Where the button goes</small>How the flow ends today</h2>
+<p class="lede">The flow's last act is a card at the foot of step 2 &mdash; <em>Final deliverable &middot; Download the proposal workbook</em> &mdash; whose one button reads <b>Download Excel</b>. The PowerPoint button joins it on that card.</p>
+
+<div class="flow">
+  <div class="fstep"><b>Step 2 &middot; the card</b><span><code>implementation.js:2288</code> renders the export card; <code>exportGate()</code> decides whether the button is live; <code>exportWorkbook()</code> (line 2318) POSTs and downloads.</span></div>
+  <div class="fstep"><b>The route</b><span><code>POST /scenario/{id}/export</code> (<code>dashboardRouter.py</code>) re-resolves the portfolios, validates sleeves, builds the model <em>once</em> via <code>buildImplementationRows</code> (D69), refuses on below-minimum breaches, mints the Proposal UID.</span></div>
+  <div class="fstep"><b>The adapter</b><span><code>bakedAdapter.build_export</code> &rarr; <code>writeWorkbook(&hellip;, assets=assetEstimates.forSlice(ccy, hedging))</code>. Fixtures and live adapters call the same writer.</span></div>
+  <div class="fstep"><b>The writer</b><span><code>workbook.py: writeWorkbook</code> (line 1182): four sheets + a hidden <code>chartData</code> sheet, protection, print setup, and the UID stamped into <code>dc:identifier</code>.</span></div>
+  <div class="fstep"><b>The record</b><span><code>proposalRegister.record</code> stores the bytes; the response carries <code>X-Proposal-Id</code> and the filename from <code>exportFilename</code>.</span></div>
+</div>
+
+<div class="note"><p><b>The workbook's own pagination convention matters later.</b> Every sheet is printed landscape with <code>fitToWidth=1, fitToHeight=0</code> and <code>print_title_rows='1:1'</code> (<code>writeWorkbook</code>, lines ~1228&ndash;1235): a sheet shrinks to the page's width and runs down as many pages as it needs, repeating its header row. The deck applies exactly this convention to a fixed 16:9 canvas &mdash; scale to width, paginate downward, repeat headers &mdash; which is why 4 sheets become 4&ndash;8 slides.</p></div>
+
+<h2 id="anatomy"><small>02 &middot; The ground truth</small>Inside the writer</h2>
+<p class="lede">The good news first: the <em>numbers</em> are already engine-shared. The blocker is confined to how those numbers are painted onto worksheet cells.</p>
+
+<div class="scroller"><table class="doc">
+  <thead><tr><th>Piece</th><th>Where</th><th>Pure / coupled</th><th>What it holds</th></tr></thead>
+  <tbody>
+    <tr class="hi"><td class="k">buildImplementationRows</td><td><code>workbook.py:128</code></td><td><b>Pure</b></td><td>The whole implementation model: groups, items, printed weights (largest-remainder to 100.00), notionals, fees, breaches, tier/effective-rate. Already the single source for the UI mirror, the register and the sheet.</td></tr>
+    <tr class="hi"><td class="k">donutBreakdown / roundSharesOneDp</td><td><code>workbook.py:355 / 341</code></td><td><b>Pure</b></td><td>Slice weights, palette slots (alphabetical), shares closed on 100.0 &mdash; mirrors the page's <code>breakdown()</code>.</td></tr>
+    <tr class="hi"><td class="k">_categoryOrder / _weight</td><td><code>workbook.py:664 / 723</code></td><td><b>Pure</b></td><td>Row order and zero-fill for the two strategic sheets (D13, D68).</td></tr>
+    <tr class="hi"><td class="k">Constants &amp; specs</td><td><code>workbook.py:58&ndash;120, 1030</code></td><td><b>Pure</b></td><td>Palette, <code>IMPL_COLUMNS</code>/<code>_WIDTHS</code>, <code>DONUT_PALETTE</code>, and <code>_ASSUMPTION_COLUMNS</code> &mdash; the last already a declarative (header, key, format, alignment, colour) table.</td></tr>
+    <tr><td class="k">writeImplementationSheet</td><td><code>workbook.py:434</code></td><td>Coupled</td><td>Preamble, header row, band/item/total rows; fonts, fills, borders and number formats built as <code>openpyxl</code> objects inside the write loops.</td></tr>
+    <tr><td class="k">writePortfoliosSheet</td><td><code>workbook.py:739</code></td><td>Coupled</td><td>The <code>style()</code> closure paints rows straight onto <code>sheet.cell(&hellip;)</code>; the 0.0% / &times;100 scale asymmetry lives here.</td></tr>
+    <tr><td class="k">writeRiskDashboardSheet</td><td><code>workbook.py:845</code></td><td>Coupled</td><td><code>paint()</code> + <code>merge()</code> closures; the stress red/green is an Excel <code>CellIsRule</code> added at line ~1002.</td></tr>
+    <tr><td class="k">writeAssumptionsSheet</td><td><code>workbook.py:1043</code></td><td>Coupled</td><td>Two merged header rows, category bands, the red/green range ends &mdash; driven by the pure column spec but painted inline.</td></tr>
+    <tr><td class="k">writeDonutCharts</td><td><code>workbook.py:379</code></td><td>Coupled</td><td><code>DoughnutChart(holeSize=55)</code> reading a hidden <code>chartData</code> sheet; per-slice <code>DataPoint</code> fills from <code>DONUT_PALETTE</code>.</td></tr>
+    <tr><td class="k">writeWorkbook</td><td><code>workbook.py:1182</code></td><td>Excel-only</td><td>Sheet order, <code>protectSheet</code> (PA55WORD), tab colour, print setup, doc properties / <code>dc:identifier</code>.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="coupling"><small>03 &middot; The blocker, precisely</small>Where styling is welded to openpyxl</h2>
+<p class="lede">Five distinct kinds of coupling, each with its exact remedy. Everything else in the writer can be shared as-is.</p>
+
+<div class="scroller"><table class="doc">
+  <thead><tr><th>#</th><th>Coupling</th><th>Where it shows</th><th>What has to change</th></tr></thead>
+  <tbody>
+    <tr><td class="k">C1</td><td><b>Style objects are openpyxl classes, built at write time.</b> <code>Font('Aptos Narrow', 12, bold, 'FFFFFF')</code>, <code>PatternFill('solid', _HEADER_NAVY)</code>, <code>Border(top=_DOTTED)</code>, <code>Alignment(horizontal='right', indent=4)</code>.</td><td>Every <code>write*Sheet</code>; e.g. the font block at the top of <code>writeImplementationSheet</code>, the <code>style()</code>/<code>paint()</code> closures.</td><td>Styles become plain data &mdash; face, size, bold, hex ink, hex fill, border kind (<code>hair/dotted/thin/thick</code> + colour), alignment, indent &mdash; declared once in the builder; each renderer maps them mechanically to its own classes.</td></tr>
+    <tr><td class="k">C2</td><td><b>Layout decisions and cell painting happen in the same loop.</b> The builders append to <code>sheet</code> and style <code>sheet.cell(row, col)</code> as they go; there is no intermediate structure a second format could read.</td><td><code>writePortfoliosSheet</code>'s <code>style()</code>, <code>writeRiskDashboardSheet</code>'s <code>paint()</code>/<code>merge()</code>, the group/item/total loops of the implementation sheet.</td><td>Split each into <code>build*Doc(payloads) &rarr; SheetDoc</code> (all decisions, no I/O) and renderers that only transcribe. The split is a refactor of statement order, not of logic.</td></tr>
+    <tr><td class="k">C3</td><td><b>Number formats are Excel display strings.</b> <code>'0.00%' '0.0%' '0%' '0.0' '0.00' '$#,##0' 'mmm-yy' 'General'</code> &mdash; Excel renders them at view time; a PowerPoint table cell holds text and renders nothing.</td><td><code>_weightCell/_feeCell/_bpCell</code> (<code>workbook.py:540&ndash;555</code>), every <code>fmt=</code> argument, <code>_ASSUMPTION_COLUMNS</code>.</td><td>The Doc keeps <em>value + format string</em>; a new <code>renderNumber(value, fmt)</code> renders those eight formats to text for PowerPoint. Excel keeps live values + formats, so the workbook is unchanged.</td></tr>
+    <tr><td class="k">C4</td><td><b>Conditional formatting is an Excel rule object.</b> The stress block's red-below-zero / green-above-zero is a <code>CellIsRule</code> applied to a range &mdash; resolved by Excel at display time.</td><td><code>writeRiskDashboardSheet</code>, lines ~1002&ndash;1010.</td><td>The Doc declares the rule once (<code>SignRule(range, neg='9C0006', pos='006100')</code>). The Excel renderer emits the same <code>CellIsRule</code> (golden files stay identical); the PowerPoint renderer resolves it per cell from the value's sign.</td></tr>
+    <tr><td class="k">C5</td><td><b>Charts read from worksheet cells.</b> An Excel chart must reference a range, so slices live on the hidden <code>chartData</code> sheet; PowerPoint charts take data directly.</td><td><code>writeDonutCharts</code> (<code>workbook.py:379</code>).</td><td><code>donutBreakdown()</code> already returns the slices with palette slots. A <code>DonutSpec</code> (title, slices, hole 55%, size) joins the Doc; the Excel renderer keeps the hidden-sheet mechanics, the PowerPoint renderer feeds <code>CategoryChartData</code> and colours points from the same slots.</td></tr>
+  </tbody>
+</table></div>
+
+<div class="note"><p><b>Deliberately not shared:</b> <code>protectSheet</code>, freeze panes, print titles, tab colour and the marginal-schedule preamble mechanics of <em>where</em> things sit on a canvas. Excel keeps its sheet-shaped extras; PowerPoint gets slide-shaped ones (footers, headings). Sharing them would mean inventing fake equivalents on both sides.</p></div>
+
+<h2 id="design"><small>04 &middot; Single source of truth</small>The design: one builder, two renderers</h2>
+<p class="lede">A small intermediate representation &mdash; the <b>SheetDoc</b> &mdash; sits between the existing model functions and the two file formats. It is the only place layout and styling are decided.</p>
+
+<div class="ir">
+  <div class="box"><b>Payloads (unchanged)</b>resolved portfolios &middot; <code>buildImplementationRows</code> model &middot; <code>assetEstimates.forSlice</code> &middot; <code>donutBreakdown</code></div>
+  <div class="arrow">&rarr;</div>
+  <div class="box core"><b>sheetDoc.py &mdash; new</b>
+    <code>buildPortfoliosDoc</code> &middot; <code>buildRiskDoc</code> &middot; <code>buildAssumptionsDoc</code> &middot; <code>buildImplementationDoc</code><br>
+    A Doc = columns (widths), rows (height, cells), merges, sign rules, donut specs, section marks.<br>
+    A Cell = value &middot; format string &middot; face/size/bold &middot; ink/fill &middot; border &middot; alignment/indent.<br>
+    Plus <code>renderNumber(value, fmt)</code> and <code>paginate(doc, budget)</code>.</div>
+  <div class="arrow">&rarr;</div>
+  <div class="box"><b>Excel renderer (in workbook.py)</b>transcribes Docs onto openpyxl sheets, then adds the Excel-only layer: protection, freeze panes, print setup, hidden chart data, <code>dc:identifier</code>. <em>Golden tests prove nothing moved.</em></div>
+  <div class="arrow" style="grid-column:2">&rarr;</div>
+  <div class="box"><b>PowerPoint renderer (pptWriter.py &mdash; new)</b>one slide per Doc page: heading, subheading, the table (python-pptx), native doughnut charts, footnotes, UID footer, core-properties stamp.</div>
+</div>
+
+<h3>Why this is genuinely one source</h3>
+<ul class="tick">
+  <li><b>A styling change is one edit.</b> Change the band fill from <code>D3DDEA</code> in <code>buildImplementationDoc</code> and the next Excel download <em>and</em> the next deck both carry it &mdash; neither renderer knows a colour of its own.</li>
+  <li><b>A content change is one edit.</b> Add a column to <code>IMPL_COLUMNS</code> or a metric row to the portfolios builder and both outputs grow it, because both render the same rows.</li>
+  <li><b>The renderers are dumb by construction.</b> Each is a mechanical mapping (&asymp;150&ndash;250 lines) with no opinions: neutral style attrs &rarr; <code>openpyxl.styles</code> on one side, <code>Pt/RGBColor/PP_ALIGN</code> + table XML on the other. Code review can hold them to "no literals" as a rule.</li>
+  <li><b>The existing guarantee gets stronger, not weaker.</b> The golden test (<code>compareSheets</code>, <code>test_scenario_backend.py:1784</code>) already diffs every cell's value, format, font, fill, merge, row height and column width against a captured reference workbook. It runs unchanged across the refactor &mdash; if the Doc split moves a single cell or shade, the diff is the review.</li>
+</ul>
+
+<h3>Sheets &rarr; slides: the page model</h3>
+<p>A Doc marks its natural break rows (a category band, a risk section subhead, an assumptions category). <code>paginate()</code> cuts a Doc into slide-sized pages only at those marks, repeating the header rows &mdash; the same convention as the workbook's <code>fitToWidth=1</code> + <code>print_title_rows</code>. Each slide scales the whole table by one factor (fonts, row heights, column widths together) to fit the 16:9 content box, so proportions &mdash; and therefore the look &mdash; are preserved exactly. Typical proposal: <b>portfolios 1 slide, risk dashboard 1&ndash;2, implementation 1&ndash;2, composition charts 1, assumptions 1&ndash;2 &rarr; 5&ndash;8 slides</b>, matching the workbook's 4&ndash;8 printed pages.</p>
+
+<h2 id="surface"><small>05 &middot; The surface</small>Endpoint, button, filename, UID</h2>
+<ul class="tick">
+  <li><b>Route:</b> <code>POST /scenario/{scenarioId}/export.pptx</code> beside the existing export. Same validation, same sleeve checks, same below-minimum refusal, and the model built once and passed down &mdash; the deck must refuse exactly where the workbook refuses. Route count 31&rarr;32; the four route-inventory tests learn it.</li>
+  <li><b>Port:</b> <code>build_export_deck(basis, mandate, portfolios, implementation)</code> on <code>ScenarioPort</code> (<code>scenarioPort.py:89</code>) with the one real implementation shared by the baked, fixtures and live adapters &mdash; mirroring how all three delegate to <code>writeWorkbook</code> today.</li>
+  <li><b>Button:</b> the export card (<code>implementation.js:2288</code>) gains <b>Download PowerPoint</b> as a quieter sibling of <b>Download Excel</b> &mdash; same <code>exportGate</code>, same busy/error handling; <code>exportWorkbook()</code> generalises to <code>exportFile(kind)</code> and both buttons call it.</li>
+  <li><b>Not a delivery (recommended).</b> The register records <em>delivered workbooks</em>: one UID per proposal, stamped and verified (<code>stampedProposalId</code>, D75), refused if mismatched. The deck should neither mint a UID nor write a register row. It stamps the scenario's <em>latest delivered</em> UID in every slide footer and in the file's core properties when one exists &mdash; and a <em>&ldquo;Draft &mdash; no delivered proposal for this scenario&rdquo;</em> footnote when none does. Pleasing detail: <code>stampedProposalId()</code> reads <code>docProps/core.xml</code>, which a .pptx has too, so the same function verifies both file kinds unchanged.</li>
+  <li><b>Filename:</b> the <code>exportFilename</code> pattern with the extension swapped &mdash; <code>PMG_Scenario_USD_Hedged_2026-09-25_pr_&hellip;.pptx</code> &mdash; via <code>Content-Disposition</code>, as today.</li>
+  <li><b>Dependency:</b> <code>python-pptx</code> (1.0.2 already in this environment) becomes a declared service dependency alongside <code>openpyxl</code>.</li>
+</ul>
+
+<h2 id="slides"><small>06 &middot; What you would get</small>Slide mock-ups</h2>
+<p class="lede">Six slides, drawn in the workbook's own palette and faces, with the suggested heading, subheading and footnotes on each. Figures are real: the golden USD Hedged payloads (<em>USD Moderate Full</em> vs <em>USD Conservative Full</em>), the baked asset estimates, and the golden implementation model priced CASP &middot; PMG Target on a $25m mandate. Long tables are abbreviated with an italic continuation row; the real deck paginates instead.</p>
+
+<!-- ── Slide 1: portfolios ── -->
+<div class="bench"><div class="slide">
+  <div class="s-head">Strategic Asset Allocation</div>
+  <div class="s-sub">USD &middot; Hedged &nbsp;&mdash;&nbsp; <b>USD Moderate Full</b> against <b>USD Conservative Full</b>, per asset category with portfolio-level estimates</div>
+  <div class="s-rule"></div>
+  <div class="s-body">
+    <table class="xl port">
+      <tr class="names"><td style="width:44%"></td><td>USD Moderate Full</td><td>USD Conservative Full</td></tr>
+      <tr class="cat"><td>Investment Grade Fixed Income</td><td class="r">34.0%</td><td class="r">50.0%</td></tr>
+      <tr><td class="asset">US Dollar Debt</td><td class="r">34.0</td><td class="r">50.0</td></tr>
+      <tr class="cat"><td>Other Fixed Income</td><td class="r">9.0%</td><td class="r">10.0%</td></tr>
+      <tr class="cat"><td>Public Equity</td><td class="r">38.0%</td><td class="r">24.0%</td></tr>
+      <tr><td class="asset">US Large Cap Growth Equity</td><td class="r">8.4</td><td class="r">5.3</td></tr>
+      <tr><td class="asset">US Large Cap Value Equity</td><td class="r">8.4</td><td class="r">5.3</td></tr>
+      <tr><td class="asset">US Small Cap Equity</td><td class="r">3.0</td><td class="r">1.9</td></tr>
+      <tr><td class="asset">Europe ex-UK Equity</td><td class="r">5.3</td><td class="r">3.4</td></tr>
+      <tr><td class="cont" colspan="3">&#8942;&nbsp; four further equity rows, Hedge Funds 10.0% / 9.0%, Private Equity 5.0% / 4.0%, Other Private Assets 4.0% / 3.0%</td></tr>
+      <tr class="total"><td>TOTAL</td><td class="r">100.0%</td><td class="r">100.0%</td></tr>
+      <tr class="gap"><td colspan="3"></td></tr>
+      <tr class="metric"><td>Estimated Mean Return</td><td class="r">6.0%</td><td class="r">5.3%</td></tr>
+      <tr class="gap"><td colspan="3"></td></tr>
+      <tr class="metric"><td>Sharpe Ratio</td><td class="r">0.48</td><td class="r">0.53</td></tr>
+      <tr class="gap"><td colspan="3"></td></tr>
+      <tr class="metric"><td>Volatility</td><td class="r">7.3%</td><td class="r">5.2%</td></tr>
+    </table>
+  </div>
+  <div class="s-foot">
+    <div class="s-notes">
+      <span>Category rows show the share of the total portfolio; asset rows sum to their category. A category one portfolio holds and the other does not prints 0.0 rather than a blank, so the columns compare row for row.</span>
+      <span>Estimates derive from the long-term assumptions on the final slide, at a 2.5% risk-free rate.</span>
+    </div>
+    <div class="s-pg">Proposal UID pr_1b8285460b7f<br>2 / 7</div>
+  </div>
+</div></div>
+<p class="benchcap">The report's scale asymmetry is kept exactly: category rows are fractions formatted <code>0.0%</code>, asset rows are &times;100 formatted <code>0.0</code> &mdash; they print alike and store differently, as <code>writePortfoliosSheet</code>'s docstring insists.</p>
+
+<!-- ── Slide 2: risk ── -->
+<div class="bench"><div class="slide">
+  <div class="s-head">Risk Dashboard</div>
+  <div class="s-sub">Factor-based risk analytics &mdash; predicted performance over stress periods and tail-loss measures, <b>nominal and real</b>, per portfolio</div>
+  <div class="s-rule"></div>
+  <div class="s-body">
+    <table class="xl risktbl">
+      <tr class="names"><td style="width:30%"></td><td colspan="2">USD Moderate Full</td><td colspan="2">USD Conservative Full</td></tr>
+      <tr class="cat"><td>Investment Grade Fixed Income</td><td colspan="2">34.0%</td><td colspan="2">50.0%</td></tr>
+      <tr class="cat"><td>Public Equity</td><td colspan="2">38.0%</td><td colspan="2">24.0%</td></tr>
+      <tr><td class="cont" colspan="5">&#8942;&nbsp; four further category rows</td></tr>
+      <tr class="met"><td>Estimated Mean Return</td><td colspan="2">6.0%</td><td colspan="2">5.3%</td></tr>
+      <tr class="met" style="border-top:0"><td>Sharpe Ratio</td><td colspan="2">0.48</td><td colspan="2">0.53</td></tr>
+      <tr class="bandrow"><td colspan="5">Factor Based Risk Analytics</td></tr>
+      <tr class="subh"><td>Predicted Performance Over Stress Periods</td><td>Nominal</td><td>Real</td><td>Nominal</td><td>Real</td></tr>
+      <tr><td>&nbsp;&nbsp;Oil Embargo</td><td class="neg">-17.7%</td><td class="neg">-30.0%</td><td class="neg">-10.6%</td><td class="neg">-24.0%</td></tr>
+      <tr><td>&nbsp;&nbsp;US Inflation / Iranian Revolution</td><td class="posv">10.7%</td><td class="neg">-6.7%</td><td class="posv">8.5%</td><td class="neg">-8.5%</td></tr>
+      <tr><td>&nbsp;&nbsp;Black Monday</td><td class="neg">-8.7%</td><td class="neg">-9.0%</td><td class="neg">-5.1%</td><td class="neg">-5.4%</td></tr>
+      <tr><td>&nbsp;&nbsp;Financial Crisis</td><td class="neg">-27.7%</td><td class="neg">-28.9%</td><td class="neg">-18.1%</td><td class="neg">-19.4%</td></tr>
+      <tr><td>&nbsp;&nbsp;Covid-19</td><td class="neg">-9.2%</td><td class="neg">-8.9%</td><td class="neg">-5.8%</td><td class="neg">-5.5%</td></tr>
+      <tr><td class="cont" colspan="5">&#8942;&nbsp; four further stress periods</td></tr>
+      <tr class="subh"><td>Value at Risk with 99% Confidence</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>&nbsp;&nbsp;Over 1 Year</td><td>17.4%</td><td>19.4%</td><td>10.7%</td><td>12.9%</td></tr>
+      <tr class="subh"><td>Conditional Value at Risk with 99% Confidence</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>&nbsp;&nbsp;Over 1 Year</td><td>20.8%</td><td>22.7%</td><td>13.3%</td><td>15.3%</td></tr>
+      <tr class="subh"><td>Probability of Loss</td><td></td><td></td><td></td><td></td></tr>
+      <tr class="last"><td>&nbsp;&nbsp;Over 1 Year</td><td>16.9%</td><td>23.7%</td><td>12.4%</td><td>20.0%</td></tr>
+    </table>
+  </div>
+  <div class="s-foot">
+    <div class="s-notes">
+      <span>Stress rows show predicted performance had each portfolio been held through the episode; losses print red, gains green &mdash; the workbook's conditional rule, resolved per cell here.</span>
+      <span>VaR and CVaR are stated as positive loss magnitudes at 99% confidence; each measure is shown over 1 month, 1 year and 3 years in the full table.</span>
+    </div>
+    <div class="s-pg">Proposal UID pr_1b8285460b7f<br>3 / 7</div>
+  </div>
+</div></div>
+<p class="benchcap">The nominal/real column pairs are merged on the summary rows and split from the stress block down, exactly as <code>merge()</code> does on the sheet. VaR/CVaR arrive negated in the payload and print positive &mdash; the writer's rule, inherited by the deck because the builder applies the sign, not the renderer.</p>
+
+<!-- ── Slide 3: implementation ── -->
+<div class="bench"><div class="slide">
+  <div class="s-head">Implemented Model</div>
+  <div class="s-sub"><b>Proposal UID pr_1b8285460b7f</b> &middot; PMG Multi-Asset Portfolio &middot; Fee Schedule CASP &middot; Fee Level PMG Target &middot; Effective Rate 0.5120% &middot; Fee Card 0.0-placeholder</div>
+  <div class="s-rule"></div>
+  <div class="s-body">
+    <table class="xl impl">
+      <tr><th style="width:21%">Categories &amp; Asset Classes</th><th style="width:24%">Products</th><th class="r">Allocation (%)</th><th>Style</th><th>Vehicle</th><th>Source</th><th>Liquidity</th><th class="r">Product Cost</th><th class="r">Mgmt fee</th><th class="r">Wtd fee (bp)</th><th class="r">Notional</th></tr>
+      <tr class="band"><td>Public Equity</td><td></td><td class="r">38.00%</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="r">26.3</td><td class="r">$9,500,000</td></tr>
+      <tr><td>&nbsp;&nbsp;US Large Cap</td><td>GS Access US Large Cap ETF</td><td class="r">20.90%</td><td>Passive</td><td>ETF</td><td>Internal</td><td>Daily</td><td class="r">0.09%</td><td class="r">0.51%</td><td class="r">12.6</td><td class="r">$5,225,000</td></tr>
+      <tr><td>&nbsp;&nbsp;Intl Developed</td><td>GS Access Intl Equity ETF</td><td class="r">11.40%</td><td>Passive</td><td>ETF</td><td>Internal</td><td>Daily</td><td class="r">0.25%</td><td class="r">0.51%</td><td class="r">8.7</td><td class="r">$2,850,000</td></tr>
+      <tr><td>&nbsp;&nbsp;Emerging Markets</td><td>GS Access EM Equity ETF</td><td class="r">5.70%</td><td>Passive</td><td>ETF</td><td>Internal</td><td>Daily</td><td class="r">0.37%</td><td class="r">0.51%</td><td class="r">5.0</td><td class="r">$1,425,000</td></tr>
+      <tr class="band"><td>Hybrid Fixed Income</td><td></td><td class="r">1.95%</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="r">2.3</td><td class="r">$487,500</td></tr>
+      <tr><td>&nbsp;&nbsp;Volatility Premium</td><td>Strategic Volatility Premium</td><td class="r">1.95%</td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td class="r">0.65%</td><td class="r">0.51%</td><td class="r">2.3</td><td class="r">$487,500</td></tr>
+      <tr class="band"><td>Other Fixed Income</td><td></td><td class="r">9.00%</td><td></td><td></td><td></td><td></td><td></td><td></td><td class="r">11.6</td><td class="r">$2,250,000</td></tr>
+      <tr><td>&nbsp;&nbsp;High Yield</td><td>GS High Yield Fund</td><td class="r">4.05%</td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td class="r">0.72%</td><td class="r">0.51%</td><td class="r">5.0</td><td class="r">$1,012,500</td></tr>
+      <tr><td>&nbsp;&nbsp;EM Debt</td><td>GS Emerging Markets Debt</td><td class="r">3.15%</td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td class="r">0.85%</td><td class="r">0.51%</td><td class="r">4.3</td><td class="r">$787,500</td></tr>
+      <tr><td>&nbsp;&nbsp;Multi-Sector</td><td>GS Strategic Income Fund</td><td class="r">1.80%</td><td>Active</td><td>Mutual Fund</td><td>Internal</td><td>Daily</td><td class="r">0.79%</td><td class="r">0.51%</td><td class="r">2.3</td><td class="r">$450,000</td></tr>
+      <tr><td class="cont" colspan="11">&#8942;&nbsp; Investment Grade Fixed Income 24.05%, Hedge Funds 10.00%, Private Equity &amp; Other Private Assets 9.00%, Asset Allocation Strategies 8.00% &mdash; slide 4 of 7 continues this table</td></tr>
+      <tr class="tot"><td>Total</td><td></td><td class="r">100.00%</td><td></td><td></td><td></td><td></td><td></td><td class="r">0.51%</td><td class="r">103.7</td><td class="r">$25,000,000</td></tr>
+    </table>
+  </div>
+  <div class="s-foot">
+    <div class="s-notes">
+      <span>Weights are rounded to 2dp by largest remainder across the whole table, so the column closes on exactly 100.00%; notionals and weighted fees derive from the printed weight on the $25,000,000 mandate.</span>
+      <span>A notional below its product's minimum would print red on white per the sheet's breach style &mdash; though a delivered file never carries one, because the export refuses while any remains. Management fees resolve from the schedule and level named above; the marginal blend is restated on the Total row.</span>
+    </div>
+    <div class="s-pg">Proposal UID pr_1b8285460b7f<br>4 / 7</div>
+  </div>
+</div></div>
+<p class="benchcap">The sheet's preamble rows (UID, implementation type, schedule, level, effective rate, fee card &mdash; <code>writeImplementationSheet</code> lines ~585&ndash;620) become the slide's <b>subheading</b> rather than table rows: same facts, presentation-shaped. With <code>includeFees</code> false the two fee columns and the fee lines vanish here exactly as on the sheet, because <code>implColumns(includeFees)</code> drives both.</p>
+
+<!-- ── Slide 4: composition ── -->
+<div class="bench"><div class="slide">
+  <div class="s-head">Composition of the Implemented Model</div>
+  <div class="s-sub">Share of allocation by product attribute &mdash; five views of the same 100%</div>
+  <div class="s-rule"></div>
+  <div class="s-body">
+    <div class="donuts">
+      <div class="donut"><b>Style</b>
+        <div class="ring" style="background:conic-gradient(var(--c1) 0 62.0%, var(--c2) 62.0% 100%)"></div>
+        <span class="leg"><i style="background:var(--c1)"></i>Active &middot; 62.0%</span>
+        <span class="leg"><i style="background:var(--c2)"></i>Passive &middot; 38.0%</span>
+      </div>
+      <div class="donut"><b>Vehicle</b>
+        <div class="ring" style="background:conic-gradient(var(--c1) 0 38%, var(--c4) 38% 62%, var(--c3) 62% 86%, var(--c2) 86% 100%)"></div>
+        <span class="leg"><i style="background:var(--c1)"></i>ETF &middot; 38.0</span>
+        <span class="leg"><i style="background:var(--c4)"></i>SMA &middot; 24.1</span>
+        <span class="leg"><i style="background:var(--c3)"></i>Mutual Fund &middot; 23.9</span>
+        <span class="leg"><i style="background:var(--c2)"></i>LP &middot; 14.0</span>
+      </div>
+      <div class="donut"><b>Source</b>
+        <div class="ring" style="background:conic-gradient(var(--c2) 0 86%, var(--c1) 86% 100%)"></div>
+        <span class="leg"><i style="background:var(--c2)"></i>Internal &middot; 86.0%</span>
+        <span class="leg"><i style="background:var(--c1)"></i>External &middot; 14.0%</span>
+      </div>
+      <div class="donut"><b>Liquidity</b>
+        <div class="ring" style="background:conic-gradient(var(--c1) 0 77%, var(--c3) 77% 91%, var(--c4) 91% 100%)"></div>
+        <span class="leg"><i style="background:var(--c1)"></i>Daily &middot; 77.0%</span>
+        <span class="leg"><i style="background:var(--c3)"></i>Drawdown &middot; 14.0%</span>
+        <span class="leg"><i style="background:var(--c4)"></i>Monthly &middot; 9.0%</span>
+      </div>
+      <div class="donut"><b>Exposure currency</b>
+        <div class="ring" style="background:conic-gradient(var(--c4) 0 72%, var(--c2) 72% 89%, var(--c1) 89% 100%)"></div>
+        <span class="leg"><i style="background:var(--c4)"></i>USD &middot; 72.0%</span>
+        <span class="leg"><i style="background:var(--c2)"></i>Local &middot; 17.0%</span>
+        <span class="leg"><i style="background:var(--c1)"></i>EUR &middot; 11.0%</span>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot">
+    <div class="s-notes">
+      <span>Each chart is a native PowerPoint doughnut, not a picture: slice colours come from the page's own palette by the alphabetical rule <code>donutBreakdown()</code> already applies, and printed shares close on exactly 100.0.</span>
+      <span>Style shares are the golden model's own; the other four are illustrative here &mdash; the deck computes all five from the same items as the workbook's charts.</span>
+    </div>
+    <div class="s-pg">Proposal UID pr_1b8285460b7f<br>5 / 7</div>
+  </div>
+</div></div>
+
+<!-- ── Slide 5: assumptions ── -->
+<div class="bench"><div class="slide">
+  <div class="s-head">Long-Term Capital Market Assumptions</div>
+  <div class="s-sub">Per-asset estimates behind the analytics &mdash; risk premia with estimated range, volatility and Sharpe, with each asset's modelling window</div>
+  <div class="s-rule"></div>
+  <div class="s-body">
+    <table class="xl assum">
+      <tr class="h1"><td style="width:26%"></td><td colspan="6">Long-Term Estimates</td><td></td><td colspan="2">Modelling Dates</td></tr>
+      <tr class="h2"><td></td><td colspan="3">Risk Premia<br>with Estimated Range</td><td>Volatility</td><td>Sharpe<br>Ratio</td><td>Estimated Mean Return<br>(2.5% Risk Free Rate)</td><td>Hedging<br>Ratio</td><td>From</td><td>To</td></tr>
+      <tr class="cat"><td>Investment Grade Fixed Income</td><td></td><td></td><td class="hi3"></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;US Dollar Debt</td><td class="lo2">0.6%</td><td>1.1%</td><td class="hi3">1.6%</td><td>3.2%</td><td>0.35</td><td>3.6%</td><td>100%</td><td>Feb-73</td><td>Apr-25</td></tr>
+      <tr class="cat"><td>Public Equity</td><td></td><td></td><td class="hi3"></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;US Large Cap Growth Equity</td><td class="lo2">2.6%</td><td>5.3%</td><td class="hi3">8.1%</td><td>17.0%</td><td>0.31</td><td>7.8%</td><td>100%</td><td>Jan-79</td><td>Apr-25</td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;US Large Cap Value Equity</td><td class="lo2">3.5%</td><td>5.9%</td><td class="hi3">8.2%</td><td>14.5%</td><td>0.40</td><td>8.4%</td><td>100%</td><td>Jan-79</td><td>Apr-25</td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;US Small Cap Equity</td><td class="lo2">2.2%</td><td>5.2%</td><td class="hi3">8.3%</td><td>19.2%</td><td>0.27</td><td>7.7%</td><td>100%</td><td>Jan-79</td><td>Apr-25</td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Europe ex-UK Equity</td><td class="lo2">2.2%</td><td>4.8%</td><td class="hi3">7.4%</td><td>16.4%</td><td>0.29</td><td>7.3%</td><td>100%</td><td>Feb-70</td><td>Apr-25</td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Japanese Equity</td><td class="lo2">-0.4%</td><td>2.6%</td><td class="hi3">5.6%</td><td>18.6%</td><td>0.14</td><td>5.1%</td><td>100%</td><td>Jan-70</td><td>Apr-25</td></tr>
+      <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Emerging Market Equity</td><td class="lo2">3.7%</td><td>7.2%</td><td class="hi3">10.7%</td><td>20.7%</td><td>0.35</td><td>9.7%</td><td>100%</td><td>Jan-88</td><td>Apr-25</td></tr>
+      <tr><td class="cont" colspan="10">&#8942;&nbsp; Other Fixed Income, Hedge Funds and Private Assets categories follow &mdash; 19 assets in all, continuing on slide 7</td></tr>
+    </table>
+  </div>
+  <div class="s-foot">
+    <div class="s-notes">
+      <span>Ranges read low &mdash; mean &mdash; high across; the ends are inked red and green all the way down, as on the sheet. The table shows only the assets the strategic slides hold, so every assumption printed explains this proposal.</span>
+      <span>Estimates are a property of the USD &middot; Hedged universe recorded at bake time, not of any portfolio; modelling windows are per asset.</span>
+    </div>
+    <div class="s-pg">Proposal UID pr_1b8285460b7f<br>6 / 7</div>
+  </div>
+</div></div>
+<p class="benchcap">The merged two-row header (&ldquo;Long-Term Estimates&rdquo; over six columns, &ldquo;Modelling Dates&rdquo; over two, the range trio merged beneath) maps directly: python-pptx table cells merge the same way. <code>mmm-yy</code> dates come out of <code>renderNumber</code>, so <em>Feb-73</em> here is the same text Excel displays.</p>
+
+<h3>The deck, end to end</h3>
+<div class="scroller"><table class="doc">
+  <thead><tr><th>#</th><th>Slide</th><th>Heading</th><th>Subheading</th><th>Footnotes carry</th></tr></thead>
+  <tbody>
+    <tr><td class="k">1</td><td>Cover</td><td>Investment Proposal</td><td>Basis, mandate, PWA, date &mdash; from the scenario; the workbook has no cover, so this is the one deck-only slide (skippable, see Decisions).</td><td>Proposal UID; &ldquo;Prepared by PMG Proposal Tool&rdquo;.</td></tr>
+    <tr><td class="k">2</td><td>portfolios</td><td>Strategic Asset Allocation</td><td>Basis + the portfolio names compared</td><td>Category/asset scale convention; zero-fill comparability; where the estimates come from.</td></tr>
+    <tr><td class="k">3</td><td>risk_dashboard</td><td>Risk Dashboard</td><td>&ldquo;Factor-based analytics &mdash; stress periods and tail losses, nominal and real&rdquo;</td><td>Red/green rule; VaR/CVaR printed positive at 99% confidence; the three horizons.</td></tr>
+    <tr><td class="k">4&ndash;5</td><td>Implementation (+ continuation)</td><td>Implemented Model</td><td>The sheet's preamble: UID &middot; variant &middot; schedule &middot; level &middot; tier / effective rate &middot; fee card</td><td>Largest-remainder rounding to 100.00; notional derivation; breach flag; fee resolution.</td></tr>
+    <tr><td class="k">6</td><td>chartData &rarr; charts</td><td>Composition of the Implemented Model</td><td>&ldquo;Share of allocation by product attribute&rdquo; &mdash; the caption the sheet already writes above its charts</td><td>Palette rule; shares close on 100.0.</td></tr>
+    <tr><td class="k">7</td><td>assumptions (&plusmn; continuation)</td><td>Long-Term Capital Market Assumptions</td><td>&ldquo;Per-asset estimates &mdash; premia ranges, volatility, modelling windows&rdquo;</td><td>Range colouring; filtered to this proposal's assets; risk-free rate; bake provenance.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="risks"><small>07 &middot; Honesty section</small>Risks and limits to 1:1 parity</h2>
+<div class="scroller"><table class="doc">
+  <thead><tr><th>Risk</th><th>&nbsp;</th><th>What exactly differs</th><th>Handling</th></tr></thead>
+  <tbody>
+    <tr><td class="k">Doughnut geometry</td><td><span class="risk md">Medium</span></td><td>python-pptx draws doughnuts natively (<code>XL_CHART_TYPE.DOUGHNUT</code>) and colours points per slice, but exposes no <code>holeSize</code>; PowerPoint's default hole differs from the sheet's 55.</td><td>One small XML helper sets <code>&lt;c:holeSize val="55"/&gt;</code> on the chart part &mdash; same value, same source constant. Legend/label defaults are set explicitly on both sides rather than trusted.</td></tr>
+    <tr><td class="k">Table borders in python-pptx</td><td><span class="risk md">Medium</span></td><td>The library has <b>no first-class cell-border API</b> &mdash; the black rules that close the tables (D78/D79's thin and thick rules, the dotted separators) cannot be set through documented properties.</td><td>A ~40-line <code>oxml</code> helper writes <code>a:lnT/a:lnB</code> elements per cell from the Doc's neutral border kinds. Well-trodden technique; covered by a round-trip test that reads the XML back.</td></tr>
+    <tr><td class="k">Number formats freeze</td><td><span class="risk lo">Low</span></td><td>Excel stores value + format and renders at view time; a PPT table cell is text. Editing a figure in the deck edits a string.</td><td>Accepted &mdash; the deck is presentation, the workbook stays the data artifact. <code>renderNumber</code> covers exactly the eight formats in use, unit-tested against Excel's display of each.</td></tr>
+    <tr><td class="k">Conditional formatting</td><td><span class="risk lo">Low</span></td><td>PowerPoint has none, so the stress red/green cannot stay live.</td><td>The Doc's declarative <code>SignRule</code>: Excel renders it as the same <code>CellIsRule</code> as today (golden-identical); the deck resolves ink per cell. One declaration, two projections.</td></tr>
+    <tr><td class="k">Fonts on other machines</td><td><span class="risk lo">Low</span></td><td>Aptos Narrow / Calibri Light / Grotesque may be absent on a viewer's machine; python-pptx cannot embed fonts.</td><td>The deck names the same faces as the workbook, so it degrades in exactly the same situations to the same fallbacks. Noted, not fought.</td></tr>
+    <tr><td class="k">Fixed canvas vs elastic sheet</td><td><span class="risk md">Medium</span></td><td>A sheet grows downward forever; a slide cannot. Absolute sizes must scale; very long product names wrap where Excel would overflow.</td><td>The workbook's own convention, transplanted: scale-to-width (<code>fitToWidth=1</code>) becomes one uniform scale factor per slide; pagination cuts only at section marks with headers repeated (<code>print_title_rows</code>). Proportions, palette, faces, weights are exact; absolute point sizes are not, and cannot be.</td></tr>
+    <tr><td class="k">Sheet protection</td><td><span class="risk lo">Low</span></td><td>No PowerPoint equivalent of <code>protectSheet</code>/PA55WORD.</td><td>Accepted and documented: protection was declared a convention, not a control, in the writer's own docstring. The register's stored workbook remains the record of what was delivered.</td></tr>
+    <tr><td class="k">Refactor regression</td><td><span class="risk hi2">Main risk</span></td><td>Splitting four writers into builders + renderers could move a cell or a shade in the workbook clients receive.</td><td>The golden diff (<code>compareSheets</code>) already checks every cell's value, format, font, fill, border, merge, height and width against the captured reference &mdash; it is the refactor's safety net, run per sheet as each is extracted. <code>engineParity</code> paths are kept.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="tests"><small>08 &middot; Proof, not promise</small>How parity is tested</h2>
+<ul class="tick">
+  <li><b>The golden guard, unchanged:</b> the existing cell-for-cell comparison against <code>engine_USD_Hedged_2col.xlsx</code> must stay green through the whole refactor &mdash; it is what &ldquo;the Excel export did not change&rdquo; means.</li>
+  <li><b>Cross-format parity test (new):</b> build the golden case once; walk the SheetDocs; for every cell assert the workbook holds its value+format and the deck's table holds <code>renderNumber(value, fmt)</code>, same fill, same ink, same bold &mdash; read back with openpyxl and python-pptx respectively. Machine-checked 1:1, not eyeballed.</li>
+  <li><b>renderNumber unit tests:</b> the eight formats against known Excel renderings, including <code>$#,##0</code> rounding and <code>mmm-yy</code>.</li>
+  <li><b>Chart tests:</b> slices, palette slots and hole size read back from the chart XML; slice shares close on 100.0.</li>
+  <li><b>Stamp test:</b> <code>stampedProposalId(deckBytes)</code> returns the same UID convention (it already reads <code>docProps/core.xml</code>, which .pptx shares).</li>
+  <li><b>Route tests:</b> the four route-inventory tests learn <code>export.pptx</code>; gate tests assert the deck refuses exactly where the workbook refuses (missing sleeves, breaches).</li>
+</ul>
+
+<h2 id="phases"><small>09 &middot; Order of work</small>Phasing and touch list</h2>
+<ol class="seq">
+  <li><b>Extract the IR under the golden guard</b> &mdash; new <code>scenario/sheetDoc.py</code>; <code>writeAssumptionsSheet</code> first (its column spec is nearly an IR already), then portfolios, risk, implementation. After each: golden diff clean, all current tests green. <em>Largest step; pure refactor, no behaviour.</em></li>
+  <li><b><code>renderNumber</code> + <code>paginate</code></b> with their unit tests.</li>
+  <li><b>The PowerPoint renderer</b> &mdash; new <code>scenario/pptWriter.py</code>: slide chrome (heading/subheading/footnotes/UID footer from a per-Doc <code>SlideMeta</code>), tables, the border and hole-size oxml helpers, native doughnuts, core properties.</li>
+  <li><b>The surface</b> &mdash; <code>build_export_deck</code> on the port + three adapters; <code>POST /scenario/{id}/export.pptx</code>; the second button on the export card; filename plumbing.</li>
+  <li><b>Parity tests + record</b> &mdash; the cross-format test, route inventories, a DEVIATIONS row, and <code>python-pptx</code> pinned as a dependency.</li>
+</ol>
+<p class="lede">Touched: <code>workbook.py</code> (split, public API unchanged), <code>scenarioPort.py</code>, <code>bakedAdapter.py</code>/<code>fixturesAdapter.py</code>/<code>liveAdapter.py</code>, <code>dashboardRouter.py</code>, <code>generator/js/implementation.js</code>. New: <code>sheetDoc.py</code>, <code>pptWriter.py</code>, <code>tests/test_deck_parity.py</code>. Nothing else moves.</p>
+
+<h2 id="decide"><small>10 &middot; Yours to call</small>Open decisions</h2>
+<ul class="tick">
+  <li><b>Does the deck mint or record anything?</b> Recommended: no &mdash; it stamps the latest delivered UID when one exists, and carries a <em>Draft</em> footnote otherwise. Alternatives: refuse to build a deck until the workbook has been exported (strictest), or record decks in the register alongside workbooks (heaviest; new invariants).</li>
+  <li><b>A cover slide?</b> The workbook has no equivalent sheet, so slide 1 breaks strict one-slide-per-sheet. Recommended: keep it &mdash; a deck opening on a dense table is odd &mdash; but it is one flag to drop.</li>
+  <li><b>Slide order.</b> Recommended narrative order: allocation &rarr; risk &rarr; implementation &rarr; composition &rarr; assumptions. The workbook's own sheet order (portfolios, risk_dashboard, assumptions, Implementation) is the alternative if the deck should mirror the file exactly.</li>
+  <li><b>Where the composition charts sit.</b> On the sheet they hang under the implementation table; on a slide they deserve their own. Recommended: own slide, headed by the caption the sheet already writes.</li>
+</ul>
+
+<footer>
+  <p>Epsilon Phi &middot; Proposal Tool &middot; implementation plan only &mdash; no code has been changed. Grounded in <code>service/cyrus_pmg/pmgService/scenario/workbook.py</code> (the source the brief attaches as <code>w.txt</code>; it was not attached here, and was identified by its exact match to every detail in the brief), <code>dashboardRouter.py</code>, the adapters, <code>implementation.js</code>, and the golden case in <code>service/tests/golden/</code>. Mock-up figures are read from those payloads; abbreviations are marked in italics. Type on this page substitutes Roboto Condensed for Aptos Narrow where the real face is unavailable. 25 September 2026.</p>
+</footer>
+
+</div>
+
+</body>
+</html>

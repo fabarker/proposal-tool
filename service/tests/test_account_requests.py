@@ -202,7 +202,7 @@ def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the
         else:
             assert 'requireEditor' not in names and 'requireAdmin' not in names, (route.path, names)
             assert set(names) <= {'requireAuth'}, (route.path, names)
-    assert seen == 30
+    assert seen == 31
 
 
 def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):
@@ -280,6 +280,9 @@ def test_account_opening_has_two_doors_and_neither_is_an_action_row_button():
         css = fh.read()
     rule = css[css.index('.lp-second{'):css.index('.lp-second:hover')]
     assert 'margin-left:auto' in rule, 'the second door is right-aligned (D109)'
+    # and Start Here carries no arrow: pointing right along the row, it pointed
+    # at the other door rather than saying "begin" (D112)
+    assert '.lp-cta::after' not in css, 'Start Here must not point at Open an Account'
 
     # the card's link is below the rule, not in the action row
     actions = source.index("'<div class=\"dlg-actions\">'")
@@ -295,3 +298,92 @@ def test_account_opening_has_two_doors_and_neither_is_an_action_row_button():
     assert 'acDraftBack = draft;' in source
     assert 'if (acDraftBack) { draft = acDraftBack; acDraftBack = null; }' in source
     assert 'draft = null; renderDialog(); }    /* the card gives way' not in source
+
+
+def test_the_account_card_opens_on_the_uid_alone_and_grows_only_for_a_live_proposal():
+    """D111. The card opens holding only the Proposal UID. It grows into the
+    request - the proposal's terms, then the fields - only when the UID names a
+    proposal that can still take one; looking up, a malformed or unknown UID and
+    an already-requested proposal are all answered in the small card. Rendered
+    in node from the page's own source, every state in turn."""
+    import os
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, '..', '..', 'generator', 'js', 'core.js'), encoding='utf-8') as fh:
+        source = fh.read()
+    region = source[source.index('var account = null;'):source.index('function accountReceiptMarkup(')]
+    script = r'''
+function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function money(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
+function opt(path, d) { return path.indexOf('accountTypes') > 0 ? ['Trust','Joint'] : d; }
+function riskLabel(r) { return 'Risk ' + r; }
+''' + region + r'''
+function fresh() {
+  return { uid: '', status: 'idle', message: '', proposal: null, requests: [],
+    fields: { clientName: '', accountType: '', bookingCentre: '', taxResidency: '',
+              fundingAmount: null, fundingSource: '', fundingDate: '', kycReference: '', notes: '' },
+    fundingTouched: false, err: null, dirty: false, submitting: false, receipt: null, seq: 0, timer: null };
+}
+const P = { proposalId: 'pr_bafdb99b80ba', primaryPwa: 'J. Mercer', mandateSize: 25000000,
+  topAccountSize: 10000000, currency: 'USD', hedging: 'Hedged', variant: 'PMG Multi-Asset Portfolio',
+  riskLevel: '4', allocationType: 'Strategic', includeFees: false, exportedAt: '2026-09-21T10:00:00',
+  exportedBy: 'fbarker', sequence: 1,
+  sleeves: [{category:'Equity',sleeve:'Core',revision:3},{category:'Fixed Income',sleeve:'Agg'},
+            {category:'Real Assets',sleeve:'Infra'},{category:'Cash',sleeve:'MMF'}] };
+const out = {};
+function snap(name) {
+  const html = accountFormMarkup();
+  out[name] = { open: accountExpanded(), status: accountStatusText(),
+    uidBox: html.includes('id="acuid"'), fields: html.includes('id="acclient"'),
+    digest: html.includes('class="ac-digest"'), submit: html.includes('id="acsubmit"'),
+    change: html.includes('id="acchange"'), spin: html.includes('ac-spin'),
+    held: html.includes('dlg-held'), copy: html.includes('id="accopy"'),
+    from: html.includes('id="acfundfrom"'), kept: html.includes('details are kept'),
+    sleeves: (html.match(/<b>(\d+) sleeves?<\/b><span>([^<]*)</) || []).slice(1) };
+}
+account = fresh(); snap('idle');
+account.uid = 'pr_bafdb99b80ba'; account.status = 'looking'; snap('looking');
+account.status = 'malformed'; account.message = UID_SHAPE; snap('malformed');
+account.status = 'notfound'; account.message = 'No proposal.'; snap('notfound');
+account.status = 'found'; account.proposal = P;
+account.requests = [{requestId:'ar_52e1c07b9a3d', submittedBy:'jmercer', submittedAt:'2026-09-18T14:05:00'}];
+snap('held');
+account.requests = []; account.fields.fundingAmount = 25000000; account.fields.clientName = 'Ashworth';
+snap('found');
+account.fundingTouched = true; snap('typedFunding');
+['accountType','bookingCentre','taxResidency','fundingSource','fundingDate'].forEach(k => account.fields[k] = 'x');
+snap('ready');
+account.status = 'idle'; account.proposal = null; snap('changed');
+process.stdout.write(JSON.stringify(out));
+'''
+    got = json.loads(subprocess.run([node, '-e', script], capture_output=True, text=True,
+                                    check=True).stdout)
+
+    # the small card: the UID box and nothing else to fill, in every state short of a live match
+    for state in ('idle', 'looking', 'malformed', 'notfound', 'held'):
+        s = got[state]
+        assert s['uidBox'] and not s['open'], state
+        assert not s['fields'] and not s['digest'] and not s['submit'], \
+            '%s must not show the request, nor a Submit waiting under one box' % state
+    assert got['idle']['status'] == 'Paste the UID to continue.'
+    assert got['looking']['spin'], 'the spinner sits inside the UID box'
+    # already requested is answered where it is asked, with the reference to copy
+    assert got['held']['held'] and got['held']['copy']
+
+    # a live match: the card grows, the UID locks with a way back, the terms read as text
+    f = got['found']
+    assert f['open'] and not f['uidBox'] and f['change'] and f['digest'] and f['fields'] and f['submit']
+    assert f['from'], 'the funding the card filled in says where it came from'
+    assert f['sleeves'] == ['4', 'Equity, Fixed Income, Real Assets and 1 more']
+    assert not got['typedFunding']['from'], 'a typed amount is the user\'s own'
+    assert got['ready']['status'] == ('Ready. Submitting records the request against '
+                                      'pr_bafdb99b80ba (J. Mercer, $25,000,000).')
+
+    # Change: back to the small card, and what was typed is kept and said to be
+    c = got['changed']
+    assert c['uidBox'] and not c['open'] and c['kept']

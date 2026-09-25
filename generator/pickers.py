@@ -185,14 +185,15 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .lp-points li::before{content:"";position:absolute;left:0;top:.55em;width:9px;height:9px;
   background:var(--accent)}
 
-.lp-cta{font-size:16px;padding:12px 28px 12px 34px;border-radius:0;letter-spacing:.02em;
-  position:relative;display:inline-flex;align-items:center;gap:14px;
+/* No arrow. With Open an Account at the far end of the same row (D109), a
+   right-pointing arrow read as "go to the button over there" rather than
+   "begin" - it pointed at the other door (D112). The pulse and halo carry the
+   invitation on their own. */
+.lp-cta{font-size:16px;padding:12px 34px;border-radius:0;letter-spacing:.02em;
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
   --btn-case:none;                       /* the landing CTA is sentence case, unlike app buttons */
   animation:lp-pulse 2.8s .9s ease-in-out infinite}
-.lp-cta::after{content:"\2192";font-family:'GS Sans','Roboto',sans-serif;font-weight:400;
-  transition:transform .25s}
-.lp-cta:hover::after{transform:translateX(5px)}
-.lp-cta::before{content:"";position:absolute;inset:-1px;border:1.5px solid currentColor;
+.lp-cta::before{content:"";position:absolute;inset:-1px;border:2px solid currentColor;
   pointer-events:none;opacity:0;animation:lp-halo 2.8s .9s ease-out infinite}
 .lp-cta:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
@@ -229,10 +230,13 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 @keyframes lp-grow{from{transform:scaleX(0)}}
 @keyframes lp-rise{from{opacity:0;transform:translateY(14px)}}
 @keyframes lp-sheen{0%{transform:translateX(-100%)}22%,100%{transform:translateX(100%)}}
+/* A step brighter than it was (D113): the glow peaks deeper, the ring is
+   wider and twice as strong, and the halo starts more opaque and travels
+   further - same rhythm, easier to see. */
 @keyframes lp-pulse{
-  0%,100%{box-shadow:0 12px 30px -10px rgba(31,95,191,.55),0 0 0 0 rgba(31,95,191,0)}
-  50%{box-shadow:0 18px 40px -8px rgba(31,95,191,.72),0 0 0 10px rgba(31,95,191,.12)}}
-@keyframes lp-halo{0%{transform:scale(1);opacity:.34}72%,100%{transform:scale(1.13,1.3);opacity:0}}
+  0%,100%{box-shadow:0 12px 30px -10px rgba(31,95,191,.6),0 0 0 0 rgba(31,95,191,0)}
+  50%{box-shadow:0 20px 44px -8px rgba(31,95,191,.85),0 0 0 13px rgba(31,95,191,.2)}}
+@keyframes lp-halo{0%{transform:scale(1);opacity:.5}72%,100%{transform:scale(1.17,1.42);opacity:0}}
 .landing{max-width:660px;margin:0 auto;padding:clamp(48px,11vh,120px) 0 80px}
 .landing .eyebrow{font-family:var(--f-num);font-size:12px;letter-spacing:.18em;
   text-transform:uppercase;color:var(--ink-3);margin:0 0 16px;font-weight:700}
@@ -291,7 +295,11 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .btn-inline:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 .dlg-actions.split{justify-content:space-between;align-items:center;flex-wrap:wrap}
 .dlg-grp{display:flex;gap:10px;align-items:center;min-width:0}
-.dialog.account{width:min(560px,calc(100vw - 32px))}
+/* Two sizes (D111): the card opens at the mandate card's 460px holding only
+   the UID, and grows to 560px - two columns of fields - once the UID names a
+   proposal that can still take a request. The script animates between them. */
+.dialog.account{width:min(460px,calc(100vw - 32px))}
+.dialog.account.open{width:min(560px,calc(100vw - 32px))}
 .dlg-sub{margin:-14px 0 18px;font-size:13px;color:var(--ink-3);line-height:1.4}
 /* the UID box's own error sits under it, as its hint would */
 .dialog .field .md-err.dlg-uiderr{margin-top:6px}
@@ -303,14 +311,50 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .dlg-grid .field{margin:0}
 .dlg-grid .field.wide{grid-column:1 / -1}
 .dialog .req{color:#B42318;margin-left:3px;font-weight:700}
-/* Filled from the proposal: greyed, legible, and not editable. readonly rather
-   than disabled, so the value stays readable to assistive tech and copyable. */
-.dialog input[readonly].ro{background:var(--surface-2);border-color:var(--line);color:var(--ink-2);
-  cursor:default;text-overflow:ellipsis}
-.dialog input[readonly].ro:hover{border-color:var(--line)}
-.dialog input[readonly].ro:focus-visible{outline-color:var(--ink-3)}
-.dialog .dlg-muted{opacity:.42}
-.dialog .dlg-muted *{pointer-events:none}
+/* The UID box carries its own spinner, so looking up never changes the
+   card's height. */
+.ac-uidbox{position:relative}
+.ac-uidbox input{width:100%}
+.ac-spin{position:absolute;right:12px;top:50%;width:14px;height:14px;margin-top:-7px;
+  border:2px solid var(--line-strong);border-top-color:var(--accent);border-radius:50%;
+  animation:ac-spin .7s linear infinite}
+@keyframes ac-spin{to{transform:rotate(360deg)}}
+/* Already requested: answered in the small card, amber rather than red -
+   nothing is wrong, the work is simply done. */
+.dlg-held{margin:8px 0 0;padding:10px 12px;border-radius:4px;background:#FEF3C7;border:1px solid #F3D38B;
+  color:#6B3A08;font-size:13px;line-height:1.5}
+.dlg-held b{color:#4A2A06}
+.dlg-held code{font-family:var(--f-num);font-size:13.5px;font-weight:600;background:var(--surface);
+  color:#16243A;padding:1px 5px;border-radius:3px}
+/* The resolved UID, locked into one line with its way back. */
+.ac-lock{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin:0 0 16px;padding:9px 12px;
+  border:1px solid #BEDFC8;background:#EAF5EE;border-radius:var(--radius-sm)}
+.ac-tick{color:#176A33;font-weight:700}
+.ac-uid{font-family:var(--f-num);font-size:15.5px;font-weight:600;color:#16243A;letter-spacing:.02em}
+.ac-when{font-size:12.5px;color:var(--ink-2);flex:1 1 170px;min-width:0}
+/* The proposal's terms as text: information to check, not controls turned off. */
+.ac-digest{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin:0 0 12px;padding:13px 14px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg)}
+.ac-digest div{min-width:0}
+.ac-digest dt{font-family:var(--f-num);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 2px}
+.ac-digest dd{margin:0;font-family:var(--f-num);font-size:14.5px;color:var(--ink);overflow-wrap:anywhere}
+.ac-sleeves{margin:0 0 18px;border:1px solid var(--line);border-radius:var(--radius-sm)}
+.ac-sleeves summary{display:flex;align-items:baseline;gap:8px;padding:9px 12px;cursor:pointer;
+  font-size:13px;color:var(--ink-2);list-style:none}
+.ac-sleeves summary::-webkit-details-marker{display:none}
+.ac-sleeves summary::after{content:"\25BE";margin-left:auto;color:var(--ink-3);transition:transform .15s}
+.ac-sleeves[open] summary::after{transform:rotate(180deg)}
+.ac-sleeves summary b{color:var(--ink);font-weight:600;white-space:nowrap}
+.ac-sleeves summary span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac-sleeves summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ac-sleeves .dlg-sleeves{border:0;border-top:1px solid var(--line);border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+.ac-none{font-size:13px;color:var(--ink-3);margin:0 0 18px}
+/* the one field the card filled in, marked until the user makes it theirs */
+.ac-from{font-family:var(--f-num);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:#92400E;background:#FEF3C7;padding:2px 6px;border-radius:3px;margin-left:8px;vertical-align:1px}
+/* the grown card's footer sits under a rule, apart from the last field */
+.dlg-actions.ac-foot{padding-top:16px;border-top:1px solid var(--line)}
 .dialog select,.dialog input[type=date],.dialog textarea{font:inherit;font-family:var(--f-num);font-size:15.5px;
   color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-sm);
   padding:10px 12px;width:100%}
@@ -335,7 +379,7 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
   padding:2px 7px;border-radius:3px}
 .btn-link{background:none;border-color:transparent;color:var(--accent);padding:11px 4px}
 .btn-link:hover:not(:disabled){text-decoration:underline}
-@media (max-width:600px){.dlg-grid{grid-template-columns:1fr}}
+@media (max-width:600px){.dlg-grid,.ac-digest{grid-template-columns:1fr}}
 
 /* ── combobox ── */
 .combo{position:relative}

@@ -16,8 +16,8 @@ import pytest
 from openpyxl import load_workbook
 
 from cyrus_pmg.pmgService import dashboardRouter
-from cyrus_pmg.pmgService.scenario import (assetEstimates, proposalRegister, rules,
-                                           scenarioStore, sleeveRepo)
+from cyrus_pmg.pmgService.scenario import (accountRequests, assetEstimates, proposalRegister,
+                                           rules, scenarioStore, sleeveRepo)
 from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput, ValidationError
 from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows, writeWorkbook
 
@@ -402,3 +402,74 @@ def test_minted_uids_have_one_shape_and_do_not_repeat():
     assert all(proposalRegister.isProposalId(uid) for uid in minted)
     assert not proposalRegister.isProposalId('pr_0123456789AB'), 'lower case only'
     assert not proposalRegister.isProposalId('sc_0123456789ab')
+
+
+def test_saved_views_count_and_filter_the_whole_register():
+    """D116. The register answers questions about a set, not only about a row:
+    each saved view carries a count over the whole register, and the two that
+    cannot be a WHERE on a column - sleeves the library has moved past, and
+    proposals with no account opening request - filter the page, the total,
+    the facets, the summary and the CSV alike."""
+    entry, _, _ = _deliver(user='viewer')
+    proposalId = entry['proposalId']
+
+    counts = proposalRegister.viewCounts('viewer')
+    assert set(counts) == set(proposalRegister.VIEW_KEYS)
+    assert counts['all'] >= 1 and counts['week'] >= 1
+    assert counts['mine'] >= 1, 'the caller exported one just now'
+    assert proposalRegister.viewCounts('')['mine'] == 0, 'nobody is not everybody'
+
+    # no request yet, so the proposal is in noAccount and not in moved
+    assert proposalId in {e['proposalId'] for e in
+                          proposalRegister.listProposals(noAccountOnly=True, limit=500)['entries']}
+    page = proposalRegister.listProposals(limit=500)
+    row = [e for e in page['entries'] if e['proposalId'] == proposalId][0]
+    assert row['moved'] == 0 and row['accountRequested'] is False
+
+    # the summary totals per currency and never across them
+    summary = page['summary']
+    assert summary['proposals'] == page['total'] >= 1
+    assert {t['currency'] for t in summary['totals']} <= {e['currency'] for e in page['entries']}
+    assert summary['earliest'] <= summary['latest']
+
+    # a request moves it out of noAccount, and the row says so
+    accountRequests.record('viewer', {
+        'proposalId': proposalId,
+        'clientName': 'View Test', 'accountType': accountRequests.ACCOUNT_TYPES[0],
+        'bookingCentre': accountRequests.BOOKING_CENTRES[0], 'taxResidency': 'CH',
+        'fundingAmount': 1_000_000, 'fundingSource': accountRequests.FUNDING_SOURCES[0],
+        'fundingDate': '2026-10-01'})
+    after = proposalRegister.listProposals(limit=500)
+    assert [e for e in after['entries'] if e['proposalId'] == proposalId][0]['accountRequested'] is True
+    assert proposalId not in {e['proposalId'] for e in
+                              proposalRegister.listProposals(noAccountOnly=True, limit=500)['entries']}
+    # and the CSV is what the screen says it is: the same view, every page
+    rows = proposalRegister.exportRows(noAccountOnly=True)
+    assert proposalId not in {r[0] for r in rows}
+
+
+def test_a_moved_sleeve_shows_on_the_row_not_only_inside_the_record():
+    """D116. Whether the library has moved past a proposal's pins was readable
+    only after opening it; it is now a figure on the row, computed for the
+    whole page in one read rather than one per pin."""
+    entry, _, _ = _deliver(user='mover')
+    proposalId = entry['proposalId']
+    pinned = [s for s in proposalRegister.getProposal(proposalId)['sleeves'] if s['sleeveId']]
+    assert pinned, 'the fixture pinned at least one sleeve'
+    before = proposalRegister.listProposals(limit=500)['entries']
+    assert [e for e in before if e['proposalId'] == proposalId][0]['moved'] == 0
+
+    pin = pinned[0]
+    sleeve = sleeveRepo.getSleeve(pin['sleeveId'])
+    sleeveRepo.updateSleeve(pin['sleeveId'], sleeve['name'],
+                            [{'productId': p['productId'], 'weight': p['weight']}
+                             for p in sleeve['products']],
+                            note='moved for the register', user='mover')
+    moved = proposalRegister.movedCounts()
+    assert moved.get(proposalId, 0) >= 1
+    row = [e for e in proposalRegister.listProposals(limit=500)['entries']
+           if e['proposalId'] == proposalId][0]
+    assert row['moved'] >= 1
+    assert proposalId in {e['proposalId'] for e in
+                          proposalRegister.listProposals(movedOnly=True, limit=500)['entries']}
+    assert proposalRegister.viewCounts('mover')['moved'] >= 1

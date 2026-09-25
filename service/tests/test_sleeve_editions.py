@@ -474,13 +474,13 @@ def test_the_console_payload_and_the_two_new_endpoints(monkeypatch):
         _archive(made['sleeve']['id'])
 
 
-def test_the_new_routes_are_admin_only_and_the_count_is_thirty():
+def test_the_new_routes_are_admin_only_and_the_count_is_thirty_one():
     found = {}
     for route in dashboardRouter.router.routes:
         if route.path.startswith('/scenario'):
             found[(route.path, tuple(sorted(route.methods)))] = [
                 d.call.__name__ for d in route.dependant.dependencies]
-    assert len(found) == 30
+    assert len(found) == 31
     assert 'requireAdmin' in found[('/scenario/repository/sleeves/{sleeveId}/editions', ('POST',))]
     assert 'requireAdmin' in found[('/scenario/repository/applicability', ('POST',))]
 

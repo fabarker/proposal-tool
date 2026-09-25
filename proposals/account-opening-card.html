@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Open an Account, UID First</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --pg:#FBFCFE;--card:#FFFFFF;--sunk:#F2F4F7;
+  --ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--on-accent:#FFFFFF;
+  --pick:#E3EBFA;--pick-ink:#1E4FA3;
+  --pos:#176A33;--pos-bg:#EAF5EE;--warn:#B45309;--warn-bg:#FEF3C7;--neg:#B42318;
+  --hdr-bg:#16243A;--hdr-ink:#FFFFFF;--hdr-kick:#F3C46B;
+  --badge-bg:#16243A;--badge-ink:#FFFFFF;
+  /* the product's own palette: fixed, because the mock-ups depict a
+     light-only application and must not follow this page's theme */
+  --p-bg:#FBFCFE;--p-surface:#FFFFFF;--p-surface2:#F0F2F5;
+  --p-ink:#1C2733;--p-ink2:#5B6B7C;--p-ink3:#8494A4;
+  --p-line:#EEF1F4;--p-line-strong:#D4DAE2;--p-accent:#1F5FBF;--p-navy:#16243A;
+  --p-pos:#176A33;--p-pos-bg:#EAF5EE;--p-neg:#B42318;--p-neg-bg:#FDE8E8;
+  --p-warn:#92400E;--p-warn-bg:#FEF3C7;
+  --num:'Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  --body:'Roboto',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+    --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+    --line:#28313D;--line2:#36414F;
+    --accent:#7FA9F0;--on-accent:#11161D;
+    --pick:#1C2B42;--pick-ink:#9DBEF2;
+    --pos:#6FCB8F;--pos-bg:#16291E;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;
+    --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+    --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+  }
+}
+:root[data-theme="dark"]{
+  --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+  --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+  --line:#28313D;--line2:#36414F;
+  --accent:#7FA9F0;--on-accent:#11161D;
+  --pick:#1C2B42;--pick-ink:#9DBEF2;
+  --pos:#6FCB8F;--pos-bg:#16291E;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;
+  --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+  --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--ink);font:16px/1.6 var(--body);-webkit-text-size-adjust:100%}
+.wrap{max-width:900px;margin:0 auto;padding-inline:20px}
+
+header.top{background:var(--hdr-bg);color:var(--hdr-ink);padding-block:42px 36px;margin-bottom:30px}
+header.top .kick{font:700 11px/1 var(--num);letter-spacing:.18em;text-transform:uppercase;color:var(--hdr-kick);margin:0 0 12px}
+header.top h1{font:400 clamp(28px,6.4vw,40px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 12px;text-wrap:balance}
+header.top p{margin:0 0 8px;max-width:64ch;opacity:.84;font-size:15.5px}
+
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 8px}
+nav.toc a{font:500 13px/1 var(--body);color:var(--ink2);text-decoration:none;border:1px solid var(--line);
+  background:var(--card);padding:8px 11px;border-radius:16px}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+h2{font:400 clamp(22px,5vw,28px)/1.2 var(--body);letter-spacing:-.02em;margin:52px 0 6px;text-wrap:balance;scroll-margin-top:16px}
+h2 small{display:block;font:700 10.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3{font:600 17px/1.3 var(--body);margin:0;letter-spacing:-.005em}
+p{max-width:68ch}
+p.lede{color:var(--ink2);margin:0 0 18px}
+code{font:13.5px var(--num);background:var(--sunk);padding:2px 6px;border-radius:3px;color:var(--ink);word-break:break-word}
+
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:14px 16px;border-radius:0 7px 7px 0;
+  font-size:14.5px;color:var(--ink2);margin:16px 0}
+.note p{margin:0;max-width:none}
+.note p+p{margin-top:8px}
+.note b{color:var(--ink)}
+.note.warn{border-left-color:var(--warn)}
+
+/* ── field inventory ── */
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0;background:var(--card);border:1px solid var(--line);border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+th{font:700 10px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 13px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:9px 13px;border-top:1px solid var(--line);vertical-align:top}
+td.grp{font:700 10.5px var(--num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);background:var(--sunk);padding-block:8px}
+.kind{font:700 10px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;padding:4px 7px;border-radius:9px;white-space:nowrap}
+.kind.ro{background:var(--sunk);color:var(--ink2)}
+.kind.pre{background:var(--warn-bg);color:var(--warn)}
+.kind.req{background:var(--pick);color:var(--pick-ink)}
+.kind.opt{background:transparent;color:var(--ink3);border:1px solid var(--line2)}
+
+/* ── the flow strip: a row of stages ── */
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;margin:16px 0}
+.stage-l{font:700 10.5px/1.3 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin:0 0 8px;display:flex;gap:8px;align-items:center}
+.stage-l .s{background:var(--badge-bg);color:var(--badge-ink);border-radius:4px;padding:4px 6px;letter-spacing:.06em}
+.stage-cap{font-size:13.5px;color:var(--ink2);margin:9px 0 0}
+
+/* ── option cards ── */
+.opt{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 20px 18px;margin:18px 0}
+.opt.rec{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.09)}
+.opt-h{display:flex;gap:11px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.opt-h .n{font:700 12px/1 var(--num);color:var(--badge-ink);background:var(--badge-bg);border-radius:5px;padding:6px 8px;letter-spacing:.05em;flex:none}
+.opt.rec .opt-h .n{background:var(--accent);color:var(--on-accent)}
+.opt-h h3{flex:1 1 200px}
+.chip{font:700 10px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--sunk);color:var(--ink2);flex:none}
+.chip.rec{background:var(--pick);color:var(--pick-ink)}
+.opt p.sum{color:var(--ink2);font-size:15px;margin:0 0 4px}
+.pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px 26px;margin:16px 0 0}
+.pc h4{font:700 10.5px/1 var(--num);letter-spacing:.13em;text-transform:uppercase;margin:0 0 7px}
+.pc .g h4{color:var(--pos)}.pc .c h4{color:var(--warn)}
+.pc ul{margin:0;padding-left:17px;font-size:14.5px;color:var(--ink2)}
+.pc li{margin:4px 0}
+
+/* ── the stage: the product's ground ── */
+.bench{background:var(--p-bg);border:1px dashed var(--line2);border-radius:10px;padding:22px 16px;
+  display:flex;justify-content:center;align-items:flex-start;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.bench.dim{background:linear-gradient(rgba(16,24,40,.34),rgba(16,24,40,.34)),var(--p-bg)}
+
+/* ── the account card, drawn in the product's own idiom ── */
+.dcard{background:var(--p-surface);border:1px solid var(--p-line-strong);border-radius:6px;
+  box-shadow:0 24px 60px -14px rgba(16,24,40,.34);padding:22px 22px 18px;width:100%;max-width:560px;
+  position:relative;color:var(--p-ink);font-family:var(--body);flex:none}
+.dcard.w460{max-width:460px}
+.dcard.w820{max-width:820px}
+.dcard .x{position:absolute;top:12px;right:15px;color:var(--p-ink3);font-size:20px;line-height:1}
+.dcard .t{font:700 15.5px/1.2 var(--num);letter-spacing:.07em;text-transform:uppercase;color:var(--p-navy);margin:0 26px 4px 0}
+.dcard .sub{font-size:12.5px;color:var(--p-ink3);margin:0 0 16px;line-height:1.4}
+.f{margin:0 0 13px}
+.f label,.f .lab{display:block;font-size:12.5px;color:var(--p-ink2);font-weight:600;margin-bottom:5px}
+.req{color:var(--p-accent);margin-left:4px}
+.in{border:1px solid var(--p-line-strong);border-radius:4px;padding:9px 11px;font:15px/1.35 var(--num);
+  color:var(--p-ink);background:var(--p-surface);min-height:40px;display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap}
+.in.ph{color:var(--p-ink3)}
+.in.sel::after{content:"\25BE";margin-left:auto;color:var(--p-ink3);font-size:12px}
+.in.focus{border-color:var(--p-accent);box-shadow:0 0 0 3px rgba(31,95,191,.16)}
+.in.bad{border-color:var(--p-neg)}
+.in.ro{background:var(--p-surface2);border-color:var(--p-line);color:var(--p-ink2)}
+.in.area{min-height:58px;align-items:flex-start;font-family:var(--body);font-size:13.5px}
+.caret{display:inline-block;width:1px;height:17px;background:var(--p-ink);margin-left:-6px}
+.hint{display:block;margin-top:5px;font-size:11.5px;color:var(--p-ink3);line-height:1.4}
+.hint.ok{color:var(--p-pos);font-weight:600}
+.hint.busy{color:var(--p-ink2)}
+.spin{width:13px;height:13px;border:2px solid var(--p-line-strong);border-top-color:var(--p-accent);border-radius:50%;flex:none;margin-left:auto}
+.errbox{margin:6px 0 0;padding:8px 11px;border-radius:4px;background:var(--p-neg-bg);border:1px solid #F1B8B2;color:#9B1C1C;font-size:12.5px;line-height:1.45;font-weight:600}
+.sect{display:flex;align-items:center;gap:10px;margin:4px 0 11px;font:500 11px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;color:var(--p-ink3)}
+.sect::after{content:"";flex:1;height:1px;background:var(--p-line)}
+.sect .tag{color:var(--p-pos);font-size:10px;letter-spacing:.08em;order:2}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:11px 13px;margin:0 0 14px}
+.g2 .f{margin:0}
+.g2 .wide{grid-column:1 / -1}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--p-line)}
+.foot.plain{border-top:0;padding-top:0}
+.status{font-size:12px;color:var(--p-ink3);line-height:1.4;flex:1 1 180px;min-width:0}
+.status.ok{color:var(--p-pos)}
+.grp{display:flex;gap:9px;margin-left:auto}
+.b{font:700 12.5px/1 var(--num);letter-spacing:.07em;text-transform:uppercase;padding:11px 18px;border-radius:4px;
+  border:1px solid var(--p-line-strong);background:transparent;color:var(--p-ink2);white-space:nowrap}
+.b.pri{background:var(--p-accent);border-color:var(--p-accent);color:#fff}
+.b.pri.off{opacity:.45}
+.b.link{border-color:transparent;color:var(--p-accent);padding-inline:4px}
+.lnk{color:var(--p-accent);font-weight:600;font-size:12.5px;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+
+/* the resolved UID, locked into one line */
+.uidlock{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid #BEDFC8;background:var(--p-pos-bg);
+  border-radius:5px;padding:9px 12px;margin:0 0 15px}
+.uidlock .tick{color:var(--p-pos);font-weight:700}
+.uidlock .v{font:600 15px var(--num);color:var(--p-navy);letter-spacing:.02em}
+.uidlock .m{font-size:12px;color:var(--p-ink2);flex:1 1 160px}
+/* the proposal as a compact digest: plain text, not greyed boxes */
+.digest{display:grid;grid-template-columns:1fr 1fr;gap:9px 18px;margin:0 0 14px;padding:13px 14px;border:1px solid var(--p-line);border-radius:5px;background:var(--p-bg)}
+.digest div{min-width:0}
+.digest dt{font:500 10.5px/1.2 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--p-ink3);margin:0 0 2px}
+.digest dd{margin:0;font:500 14px/1.3 var(--num);color:var(--p-ink)}
+.digest .wide{grid-column:1 / -1}
+.disc{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--p-ink2);padding:9px 12px;border:1px solid var(--p-line);border-radius:5px;margin:0 0 14px;background:var(--p-surface)}
+.disc b{color:var(--p-ink);font-weight:600}
+.disc .chev{margin-left:auto;color:var(--p-ink3)}
+.sleeves{border:1px solid var(--p-line);border-radius:4px;background:var(--p-surface2);padding:6px 11px;font-size:12.5px}
+.sleeves div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed var(--p-line-strong)}
+.sleeves div:last-child{border-bottom:0}
+.sleeves span:last-child{font-family:var(--num);color:var(--p-ink);text-align:right}
+.from{font:500 10px/1 var(--num);letter-spacing:.06em;text-transform:uppercase;color:var(--p-warn);background:var(--p-warn-bg);padding:3px 6px;border-radius:3px;margin-left:6px;vertical-align:1px}
+/* stepped header */
+.steps{display:flex;gap:6px;margin:0 0 15px;font:500 11px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--p-ink3)}
+.steps span{flex:1;padding-top:8px;border-top:3px solid var(--p-line)}
+.steps span.on{border-top-color:var(--p-accent);color:var(--p-accent)}
+.steps span.done{border-top-color:var(--p-pos);color:var(--p-pos)}
+/* option 02: the UID as the title */
+.uidtitle{font:600 21px/1.15 var(--num);color:var(--p-navy);letter-spacing:.01em;margin:0 26px 5px 0}
+.uidmeta{font-size:12.5px;color:var(--p-ink2);margin:0 0 15px;display:flex;gap:6px 10px;flex-wrap:wrap;align-items:baseline}
+/* option 03: two panes */
+.panes{display:grid;grid-template-columns:260px 1fr;gap:20px}
+.pane-l{background:var(--p-bg);border:1px solid var(--p-line);border-radius:5px;padding:13px 14px}
+.pane-l dl{margin:0;display:grid;gap:9px}
+.pane-l dt{font:500 10.5px/1.2 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--p-ink3)}
+.pane-l dd{margin:1px 0 0;font:500 13.5px/1.3 var(--num);color:var(--p-ink)}
+/* already requested */
+.held{border:1px solid #F3D38B;background:var(--p-warn-bg);border-radius:5px;padding:12px 13px;font-size:12.5px;color:#6B3A08;line-height:1.5;margin:4px 0 0}
+.held b{color:#4A2A06}
+.held code{font:600 13px var(--num);background:#fff;padding:1px 5px;border-radius:3px;color:var(--p-navy)}
+/* receipt */
+.rtick{width:40px;height:40px;border-radius:50%;background:var(--p-pos-bg);color:var(--p-pos);display:grid;place-items:center;font-size:19px;font-weight:700;margin:0 0 10px}
+.rtext{font-size:13px;color:var(--p-ink2);line-height:1.6;margin:0}
+.rtext code{font:600 13.5px var(--num);background:var(--p-surface2);padding:1px 5px;border-radius:3px;color:var(--p-ink)}
+
+/* ── decisions & recommendation ── */
+.dec{display:grid;gap:12px;margin:16px 0}
+.dec > div{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:14px 16px}
+.dec h4{margin:0 0 5px;font:600 15px var(--body)}
+.dec p{margin:0;font-size:14.5px;color:var(--ink2);max-width:none}
+.dec p + p{margin-top:6px}
+.dec .mine{color:var(--ink)}
+.dec .mine b{color:var(--accent)}
+ol.seq{padding-left:20px;margin:14px 0}
+ol.seq li{margin:10px 0;max-width:66ch;color:var(--ink2);font-size:15px}
+ol.seq li b{color:var(--ink);font-weight:600}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:16px;margin-top:48px;padding-bottom:36px}
+footer p{margin:0;max-width:none}
+
+@media (max-width:620px){
+  .wrap{padding-inline:16px}
+  .bench{padding:14px 10px}
+  .dcard{padding:18px 15px 15px}
+  .g2,.digest{grid-template-columns:1fr}
+  .panes{grid-template-columns:1fr}
+  .opt{padding:16px 14px 14px}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="kick">Proposal &middot; Account opening card</p>
+    <h1>Open an Account, UID first</h1>
+    <p>The card opens asking for one thing: the Proposal UID. Once it resolves, the card grows into the request itself, with everything the proposal already knows filled in and the rest waiting for you. Five ways the second half could look, one set of states they share, and a recommendation.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" aria-label="Contents">
+  <a href="#today">Today</a>
+  <a href="#fields">The fields</a>
+  <a href="#stage1">Stage 1, shared</a>
+  <a href="#o1">01</a><a href="#o2">02</a><a href="#o3">03</a><a href="#o4">04</a><a href="#o5">05</a>
+  <a href="#after">Submit &amp; receipt</a>
+  <a href="#decide">Decisions</a>
+  <a href="#rec">Recommendation</a>
+</nav>
+
+<h2 id="today"><small>Where we are</small>Today the card shows everything at once</h2>
+<p class="lede">Press <b>Open an Account</b> and the card opens at full length before a single character is typed: the UID box, then a greyed <em>From the proposal</em> block of eight read-only boxes and a sleeve list, then a greyed <em>Account details</em> block of nine fields, then the footer. Eighteen boxes and a sleeve list, and only the first box does anything.</p>
+<div class="note">
+  <p><b>Why that hurts.</b> The only thing you can do is type a UID, but the card makes you read past a wall of empty grey to understand that. Disabled fields look broken rather than pending, and on a laptop screen the card overflows and scrolls inside itself &mdash; so the UID field, the one live thing, can be the first thing that scrolls away.</p>
+  <p><b>What stays the same in every option below.</b> The lookup (<code>GET /scenario/proposals/{uid}</code>), the nine fields and their rules, the one-request-per-proposal refusal, and the receipt. This is a change to the card's shape, not to what it submits.</p>
+</div>
+
+<h2 id="fields"><small>What the card holds</small>Four kinds of field</h2>
+<p class="lede">The expanded card has to make these four kinds visibly different, because they ask different things of the reader: check, confirm, fill, or skip.</p>
+<div class="scroller">
+<table>
+  <thead><tr><th>Field</th><th>Kind</th><th>Where it comes from</th></tr></thead>
+  <tbody>
+    <tr><td class="grp" colspan="3">From the proposal &middot; to check, not edit</td></tr>
+    <tr><td>Primary PWA</td><td><span class="kind ro">Read only</span></td><td>The mandate</td></tr>
+    <tr><td>Mandate size &middot; Top account size</td><td><span class="kind ro">Read only</span></td><td>The mandate</td></tr>
+    <tr><td>Basis</td><td><span class="kind ro">Read only</span></td><td>Currency &middot; hedging</td></tr>
+    <tr><td>Implementation type</td><td><span class="kind ro">Read only</span></td><td>The variant, e.g. PMG Multi-Asset Portfolio</td></tr>
+    <tr><td>Risk &middot; allocation</td><td><span class="kind ro">Read only</span></td><td>The base portfolio key</td></tr>
+    <tr><td>Fees &middot; Switches</td><td><span class="kind ro">Read only</span></td><td>Fee schedule and level; tactical tilt, vol premium</td></tr>
+    <tr><td>Sleeves</td><td><span class="kind ro">Read only</span></td><td>One line per asset class, with its revision</td></tr>
+    <tr><td>Exported on / by, proposal #n</td><td><span class="kind ro">Read only</span></td><td>The register row</td></tr>
+    <tr><td class="grp" colspan="3">Filled for you &middot; to confirm</td></tr>
+    <tr><td>Initial funding</td><td><span class="kind pre">Prefilled</span></td><td>Defaults to the mandate size; change it if the first tranche differs</td></tr>
+    <tr><td class="grp" colspan="3">Yours to supply &middot; required</td></tr>
+    <tr><td>Client / account name</td><td><span class="kind req">Required</span></td><td>Free text</td></tr>
+    <tr><td>Account type</td><td><span class="kind req">Required</span></td><td>Individual, Joint, Trust, Corporate, Foundation</td></tr>
+    <tr><td>Booking centre</td><td><span class="kind req">Required</span></td><td>New York, London, Frankfurt, Zurich, Singapore, Hong Kong</td></tr>
+    <tr><td>Tax residency</td><td><span class="kind req">Required</span></td><td>Country</td></tr>
+    <tr><td>Funding source</td><td><span class="kind req">Required</span></td><td>Wire, Transfer in kind, Internal transfer</td></tr>
+    <tr><td>Expected funding date</td><td><span class="kind req">Required</span></td><td>Date</td></tr>
+    <tr><td class="grp" colspan="3">Yours to supply &middot; optional</td></tr>
+    <tr><td>KYC / onboarding reference</td><td><span class="kind opt">Optional</span></td><td>Free text</td></tr>
+    <tr><td>Notes for Onboarding</td><td><span class="kind opt">Optional</span></td><td>Free text</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="note warn">
+  <p><b>One gap worth knowing about.</b> The proposal does not record a client name &mdash; the mandate card never asks for one. So the thing a reader would use first to recognise <em>the right proposal</em> is not on it. Confirming the match has to rely on the PWA, the mandate size, the basis and the export date. That is why every option below keeps those four in plain sight.</p>
+</div>
+
+<h2 id="stage1"><small>Stage 1 &middot; the same in every option</small>The card opens small</h2>
+<p class="lede">One field, one line of help, and Cancel. The card is the width of the mandate card, 460px, and short enough that nothing scrolls. Each state below happens in this small card; <b>it only grows when the UID resolves to a proposal that can still take a request.</b></p>
+
+<div class="flow">
+  <div>
+    <p class="stage-l"><span class="s">1a</span>Opens</p>
+    <div class="bench dim"><div class="dcard w460">
+      <span class="x">&times;</span>
+      <p class="t">Open an Account</p>
+      <p class="sub">Start from the proposal the account is for.</p>
+      <div class="f"><label>Proposal UID<span class="req">&bull;</span></label>
+        <div class="in focus ph"><span class="caret"></span>pr_&hellip;</div>
+        <span class="hint">The end of the workbook's file name, or cell B1 of its Implementation sheet.</span></div>
+      <div class="foot plain"><span class="status">Paste the UID to continue.</span><div class="grp"><span class="b">Cancel</span></div></div>
+    </div></div>
+    <p class="stage-cap">Focus lands in the field. No disabled Submit waiting at the bottom &mdash; there is nothing to submit yet.</p>
+  </div>
+
+  <div>
+    <p class="stage-l"><span class="s">1b</span>Looking up</p>
+    <div class="bench dim"><div class="dcard w460">
+      <span class="x">&times;</span>
+      <p class="t">Open an Account</p>
+      <p class="sub">Start from the proposal the account is for.</p>
+      <div class="f"><label>Proposal UID<span class="req">&bull;</span></label>
+        <div class="in focus">pr_bafdb99b80ba<span class="spin"></span></div>
+        <span class="hint busy">Finding the proposal&hellip;</span></div>
+      <div class="foot plain"><span class="status">&nbsp;</span><div class="grp"><span class="b">Cancel</span></div></div>
+    </div></div>
+    <p class="stage-cap">Fires the moment the box holds a well-formed UID, as it does today. The spinner sits inside the field, so the card does not change height.</p>
+  </div>
+
+  <div>
+    <p class="stage-l"><span class="s">1c</span>Not a UID</p>
+    <div class="bench dim"><div class="dcard w460">
+      <span class="x">&times;</span>
+      <p class="t">Open an Account</p>
+      <p class="sub">Start from the proposal the account is for.</p>
+      <div class="f"><label>Proposal UID<span class="req">&bull;</span></label>
+        <div class="in bad">pr_bafdb99b80b</div>
+        <p class="errbox">A Proposal UID is pr_ followed by twelve letters or digits.</p></div>
+      <div class="foot plain"><span class="status">&nbsp;</span><div class="grp"><span class="b">Cancel</span></div></div>
+    </div></div>
+    <p class="stage-cap">Only after 15 characters, so it never scolds you mid-paste. Same wording as today.</p>
+  </div>
+
+  <div>
+    <p class="stage-l"><span class="s">1d</span>No such proposal</p>
+    <div class="bench dim"><div class="dcard w460">
+      <span class="x">&times;</span>
+      <p class="t">Open an Account</p>
+      <p class="sub">Start from the proposal the account is for.</p>
+      <div class="f"><label>Proposal UID<span class="req">&bull;</span></label>
+        <div class="in bad">pr_bafdb99b80bb</div>
+        <p class="errbox">No proposal has this UID. Check the end of the workbook's name or cell B1 of its Implementation sheet.</p></div>
+      <div class="foot plain"><span class="status">&nbsp;</span><div class="grp"><span class="b">Cancel</span></div></div>
+    </div></div>
+    <p class="stage-cap">The card stays small. Nothing to fill in means nothing to show.</p>
+  </div>
+
+  <div>
+    <p class="stage-l"><span class="s">1e</span>Already has a request</p>
+    <div class="bench dim"><div class="dcard w460">
+      <span class="x">&times;</span>
+      <p class="t">Open an Account</p>
+      <p class="sub">Start from the proposal the account is for.</p>
+      <div class="f"><label>Proposal UID<span class="req">&bull;</span></label>
+        <div class="in">pr_7c41e0a9d2f8</div>
+        <div class="held"><b>This proposal already has an account opening request.</b> <code>ar_52e1c07b9a3d</code>, raised by jmercer on 18 Sep 2026 at 14:05. Each proposal takes one request &mdash; quote this reference to follow it up.</div></div>
+      <div class="foot plain"><span class="status">&nbsp;</span><div class="grp"><span class="b link">Copy reference</span><span class="b">Close</span></div></div>
+    </div></div>
+    <p class="stage-cap"><b>New.</b> Today this state expands the whole card and then disables every field in it. Here it never expands: the answer fits in the small card.</p>
+  </div>
+</div>
+
+<h2><small>Stage 2 &middot; five ways to grow</small>The card once the proposal is found</h2>
+<p class="lede">Every example uses the same proposal: <code>pr_bafdb99b80ba</code>, USD Hedged, $25,000,000 for J. Mercer, exported 21 Sep 2026. Two fields are already filled in by the user in each, to show what a half-done card looks like.</p>
+
+<!-- ───────────── 01 ───────────── -->
+<div class="opt rec" id="o1">
+  <div class="opt-h"><span class="n">01</span><h3>Grow in place</h3><span class="chip rec">Recommended</span></div>
+  <p class="sum">The card keeps its place and grows downward, widening to 560px. The UID box locks into one green line with a <b>Change</b> link. Beneath it the proposal appears as a <b>digest</b> &mdash; plain text on a pale ground, not greyed input boxes, so it reads as information rather than as switched-off controls. The sleeves fold into one line you can open. Then the six required fields, the prefilled funding amount, and the two optional ones.</p>
+  <div class="bench dim"><div class="dcard">
+    <span class="x">&times;</span>
+    <p class="t">Open an Account</p>
+    <p class="sub">Start from the proposal the account is for.</p>
+    <div class="uidlock"><span class="tick">&#10003;</span><span class="v">pr_bafdb99b80ba</span><span class="m">Exported 21 Sep 2026 by fbarker</span><span class="lnk">Change</span></div>
+    <div class="sect">The proposal<span class="tag">From the register</span></div>
+    <dl class="digest">
+      <div><dt>Primary PWA</dt><dd>J. Mercer</dd></div>
+      <div><dt>Basis</dt><dd>USD &middot; Hedged</dd></div>
+      <div><dt>Mandate size</dt><dd>$25,000,000</dd></div>
+      <div><dt>Top account size</dt><dd>$10,000,000</dd></div>
+      <div><dt>Implementation</dt><dd>PMG Multi-Asset Portfolio</dd></div>
+      <div><dt>Risk &middot; allocation</dt><dd>Risk 4 &middot; Strategic</dd></div>
+      <div><dt>Fees</dt><dd>Standard &middot; Tier 2</dd></div>
+      <div><dt>Switches</dt><dd>Tactical tilt</dd></div>
+    </dl>
+    <div class="disc"><b>7 sleeves</b>&nbsp;Equity, Fixed Income, Real Assets and 4 more<span class="chev">&#9662;</span></div>
+    <div class="sect">The account</div>
+    <div class="g2">
+      <div class="f wide"><label>Client / account name<span class="req">&bull;</span></label><div class="in">Ashworth Family Trust</div></div>
+      <div class="f"><label>Account type<span class="req">&bull;</span></label><div class="in sel">Trust</div></div>
+      <div class="f"><label>Booking centre<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+      <div class="f"><label>Tax residency<span class="req">&bull;</span></label><div class="in ph">Country</div></div>
+      <div class="f"><label>Initial funding<span class="req">&bull;</span><span class="from">From mandate</span></label><div class="in">$25,000,000</div></div>
+      <div class="f"><label>Funding source<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+      <div class="f"><label>Expected funding date<span class="req">&bull;</span></label><div class="in ph">dd / mm / yyyy</div></div>
+      <div class="f"><label>KYC reference</label><div class="in ph">Optional</div></div>
+      <div class="f wide"><label>Notes for Onboarding</label><div class="in area ph">Anything Onboarding should know that the proposal does not say.</div></div>
+    </div>
+    <div class="foot"><span class="status">4 required fields left: booking centre, tax residency, funding source, funding date.</span>
+      <div class="grp"><span class="b">Cancel</span><span class="b pri off">Submit request</span></div></div>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>One continuous movement: the thing you typed stays where you typed it, and the rest appears beneath it.</li>
+      <li>The four facts you check the match against sit at the top, readable at a glance, before a single field asks anything of you.</li>
+      <li>The digest cuts eight boxes to eight lines of text. The card is shorter than today's.</li>
+      <li>The <em>From mandate</em> tag makes the one prefilled field visibly different from the ones you typed.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>The card changes width as well as height, 460 to 560. A small jump &mdash; see the decision on width below.</li>
+      <li>Still a long card. On a 768px-tall laptop the footer will scroll.</li>
+      <li>Sleeves are one click away rather than visible.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- ───────────── 02 ───────────── -->
+<div class="opt" id="o2">
+  <div class="opt-h"><span class="n">02</span><h3>The UID becomes the title</h3><span class="chip">Most focused</span></div>
+  <p class="sum">Once found, the card's heading changes from <em>Open an Account</em> to the proposal itself: the UID in large type, with a one-line summary beneath it. The body is only what you have to fill. The proposal's full terms fold into a single <b>Proposal terms</b> line you can open if you want to check them.</p>
+  <div class="bench dim"><div class="dcard">
+    <span class="x">&times;</span>
+    <p class="t" style="font-size:11.5px;color:var(--p-ink3);margin-bottom:6px">Account for proposal</p>
+    <p class="uidtitle">pr_bafdb99b80ba</p>
+    <p class="uidmeta"><span>J. Mercer &middot; $25,000,000 &middot; USD Hedged &middot; 21 Sep 2026</span><span class="lnk">Change</span></p>
+    <div class="disc"><b>Proposal terms</b>&nbsp;Implementation, risk, fees, 7 sleeves<span class="chev">&#9662;</span></div>
+    <div class="g2">
+      <div class="f wide"><label>Client / account name<span class="req">&bull;</span></label><div class="in">Ashworth Family Trust</div></div>
+      <div class="f"><label>Account type<span class="req">&bull;</span></label><div class="in sel">Trust</div></div>
+      <div class="f"><label>Booking centre<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+      <div class="f"><label>Tax residency<span class="req">&bull;</span></label><div class="in ph">Country</div></div>
+      <div class="f"><label>Initial funding<span class="req">&bull;</span><span class="from">From mandate</span></label><div class="in">$25,000,000</div></div>
+      <div class="f"><label>Funding source<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+      <div class="f"><label>Expected funding date<span class="req">&bull;</span></label><div class="in ph">dd / mm / yyyy</div></div>
+      <div class="f"><label>KYC reference</label><div class="in ph">Optional</div></div>
+      <div class="f wide"><label>Notes for Onboarding</label><div class="in area ph">Anything Onboarding should know that the proposal does not say.</div></div>
+    </div>
+    <div class="foot"><span class="status">4 required fields left.</span>
+      <div class="grp"><span class="b">Cancel</span><span class="b pri off">Submit request</span></div></div>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>The shortest expanded card of the five &mdash; the form, and nothing else by default.</li>
+      <li>It is always obvious which proposal you are working on: it is the title.</li>
+      <li>The summary line carries the four facts you match against, in one sentence.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>Implementation, risk, fees and sleeves are hidden by default, and hidden things go unchecked.</li>
+      <li>The title changing under you is a bigger visual event than a field locking.</li>
+      <li>A long UID set in 21px type is the least readable thing in the card to put in the biggest type.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- ───────────── 03 ───────────── -->
+<div class="opt" id="o3">
+  <div class="opt-h"><span class="n">03</span><h3>Side by side</h3><span class="chip">Wide</span></div>
+  <p class="sum">The card widens to 820px and splits: the proposal on the left as a quiet reference panel, the account on the right as the form. You can read the terms while you fill, without scrolling between them. On a phone or a narrow window the two stack, and it becomes option 01.</p>
+  <div class="bench dim"><div class="dcard w820">
+    <span class="x">&times;</span>
+    <p class="t">Open an Account</p>
+    <p class="sub">Start from the proposal the account is for.</p>
+    <div class="uidlock"><span class="tick">&#10003;</span><span class="v">pr_bafdb99b80ba</span><span class="m">Exported 21 Sep 2026 by fbarker</span><span class="lnk">Change</span></div>
+    <div class="panes">
+      <div class="pane-l">
+        <div class="sect" style="margin-bottom:10px">The proposal</div>
+        <dl>
+          <div><dt>Primary PWA</dt><dd>J. Mercer</dd></div>
+          <div><dt>Mandate &middot; top account</dt><dd>$25,000,000 &middot; $10,000,000</dd></div>
+          <div><dt>Basis</dt><dd>USD &middot; Hedged</dd></div>
+          <div><dt>Implementation</dt><dd>PMG Multi-Asset Portfolio</dd></div>
+          <div><dt>Risk &middot; allocation</dt><dd>Risk 4 &middot; Strategic</dd></div>
+          <div><dt>Fees &middot; switches</dt><dd>Standard &middot; Tier 2 &middot; Tactical tilt</dd></div>
+          <div><dt>Sleeves</dt><dd>7 &middot; <span class="lnk">show</span></dd></div>
+        </dl>
+      </div>
+      <div>
+        <div class="sect">The account</div>
+        <div class="g2" style="margin-bottom:0">
+          <div class="f wide"><label>Client / account name<span class="req">&bull;</span></label><div class="in">Ashworth Family Trust</div></div>
+          <div class="f"><label>Account type<span class="req">&bull;</span></label><div class="in sel">Trust</div></div>
+          <div class="f"><label>Booking centre<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+          <div class="f"><label>Tax residency<span class="req">&bull;</span></label><div class="in ph">Country</div></div>
+          <div class="f"><label>Initial funding<span class="req">&bull;</span><span class="from">From mandate</span></label><div class="in">$25,000,000</div></div>
+          <div class="f"><label>Funding source<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+          <div class="f"><label>Funding date<span class="req">&bull;</span></label><div class="in ph">dd / mm / yyyy</div></div>
+          <div class="f"><label>KYC reference</label><div class="in ph">Optional</div></div>
+          <div class="f"><label>Notes for Onboarding</label><div class="in ph">Optional</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="foot"><span class="status">4 required fields left.</span>
+      <div class="grp"><span class="b">Cancel</span><span class="b pri off">Submit request</span></div></div>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>The terms stay in view the whole time you fill, which suits a careful, checklist-minded task.</li>
+      <li>The shortest card on a desktop: the height of the form alone.</li>
+      <li>Shows the whole proposal, sleeves count included, with nothing hidden.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>The biggest jump of all: 460 to 820 wide. The card visibly re-shapes rather than grows.</li>
+      <li>An 820px modal is a lot of screen for nine fields.</li>
+      <li>Two layouts to build and test, since it has to become 01 when narrow.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- ───────────── 04 ───────────── -->
+<div class="opt" id="o4">
+  <div class="opt-h"><span class="n">04</span><h3>Confirm, then fill</h3><span class="chip">Safest</span></div>
+  <p class="sum">Three steps instead of two. After the UID resolves, the card first asks <em>Is this the proposal?</em> and shows its terms with two buttons. Only after <b>Yes, this one</b> do the account fields appear. A step header across the top says where you are.</p>
+  <div class="flow" style="margin-top:14px">
+    <div>
+      <p class="stage-l"><span class="s">2</span>Confirm</p>
+      <div class="bench dim"><div class="dcard">
+        <span class="x">&times;</span>
+        <p class="t">Open an Account</p>
+        <div class="steps" style="margin-top:12px"><span class="done">1 &middot; Proposal</span><span class="on">2 &middot; Confirm</span><span>3 &middot; Account</span></div>
+        <p style="font-size:14px;margin:0 0 12px;color:var(--p-ink)"><b>Is this the proposal the account is for?</b></p>
+        <div class="uidlock"><span class="tick">&#10003;</span><span class="v">pr_bafdb99b80ba</span><span class="m">Exported 21 Sep 2026 by fbarker</span></div>
+        <dl class="digest">
+          <div><dt>Primary PWA</dt><dd>J. Mercer</dd></div>
+          <div><dt>Basis</dt><dd>USD &middot; Hedged</dd></div>
+          <div><dt>Mandate size</dt><dd>$25,000,000</dd></div>
+          <div><dt>Top account size</dt><dd>$10,000,000</dd></div>
+          <div><dt>Implementation</dt><dd>PMG Multi-Asset Portfolio</dd></div>
+          <div><dt>Risk &middot; allocation</dt><dd>Risk 4 &middot; Strategic</dd></div>
+        </dl>
+        <div class="disc"><b>7 sleeves</b>&nbsp;and fees, switches<span class="chev">&#9662;</span></div>
+        <div class="foot"><span class="status">Each proposal takes one request, so check before you go on.</span>
+          <div class="grp"><span class="b">Not this one</span><span class="b pri">Yes, this one</span></div></div>
+      </div></div>
+    </div>
+    <div>
+      <p class="stage-l"><span class="s">3</span>Fill</p>
+      <div class="bench dim"><div class="dcard">
+        <span class="x">&times;</span>
+        <p class="t">Open an Account</p>
+        <div class="steps" style="margin-top:12px"><span class="done">1 &middot; Proposal</span><span class="done">2 &middot; Confirm</span><span class="on">3 &middot; Account</span></div>
+        <div class="uidlock" style="margin-bottom:13px"><span class="tick">&#10003;</span><span class="v">pr_bafdb99b80ba</span><span class="m">J. Mercer &middot; $25m &middot; USD Hedged</span><span class="lnk">Back</span></div>
+        <div class="g2">
+          <div class="f wide"><label>Client / account name<span class="req">&bull;</span></label><div class="in">Ashworth Family Trust</div></div>
+          <div class="f"><label>Account type<span class="req">&bull;</span></label><div class="in sel">Trust</div></div>
+          <div class="f"><label>Booking centre<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+          <div class="f"><label>Tax residency<span class="req">&bull;</span></label><div class="in ph">Country</div></div>
+          <div class="f"><label>Initial funding<span class="req">&bull;</span><span class="from">From mandate</span></label><div class="in">$25,000,000</div></div>
+          <div class="f"><label>Funding source<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+          <div class="f"><label>Funding date<span class="req">&bull;</span></label><div class="in ph">dd / mm / yyyy</div></div>
+          <div class="f"><label>KYC reference</label><div class="in ph">Optional</div></div>
+          <div class="f"><label>Notes for Onboarding</label><div class="in ph">Optional</div></div>
+        </div>
+        <div class="foot"><span class="status">4 required fields left.</span>
+          <div class="grp"><span class="b">Cancel</span><span class="b pri off">Submit request</span></div></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>The strongest guard against the one mistake that cannot be undone: a request raised against the wrong proposal uses up that proposal's single request.</li>
+      <li>Each step is short. Nothing scrolls, even on a small laptop.</li>
+      <li>Handles re-exports well: a PWA holding two UIDs from the same scenario is made to look before choosing.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>One more click on every request, including every one where the UID was right.</li>
+      <li>It is not quite what you asked for: the card no longer expands straight into the form.</li>
+      <li>Step headers make a small task feel like a wizard.</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- ───────────── 05 ───────────── -->
+<div class="opt" id="o5">
+  <div class="opt-h"><span class="n">05</span><h3>Today's card, revealed</h3><span class="chip">Cheapest</span></div>
+  <p class="sum">Change nothing about the expanded card except when it appears. Stage 1 is the small UID card; on a match, today's two sections &mdash; the greyed read-only boxes and the account fields &mdash; slide in beneath. The smallest possible change to deliver your one requirement.</p>
+  <div class="bench dim"><div class="dcard">
+    <span class="x">&times;</span>
+    <p class="t">Account opening request</p>
+    <p class="sub">Open an account on the terms of a delivered proposal.</p>
+    <div class="f"><label>Proposal UID<span class="req">&bull;</span></label>
+      <div class="in">pr_bafdb99b80ba</div>
+      <span class="hint ok">&#10003; Proposal found &middot; USD Hedged &middot; exported 21 Sep 2026 by fbarker</span></div>
+    <div class="sect">From the proposal<span class="tag">Filled &middot; read only</span></div>
+    <div class="g2">
+      <div class="f"><label>Primary PWA</label><div class="in ro">J. Mercer</div></div>
+      <div class="f"><label>Mandate size</label><div class="in ro">$25,000,000</div></div>
+      <div class="f"><label>Top account size</label><div class="in ro">$10,000,000</div></div>
+      <div class="f"><label>Basis</label><div class="in ro">USD &middot; Hedged</div></div>
+      <div class="f"><label>Implementation type</label><div class="in ro">PMG Multi-Asset Portfolio</div></div>
+      <div class="f"><label>Risk &middot; allocation</label><div class="in ro">Risk 4 &middot; Strategic</div></div>
+      <div class="f"><label>Fees</label><div class="in ro">Standard &middot; Tier 2</div></div>
+      <div class="f"><label>Switches</label><div class="in ro">Tactical tilt</div></div>
+    </div>
+    <div class="f"><span class="lab">Sleeves</span><div class="sleeves">
+      <div><span>Equity</span><span>Global Core Equity r3</span></div>
+      <div><span>Fixed Income</span><span>Aggregate Bond r2</span></div>
+      <div><span>Real Assets</span><span>Listed Infrastructure r1</span></div>
+      <div><span>&hellip; 4 more</span><span>&nbsp;</span></div>
+    </div></div>
+    <div class="sect">Account details</div>
+    <div class="g2">
+      <div class="f"><label>Client / account name<span class="req">&bull;</span></label><div class="in">Ashworth Family Trust</div></div>
+      <div class="f"><label>Account type<span class="req">&bull;</span></label><div class="in sel">Trust</div></div>
+      <div class="f"><label>Booking centre<span class="req">&bull;</span></label><div class="in sel ph">Select&hellip;</div></div>
+      <div class="f"><label>Tax residency<span class="req">&bull;</span></label><div class="in ph">Country</div></div>
+      <div class="f"><label>&hellip; and five more</label><div class="in ph">&nbsp;</div></div>
+    </div>
+    <div class="foot"><span class="status">4 required fields remaining.</span>
+      <div class="grp"><span class="b">Cancel</span><span class="b pri off">Submit request</span></div></div>
+  </div></div>
+  <div class="pc">
+    <div class="g"><h4>What it gains</h4><ul>
+      <li>Delivers the requirement exactly and nothing else: a few lines of change in <code>accountFormMarkup()</code>.</li>
+      <li>No new patterns to learn, name or test.</li>
+    </ul></div>
+    <div class="c"><h4>What it costs</h4><ul>
+      <li>The longest expanded card: eight boxes, a sleeve list and nine fields. It will scroll inside itself on most laptops.</li>
+      <li>Greyed input boxes still read as switched-off controls, even once they are filled.</li>
+      <li>The prefilled funding amount looks the same as fields you typed.</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2 id="after"><small>Stage 3 &middot; shared</small>Submit, and the receipt</h2>
+<p class="lede">The same in all five. Submit goes live the moment the last required field is filled; the status line says so, and names the proposal the request will be recorded against. The receipt replaces the card's body in the same frame.</p>
+<div class="flow">
+  <div>
+    <p class="stage-l"><span class="s">3a</span>Ready</p>
+    <div class="bench"><div class="dcard" style="box-shadow:none">
+      <div class="foot" style="margin-top:0;padding-top:0;border-top:0"><span class="status ok">Ready. Submitting records the request against pr_bafdb99b80ba (J. Mercer, $25,000,000).</span>
+        <div class="grp"><span class="b">Cancel</span><span class="b pri">Submit request</span></div></div>
+    </div></div>
+    <p class="stage-cap">Naming the PWA and mandate here, not just the UID, is one last cheap check before the proposal's single request is spent.</p>
+  </div>
+  <div>
+    <p class="stage-l"><span class="s">3b</span>Receipt</p>
+    <div class="bench dim"><div class="dcard w460">
+      <span class="x">&times;</span>
+      <div class="rtick">&#10003;</div>
+      <p class="t" style="text-transform:none;letter-spacing:0;font:600 19px var(--body);color:var(--p-navy)">Request submitted</p>
+      <p class="rtext">Account opening request <code>ar_91d4e6c2b0f7</code> for proposal <code>pr_bafdb99b80ba</code> was recorded at 22 Sep 2026, 10:42 by fbarker. <b>Quote the request reference</b> in any follow-up.</p>
+      <div class="foot plain"><span class="b link">Copy reference</span><div class="grp"><span class="b pri">Done</span></div></div>
+    </div></div>
+    <p class="stage-cap">The card shrinks back to 460px, the size it opened at. It began small and ends small.</p>
+  </div>
+</div>
+
+<h2 id="decide"><small>Worth deciding</small>Four choices the mock-ups make for you</h2>
+<div class="dec">
+  <div>
+    <h4>What makes it expand: the UID alone, or a button?</h4>
+    <p>Today the lookup fires 150ms after the box holds a well-formed UID. Keeping that means pasting a UID is all it takes &mdash; the card grows under your cursor. A <b>Find proposal</b> button would make the expansion something you asked for, at the cost of a click that does nothing but confirm a paste.</p>
+    <p class="mine"><b>I'd keep it automatic</b>, plus Enter. UIDs are pasted, not typed, so the moment the box is full is the moment you meant.</p>
+  </div>
+  <div>
+    <h4>What happens to typed details if the UID is changed?</h4>
+    <p>Press <b>Change</b> after filling half the form. Either the account fields are cleared, since they were meant for another proposal, or they are kept and the card collapses to the UID with them held in memory.</p>
+    <p class="mine"><b>I'd keep them</b> and say so &mdash; <em>Your account details are kept</em> under the UID box. The usual reason to change a UID is a typo or the wrong re-export, and the client is the same client.</p>
+  </div>
+  <div>
+    <h4>One width throughout, or grow wider?</h4>
+    <p>The small card at 460px matches the mandate card and looks right with one field. The full form needs 560px for its two columns. Opening at 560 avoids the sideways jump but leaves a wide card with one short field in it.</p>
+    <p class="mine"><b>I'd grow both ways</b>, in one 260ms movement, height and width together. One transition reads as one event; it is the width change on its own, after the height, that looks like a glitch.</p>
+  </div>
+  <div>
+    <h4>Should the mandate card start asking for a client name?</h4>
+    <p>Outside this card's scope, but it is the root of why matching a UID to a proposal is hard: the register has no client on it. If the mandate carried one, every option here could lead with <em>Ashworth Family Trust</em> instead of a hex string, and the account's name field could prefill.</p>
+    <p class="mine"><b>Worth a separate look.</b> It changes the mandate card, the register and the workbook, so it is its own piece of work.</p>
+  </div>
+</div>
+
+<h2 id="rec"><small>If you want one</small>Recommendation</h2>
+<p class="lede"><b>Option 01, grow in place</b>, with 04's safeguard folded into the footer rather than given its own step.</p>
+<ol class="seq">
+  <li><b>It is the literal shape of what you asked for.</b> The card opens on the UID alone, and the same card grows into the request once it resolves &mdash; no mode change, no new title, no wizard.</li>
+  <li><b>The digest is the real improvement.</b> The four facts you match the proposal against are readable at the top, as text rather than eight grey boxes, and the card ends up shorter than today's.</li>
+  <li><b>The one-request rule stops being a surprise.</b> State 1e answers <em>this proposal already has a request</em> in the small card, before anything expands &mdash; today it expands the whole form and then disables it.</li>
+  <li><b>It keeps 04's protection without 04's extra click.</b> The Ready line names the PWA and mandate beside the UID, so the last thing read before Submit is the thing you would check.</li>
+</ol>
+<p class="lede">If the wrong-proposal mistake has actually happened, or you expect PWAs to hold several re-exports of the same scenario, <b>04</b> is the honest upgrade: the confirm step costs a click and buys certainty. If you mainly want this done quickly, <b>05</b> delivers the requirement in an afternoon and can be improved into 01 later.</p>
+
+<footer>
+  <p>Epsilon Phi &middot; Proposal Tool &middot; account opening card. Drawn against <code>accountFormMarkup()</code> and <code>AC_FIELDS</code> in <code>generator/js/core.js</code> and the option lists in <code>scenario/accountRequests.py</code>, 22 September 2026. Proposal data in the mock-ups is an example; field names, option lists, messages and colours are the tool's own. Type is Roboto Condensed standing in for GS Sans Condensed.</p>
+</footer>
+
+</div>
+
+</body>
+</html>

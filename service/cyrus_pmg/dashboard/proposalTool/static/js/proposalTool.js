@@ -3011,23 +3011,39 @@ async function lookupProposal(uid, seq) {
   /* No abort: a lookup is a primary-key read, and a stale reply is simply
      ignored by the sequence check - cheaper than teaching apiFetch that an
      abort is not the service going down (D64). */
+  var wasOpen = accountExpanded();
   try {
     var found = await apiFetch('/scenario/proposals/' + encodeURIComponent(uid));
     if (!account || account.seq !== seq) return;
     account.status = 'found'; account.message = '';
     account.proposal = found.proposal; account.requests = found.requests || [];
-    if (!account.fundingTouched && !(account.fields.fundingAmount > 0)) {
+    /* Untouched, the funding follows the proposal - including a new one after
+       Change. Typed, it is the user's and stays. */
+    if (!account.fundingTouched) {
       account.fields.fundingAmount = found.proposal.mandateSize || null;
     }
-    announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
-      + money(found.proposal.mandateSize) + '.');
+    if (account.requests.length) {
+      announce('polite', 'This proposal already has an account opening request, '
+        + account.requests[0].requestId + '.');
+    } else {
+      announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
+        + money(found.proposal.mandateSize) + '.');
+    }
   } catch (err) {
     if (!account || account.seq !== seq) return;
     account.status = (err && err.status === 404) ? 'notfound'
       : (err && err.status === 422) ? 'malformed' : 'error';
     account.message = (err && err.message) || 'The lookup failed.';
   }
-  preserveFocus(renderAccountDialog);
+  /* The UID box is gone once the card grows, so focus moves on to the first
+     thing left to do rather than falling back to the page. */
+  if (!wasOpen && accountExpanded()) {
+    renderAccountDialog();
+    var first = document.getElementById(AC_FIELDS[0].id);
+    if (first) first.focus();
+  } else {
+    preserveFocus(renderAccountDialog);
+  }
 }
 
 function accountMissing() {
@@ -3046,18 +3062,68 @@ function accountReady() {
 
 function accountStatusText() {
   var a = account;
-  if (a.status !== 'found') return 'Enter a Proposal UID to begin.';
-  if (a.requests.length) {
-    var r = a.requests[0];
-    return 'An account opening request already exists for this proposal: ' + r.requestId
-      + ' by ' + r.submittedBy + ' on ' + whenText(r.submittedAt) + '.';
-  }
+  if (a.status === 'idle') return 'Paste the UID to continue.';
+  /* looking, refused or already requested: the line under the UID says it */
+  if (!accountExpanded()) return '';
   var missing = accountMissing();
   if (missing.length) {
     return missing.length + ' required field' + (missing.length === 1 ? '' : 's') + ' remaining: '
       + missing.map(function (m) { return m.label; }).join(', ') + '.';
   }
-  return 'Ready. Submitting records the request against ' + a.proposal.proposalId + '.';
+  /* The PWA and mandate beside the UID: the last thing read before the
+     proposal's one request is spent is the thing the user would check (D111). */
+  var p = a.proposal;
+  return 'Ready. Submitting records the request against ' + p.proposalId
+    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize) + ').';
+}
+
+/* The card opens on the UID alone and grows into the request only when the
+   UID names a proposal that can still take one. Every other outcome - looking,
+   malformed, not found, already requested - is answered in the small card,
+   because there is nothing yet for the user to fill in (D111). */
+function accountExpanded() {
+  return !!(account && !account.receipt && account.status === 'found'
+            && !account.requests.length);
+}
+
+/* Anything the user has typed about the account, so a changed UID can say it
+   was kept. The funding default does not count: the card wrote that. */
+function accountHasDetails() {
+  var f = account.fields;
+  return AC_FIELDS.some(function (spec) {
+    if (spec.kind === 'money') return account.fundingTouched && f[spec.key] > 0;
+    return !!(f[spec.key] && String(f[spec.key]).trim());
+  });
+}
+
+/* Enter looks up at once rather than waiting out the debounce - and looks up
+   again when the box already holds the UID, which is how someone who pressed
+   Change gets back to the proposal they had. */
+function lookupNow() {
+  if (!account || account.submitting) return;
+  var uid = (account.uid || '').toLowerCase();
+  if (!UID_PATTERN.test(uid)) {
+    if (uid) { account.status = 'malformed'; account.message = UID_SHAPE; preserveFocus(renderAccountDialog); }
+    return;
+  }
+  if (account.timer) { clearTimeout(account.timer); account.timer = null; }
+  account.status = 'looking'; account.message = '';
+  preserveFocus(renderAccountDialog);
+  lookupProposal(uid, ++account.seq);
+}
+
+/* Change: back to the small card with the UID selected for editing. What the
+   user typed about the account is kept - the usual reason to change a UID is
+   a typo or the wrong re-export, and the client is the same client (D111). */
+function changeProposal() {
+  if (!account || account.submitting) return;
+  ++account.seq;                      /* a reply still in flight is stale now */
+  if (account.timer) { clearTimeout(account.timer); account.timer = null; }
+  account.status = 'idle'; account.message = ''; account.err = null;
+  account.proposal = null; account.requests = [];
+  renderAccountDialog();
+  var box = document.getElementById('acuid');
+  if (box) { box.focus(); box.select(); }
 }
 
 function whenText(iso) {
@@ -3091,69 +3157,154 @@ function renderAccountDialog() {
   }
   host.hidden = false;
   setBackgroundInert(true);
-  host.innerHTML =
-      '<div class="scrim" data-scrim></div>'
-    + '<div class="dialog account" role="dialog" aria-modal="true" aria-labelledby="acTitle">'
-    + '<button type="button" class="dlg-close" id="acclose" aria-label="Close">×</button>'
-    + (account.receipt ? accountReceiptMarkup() : accountFormMarkup())
-    + '</div>';
+  /* The dialog element survives re-renders - only its contents are replaced -
+     so the change between the small card and the grown one can be one
+     movement, width and height together, rather than a jump (D111). */
+  var box = host.querySelector('.dialog.account');
+  var before = box ? box.getBoundingClientRect() : null;
+  var wasOpen = box ? box.classList.contains('open') : false;
+  if (!box) {
+    host.innerHTML = '<div class="scrim" data-scrim></div>'
+      + '<div class="dialog account" role="dialog" aria-modal="true" aria-labelledby="acTitle"></div>';
+    box = host.querySelector('.dialog.account');
+  }
+  var open = accountExpanded();
+  box.classList.toggle('open', open);
+  box.innerHTML = '<button type="button" class="dlg-close" id="acclose" aria-label="Close">×</button>'
+    + (account.receipt ? accountReceiptMarkup() : accountFormMarkup());
+  if (before && wasOpen !== open && box.animate) {
+    var after = box.getBoundingClientRect();
+    box.style.overflow = 'hidden';
+    var grow = box.animate([
+      { width: before.width + 'px', height: before.height + 'px' },
+      { width: after.width + 'px', height: after.height + 'px' }
+    ], { duration: 260, easing: 'cubic-bezier(.4,0,.2,1)' });
+    grow.onfinish = grow.oncancel = function () { box.style.overflow = ''; };
+    var fresh = open && box.querySelector('.ac-grow');
+    if (fresh && fresh.animate) {
+      fresh.animate([{ opacity: 0 }, { opacity: 1 }],
+                    { duration: 220, delay: 90, easing: 'ease-out', fill: 'backwards' });
+    }
+  }
 }
 
 function accountFormMarkup() {
-  var a = account, p = a.proposal;
-  var found = (a.status === 'found');
+  var a = account;
+  var open = accountExpanded();
   var busy = a.submitting;
-  /* the account fields open only for a proposal that can still be requested */
-  var editable = found && !a.requests.length;
+  var held = a.status === 'found' && a.requests.length;
+  var ready = accountReady() && !busy;
+  var actions;
+  if (open) {
+    actions = '<button type="button" class="btn btn-ghost" id="accancel"' + (busy ? ' disabled' : '') + '>Cancel</button>'
+      + '<button type="button" class="btn btn-primary" id="acsubmit"' + (ready ? '' : ' disabled') + '>'
+      + (busy ? 'Working…' : 'Submit request') + '</button>';
+  } else if (held) {
+    actions = '<button type="button" class="btn btn-link" id="accopy">Copy reference</button>'
+      + '<button type="button" class="btn btn-ghost" id="accancel">Close</button>';
+  } else {
+    /* No disabled Submit waiting below one empty box: there is nothing to
+       submit yet, so the small card offers only the way out. */
+    actions = '<button type="button" class="btn btn-ghost" id="accancel">Cancel</button>';
+  }
+  return '<h2 id="acTitle" class="dlg-shout">Open an Account</h2>'
+    + '<p class="dlg-sub">Start from the proposal the account is for.</p>'
+    + (open ? '<div class="ac-grow">' + accountProposalMarkup(busy) + accountFieldsMarkup(busy) + '</div>'
+            : accountUidMarkup())
+    + (open && a.err ? '<p class="md-err" id="acerr" role="alert">' + esc(a.err.msg) + '</p>' : '')
+    + '<div class="dlg-actions split' + (open ? ' ac-foot' : '') + '">'
+    + '<span class="dlg-status' + (ready ? ' ok' : '') + '" id="acstatus" role="status">'
+    + esc(accountStatusText()) + '</span>'
+    + '<div class="dlg-grp">' + actions + '</div></div>';
+}
+
+/* The small card: the UID box and one line under it, which carries every
+   answer the lookup can give short of a proposal to fill in. */
+function accountUidMarkup() {
+  var a = account;
+  var looking = a.status === 'looking';
+  var bad = a.status === 'notfound' || a.status === 'malformed' || a.status === 'error';
+  var hint;
+  if (looking) {
+    hint = '<span class="field-hint busy" id="achint" role="status">Finding the proposal…</span>';
+  } else if (a.status === 'found' && a.requests.length) {
+    var r = a.requests[0];
+    hint = '<p class="dlg-held" id="achint" role="status"><b>This proposal already has an account '
+      + 'opening request.</b> <code>' + esc(r.requestId) + '</code>, raised by ' + esc(r.submittedBy)
+      + ' on ' + esc(whenText(r.submittedAt)) + '. Each proposal takes one request; quote this '
+      + 'reference to follow it up.</p>';
+  } else if (bad) {
+    hint = '<p class="md-err dlg-uiderr" id="achint" role="alert">' + esc(a.message || UID_SHAPE) + '</p>';
+  } else {
+    hint = '<span class="field-hint" id="achint">The end of the workbook\'s file name, or cell B1 '
+      + 'of its Implementation sheet.'
+      + (accountHasDetails() ? ' <b>Your account details are kept.</b>' : '') + '</span>';
+  }
+  return '<div class="field"><label for="acuid">Proposal UID<span class="req" aria-hidden="true">•</span></label>'
+    + '<div class="ac-uidbox">'
+    + '<input type="text" id="acuid" autocomplete="off" spellcheck="false" autocapitalize="off"'
+    + ' placeholder="pr_…" aria-describedby="achint" aria-required="true" value="' + esc(a.uid) + '"'
+    + (bad ? ' aria-invalid="true"' : '') + '>'
+    + (looking ? '<span class="ac-spin" aria-hidden="true"></span>' : '')
+    + '</div>' + hint + '</div>';
+}
+
+/* The proposal, once found: the UID locked into one line, then the terms as
+   plain text rather than greyed boxes - information to check, not controls
+   switched off - with the sleeves folded behind one line (D111). */
+function accountProposalMarkup(busy) {
+  var p = account.proposal;
+  var terms = [
+    ['Primary PWA', p.primaryPwa],
+    ['Basis', p.currency + ' · ' + p.hedging],
+    ['Mandate size', money(p.mandateSize)],
+    ['Top account size', money(p.topAccountSize)],
+    ['Implementation', p.variant],
+    ['Risk · allocation', riskAllocationText(p)],
+    ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
+    ['Switches', switchesText(p)]
+  ];
+  var sleeves = p.sleeves || [];
+  var names = sleeves.map(function (s) { return s.category; });
+  var preview = names.slice(0, 3).join(', ')
+    + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '');
+  return '<div class="ac-lock">'
+    + '<span class="ac-tick" aria-hidden="true">✓</span>'
+    + '<span class="ac-uid">' + esc(p.proposalId) + '</span>'
+    + '<span class="ac-when">Exported ' + esc(whenText(p.exportedAt)) + ' by ' + esc(p.exportedBy)
+    + (p.sequence > 1 ? ' · proposal #' + p.sequence + ' of its scenario' : '') + '</span>'
+    + '<button type="button" class="btn-inline" id="acchange"' + (busy ? ' disabled' : '')
+    + ' aria-label="Change the Proposal UID">Change</button></div>'
+    + '<div class="dlg-sect">The proposal<span class="dlg-tag">from the register</span></div>'
+    + '<dl class="ac-digest">' + terms.map(function (t) {
+        return '<div><dt>' + esc(t[0]) + '</dt><dd>' + esc(t[1] || '—') + '</dd></div>';
+      }).join('') + '</dl>'
+    + (sleeves.length
+        ? '<details class="ac-sleeves"><summary><b>' + sleeves.length + ' sleeve'
+          + (sleeves.length === 1 ? '' : 's') + '</b><span>' + esc(preview) + '</span></summary>'
+          + '<div class="dlg-sleeves">' + sleeves.map(function (s) {
+              return '<div><span>' + esc(s.category) + '</span><span>' + esc(s.sleeve || '—')
+                + (s.revision ? '<em>r' + esc(String(s.revision)) + '</em>' : '') + '</span></div>';
+            }).join('') + '</div></details>'
+        : '<p class="ac-none">No sleeves recorded.</p>');
+}
+
+function accountFieldsMarkup(busy) {
+  var a = account;
   var errField = a.err && a.err.field;
   function invalid(id) {
     return (errField === id) ? ' aria-invalid="true" aria-describedby="acerr"' : '';
   }
-
-  var uidHint;
-  if (a.status === 'looking') {
-    uidHint = '<span class="field-hint busy" id="achint" role="status">Looking up…</span>';
-  } else if (found) {
-    uidHint = '<span class="field-hint ok" id="achint" role="status">✓ Proposal found · '
-      + esc(p.currency + ' ' + p.hedging) + ' · exported ' + esc(whenText(p.exportedAt))
-      + ' by ' + esc(p.exportedBy)
-      + (p.sequence > 1 ? ' · proposal #' + p.sequence + ' of its scenario' : '') + '</span>';
-  } else if (a.status === 'idle') {
-    uidHint = '<span class="field-hint" id="achint">The last part of the workbook\'s name, '
-      + 'and the first row of its Implementation sheet.</span>';
-  } else {
-    uidHint = '<p class="md-err dlg-uiderr" id="achint" role="alert">' + esc(a.message || UID_SHAPE) + '</p>';
-  }
-
-  /* Filled from the proposal: greyed, visibly filled, not editable. */
-  var ro = [
-    ['Primary PWA', p ? p.primaryPwa : ''],
-    ['Mandate size', p ? money(p.mandateSize) : ''],
-    ['Top account size', p ? money(p.topAccountSize) : ''],
-    ['Basis', p ? p.currency + ' · ' + p.hedging : ''],
-    ['Implementation type', p ? p.variant : ''],
-    ['Risk · allocation', p ? riskAllocationText(p) : ''],
-    ['Fees', p ? (p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees') : ''],
-    ['Switches', p ? switchesText(p) : '']
-  ];
-  var roMarkup = ro.map(function (pair, i) {
-    return '<div class="field"><label for="acro' + i + '">' + esc(pair[0]) + '</label>'
-      + '<input type="text" id="acro' + i + '" class="ro" readonly value="' + esc(pair[1]) + '"></div>';
-  }).join('');
-  var sleeves = (p && p.sleeves && p.sleeves.length)
-    ? p.sleeves.map(function (s) {
-        return '<div><span>' + esc(s.category) + '</span><span>' + esc(s.sleeve || '—')
-          + (s.revision ? '<em>r' + esc(String(s.revision)) + '</em>' : '') + '</span></div>';
-      }).join('')
-    : '<div class="none">' + (p ? 'No sleeves recorded.' : '—') + '</div>';
-
-  var fieldsMarkup = AC_FIELDS.map(function (spec) {
+  return '<div class="dlg-sect">The account</div><div class="dlg-grid">' + AC_FIELDS.map(function (spec) {
     var v = a.fields[spec.key];
+    /* the one field the card filled in says so, until the user makes it theirs */
+    var from = (spec.kind === 'money' && !a.fundingTouched && v > 0)
+      ? '<span class="ac-from" id="acfundfrom">From mandate</span>' : '';
     var label = '<label for="' + spec.id + '">' + esc(spec.label)
-      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + '</label>';
+      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + from + '</label>';
     var common = ' id="' + spec.id + '" data-acf="' + spec.key + '"'
       + (spec.required ? ' aria-required="true"' : '') + invalid(spec.id)
-      + ((editable && !busy) ? '' : ' disabled');
+      + (busy ? ' disabled' : '');
     var control;
     if (spec.kind === 'select') {
       var choices = opt('options.accountRequest.' + spec.options, []);
@@ -3176,33 +3327,7 @@ function accountFormMarkup() {
     }
     return '<div class="field' + (spec.wide ? ' wide' : '') + '">' + label + control
       + (spec.hint ? '<span class="field-hint">' + esc(spec.hint) + '</span>' : '') + '</div>';
-  }).join('');
-
-  var ready = accountReady() && !busy;
-  var uidInvalid = (errField === 'acuid' || a.status === 'notfound' || a.status === 'malformed'
-                    || a.status === 'error');
-  return '<h2 id="acTitle" class="dlg-shout">Account opening request</h2>'
-    + '<p class="dlg-sub">Open an account on the terms of a delivered proposal.</p>'
-    + '<div class="field"><label for="acuid">Proposal UID<span class="req" aria-hidden="true">•</span></label>'
-    + '<input type="text" id="acuid" autocomplete="off" spellcheck="false" autocapitalize="off"'
-    + ' aria-describedby="achint" aria-required="true" value="' + esc(a.uid) + '"'
-    + (uidInvalid ? ' aria-invalid="true"' : '') + (busy ? ' disabled' : '') + '>'
-    + uidHint + '</div>'
-    + '<div class="dlg-sect">From the proposal'
-    + (found ? '<span class="dlg-tag">filled · read only</span>' : '') + '</div>'
-    + '<div class="' + (found ? '' : 'dlg-muted') + '"><div class="dlg-grid">' + roMarkup + '</div>'
-    + '<div class="field"><label>Sleeves</label><div class="dlg-sleeves">' + sleeves + '</div></div></div>'
-    + '<div class="dlg-sect">Account details</div>'
-    + '<div class="' + (editable ? '' : 'dlg-muted') + '"><div class="dlg-grid">' + fieldsMarkup + '</div></div>'
-    + (a.err ? '<p class="md-err" id="acerr" role="alert">' + esc(a.err.msg) + '</p>' : '')
-    + '<div class="dlg-actions split">'
-    + '<span class="dlg-status' + (ready ? ' ok' : '') + '" id="acstatus" role="status">'
-    + esc(accountStatusText()) + '</span>'
-    + '<div class="dlg-grp">'
-    + '<button type="button" class="btn btn-ghost" id="accancel"' + (busy ? ' disabled' : '') + '>Cancel</button>'
-    + '<button type="button" class="btn btn-primary" id="acsubmit"' + (ready ? '' : ' disabled') + '>'
-    + (busy ? 'Working…' : 'Submit request') + '</button>'
-    + '</div></div>';
+  }).join('') + '</div>';
 }
 
 function accountReceiptMarkup() {
@@ -3245,6 +3370,8 @@ function onAccountInput(e) {
   if (spec.kind === 'money') {
     account.fields[key] = parseMoney(t.value) || null;
     account.fundingTouched = true;
+    var from = document.getElementById('acfundfrom');
+    if (from) from.remove();
   } else {
     account.fields[key] = t.value;
   }
@@ -3288,8 +3415,11 @@ async function submitAccountRequest() {
 }
 
 function copyRequestReference(button) {
-  if (!account || !account.receipt) return;
-  var text = account.receipt.requestId;
+  if (!account) return;
+  /* the receipt's reference, or the one already on the proposal (D111) */
+  var text = account.receipt ? account.receipt.requestId
+    : (account.requests.length ? account.requests[0].requestId : '');
+  if (!text) return;
   function done() {
     button.textContent = 'Copied';
     announce('polite', 'Reference ' + text + ' copied.');
@@ -3709,6 +3839,7 @@ document.addEventListener('click', function (e) {
   }
   if (e.target.id === 'acsubmit') { submitAccountRequest(); return; }
   if (e.target.id === 'accopy') { copyRequestReference(e.target); return; }
+  if (e.target.id === 'acchange') { changeProposal(); return; }
   if (e.target.dataset && e.target.dataset.scrim !== undefined) {
     if (draft && !draft.dirty) closeMandateDialog();   /* spec 7.1 dialog rules */
     else if (account && !account.dirty && !account.submitting) closeAccountDialog();
@@ -3800,6 +3931,9 @@ document.addEventListener('keydown', function (e) {
       e.preventDefault();
       if (!account.submitting) closeAccountDialog();
       return;
+    }
+    if (e.key === 'Enter' && e.target && e.target.id === 'acuid') {
+      e.preventDefault(); lookupNow(); return;
     }
     if (e.key === 'Tab') trapFocus(e, document.getElementById('accountDialog'));
     return;
@@ -6833,10 +6967,10 @@ var RULE_LABELS = { currency: 'Currency', riskLevel: 'Risk level', allocationTyp
    view, and every part of it encodes into the URL, so a view is a link. */
 var cat = {
   query: '', filters: {},            /* facet field -> [values] */
-  sort: { key: 'allIn', dir: 'asc' }, /* null = the delivery's own order */
+  sort: { key: 'productCost', dir: 'asc' }, /* null = the delivery's own order */
   hidden: [],                        /* column keys taken away by the picker */
   density: 'dense',                  /* 'dense' | 'comfortable' */
-  group: false,                      /* the rows banded by sleeve category (D100) */
+  group: true,                       /* banded by sleeve category (D100); the default since D114 */
   folded: [],                        /* the categories whose bands are shut */
   pins: [],                          /* productIds in the tray */
   cursor: null,                      /* the row the keyboard is on */
@@ -6877,14 +7011,31 @@ var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'restored', 'imp
    open record is fetched on its own, and the workbook only on click. */
 var reg = {
   query: '', exportedBy: '', primaryPwa: '', currency: '', variant: '', range: '90d',
-  entries: [], next: null, total: 0, facets: null,
+  view: 'recent',              /* the saved view in force (D116) */
+  openFilters: false,          /* the five selects, behind Filter */
+  entries: [], next: null, total: 0, facets: null, summary: null, views: null, viewsBusy: false,
   busy: false, loaded: false, error: null,
-  detail: null,                /* proposalId open below the table */
+  detail: null,                /* the proposal open in the right-hand pane */
   record: null,                /* that proposal, fetched */
   recordBusy: false,
   picture: 'implemented'       /* 'allocation' | 'implemented' */
 };
-var REG_RANGES = [['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['365d', 'Last year'], ['all', 'All time']];
+/* The saved views, in the order they are shown. Each answers a question people
+   arrive with, and carries its own count - 3 with sleeves moved is worth
+   reading before it is pressed. Pressing one replaces the filters rather than
+   adding to them, which is what keeps the counts honest (D116). */
+var REG_VIEWS = [
+  ['recent', 'Last 90 days'], ['week', 'This week'], ['mine', 'Mine'],
+  ['moved', 'Sleeves moved'], ['noAccount', 'No account yet'], ['all', 'All time']
+];
+function regApplyView(key) {
+  reg.view = key;
+  reg.exportedBy = ''; reg.primaryPwa = ''; reg.currency = ''; reg.variant = '';
+  reg.range = (key === 'week') ? '7d' : (key === 'recent') ? '90d' : 'all';
+  if (key === 'mine') reg.exportedBy = App.opt('capabilities.user', '');
+}
+var REG_RANGES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'],
+                  ['365d', 'Last year'], ['all', 'All time']];
 var regTimer = null;
 var ACT_RANGES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['all', 'All time']];
 var actTimer = null;
@@ -6899,12 +7050,14 @@ var CAT_FACETS = [
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
-  { key: 'feeGroup', label: 'Fee group' },
   { key: 'book', label: 'Book' }
 ];
 /* Every column, in order. The product column cannot be taken away; the
    rest can, and the picker remembers. num: right-aligned condensed figures.
-   derived: net yield, set apart in its head because it is computed here. */
+   derived: net yield, set apart in its head because it is computed here.
+   Product fees only (D114): a management fee depends on a proposal's
+   schedule, tier and level, and the catalogue describes products, not a
+   proposal - so no management, all-in or fee-group figure appears here. */
 var CAT_COLUMNS = [
   { key: 'ticker', label: 'Ticker' },
   { key: 'name', label: 'Product', fixed: true },
@@ -6916,14 +7069,12 @@ var CAT_COLUMNS = [
   { key: 'exposureCurrency', label: 'Ccy' },
   { key: 'liquidity', label: 'Liq' },
   { key: 'productCost', label: 'Cost', num: true },
-  { key: 'mgmt', label: 'Mgmt', num: true, tier: true },
-  { key: 'allIn', label: 'All-in', num: true },
   { key: 'distributionYield', label: 'Yield', num: true },
   { key: 'net', label: 'Net', num: true, derived: true },
   { key: 'minimumInvestment', label: 'Min', num: true },
   { key: 'used', label: 'Used', num: true }
 ];
-var CAT_NUMERIC = { productCost: 1, mgmt: 1, allIn: 1, distributionYield: 1, net: 1, minimumInvestment: 1, used: 1 };
+var CAT_NUMERIC = { productCost: 1, distributionYield: 1, net: 1, minimumInvestment: 1, used: 1 };
 var UNPLACED = 'Not yet placed';
 
 function canAdmin() { return !!App.opt('capabilities.canAdmin', false); }
@@ -6969,7 +7120,7 @@ function esc(s) { return App.esc(s == null ? '' : String(s)); }
    Pure functions over the fetched data, DOM-free so the suite can run them
    through node against fixture data the way it runs the rounding and tilt
    mirrors. A "row" here is a product enriched with its joins and its
-   figures: { p, used, categories, books, mgmt, allIn, net }. */
+   figures: { p, used, categories, books, net, tooBig }. */
 function catJoin(sleeves) {
   /* productId -> { used, categories, books } from the sleeves that hold it */
   var map = {};
@@ -6983,19 +7134,17 @@ function catJoin(sleeves) {
   });
   return map;
 }
-function catEnrich(products, sleeves, mgmtOf, mandateSize) {
+function catEnrich(products, sleeves, mandateSize) {
   var join = catJoin(sleeves);
   return (products || []).map(function (p) {
     var j = join[p.productId] || { used: 0, categories: [], books: [] };
-    var mgmt = mgmtOf ? mgmtOf(p.feeGroup) : null;
-    if (typeof mgmt !== 'number' || !isFinite(mgmt)) mgmt = null;
-    var allIn = p.productCost + (mgmt === null ? 0 : mgmt);
     var y = p.distributionYield;
+    var cost = p.productCost;
     var min = p.minimumInvestment;
     return {
       p: p, used: j.used, categories: j.categories, books: j.books,
-      mgmt: mgmt, allIn: allIn,
-      net: (typeof y === 'number') ? y - allIn : null,
+      /* the yield less the product's own cost - never a management fee (D114) */
+      net: (typeof y === 'number' && typeof cost === 'number') ? y - cost : null,
       tooBig: typeof min === 'number' && typeof mandateSize === 'number' && mandateSize > 0 && min > mandateSize
     };
   });
@@ -7007,7 +7156,7 @@ function catValuesOf(row, field) {
 }
 function catMatches(p, q) {
   if (!q) return true;
-  return [p.name, p.ticker, p.assetClass, p.vehicle, p.source, p.feeGroup]
+  return [p.name, p.ticker, p.assetClass, p.vehicle, p.source]
     .join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catPasses(row, state, except) {
@@ -7054,7 +7203,7 @@ function catFacets(rows, facets, state, orders) {
   return out;
 }
 function catSortValue(row, key) {
-  if (key === 'used' || key === 'mgmt' || key === 'allIn' || key === 'net') return row[key];
+  if (key === 'used' || key === 'net') return row[key];
   if (key === 'productCost' || key === 'distributionYield' || key === 'minimumInvestment') return row.p[key];
   return String(row.p[key] || '').toLowerCase();
 }
@@ -7074,7 +7223,7 @@ function catSort(rows, sort) {
 }
 function catBest(pinned) {
   /* per figure, which pinned product is best: lowest cost, highest yield */
-  var rules = { productCost: -1, mgmt: -1, allIn: -1, distributionYield: 1, net: 1 };
+  var rules = { productCost: -1, distributionYield: 1, net: 1 };
   var best = {};
   Object.keys(rules).forEach(function (key) {
     var winner = null, value = null;
@@ -7089,7 +7238,7 @@ function catBest(pinned) {
 }
 function catGroups(rows, order, chosen) {
   /* the rows banded by sleeve category (D100), the bands in the order given
-     and each saying what it holds: how many, the all-in range, how many are
+     and each saying what it holds: how many, the product-cost range, how many are
      not dealt daily. The rows keep the order they came in, so a sort applies
      within a band. Category is a join: a product two categories hold stands
      in both bands, and with a category filter in force only the chosen
@@ -7103,9 +7252,10 @@ function catGroups(rows, order, chosen) {
       var g = index[key];
       if (!g) { g = index[key] = { key: key, rows: [], lo: null, hi: null, notDaily: 0 }; out.push(g); }
       g.rows.push(row);
-      if (typeof row.allIn === 'number' && isFinite(row.allIn)) {
-        if (g.lo === null || row.allIn < g.lo) g.lo = row.allIn;
-        if (g.hi === null || row.allIn > g.hi) g.hi = row.allIn;
+      var cost = row.p.productCost;
+      if (typeof cost === 'number' && isFinite(cost)) {
+        if (g.lo === null || cost < g.lo) g.lo = cost;
+        if (g.hi === null || cost > g.hi) g.hi = cost;
       }
       var liquidity = String(row.p.liquidity || '').toLowerCase();
       if (liquidity && liquidity !== 'daily') g.notDaily += 1;
@@ -7120,10 +7270,8 @@ function catGroups(rows, order, chosen) {
 var catRowCache = null;
 function catRows() {
   if (!catRowCache) {
-    var priced = App.feeSchedule && App.feeSchedule() && App.managementFee;
     var mandate = (typeof App.mandateSize === 'function') ? App.mandateSize() : null;
     catRowCache = catEnrich(repo.data.products, repo.data.sleeves,
-                            priced ? App.managementFee : null,
                             typeof mandate === 'number' ? mandate : null);
   }
   return catRowCache;
@@ -7256,13 +7404,11 @@ function catHash() {
     if (cat.filters[f] && cat.filters[f].length) q.set('f.' + f, cat.filters[f].join('|'));
   });
   if (!cat.sort) q.set('sort', 'none');
-  else if (!(cat.sort.key === 'allIn' && cat.sort.dir === 'asc')) q.set('sort', cat.sort.key + ':' + cat.sort.dir);
+  else if (!(cat.sort.key === 'productCost' && cat.sort.dir === 'asc')) q.set('sort', cat.sort.key + ':' + cat.sort.dir);
   if (cat.hidden.length) q.set('hide', cat.hidden.join(','));
   if (cat.density !== 'dense') q.set('d', cat.density);
-  if (cat.group) {
-    q.set('group', 'category');
-    if (cat.folded.length) q.set('fold', cat.folded.join('|'));
-  }
+  if (!cat.group) q.set('group', 'flat');
+  else if (cat.folded.length) q.set('fold', cat.folded.join('|'));
   if (cat.pins.length) q.set('pins', cat.pins.join(','));
   if (cat.compare) q.set('cmp', '1');
   var str = q.toString();
@@ -7276,11 +7422,17 @@ function catFromHash(hash) {
   cat.filters = {};
   q.forEach(function (v, k) { if (k.indexOf('f.') === 0 && v) cat.filters[k.slice(2)] = v.split('|'); });
   var sort = q.get('sort');
+  var known = function (key) { return CAT_COLUMNS.some(function (c) { return c.key === key; }); };
+  cat.sort = { key: 'productCost', dir: 'asc' };
   if (sort === 'none') cat.sort = null;
-  else if (sort && sort.indexOf(':') !== -1) cat.sort = { key: sort.split(':')[0], dir: sort.split(':')[1] === 'desc' ? 'desc' : 'asc' };
-  cat.hidden = (q.get('hide') || '').split(',').filter(Boolean);
+  /* a link saved before D114 may sort by a column that is gone (all-in,
+     management): it falls back to the default rather than to nothing */
+  else if (sort && sort.indexOf(':') !== -1 && known(sort.split(':')[0])) {
+    cat.sort = { key: sort.split(':')[0], dir: sort.split(':')[1] === 'desc' ? 'desc' : 'asc' };
+  }
+  cat.hidden = (q.get('hide') || '').split(',').filter(known);
   cat.density = q.get('d') === 'comfortable' ? 'comfortable' : 'dense';
-  cat.group = q.get('group') === 'category';
+  cat.group = q.get('group') !== 'flat';          /* banded unless the link says flat (D114) */
   cat.folded = cat.group ? (q.get('fold') || '').split('|').filter(Boolean) : [];
   cat.pins = (q.get('pins') || '').split(',').filter(Boolean);
   cat.compare = q.get('cmp') === '1';
@@ -7332,6 +7484,7 @@ function regHash() {
   if (reg.primaryPwa) q.set('pwa', reg.primaryPwa);
   if (reg.currency) q.set('ccy', reg.currency);
   if (reg.variant) q.set('book', reg.variant);
+  if (reg.view !== 'recent') q.set('view', reg.view);
   if (reg.range !== '90d') q.set('range', reg.range);
   if (reg.detail) { q.set('open', reg.detail); if (reg.picture !== 'implemented') q.set('pic', reg.picture); }
   var str = q.toString();
@@ -7345,6 +7498,8 @@ function regFromHash(hash) {
   reg.primaryPwa = q.get('pwa') || '';
   reg.currency = q.get('ccy') || '';
   reg.variant = q.get('book') || '';
+  var view = q.get('view');
+  reg.view = REG_VIEWS.some(function (v) { return v[0] === view; }) ? view : 'recent';
   var range = q.get('range');
   reg.range = REG_RANGES.some(function (r) { return r[0] === range; }) ? range : '90d';
   reg.detail = q.get('open') || null;
@@ -8727,6 +8882,8 @@ function regParams(before) {
     var days = parseInt(reg.range, 10) || 90;
     q.set('since', new Date(Date.now() - days * 86400000).toISOString().slice(0, 10));
   }
+  if (reg.view === 'moved') q.set('moved', '1');
+  if (reg.view === 'noAccount') q.set('noAccount', '1');
   q.set('limit', '60');
   if (before) q.set('before', before);
   return q.toString();
@@ -8742,10 +8899,24 @@ async function loadRegister(reset) {
     if (!r.ok) throw new Error(r.body.error || ('Could not read the register (' + r.status + ')'));
     reg.entries = reset ? r.body.entries : reg.entries.concat(r.body.entries);
     reg.next = r.body.next; reg.total = r.body.total; reg.facets = r.body.facets;
+    reg.summary = r.body.summary || null;
     reg.loaded = true;
+    loadRegisterViews();
   } catch (err) { reg.error = err.message; }
   reg.busy = false; render();
 }
+/* The view counts are over the whole register, so they do not move with the
+   filters and are read once per session rather than once per page. */
+async function loadRegisterViews() {
+  if (reg.views || reg.viewsBusy) return;
+  reg.viewsBusy = true;
+  try {
+    var r = await api('GET', '/scenario/repository/proposals/views');
+    if (r && r.ok) { reg.views = r.body.views; render(); }
+  } catch (err) { /* the chips simply go countless */ }
+  reg.viewsBusy = false;
+}
+
 async function loadProposal(proposalId) {
   reg.recordBusy = true; render();
   try {
@@ -8790,60 +8961,147 @@ function mark(currency) {
 function money(n, currency) {
   if (typeof n !== 'number') return '\u2014';
   var m = mark(currency);
+  /* There was nothing above m, so a 5e14 mandate - a real row - printed as
+     $500000000.0m, wider than its column and read as nothing at all (D116). */
+  if (n >= 1e12) return m + (Math.round(n / 1e11) / 10).toFixed(1) + 'tn';
+  if (n >= 1e9) return m + (Math.round(n / 1e8) / 10).toFixed(1) + 'bn';
   if (n >= 1e6) return m + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
   if (n >= 1e3) return m + Math.round(n / 1e3) + 'k';
   return m + Math.round(n);
 }
-function regToolbarHtml() {
-  return '<div class="cat-tools reg-tools">'
-    + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
-    + '<input type="search" id="regSearch" placeholder="Search PWA, person, sleeve or portfolio…" value="' + esc(reg.query) + '"'
-    + ' aria-label="Search the register"><kbd aria-hidden="true">/</kbd></label>'
-    + regSelect('regwho', 'By', regFacetOptions('exportedBy', reg.exportedBy, 'Anyone'), reg.exportedBy)
-    + regSelect('regpwa', 'PWA', regFacetOptions('primaryPwa', reg.primaryPwa, 'Any PWA'), reg.primaryPwa)
-    + regSelect('regccy', 'Currency', regFacetOptions('currency', reg.currency, 'Any'), reg.currency)
-    + regSelect('regbook', 'Book', regFacetOptions('variant', reg.variant, 'All books'), reg.variant)
-    + regSelect('regrange', 'When', REG_RANGES, reg.range)
-    + (regFiltersInForce() ? '<button type="button" class="cat-clear" data-regclear>Clear</button>' : '')
-    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/proposals.csv?' + regParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
+function regViewsHtml() {
+  var counts = reg.views || {};
+  return '<div class="reg-views" role="tablist" aria-label="Saved views">'
+    + REG_VIEWS.map(function (v) {
+        var on = reg.view === v[0];
+        var n = counts[v[0]];
+        return '<button type="button" role="tab" class="reg-view' + (on ? ' on' : '') + '"'
+          + ' data-regview="' + v[0] + '" aria-selected="' + on + '">' + esc(v[1])
+          + (typeof n === 'number' ? '<b>' + n + '</b>' : '') + '</button>';
+      }).join('')
     + '</div>';
 }
+
+/* What the rows in force come to (D116). The register could answer a question
+   about a row and none about a set; this is the set, and mandate is totalled
+   per currency because adding across them would be a lie (D1). */
+function regSummaryHtml() {
+  var sm = reg.summary;
+  if (!sm || !reg.loaded) return '';
+  var totals = (sm.totals || []).map(function (t) { return money(t.total, t.currency); }).join(' \u00b7 ');
+  var span = sm.earliest
+    ? shortDate(sm.earliest) + (sm.latest && sm.latest.slice(0, 10) !== sm.earliest.slice(0, 10)
+        ? ' \u2013 ' + shortDate(sm.latest) : '')
+    : '\u2014';
+  var cells = [
+    ['Proposals', String(sm.proposals)],
+    ['Mandate', totals || '\u2014'],
+    [sm.pwas === 1 ? 'PWA' : 'PWAs', String(sm.pwas)],
+    ['Span', span]
+  ];
+  return '<dl class="reg-stat">' + cells.map(function (c) {
+    return '<div><dt>' + esc(c[0]) + '</dt><dd>' + esc(c[1]) + '</dd></div>';
+  }).join('') + '</dl>';
+}
+
+function regToolbarHtml() {
+  var filtered = !!(reg.exportedBy || reg.primaryPwa || reg.currency || reg.variant);
+  return regViewsHtml()
+    + '<div class="cat-tools reg-tools">'
+    + '<label class="cat-search"><span aria-hidden="true">\u2315</span>'
+    + '<input type="search" id="regSearch" placeholder="Search UID, PWA, person, sleeve\u2026" value="' + esc(reg.query) + '"'
+    + ' aria-label="Search the register"><kbd aria-hidden="true">/</kbd></label>'
+    /* the five selects are the long tail of asking, so they fold away behind
+       one control and the saved views take the front (D116) */
+    + '<button type="button" class="cat-chip' + (filtered || reg.openFilters ? ' on' : '') + '" data-regfilters'
+    + ' aria-expanded="' + reg.openFilters + '">Filter'
+    + (filtered ? ' <b>' + [reg.exportedBy, reg.primaryPwa, reg.currency, reg.variant].filter(Boolean).length + '</b>' : '')
+    + ' <span class="car">\u25be</span></button>'
+    + (regFiltersInForce() ? '<button type="button" class="cat-clear" data-regclear>Clear</button>' : '')
+    + '<span class="spacer"></span>'
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/proposals.csv?' + regParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
+    + '</div>'
+    + (reg.openFilters
+        ? '<div class="cat-tools reg-filters" id="regFilters">'
+          + regSelect('regwho', 'By', regFacetOptions('exportedBy', reg.exportedBy, 'Anyone'), reg.exportedBy)
+          + regSelect('regpwa', 'PWA', regFacetOptions('primaryPwa', reg.primaryPwa, 'Any PWA'), reg.primaryPwa)
+          + regSelect('regccy', 'Currency', regFacetOptions('currency', reg.currency, 'Any'), reg.currency)
+          + regSelect('regbook', 'Book', regFacetOptions('variant', reg.variant, 'All books'), reg.variant)
+          + regSelect('regrange', 'When', REG_RANGES, reg.range)
+          + '</div>'
+        : '')
+    + regSummaryHtml();
+}
+
 /* Exported and By are one cell (D3): on a real register both repeat - one
    desk, a handful of PWAs - and giving two identity columns the same weight
    as the portfolio and the price spent the width on what varies least. */
 function regHeadHtml() {
   return '<tr><th>Exported</th><th>Primary PWA</th><th class="num">Mandate</th>'
-    + '<th>Basis</th><th>Book</th><th>Proposal portfolio</th><th>Pricing</th><th></th></tr>';
+    + '<th>Proposal UID</th><th>Since</th></tr>';
 }
 function regBodyHtml() {
-  if (!reg.loaded && reg.busy) return '<tr><td colspan="8" class="cat-empty">Reading the register…</td></tr>';
-  if (reg.error && !reg.entries.length) return '<tr><td colspan="8" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
+  if (!reg.loaded && reg.busy) return '<tr><td colspan="5" class="cat-empty">Reading the register\u2026</td></tr>';
+  if (reg.error && !reg.entries.length) return '<tr><td colspan="5" class="cat-empty md-err">' + esc(reg.error) + '</td></tr>';
   if (!reg.entries.length) {
-    return '<tr><td colspan="8" class="cat-empty">No proposal on record'
-      + (reg.range !== 'all' ? ' in the ' + esc(REG_RANGES.filter(function (r) { return r[0] === reg.range; })[0][1].toLowerCase()) : '')
-      + ' with the filters in force.'
+    var view = REG_VIEWS.filter(function (v) { return v[0] === reg.view; })[0];
+    return '<tr><td colspan="5" class="cat-empty">No proposal on record'
+      + (view ? ' under \u201c' + esc(view[1]) + '\u201d' : '')
+      + (regFiltersInForce() ? ' with the filters in force.' : '.')
       + (regFiltersInForce() ? ' <button type="button" class="cat-clear" data-regclear>Clear the filters</button>' : '')
       + '</td></tr>';
   }
   return reg.entries.map(function (e) {
     var when = e.exportedAt ? shortDate(e.exportedAt) + ' ' + e.exportedAt.slice(11, 16) : '';
-    var pricing = e.includeFees ? esc((e.feeSchedule || '') + (e.feeLevel ? ' · ' + e.feeLevel.replace(/^PMG |^Management /, '') : '')) : '<span class="mut">no fees</span>';
-    var flags = [];
-    if (e.sequence > 1) flags.push('<span class="arc-badge acc">#' + e.sequence + '</span>');
-    if (e.tacticalTilt) flags.push('<span class="arc-badge mute">tilt</span>');
+    /* what has happened to this proposal since it was delivered - the two
+       things that were readable only inside the record (D116) */
+    var since = [];
+    if (e.moved) {
+      since.push('<span class="arc-badge warn" title="The library has moved on since this proposal">'
+        + e.moved + ' moved</span>');
+    }
+    if (e.accountRequested) since.push('<span class="arc-badge ok" title="An account opening request exists">account</span>');
+    if (e.sequence > 1) since.push('<span class="arc-badge acc" title="The ' + e.sequence + 'th proposal of its scenario">#' + e.sequence + '</span>');
+    if (e.tacticalTilt) since.push('<span class="arc-badge mute">tilt</span>');
+    var name = String(e.primaryPwa || '');
+    var dash = name.indexOf('\u2014');
     return '<tr data-regrow="' + esc(e.proposalId) + '" class="' + (reg.detail === e.proposalId ? 'on' : '') + '" aria-selected="' + (reg.detail === e.proposalId) + '">'
-      + '<td class="reg-when">' + esc(when)
-      + '<small>' + esc(e.exportedBy) + '</small></td>'
-      + '<td class="reg-pwa"><b>' + esc(e.primaryPwa) + '</b></td>'
-      + '<td class="num">' + money(e.mandateSize, e.currency) + '</td>'
-      + '<td>' + esc(e.currency) + ' · ' + esc(e.hedging) + '</td>'
-      + '<td>' + esc(e.variant) + '</td>'
-      + '<td>' + esc((e.baseKey || '').split('|').slice(1, 3).join(' ')) + '</td>'
-      + '<td>' + pricing + '</td>'
-      + '<td class="arc-status">' + flags.join(' ') + '</td>'
+      + '<td class="reg-when">' + esc(when) + '<small>' + esc(e.exportedBy) + '</small></td>'
+      + '<td class="reg-pwa"><b>' + esc(dash === -1 ? name : name.slice(0, dash).trim()) + '</b>'
+      + (dash === -1 ? '' : '<small>' + esc(name.slice(dash + 1).trim()) + '</small>') + '</td>'
+      + '<td class="num reg-size">' + money(e.mandateSize, e.currency)
+      + '<small>' + esc(e.currency + ' \u00b7 ' + e.hedging) + '</small></td>'
+      /* the id everything else quotes, and one click to have it (D116) */
+      + '<td><button type="button" class="reg-uid" data-reguid="' + esc(e.proposalId) + '"'
+      + ' title="Copy the Proposal UID">' + esc(e.proposalId) + '</button></td>'
+      + '<td class="arc-status">' + since.join(' ') + '</td>'
       + '</tr>';
   }).join('');
 }
+/* The UID is what the workbook's name, cell B1 and every account opening
+   request quote, so the register hands it over rather than making it text to
+   select by hand (D116). */
+function copyProposalUid(button, uid) {
+  function done() {
+    button.classList.add('copied');
+    App.announce('polite', 'Proposal UID ' + uid + ' copied.');
+    window.setTimeout(function () {
+      if (button.isConnected) button.classList.remove('copied');
+    }, 1400);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(uid).then(done, function () { /* nothing to do */ });
+    return;
+  }
+  var area = document.createElement('textarea');
+  area.value = uid; area.setAttribute('readonly', '');
+  area.style.position = 'fixed'; area.style.opacity = '0';
+  document.body.appendChild(area); area.select();
+  try { document.execCommand('copy'); } catch (err) { /* nothing to do */ }
+  area.remove();
+  done();
+}
+
 function regPinBadge(pin) {
   if (pin.sleeveId == null || pin.revision == null) return '';
   if (pin.archived) return ' <span class="arc-badge gone" title="This sleeve has since been archived">r' + pin.revision + ' · archived</span>';
@@ -8899,12 +9157,15 @@ function regDetailHtml() {
   var moved = pins.filter(function (p) { return p.moved || p.archived; }).length;
   return '<div class="arc-detail reg-detail" id="regDetail">'
     + '<div class="arc-dh"><div>'
-    + '<h3>' + esc(r.primaryPwa) + ' \u00b7 ' + money(r.mandateSize, r.currency) + '</h3>'
-    + '<p>' + esc(r.currency) + ' · ' + esc(r.hedging) + ' · ' + esc(r.variant)
+    + '<h3>' + esc(r.primaryPwa) + '</h3>'
+    + '<p><b>' + money(r.mandateSize, r.currency) + '</b> · ' + esc(r.currency) + ' · ' + esc(r.hedging)
     + ' · ' + esc((r.baseKey || '').split('|').slice(1, 3).join(' '))
-    + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '')
+    + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '') + '</p>'
+    + '<p>' + esc(r.variant)
     + (r.includeFees ? ' · ' + esc((r.feeSchedule || '') + ' ' + (r.feeLevel || '')) : ' · no fees') + '</p>'
-    + '<p class="repo-prov">' + esc(r.proposalId) + ' · exported ' + esc(shortDate(r.exportedAt)) + ' ' + esc((r.exportedAt || '').slice(11, 16))
+    + '<p class="repo-prov"><button type="button" class="reg-uid" data-reguid="' + esc(r.proposalId)
+    + '" title="Copy the Proposal UID">' + esc(r.proposalId) + '</button>'
+    + ' · exported ' + esc(shortDate(r.exportedAt)) + ' ' + esc((r.exportedAt || '').slice(11, 16))
     + ' by ' + esc(r.exportedBy) + (r.createdBy && r.createdBy !== r.exportedBy ? ' · started by ' + esc(r.createdBy) : '')
     + ' · workbook ' + Math.round(r.workbookBytes / 1024) + ' KB · sha ' + esc((r.workbookSha || '').slice(0, 8)) + '…'
     + (moved ? ' · <b class="warn">' + moved + ' sleeve' + (moved === 1 ? '' : 's') + ' moved since</b>' : '') + '</p>'
@@ -8919,15 +9180,21 @@ function regDetailHtml() {
     + '<div class="reg-pic-wrap">' + (reg.picture === 'allocation' ? regAllocationHtml(r) : regImplementedHtml(r)) + '</div>'
     + '</div>';
 }
+/* The record moved out of a drawer along the foot and into a pane beside the
+   list (D116). The drawer took up to 52% of the card's height, so reading one
+   proposal halved the list you were reading it from; the pane costs no rows,
+   and arrowing down the list with it open turns the register into something
+   that can be read through. Below 1100px the CSS drops it back under the
+   table, where it is the only thing that fits. */
 function registerViewHtml() {
   return regToolbarHtml()
-    + '<div class="arc-b">'
-    + '<div class="cat-tblwrap arc-tblwrap" tabindex="0" aria-label="Proposal register, scrolls">'
+    + '<div class="arc-b reg-b' + (reg.detail ? ' open' : '') + '">'
+    + '<div class="cat-tblwrap arc-tblwrap reg-list" tabindex="0" aria-label="Proposal register, scrolls">'
     + '<table class="cat-tbl dense arc-tbl reg-tbl"><thead>' + regHeadHtml() + '</thead>'
     + '<tbody id="regBody">' + regBodyHtml()
-    + (reg.next ? '<tr><td colspan="8" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
+    + (reg.next ? '<tr><td colspan="5" class="act-more"><button type="button" class="btn" data-regmore' + (reg.busy ? ' disabled' : '') + '>' + (reg.busy ? 'Reading…' : 'Earlier proposals') + '</button></td></tr>' : '')
     + '</tbody></table></div>'
-    + regDetailHtml()
+    + (reg.detail ? '<div class="reg-pane">' + regDetailHtml() + '</div>' : '')
     + '</div>';
 }
 function regFooterHtml() {
@@ -8995,12 +9262,6 @@ function catMoney(n) {
   return '$' + Math.round(n);
 }
 function catFigure(v, dp) { return (typeof v === 'number' && isFinite(v)) ? v.toFixed(dp) : '—'; }
-function catTierId() { var t = App.opt('fees.tier', null); return t ? t.id : null; }
-function catPricedLabel() {
-  var tier = catTierId(), schedule = App.feeSchedule && App.feeSchedule();
-  if (!tier || !schedule) return null;
-  return schedule + ' · ' + (App.feeLevel ? App.feeLevel() : '') + ' · ' + tier;
-}
 function liqClass(v) {
   if (!v) return '';
   var s = String(v).toLowerCase();
@@ -9021,13 +9282,11 @@ function liqClass(v) {
    it is on screen, with the columns that are on screen.
 
    Excel decides a field's type from the text, so a ticker like SEP1 must not
-   arrive as a date: every text field is quoted, and the reader is told what
-   the figures are priced at rather than left to guess. */
+   arrive as a date: every text field is quoted. The figures are the products'
+   own; nothing in the file depends on a proposal's fees (D114). */
 function catCsvCell(row, c) {
   var p = row.p;
   switch (c.key) {
-    case 'mgmt': return row.mgmt === null ? '' : row.mgmt.toFixed(2);
-    case 'allIn': return (typeof row.allIn === 'number') ? row.allIn.toFixed(2) : '';
     case 'net': return row.net === null ? '' : row.net.toFixed(2);
     case 'used': return String(row.used);
     case 'productCost': case 'distributionYield':
@@ -9092,8 +9351,8 @@ function catToolbarHtml() {
     + '</div>'
     /* one ranked list, or the same rows banded by sleeve category (D100) */
     + '<div class="repo-seg cat-density" role="tablist" aria-label="Rows">'
-    + '<button type="button" role="tab" id="catFlat" data-catgroup="flat" aria-selected="' + !cat.group + '">Flat</button>'
     + '<button type="button" role="tab" id="catByCategory" data-catgroup="category" aria-selected="' + cat.group + '">By category</button>'
+    + '<button type="button" role="tab" id="catFlat" data-catgroup="flat" aria-selected="' + !cat.group + '">Flat</button>'
     + '</div>'
     + '<span id="catFoldAll">' + catFoldAllHtml() + '</span>'
     + '<span class="cat-chipwrap">'
@@ -9104,7 +9363,7 @@ function catToolbarHtml() {
           + CAT_COLUMNS.map(function (c) {
               return '<label class="cat-opt' + (c.fixed ? ' fixed' : '') + '"><input type="checkbox" data-catcol="' + c.key + '"'
                 + (cat.hidden.indexOf(c.key) === -1 ? ' checked' : '') + (c.fixed ? ' disabled' : '') + '> <span>' + esc(c.label)
-                + (c.tier ? ' @ tier' : '') + (c.derived ? ' (derived)' : '') + '</span></label>';
+                + (c.derived ? ' (derived)' : '') + '</span></label>';
             }).join('')
           + (cat.hidden.length ? '<button type="button" class="cat-clear" data-catshowall>Show all</button>' : '')
           + '</div>' : '')
@@ -9126,11 +9385,9 @@ function catFoldAllHtml() {
 
 function catCountText() {
   var n = catVisible().length, all = repo.data.products.length;
-  var priced = catPricedLabel();
   return (n === all ? all + ' products' : 'Showing ' + n + ' of ' + all)
     + (cat.sort ? ' · sorted by ' + esc(catColumnLabel(cat.sort.key)) + (cat.sort.dir === 'desc' ? ' ↓' : ' ↑')
         + (cat.group ? ' within category' : '') : '')
-    + (priced ? ' · priced ' + esc(priced) : ' · unpriced — no mandate open')
     + (catFiltersInForce() ? ' · <button type="button" class="cat-clear" data-catclearall>Clear</button>' : '');
 }
 function catColumnLabel(key) {
@@ -9164,14 +9421,13 @@ function catFacetsHtml() {
    whole height, a header shows it can sort before it has, and every row ends
    in a cell that says it opens. */
 function catHeadHtml() {
-  var tier = catTierId();
   return '<tr><th class="pinc"></th>' + catColumns().map(function (c) {
     var sorted = cat.sort && cat.sort.key === c.key;
     var cls = (c.num ? 'num' : '') + (sorted ? ' srt' : '');
     return '<th' + (cls ? ' class="' + cls.trim() + '"' : '') + ' aria-sort="' + (sorted ? (cat.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
       + '<button type="button" class="cat-sort' + (sorted ? ' on' : '') + (c.derived ? ' drv' : '') + '" data-catsort="' + c.key + '"'
-      + (c.derived ? ' title="Derived: distribution yield less all-in cost"' : '') + '><span class="lb">' + esc(c.label)
-      + (c.tier ? '<small>' + (tier ? '@' + esc(tier) : 'no tier') + '</small>' : '') + '</span>'
+      + (c.derived ? ' title="Derived: distribution yield less product cost"' : '') + '><span class="lb">' + esc(c.label)
+      + '</span>'
       + (sorted ? (cat.sort.dir === 'desc' ? ' ▼' : ' ▲') : '') + '</button></th>';
   }).join('') + '<th class="go"></th></tr>';
 }
@@ -9188,8 +9444,6 @@ function catCellHtml(row, c, sorted) {
     case 'vehicle': return td('', '<span class="veh">' + esc(p.vehicle) + '</span>');
     case 'liquidity': return td('', '<span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span>');
     case 'productCost': return td('num', catFigure(p.productCost, 2));
-    case 'mgmt': return td('num mute', catFigure(row.mgmt, 2));
-    case 'allIn': return td('num', '<b>' + catFigure(row.allIn, 2) + '</b>');
     case 'distributionYield': return td('num', catFigure(p.distributionYield, 2));
     case 'net': return td('num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')),
       row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2));
@@ -9207,7 +9461,7 @@ function catBandHtml(g, span) {
     + '<button type="button" class="cat-fold"' + (at === -1 ? '' : ' id="catFold' + at + '"') + ' aria-expanded="' + !shut + '">'
     + '<span class="car" aria-hidden="true">▾</span><b>' + esc(g.key) + '</b>'
     + '<span class="n">' + n + ' product' + (n === 1 ? '' : 's') + '</span>'
-    + (g.lo === null ? '' : '<span class="rng">all-in ' + catFigure(g.lo, 2) + (g.hi > g.lo ? '–' + catFigure(g.hi, 2) : '') + '</span>')
+    + (g.lo === null ? '' : '<span class="rng">cost ' + catFigure(g.lo, 2) + (g.hi > g.lo ? '–' + catFigure(g.hi, 2) : '') + '</span>')
     + (g.notDaily ? '<span class="cst">' + g.notDaily + ' not daily</span>' : '')
     + '</button></th></tr>';
 }
@@ -9264,7 +9518,6 @@ function catCompareHtml() {
   var pinned = cat.pins.map(catRow).filter(Boolean);
   if (!pinned.length) return '<div class="cat-cmp-empty"><p>Pin two or more products to compare them.</p></div>';
   var best = catBest(pinned);
-  var tier = catTierId();
   var cell = function (row, key, text, cls) {
     return '<td class="' + (cls || '') + (best[key] === row.p.productId ? ' best' : '') + '">' + text + '</td>';
   };
@@ -9286,18 +9539,15 @@ function catCompareHtml() {
     + line('Liquidity', function (r) { return '<span class="liq' + liqClass(r.p.liquidity) + '">' + esc(r.p.liquidity) + '</span>'; })
     + line('Minimum investment', function (r) { return esc(catMoney(r.p.minimumInvestment)); })
     + section('Cost · % p.a.')
-    + line('Product cost', function (r) { return catFigure(r.p.productCost, 2); }, 'productCost')
-    + line('Fee group', function (r) { return esc(r.p.feeGroup); })
-    + line('Management' + (tier ? ' @ ' + esc(tier) : ''), function (r) { return catFigure(r.mgmt, 2); }, 'mgmt')
-    + line('All-in', function (r) { return '<b>' + catFigure(r.allIn, 2) + '</b>'; }, 'allIn')
+    + line('<b>Product cost</b>', function (r) { return '<b>' + catFigure(r.p.productCost, 2) + '</b>'; }, 'productCost')
     + section('Yield · % p.a.')
     + line('Distribution yield', function (r) { return catFigure(r.p.distributionYield, 2); }, 'distributionYield')
-    + line('<em>Net of all-in</em>', function (r) { return r.net === null ? '—' : (r.net >= 0 ? '+' : '−') + Math.abs(r.net).toFixed(2); }, 'net')
+    + line('<em>Net of product cost</em>', function (r) { return r.net === null ? '—' : (r.net >= 0 ? '+' : '−') + Math.abs(r.net).toFixed(2); }, 'net')
     + section('Placement')
     + line('Offered in', function (r) { return r.books.length ? r.books.length + ' book' + (r.books.length === 1 ? '' : 's') : '—'; })
     + line('Used in sleeves', function (r) { return String(r.used); })
     + '</tbody></table>'
-    + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row. Management and all-in price at the open proposal’s schedule, tier and level; without one they read as product cost.</p>'
+    + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row. Product fees only: management fees belong to a proposal, not to the catalogue.</p>'
     + '</div>';
 }
 
@@ -9316,19 +9566,17 @@ function catDetailHtml() {
     + '<h4>' + esc(p.name) + '</h4>'
     + '<span class="tk">' + esc(p.ticker) + ' · ' + esc(p.assetClass) + ' · ' + esc(p.productId) + '</span>'
     + '<div class="cat-mg">'
-    + '<div class="m"><small>Cost</small><b>' + catFigure(p.productCost, 2) + '</b></div>'
-    + '<div class="m"><small>All-in' + (catTierId() ? ' @ ' + esc(catTierId()) : '') + '</small><b>' + catFigure(row.allIn, 2) + '</b></div>'
+    + '<div class="m"><small>Product cost</small><b>' + catFigure(p.productCost, 2) + '</b></div>'
     + '<div class="m"><small>Yield</small><b>' + catFigure(p.distributionYield, 2) + '</b></div>'
+    + '<div class="m"><small>Net</small><b>' + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</b></div>'
     + '</div>'
     + '<dl class="cat-dl">'
     + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
     + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
     + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
-    + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd></dl>'
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
-    + '<div class="acts"><button type="button" class="btn" data-catpin="' + esc(p.productId) + '">' + (cat.pins.indexOf(p.productId) !== -1 ? 'Unpin' : 'Pin to compare') + '</button>'
-    + '<button type="button" class="btn" data-catfee="' + esc(p.feeGroup) + '">Fee card · ' + esc(p.feeGroup) + '</button></div>'
+    + '<div class="acts"><button type="button" class="btn" data-catpin="' + esc(p.productId) + '">' + (cat.pins.indexOf(p.productId) !== -1 ? 'Unpin' : 'Pin to compare') + '</button></div>'
     + '</div>';
 }
 
@@ -9637,7 +9885,8 @@ function render() {
     + body + '</div>';
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
-    + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
+    + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '')
+    + (!onCatalogue && !onArchive && !onActivity && !onRegister ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
   keepDraft();                  /* the local copy follows the draft (F1) */
@@ -9794,7 +10043,7 @@ function renderEntryLinks() {
   }
 }
 
-/* The fee card can be opened from the catalogue's drawer, above this dialog.
+/* The fee card, if something opens it above this dialog.
    Closing it releases the page's inert state, which this dialog still needs;
    watching the card's host puts it back. */
 (function watchFeeDialog() {
@@ -9803,7 +10052,6 @@ function renderEntryLinks() {
   new MutationObserver(function () {
     if (feeHost.hidden && repo.open) {
       App.setBackgroundInert(true);
-      var back = document.querySelector('[data-catfee]'); if (back) back.focus();
     }
   }).observe(feeHost, { attributes: true, attributeFilter: ['hidden'] });
 })();
@@ -9831,12 +10079,13 @@ document.addEventListener('click', function (e) {
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
-    + '[data-catrow],[data-catopen],[data-catfee],[data-catgroup],[data-catfold],[data-catfoldall],'
+    + '[data-catrow],[data-catopen],[data-catgroup],[data-catfold],[data-catfoldall],'
     + '[data-repocreate],[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
     + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
-    + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose]') : null;
+    + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose],'
+    + '[data-regview],[data-regfilters],[data-reguid]') : null;
   if (!el) {
     /* a click anywhere else closes an open picker, chip menu or context menu */
     if (repo.picker && !e.target.closest('.repo-menu, #repoSearch')) closePicker();
@@ -9921,9 +10170,17 @@ document.addEventListener('click', function (e) {
     if (!same) loadProposal(ds.regrow); else render();
     return;
   }
-  if (ds.regdetailclose !== undefined) { reg.detail = null; render(); return; }
+  if (ds.regdetailclose !== undefined) { reg.detail = null; syncHash(); render(); return; }
+  if (ds.regview !== undefined) {
+    if (reg.view !== ds.regview) { regApplyView(ds.regview); syncHash(); loadRegister(true); }
+    return;
+  }
+  if (ds.regfilters !== undefined) { reg.openFilters = !reg.openFilters; render(); return; }
+  if (ds.reguid !== undefined) { copyProposalUid(e.target, ds.reguid); return; }
   if (ds.regpic !== undefined) { reg.picture = ds.regpic === 'allocation' ? 'allocation' : 'implemented'; render(); return; }
-  if (ds.regclear !== undefined) { reg.query = ''; reg.exportedBy = ''; reg.primaryPwa = ''; reg.currency = ''; reg.variant = ''; reg.range = '90d'; loadRegister(true); return; }
+  if (ds.regclear !== undefined) {
+    reg.query = ''; regApplyView('recent'); syncHash(); loadRegister(true); return;
+  }
   if (ds.regmore !== undefined) { loadRegister(false); return; }
   if (ds.repoadd !== undefined) { addRow(); return; }
   if (ds.reporm !== undefined) { removeRow(parseInt(ds.reporm, 10)); return; }
@@ -9976,7 +10233,6 @@ document.addEventListener('click', function (e) {
     cat.detail = cat.detail === ds.catrow ? null : ds.catrow;
     render(); return;
   }
-  if (ds.catfee !== undefined) { if (App.openFeePanel) App.openFeePanel(ds.catfee); return; }
 });
 
 /* a chip's boxes: change, not click, so the state read is the state the

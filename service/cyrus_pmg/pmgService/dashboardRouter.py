@@ -462,23 +462,35 @@ def _registerFilters(exportedBy: str = '', primaryPwa: str = '', currency: str =
 @router.get('/scenario/repository/proposals')
 def listRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
                           variant: str = '', since: str = '', until: str = '', q: str = '',
-                          limit: int = 100, before: str = '',
+                          limit: int = 100, before: str = '', moved: int = 0, noAccount: int = 0,
                           caller=Depends(requireAdmin)):
     """A page of the proposal register (D69): every delivered proposal, newest
     first, with the counts that frame it. `before` is the cursor a previous
     page handed back as `next`. No blob travels with a list."""
     filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
-    return proposalRegister.listProposals(limit=limit, before=before or None, **filters)
+    return proposalRegister.listProposals(limit=limit, before=before or None,
+                                          movedOnly=bool(moved), noAccountOnly=bool(noAccount),
+                                          **filters)
 
 
 @router.get('/scenario/repository/proposals.csv')
 def exportRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
                             variant: str = '', since: str = '', until: str = '', q: str = '',
+                            moved: int = 0, noAccount: int = 0,
                             caller=Depends(requireAdmin)):
-    """The register as a table under the same filters, every page of it."""
+    """The register as a table under the same filters and the same saved view,
+    every page of it - so the file is what the screen says it is (D116)."""
     filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
+    filters.update(movedOnly=bool(moved), noAccountOnly=bool(noAccount))
     return _csv(proposalRegister.EXPORT_COLUMNS, proposalRegister.exportRows(**filters),
                 'proposal-register.csv')
+
+
+@router.get('/scenario/repository/proposals/views')
+def registerViewCounts(caller=Depends(requireAdmin)):
+    """How many proposals each saved view holds (D116). Declared above the
+    {proposalId} route on purpose: a path parameter would swallow `views`."""
+    return {'views': proposalRegister.viewCounts(caller.kerberos)}
 
 
 @router.get('/scenario/repository/proposals/{proposalId}')
