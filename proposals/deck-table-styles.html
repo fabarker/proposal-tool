@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deck Table Styles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito:wght@400;700&family=Roboto+Condensed:wght@400;700&family=Roboto:wght@400;500;700&display=swap">
+<style>
+:root{
+  --pg:#FBFCFE;--card:#FFFFFF;--sunk:#F2F4F7;
+  --ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;
+  --accent:#1F5FBF;--on-accent:#FFFFFF;
+  --pick:#E3EBFA;--pick-ink:#1E4FA3;
+  --pos:#176A33;--warn:#B45309;--warn-bg:#FEF3C7;--neg:#B42318;--neg-bg:#FDE8E8;--pos-bg:#E7F4EC;
+  --hdr-bg:#16243A;--hdr-ink:#FFFFFF;--hdr-kick:#F3C46B;
+  --badge-bg:#16243A;--badge-ink:#FFFFFF;
+  --body:'Roboto',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --num:'Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  /* the deck's faces: the real ones when Office is installed, close stand-ins when not */
+  --apt:'Aptos Narrow','Roboto Condensed','Arial Narrow',sans-serif;
+  --cal:'Calibri','Carlito',sans-serif;
+  --call:'Calibri Light','Calibri','Carlito',sans-serif;
+  --gro:'Grotesque','Calibri','Carlito',sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+    --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+    --line:#28313D;--line2:#36414F;
+    --accent:#7FA9F0;--on-accent:#11161D;
+    --pick:#1C2B42;--pick-ink:#9DBEF2;
+    --pos:#6FCB8F;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;--neg-bg:#2E1717;--pos-bg:#16291E;
+    --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+    --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+  }
+}
+:root[data-theme="dark"]{
+  --pg:#11161D;--card:#171E27;--sunk:#1E2630;
+  --ink:#E6EDF5;--ink2:#A9B7C6;--ink3:#7B8A9B;
+  --line:#28313D;--line2:#36414F;
+  --accent:#7FA9F0;--on-accent:#11161D;
+  --pick:#1C2B42;--pick-ink:#9DBEF2;
+  --pos:#6FCB8F;--warn:#E0A93F;--warn-bg:#2B2210;--neg:#F08C82;--neg-bg:#2E1717;--pos-bg:#16291E;
+  --hdr-bg:#0D1219;--hdr-ink:#E6EDF5;--hdr-kick:#E0A93F;
+  --badge-bg:#2C3A4C;--badge-ink:#E6EDF5;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--pg);color:var(--ink);font:16px/1.6 var(--body);-webkit-text-size-adjust:100%}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:20px}
+header.top{background:var(--hdr-bg);color:var(--hdr-ink);padding-block:42px 36px;margin-bottom:28px}
+header.top .kick{font:700 11px/1 var(--num);letter-spacing:.18em;text-transform:uppercase;color:var(--hdr-kick);margin:0 0 12px}
+header.top h1{font:400 clamp(28px,6.4vw,40px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 12px;text-wrap:balance}
+header.top p{margin:0;max-width:68ch;opacity:.86;font-size:15.5px}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 6px}
+nav.toc a{font:500 13px/1 var(--body);color:var(--ink2);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:8px 11px;border-radius:16px}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h2{font:400 clamp(22px,5vw,28px)/1.2 var(--body);letter-spacing:-.02em;margin:54px 0 6px;text-wrap:balance;scroll-margin-top:16px}
+h2 small{display:block;font:700 10.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3.stage-h{font:600 15px/1.3 var(--body);margin:30px 0 8px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+h3.stage-h span{font:700 10px/1 var(--num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+p{max-width:70ch}
+p.lede{color:var(--ink2);margin:0 0 16px}
+code{font:13px var(--num);background:var(--sunk);padding:2px 6px;border-radius:3px;color:var(--ink)}
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:13px 15px;border-radius:0 7px 7px 0;font-size:14.5px;color:var(--ink2);margin:16px 0}
+.note p{margin:0;max-width:none}
+.note p+p{margin-top:8px}
+.note b{color:var(--ink)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;margin:16px 0}
+.fact{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:14px 16px}
+.fact b{display:block;font:700 10.5px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
+.fact .big{font:600 26px/1.1 var(--num);color:var(--ink);font-variant-numeric:tabular-nums}
+.fact .big small{font:500 13px var(--body);color:var(--ink2);margin-left:4px}
+.fact p{margin:6px 0 0;font-size:13.5px;color:var(--ink2);max-width:none}
+.fact.bad{border-left:3px solid var(--neg)}
+.fact.okay{border-left:3px solid var(--warn)}
+ol.seq{padding-left:20px;margin:14px 0}
+ol.seq li{margin:10px 0;max-width:68ch;color:var(--ink2);font-size:15px}
+ol.seq li b{color:var(--ink);font-weight:600}
+/* configuration schematics */
+.configs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px;margin:16px 0}
+.config{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:15px 16px}
+.config h4{margin:0 0 3px;font:600 15px var(--body)}
+.config p{margin:0 0 11px;font-size:13.5px;color:var(--ink2);max-width:none}
+.minis{display:flex;gap:8px;flex-wrap:wrap}
+.mini{width:132px;aspect-ratio:16/9;border:1px solid var(--line2);border-radius:3px;background:var(--sunk);padding:7px 7px 6px;display:flex;flex-direction:column;gap:4px}
+.mini i{display:block;height:4px;width:55%;background:var(--ink3);border-radius:1px;opacity:.7}
+.mini .row{flex:1;display:flex;gap:5px}
+.mini .blk{flex:1;border-radius:2px;background:repeating-linear-gradient(var(--line2) 0 1px,transparent 1px 4px);border:1px solid var(--line2);font:700 8px/1 var(--num);color:var(--ink3);display:flex;align-items:flex-end;padding:3px;letter-spacing:.04em}
+.mini .blk.w46{flex:0 0 44%}
+.mini-cap{font:500 11px var(--num);color:var(--ink3);margin-top:3px;letter-spacing:.02em}
+/* controls */
+.controls{position:sticky;top:0;z-index:5;background:var(--pg);padding:10px 0 10px;border-bottom:1px solid var(--line);margin:14px 0 0}
+.picker{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.vbtn{font:500 12.5px/1.2 var(--body);text-align:left;display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:7px;border:1px solid var(--line2);background:var(--card);color:var(--ink2);cursor:pointer;min-width:0}
+.vbtn b{font:700 12px/1 var(--num);background:var(--sunk);color:var(--ink);border-radius:4px;padding:4px 6px;flex:none}
+.vbtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vbtn:hover{border-color:var(--accent);color:var(--accent)}
+.vbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vbtn[aria-pressed="true"]{border-color:var(--accent);background:var(--pick);color:var(--pick-ink)}
+.vbtn[aria-pressed="true"] b{background:var(--accent);color:var(--on-accent)}
+.toggles{display:flex;gap:16px;flex-wrap:wrap;margin-top:9px;font-size:13.5px;color:var(--ink2)}
+.toggles label{display:flex;gap:7px;align-items:center;cursor:pointer}
+.toggles input{accent-color:var(--accent);width:16px;height:16px}
+.vcard{background:var(--card);border:1px solid var(--accent);border-radius:10px;padding:15px 17px 13px;margin:16px 0 4px;box-shadow:0 0 0 3px rgba(31,95,191,.08)}
+.vc-h{display:flex;gap:11px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px}
+.vc-h .vn{font:700 13px/1 var(--num);background:var(--accent);color:var(--on-accent);border-radius:5px;padding:6px 8px}
+.vc-h h3{margin:0;font:600 18px/1.3 var(--body);flex:1 1 200px}
+.par{font:700 10px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;padding:5px 8px;border-radius:10px}
+.par.same{background:var(--pos-bg);color:var(--pos)}
+.par.plus{background:var(--pick);color:var(--pick-ink)}
+.par.new{background:var(--warn-bg);color:var(--warn)}
+.vcard p{margin:0;font-size:14.5px;color:var(--ink2);max-width:none}
+.vcard p.best{margin-top:6px;font-size:13.5px}
+.vcard p.best b{font:700 10px var(--num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-right:6px}
+.fitcap{margin:7px 0 0;font-size:12.5px;color:var(--ink3);display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:none}
+.pt{font:500 11.5px/1 var(--num);padding:4px 8px;border-radius:9px;background:var(--sunk);color:var(--ink2);letter-spacing:.02em}
+.pt b{font-weight:700}
+.pt.ok{background:var(--pos-bg);color:var(--pos)}
+.pt.mid{background:var(--warn-bg);color:var(--warn)}
+.pt.low{background:var(--neg-bg);color:var(--neg)}
+/* gallery */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px;margin:16px 0}
+.gcard{display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer;color:var(--ink);min-width:0}
+.gcard:hover{border-color:var(--accent)}
+.gcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gcard.on{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.12)}
+.gl{font:600 13.5px var(--body)}
+.gl b{font:700 12px var(--num);background:var(--badge-bg);color:var(--badge-ink);border-radius:4px;padding:3px 6px;margin-right:6px}
+.gcard.on .gl b{background:var(--accent);color:var(--on-accent)}
+.gthumb{display:block;width:100%;pointer-events:none}
+.gthumb > div{width:100%}
+.gfit{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
+ul.q{padding-left:18px;color:var(--ink2);font-size:15px}
+ul.q li{margin:10px 0;max-width:68ch}
+ul.q li b{color:var(--ink);font-weight:600}
+footer{color:var(--ink3);font-size:13px;border-top:1px solid var(--line);padding-top:16px;margin-top:48px;padding-bottom:36px}
+footer p{margin:0;max-width:none}
+
+/* ── the slide canvas: 13.33 x 7.5 in drawn at 1pt = 1px, scaled to fit ── */
+.slideWrap{position:relative;width:100%;aspect-ratio:16/9;margin:0;overflow:hidden;border-radius:3px;
+  background:#fff;box-shadow:0 14px 34px -14px rgba(16,24,40,.45);border:1px solid var(--line2)}
+.slide{position:absolute;left:0;top:0;width:960px;height:540px;transform-origin:0 0;
+  transform:scale(var(--k,1));background:#fff;color:#1C2733;font-family:var(--cal)}
+.s-head{position:absolute;left:32.4px;right:32.4px;top:18.7px;font:700 22px/1.15 var(--cal);color:#0F243E}
+.s-sub{position:absolute;left:32.4px;right:32.4px;top:50.4px;font:400 11px/1.3 var(--call);color:#4B5A6A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.s-rule{position:absolute;left:32.4px;right:32.4px;top:75.6px;height:2.5px;background:#0F243E}
+.region{position:absolute;top:84px;height:411px;overflow:hidden}
+.region.full{left:32.4px;right:32.4px}
+.region.left{left:32.4px;width:400.8px}
+.region.right{left:457.2px;width:470.4px}
+.region.today{display:flex;justify-content:center;align-items:flex-start}
+.s-notes{position:absolute;left:32.4px;top:499px;width:700px;font:400 8px/1.45 var(--call);color:#7C8B9C}
+.s-notes span{display:block}
+.s-pg{position:absolute;right:32.4px;top:499px;width:180px;text-align:right;font:400 8px/1.45 var(--call);color:#7C8B9C}
+
+/* ── the tables: structure shared by all ten; the skins below restyle it ── */
+.t{width:100%;border-collapse:collapse;table-layout:fixed;line-height:1.2;color:#1C2733;
+  font-family:var(--cal);font-size:var(--fs,12px)}
+.t td{padding:.16em .5em;vertical-align:middle;overflow:hidden;white-space:normal}
+.t td.r,.t td.c{white-space:nowrap}
+.t td.r{text-align:right}.t td.c{text-align:center}.t td.l{text-align:left}
+.t td.lab.ind{padding-left:1.35em}
+.t tr.spacer td{padding:0;height:3px;font-size:0;line-height:0}
+.t tr.names td,.t tr.head td,.t tr.h1 td,.t tr.h2 td{white-space:normal;line-height:1.12}
+.t .n{font-variant-numeric:tabular-nums}
+.t .neg{color:#9C0006}.t .pos{color:#006100}
+.nodup .risk tr.dup{display:none}
+.todaybox .t{font-size:inherit}
+.todaybox .t td{padding-top:0!important;padding-bottom:0!important}
+.v1{--fs:12px}
+.v1 .port{font-family:var(--call)}
+.v1 .port tr.names td{font-weight:700;border-bottom:2.25px solid #000;padding-top:.45em;padding-bottom:.45em}
+.v1 .port tr.cat td{color:#092C61;font-weight:700;border-top:1px solid #000}
+.v1 .port tr.total td{color:#092C61;font-weight:700;border-top:2.25px solid #000;padding-top:.3em;padding-bottom:.3em}
+.v1 .port tr.metric td{background:#0F243E;color:#fff;font-family:var(--cal);padding-top:.3em;padding-bottom:.3em}
+.v1 .port td.n{padding-right:1.4em}
+.v1 .risk{font-family:var(--apt)}
+.v1 .risk tr.names td{background:#092532;color:#fff}
+.v1 .risk tr.cat td.lab, .v1 .risk tr.metric td.lab{color:#092C61;font-weight:700}
+.v1 .risk tr.firstmetric td{border-top:1px dotted #A9A9A9}
+.v1 .risk tr.band td{background:#092532;color:#fff}
+.v1 .risk tr.subhead td{border-top:1px dotted #A9A9A9}
+.v1 .risk tr.subhead td.lab{color:#092539;font-weight:700}
+.v1 .risk tr.last td{border-bottom:1px solid #000}
+.v1 .impl{font-family:var(--apt)}
+.v1 .impl tr.head td{background:#092532;color:#fff;font-weight:700}
+.v1 .impl tr.cat td{background:#D3DDEA;font-weight:700}
+.v1 .impl tr.total td{font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000}
+.v1 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v1 .assum{font-family:var(--gro)}
+.v1 .assum tr.h1 td, .v1 .assum tr.h2 td{border-bottom:1px solid #000}
+.v1 .assum tr.cat td{color:#0F243E;font-weight:700}
+.v1 .assum tr.cat:not(.firstcat) td{border-top:.5px solid #8A94A3}
+.v1 .assum td.lo{color:#C00000}
+.v1 .assum td.hi{color:#039644}
+.v1 .assum tr.last td{border-bottom:1px solid #000}
+.v2{--fs:11px}
+.v2 .port{font-family:var(--call)}
+.v2 .port tr.names td{font-weight:700;border-bottom:2.25px solid #000;padding-top:.45em;padding-bottom:.45em}
+.v2 .port tr.cat td{color:#092C61;font-weight:700;border-top:1px solid #000}
+.v2 .port tr.total td{color:#092C61;font-weight:700;border-top:2.25px solid #000;padding-top:.3em;padding-bottom:.3em}
+.v2 .port tr.metric td{background:#0F243E;color:#fff;font-family:var(--cal);padding-top:.3em;padding-bottom:.3em}
+.v2 .port td.n{padding-right:1.4em}
+.v2 .risk{font-family:var(--apt)}
+.v2 .risk tr.names td{background:#092532;color:#fff}
+.v2 .risk tr.cat td.lab, .v2 .risk tr.metric td.lab{color:#092C61;font-weight:700}
+.v2 .risk tr.firstmetric td{border-top:1px dotted #A9A9A9}
+.v2 .risk tr.band td{background:#092532;color:#fff}
+.v2 .risk tr.subhead td{border-top:1px dotted #A9A9A9}
+.v2 .risk tr.subhead td.lab{color:#092539;font-weight:700}
+.v2 .risk tr.last td{border-bottom:1px solid #000}
+.v2 .impl{font-family:var(--apt)}
+.v2 .impl tr.head td{background:#092532;color:#fff;font-weight:700}
+.v2 .impl tr.cat td{background:#D3DDEA;font-weight:700}
+.v2 .impl tr.total td{font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000}
+.v2 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v2 .assum{font-family:var(--gro)}
+.v2 .assum tr.h1 td, .v2 .assum tr.h2 td{border-bottom:1px solid #000}
+.v2 .assum tr.cat td{color:#0F243E;font-weight:700}
+.v2 .assum tr.cat:not(.firstcat) td{border-top:.5px solid #8A94A3}
+.v2 .assum td.lo{color:#C00000}
+.v2 .assum td.hi{color:#039644}
+.v2 .assum tr.last td{border-bottom:1px solid #000}
+.v2 .t td{padding-top:.04em;padding-bottom:.04em}
+.v2 .port tr.names td{padding-top:.25em;padding-bottom:.25em}
+.v2 .port tr.total td, .v2 .port tr.metric td{padding-top:.12em;padding-bottom:.12em}
+.v3{--fs:12px}
+.v3 .t{font-family:var(--apt)}
+.v3 tr.names td, .v3 tr.head td, .v3 tr.h1 td, .v3 tr.h2 td{background:#092532;color:#fff;font-weight:700}
+.v3 tr.cat td{background:#D3DDEA;color:#0F243E;font-weight:700}
+.v3 tr.total td{font-weight:700;color:#0F243E;border-top:1.5px solid #092532;border-bottom:1.5px solid #092532}
+.v3 tr.metric td{background:#EEF2F7;color:#0F243E;font-weight:700}
+.v3 .risk tr.band td{background:#0F243E;color:#fff;font-weight:700}
+.v3 .risk tr.subhead td{color:#0F243E;font-weight:700;border-bottom:1px solid #C5CFDC}
+.v3 tr.last td{border-bottom:1.5px solid #092532}
+.v3 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v3 .assum td.lo{color:#C00000}
+.v3 .assum td.hi{color:#039644}
+.v4{--fs:12.5px}
+.v4 .t{font-family:var(--cal)}
+.v4 td{border-bottom:.5px solid #D9DEE5}
+.v4 tr.names td, .v4 tr.head td, .v4 tr.h2 td{font-weight:700;color:#0F243E;border-bottom:2px solid #0F243E}
+.v4 tr.h1 td{color:#5B6B7C;border-bottom:0}
+.v4 tr.cat td{font-weight:700;color:#0F243E;font-variant:small-caps;letter-spacing:.03em}
+.v4 tr.total td{font-weight:700;color:#0F243E;border-top:2px solid #0F243E;border-bottom:2px solid #0F243E}
+.v4 tr.metric td{font-weight:700;color:#0F243E}
+.v4 .risk tr.band td{font-weight:700;color:#0F243E;border-bottom:2px solid #0F243E;padding-top:.45em}
+.v4 .risk tr.subhead td{font-weight:700;color:#0F243E;background:#F4F6F9}
+.v4 tr.spacer td{border:0}
+.v4 td.breach{color:#9B1C1C;font-weight:700}
+.v4 .assum td.lo{color:#C00000}
+.v4 .assum td.hi{color:#039644}
+.v5{--fs:12px}
+.v5 .t{font-family:var(--apt)}
+.v5 tr.names td, .v5 tr.head td, .v5 tr.h1 td, .v5 tr.h2 td{background:#092532;color:#fff;font-weight:700}
+.v5 tr.cat td{font-weight:700;color:#0F243E;border-bottom:1px solid #0F243E}
+.v5 tr.asset:nth-child(even) td, .v5 tr.item:nth-child(even) td, .v5 tr.data:nth-child(even) td{background:#EEF2F7}
+.v5 tr.total td{font-weight:700;color:#0F243E;border-top:1.5px solid #0F243E}
+.v5 tr.metric td{background:#0F243E;color:#fff}
+.v5 .risk tr.band td{background:#092532;color:#fff}
+.v5 .risk tr.subhead td{font-weight:700;color:#0F243E;border-bottom:1px solid #0F243E}
+.v5 tr.last td{border-bottom:1.5px solid #0F243E}
+.v5 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v5 .assum td.lo{color:#C00000}
+.v5 .assum td.hi{color:#039644}
+.v6{--fs:12px}
+.v6 .t{font-family:var(--apt)}
+.v6 tr.names td, .v6 tr.head td, .v6 tr.h2 td{font-weight:700;color:#0F243E;border-bottom:2px solid #0F243E}
+.v6 tr.h1 td{color:#5B6B7C}
+.v6 tr.cat td{background:#0F243E;color:#fff;font-weight:700}
+.v6 tr.total td{background:#E6EBF2;color:#0F243E;font-weight:700}
+.v6 tr.metric td{background:#EEF1F5;color:#0F243E;font-weight:700}
+.v6 .risk tr.band td{background:#0F243E;color:#fff;font-weight:700}
+.v6 .risk tr.subhead td{background:#D3DDEA;color:#0F243E;font-weight:700}
+.v6 tr.last td{border-bottom:2px solid #0F243E}
+.v6 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v6 .assum td.lo{color:#C00000}
+.v6 .assum td.hi{color:#039644}
+.v7{--fs:12px}
+.v7 .port{font-family:var(--call)}
+.v7 .port tr.names td{font-weight:700;border-bottom:2.25px solid #000;padding-top:.45em;padding-bottom:.45em}
+.v7 .port tr.cat td{color:#092C61;font-weight:700;border-top:1px solid #000}
+.v7 .port tr.total td{color:#092C61;font-weight:700;border-top:2.25px solid #000;padding-top:.3em;padding-bottom:.3em}
+.v7 .port tr.metric td{background:#0F243E;color:#fff;font-family:var(--cal);padding-top:.3em;padding-bottom:.3em}
+.v7 .port td.n{padding-right:1.4em}
+.v7 .risk{font-family:var(--apt)}
+.v7 .risk tr.names td{background:#092532;color:#fff}
+.v7 .risk tr.cat td.lab, .v7 .risk tr.metric td.lab{color:#092C61;font-weight:700}
+.v7 .risk tr.firstmetric td{border-top:1px dotted #A9A9A9}
+.v7 .risk tr.band td{background:#092532;color:#fff}
+.v7 .risk tr.subhead td{border-top:1px dotted #A9A9A9}
+.v7 .risk tr.subhead td.lab{color:#092539;font-weight:700}
+.v7 .risk tr.last td{border-bottom:1px solid #000}
+.v7 .impl{font-family:var(--apt)}
+.v7 .impl tr.head td{background:#092532;color:#fff;font-weight:700}
+.v7 .impl tr.cat td{background:#D3DDEA;font-weight:700}
+.v7 .impl tr.total td{font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000}
+.v7 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v7 .assum{font-family:var(--gro)}
+.v7 .assum tr.h1 td, .v7 .assum tr.h2 td{border-bottom:1px solid #000}
+.v7 .assum tr.cat td{color:#0F243E;font-weight:700}
+.v7 .assum tr.cat:not(.firstcat) td{border-top:.5px solid #8A94A3}
+.v7 .assum td.lo{color:#C00000}
+.v7 .assum td.hi{color:#039644}
+.v7 .assum tr.last td{border-bottom:1px solid #000}
+.v7 tr:not(.metric):not(.names):not(.band):not(.spacer) td.p1{background:#E9F0FB;font-weight:700}
+.v7 tr.metric td.p1{background:#1F3A5F;font-weight:700}
+.v7 tr.names td.p1{color:#1F5FBF}
+.v7 .risk tr.names td.p1{background:#1F5FBF;color:#fff}
+.v8{--fs:13px}
+.v8 .t{font-family:var(--cal);line-height:1.34}
+.v8 tr.names td, .v8 tr.head td, .v8 tr.h1 td, .v8 tr.h2 td{color:#5B6B7C;font-size:.8em;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #0F243E}
+.v8 tr.cat td{font-weight:700;color:#0F243E;padding-top:.5em}
+.v8 tr.asset td, .v8 tr.item td, .v8 tr.data td{color:#3C4A5A}
+.v8 tr.total td{font-weight:700;color:#0F243E;border-top:1px solid #0F243E}
+.v8 tr.metric td{font-weight:700;color:#0F243E}
+.v8 .risk tr.band td{font-weight:700;color:#0F243E;border-bottom:1px solid #0F243E;padding-top:.55em}
+.v8 .risk tr.subhead td{font-weight:700;color:#5B6B7C;padding-top:.45em}
+.v8 td.breach{color:#9B1C1C;font-weight:700}
+.v8 .assum td.lo{color:#C00000}
+.v8 .assum td.hi{color:#039644}
+.v9{--fs:12px}
+.v9 .t{font-family:var(--apt)}
+.v9 tr.names td, .v9 tr.head td, .v9 tr.h1 td, .v9 tr.h2 td{background:#092532;color:#fff;font-weight:700}
+.v9 tr.cat td{background:#D3DDEA;color:#0F243E;font-weight:700}
+.v9 tr.total td{font-weight:700;color:#0F243E;border-top:1.5px solid #092532;border-bottom:1.5px solid #092532}
+.v9 tr.metric td{background:#EEF2F7;color:#0F243E;font-weight:700}
+.v9 .risk tr.band td{background:#0F243E;color:#fff;font-weight:700}
+.v9 .risk tr.subhead td{color:#0F243E;font-weight:700;border-bottom:1px solid #C5CFDC}
+.v9 tr.last td{border-bottom:1.5px solid #092532}
+.v9 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v9 .assum td.lo{color:#C00000}
+.v9 .assum td.hi{color:#039644}
+.v9 .port tr.asset td.n{background:linear-gradient(to left,rgba(31,95,191,.18) calc(var(--w) * 100%),transparent 0)}
+.v9 .port tr.cat td.n{background:linear-gradient(to left,rgba(15,36,62,.24) calc(var(--w) * 100%),#D3DDEA 0)}
+.v9 .risk td.neg{background:rgba(156,0,6,calc(var(--a) * .30));color:#5E0004}
+.v9 .risk td.pos{background:rgba(0,97,0,calc(var(--a) * .30));color:#003D00}
+.v10{--fs:11.5px}
+.v10 .t{font-family:var(--apt)}
+.v10 td{border:1px solid #C9D1DB}
+.v10 tr.names td, .v10 tr.head td, .v10 tr.h1 td, .v10 tr.h2 td{background:#092532;color:#fff;font-weight:700;border-color:#092532}
+.v10 tr.cat td{background:#D3DDEA;font-weight:700}
+.v10 tr.total td{background:#EEF1F5;font-weight:700}
+.v10 tr.metric td{background:#EEF1F5;color:#0F243E;font-weight:700}
+.v10 .risk tr.band td{background:#0F243E;color:#fff;font-weight:700;border-color:#0F243E}
+.v10 .risk tr.subhead td{background:#F4F6F9;font-weight:700}
+.v10 tr.spacer td{border-left:0;border-right:0}
+.v10 td.breach{background:#FDE8E8;color:#9B1C1C;font-weight:700}
+.v10 .assum td.lo{color:#C00000}
+.v10 .assum td.hi{color:#039644}
+@media (max-width:640px){
+  .wrap{padding-inline:16px}
+  .picker{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <p class="kick">Proposal deck &middot; table formatting</p>
+    <h1>Ten ways to set the deck&rsquo;s tables</h1>
+    <p>Every table on this page is generated by the deck&rsquo;s own builders from real proposal data &mdash; the same rows, merges and number text the PowerPoint renders. Only the styling and the sizing change between versions. Pick a number.</p>
+  </div>
+</header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <a href="#today">Today</a><a href="#method">Finding the format</a><a href="#configs">The two configurations</a>
+  <a href="#ten">The ten</a><a href="#gallery">All ten at once</a><a href="#decide">Decisions</a>
+</nav>
+
+<h2 id="today"><small>Where we are</small>Why the slides look wrong today</h2>
+<p class="lede">The deck scales the workbook&rsquo;s geometry by one factor: Excel column widths, and spreadsheet row heights &mdash; 17pt rows for 12.5pt text, a 37pt header. On a slide, that lands the tables narrow and small.</p>
+<div class="facts">
+  <div class="fact bad"><b>Allocation slide</b><span class="big">33%<small>of the width</small></span><p>Text at <b>9.2pt</b>, centred in empty space.</p></div>
+  <div class="fact bad"><b>Risk slide</b><span class="big">46%<small>of the width</small></span><p>Text at <b>9.4pt</b>, same problem.</p></div>
+  <div class="fact okay"><b>Implementation slide</b><span class="big">100%<small>of the width</small></span><p>Text at <b>10.7pt</b> &mdash; the one that roughly works, because 13 columns already fill a slide.</p></div>
+</div>
+<div class="v1" id="todayslides">
+  <h3 class="stage-h">Allocation, as built <span>Today</span></h3>
+  <figure class="slideWrap" id="tAlloc"><div class="slide"><div class="s-head">Strategic Asset Allocation</div><div class="s-sub">USD · Hedged — USD Moderate Full against USD Conservative Full, per asset category with portfolio-level estimates</div><div class="s-rule"></div><div class="region full today" data-name="Table" data-fixed><div class="todaybox" style="width:292.9px;font-size:9.18px"><table class="t port"><colgroup><col style="width:52.632%"><col style="width:23.684%"><col style="width:23.684%"></colgroup><tbody><tr class="names" style="height:27.2px"><td class="lab"></td><td class="n c p1">USD Moderate Full</td><td class="n c">USD Conservative Full</td></tr><tr class="cat firstcat" style="height:12.5px"><td class="lab l">Investment Grade Fixed Income</td><td class="n r p1" style="--w:0.3400">34.0%</td><td class="n r" style="--w:0.5000">50.0%</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">US Dollar Debt</td><td class="n r p1" style="--w:0.3400">34.0</td><td class="n r" style="--w:0.5000">50.0</td></tr><tr class="cat" style="height:12.5px"><td class="lab l">Other Fixed Income</td><td class="n r p1" style="--w:0.0900">9.0%</td><td class="n r" style="--w:0.1000">10.0%</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">US High Yield</td><td class="n r p1" style="--w:0.0900">9.0</td><td class="n r" style="--w:0.1000">10.0</td></tr><tr class="cat" style="height:12.5px"><td class="lab l">Public Equity</td><td class="n r p1" style="--w:0.3800">38.0%</td><td class="n r" style="--w:0.2400">24.0%</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">US Large Cap Growth Equity</td><td class="n r p1" style="--w:0.0836">8.4</td><td class="n r" style="--w:0.0528">5.3</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">US Large Cap Value Equity</td><td class="n r p1" style="--w:0.0836">8.4</td><td class="n r" style="--w:0.0528">5.3</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">US Small Cap Equity</td><td class="n r p1" style="--w:0.0304">3.0</td><td class="n r" style="--w:0.0192">1.9</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Europe ex-UK Equity</td><td class="n r p1" style="--w:0.0532">5.3</td><td class="n r" style="--w:0.0336">3.4</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">UK Equity</td><td class="n r p1" style="--w:0.0190">1.9</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Japanese Equity</td><td class="n r p1" style="--w:0.0266">2.7</td><td class="n r" style="--w:0.0168">1.7</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Asia-Pacific Equity</td><td class="n r p1" style="--w:0.0266">2.7</td><td class="n r" style="--w:0.0168">1.7</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Emerging Market Equity</td><td class="n r p1" style="--w:0.0570">5.7</td><td class="n r" style="--w:0.0360">3.6</td></tr><tr class="cat" style="height:12.5px"><td class="lab l">Hedge Funds</td><td class="n r p1" style="--w:0.1000">10.0%</td><td class="n r" style="--w:0.0900">9.0%</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Event Driven</td><td class="n r p1" style="--w:0.0350">3.5</td><td class="n r" style="--w:0.0315">3.2</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Equity Long/Short</td><td class="n r p1" style="--w:0.0400">4.0</td><td class="n r" style="--w:0.0360">3.6</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Tactical Trading</td><td class="n r p1" style="--w:0.0250">2.5</td><td class="n r" style="--w:0.0225">2.3</td></tr><tr class="cat" style="height:12.5px"><td class="lab l">Private Equity</td><td class="n r p1" style="--w:0.0500">5.0%</td><td class="n r" style="--w:0.0400">4.0%</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Buyout</td><td class="n r p1" style="--w:0.0275">2.8</td><td class="n r" style="--w:0.0220">2.2</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Growth</td><td class="n r p1" style="--w:1.0000">1.5</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Venture</td><td class="n r p1" style="--w:0.7500">0.8</td><td class="n r" style="--w:0.6000">0.6</td></tr><tr class="cat" style="height:12.5px"><td class="lab l">Other Private Assets</td><td class="n r p1" style="--w:0.0400">4.0%</td><td class="n r" style="--w:0.0300">3.0%</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Private Credit</td><td class="n r p1" style="--w:0.0240">2.4</td><td class="n r" style="--w:0.0180">1.8</td></tr><tr class="asset" style="height:12.5px"><td class="lab ind l">Core Real Estate</td><td class="n r p1" style="--w:0.0160">1.6</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="total" style="height:16.9px"><td class="lab">TOTAL</td><td class="n r p1">100.0%</td><td class="n r">100.0%</td></tr><tr class="spacer" style="height:2.2px"><td colspan="3"></td></tr><tr class="metric" style="height:16.9px"><td class="lab">Estimated Mean Return</td><td class="n r p1">6.0%</td><td class="n r">5.3%</td></tr><tr class="spacer" style="height:2.2px"><td colspan="3"></td></tr><tr class="metric" style="height:16.9px"><td class="lab">Sharpe Ratio</td><td class="n r p1">0.48</td><td class="n r">0.53</td></tr><tr class="spacer" style="height:2.2px"><td colspan="3"></td></tr><tr class="metric" style="height:16.9px"><td class="lab">Volatility</td><td class="n r p1">7.3%</td><td class="n r">5.2%</td></tr></tbody></table></div></div><div class="s-notes"><span>Category rows show the share of the total portfolio; asset rows sum to their category. A category one portfolio holds and another does not prints 0.0.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 2 of 6</div></div></figure><p class="fitcap" data-for="tAlloc"></p>
+  <h3 class="stage-h">Risk dashboard, as built <span>Today</span></h3>
+  <figure class="slideWrap" id="tRisk"><div class="slide"><div class="s-head">Risk Dashboard</div><div class="s-sub">Factor-based risk analytics — stress periods and tail-loss measures, nominal and real, per portfolio</div><div class="s-rule"></div><div class="region full today" data-name="Table" data-fixed><div class="todaybox" style="width:409.5px;font-size:9.36px"><table class="t risk"><colgroup><col style="width:40.000%"><col style="width:15.000%"><col style="width:15.000%"><col style="width:15.000%"><col style="width:15.000%"></colgroup><tbody><tr class="names" style="height:12.5px"><td class="lab"></td><td class="n c p1" colspan="2">USD Moderate Full</td><td class="n c" colspan="2">USD Conservative Full</td></tr><tr class="cat dup" style="height:12.5px"><td class="lab">Investment Grade Fixed Income</td><td class="n c p1" colspan="2">34.0%</td><td class="n c" colspan="2">50.0%</td></tr><tr class="cat dup" style="height:12.5px"><td class="lab">Other Fixed Income</td><td class="n c p1" colspan="2">9.0%</td><td class="n c" colspan="2">10.0%</td></tr><tr class="cat dup" style="height:12.5px"><td class="lab">Public Equity</td><td class="n c p1" colspan="2">38.0%</td><td class="n c" colspan="2">24.0%</td></tr><tr class="cat dup" style="height:12.5px"><td class="lab">Hedge Funds</td><td class="n c p1" colspan="2">10.0%</td><td class="n c" colspan="2">9.0%</td></tr><tr class="cat dup" style="height:12.5px"><td class="lab">Private Equity</td><td class="n c p1" colspan="2">5.0%</td><td class="n c" colspan="2">4.0%</td></tr><tr class="cat dup" style="height:12.5px"><td class="lab">Other Private Assets</td><td class="n c p1" colspan="2">4.0%</td><td class="n c" colspan="2">3.0%</td></tr><tr class="metric dup firstmetric" style="height:12.5px"><td class="lab">Estimated Mean Return</td><td class="n c p1" colspan="2">6.0%</td><td class="n c" colspan="2">5.3%</td></tr><tr class="metric dup" style="height:12.5px"><td class="lab">Sharpe Ratio</td><td class="n c p1" colspan="2">0.48</td><td class="n c" colspan="2">0.53</td></tr><tr class="metric dup" style="height:12.5px"><td class="lab">Volatility</td><td class="n c p1" colspan="2">7.3%</td><td class="n c" colspan="2">5.2%</td></tr><tr class="band" style="height:12.5px"><td class="lab span" colspan="5">Factor Based Risk Analytics</td></tr><tr class="subhead" style="height:12.5px"><td class="lab">Predicted Performance Over Stress Periods</td><td class="n c p1">Nominal</td><td class="n c p1">Real</td><td class="n c">Nominal</td><td class="n c">Real</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Oil Embargo</td><td class="n c neg p1" style="--a:0.589">-17.7%</td><td class="n c neg p1" style="--a:1.000">-30.0%</td><td class="n c neg" style="--a:0.352">-10.6%</td><td class="n c neg" style="--a:0.800">-24.0%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">US Inflation / Iranian Revolution</td><td class="n c pos p1" style="--a:0.357">10.7%</td><td class="n c neg p1" style="--a:0.224">-6.7%</td><td class="n c pos" style="--a:0.284">8.5%</td><td class="n c neg" style="--a:0.285">-8.5%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">US Stagflation</td><td class="n c pos p1" style="--a:0.051">1.5%</td><td class="n c neg p1" style="--a:0.362">-10.9%</td><td class="n c pos" style="--a:0.308">9.2%</td><td class="n c neg" style="--a:0.137">-4.1%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Black Monday</td><td class="n c neg p1" style="--a:0.291">-8.7%</td><td class="n c neg p1" style="--a:0.299">-9.0%</td><td class="n c neg" style="--a:0.170">-5.1%</td><td class="n c neg" style="--a:0.179">-5.4%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Bond Crisis</td><td class="n c neg p1" style="--a:0.081">-2.4%</td><td class="n c neg p1" style="--a:0.157">-4.7%</td><td class="n c neg" style="--a:0.076">-2.3%</td><td class="n c neg" style="--a:0.152">-4.5%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Russian Default / LTCM Collapse</td><td class="n c neg p1" style="--a:0.245">-7.4%</td><td class="n c neg p1" style="--a:0.249">-7.5%</td><td class="n c neg" style="--a:0.155">-4.6%</td><td class="n c neg" style="--a:0.159">-4.8%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Tech Meltdown</td><td class="n c neg p1" style="--a:0.608">-18.2%</td><td class="n c neg p1" style="--a:0.755">-22.7%</td><td class="n c neg" style="--a:0.267">-8.0%</td><td class="n c neg" style="--a:0.433">-13.0%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Financial Crisis</td><td class="n c neg p1" style="--a:0.923">-27.7%</td><td class="n c neg p1" style="--a:0.962">-28.9%</td><td class="n c neg" style="--a:0.602">-18.1%</td><td class="n c neg" style="--a:0.647">-19.4%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Covid-19</td><td class="n c neg p1" style="--a:0.308">-9.2%</td><td class="n c neg p1" style="--a:0.297">-8.9%</td><td class="n c neg" style="--a:0.195">-5.8%</td><td class="n c neg" style="--a:0.183">-5.5%</td></tr><tr class="subhead" style="height:12.5px"><td class="lab span" colspan="5">Value at Risk with 99% Confidence</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 1 Month</td><td class="n c p1">5.5%</td><td class="n c p1">5.6%</td><td class="n c">3.8%</td><td class="n c">4.0%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 1 Year</td><td class="n c p1">17.4%</td><td class="n c p1">19.4%</td><td class="n c">10.7%</td><td class="n c">12.9%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 3 Years</td><td class="n c p1">18.2%</td><td class="n c p1">23.3%</td><td class="n c">9.6%</td><td class="n c">15.2%</td></tr><tr class="subhead" style="height:12.5px"><td class="lab span" colspan="5">Conditional Value at Risk with 99% Confidence</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 1 Month</td><td class="n c p1">7.3%</td><td class="n c p1">7.5%</td><td class="n c">4.9%</td><td class="n c">5.1%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 1 Year</td><td class="n c p1">20.8%</td><td class="n c p1">22.7%</td><td class="n c">13.3%</td><td class="n c">15.3%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 3 Years</td><td class="n c p1">23.0%</td><td class="n c p1">27.7%</td><td class="n c">13.6%</td><td class="n c">18.9%</td></tr><tr class="subhead" style="height:12.5px"><td class="lab span" colspan="5">Probability of Loss</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 1 Month</td><td class="n c p1">31.5%</td><td class="n c p1">35.2%</td><td class="n c">29.0%</td><td class="n c">33.6%</td></tr><tr class="data" style="height:12.5px"><td class="lab ind l">Over 1 Year</td><td class="n c p1">16.9%</td><td class="n c p1">23.7%</td><td class="n c">12.4%</td><td class="n c">20.0%</td></tr><tr class="data last" style="height:12.5px"><td class="lab ind l">Over 3 Years</td><td class="n c p1">9.5%</td><td class="n c p1">16.5%</td><td class="n c">5.6%</td><td class="n c">12.9%</td></tr></tbody></table></div></div><div class="s-notes"><span>Stress rows show predicted performance through each episode; losses red, gains green. VaR and CVaR are positive loss magnitudes at 99% confidence.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 3 of 6</div></div></figure><p class="fitcap" data-for="tRisk"></p>
+</div>
+<div class="note"><p><b>The sizing fix is the same in all ten versions:</b> each table fills its box&rsquo;s width, rows are sized to the text rather than to a spreadsheet, and the text is the largest that still fits. Version 1 is that fix and nothing else.</p></div>
+
+<h2 id="method"><small>Your question</small>How to find the best format</h2>
+<ol class="seq">
+  <li><b>Judge the real thing at the real size.</b> Every table here comes out of <code>sheetDoc</code>&rsquo;s builders with real figures and <code>renderNumber</code>&rsquo;s text. Every slide is a true 16:9 canvas &mdash; 13.33 &times; 7.5 in, drawn at 1pt = 1px &mdash; scaled to your screen. Where Calibri and Aptos Narrow are installed (they come with Office) you see the real faces; elsewhere, close stand-ins.</li>
+  <li><b>Choose a system, not ten tables.</b> Each version is one set of rules applied to all four tables, so the deck stays consistent. Combining is fine: &ldquo;3, with 7&rsquo;s proposal column&rdquo;.</li>
+  <li><b>Measure the sizing, don&rsquo;t eyeball it.</b> Each table is shrunk until it fits its box without clipping a figure, and the point size it lands at is printed under the slide &mdash; green from 10pt, amber from 8.5pt, red below.</li>
+  <li><b>Proof the finalists in PowerPoint.</b> Browsers and PowerPoint measure text differently. PowerPoint is installed on this Mac, so once you&rsquo;ve chosen one or two, I&rsquo;ll render them as real <code>.pptx</code> and export them through PowerPoint itself before building anything.</li>
+  <li><b>Then lock it in</b> as the deck&rsquo;s theme, with tests pinning it.</li>
+</ol>
+<div class="note"><p><b>What this does to the 1:1 promise.</b> Sizing never threatens it &mdash; a slide is not a sheet, so sizing is per medium by nature. Styling does. Versions 1 and 2 keep the workbook&rsquo;s styling exactly; 7 adds one thing; the rest restyle. A restyle can go to <em>both</em> files (one engine &mdash; the workbook changes too), or to the deck only, which narrows the promise from &ldquo;same styling&rdquo; to &ldquo;same content, same numbers&rdquo;.</p></div>
+
+<h2 id="configs"><small>What you asked for</small>The two slide configurations</h2>
+<div class="configs">
+  <div class="config">
+    <h4>No comparison, or one</h4>
+    <p>One or two portfolios. One slide, <em>Strategic Asset Allocation &amp; Risk</em>: allocation on the left (46%), risk dashboard on the right (54%). Five slides in all.</p>
+    <div class="minis"><div><div class="mini"><i></i><div class="row"><div class="blk w46">ALLOC</div><div class="blk">RISK</div></div></div><div class="mini-cap">Slide 2 of 5</div></div></div>
+  </div>
+  <div class="config">
+    <h4>Two comparisons or three</h4>
+    <p>Three or four portfolios. Allocation on one slide and risk on the next, each at full width. Six slides in all.</p>
+    <div class="minis">
+      <div><div class="mini"><i></i><div class="row"><div class="blk">ALLOCATION</div></div></div><div class="mini-cap">Slide 2 of 6</div></div>
+      <div><div class="mini"><i></i><div class="row"><div class="blk">RISK DASHBOARD</div></div></div><div class="mini-cap">Slide 3 of 6</div></div>
+    </div>
+  </div>
+</div>
+<div class="note"><p><b>What splitting does and doesn&rsquo;t buy.</b> The allocation table is limited by its <em>height</em>, not its width: 32 rows, most of them asset lines. On a slide of its own it gets wider columns but not larger text &mdash; it fits at the same size either way. Only tighter rows move that number (version 2 reaches 10pt). The risk table, at 24 rows, fits at around 11pt in both configurations.</p>
+<p><b>Tables that share a slide share a type size.</b> On the combined slide, each table is fitted alone, then both step down to the smaller size, and the shorter table opens its rows to use the height it gave back. Both halves end at the bottom, and the slide reads as one piece rather than two.</p></div>
+<div class="note"><p><b>One decision the combined slide forces.</b> The risk sheet opens by repeating the allocation by category and the three metrics &mdash; the same figures as the left-hand table. Side by side, that shows everything twice. Dropping them from the risk table (the default here) takes it from 33 rows to 24, and that is what lets both halves sit at a readable size. Tick <em>Keep the repeated rows</em> below to see the cost.</p></div>
+
+<h2 id="ten"><small>Choose</small>The ten versions</h2>
+<div class="controls">
+  <div class="picker" role="group" aria-label="Table style version"><button type="button" class="vbtn" data-v="1" aria-pressed="false"><b>1</b><span>Workbook, fitted</span></button><button type="button" class="vbtn" data-v="2" aria-pressed="false"><b>2</b><span>Workbook, compact</span></button><button type="button" class="vbtn" data-v="3" aria-pressed="false"><b>3</b><span>One header, banded groups</span></button><button type="button" class="vbtn" data-v="4" aria-pressed="false"><b>4</b><span>Ledger</span></button><button type="button" class="vbtn" data-v="5" aria-pressed="false"><b>5</b><span>Zebra</span></button><button type="button" class="vbtn" data-v="6" aria-pressed="false"><b>6</b><span>Category blocks</span></button><button type="button" class="vbtn" data-v="7" aria-pressed="false"><b>7</b><span>Proposal column</span></button><button type="button" class="vbtn" data-v="8" aria-pressed="false"><b>8</b><span>Quiet modern</span></button><button type="button" class="vbtn" data-v="9" aria-pressed="false"><b>9</b><span>Data bars and heat</span></button><button type="button" class="vbtn" data-v="10" aria-pressed="false"><b>10</b><span>Full grid</span></button></div>
+  <div class="toggles"><label><input type="checkbox" id="keepdup"> Keep the repeated rows on the risk table</label></div>
+</div>
+<div class="vcard" data-card="1" hidden><div class="vc-h"><span class="vn">1</span><h3>Workbook, fitted</h3><span class="par same" title="Sizing only — the 1:1 promise holds as written.">Workbook styling</span></div><p>The workbook’s own styling, rule for rule — navy metric bars, heading-ink categories, the thick and dotted rules, red/green stress figures. Only the sizing changes: every table fills its box and the text is as large as the box allows.</p><p class="best"><b>Best for</b> Keeping the 1:1 promise exactly as written.</p></div><div class="vcard" data-card="2" hidden><div class="vc-h"><span class="vn">2</span><h3>Workbook, compact</h3><span class="par same" title="Sizing only — the 1:1 promise holds as written.">Workbook styling</span></div><p>Version 1 with tighter rows and a smaller starting size. Buys headroom for four-portfolio scenarios and long product lists before a table needs a continuation slide.</p><p class="best"><b>Best for</b> Dense proposals; fewest continuation slides.</p></div><div class="vcard" data-card="3" hidden><div class="vc-h"><span class="vn">3</span><h3>One header, banded groups</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>One grammar for all four tables: a navy header row, categories on the light-blue band the implementation sheet already uses, and a pale band for the metrics instead of solid navy bars. Aptos Narrow throughout.</p><p class="best"><b>Best for</b> A deck where every table visibly belongs to the same family.</p></div><div class="vcard" data-card="4" hidden><div class="vc-h"><span class="vn">4</span><h3>Ledger</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>No fills at all. Hairline rules between rows, bold navy small-caps categories, heavy rules only on the header and the total — the printed-report look.</p><p class="best"><b>Best for</b> Restraint; decks that are printed as much as projected.</p></div><div class="vcard" data-card="5" hidden><div class="vc-h"><span class="vn">5</span><h3>Zebra</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>Keeps the navy header and metric bars; line items alternate with a faint tint so the eye tracks across wide rows.</p><p class="best"><b>Best for</b> The wide 13-column implementation table.</p></div><div class="vcard" data-card="6" hidden><div class="vc-h"><span class="vn">6</span><h3>Category blocks</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>Categories become solid navy bars with white type, line items sit white beneath them, the metrics on a pale band. The strongest grouping of the ten.</p><p class="best"><b>Best for</b> Reading a table by category first.</p></div><div class="vcard" data-card="7" hidden><div class="vc-h"><span class="vn">7</span><h3>Proposal column</h3><span class="par plus" title="One addition to the workbook styling.">Workbook + 1</span></div><p>Version 1’s styling plus one idea: the proposed portfolio’s column is tinted and set bold, so the proposal reads against its comparisons at a glance.</p><p class="best"><b>Best for</b> Meetings where the question is “why this one?”</p></div><div class="vcard" data-card="8" hidden><div class="vc-h"><span class="vn">8</span><h3>Quiet modern</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>Small grey capitals for headers, no fills, rules only under the header and above the total, generous leading, slightly larger figures.</p><p class="best"><b>Best for</b> A lighter, contemporary deck.</p></div><div class="vcard" data-card="9" hidden><div class="vc-h"><span class="vn">9</span><h3>Data bars and heat</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>Version 3’s grammar plus two visual encodings: a bar behind every allocation figure showing its weight, and stress figures tinted by the size of the loss or gain.</p><p class="best"><b>Best for</b> Seeing shape before reading numbers.</p></div><div class="vcard" data-card="10" hidden><div class="vc-h"><span class="vn">10</span><h3>Full grid</h3><span class="par new" title="Changes the workbook too (one engine), or the deck only (relaxes 1:1).">New styling</span></div><p>Every cell ruled in light grey, navy header, banded categories — the most spreadsheet-like of the ten, and the most explicit.</p><p class="best"><b>Best for</b> Audiences who expect a table to look like a table.</p></div>
+<div id="stage" class="v1 nodup">
+  <h3 class="stage-h">No comparison, or one <span>Combined slide</span></h3>
+  <figure class="slideWrap" id="sCombined"><div class="slide"><div class="s-head">Strategic Asset Allocation &amp; Risk</div><div class="s-sub">USD · Hedged — USD Moderate Full against USD Conservative Full — allocation per asset category, risk per portfolio, nominal and real</div><div class="s-rule"></div><div class="region left" data-name="Allocation"><table class="t port"><colgroup><col style="width:44.000%"><col style="width:28.000%"><col style="width:28.000%"></colgroup><tbody><tr class="names"><td class="lab"></td><td class="n c p1">USD Moderate Full</td><td class="n c">USD Conservative Full</td></tr><tr class="cat firstcat"><td class="lab l">Investment Grade Fixed Income</td><td class="n r p1" style="--w:0.3400">34.0%</td><td class="n r" style="--w:0.5000">50.0%</td></tr><tr class="asset"><td class="lab ind l">US Dollar Debt</td><td class="n r p1" style="--w:0.3400">34.0</td><td class="n r" style="--w:0.5000">50.0</td></tr><tr class="cat"><td class="lab l">Other Fixed Income</td><td class="n r p1" style="--w:0.0900">9.0%</td><td class="n r" style="--w:0.1000">10.0%</td></tr><tr class="asset"><td class="lab ind l">US High Yield</td><td class="n r p1" style="--w:0.0900">9.0</td><td class="n r" style="--w:0.1000">10.0</td></tr><tr class="cat"><td class="lab l">Public Equity</td><td class="n r p1" style="--w:0.3800">38.0%</td><td class="n r" style="--w:0.2400">24.0%</td></tr><tr class="asset"><td class="lab ind l">US Large Cap Growth Equity</td><td class="n r p1" style="--w:0.0836">8.4</td><td class="n r" style="--w:0.0528">5.3</td></tr><tr class="asset"><td class="lab ind l">US Large Cap Value Equity</td><td class="n r p1" style="--w:0.0836">8.4</td><td class="n r" style="--w:0.0528">5.3</td></tr><tr class="asset"><td class="lab ind l">US Small Cap Equity</td><td class="n r p1" style="--w:0.0304">3.0</td><td class="n r" style="--w:0.0192">1.9</td></tr><tr class="asset"><td class="lab ind l">Europe ex-UK Equity</td><td class="n r p1" style="--w:0.0532">5.3</td><td class="n r" style="--w:0.0336">3.4</td></tr><tr class="asset"><td class="lab ind l">UK Equity</td><td class="n r p1" style="--w:0.0190">1.9</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="asset"><td class="lab ind l">Japanese Equity</td><td class="n r p1" style="--w:0.0266">2.7</td><td class="n r" style="--w:0.0168">1.7</td></tr><tr class="asset"><td class="lab ind l">Asia-Pacific Equity</td><td class="n r p1" style="--w:0.0266">2.7</td><td class="n r" style="--w:0.0168">1.7</td></tr><tr class="asset"><td class="lab ind l">Emerging Market Equity</td><td class="n r p1" style="--w:0.0570">5.7</td><td class="n r" style="--w:0.0360">3.6</td></tr><tr class="cat"><td class="lab l">Hedge Funds</td><td class="n r p1" style="--w:0.1000">10.0%</td><td class="n r" style="--w:0.0900">9.0%</td></tr><tr class="asset"><td class="lab ind l">Event Driven</td><td class="n r p1" style="--w:0.0350">3.5</td><td class="n r" style="--w:0.0315">3.2</td></tr><tr class="asset"><td class="lab ind l">Equity Long/Short</td><td class="n r p1" style="--w:0.0400">4.0</td><td class="n r" style="--w:0.0360">3.6</td></tr><tr class="asset"><td class="lab ind l">Tactical Trading</td><td class="n r p1" style="--w:0.0250">2.5</td><td class="n r" style="--w:0.0225">2.3</td></tr><tr class="cat"><td class="lab l">Private Equity</td><td class="n r p1" style="--w:0.0500">5.0%</td><td class="n r" style="--w:0.0400">4.0%</td></tr><tr class="asset"><td class="lab ind l">Buyout</td><td class="n r p1" style="--w:0.0275">2.8</td><td class="n r" style="--w:0.0220">2.2</td></tr><tr class="asset"><td class="lab ind l">Growth</td><td class="n r p1" style="--w:1.0000">1.5</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="asset"><td class="lab ind l">Venture</td><td class="n r p1" style="--w:0.7500">0.8</td><td class="n r" style="--w:0.6000">0.6</td></tr><tr class="cat"><td class="lab l">Other Private Assets</td><td class="n r p1" style="--w:0.0400">4.0%</td><td class="n r" style="--w:0.0300">3.0%</td></tr><tr class="asset"><td class="lab ind l">Private Credit</td><td class="n r p1" style="--w:0.0240">2.4</td><td class="n r" style="--w:0.0180">1.8</td></tr><tr class="asset"><td class="lab ind l">Core Real Estate</td><td class="n r p1" style="--w:0.0160">1.6</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="total"><td class="lab">TOTAL</td><td class="n r p1">100.0%</td><td class="n r">100.0%</td></tr><tr class="spacer"><td colspan="3"></td></tr><tr class="metric"><td class="lab">Estimated Mean Return</td><td class="n r p1">6.0%</td><td class="n r">5.3%</td></tr><tr class="spacer"><td colspan="3"></td></tr><tr class="metric"><td class="lab">Sharpe Ratio</td><td class="n r p1">0.48</td><td class="n r">0.53</td></tr><tr class="spacer"><td colspan="3"></td></tr><tr class="metric"><td class="lab">Volatility</td><td class="n r p1">7.3%</td><td class="n r">5.2%</td></tr></tbody></table></div><div class="region right" data-name="Risk"><table class="t risk"><colgroup><col style="width:36.000%"><col style="width:16.000%"><col style="width:16.000%"><col style="width:16.000%"><col style="width:16.000%"></colgroup><tbody><tr class="names"><td class="lab"></td><td class="n c p1" colspan="2">USD Moderate Full</td><td class="n c" colspan="2">USD Conservative Full</td></tr><tr class="cat dup"><td class="lab">Investment Grade Fixed Income</td><td class="n c p1" colspan="2">34.0%</td><td class="n c" colspan="2">50.0%</td></tr><tr class="cat dup"><td class="lab">Other Fixed Income</td><td class="n c p1" colspan="2">9.0%</td><td class="n c" colspan="2">10.0%</td></tr><tr class="cat dup"><td class="lab">Public Equity</td><td class="n c p1" colspan="2">38.0%</td><td class="n c" colspan="2">24.0%</td></tr><tr class="cat dup"><td class="lab">Hedge Funds</td><td class="n c p1" colspan="2">10.0%</td><td class="n c" colspan="2">9.0%</td></tr><tr class="cat dup"><td class="lab">Private Equity</td><td class="n c p1" colspan="2">5.0%</td><td class="n c" colspan="2">4.0%</td></tr><tr class="cat dup"><td class="lab">Other Private Assets</td><td class="n c p1" colspan="2">4.0%</td><td class="n c" colspan="2">3.0%</td></tr><tr class="metric dup firstmetric"><td class="lab">Estimated Mean Return</td><td class="n c p1" colspan="2">6.0%</td><td class="n c" colspan="2">5.3%</td></tr><tr class="metric dup"><td class="lab">Sharpe Ratio</td><td class="n c p1" colspan="2">0.48</td><td class="n c" colspan="2">0.53</td></tr><tr class="metric dup"><td class="lab">Volatility</td><td class="n c p1" colspan="2">7.3%</td><td class="n c" colspan="2">5.2%</td></tr><tr class="band"><td class="lab span" colspan="5">Factor Based Risk Analytics</td></tr><tr class="subhead"><td class="lab">Predicted Performance Over Stress Periods</td><td class="n c p1">Nominal</td><td class="n c p1">Real</td><td class="n c">Nominal</td><td class="n c">Real</td></tr><tr class="data"><td class="lab ind l">Oil Embargo</td><td class="n c neg p1" style="--a:0.589">-17.7%</td><td class="n c neg p1" style="--a:1.000">-30.0%</td><td class="n c neg" style="--a:0.352">-10.6%</td><td class="n c neg" style="--a:0.800">-24.0%</td></tr><tr class="data"><td class="lab ind l">US Inflation / Iranian Revolution</td><td class="n c pos p1" style="--a:0.357">10.7%</td><td class="n c neg p1" style="--a:0.224">-6.7%</td><td class="n c pos" style="--a:0.284">8.5%</td><td class="n c neg" style="--a:0.285">-8.5%</td></tr><tr class="data"><td class="lab ind l">US Stagflation</td><td class="n c pos p1" style="--a:0.051">1.5%</td><td class="n c neg p1" style="--a:0.362">-10.9%</td><td class="n c pos" style="--a:0.308">9.2%</td><td class="n c neg" style="--a:0.137">-4.1%</td></tr><tr class="data"><td class="lab ind l">Black Monday</td><td class="n c neg p1" style="--a:0.291">-8.7%</td><td class="n c neg p1" style="--a:0.299">-9.0%</td><td class="n c neg" style="--a:0.170">-5.1%</td><td class="n c neg" style="--a:0.179">-5.4%</td></tr><tr class="data"><td class="lab ind l">Bond Crisis</td><td class="n c neg p1" style="--a:0.081">-2.4%</td><td class="n c neg p1" style="--a:0.157">-4.7%</td><td class="n c neg" style="--a:0.076">-2.3%</td><td class="n c neg" style="--a:0.152">-4.5%</td></tr><tr class="data"><td class="lab ind l">Russian Default / LTCM Collapse</td><td class="n c neg p1" style="--a:0.245">-7.4%</td><td class="n c neg p1" style="--a:0.249">-7.5%</td><td class="n c neg" style="--a:0.155">-4.6%</td><td class="n c neg" style="--a:0.159">-4.8%</td></tr><tr class="data"><td class="lab ind l">Tech Meltdown</td><td class="n c neg p1" style="--a:0.608">-18.2%</td><td class="n c neg p1" style="--a:0.755">-22.7%</td><td class="n c neg" style="--a:0.267">-8.0%</td><td class="n c neg" style="--a:0.433">-13.0%</td></tr><tr class="data"><td class="lab ind l">Financial Crisis</td><td class="n c neg p1" style="--a:0.923">-27.7%</td><td class="n c neg p1" style="--a:0.962">-28.9%</td><td class="n c neg" style="--a:0.602">-18.1%</td><td class="n c neg" style="--a:0.647">-19.4%</td></tr><tr class="data"><td class="lab ind l">Covid-19</td><td class="n c neg p1" style="--a:0.308">-9.2%</td><td class="n c neg p1" style="--a:0.297">-8.9%</td><td class="n c neg" style="--a:0.195">-5.8%</td><td class="n c neg" style="--a:0.183">-5.5%</td></tr><tr class="subhead"><td class="lab span" colspan="5">Value at Risk with 99% Confidence</td></tr><tr class="data"><td class="lab ind l">Over 1 Month</td><td class="n c p1">5.5%</td><td class="n c p1">5.6%</td><td class="n c">3.8%</td><td class="n c">4.0%</td></tr><tr class="data"><td class="lab ind l">Over 1 Year</td><td class="n c p1">17.4%</td><td class="n c p1">19.4%</td><td class="n c">10.7%</td><td class="n c">12.9%</td></tr><tr class="data"><td class="lab ind l">Over 3 Years</td><td class="n c p1">18.2%</td><td class="n c p1">23.3%</td><td class="n c">9.6%</td><td class="n c">15.2%</td></tr><tr class="subhead"><td class="lab span" colspan="5">Conditional Value at Risk with 99% Confidence</td></tr><tr class="data"><td class="lab ind l">Over 1 Month</td><td class="n c p1">7.3%</td><td class="n c p1">7.5%</td><td class="n c">4.9%</td><td class="n c">5.1%</td></tr><tr class="data"><td class="lab ind l">Over 1 Year</td><td class="n c p1">20.8%</td><td class="n c p1">22.7%</td><td class="n c">13.3%</td><td class="n c">15.3%</td></tr><tr class="data"><td class="lab ind l">Over 3 Years</td><td class="n c p1">23.0%</td><td class="n c p1">27.7%</td><td class="n c">13.6%</td><td class="n c">18.9%</td></tr><tr class="subhead"><td class="lab span" colspan="5">Probability of Loss</td></tr><tr class="data"><td class="lab ind l">Over 1 Month</td><td class="n c p1">31.5%</td><td class="n c p1">35.2%</td><td class="n c">29.0%</td><td class="n c">33.6%</td></tr><tr class="data"><td class="lab ind l">Over 1 Year</td><td class="n c p1">16.9%</td><td class="n c p1">23.7%</td><td class="n c">12.4%</td><td class="n c">20.0%</td></tr><tr class="data last"><td class="lab ind l">Over 3 Years</td><td class="n c p1">9.5%</td><td class="n c p1">16.5%</td><td class="n c">5.6%</td><td class="n c">12.9%</td></tr></tbody></table></div><div class="s-notes"><span>Category rows show the share of the total portfolio; asset rows sum to their category. A category one portfolio holds and another does not prints 0.0.</span><span>Stress rows show predicted performance through each episode; losses red, gains green. VaR and CVaR are positive loss magnitudes at 99% confidence.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 2 of 5</div></div></figure><p class="fitcap" data-for="sCombined"></p>
+  <h3 class="stage-h">Two comparisons or three <span>Allocation slide</span></h3>
+  <figure class="slideWrap" id="sAlloc4"><div class="slide"><div class="s-head">Strategic Asset Allocation</div><div class="s-sub">USD · Hedged — USD Moderate Full, USD Conservative Full, USD Moderate-Aggressive Full and USD Aggressive Full, per asset category with portfolio-level estimates</div><div class="s-rule"></div><div class="region full" data-name="Allocation"><table class="t port"><colgroup><col style="width:32.000%"><col style="width:17.000%"><col style="width:17.000%"><col style="width:17.000%"><col style="width:17.000%"></colgroup><tbody><tr class="names"><td class="lab"></td><td class="n c p1">USD Moderate Full</td><td class="n c">USD Conservative Full</td><td class="n c">USD Moderate-Aggressive Full</td><td class="n c">USD Aggressive Full</td></tr><tr class="cat firstcat"><td class="lab l">Investment Grade Fixed Income</td><td class="n r p1" style="--w:0.3400">34.0%</td><td class="n r" style="--w:0.5000">50.0%</td><td class="n r" style="--w:0.2500">25.0%</td><td class="n r" style="--w:0.1600">16.0%</td></tr><tr class="asset"><td class="lab ind l">US Dollar Debt</td><td class="n r p1" style="--w:0.3400">34.0</td><td class="n r" style="--w:0.5000">50.0</td><td class="n r" style="--w:0.2500">25.0</td><td class="n r" style="--w:0.1600">16.0</td></tr><tr class="cat"><td class="lab l">Other Fixed Income</td><td class="n r p1" style="--w:0.0900">9.0%</td><td class="n r" style="--w:0.1000">10.0%</td><td class="n r" style="--w:0.0800">8.0%</td><td class="n r" style="--w:0.0700">7.0%</td></tr><tr class="asset"><td class="lab ind l">US High Yield</td><td class="n r p1" style="--w:0.0900">9.0</td><td class="n r" style="--w:0.1000">10.0</td><td class="n r" style="--w:0.0800">8.0</td><td class="n r" style="--w:0.0700">7.0</td></tr><tr class="cat"><td class="lab l">Public Equity</td><td class="n r p1" style="--w:0.3800">38.0%</td><td class="n r" style="--w:0.2400">24.0%</td><td class="n r" style="--w:0.4700">47.0%</td><td class="n r" style="--w:0.5700">57.0%</td></tr><tr class="asset"><td class="lab ind l">US Large Cap Growth Equity</td><td class="n r p1" style="--w:0.0836">8.4</td><td class="n r" style="--w:0.0528">5.3</td><td class="n r" style="--w:0.1034">10.3</td><td class="n r" style="--w:0.1254">12.5</td></tr><tr class="asset"><td class="lab ind l">US Large Cap Value Equity</td><td class="n r p1" style="--w:0.0836">8.4</td><td class="n r" style="--w:0.0528">5.3</td><td class="n r" style="--w:0.1034">10.3</td><td class="n r" style="--w:0.1254">12.5</td></tr><tr class="asset"><td class="lab ind l">US Small Cap Equity</td><td class="n r p1" style="--w:0.0304">3.0</td><td class="n r" style="--w:0.0192">1.9</td><td class="n r" style="--w:0.0376">3.8</td><td class="n r" style="--w:0.0456">4.6</td></tr><tr class="asset"><td class="lab ind l">Europe ex-UK Equity</td><td class="n r p1" style="--w:0.0532">5.3</td><td class="n r" style="--w:0.0336">3.4</td><td class="n r" style="--w:0.0658">6.6</td><td class="n r" style="--w:0.0798">8.0</td></tr><tr class="asset"><td class="lab ind l">UK Equity</td><td class="n r p1" style="--w:0.0190">1.9</td><td class="n r" style="--w:1.0000">1.2</td><td class="n r" style="--w:0.0235">2.4</td><td class="n r" style="--w:0.0285">2.9</td></tr><tr class="asset"><td class="lab ind l">Japanese Equity</td><td class="n r p1" style="--w:0.0266">2.7</td><td class="n r" style="--w:0.0168">1.7</td><td class="n r" style="--w:0.0329">3.3</td><td class="n r" style="--w:0.0399">4.0</td></tr><tr class="asset"><td class="lab ind l">Asia-Pacific Equity</td><td class="n r p1" style="--w:0.0266">2.7</td><td class="n r" style="--w:0.0168">1.7</td><td class="n r" style="--w:0.0329">3.3</td><td class="n r" style="--w:0.0399">4.0</td></tr><tr class="asset"><td class="lab ind l">Emerging Market Equity</td><td class="n r p1" style="--w:0.0570">5.7</td><td class="n r" style="--w:0.0360">3.6</td><td class="n r" style="--w:0.0705">7.0</td><td class="n r" style="--w:0.0855">8.6</td></tr><tr class="cat"><td class="lab l">Hedge Funds</td><td class="n r p1" style="--w:0.1000">10.0%</td><td class="n r" style="--w:0.0900">9.0%</td><td class="n r" style="--w:0.1100">11.0%</td><td class="n r" style="--w:0.1100">11.0%</td></tr><tr class="asset"><td class="lab ind l">Event Driven</td><td class="n r p1" style="--w:0.0350">3.5</td><td class="n r" style="--w:0.0315">3.2</td><td class="n r" style="--w:0.0385">3.9</td><td class="n r" style="--w:0.0385">3.9</td></tr><tr class="asset"><td class="lab ind l">Equity Long/Short</td><td class="n r p1" style="--w:0.0400">4.0</td><td class="n r" style="--w:0.0360">3.6</td><td class="n r" style="--w:0.0440">4.4</td><td class="n r" style="--w:0.0440">4.4</td></tr><tr class="asset"><td class="lab ind l">Tactical Trading</td><td class="n r p1" style="--w:0.0250">2.5</td><td class="n r" style="--w:0.0225">2.3</td><td class="n r" style="--w:0.0275">2.8</td><td class="n r" style="--w:0.0275">2.8</td></tr><tr class="cat"><td class="lab l">Private Equity</td><td class="n r p1" style="--w:0.0500">5.0%</td><td class="n r" style="--w:0.0400">4.0%</td><td class="n r" style="--w:0.0600">6.0%</td><td class="n r" style="--w:0.0600">6.0%</td></tr><tr class="asset"><td class="lab ind l">Buyout</td><td class="n r p1" style="--w:0.0275">2.8</td><td class="n r" style="--w:0.0220">2.2</td><td class="n r" style="--w:0.0330">3.3</td><td class="n r" style="--w:0.0330">3.3</td></tr><tr class="asset"><td class="lab ind l">Growth</td><td class="n r p1" style="--w:1.0000">1.5</td><td class="n r" style="--w:1.0000">1.2</td><td class="n r" style="--w:0.0180">1.8</td><td class="n r" style="--w:0.0180">1.8</td></tr><tr class="asset"><td class="lab ind l">Venture</td><td class="n r p1" style="--w:0.7500">0.8</td><td class="n r" style="--w:0.6000">0.6</td><td class="n r" style="--w:0.9000">0.9</td><td class="n r" style="--w:0.9000">0.9</td></tr><tr class="cat"><td class="lab l">Other Private Assets</td><td class="n r p1" style="--w:0.0400">4.0%</td><td class="n r" style="--w:0.0300">3.0%</td><td class="n r" style="--w:0.0300">3.0%</td><td class="n r" style="--w:0.0300">3.0%</td></tr><tr class="asset"><td class="lab ind l">Private Credit</td><td class="n r p1" style="--w:0.0240">2.4</td><td class="n r" style="--w:0.0180">1.8</td><td class="n r" style="--w:0.0180">1.8</td><td class="n r" style="--w:0.0180">1.8</td></tr><tr class="asset"><td class="lab ind l">Core Real Estate</td><td class="n r p1" style="--w:0.0160">1.6</td><td class="n r" style="--w:1.0000">1.2</td><td class="n r" style="--w:1.0000">1.2</td><td class="n r" style="--w:1.0000">1.2</td></tr><tr class="total"><td class="lab">TOTAL</td><td class="n r p1">100.0%</td><td class="n r">100.0%</td><td class="n r">100.0%</td><td class="n r">100.0%</td></tr><tr class="spacer"><td colspan="5"></td></tr><tr class="metric"><td class="lab">Estimated Mean Return</td><td class="n r p1">6.0%</td><td class="n r">5.3%</td><td class="n r">6.3%</td><td class="n r">6.8%</td></tr><tr class="spacer"><td colspan="5"></td></tr><tr class="metric"><td class="lab">Sharpe Ratio</td><td class="n r p1">0.48</td><td class="n r">0.53</td><td class="n r">0.45</td><td class="n r">0.43</td></tr><tr class="spacer"><td colspan="5"></td></tr><tr class="metric"><td class="lab">Volatility</td><td class="n r p1">7.3%</td><td class="n r">5.2%</td><td class="n r">8.6%</td><td class="n r">10.0%</td></tr></tbody></table></div><div class="s-notes"><span>Category rows show the share of the total portfolio; asset rows sum to their category. A category one portfolio holds and another does not prints 0.0.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 2 of 6</div></div></figure><p class="fitcap" data-for="sAlloc4"></p>
+  <h3 class="stage-h">Two comparisons or three <span>Risk slide</span></h3>
+  <figure class="slideWrap" id="sRisk4"><div class="slide"><div class="s-head">Risk Dashboard</div><div class="s-sub">Factor-based risk analytics — stress periods and tail-loss measures, nominal and real, per portfolio</div><div class="s-rule"></div><div class="region full" data-name="Risk"><table class="t risk"><colgroup><col style="width:22.000%"><col style="width:9.750%"><col style="width:9.750%"><col style="width:9.750%"><col style="width:9.750%"><col style="width:9.750%"><col style="width:9.750%"><col style="width:9.750%"><col style="width:9.750%"></colgroup><tbody><tr class="names"><td class="lab"></td><td class="n c p1" colspan="2">USD Moderate Full</td><td class="n c" colspan="2">USD Conservative Full</td><td class="n c" colspan="2">USD Moderate-Aggressive Full</td><td class="n c" colspan="2">USD Aggressive Full</td></tr><tr class="cat dup"><td class="lab">Investment Grade Fixed Income</td><td class="n c p1" colspan="2">34.0%</td><td class="n c" colspan="2">50.0%</td><td class="n c" colspan="2">25.0%</td><td class="n c" colspan="2">16.0%</td></tr><tr class="cat dup"><td class="lab">Other Fixed Income</td><td class="n c p1" colspan="2">9.0%</td><td class="n c" colspan="2">10.0%</td><td class="n c" colspan="2">8.0%</td><td class="n c" colspan="2">7.0%</td></tr><tr class="cat dup"><td class="lab">Public Equity</td><td class="n c p1" colspan="2">38.0%</td><td class="n c" colspan="2">24.0%</td><td class="n c" colspan="2">47.0%</td><td class="n c" colspan="2">57.0%</td></tr><tr class="cat dup"><td class="lab">Hedge Funds</td><td class="n c p1" colspan="2">10.0%</td><td class="n c" colspan="2">9.0%</td><td class="n c" colspan="2">11.0%</td><td class="n c" colspan="2">11.0%</td></tr><tr class="cat dup"><td class="lab">Private Equity</td><td class="n c p1" colspan="2">5.0%</td><td class="n c" colspan="2">4.0%</td><td class="n c" colspan="2">6.0%</td><td class="n c" colspan="2">6.0%</td></tr><tr class="cat dup"><td class="lab">Other Private Assets</td><td class="n c p1" colspan="2">4.0%</td><td class="n c" colspan="2">3.0%</td><td class="n c" colspan="2">3.0%</td><td class="n c" colspan="2">3.0%</td></tr><tr class="metric dup firstmetric"><td class="lab">Estimated Mean Return</td><td class="n c p1" colspan="2">6.0%</td><td class="n c" colspan="2">5.3%</td><td class="n c" colspan="2">6.3%</td><td class="n c" colspan="2">6.8%</td></tr><tr class="metric dup"><td class="lab">Sharpe Ratio</td><td class="n c p1" colspan="2">0.48</td><td class="n c" colspan="2">0.53</td><td class="n c" colspan="2">0.45</td><td class="n c" colspan="2">0.43</td></tr><tr class="metric dup"><td class="lab">Volatility</td><td class="n c p1" colspan="2">7.3%</td><td class="n c" colspan="2">5.2%</td><td class="n c" colspan="2">8.6%</td><td class="n c" colspan="2">10.0%</td></tr><tr class="band"><td class="lab span" colspan="9">Factor Based Risk Analytics</td></tr><tr class="subhead"><td class="lab">Predicted Performance Over Stress Periods</td><td class="n c p1">Nominal</td><td class="n c p1">Real</td><td class="n c">Nominal</td><td class="n c">Real</td><td class="n c">Nominal</td><td class="n c">Real</td><td class="n c">Nominal</td><td class="n c">Real</td></tr><tr class="data"><td class="lab ind l">Oil Embargo</td><td class="n c neg p1" style="--a:0.589">-17.7%</td><td class="n c neg p1" style="--a:1.000">-30.0%</td><td class="n c neg" style="--a:0.352">-10.6%</td><td class="n c neg" style="--a:0.800">-24.0%</td><td class="n c neg" style="--a:0.733">-22.0%</td><td class="n c neg" style="--a:1.000">-33.7%</td><td class="n c neg" style="--a:0.871">-26.1%</td><td class="n c neg" style="--a:1.000">-37.2%</td></tr><tr class="data"><td class="lab ind l">US Inflation / Iranian Revolution</td><td class="n c pos p1" style="--a:0.357">10.7%</td><td class="n c neg p1" style="--a:0.224">-6.7%</td><td class="n c pos" style="--a:0.284">8.5%</td><td class="n c neg" style="--a:0.285">-8.5%</td><td class="n c pos" style="--a:0.403">12.1%</td><td class="n c neg" style="--a:0.184">-5.5%</td><td class="n c pos" style="--a:0.449">13.5%</td><td class="n c neg" style="--a:0.146">-4.4%</td></tr><tr class="data"><td class="lab ind l">US Stagflation</td><td class="n c pos p1" style="--a:0.051">1.5%</td><td class="n c neg p1" style="--a:0.362">-10.9%</td><td class="n c pos" style="--a:0.308">9.2%</td><td class="n c neg" style="--a:0.137">-4.1%</td><td class="n c neg" style="--a:0.110">-3.3%</td><td class="n c neg" style="--a:0.503">-15.1%</td><td class="n c neg" style="--a:0.263">-7.9%</td><td class="n c neg" style="--a:0.638">-19.1%</td></tr><tr class="data"><td class="lab ind l">Black Monday</td><td class="n c neg p1" style="--a:0.291">-8.7%</td><td class="n c neg p1" style="--a:0.299">-9.0%</td><td class="n c neg" style="--a:0.170">-5.1%</td><td class="n c neg" style="--a:0.179">-5.4%</td><td class="n c neg" style="--a:0.368">-11.0%</td><td class="n c neg" style="--a:0.376">-11.3%</td><td class="n c neg" style="--a:0.445">-13.4%</td><td class="n c neg" style="--a:0.453">-13.6%</td></tr><tr class="data"><td class="lab ind l">Bond Crisis</td><td class="n c neg p1" style="--a:0.081">-2.4%</td><td class="n c neg p1" style="--a:0.157">-4.7%</td><td class="n c neg" style="--a:0.076">-2.3%</td><td class="n c neg" style="--a:0.152">-4.5%</td><td class="n c neg" style="--a:0.087">-2.6%</td><td class="n c neg" style="--a:0.162">-4.9%</td><td class="n c neg" style="--a:0.094">-2.8%</td><td class="n c neg" style="--a:0.169">-5.1%</td></tr><tr class="data"><td class="lab ind l">Russian Default / LTCM Collapse</td><td class="n c neg p1" style="--a:0.245">-7.4%</td><td class="n c neg p1" style="--a:0.249">-7.5%</td><td class="n c neg" style="--a:0.155">-4.6%</td><td class="n c neg" style="--a:0.159">-4.8%</td><td class="n c neg" style="--a:0.300">-9.0%</td><td class="n c neg" style="--a:0.303">-9.1%</td><td class="n c neg" style="--a:0.356">-10.7%</td><td class="n c neg" style="--a:0.360">-10.8%</td></tr><tr class="data"><td class="lab ind l">Tech Meltdown</td><td class="n c neg p1" style="--a:0.608">-18.2%</td><td class="n c neg p1" style="--a:0.755">-22.7%</td><td class="n c neg" style="--a:0.267">-8.0%</td><td class="n c neg" style="--a:0.433">-13.0%</td><td class="n c neg" style="--a:0.815">-24.4%</td><td class="n c neg" style="--a:0.951">-28.5%</td><td class="n c neg" style="--a:1.000">-30.2%</td><td class="n c neg" style="--a:1.000">-34.0%</td></tr><tr class="data"><td class="lab ind l">Financial Crisis</td><td class="n c neg p1" style="--a:0.923">-27.7%</td><td class="n c neg p1" style="--a:0.962">-28.9%</td><td class="n c neg" style="--a:0.602">-18.1%</td><td class="n c neg" style="--a:0.647">-19.4%</td><td class="n c neg" style="--a:1.000">-33.1%</td><td class="n c neg" style="--a:1.000">-34.2%</td><td class="n c neg" style="--a:1.000">-38.2%</td><td class="n c neg" style="--a:1.000">-39.3%</td></tr><tr class="data"><td class="lab ind l">Covid-19</td><td class="n c neg p1" style="--a:0.308">-9.2%</td><td class="n c neg p1" style="--a:0.297">-8.9%</td><td class="n c neg" style="--a:0.195">-5.8%</td><td class="n c neg" style="--a:0.183">-5.5%</td><td class="n c neg" style="--a:0.375">-11.3%</td><td class="n c neg" style="--a:0.365">-10.9%</td><td class="n c neg" style="--a:0.443">-13.3%</td><td class="n c neg" style="--a:0.433">-13.0%</td></tr><tr class="subhead"><td class="lab span" colspan="9">Value at Risk with 99% Confidence</td></tr><tr class="data"><td class="lab ind l">Over 1 Month</td><td class="n c p1">5.5%</td><td class="n c p1">5.6%</td><td class="n c">3.8%</td><td class="n c">4.0%</td><td class="n c">6.5%</td><td class="n c">6.7%</td><td class="n c">7.7%</td><td class="n c">7.8%</td></tr><tr class="data"><td class="lab ind l">Over 1 Year</td><td class="n c p1">17.4%</td><td class="n c p1">19.4%</td><td class="n c">10.7%</td><td class="n c">12.9%</td><td class="n c">21.3%</td><td class="n c">23.3%</td><td class="n c">25.2%</td><td class="n c">27.0%</td></tr><tr class="data"><td class="lab ind l">Over 3 Years</td><td class="n c p1">18.2%</td><td class="n c p1">23.3%</td><td class="n c">9.6%</td><td class="n c">15.2%</td><td class="n c">23.4%</td><td class="n c">28.1%</td><td class="n c">28.3%</td><td class="n c">32.9%</td></tr><tr class="subhead"><td class="lab span" colspan="9">Conditional Value at Risk with 99% Confidence</td></tr><tr class="data"><td class="lab ind l">Over 1 Month</td><td class="n c p1">7.3%</td><td class="n c p1">7.5%</td><td class="n c">4.9%</td><td class="n c">5.1%</td><td class="n c">8.8%</td><td class="n c">9.0%</td><td class="n c">10.4%</td><td class="n c">10.6%</td></tr><tr class="data"><td class="lab ind l">Over 1 Year</td><td class="n c p1">20.8%</td><td class="n c p1">22.7%</td><td class="n c">13.3%</td><td class="n c">15.3%</td><td class="n c">25.2%</td><td class="n c">26.9%</td><td class="n c">29.4%</td><td class="n c">31.1%</td></tr><tr class="data"><td class="lab ind l">Over 3 Years</td><td class="n c p1">23.0%</td><td class="n c p1">27.7%</td><td class="n c">13.6%</td><td class="n c">18.9%</td><td class="n c">28.7%</td><td class="n c">33.0%</td><td class="n c">34.1%</td><td class="n c">38.1%</td></tr><tr class="subhead"><td class="lab span" colspan="9">Probability of Loss</td></tr><tr class="data"><td class="lab ind l">Over 1 Month</td><td class="n c p1">31.5%</td><td class="n c p1">35.2%</td><td class="n c">29.0%</td><td class="n c">33.6%</td><td class="n c">32.9%</td><td class="n c">36.0%</td><td class="n c">34.1%</td><td class="n c">36.7%</td></tr><tr class="data"><td class="lab ind l">Over 1 Year</td><td class="n c p1">16.9%</td><td class="n c p1">23.7%</td><td class="n c">12.4%</td><td class="n c">20.0%</td><td class="n c">19.3%</td><td class="n c">25.6%</td><td class="n c">21.3%</td><td class="n c">27.1%</td></tr><tr class="data last"><td class="lab ind l">Over 3 Years</td><td class="n c p1">9.5%</td><td class="n c p1">16.5%</td><td class="n c">5.6%</td><td class="n c">12.9%</td><td class="n c">11.6%</td><td class="n c">18.3%</td><td class="n c">13.6%</td><td class="n c">19.9%</td></tr></tbody></table></div><div class="s-notes"><span>Stress rows show predicted performance through each episode; losses red, gains green. VaR and CVaR are positive loss magnitudes at 99% confidence.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 3 of 6</div></div></figure><p class="fitcap" data-for="sRisk4"></p>
+  <h3 class="stage-h">Both configurations <span>Implementation</span></h3>
+  <figure class="slideWrap" id="sImpl"><div class="slide"><div class="s-head">Implemented Model</div><div class="s-sub">Proposal UID pr_1b8285460b7f · Implementation Type PMG Multi-Asset Portfolio · Fee Schedule CASP · Fee Level PMG Target · Effective Rate 0.3001% · Fee Card 0.0-placeholder · placeholder</div><div class="s-rule"></div><div class="region full" data-name="Implementation"><table class="t impl"><colgroup><col style="width:17.708%"><col style="width:16.667%"><col style="width:6.250%"><col style="width:4.688%"><col style="width:6.250%"><col style="width:6.250%"><col style="width:5.208%"><col style="width:5.729%"><col style="width:6.250%"><col style="width:6.250%"><col style="width:5.208%"><col style="width:6.250%"><col style="width:7.292%"></colgroup><tbody><tr class="head"><td class="lab">Categories &amp; Asset Classes</td><td class="n">Products</td><td class="n">Allocation (%)</td><td class="n">Style</td><td class="n">Vehicle</td><td class="n">Share Class</td><td class="n">Source</td><td class="n">Liquidity</td><td class="n">Exposure ccy</td><td class="n">Product Cost</td><td class="n">Mgmt fee</td><td class="n">Wtd fee (bp)</td><td class="n">Notional</td></tr><tr class="cat"><td class="lab">Investment Grade Fixed Income</td><td class="n"></td><td class="n r">24.05%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">13.3</td><td class="n r">$144,300,000</td></tr><tr class="item"><td class="lab ind">Municipals</td><td class="n">GSAM Core Municipal SMA</td><td class="n r">10.82%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.25%</td><td class="n r">0.30%</td><td class="n r">6.0</td><td class="n r">$64,920,000</td></tr><tr class="item"><td class="lab ind">IG Corporate</td><td class="n">GSAM Intermediate Credit SMA</td><td class="n r">8.42%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.28%</td><td class="n r">0.30%</td><td class="n r">4.9</td><td class="n r">$50,520,000</td></tr><tr class="item"><td class="lab ind">Short Duration</td><td class="n">GSAM Short Duration SMA</td><td class="n r">4.81%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.22%</td><td class="n r">0.30%</td><td class="n r">2.5</td><td class="n r">$28,860,000</td></tr><tr class="cat"><td class="lab">Hybrid Fixed Income</td><td class="n"></td><td class="n r">1.95%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">1.9</td><td class="n r">$11,700,000</td></tr><tr class="item"><td class="lab ind">Volatility Premium</td><td class="n">Strategic Volatility Premium</td><td class="n r">1.95%</td><td class="n l">Active</td><td class="n l">Mutual Fund</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.65%</td><td class="n r">0.30%</td><td class="n r">1.9</td><td class="n r">$11,700,000</td></tr><tr class="cat"><td class="lab">Other Fixed Income</td><td class="n"></td><td class="n r">9.00%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">9.7</td><td class="n r">$54,000,000</td></tr><tr class="item"><td class="lab ind">High Yield</td><td class="n">GS High Yield Fund</td><td class="n r">4.05%</td><td class="n l">Active</td><td class="n l">Mutual Fund</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.72%</td><td class="n r">0.30%</td><td class="n r">4.1</td><td class="n r">$24,300,000</td></tr><tr class="item"><td class="lab ind">EM Debt</td><td class="n">GS Emerging Markets Debt</td><td class="n r">3.15%</td><td class="n l">Active</td><td class="n l">Mutual Fund</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.85%</td><td class="n r">0.30%</td><td class="n r">3.6</td><td class="n r">$18,900,000</td></tr><tr class="item"><td class="lab ind">Multi-Sector</td><td class="n">GS Strategic Income Fund</td><td class="n r">1.80%</td><td class="n l">Active</td><td class="n l">Mutual Fund</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.79%</td><td class="n r">0.30%</td><td class="n r">2.0</td><td class="n r">$10,800,000</td></tr><tr class="cat"><td class="lab">Public Equity</td><td class="n"></td><td class="n r">38.00%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">18.2</td><td class="n r">$228,000,000</td></tr><tr class="item"><td class="lab ind">US Large Cap</td><td class="n">GS Access US Large Cap ETF</td><td class="n r">20.90%</td><td class="n l">Passive</td><td class="n l">ETF</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.09%</td><td class="n r">0.30%</td><td class="n r">8.2</td><td class="n r">$125,400,000</td></tr><tr class="item"><td class="lab ind">Intl Developed</td><td class="n">GS Access Intl Equity ETF</td><td class="n r">11.40%</td><td class="n l">Passive</td><td class="n l">ETF</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">Local</td><td class="n r">0.25%</td><td class="n r">0.30%</td><td class="n r">6.3</td><td class="n r">$68,400,000</td></tr><tr class="item"><td class="lab ind">Emerging Markets</td><td class="n">GS Access EM Equity ETF</td><td class="n r">5.70%</td><td class="n l">Passive</td><td class="n l">ETF</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">Local</td><td class="n r">0.37%</td><td class="n r">0.30%</td><td class="n r">3.8</td><td class="n r">$34,200,000</td></tr><tr class="cat"><td class="lab">Hedge Funds</td><td class="n"></td><td class="n r">10.00%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">14.9</td><td class="n r">$60,000,000</td></tr><tr class="item"><td class="lab ind">Multi-Strategy</td><td class="n">GS HedgeWorks Multi-Strategy</td><td class="n r">6.00%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Acc</td><td class="n l">Internal</td><td class="n l">Quarterly</td><td class="n l">USD</td><td class="n r">1.35%</td><td class="n r">0.30%</td><td class="n r">9.9</td><td class="n r">$36,000,000</td></tr><tr class="item"><td class="lab ind">Multi-Strategy</td><td class="n">GS Absolute Return Tracker</td><td class="n r">4.00%</td><td class="n l">Active</td><td class="n l">Mutual Fund</td><td class="n l">Acc</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.96%</td><td class="n r">0.30%</td><td class="n r">5.0</td><td class="n r">$24,000,000</td></tr><tr class="cat"><td class="lab">Private Equity &amp; Other Private Assets</td><td class="n"></td><td class="n r">9.00%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">15.2</td><td class="n r">$54,000,000</td></tr><tr class="item"><td class="lab ind">Buyout</td><td class="n">GS Private Markets Buyout</td><td class="n r">2.70%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Acc</td><td class="n l">Internal</td><td class="n l">Drawdown</td><td class="n l">USD</td><td class="n r">1.45%</td><td class="n r">0.30%</td><td class="n r">4.7</td><td class="n r">$16,200,000</td></tr><tr class="item"><td class="lab ind">Secondaries</td><td class="n">GS Vintage Fund IX</td><td class="n r">2.25%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Acc</td><td class="n l">Internal</td><td class="n l">Drawdown</td><td class="n l">USD</td><td class="n r">1.25%</td><td class="n r">0.30%</td><td class="n r">3.5</td><td class="n r">$13,500,000</td></tr><tr class="item"><td class="lab ind">Growth</td><td class="n">GS Growth Equity Partners</td><td class="n r">1.80%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Acc</td><td class="n l">Internal</td><td class="n l">Drawdown</td><td class="n l">USD</td><td class="n r">1.50%</td><td class="n r">0.30%</td><td class="n r">3.2</td><td class="n r">$10,800,000</td></tr><tr class="item"><td class="lab ind">Private Credit</td><td class="n">GS Private Credit Partners</td><td class="n r">1.35%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Quarterly</td><td class="n l">USD</td><td class="n r">1.40%</td><td class="n r">0.30%</td><td class="n r">2.3</td><td class="n r">$8,100,000</td></tr><tr class="item"><td class="lab ind">Core Real Estate</td><td class="n">GS Real Estate Partners</td><td class="n r">0.90%</td><td class="n l">Active</td><td class="n l">SMA</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Drawdown</td><td class="n l">USD</td><td class="n r">1.30%</td><td class="n r">0.30%</td><td class="n r">1.4</td><td class="n r">$5,400,000</td></tr><tr class="cat"><td class="lab">Asset Allocation Strategies</td><td class="n"></td><td class="n r">8.00%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r"></td><td class="n r">9.2</td><td class="n r">$48,000,000</td></tr><tr class="item"><td class="lab ind">Tactical Tilts</td><td class="n">Tactical Tilt Fund</td><td class="n r">8.00%</td><td class="n l">Active</td><td class="n l">Mutual Fund</td><td class="n l">Dis</td><td class="n l">Internal</td><td class="n l">Daily</td><td class="n l">USD</td><td class="n r">0.85%</td><td class="n r">0.30%</td><td class="n r">9.2</td><td class="n r">$48,000,000</td></tr><tr class="total"><td class="lab">Total</td><td class="n"></td><td class="n r">100.00%</td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n l"></td><td class="n r"></td><td class="n r">0.30%</td><td class="n r">82.5</td><td class="n r">$600,000,000</td></tr></tbody></table></div><div class="s-notes"><span>Weights are rounded to 2dp by largest remainder across the whole table, so the column closes on exactly 100.00%; notionals derive from the printed weight on the $600,000,000 mandate.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 3 of 5</div></div></figure><p class="fitcap" data-for="sImpl"></p>
+  <h3 class="stage-h">Both configurations <span>Assumptions</span></h3>
+  <figure class="slideWrap" id="sAssum"><div class="slide"><div class="s-head">Long-Term Capital Market Assumptions</div><div class="s-sub">Per-asset estimates behind the analytics — risk premia ranges, volatility and modelling windows</div><div class="s-rule"></div><div class="region full" data-name="Assumptions"><table class="t assum"><colgroup><col style="width:26.316%"><col style="width:4.605%"><col style="width:4.605%"><col style="width:4.605%"><col style="width:7.895%"><col style="width:9.539%"><col style="width:17.105%"><col style="width:10.855%"><col style="width:7.237%"><col style="width:7.237%"></colgroup><tbody><tr class="h1"><td class="lab"></td><td class="n c" colspan="6">Long-Term Estimates</td><td class="n c"></td><td class="n c" colspan="2">Modelling Dates</td></tr><tr class="h2"><td class="lab"></td><td class="n c" colspan="3">Risk Premia<br> with Estimated Range</td><td class="n c">Volatility</td><td class="n c">Sharpe Ratio</td><td class="n c">Estimated Mean Return<br>(2.5% Risk Free Rate)</td><td class="n c">Hedging Ratio</td><td class="n c">From</td><td class="n c">To</td></tr><tr class="cat firstcat"><td class="lab">Investment Grade Fixed Income</td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td></tr><tr class="asset"><td class="lab ind">US Dollar Debt</td><td class="n r lo">0.6%</td><td class="n c">1.1%</td><td class="n l hi">1.6%</td><td class="n c">3.2%</td><td class="n c">0.35</td><td class="n c">3.6%</td><td class="n c">100%</td><td class="n c">Feb-73</td><td class="n c">Apr-25</td></tr><tr class="cat"><td class="lab">Other Fixed Income</td><td class="n r"></td><td class="n c"></td><td class="n l hi"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td></tr><tr class="asset"><td class="lab ind">US High Yield</td><td class="n r lo">1.7%</td><td class="n c">3.0%</td><td class="n l hi">4.3%</td><td class="n c">8.2%</td><td class="n c">0.37</td><td class="n c">5.5%</td><td class="n c">100%</td><td class="n c">Aug-83</td><td class="n c">Apr-25</td></tr><tr class="cat"><td class="lab">Public Equity</td><td class="n r"></td><td class="n c"></td><td class="n l hi"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td></tr><tr class="asset"><td class="lab ind">US Large Cap Growth Equity</td><td class="n r lo">2.6%</td><td class="n c">5.3%</td><td class="n l hi">8.1%</td><td class="n c">17.0%</td><td class="n c">0.31</td><td class="n c">7.8%</td><td class="n c">100%</td><td class="n c">Jan-79</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">US Large Cap Value Equity</td><td class="n r lo">3.5%</td><td class="n c">5.9%</td><td class="n l hi">8.2%</td><td class="n c">14.5%</td><td class="n c">0.40</td><td class="n c">8.4%</td><td class="n c">100%</td><td class="n c">Jan-79</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">US Small Cap Equity</td><td class="n r lo">2.2%</td><td class="n c">5.2%</td><td class="n l hi">8.3%</td><td class="n c">19.2%</td><td class="n c">0.27</td><td class="n c">7.7%</td><td class="n c">100%</td><td class="n c">Jan-79</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Europe ex-UK Equity</td><td class="n r lo">2.2%</td><td class="n c">4.8%</td><td class="n l hi">7.4%</td><td class="n c">16.4%</td><td class="n c">0.29</td><td class="n c">7.3%</td><td class="n c">100%</td><td class="n c">Feb-70</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">UK Equity</td><td class="n r lo">2.4%</td><td class="n c">4.7%</td><td class="n l hi">7.1%</td><td class="n c">14.8%</td><td class="n c">0.32</td><td class="n c">7.2%</td><td class="n c">100%</td><td class="n c">Jan-70</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Japanese Equity</td><td class="n r lo">-0.4%</td><td class="n c">2.6%</td><td class="n l hi">5.6%</td><td class="n c">18.6%</td><td class="n c">0.14</td><td class="n c">5.1%</td><td class="n c">100%</td><td class="n c">Jan-70</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Asia-Pacific Equity</td><td class="n r lo">2.7%</td><td class="n c">5.4%</td><td class="n l hi">8.1%</td><td class="n c">16.1%</td><td class="n c">0.34</td><td class="n c">7.9%</td><td class="n c">100%</td><td class="n c">Feb-70</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Emerging Market Equity</td><td class="n r lo">3.7%</td><td class="n c">7.2%</td><td class="n l hi">10.7%</td><td class="n c">20.7%</td><td class="n c">0.35</td><td class="n c">9.7%</td><td class="n c">100%</td><td class="n c">Jan-88</td><td class="n c">Apr-25</td></tr><tr class="cat"><td class="lab">Hedge Funds</td><td class="n r"></td><td class="n c"></td><td class="n l hi"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td></tr><tr class="asset"><td class="lab ind">Event Driven</td><td class="n r lo">0.5%</td><td class="n c">1.7%</td><td class="n l hi">2.8%</td><td class="n c">6.2%</td><td class="n c">0.27</td><td class="n c">4.2%</td><td class="n c">100%</td><td class="n c">Jan-94</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Equity Long/Short</td><td class="n r lo">0.5%</td><td class="n c">2.1%</td><td class="n l hi">3.8%</td><td class="n c">8.9%</td><td class="n c">0.24</td><td class="n c">4.6%</td><td class="n c">100%</td><td class="n c">Jan-94</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Tactical Trading</td><td class="n r lo">0.4%</td><td class="n c">2.1%</td><td class="n l hi">3.8%</td><td class="n c">7.3%</td><td class="n c">0.29</td><td class="n c">4.6%</td><td class="n c">100%</td><td class="n c">Jan-05</td><td class="n c">Apr-25</td></tr><tr class="cat"><td class="lab">Private Equity</td><td class="n r"></td><td class="n c"></td><td class="n l hi"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td></tr><tr class="asset"><td class="lab ind">Buyout</td><td class="n r lo">1.8%</td><td class="n c">6.5%</td><td class="n l hi">11.2%</td><td class="n c">13.8%</td><td class="n c">0.47</td><td class="n c">9.0%</td><td class="n c">100%</td><td class="n c">Jan-70</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Growth</td><td class="n r lo">1.1%</td><td class="n c">6.4%</td><td class="n l hi">11.7%</td><td class="n c">15.5%</td><td class="n c">0.41</td><td class="n c">8.9%</td><td class="n c">100%</td><td class="n c">Jan-79</td><td class="n c">Apr-25</td></tr><tr class="asset"><td class="lab ind">Venture</td><td class="n r lo">-0.1%</td><td class="n c">5.6%</td><td class="n l hi">11.3%</td><td class="n c">16.6%</td><td class="n c">0.34</td><td class="n c">8.1%</td><td class="n c">100%</td><td class="n c">Dec-83</td><td class="n c">Dec-22</td></tr><tr class="cat"><td class="lab">Other Private Assets</td><td class="n r"></td><td class="n c"></td><td class="n l hi"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td><td class="n c"></td></tr><tr class="asset"><td class="lab ind">Private Credit</td><td class="n r lo">1.5%</td><td class="n c">5.3%</td><td class="n l hi">9.0%</td><td class="n c">11.0%</td><td class="n c">0.48</td><td class="n c">7.8%</td><td class="n c">100%</td><td class="n c">Sep-83</td><td class="n c">Apr-25</td></tr><tr class="asset last"><td class="lab ind">Core Real Estate</td><td class="n r lo">1.7%</td><td class="n c">6.4%</td><td class="n l hi">11.2%</td><td class="n c">13.8%</td><td class="n c">0.47</td><td class="n c">8.9%</td><td class="n c">100%</td><td class="n c">Jul-89</td><td class="n c">Dec-22</td></tr></tbody></table></div><div class="s-notes"><span>Range ends are inked red and green, low — mean — high across; the table shows only the assets the strategic slides hold.</span></div><div class="s-pg">Proposal UID pr_1b8285460b7f<br>Slide 5 of 5</div></div></figure><p class="fitcap" data-for="sAssum"></p>
+</div>
+
+<h2 id="gallery"><small>Side by side</small>All ten, on the combined slide</h2>
+<p class="lede">The same slide in every version, each fitted independently. Click one to load it above.</p>
+<div class="gallery"><div class="gcard" role="button" tabindex="0" data-v="1" aria-label="Load version 1"><div class="gl"><b>1</b> Workbook, fitted</div><div class="gthumb" data-thumb="1"></div><div class="gfit" data-gfit="1"></div></div><div class="gcard" role="button" tabindex="0" data-v="2" aria-label="Load version 2"><div class="gl"><b>2</b> Workbook, compact</div><div class="gthumb" data-thumb="2"></div><div class="gfit" data-gfit="2"></div></div><div class="gcard" role="button" tabindex="0" data-v="3" aria-label="Load version 3"><div class="gl"><b>3</b> One header, banded groups</div><div class="gthumb" data-thumb="3"></div><div class="gfit" data-gfit="3"></div></div><div class="gcard" role="button" tabindex="0" data-v="4" aria-label="Load version 4"><div class="gl"><b>4</b> Ledger</div><div class="gthumb" data-thumb="4"></div><div class="gfit" data-gfit="4"></div></div><div class="gcard" role="button" tabindex="0" data-v="5" aria-label="Load version 5"><div class="gl"><b>5</b> Zebra</div><div class="gthumb" data-thumb="5"></div><div class="gfit" data-gfit="5"></div></div><div class="gcard" role="button" tabindex="0" data-v="6" aria-label="Load version 6"><div class="gl"><b>6</b> Category blocks</div><div class="gthumb" data-thumb="6"></div><div class="gfit" data-gfit="6"></div></div><div class="gcard" role="button" tabindex="0" data-v="7" aria-label="Load version 7"><div class="gl"><b>7</b> Proposal column</div><div class="gthumb" data-thumb="7"></div><div class="gfit" data-gfit="7"></div></div><div class="gcard" role="button" tabindex="0" data-v="8" aria-label="Load version 8"><div class="gl"><b>8</b> Quiet modern</div><div class="gthumb" data-thumb="8"></div><div class="gfit" data-gfit="8"></div></div><div class="gcard" role="button" tabindex="0" data-v="9" aria-label="Load version 9"><div class="gl"><b>9</b> Data bars and heat</div><div class="gthumb" data-thumb="9"></div><div class="gfit" data-gfit="9"></div></div><div class="gcard" role="button" tabindex="0" data-v="10" aria-label="Load version 10"><div class="gl"><b>10</b> Full grid</div><div class="gthumb" data-thumb="10"></div><div class="gfit" data-gfit="10"></div></div></div>
+
+<h2 id="decide"><small>Yours to call</small>Decisions</h2>
+<ul class="q">
+  <li><b>Which version</b> &mdash; a number, or a combination (&ldquo;3 with 7&rsquo;s proposal column&rdquo;). My read: <b>1</b> fixes exactly what&rsquo;s wrong today without touching the 1:1 promise; <b>7</b> is the smallest step beyond it, and makes the proposal the thing the eye lands on.</li>
+  <li><b>The repeated rows on the risk table</b> &mdash; drop them (the default here) or keep them. The choice applies to both configurations, so the risk table reads the same wherever it appears.</li>
+  <li><b>For versions 3&ndash;10: both files, or the deck only?</b> I&rsquo;d apply a restyle to both. One engine was the point, and a workbook that looks different from its own presentation invites the question of which one is right.</li>
+  <li><b>The 46 / 54 split</b> on the combined slide gives the risk table its extra columns. If the allocation labels feel cramped, 50 / 50 is one line to change.</li>
+</ul>
+<div class="note"><p><b>What happens next.</b> Once you&rsquo;ve chosen, I&rsquo;ll build the two configurations and the theme into <code>pptWriter</code>, proof the result through PowerPoint here, pin it with tests, and send you the proof.</p></div>
+
+<footer>
+  <p>Epsilon Phi &middot; Proposal Tool &middot; deck table styles. Tables generated by <code>sheetDoc.buildPortfoliosDoc</code>, <code>buildRiskDoc</code>, <code>buildImplementationDoc</code> and <code>buildAssumptionsDoc</code>, with text from <code>renderNumber</code>. Data: the golden USD Hedged pair (combined slide, implementation, assumptions) and four live baked USD Hedged portfolios (split slides). &ldquo;Today&rdquo; is reproduced with <code>pptWriter</code>&rsquo;s own scale arithmetic. 27 September 2026.</p>
+</footer>
+</div>
+
+<script>
+(function () {
+  var NAMES = ["Workbook, fitted", "Workbook, compact", "One header, banded groups", "Ledger", "Zebra", "Category blocks", "Proposal column", "Quiet modern", "Data bars and heat", "Full grid"];
+  var stage = document.getElementById('stage');
+  var keep = document.getElementById('keepdup');
+  var current = 1;
+  var store = null;
+  try { store = window.localStorage; } catch (e) { store = null; }
+
+  function scaleWrap(w) {
+    var k = w.clientWidth / 960;
+    if (k > 0) w.querySelector('.slide').style.setProperty('--k', k);
+  }
+  function scaleAll() { document.querySelectorAll('.slideWrap').forEach(scaleWrap); }
+
+  function numeric(td) { return td.classList.contains('r') || td.classList.contains('c'); }
+  function fitRegion(region, base) {
+    var t = region.querySelector('table');
+    if (!t) return null;
+    if (region.hasAttribute('data-fixed')) return parseFloat(getComputedStyle(t).fontSize);
+    t.querySelectorAll('tr').forEach(function (tr) { tr.style.height = ''; });
+    var H = region.clientHeight;
+    var cells = Array.prototype.filter.call(t.querySelectorAll('td'), function (td) {
+      return numeric(td) && td.textContent && !td.closest('tr.names, tr.head, tr.h1, tr.h2');
+    });
+    function fits() {
+      if (t.offsetHeight > H + 0.5) return false;
+      for (var i = 0; i < cells.length; i++) {
+        if (cells[i].offsetParent && cells[i].scrollWidth > cells[i].clientWidth + 1) return false;
+      }
+      return true;
+    }
+    var fs = base;
+    t.style.fontSize = fs + 'px';
+    while (fs > 5 && !fits()) {
+      fs = Math.round((fs - 0.25) * 100) / 100;
+      t.style.fontSize = fs + 'px';
+    }
+    return fs;
+  }
+  /* Tables that share a slide share a type size: each is fitted alone, then
+     all step down to the smallest, and the shorter ones open their rows to use
+     the height they gave back - so both halves still end at the bottom. */
+  function fitSlide(wrap, base) {
+    var out = [];
+    wrap.querySelectorAll('.region').forEach(function (r) {
+      var fs = fitRegion(r, base);
+      if (fs != null) out.push([r, fs]);
+    });
+    var fitted = out.filter(function (x) { return !x[0].hasAttribute('data-fixed'); });
+    if (fitted.length > 1) {
+      var min = Math.min.apply(null, fitted.map(function (x) { return x[1]; }));
+      fitted.forEach(function (x) {
+        var t = x[0].querySelector('table');
+        t.style.fontSize = min + 'px';
+        x[1] = min;
+        var extra = x[0].clientHeight - t.offsetHeight;
+        var rows = Array.prototype.filter.call(t.querySelectorAll('tr'), function (tr) {
+          return !tr.classList.contains('spacer') && tr.offsetParent;
+        });
+        if (extra > 1 && rows.length) {
+          var add = Math.min(extra / rows.length, min * 0.9);
+          var heights = rows.map(function (tr) { return tr.offsetHeight; });
+          rows.forEach(function (tr, i) { tr.style.height = (heights[i] + add) + 'px'; });
+        }
+      });
+      wrap.setAttribute('data-matched', '1');
+    }
+    return out.map(function (x) { return [x[0].getAttribute('data-name'), x[1]]; });
+  }
+  function tone(fs) { return fs >= 10 ? 'ok' : fs >= 8.5 ? 'mid' : 'low'; }
+  function pts(fs) { return (Math.round(fs * 10) / 10).toString(); }
+  function caption(results) {
+    return results.map(function (x) {
+      return '<span class="pt ' + tone(x[1]) + '">' + x[0] + ' <b>' + pts(x[1]) + 'pt</b></span>';
+    }).join('');
+  }
+  function baseOf(el) { return parseFloat(getComputedStyle(el).getPropertyValue('--fs')) || 12; }
+
+  function fitWraps(scope, label) {
+    var base = baseOf(scope);
+    scope.querySelectorAll('.slideWrap').forEach(function (w) {
+      var res = fitSlide(w, base);
+      var cap = w.id ? document.querySelector('.fitcap[data-for="' + w.id + '"]') : null;
+      if (cap) cap.innerHTML = label + caption(res)
+        + (w.getAttribute('data-matched') ? '<span>matched across the slide</span>' : '');
+    });
+  }
+
+  function buildGallery() {
+    var src = document.getElementById('sCombined');
+    document.querySelectorAll('.gthumb').forEach(function (holder) {
+      var n = holder.getAttribute('data-thumb');
+      holder.innerHTML = '';
+      var box = document.createElement('div');
+      box.className = 'v' + n + (keep.checked ? '' : ' nodup');
+      var clone = src.cloneNode(true);
+      clone.removeAttribute('id');
+      box.appendChild(clone);
+      holder.appendChild(box);
+      scaleWrap(clone);
+      var res = fitSlide(clone, baseOf(box));
+      var g = document.querySelector('[data-gfit="' + n + '"]');
+      if (g) g.innerHTML = caption(res);
+    });
+  }
+
+  function select(n, fromHash) {
+    n = Math.max(1, Math.min(10, n | 0));
+    current = n;
+    stage.className = 'v' + n + (keep.checked ? '' : ' nodup');
+    document.querySelectorAll('.vbtn').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(+b.getAttribute('data-v') === n));
+    });
+    document.querySelectorAll('.vcard').forEach(function (c) {
+      c.hidden = +c.getAttribute('data-card') !== n;
+    });
+    document.querySelectorAll('.gcard').forEach(function (c) {
+      c.classList.toggle('on', +c.getAttribute('data-v') === n);
+    });
+    fitWraps(stage, 'Fitted text: ');
+    if (!fromHash) {
+      try { history.replaceState(null, '', '#v' + n); } catch (e) { /* sandboxed */ }
+    }
+    try { if (store) store.setItem('deckTableVersion', String(n)); } catch (e) { /* private mode */ }
+  }
+
+  document.querySelectorAll('.vbtn').forEach(function (b) {
+    b.addEventListener('click', function () { select(+b.getAttribute('data-v')); });
+  });
+  document.querySelector('.picker').addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    var next = current + (e.key === 'ArrowRight' ? 1 : -1);
+    if (next < 1) next = 10;
+    if (next > 10) next = 1;
+    select(next);
+    var btn = document.querySelector('.vbtn[data-v="' + next + '"]');
+    if (btn) btn.focus();
+  });
+  document.querySelectorAll('.gcard').forEach(function (c) {
+    function load() {
+      select(+c.getAttribute('data-v'));
+      document.getElementById('ten').scrollIntoView({ behavior: 'smooth' });
+    }
+    c.addEventListener('click', load);
+    c.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); load(); }
+    });
+  });
+  keep.addEventListener('change', function () { select(current, true); buildGallery(); });
+
+  function start() {
+    scaleAll();
+    var initial = 1;
+    var m = /#v(\d+)/.exec(location.hash || '');
+    if (m) initial = +m[1];
+    else {
+      try { if (store && store.getItem('deckTableVersion')) initial = +store.getItem('deckTableVersion'); }
+      catch (e) { /* private mode */ }
+    }
+    fitWraps(document.getElementById('todayslides'), 'As built: ');
+    select(initial, true);
+    buildGallery();
+  }
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function (entries) { entries.forEach(function (e) { scaleWrap(e.target); }); });
+    var observeAll = function () { document.querySelectorAll('.slideWrap').forEach(function (w) { ro.observe(w); }); };
+    observeAll();
+    var mo = new MutationObserver(observeAll);
+    mo.observe(document.querySelector('.gallery'), { childList: true, subtree: true });
+  } else {
+    window.addEventListener('resize', scaleAll);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(start);
+  else window.addEventListener('load', start);
+})();
+</script>
+
+</body>
+</html>

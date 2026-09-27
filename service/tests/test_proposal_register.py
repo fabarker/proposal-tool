@@ -19,6 +19,7 @@ from cyrus_pmg.pmgService import dashboardRouter
 from cyrus_pmg.pmgService.scenario import (accountRequests, assetEstimates, proposalRegister,
                                            rules, scenarioStore, sleeveRepo)
 from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput, ValidationError
+from cyrus_pmg.pmgService.scenario.pptWriter import writeDeck
 from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows, writeWorkbook
 
 
@@ -47,7 +48,8 @@ def _case():
 def _deliver(user='alice', createdBy='bob', scenarioId='sc_test', includeFees=True, results=None,
              recordAs=None, stampAs=None, filename=None):
     """Do what the export endpoint does: mint the UID, build the model once,
-    write the workbook with both, name the file after the UID, record it.
+    write the workbook AND the deck with both, name the files after the UID,
+    record them together (D123).
 
     The three keyword arguments exist to break the one-UID invariant on
     purpose: *recordAs* records under another id, *stampAs* writes another
@@ -70,9 +72,17 @@ def _deliver(user='alice', createdBy='bob', scenarioId='sc_test', includeFees=Tr
         implementation['feeSchedule'], implementation['feeLevel'], includeFees,
         implementation['volPremium'], assets=assetEstimates.forSlice('USD', 'Hedged'),
         model=model, proposalId=proposalId if stampAs is None else stampAs)
+    deck = writeDeck(
+        basis, mandate, results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'], includeFees,
+        implementation['volPremium'], assets=assetEstimates.forSlice('USD', 'Hedged'),
+        model=model, proposalId=proposalId if stampAs is None else stampAs)
+    workbookName = filename or rules.exportFilename(basis, proposalId)
     entry = proposalRegister.record(recordAs or proposalId, scenarioId, user, createdBy, basis,
                                     mandate, results, implementation, model, content,
-                                    filename or rules.exportFilename(basis, proposalId))
+                                    workbookName, deck=deck,
+                                    deckName=workbookName[:-len('.xlsx')] + '.pptx')
     return entry, content, model
 
 
@@ -473,3 +483,116 @@ def test_a_moved_sleeve_shows_on_the_row_not_only_inside_the_record():
     assert proposalId in {e['proposalId'] for e in
                           proposalRegister.listProposals(movedOnly=True, limit=500)['entries']}
     assert proposalRegister.viewCounts('mover')['moved'] >= 1
+
+
+
+# ---------------------------------------- the deck is half the delivery ---
+
+def test_a_delivery_records_the_deck_beside_the_workbook():
+    """D123. One row holds both files: the deck byte for byte, its name
+    carrying the UID, its hash, its size - and the list reads the deck's
+    metadata without ever carrying its bytes."""
+    entry, content, _ = _deliver(user='decker', scenarioId='sc_deck')
+    uid = entry['proposalId']
+    kept = proposalRegister.deck(uid)
+    assert kept is not None
+    assert kept['name'].endswith(uid + '.pptx')
+    assert kept['sha'] == hashlib.sha256(kept['bytes']).hexdigest()
+    from cyrus_pmg.pmgService.scenario.workbook import stampedProposalId
+    assert stampedProposalId(kept['bytes']) == uid
+    assert entry['deckBytes'] == len(kept['bytes']) and entry['deckName'] == kept['name']
+    listed = [e for e in proposalRegister.listProposals(exportedBy='decker')['entries']
+              if e['proposalId'] == uid][0]
+    assert listed['deckBytes'] == len(kept['bytes'])
+    assert 'deck' not in listed and 'workbook' not in listed, 'no blob travels with a list'
+
+
+def test_a_delivery_without_its_deck_is_refused():
+    """D123: the register will not hold half a proposal. No deck, a deck
+    stamped with another UID, or a deck named without the UID - each refused,
+    and nothing written."""
+    results, implementation = _case()
+    basis = BasisInput(currency='USD', hedging='Hedged')
+    mandate = MandateInput(50e6, 50e6, 'A. Castellanos — Madrid')
+    model = buildImplementationRows(
+        results[0], implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+        mandate.mandateSize, implementation['variant'], implementation['tacticalTilt'],
+        implementation['feeSchedule'], implementation['feeLevel'],
+        mandate.topAccountSize, implementation['volPremium'], 'USD')
+
+    def files(uid, deckUid):
+        book = writeWorkbook(
+            basis, mandate, results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+            implementation['variant'], implementation['tacticalTilt'],
+            implementation['feeSchedule'], implementation['feeLevel'], True,
+            implementation['volPremium'], assets=assetEstimates.forSlice('USD', 'Hedged'),
+            model=model, proposalId=uid)
+        deck = writeDeck(
+            basis, mandate, results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
+            implementation['variant'], implementation['tacticalTilt'],
+            implementation['feeSchedule'], implementation['feeLevel'], True,
+            implementation['volPremium'], assets=assetEstimates.forSlice('USD', 'Hedged'),
+            model=model, proposalId=deckUid)
+        return book, deck
+
+    uid = proposalRegister.newProposalId()
+    book, deck = files(uid, uid)
+    name = rules.exportFilename(basis, uid)
+    for kwargs, field in (({}, 'deck'),
+                          ({'deck': deck, 'deckName': 'untitled.pptx'}, 'proposalId')):
+        with pytest.raises(ValidationError) as caught:
+            proposalRegister.record(uid, 'sc_half', 'alice', 'bob', basis, mandate, results,
+                                    implementation, model, book, name, **kwargs)
+        assert caught.value.field == field
+    other = proposalRegister.newProposalId()
+    _, strayDeck = files(uid, other)
+    with pytest.raises(ValidationError) as caught:
+        proposalRegister.record(uid, 'sc_half', 'alice', 'bob', basis, mandate, results,
+                                implementation, model, book, name,
+                                deck=strayDeck, deckName=name[:-5] + '.pptx')
+    assert 'one UID' in str(caught.value)
+    assert proposalRegister.getProposal(uid) is None, 'nothing was written'
+
+
+def test_a_register_from_before_decks_gains_the_columns_and_keeps_its_rows():
+    """An existing register opened after D123: the four deck columns are
+    added, the old rows keep NULL decks - the truth about them - and the
+    schema version moves to 3."""
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), 'old.db')
+    conn = sqlite3.connect(path)
+    conn.executescript('''
+        CREATE TABLE proposals (proposalId TEXT PRIMARY KEY, scenarioId TEXT NOT NULL,
+            sequence INTEGER NOT NULL, exportedAt TEXT NOT NULL, exportedBy TEXT NOT NULL,
+            createdBy TEXT NOT NULL DEFAULT '', primaryPwa TEXT NOT NULL,
+            topAccountSize REAL NOT NULL, mandateSize REAL NOT NULL, currency TEXT NOT NULL,
+            hedging TEXT NOT NULL, variant TEXT NOT NULL, baseKey TEXT NOT NULL,
+            tacticalTilt INTEGER NOT NULL, volPremium INTEGER NOT NULL,
+            includeFees INTEGER NOT NULL, feeSchedule TEXT, feeLevel TEXT, customFees TEXT,
+            allocation TEXT NOT NULL, implemented TEXT NOT NULL, workbook BLOB NOT NULL,
+            workbookName TEXT NOT NULL, workbookSha TEXT NOT NULL,
+            workbookBytes INTEGER NOT NULL, UNIQUE (scenarioId, sequence));
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO meta VALUES ('schemaVersion', '2');
+        INSERT INTO proposals VALUES ('pr_00000000abcd', 'sc_old', 1, '2026-09-01T10:00:00',
+            'alice', '', 'X', 1, 1, 'USD', 'Hedged', 'V', 'USD|Moderate|Full|0', 0, 0, 0,
+            NULL, NULL, NULL, '{}', '[]', x'00', 'old.xlsx', 'sha', 1);
+    ''')
+    conn.commit()
+    conn.close()
+    previous = os.environ.get('SCENARIO_REGISTER_DB')
+    os.environ['SCENARIO_REGISTER_DB'] = path
+    try:
+        opened = proposalRegister._connect()
+        columns = {r[1] for r in opened.execute('PRAGMA table_info(proposals)')}
+        version = opened.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
+        opened.close()
+        assert {'deck', 'deckName', 'deckSha', 'deckBytes'} <= columns
+        assert version == '3'
+        assert proposalRegister.deck('pr_00000000abcd') is None, 'an old row keeps its NULLs'
+        assert proposalRegister.workbook('pr_00000000abcd')['name'] == 'old.xlsx'
+    finally:
+        if previous is None:
+            os.environ.pop('SCENARIO_REGISTER_DB', None)
+        else:
+            os.environ['SCENARIO_REGISTER_DB'] = previous

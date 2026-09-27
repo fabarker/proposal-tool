@@ -2267,6 +2267,10 @@ function regDetailHtml() {
     + (moved ? ' · <b class="warn">' + moved + ' sleeve' + (moved === 1 ? '' : 's') + ' moved since</b>' : '') + '</p>'
     + '</div><div class="arc-dact">'
     + '<a class="btn btn-primary" href="' + esc(window.API_BASE + '/scenario/repository/proposals/' + encodeURIComponent(r.proposalId) + '/workbook') + '" download>Download the workbook</a>'
+    /* the deck delivered with it (D123); a proposal from before decks has none */
+    + (r.deckBytes
+        ? '<a class="btn" href="' + esc(window.API_BASE + '/scenario/repository/proposals/' + encodeURIComponent(r.proposalId) + '/deck') + '" download>Download the deck</a>'
+        : '')
     + '<div class="repo-seg" role="tablist" aria-label="Picture">'
     + '<button type="button" role="tab" data-regpic="allocation" aria-selected="' + (reg.picture === 'allocation') + '">Allocation</button>'
     + '<button type="button" role="tab" data-regpic="implemented" aria-selected="' + (reg.picture === 'implemented') + '">Implemented</button>'

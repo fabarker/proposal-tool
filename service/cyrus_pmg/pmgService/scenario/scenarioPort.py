@@ -119,9 +119,10 @@ class ScenarioPort(Protocol):
         """Return a .pptx byte stream: the same resolved payloads as
         ``build_export``, rendered as one slide per sheet page by the same
         builders (D121), so the deck and the workbook cannot disagree.
-        ``proposalId`` in *implementation* is the delivered proposal the deck
-        cites; None, and every footer says the deck is a draft. A deck is
-        never a delivery: nothing is minted and nothing recorded (D122).""""""
+        ``proposalId`` in *implementation* is the UID the export minted: the
+        deck and the workbook are one delivery, built from the same dict,
+        stamped with the same UID and recorded together (D123). The deck is
+        locked like the workbook - a password to modify and Mark as Final.""""""
 
     def capabilities(self) -> dict:
         """{"canExport": bool, "canEdit": bool}. One role today; this is the seam."""

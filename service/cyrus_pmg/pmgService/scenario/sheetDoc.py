@@ -51,6 +51,16 @@ BLACK_THIN = ('thin', '000000')
 BLACK_THICK = ('thick', '000000')
 HAIR = ('hair', None)
 
+# The house faces (D125). The builders below write the faces the library's
+# workbook was set in - the golden comparison holds them cell for cell - and
+# a delivered proposal is then re-set in the firm's own: GS Sans for the
+# report's text, GS Sans Condensed wherever the workbook used a narrow face.
+SANS = 'GS Sans'
+SANS_LIGHT = 'GS Sans Light'
+CONDENSED = 'GS Sans Condensed'
+HOUSE_FACES = {'Calibri': SANS, 'Calibri Light': SANS_LIGHT, 'Grotesque': SANS,
+               'Arial': SANS, 'Aptos Narrow': CONDENSED}
+
 
 def columnLetter(index: int) -> str:
     """1 -> A, 27 -> AA. Local so the module needs no spreadsheet library."""
@@ -204,6 +214,22 @@ def _asDate(value):
 # portfolios
 # --------------------------------------------------------------------- #
 
+def houseFaces(doc: SheetDoc) -> SheetDoc:
+    """Re-set *doc* in the house faces, in place. GS Sans Light has no bold
+    of its own, so a bold Light cell takes GS Sans Bold rather than letting
+    Office embolden the Light."""
+    for row in doc.rows.values():
+        for cell in row.cells.values():
+            font = cell.font
+            face = HOUSE_FACES.get(font.get('name')) if font else None
+            if face is None:
+                continue
+            if face == SANS_LIGHT and font.get('bold'):
+                face = SANS
+            cell.font = dict(font, name=face)        # fonts are shared dicts
+    return doc
+
+
 def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     """The strategic allocation, one column per portfolio.
 
@@ -257,6 +283,10 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     style(1, headFont, border=headRule, height=37, labelAlign=None)
     for index in range(2, columns + 2):
         doc.cell(1, index).align = {'horizontal': 'center', 'vertical': 'center'}
+        if not engineParity:
+            # a long name takes the row's second line rather than being cut
+            # off by its neighbour - the row was always two lines high (D125)
+            doc.cell(1, index).align['wrap'] = True
 
     order, assets = _categoryOrder(results, engineParity)
     for categoryName in order:
@@ -315,7 +345,7 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     for index in range(2, columns + 2):
         doc.widths[columnLetter(index)] = 18
     doc.freeze = 'B2'                                          # enhancement
-    return doc
+    return doc if engineParity else houseFaces(doc)
 
 
 # --------------------------------------------------------------------- #
@@ -493,7 +523,7 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
     for index in range(2, span + 2):
         doc.widths[columnLetter(index)] = 15
     doc.freeze = 'B2'                                          # enhancement
-    return doc
+    return doc if engineParity else houseFaces(doc)
 
 
 # --------------------------------------------------------------------- #
@@ -641,7 +671,7 @@ def buildAssumptionsDoc(assets, results=None, engineParity: bool = False) -> She
     for letter, width in ASSUMPTION_WIDTHS:
         doc.widths[letter] = width
     doc.freeze = 'A3'                                          # enhancement
-    return doc
+    return doc if engineParity else houseFaces(doc)
 
 
 # --------------------------------------------------------------------- #
@@ -703,6 +733,8 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         doc.cell(row, 1).value = line[0]
         doc.cell(row, 1).font = boldFont
         doc.cell(row, 2).value = line[1]
+        # the value in the label's face, not whatever the reader's default is
+        doc.cell(row, 2).font = bodyFont
     if preamble:
         row += 1                                     # the blank line beneath
     headerRow = row + 1
@@ -818,7 +850,7 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
             doc.cell(rowIndex, column).align = {'horizontal': 'right'}
         for column in text:
             doc.cell(rowIndex, column).align = {'horizontal': 'left'}
-    return doc, headerRow, totalRow
+    return houseFaces(doc), headerRow, totalRow
 
 
 # --------------------------------------------------------------------- #
@@ -905,7 +937,7 @@ class Page:
 
 
 def paginate(doc: SheetDoc, budgetPt: float, headerRows=(1,),
-             defaultRowPt: float = DEFAULT_ROW_PT):
+             defaultRowPt: float = DEFAULT_ROW_PT, costOf=None):
     """Cut a Doc into pages of at most *budgetPt* points of rows (D120).
 
     The workbook's own convention, made explicit: *headerRows* repeat at the
@@ -916,13 +948,17 @@ def paginate(doc: SheetDoc, budgetPt: float, headerRows=(1,),
     rather than overflowing the canvas.
 
     Pure: the Doc is read, never changed, and the same call returns the
-    same pages. Row cost is the builder's height or *defaultRowPt*; the
-    budget includes the repeated headers.
+    same pages. Row cost is the builder's height or *defaultRowPt* - or, given
+    *costOf*, whatever it returns for a row index: the deck costs rows at the
+    size it will actually set them in (D124). The budget includes the
+    repeated headers.
     """
     header = list(headerRows)
     headSet = set(header)
 
     def cost(index):
+        if costOf is not None:
+            return costOf(index)
         row = doc.rows.get(index)
         height = row.height if row is not None and row.height is not None else None
         return height if height is not None else defaultRowPt

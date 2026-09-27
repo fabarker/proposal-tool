@@ -51,7 +51,7 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 2          # 2: customFees (D96)
+SCHEMA_VERSION = 3          # 2: customFees (D96); 3: the deck (D123)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS proposals (
     workbookName   TEXT NOT NULL,
     workbookSha    TEXT NOT NULL,
     workbookBytes  INTEGER NOT NULL,
+    deck           BLOB,
+    deckName       TEXT,
+    deckSha        TEXT,
+    deckBytes      INTEGER,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -111,7 +115,8 @@ CREATE INDEX IF NOT EXISTS ps_sleeve ON proposalSleeves (sleeveId);
 _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, createdBy, '
                  'primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                  'baseKey, tacticalTilt, volPremium, includeFees, '
-                 'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha')
+                 'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
+                 'deckName, deckBytes, deckSha')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -144,6 +149,12 @@ def _connect() -> sqlite3.Connection:
         held = {row[1] for row in conn.execute('PRAGMA table_info(proposals)')}
         if 'customFees' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN customFees TEXT')
+        # and the deck that is delivered with every workbook from D123 on;
+        # a row from before keeps NULLs, which is the truth about it
+        for column, kind in (('deck', 'BLOB'), ('deckName', 'TEXT'),
+                             ('deckSha', 'TEXT'), ('deckBytes', 'INTEGER')):
+            if column not in held:
+                conn.execute('ALTER TABLE proposals ADD COLUMN {} {}'.format(column, kind))
         conn.execute("INSERT OR IGNORE INTO meta VALUES ('schemaVersion', ?)",
                      (str(SCHEMA_VERSION),))
         conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
@@ -233,8 +244,14 @@ def isProposalId(value) -> bool:
 # ------------------------------------------------------------------ write ---
 
 def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, mandate,
-           results, implementation: dict, model: dict, workbook: bytes, filename: str) -> dict:
-    """Write one delivered proposal. One transaction, one row, one file.
+           results, implementation: dict, model: dict, workbook: bytes, filename: str,
+           deck: bytes = None, deckName: str = None) -> dict:
+    """Write one delivered proposal. One transaction, one row, both files.
+
+    A delivery is the workbook AND the deck, or nothing (D123): the deck is
+    held to the workbook's own checks - stamped with this UID, named with
+    it - and the row is refused without it. Keyword arguments only so the
+    old call shape fails loudly rather than recording half a delivery.
 
     Raises on any failure, and the export endpoint lets that propagate: a
     proposal that could not be recorded is not delivered.
@@ -257,12 +274,25 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
         raise ValidationError(
             'proposalId', 'The filename {!r} does not carry the Proposal UID {}.'.format(
                 filename, proposalId))
+    if not deck or not deckName:
+        raise ValidationError('deck', 'Nothing to record: a proposal is delivered as its '
+                              'workbook and its deck together, and the deck is missing.')
+    deckStamp = stampedProposalId(deck)
+    if deckStamp != proposalId:
+        raise ValidationError(
+            'proposalId', 'The deck is stamped {} but would be recorded as {}: a proposal '
+            'has one UID.'.format(deckStamp or 'with no UID', proposalId))
+    if proposalId not in deckName:
+        raise ValidationError(
+            'proposalId', 'The deck name {!r} does not carry the Proposal UID {}.'.format(
+                deckName, proposalId))
     allocation = allocationPicture(results)
     baseKey = (PortfolioKey.fromStr(results[0]['keyStr'])
                if results and results[0].get('keyStr') else None)
     implemented = implementedPicture(model, implementation.get('variant'), baseKey)
     stamp = _now()
     sha = hashlib.sha256(workbook).hexdigest()
+    deckSha = hashlib.sha256(deck).hexdigest()
     conn = _connect()
     try:
         with conn:
@@ -274,8 +304,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'createdBy, primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                 'baseKey, tacticalTilt, volPremium, includeFees, feeSchedule, '
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
-                'workbookSha, workbookBytes) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -290,7 +320,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                   if implementation.get('includeFees') and fees.isCustom(implementation.get('feeLevel'))
                   else None),
                  json.dumps(allocation), json.dumps(implemented),
-                 sqlite3.Binary(workbook), filename, sha, len(workbook)))
+                 sqlite3.Binary(workbook), filename, sha, len(workbook),
+                 sqlite3.Binary(deck), deckName, deckSha, len(deck)))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName) '
                 'VALUES (?,?,?,?,?)',
@@ -330,28 +361,6 @@ def _sleevesFor(conn, proposalId) -> list:
     return out
 
 
-def latestForScenario(scenarioId: str):
-    """The scenario's newest delivered proposal, pictures included, or None.
-
-    What the deck export asks before citing a UID (D122): cite only what was
-    actually delivered, read from the row - never reconstructed from what the
-    scenario looks like today."""
-    conn = _connect()
-    try:
-        row = conn.execute(
-            'SELECT {}, allocation, implemented FROM proposals WHERE scenarioId = ? '
-            'ORDER BY exportedAt DESC, sequence DESC LIMIT 1'.format(_LIST_COLUMNS),
-            (scenarioId,)).fetchone()
-        if row is None:
-            return None
-        entry = _rowToEntry(row)
-        entry['allocation'] = json.loads(row['allocation'])
-        entry['implemented'] = json.loads(row['implemented'])
-        return entry
-    finally:
-        conn.close()
-
-
 def getProposal(proposalId: str, conn=None):
     """One proposal with both pictures and its sleeve pins - and no blob."""
     own = conn is None
@@ -370,6 +379,20 @@ def getProposal(proposalId: str, conn=None):
     finally:
         if own:
             conn.close()
+
+
+def deck(proposalId: str):
+    """The delivered deck, or None - for an unknown proposal, and for one
+    delivered before decks were (D123), which never had one."""
+    conn = _connect()
+    try:
+        row = conn.execute('SELECT deck, deckName, deckSha FROM proposals '
+                           'WHERE proposalId = ?', (proposalId,)).fetchone()
+        if row is None or row['deck'] is None:
+            return None
+        return {'bytes': bytes(row['deck']), 'name': row['deckName'], 'sha': row['deckSha']}
+    finally:
+        conn.close()
 
 
 def workbook(proposalId: str):

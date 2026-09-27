@@ -19,7 +19,9 @@ Handlers are sync ``def`` on purpose: FastAPI runs them in the threadpool, so
 a slow resolve_portfolio never blocks the event loop.
 """
 
+import io
 import json
+import zipfile
 
 from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.responses import JSONResponse
@@ -517,6 +519,20 @@ def downloadRegisterWorkbook(proposalId: str, caller=Depends(requireAdmin)):
                              'X-Workbook-SHA256': found['sha']})
 
 
+@router.get('/scenario/repository/proposals/{proposalId}/deck')
+def downloadRegisterDeck(proposalId: str, caller=Depends(requireAdmin)):
+    """The delivered deck, byte for byte, hash in a header - the workbook's
+    companion (D123). 404 for a proposal delivered before decks were: it
+    never had one, and none is made up after the fact."""
+    found = proposalRegister.deck(proposalId)
+    if found is None:
+        return JSONResponse(status_code=404,
+                            content={'error': 'No deck was delivered with {}.'.format(proposalId)})
+    return Response(content=found['bytes'], media_type=_PPTX,
+                    headers={'Content-Disposition': 'attachment; filename="{}"'.format(found['name']),
+                             'X-Deck-SHA256': found['sha']})
+
+
 @router.post('/scenario/repository/sleeves/{sleeveId}/restore')
 def restoreRepositorySleeve(sleeveId: int, caller=Depends(requireAdmin)):
     """Put a removed sleeve back. Re-validated on the way in: the name may
@@ -863,124 +879,57 @@ def _assembleExport(scenarioId: str, port):
     return state, basis, mandate, results, implementation, model
 
 
+_PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+_ZIP = 'application/zip'
+
+
 @router.post('/scenario/{scenarioId}/export')
 def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
-    """The Excel workbook (spec 14). Assembled from stored scenario state.
+    """The proposal (spec 14): the Excel workbook AND the PowerPoint deck,
+    delivered together and never apart (D123). Assembled from stored state.
 
-    Refuses (422) while no variant is chosen, a category lacks a sleeve, or
-    the proposal includes fees and no schedule is chosen - the UI disables the
-    button, the server re-enforces. The fee level always has a value (the
-    store defaults it) but is validated all the same, since it is read back
-    from a file. Column payloads are
-    re-resolved through the port, which is cheap when its caches are warm and
-    correct when not.
+    Refuses (422) while no variant is chosen, a category lacks a sleeve, the
+    proposal includes fees and no schedule is chosen, a custom row is
+    unpriced or a position sits below its product's minimum - the UI
+    disables the button, the server re-enforces (``_assembleExport``).
+
+    One UID is minted and stamped into both files; both are written from the
+    one model (D69); both are recorded in one register row before either is
+    returned (a proposal that could not be written down is not delivered);
+    and both travel in one zip, because a browser can refuse a second
+    download from one click and "both or neither" must not depend on it.
     """
     port = getScenarioPort()
     try:
         state, basis, mandate, results, implementation, model = _assembleExport(
             scenarioId, port)
 
-        # The Proposal UID is minted here, before the workbook exists, so the
-        # one id is written into the file, into its name and into the register
-        # row. The register refuses the row if any of the three differ (D75).
+        # The Proposal UID is minted here, before either file exists, so the
+        # one id is written into both files, their names and the register
+        # row. The register refuses the row if any of them differ (D75).
         proposalId = proposalRegister.newProposalId()
-        content = port.build_export(basis, mandate, results,
-                                    dict(implementation, model=model, proposalId=proposalId))
+        delivery = dict(implementation, model=model, proposalId=proposalId)
+        content = port.build_export(basis, mandate, results, delivery)
+        deck = port.build_export_deck(basis, mandate, results, delivery)
         filename = exportFilename(basis, proposalId)
-        # Record first, deliver second. A proposal that could not be written
-        # down is not delivered - the register is worth nothing with holes in
-        # it, and this write is one insert of ~30 KB into a local file.
+        stem = filename[:-len('.xlsx')]
+        deckName = stem + '.pptx'
+        # Record first, deliver second - both files, one transaction.
         proposalRegister.record(proposalId, scenarioId, caller.kerberos, state.get('createdBy', ''),
-                                basis, mandate, results, implementation, model, content, filename)
+                                basis, mandate, results, implementation, model, content, filename,
+                                deck=deck, deckName=deckName)
+        bundle = io.BytesIO()
+        # stored, not deflated: both members are already zips of their own
+        with zipfile.ZipFile(bundle, 'w', zipfile.ZIP_STORED) as archive:
+            archive.writestr(filename, content)
+            archive.writestr(deckName, deck)
         return Response(
-            content=content,
-            media_type=_XLSX,
+            content=bundle.getvalue(),
+            media_type=_ZIP,
             headers={'Content-Disposition':
-                     'attachment; filename="{}"'.format(filename),
+                     'attachment; filename="{}.zip"'.format(stem),
                      'X-Proposal-Id': proposalId},
         )
-    except ScenarioNotFound:
-        return _notFound(scenarioId)
-    except ValidationError as exc:
-        return _validationError(exc)
-    except AnalyticsError as exc:
-        return _analyticsError(exc)
-
-_PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-
-
-def _deckCitation(scenarioId: str, state, basis, mandate, implementation,
-                  model, results):
-    """The delivered proposal this deck may cite, or None (D122, plan A3).
-
-    A deck cites the scenario's latest delivered UID only while the current
-    build still matches what was delivered - basis, mandate, PWA, variant,
-    overlays, pricing terms, and both register pictures, sleeve revisions
-    included. Anything moved since delivery and the deck is a draft: the two
-    files a client holds must never disagree under one UID, and the register
-    deliberately stores no fee figures to rebuild from, so refusing to cite
-    is how the promise is kept."""
-    from cyrus_pmg.pmgService.scenario import fees
-    latest = proposalRegister.latestForScenario(scenarioId)
-    if latest is None:
-        return None
-    includeFees = bool(implementation.get('includeFees'))
-    same = (latest['currency'] == basis.currency
-            and latest['hedging'] == basis.hedging
-            and latest['baseKey'] == (state.get('base') or '')
-            and float(latest['mandateSize']) == float(mandate.mandateSize)
-            and float(latest['topAccountSize']) == float(mandate.topAccountSize)
-            and latest['primaryPwa'] == mandate.primaryPwa
-            and (latest['variant'] or '') == (implementation.get('variant') or '')
-            and latest['tacticalTilt'] == bool(implementation.get('tacticalTilt'))
-            and latest['volPremium'] == bool(implementation.get('volPremium'))
-            and latest['includeFees'] == includeFees)
-    if same and includeFees:
-        same = (latest.get('feeSchedule') == implementation.get('feeSchedule')
-                and latest.get('feeLevel') == implementation.get('feeLevel'))
-        if same and fees.isCustom(implementation.get('feeLevel')):
-            try:
-                recorded = json.loads(latest.get('customFees') or '{}')
-            except ValueError:
-                recorded = None
-            same = recorded == (implementation.get('customFees') or {})
-    if not same:
-        return None
-    if latest['allocation'] != proposalRegister.allocationPicture(results):
-        return None
-    baseKey = PortfolioKey.fromStr(state['base']) if state.get('base') else None
-    if latest['implemented'] != proposalRegister.implementedPicture(
-            model, implementation.get('variant'), baseKey):
-        return None
-    return latest['proposalId']
-
-
-@router.post('/scenario/{scenarioId}/export.pptx')
-def exportScenarioDeck(scenarioId: str, caller=Depends(requireAuth)):
-    """The proposal deck (D122): the workbook's sheets as slides, same
-    engine, same assembly, same refusals - and never a delivery.
-
-    Nothing is minted and nothing recorded: the register stays the record of
-    delivered workbooks (D69, D75). The deck cites the scenario's latest
-    delivered UID only while the current state still matches that delivery
-    (see ``_deckCitation``); otherwise every slide footer says it is a
-    draft. The filename follows the workbook's naming with the extension
-    swapped, and ``X-Proposal-Id`` travels only when a UID is cited."""
-    port = getScenarioPort()
-    try:
-        state, basis, mandate, results, implementation, model = _assembleExport(
-            scenarioId, port)
-        cited = _deckCitation(scenarioId, state, basis, mandate,
-                              implementation, model, results)
-        content = port.build_export_deck(
-            basis, mandate, results,
-            dict(implementation, model=model, proposalId=cited))
-        filename = exportFilename(basis, cited or 'draft')
-        filename = filename[:-len('.xlsx')] + '.pptx'
-        headers = {'Content-Disposition': 'attachment; filename="{}"'.format(filename)}
-        if cited:
-            headers['X-Proposal-Id'] = cited
-        return Response(content=content, media_type=_PPTX, headers=headers)
     except ScenarioNotFound:
         return _notFound(scenarioId)
     except ValidationError as exc:

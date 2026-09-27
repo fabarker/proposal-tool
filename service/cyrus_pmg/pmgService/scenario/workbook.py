@@ -44,6 +44,9 @@ from openpyxl.utils import get_column_letter
 
 from openpyxl.chart import DoughnutChart, Reference
 from openpyxl.chart.series import DataPoint
+from openpyxl.chart.text import RichText
+from openpyxl.drawing.text import (CharacterProperties, Font as DrawingFont,
+                                   Paragraph, ParagraphProperties)
 from openpyxl.formatting.rule import CellIsRule
 
 from . import fees, rules
@@ -431,11 +434,11 @@ def writeDonutCharts(book, sheet, model, firstRow: int) -> None:
     data.sheet_state = 'hidden'
 
     sheet.cell(row=firstRow, column=1).value = 'Composition of the Implemented Model'
-    sheet.cell(row=firstRow, column=1).font = Font(name='Calibri', size=12, bold=True,
+    sheet.cell(row=firstRow, column=1).font = Font(name=sheetDoc.SANS, size=12, bold=True,
                                                    color=_NAVY)
     sheet.cell(row=firstRow + 1, column=1).value = (
         'Share of allocation by product attribute.')
-    sheet.cell(row=firstRow + 1, column=1).font = Font(name='Calibri', size=10,
+    sheet.cell(row=firstRow + 1, column=1).font = Font(name=sheetDoc.SANS, size=10,
                                                        color='5B6B7C')
 
     column = 1
@@ -466,6 +469,15 @@ def writeDonutCharts(book, sheet, model, firstRow: int) -> None:
             point.graphicalProperties.line.solidFill = 'FFFFFF'
             series.data_points.append(point)
         chart.dataLabels = None
+        # a chart's text follows the theme's face unless told otherwise, and
+        # the theme is Excel's: the title and legend name the house face
+        # (openpyxl writes no chart-wide text properties, so each gets its own)
+        for paragraph in chart.title.tx.rich.p:
+            paragraph.pPr.defRPr.latin = DrawingFont(typeface=sheetDoc.SANS)
+        chart.legend.txPr = RichText(p=[Paragraph(
+            pPr=ParagraphProperties(defRPr=CharacterProperties(
+                latin=DrawingFont(typeface=sheetDoc.SANS))),
+            endParaRPr=CharacterProperties())])
         # laid out across the sheet, in the order the page shows them
         sheet.add_chart(chart, '{}{}'.format(
             get_column_letter(1 + index * 4), firstRow + 3))

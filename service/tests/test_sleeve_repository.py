@@ -427,6 +427,7 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/proposals/views', ('GET',)),
         ('/scenario/repository/proposals/{proposalId}', ('GET',)),
         ('/scenario/repository/proposals/{proposalId}/workbook', ('GET',)),
+        ('/scenario/repository/proposals/{proposalId}/deck', ('GET',)),
     }
     for key, names in found.items():
         assert 'requireAdmin' in names, key

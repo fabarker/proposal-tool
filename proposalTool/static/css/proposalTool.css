@@ -1601,14 +1601,10 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 .export-copy>p.export-gate.error{color:#9B1C1C}
 .btn-export{background:#176A33;color:#fff;border-color:#176A33;min-width:180px}
 .btn-export:hover:not(:disabled){background:#12572a;border-color:#12572a}
-/* the deck beside the workbook (D122): same width, quieter weight */
-.export-actions{display:flex;flex-direction:column;gap:9px;align-items:stretch}
-.btn-exportppt{background:transparent;color:#176A33;border-color:#176A33;min-width:180px}
-.btn-exportppt:hover:not(:disabled){background:#EAF5EE}
 @media (max-width:719px){
   .export-card{grid-template-columns:1fr;gap:14px}
   .export-icon{display:none}
-  .btn-export,.btn-exportppt,.export-actions{width:100%}
+  .btn-export{width:100%}
 }
 /* Narrower by the three fee columns when the proposal excludes them (D52).
    The width is transitioned so the table closes up as the columns collapse

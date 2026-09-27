@@ -6680,26 +6680,17 @@ function renderView() {
     /* all four sheets, by name (D122, plan A7): the old copy omitted
        assumptions */
     + '<p>Generates the Portfolios, Risk Dashboard, Assumptions and '
-    + 'Implementation sheets from the persisted scenario — as the Excel '
-    + 'workbook of record, or as a PowerPoint of the same tables.</p>'
+    + 'Implementation sheets from the persisted scenario, as an Excel workbook '
+    + 'and a PowerPoint presentation of the same tables — delivered together '
+    + 'in one .zip under one Proposal UID, both protected.</p>'
     + '<p class="export-gate ' + gate.tone + '" id="implgate">' + gate.html + '</p>'
     + '</div>'
-    + '<div class="export-actions">'
+    /* one button, both files (D123): a proposal is never half-delivered */
     + '<button type="button" class="btn btn-export" id="implexport"'
     + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
     + ' aria-describedby="implgate"'
     + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
-    + (exporting.status === 'working' && exporting.kind !== 'pptx'
-        ? 'Preparing…' : 'Download Excel') + '</button>'
-    /* the deck is never a delivery (D122): same gate, same refusals, and the
-       file cites the delivered UID only while the scenario still matches it */
-    + '<button type="button" class="btn btn-exportppt" id="implexportppt"'
-    + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
-    + ' aria-describedby="implgate"'
-    + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
-    + (exporting.status === 'working' && exporting.kind === 'pptx'
-        ? 'Preparing…' : 'Download PowerPoint') + '</button>'
-    + '</div>'
+    + (exporting.status === 'working' ? 'Preparing…' : 'Download proposal') + '</button>'
     + '</section>';
   el.innerHTML = html;
   publishPinnedColumnWidth(el);
@@ -6717,12 +6708,12 @@ function publishPinnedColumnWidth(root) {
 }
 
 /* ---- export (spec 14) --------------------------------------------------- */
-async function exportFile(kind) {
-  /* one path for both deliverables (D122): kind is 'xlsx' or 'pptx' */
+async function exportProposal() {
+  /* the one delivery (D123): the workbook and the deck together, one UID,
+     one zip - there is no way to take one without the other */
   var exporting = App.exporting();
   if (exporting.status === 'working') return;
   exporting.status = 'working';
-  exporting.kind = kind;
   exporting.error = null;
   App.refresh();
   /* the save barrier (D122, plan A1): a click straight after a toggle must
@@ -6737,8 +6728,7 @@ async function exportFile(kind) {
   }
   try {
     var resp = await fetch(window.API_BASE + '/scenario/'
-        + encodeURIComponent(App.scenarioId()) + '/export'
-        + (kind === 'pptx' ? '.pptx' : ''),
+        + encodeURIComponent(App.scenarioId()) + '/export',
       { method: 'POST', credentials: 'same-origin' });
     if (!resp.ok) {
       var message = 'Export failed (' + resp.status + ')';
@@ -6750,7 +6740,7 @@ async function exportFile(kind) {
       throw new Error(message);
     }
     var blob = await resp.blob();
-    var name = kind === 'pptx' ? 'PMG_Scenario.pptx' : 'PMG_Scenario.xlsx';
+    var name = 'PMG_Scenario.zip';
     var disposition = resp.headers.get('Content-Disposition') || '';
     var match = disposition.match(/filename="?([^";]+)"?/);
     if (match) name = match[1];
@@ -6763,8 +6753,7 @@ async function exportFile(kind) {
     link.remove();
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     exporting.status = 'idle';
-    App.announce('polite', kind === 'pptx' ? 'Presentation downloaded.'
-                                           : 'Workbook downloaded.');
+    App.announce('polite', 'Proposal downloaded: the workbook and the presentation.');
   } catch (err) {
     exporting.status = 'error';
     exporting.error = (err && err.message) || 'Export failed.';
@@ -6895,8 +6884,7 @@ document.addEventListener('click', function (e) {
     var axis = document.getElementById('feeaxis'); if (axis) axis.focus();
     return;
   }
-  if (e.target.id === 'implexport') { exportFile('xlsx'); return; }
-  if (e.target.id === 'implexportppt') { exportFile('pptx'); return; }
+  if (e.target.id === 'implexport') { exportProposal(); return; }
   var sched = e.target.closest ? e.target.closest('[data-feesched]') : null;
   if (sched) { App.setFeeSchedule(sched.dataset.feesched); return; }
   /* Either half of the level composes the whole: the other half is read from
@@ -9232,6 +9220,10 @@ function regDetailHtml() {
     + (moved ? ' · <b class="warn">' + moved + ' sleeve' + (moved === 1 ? '' : 's') + ' moved since</b>' : '') + '</p>'
     + '</div><div class="arc-dact">'
     + '<a class="btn btn-primary" href="' + esc(window.API_BASE + '/scenario/repository/proposals/' + encodeURIComponent(r.proposalId) + '/workbook') + '" download>Download the workbook</a>'
+    /* the deck delivered with it (D123); a proposal from before decks has none */
+    + (r.deckBytes
+        ? '<a class="btn" href="' + esc(window.API_BASE + '/scenario/repository/proposals/' + encodeURIComponent(r.proposalId) + '/deck') + '" download>Download the deck</a>'
+        : '')
     + '<div class="repo-seg" role="tablist" aria-label="Picture">'
     + '<button type="button" role="tab" data-regpic="allocation" aria-selected="' + (reg.picture === 'allocation') + '">Allocation</button>'
     + '<button type="button" role="tab" data-regpic="implemented" aria-selected="' + (reg.picture === 'implemented') + '">Implemented</button>'

@@ -2638,14 +2638,26 @@ def test_a_delivered_export_carries_one_uid_in_the_name_the_file_and_the_registe
     assert proposalRegister.isProposalId(uid)
     disposition = delivered.headers['content-disposition']
     assert 'filename="PMG_Scenario_USD_Hedged_' in disposition
-    assert disposition.endswith('_{}.xlsx"'.format(uid))
-    assert stampedProposalId(delivered.body) == uid
-    book = load_workbook(io.BytesIO(delivered.body))
+    # one download, both files (D123): a zip named for the UID...
+    assert disposition.endswith('_{}.zip"'.format(uid))
+    import zipfile
+    archive = zipfile.ZipFile(io.BytesIO(delivered.body))
+    names = sorted(archive.namelist())
+    assert [n.rsplit('.', 1)[1] for n in names] == ['pptx', 'xlsx']
+    assert all(n.endswith(uid + '.' + n.rsplit('.', 1)[1]) for n in names)
+    workbookBytes = archive.read([n for n in names if n.endswith('.xlsx')][0])
+    deckBytes = archive.read([n for n in names if n.endswith('.pptx')][0])
+    # ...each stamped with the one UID
+    assert stampedProposalId(workbookBytes) == uid
+    assert stampedProposalId(deckBytes) == uid
+    book = load_workbook(io.BytesIO(workbookBytes))
     assert (book['Implementation']['A1'].value, book['Implementation']['B1'].value) == ('Proposal UID', uid)
     kept = proposalRegister.getProposal(uid)
     assert kept['proposalId'] == uid and kept['exportedBy'] == 'alice'
-    assert 'filename="{}"'.format(kept['workbookName']) in disposition
-    assert proposalRegister.workbook(uid)['bytes'] == delivered.body
+    assert kept['workbookName'] in names and kept['deckName'] in names
+    # and the register holds exactly what was handed over, both files
+    assert proposalRegister.workbook(uid)['bytes'] == workbookBytes
+    assert proposalRegister.deck(uid)['bytes'] == deckBytes
 
 
 def test_private_equity_and_other_private_assets_are_one_line():
