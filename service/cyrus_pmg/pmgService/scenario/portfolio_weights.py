@@ -83,7 +83,6 @@ from pathlib import Path
 from typing import Dict, Iterable, Mapping, MutableMapping, Sequence
 
 import pandas as pd
-from functools import lru_cache
 
 CURRENCIES = ("CHF", "USD", "GBP", "EUR")
 TACTICAL_TILT_CODE = "LHUT1T3"
@@ -751,126 +750,10 @@ def _variant_label_for_inputs(
         return "Full ex RE" if exclude_real_estate else "Full + RE"
     return "Ex HFs ex RE" if exclude_real_estate else "Ex HFs + RE"
 
-# The estimation window matches the canonical portfolio-analysis case study
-# ("1. Portfolio Analysis/a. Simple Analysis.py") and the 20221231 base model:
-# ContextCreator defaults start_date/end_date to None, which CContext cannot
-# parse, so the dates must be supplied here.
-CONTEXT_START_DATE = "30-Nov-1983"
-CONTEXT_END_DATE = "31-Dec-2022"
-
-
-@lru_cache(maxsize=None)
-def get_context(currency: str):
-    """Return the SAA analytics context for *currency*.
-
-    Expensive: builds the full schema context. Cached unbounded because there
-    are only four currencies.
-
-    Named ``context``, not ``schema``: ``ScenarioPort.get_schema()`` is a
-    different thing entirely -- the UI's field definitions, option values and
-    availability set.
-    """
-
-    from .engine import ContextCreator
-    return ContextCreator(
-        currency=currency,
-        start_date=CONTEXT_START_DATE,
-        end_date=CONTEXT_END_DATE,
-    ).create_context()
-
-
-# Hedging policy -> per-asset FX hedge ratio, by the asset's category.
-# ``SAAPortfolio.set_hedging_option`` is a dead path in this engine
-# snapshot (it calls SAAHedging, which does not exist here), so the policy is
-# applied through ``set_hedging_ratios`` instead - the working mechanism the
-# estimators respect. Hedged/Unhedged/Equity Not Hedged carry their
-# conventional meanings; the ISG Hedged ratios are a stand-in awaiting PMG's
-# house numbers (recorded as deviation D3). Swapping back to the host's
-# hedging service later changes only this table and the call below.
-HEDGE_RATIOS_BY_OPTION = {
-    "Hedged": lambda category: 1.0,
-    "Unhedged": lambda category: 0.0,
-    "Equity Not Hedged": lambda category: 0.0 if category == "Public Equity" else 1.0,
-    "ISG Hedged": lambda category: 0.5 if category == "Public Equity" else 1.0,
-}
-
-
-@lru_cache(maxsize=512)
-def _build_portfolio(
-    currency: str,
-    weight_items: tuple,
-    hedging_option: object,
-):
-    """Cached portfolio construction. Arguments must be hashable."""
-
-    from .engine import SAAPortfolio
-
-    # The cache key sorts the items so equal weight maps share one entry; the
-    # portfolio itself is built in the supplied universe order, so every
-    # downstream surface that iterates assets - Reporting's category blocks
-    # above all - reads in the same order the screen does.
-    weight_map = dict(weight_items)
-    ordered = {code: weight_map[code] for code in ASSET_CODES if code in weight_map}
-    ordered.update({code: weight for code, weight in weight_map.items()
-                    if code not in ordered})
-    portfolio = SAAPortfolio.from_dict(
-        'Portfolio',
-        ordered,
-        get_context(currency),
-    )
-
-    # The weight source carries both display labels (spec 2.2); stamping them
-    # on the assets here makes every downstream surface - the resolve payload
-    # checks and Reporting's workbook - carry the same names. Deterministic
-    # per weights, so safe to do before the instance is cached and shared.
-    for asset_name in portfolio.get_asset_names():
-        metadata = ASSET_LOOKUP.get(asset_name)
-        if metadata:
-            portfolio.get_asset(asset_name).set_reporting_info(
-                reporting_name=metadata["reporting_name"],
-                category=metadata["category"],
-            )
-
-    if hedging_option is not None:
-        ratioFor = HEDGE_RATIOS_BY_OPTION.get(str(hedging_option))
-        if ratioFor is None:
-            raise ValueError(
-                "Unknown hedging option {!r}; expected one of: {}".format(
-                    hedging_option, ", ".join(HEDGE_RATIOS_BY_OPTION)))
-        ratios = [
-            ratioFor(ASSET_LOOKUP.get(name, {}).get("category", ""))
-            for name in portfolio.get_asset_names()
-        ]
-        portfolio.set_hedging_ratios(ratios)
-    return portfolio
-
-
-def get_portfolio(currency, weights_dict, hedging_option=None):
-    """Return the ``SAAPortfolio`` for one selection, cached.
-
-    This is the analytics object: every figure the Proposal Tool displays is
-    read off it.
-
-    ``weights_dict`` is the mapping returned by
-    :func:`load_portfolio_weight_map`. It is normalised to a sorted tuple
-    before caching, because a ``dict`` is unhashable and ``lru_cache`` would
-    otherwise raise ``TypeError`` on the first call.
-
-    ``hedging_option`` is **part of the cache key**, and is applied here rather
-    than by the caller. That is deliberate. ``SAAPortfolio`` is mutable and
-    memoises its own analytics (``_sigma``, ``_risk_betas``, ``_risk_premias``),
-    so calling ``set_hedging_option()`` on a shared cached instance would change
-    the numbers seen by every other holder of it. Ask for the hedging you want
-    and you get an instance built for it.
-
-    For the same reason: **treat the returned portfolio as read-only.** If you
-    need to mutate one, take a copy first via ``deepcopy()``.
-    """
-
-    weight_items = tuple(
-        sorted((str(code), float(weight)) for code, weight in weights_dict.items())
-    )
-    return _build_portfolio(currency, weight_items, hedging_option)
+# The engine bridge that stood here - the analytics context, the hedge ratio
+# per policy and the SAAPortfolio builder - left with D126: the analytics
+# run in epsilon-phi, which delivers the bake, and this repository never
+# builds a portfolio. What remains is the weight universe and its loaders.
 
 
 def load_portfolio_weights(

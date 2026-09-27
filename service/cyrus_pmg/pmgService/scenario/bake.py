@@ -22,23 +22,30 @@ Layout under the store directory (SCENARIO_BAKED_DIR):
 One file per (currency, hedging) so a cold process reads only the slice it
 needs (~700 KB, ~10 ms) instead of the whole universe.
 
-Usage::
+Where the bake is made (D126): NOT here. The analytics library lives in
+epsilon-phi, and so does the producer that runs it - epsilon-phi's copy of
+this module with its live adapter. A bake is DELIVERED to this repository as
+the files above (the contract is PORTING.md Appendix C.6), and the service
+reads them and nothing else. What this module keeps is the consumer's half:
+the layout and paths every reader uses, ``--census`` to validate an extract
+before a bake is asked for, and a bake from the fixtures port so tests and
+demos can build a store with the same shape and no analytics at all::
 
-    # one slice
-    python3 -m cyrus_pmg.pmgService.scenario.bake --currency USD --hedging Hedged
+    # validate the strategic extract: every name parses, every ticker is known
+    python3 -m cyrus_pmg.pmgService.scenario.bake --census
 
-    # everything this database can serve, four workers
-    python3 -m cyrus_pmg.pmgService.scenario.bake --all --workers 4
-
-    # a store for demos/tests, no database required
+    # a store for demos and tests, synthetic analytics
     python3 -m cyrus_pmg.pmgService.scenario.bake --all --adapter fixtures
+
+``assetEstimates.json`` is part of the delivery too: a fixtures store has
+none, and the export's assumptions sheet then falls back to the packaged
+copy (assetEstimates.py).
 
 Resumable by default: an existing slice is loaded and its keys skipped, and
 the slice is flushed every ``--flush-every`` portfolios, so a bake that is
 interrupted (or a resolve that fails) never loses completed work. A
 combination that cannot be resolved is recorded in the manifest with its
-error rather than aborting the run - this database, for instance, carries
-currency configs for USD and GBP only, so CHF and EUR bake as failures.
+error rather than aborting the run.
 """
 
 from __future__ import annotations
@@ -225,11 +232,13 @@ def census() -> int:
 
 
 def _makePort(adapter: str):
-    if adapter == 'fixtures':
-        from .fixturesAdapter import FixturesScenarioPort
-        return FixturesScenarioPort()
-    from .liveAdapter import LiveScenarioPort
-    return LiveScenarioPort()
+    # the only port this repository can bake from: the analytics behind a
+    # real bake live in epsilon-phi, which delivers the store (D126)
+    if adapter != 'fixtures':
+        raise ValueError('this repository bakes from fixtures only; a real bake '
+                         'is delivered from epsilon-phi')
+    from .fixturesAdapter import FixturesScenarioPort
+    return FixturesScenarioPort()
 
 
 def _bakeOneInProcess(args_tuple):
@@ -244,66 +253,6 @@ def _bakeOneInProcess(args_tuple):
                      analyticsCurrency=analyticsCurrency)
 
 
-def assetBlock(currency: str, hedging: str, analyticsCurrency: str = None) -> list:
-    """The per-asset long-term estimates for one slice, read off a portfolio
-    built in that basis. Every portfolio in a slice carries the whole padded
-    universe, so any one of them answers for all of them."""
-    from . import portfolio_weights as pw
-    keys = [k for k in universe.keyStrs() if k.startswith(currency + '|')]
-    if not keys:
-        return []
-    key = PortfolioKey.fromStr(keys[0])
-    portfolio = pw.get_portfolio(analyticsCurrency or currency,
-                                 universe.weightMap(key), hedging_option=hedging)
-    rows = []
-    for asset in portfolio.get_assets():
-        premia = float(asset.get_risk_premia())
-        uncertainty = float(asset.get_uncertainty())
-        rows.append({
-            'reportingName': asset.reporting_name,
-            'category': asset.category,
-            'lower': premia - uncertainty,
-            'mean': premia,
-            'upper': premia + uncertainty,
-            'volatility': float(asset.get_volatility()),
-            'sharpe': float(asset.get_sharpe_ratio()),
-            'totalReturn': float(asset.get_total_return()),
-            'hedgingRatio': float(asset.hedging_ratio),
-            'from': str(asset.index.min())[:10],
-            'to': str(asset.index.max())[:10],
-        })
-    return rows
-
-
-def writeAssetEstimates(directory: str, entries) -> str:
-    """Write ``assetEstimates.json`` beside the slices, one block per basis.
-
-    A block records the currency its analytics actually ran in, because a
-    substituted slice carries the substitute's estimates and the sheet should
-    not pretend otherwise. A slice that could not be built is left out rather
-    than filled with something plausible."""
-    path = os.path.join(directory, 'assetEstimates.json')
-    out = {'_note': ('Per-asset long-term estimates behind the export\'s assumptions '
-                     'sheet, recorded once per (currency, hedging) slice.'),
-           'updatedAt': datetime.datetime.now().isoformat(timespec='seconds'),
-           'slices': {}}
-    for entry in entries:
-        currency, hedging = entry['currency'], entry['hedging']
-        analytics = entry.get('analyticsCurrency') or currency
-        try:
-            rows = assetBlock(currency, hedging, analytics)
-        except Exception as exc:                       # noqa: BLE001 - reported, not raised
-            print('  asset estimates for {} {} unavailable: {}: {}'.format(
-                currency, hedging, type(exc).__name__, exc), flush=True)
-            continue
-        if rows:
-            out['slices']['{}|{}'.format(currency, hedging)] = {
-                'analyticsCurrency': analytics, 'assets': rows}
-    writeJsonAtomic(path, out)
-    print('asset estimates: {} slice(s) -> {}'.format(len(out['slices']), path), flush=True)
-    return path
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--currency', action='append', default=None,
@@ -312,8 +261,8 @@ def main(argv=None) -> int:
                         help='hedging policy to bake; repeatable (default: all)')
     parser.add_argument('--all', action='store_true',
                         help='bake every currency x hedging slice')
-    parser.add_argument('--adapter', default='live',
-                        choices=('live', 'fixtures'))
+    parser.add_argument('--adapter', default='fixtures', choices=('fixtures',),
+                        help='fixtures only: a real bake is delivered (D126)')
     parser.add_argument('--out', default=None, help='store directory')
     parser.add_argument('--workers', type=int, default=1,
                         help='parallel slice workers (one process per slice)')
@@ -365,12 +314,6 @@ def main(argv=None) -> int:
     # here is the authoritative one: every entry merged in, in order.
     for entry in entries:
         updateManifest(directory, entry['currency'], entry['hedging'], entry)
-
-    # The assumptions sheet reports what the library assumes about each ASSET
-    # rather than about any portfolio, so it is recorded once per slice here
-    # rather than on all 43 payloads of one. Without this the export's fourth
-    # sheet has nothing to say (D67).
-    writeAssetEstimates(directory, entries)
 
     baked = sum(e['baked'] for e in entries)
     failed = sum(len(e['failures']) for e in entries)

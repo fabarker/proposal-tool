@@ -1194,16 +1194,14 @@ def test_unparsed_names_are_recorded_not_fatal(tmp_path, monkeypatch):
 
 
 def test_database_free_availability_means_baked(tmp_path):
-    """Without a live fallback, a portfolio that enumerated but never baked is
-    not offered - or a PWA would pick a column that errors (D54)."""
+    """A portfolio that enumerated but never baked is not offered - or a PWA
+    would pick a column that errors (D54). There is nothing to fall back to."""
     from cyrus_pmg.pmgService.scenario import bake
     from cyrus_pmg.pmgService.scenario.bakedAdapter import BakedScenarioPort
     store = str(tmp_path / 'baked')
     bake.bakeSlice(PORT, 'USD', 'Hedged', store, limit=5, verbose=False)
     alone = BakedScenarioPort(storeDirectory=store, warm=False)
     assert len(alone.get_schema(BASIS, None)['availability']) == 5
-    withFallback = BakedScenarioPort(storeDirectory=store, delegate=PORT, warm=False)
-    assert len(withFallback.get_schema(BASIS, None)['availability']) == 43
     manifest = json.load(open(os.path.join(store, 'manifest.json')))
     assert manifest['facets']['allocationTypes']['All Equity'] == []
     assert manifest['vocabulary']['riskLevels'][0] == 'LowVol'

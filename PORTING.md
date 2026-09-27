@@ -7,7 +7,12 @@ the register's saved views and the page work in between. **If Cyrus already carr
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
 every statement here is in `PORTING_GUIDE_AUDIT.md`.
 
-Paths are relative to `epsilon-phi-core/proposal-tool/` unless they start with `isg-cyrus-pmg/`.
+**Since D126 (2026-09-27) the tool lives in its own repository, `proposal-tool`, carved out of
+epsilon-phi with its history.** The analytics library is not in it, and cannot be reached from it:
+the bake is produced in epsilon-phi and delivered here as data (§11.5, Appendix C.6). Wherever this
+guide says "epsilon-phi" below, it means the producer of the bake, nothing more.
+
+Paths are relative to this repository's root unless they start with `isg-cyrus-pmg/`.
 "The host" means `isg-cyrus-pmg/src/cyrus_pmg` as described in `HOST_AUDIT.md`. Every claim
 about the host carries one of three tags:
 
@@ -15,7 +20,7 @@ about the host carries one of three tags:
 - **Audit** — stated by `HOST_AUDIT.md` (2026-08-30) and not independently re-checked.
 - **Unverifiable** — needs the live Cyrus codebase; listed again in §18.
 
-Sources, newest first: the real host files at `../cyrus-files/` (2026-09-05, §4.0), then
+Sources, newest first: the real host files at `cyrus-files/` (2026-09-05, §4.0), then
 `HOST_AUDIT.md` (2026-08-30). Where they differ the files win.
 
 ---
@@ -114,17 +119,17 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 | The endpoint block: 32 routes (was 30) — `GET /scenario/repository/proposals/views` (D116) and `GET /scenario/repository/proposals/{proposalId}/deck` (D123) are new; the export returns a zip of both files (D123); `PUT /scenario/{id}` accepts `customFees` (D96) | the host's `dashboardRouter.py`, between the markers | Replace everything between `TRANSPLANT BLOCK BEGIN` and `TRANSPLANT BLOCK END` as a unit — `/proposals/views` must stay declared above `/proposals/{proposalId}` |
 | The page folder — D90–D118 and the single **Download proposal** button (D123) | `dashboard/proposalTool/` | Re-copy the folder (§10.1) |
 | The proposal register goes from schema 1 to 3: `customFees` (D96); `deck`, `deckName`, `deckSha`, `deckBytes` (D123) | `SCENARIO_REGISTER_DB` | Nothing to run — the columns are added on first open. **Back the file up first.** Rows delivered earlier keep NULLs and have no deck |
-| Configuration | — | **None.** No variable was added. The password that locks the workbook and the deck is a constant in source (`workbook.SHEET_PASSWORD`, §13.5) |
+| Configuration | — | **None to add.** D126 removed `SCENARIO_BAKED_FALLBACK`; a host that still exports it is harmless, since nothing reads it. The password that locks the workbook and the deck is a constant in source (`workbook.SHEET_PASSWORD`, §13.5) |
 | Auth, the Flask route, the nav link | — | **None.** The new routes use the existing `requireAdmin`; `capabilities.user` is the `caller.kerberos` the block already reads (D106) |
 | The proxy | — | **None.** It forwards the zip body and every response header bar the hop-by-hop ones, so `Content-Disposition`, `X-Proposal-Id` and `X-Deck-SHA256` arrive intact (Verified: `cyrus-files/dashboardFrontend.py:409–415`) |
 | The bake, the extracts, the sleeve seed | — | **None** — no payload, extract or seed column changed |
 
 ### 0A.2 The update, step by step
 
-On the Cyrus machine. `<ep>` is the epsilon-phi checkout's `epsilon-phi-core\proposal-tool`; the host
+On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 391 passed, 4 skipped at D125.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 394 passed, none skipped, at D126.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -178,20 +183,19 @@ FastAPI service, with no analytics library and no database on the request path.
   `pmgService/dashboardRouter.py`.
 - Add two names, `isAdmin` and `requireAdmin`, to the host's `pmgService/core/pmgEntitlement.py` (§9.2).
 - Add one Flask route and one nav link.
-- Configure twenty environment variables, deliver four data extracts and one baked store, and
+- Configure seventeen environment variables, deliver four data extracts and one baked store, and
   install three Python dependencies — `openpyxl`, `pandas`, `python-pptx` — if the host lacks them.
 
 **Non-goals.**
 
-- Porting the analytics library (`epsilonPhi`). It is not on the request path (D67) and this
-  guide keeps it off. Analytics are computed by an offline bake on a machine that has the library
-  and delivered to the host as data (§11.5).
+- The analytics library (`epsilonPhi`). It is not in this repository at all (D126): the analytics
+  are computed by an offline bake in epsilon-phi and delivered here as data (§11.5, Appendix C.6).
 - Replacing placeholder data. The fee card, the product catalogue's figures, the sleeve contents
   and the advisor directory are stand-ins; the port carries them as they are and §17 says what
   must land before a client sees the tool.
 - Retheming to OneGS. Deliberately a separate change (§10.5, §17).
-- Tests in the host's dashboard package (it has none — Audit §10). The suite stays on the
-  epsilon-phi side as the pre-port gate (§14).
+- Tests in the host's dashboard package (it has none — Audit §10). The suite stays in this
+  repository as the pre-port gate (§14).
 - Deployment pipeline changes. The host zips `src/cyrus_pmg/**` (Audit §6); this guide tells
   you what must live outside that tree and nothing about how it is distributed.
 
@@ -221,10 +225,11 @@ Behind it, in the order a request travels:
    baked analytics store produced offline, and four stores the tool owns (scenarios, sleeves, the
    proposal register, and the bake).
 
-In production the service runs **`SCENARIO_ADAPTER=baked` with `SCENARIO_BAKED_FALLBACK=0`**: every
+In production the service runs **`SCENARIO_ADAPTER=baked`**: every
 portfolio a user can select is precomputed, a resolve is a dictionary lookup (measured 6–9 ms), an
 export — workbook and deck — is written by the tool in ~1.2 s (the workbook ~160 ms, the deck ~1 s),
-and the analytics library is never imported (Verified — §14.3).
+and the analytics library is not imported — since D126 it is not in this repository (Verified —
+§14.3, `tests/test_carve_out.py`).
 
 ---
 
@@ -245,7 +250,7 @@ browser ──► Flask :8001 (host: dashboardFrontend.py)
                                               ├─ proposalRegister (SQLite)    products · fees · advisors
                                               ├─ sheetDoc ─► workbook (openpyxl) · pptWriter (python-pptx)
                                               ├─ houseFonts + fonts/ (embedded in the deck)   assetEstimates
-                                              └─ engine.py ─lazy─► the analytics library  (bake only)
+                                              └─ var/baked: the delivered bake (produced in epsilon-phi; D126)
 ```
 
 ### 3.1 The page folder — `proposalTool/` (COPY)
@@ -282,26 +287,24 @@ What the page assumes of its host (all Verified in the mirror):
 
 ### 3.2 The scenario package — `service/cyrus_pmg/pmgService/scenario/` (COPY)
 
-31 Python modules (11,591 lines at D125), four data files and a `fonts/` folder of five TrueType
-files (~283 KB). Only intra-package relative imports; no
-`cyrus_pmg.*` and no `..core` import anywhere inside it (Verified). Its two outward seams are
-`engine.py` (the analytics library, lazily) and the host's `accessControl`, which only the router
-imports.
+29 Python modules (11,119 lines at D126; `engine.py` and `liveAdapter.py` left with D126), four data
+files and a `fonts/` folder of five TrueType files (~283 KB). Only intra-package relative imports; no
+`cyrus_pmg.*` and no `..core` import anywhere inside it (Verified). Its one outward seam is the
+host's `accessControl`, which only the router imports; the analytics library is reached from nowhere
+(`tests/test_carve_out.py` reads every source file to hold that).
 
 | Module | Role | Runtime on the baked path? |
 |---|---|---|
 | `scenarioPort.py` | The nine-method `ScenarioPort` protocol (`build_export_deck`, D122) | contract |
 | `types.py` | `BasisInput`, `MandateInput`, `PortfolioKey`, `ValidationError`, `ScenarioNotFound`, `AnalyticsError` | yes |
-| `registry.py` | `getScenarioPort()` — reads `SCENARIO_ADAPTER`, `SCENARIO_BAKED_FALLBACK` | yes |
-| `bakedAdapter.py` | `BakedScenarioPort` — dictionary lookup over slice files; export via `workbook` | **the production adapter** |
+| `registry.py` | `getScenarioPort()` — reads `SCENARIO_ADAPTER`: `fixtures` or `baked`, and refuses anything else (D126) | yes |
+| `bakedAdapter.py` | `BakedScenarioPort` — dictionary lookup over slice files, no delegate: a miss is `AnalyticsError`, never a computation (D126); export via `workbook` and `pptWriter` | **the production adapter** |
 | `fixturesAdapter.py` | `FixturesScenarioPort` — synthetic analytics, failure knobs | demo/debug only |
-| `liveAdapter.py` | `LiveScenarioPort` — real analytics through `engine` | bake, or `SCENARIO_BAKED_FALLBACK=1` |
-| `engine.py` | The only module naming the analytics library: `_PACKAGE` from `SAA_ENGINE_PACKAGE`, five symbols in `_SYMBOLS` (`CAppConfig`, `DATAVERSION`, `ContextCreator`, `SAAPortfolio`, `AssetReturnEstimator`), PEP 562 lazy resolution | never resolved on the baked path |
 | `rules.py` | Floors, caps, tilt, volatility premium, variants, sleeve groups, availability, validators, `schemaPayload` | yes |
 | `saaKeys.py` | Portfolio name ⇄ key parser and the closed vocabularies | yes |
 | `universe.py` | The strategic universe read from `SCENARIO_SAA_SOURCE` — keys, facets, weights, category rows | **yes — read at request time** for availability and category rows |
 | `payloads.py` | `PortfolioResult` shaping, finiteness guard, largest-remainder rounding | yes |
-| `portfolio_weights.py` | Asset metadata (`ASSET_METADATA`, 19 assets), hedge ratios, context window, the engine bridge (`get_context`, `get_portfolio`). Imports **pandas** and builds two frames at import | imported at start (§12) |
+| `portfolio_weights.py` | Asset metadata (`ASSET_METADATA`, 19 assets) and the weight universe's loaders; the engine bridge, the hedge-ratio table and the context window left with D126. Imports **pandas** and builds two frames at import | imported at start (§12) |
 | `scenarioStore.py` | One JSON file per scenario under `SCENARIO_STORE_DIR`, atomic writes, `SCENARIO_RETENTION_HOURS` | yes |
 | `sleeves.py` | Facade: `VARIANTS`, `listSleeves`, `sleeveExists`, `variantExists` | yes |
 | `sleeveRules.py` | The editions' applicability rules: which strategic portfolios each edition of a sleeve is for (D89) | yes |
@@ -319,7 +322,7 @@ imports.
 | `fontMetrics.py` | Generated: the embedded faces' advance widths and line heights, so the deck's fit needs no fonts on the server (D124, D125). Rebuilt by `service/tools/buildFontMetrics.py` | yes |
 | `proposalRegister.py` | Every delivered proposal, SQLite at `SCENARIO_REGISTER_DB`, schema v3 (migrated in place on open), append-only; the workbook **and the deck**, each with its bytes, size and SHA-256 (D123); custom rates (D96); saved views (D116) | yes |
 | `accountRequests.py` | Account opening requests (D76): one per proposal, an `accountRequests` table in the register's own file, append-only; placeholder option lists | yes |
-| `bake.py` | Offline bake CLI and the store layout (`manifest.json`, `<CCY>_<Hedging>.json`, `assetEstimates.json`); `storeDir()` reads `SCENARIO_BAKED_DIR` | store layout at runtime; the CLI offline |
+| `bake.py` | The store layout every reader uses (`manifest.json`, `<CCY>_<Hedging>.json`, `assetEstimates.json`; `storeDir()` reads `SCENARIO_BAKED_DIR`), `--census`, and a bake from the fixtures port for tests. A real bake is produced in epsilon-phi and delivered (D126) | store layout at runtime; the CLI offline |
 | `__init__.py` | Package docstring (its module list is stale — ignore it) | — |
 
 Data files inside the package: `advisors.xlsx` (24 rows), `fees.json` (which also names the custom
@@ -400,7 +403,7 @@ without them — `universe.py` raises on a missing extract, `products.py` raises
 
 ### 4.0 What the real host files settle
 
-Six actual Cyrus files are in the repository at `../cyrus-files/`, supplied 2026-09-05:
+Six actual Cyrus files are in the repository at `cyrus-files/`, supplied 2026-09-05:
 `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`, `exceptionHandlers.py`,
 `config.py`, `dashboard.env.defaults`. They are transcriptions with marked gaps, but they are
 source rather than description, and they **replace `HOST_AUDIT.md` wherever the two differ**.
@@ -512,7 +515,7 @@ three auth names, configuration.**
 
 ## 5. Prerequisites and pre-port checks
 
-Run these on the epsilon-phi side, at the commit you are porting, before copying anything.
+Run these in this repository, at the commit you are porting, before copying anything.
 
 ```bash
 cd proposal-tool
@@ -572,7 +575,6 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 |---|---|
 | Identity | The host's GSSSO session replaces the mirror's `kerberos` cookie / `X-Kerberos` header, inside the host's own `accessControl` — the package never reads identity. |
 | Admin list | On the host `isAdmin` is membership of `ISGAdmin`, resolved by `pmgEntitlement` (§9.2); only the mirror reads `PMG_ADMIN_KERBEROS`. |
-| The analytics library, on the **bake** machine only | `SAA_ENGINE_PACKAGE` if the library is named differently; the `_SYMBOLS` table in `engine.py` if its layout differs. Irrelevant to the host service under §11.4's recommended configuration. |
 | Log destination | The host's launcher redirects each process to its own log (Audit §9); the package logs nothing of its own (§13.4). |
 
 ### REIMPLEMENT later, behind an unchanged function (a code change — not part of the port)
@@ -622,7 +624,7 @@ a register starts empty); `.DS_Store` files; `service/weo_2026_1.csv`; the mirro
 
 Do the steps in order; each has a check.
 
-**Step 0 — Freeze the commit.** Note the epsilon-phi commit (`git rev-parse --short HEAD`), run §5,
+**Step 0 — Freeze the commit.** Note this repository's commit (`git rev-parse --short HEAD`), run §5,
 and take the bake manifest's `updatedAt` and `source.modified` — they are what §15 checks the
 running host against.
 
@@ -1087,13 +1089,12 @@ python -c "import sqlite3; print(sqlite3.sqlite_version)"   # >= 3.8.0
 
 ### 11.4 Configuration — every variable the package reads
 
-Twenty variables (Verified by grep of `os.getenv` across `service/` and `generator/`). "Required"
+Seventeen variables (D126 removed the live path's three; Verified by grep of `os.getenv` across `service/` and `generator/`). "Required"
 means the host must set it; "own" means the host already has its own value.
 
 | Variable | Read in | Default | Host |
 |---|---|---|---|
 | `SCENARIO_ADAPTER` | `registry.py` | `fixtures` when unset (`dashboard.env.defaults` sets `baked`) | **Required: `baked`** |
-| `SCENARIO_BAKED_FALLBACK` | `registry.py` | `1` | **Required: `0`** — no database, no library on the request path |
 | `SCENARIO_BAKED_DIR` | `bake.py` (`storeDir`, used by the adapter and `assetEstimates`) | `<pkg>/../../../var/baked` | **Required** — the delivered store |
 | `SCENARIO_SAA_SOURCE` | `universe.py` | `<pkg>/../../../../saaSource/saaPortfolios.csv` | **Required** — read at request time |
 | `SCENARIO_PRODUCTS_SOURCE` | `products.py` | `<pkg>/../../../../productSource/products.csv` | **Required** |
@@ -1107,12 +1108,10 @@ means the host must set it; "own" means the host already has its own value.
 | `SCENARIO_ASSET_ESTIMATES` | `assetEstimates.py` | the bake store's copy, else `<pkg>/assetEstimates.json` | optional |
 | `PMG_ALLOWED_KERBEROS` | `accessControl.py` | `fbarker` in the mirror | own (Audit §5.5) |
 | `PMG_ADMIN_KERBEROS` | `accessControl.py` (mirror only) | `fbarker` | not needed — on the host `isAdmin` is membership of `ISGAdmin` (§9.2); nothing in the package reads it |
-| `SAA_ENGINE_PACKAGE` | `engine.py` | `epsilonPhi` | bake machine only |
 | `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are **8002 / 0.0.0.0**, under its `PMG_SVC_` pydantic-settings prefix (Verified: `cyrus-files/config.py`, `dashboard.env.defaults`) |
 | `FRONTEND_PORT`, `DASHBOARD_HOST` | `dashboardConfig.py` (mirror) | 8001 / 127.0.0.1 | own |
 | `PMG_SVC_WORKERS` | `start_dashboard.sh` (mirror) | 1 | own (the host runs 2) |
 | `SCENARIO_FIXTURES_LATENCY_MS`, `SCENARIO_FIXTURES_FAIL`, `SCENARIO_FIXTURES_FAIL_SCHEMA`, `SCENARIO_FIXTURES_FAIL_SLEEVES`, `SCENARIO_FIXTURES_FAIL_EXPORT` | `fixturesAdapter.py` | unset | never in production |
-| `SAA_ENGINE_LIVE` | tests only | unset | — |
 
 Reference block for the host's `dashboard.env.defaults`, in that file's own idiom — a
 `: "${VAR:=default}"` line per setting, then one `export` (Verified: `cyrus-files/dashboard.env.defaults`).
@@ -1121,7 +1120,6 @@ Adjust the paths:
 ```bash
 # ---- Proposal Tool (PORTING.md §11.4) -----------------------------------------
 : "${SCENARIO_ADAPTER:=baked}"
-: "${SCENARIO_BAKED_FALLBACK:=0}"
 : "${SCENARIO_BAKED_DIR:=/data/pmg/proposalTool/baked}"
 : "${SCENARIO_SAA_SOURCE:=/data/pmg/proposalTool/extracts/saaPortfolios.csv}"
 : "${SCENARIO_PRODUCTS_SOURCE:=/data/pmg/proposalTool/extracts/products.csv}"
@@ -1130,7 +1128,7 @@ Adjust the paths:
 : "${SCENARIO_REGISTER_DB:=/data/pmg/proposalTool/proposals.db}"
 : "${SCENARIO_STORE_DIR:=/data/pmg/proposalTool/scenarios}"
 : "${SCENARIO_RETENTION_HOURS:=24}"
-export SCENARIO_ADAPTER SCENARIO_BAKED_FALLBACK SCENARIO_BAKED_DIR SCENARIO_SAA_SOURCE
+export SCENARIO_ADAPTER SCENARIO_BAKED_DIR SCENARIO_SAA_SOURCE
 export SCENARIO_PRODUCTS_SOURCE SCENARIO_SLEEVES_SEED SCENARIO_SLEEVES_DB SCENARIO_REGISTER_DB
 export SCENARIO_STORE_DIR SCENARIO_RETENTION_HOURS
 ```
@@ -1138,37 +1136,41 @@ export SCENARIO_STORE_DIR SCENARIO_RETENTION_HOURS
 (`/data/pmg/proposalTool` is illustrative — where writable, durable storage lives on the deployed
 host is Unverifiable, §18.)
 
-D90–D125 added no variable. The password that protects the workbook's sheets and the deck
+D90–D125 added no variable, and D126 removed three with the live path — `SCENARIO_BAKED_FALLBACK`,
+`SAA_ENGINE_PACKAGE`, `SAA_ENGINE_LIVE`. The password that protects the workbook's sheets and the deck
 (`workbook.SHEET_PASSWORD`, D104, D123) is a constant in source on purpose — a convention against
 accidental edits, not a secret (§13.5). The deck's fonts and metrics are package files, not
 configuration.
 
 ### 11.5 The bake is a delivery, not a cache
 
-The store is built where the analytics library and its database exist — today the epsilon-phi
-side — and shipped to the host as data. At `9f4dc50`: 16 slices × 43 portfolios = **688
+The store is built where the analytics library and its database exist — **epsilon-phi**, which keeps
+the producer: its own copy of `bake.py` with the live adapter and `engine.py` — and shipped here, and
+on to the host, as data. This repository holds no way to compute a figure (D126): the committed
+`service/var/baked/` **is** the delivery, versioned with the code that reads it. At `9f4dc50`: 16 slices × 43 portfolios = **688
 payloads**, four currencies, ~3.0 MB including `assetEstimates.json` and `manifest.json`. GBP, CHF
 and EUR were analysed in a USD context (`--analytics-currency USD`) because the development
 database carries currency configs for USD and GBP only; the manifest records
 `currencySubstitutions` and every non-USD payload is stamped `analyticsCurrency: "USD"` (Verified).
 
 ```bash
-# on a machine with the analytics library and its database, PYTHONPATH including the library
-cd proposal-tool/service
+# in epsilon-phi, on a machine with the analytics library and its database
+cd epsilon-phi-core/proposal-tool/service
 PYTHONPATH=".:../../src/python" python3 -m cyrus_pmg.pmgService.scenario.bake --census
 PYTHONPATH=".:../../src/python" python3 -m cyrus_pmg.pmgService.scenario.bake \
     --all --workers 4 --out var/baked.new --analytics-currency USD
 # verify manifest.json: portfoliosBaked, currencies, source.path/modified, unparsedNames == []
-# then deliver var/baked.new to the host as the new SCENARIO_BAKED_DIR
+# then deliver var/baked.new: into this repository as service/var/baked (commit it with the
+# extract it was built from), and to the host as the new SCENARIO_BAKED_DIR
 ```
 
-Re-bake when: the SAA extract changes (`bake --census` first), the library's `dataversion` moves,
-the hedge ratios or the context window change, or the payload shape changes. The host never bakes.
-`bake.py`, `liveAdapter.py`, `engine.py` and the engine half of `portfolio_weights.py` still travel
-in the package (verbatim copy) and stay inert under `SCENARIO_BAKED_FALLBACK=0` (Verified by the
-§14.3 probe).
+Ask epsilon-phi for a new bake when: the SAA extract changes (`bake --census` here first), the
+library's `dataversion` moves, the hedge ratios or the context window change, or the payload shape
+changes. Neither this repository nor the host bakes. What travels in the package is the consumer's
+half of `bake.py` — the layout, the census and a fixtures bake for tests — and nothing on the
+request path can compute (Verified by the §14.3 probe and `tests/test_carve_out.py`).
 
-Coverage is exact: an unbaked key with the fallback off is a 422 from the availability check when
+Coverage is exact: an unbaked key is a 422 from the availability check when
 the universe does not offer it, and an `AnalyticsError` → 502 with Retry if it is offered but
 missing from the store (`test_miss_without_delegate_raises_analytics_error`). Because availability
 is derived from the extract at request time (§3.6), **ship the extract and the bake that was built
@@ -1178,7 +1180,7 @@ from it together**; the manifest's `source.modified` is the tie.
 
 ## 12. Dependencies
 
-Measured on the epsilon-phi side (Python 3.8.20). The host's versions are Unverifiable.
+Measured in this repository (Python 3.8.20). The host's versions are Unverifiable.
 
 | Package | Here | Needed by | Host status (Audit §5.1) |
 |---|---|---|---|
@@ -1192,16 +1194,16 @@ Measured on the epsilon-phi side (Python 3.8.20). The host's versions are Unveri
 | `requests`, `flask` | 2.32.3 / 2.2.5 | the host's own proxy and gate, not the package | present |
 | `sqlite3` | stdlib, **library ≥ 3.8.0** | the sleeve repository and the proposal register; the partial unique index needs 3.8.0 (§11.3.2) | verify — a stripped Python build without `_sqlite3`, or RHEL 7's 3.7.17, would fail |
 | `csv`, `json`, `secrets`, `hashlib`, `tempfile`, `threading` | stdlib | the stores and readers | — |
-| `epsilonPhi` (the analytics library), `numpy`, `sklearn`, the database driver | — | **only the bake** and `SCENARIO_BAKED_FALLBACK=1` | not needed on the host service |
+| `epsilonPhi` (the analytics library), `sklearn`, the database driver | — | **not in this repository** (D126): the bake is produced with them in epsilon-phi and delivered | not needed anywhere the tool runs |
 
-What a fully baked, no-fallback service actually imports across a complete cycle (schema, create,
+What a baked service actually imports across a complete cycle (schema, create,
 resolve, sleeves, export, register, console): `fastapi, starlette, pydantic, openpyxl, anyio, httpx`
 plus `pandas, numpy, pyarrow` via `portfolio_weights.py`, plus `pptx, lxml, PIL, xlsxwriter` once an
-export runs — and **never `epsilonPhi`** (Verified, §14.3). There is no requirements file in
-`proposal-tool/`; `openpyxl`, `pandas` and `python-pptx` are what to add to the host's
-`requirements.in`.
+export runs — and **never `epsilonPhi`** (Verified, §14.3). `requirements.txt` at the root of this
+repository pins the floors (`requirements-dev.txt` adds the tests' and the tools'); `openpyxl`,
+`pandas` and `python-pptx` are what to add to the host's `requirements.in`.
 
-`node` is needed only to run the JavaScript-mirror tests on the epsilon-phi side (§14).
+`node` is needed only to run the JavaScript-mirror tests in this repository (§14).
 
 ---
 
@@ -1234,7 +1236,7 @@ router (§9.2).
 
 ### 13.3 The error contract — two shapes, both handled
 
-Settled by `../cyrus-files/exceptionHandlers.py`. The host wraps its own failures as
+Settled by `cyrus-files/exceptionHandlers.py`. The host wraps its own failures as
 `PmgAppException`, whose handler emits:
 
 ```python
@@ -1291,11 +1293,11 @@ router level — not in the package.
 
 ## 14. Tests and validation
 
-### 14.1 The suite (epsilon-phi side)
+### 14.1 The suite (this repository)
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 391 passed, 4 skipped in ~2 min (at D125)
+# 394 passed, none skipped, in ~2 min (at D126)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1304,12 +1306,12 @@ cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
 | `tests/test_sleeve_repository.py` | 76 | the sleeve store, migration, history, archive/activity, the console routes, the admin gate on every `/scenario/repository…` route, `accessControl` semantics, and the four-worker cold start (§11.3.1) |
 | `tests/test_proposal_register.py` | 32 | the register end to end, byte-identity of the stored workbook and deck, append-only, the panel's endpoints, the one-UID invariant (D75), the refusal of half a delivery and the schema 2→3 migration (D123), saved views and moved counts (D116) |
 | `tests/test_account_requests.py` | 28 | the UID lookup, the request store and its validation, one request per proposal, the gates, the option lists on the schema (D76) |
-| `tests/test_baked_adapter.py` | 10 | slice coverage, manifest provenance, no analytics on the read path, export without a delegate, resumable bake |
+| `tests/test_baked_adapter.py` | 9 | slice coverage, manifest provenance, no analytics on the read path, a miss refused, export from the payloads, resumable bake |
 | `tests/test_sleeve_editions.py` | 24 | editions of a sleeve and their applicability rules (D89) |
 | `tests/test_sheet_doc.py` | 12 | the report as data: no file format imported, deterministic builders, `renderNumber`, `paginate` (D119, D120) |
 | `tests/test_deck.py` | 15 | the deck cell for cell against its plan, the slide configurations, the fit, the lock, and one export delivering both files over HTTP (D121–D124) |
 | `tests/test_house_fonts.py` | 6 | the font files, house faces in production and the library's on the golden path, the embedded faces parsed back byte for byte (D125) |
-| `tests/test_tier0_beta_equivalence.py` | 4 | the library-side Tier 0 optimisation; **skipped** unless `SAA_ENGINE_LIVE=1` and a database |
+| `tests/test_carve_out.py` | 4 | D126: no source names the library or a live path, the registry refuses `live`, the adapter has no delegate, and a production cycle against the delivered bake in a fresh interpreter ends with the library absent from `sys.modules` |
 
 `tests/conftest.py` gives every session a throwaway sleeve database and register. The suite is
 written against the mirror's stand-ins (the `X-Kerberos` header, `_dev_login`, the packaged
@@ -1338,7 +1340,7 @@ sheets), a register row whose stored workbook is byte-identical, the $50m export
 
 ```bash
 TMP=$(mktemp -d)
-SCENARIO_ADAPTER=baked SCENARIO_BAKED_FALLBACK=0 \
+SCENARIO_ADAPTER=baked \
 SCENARIO_STORE_DIR=$TMP/store SCENARIO_SLEEVES_DB=$TMP/sleeves.db SCENARIO_REGISTER_DB=$TMP/proposals.db \
 python3 - <<'EOF'
 import sys
@@ -1357,7 +1359,7 @@ Since D123 the export in that cycle returns a zip: check it holds exactly one `.
 the register row holds both. Expect ~1.2 s rather than 194 ms — the deck is ~1 s of it — and
 ~230 KB rather than 22 KB. `pptx` joins `sys.modules`; `epsilonPhi` still must not.
 
-The two tests that lock this property on the epsilon-phi side:
+The tests that lock this property here — `tests/test_carve_out.py` (D126), and two older ones:
 `test_an_export_imports_no_part_of_the_analytics_library` (a subprocess, asserts `LEAKED []`) and
 `test_schema_and_library_need_no_analytics`.
 
@@ -1384,7 +1386,7 @@ nav for users.
 
 **Data and provenance**
 
-4. The schema's `dataInfo` reads `adapter: "baked"` (not "baked (live fallback)"), `688 portfolios
+4. The schema's `dataInfo` reads `adapter: "baked"`, `688 portfolios
    baked` (or the delivered count), the four currencies and the bake date you delivered.
 5. `availability` is 43 per currency at the current extract; `bake --census` on the host shows the
    delivered extract with 0 unparsed names.
@@ -1600,11 +1602,10 @@ repository. Tick each before Step 1.
 - [ ] Durable, writable, backed-up storage exists outside `src/cyrus_pmg/**` for the register,
       the sleeve database, the scenario store, the bake and the extracts; the `gns` deployment does
       not wipe it.
-- [ ] Whether the deployed host may run a scheduled job, or whether the bake is always delivered
-      from elsewhere; who holds the library and database credentials for it.
-- [ ] If `SCENARIO_BAKED_FALLBACK=1` is ever wanted: the analytics library's package name
-      (`SAA_ENGINE_PACKAGE`) and layout (`engine._SYMBOLS`), its `dataversion`, and currency
-      configs for GBP/CHF/EUR.
+- [ ] Who in epsilon-phi produces and delivers the bake, and on what cadence — it is always
+      delivered from there (D126); the host never bakes and neither does this repository.
+- [x] ~~If `SCENARIO_BAKED_FALLBACK=1` is ever wanted…~~ — **moot** since D126: there is no fallback
+      and no library here to fall back to.
 
 **Conventions**
 
@@ -1743,6 +1744,12 @@ Since the 10 September port (§0A):
 - **D125** The exports are set in GS Sans and GS Sans Condensed: five `.ttf` files in
   `scenario/fonts/`, embedded in every deck; an `.xlsx` cannot embed a font, so the workbook needs
   them installed.
+- **D126** The tool lives in its own repository, `proposal-tool`, carved out of epsilon-phi with its
+  history. The analytics library is not in it: `engine.py`, `liveAdapter.py`, the engine bridge in
+  `portfolio_weights.py`, the live bake, `SCENARIO_BAKED_FALLBACK`, `SAA_ENGINE_PACKAGE` and
+  `SAA_ENGINE_LIVE` are gone; the registry offers `fixtures` and `baked` only; a miss is an error,
+  never a computation. The bake is produced in epsilon-phi and delivered (§11.5, C.6).
+  `cyrus-files/` moved in beside this guide.
 
 ## Appendix B — where the rest is written down
 
@@ -1754,7 +1761,8 @@ Since the 10 September port (§0A):
 | `proposals/` | Design studies behind D90–D125, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
-| `service/PERFORMANCE.md` | The analytics profile and the Tier 0 / bake measurements. |
+| `service/PERFORMANCE.md` | The analytics profile and the Tier 0 / bake measurements — from before the library left (D126); the bake it argues for is what is delivered. |
+| `cyrus-files/` | The six real Cyrus host files (2026-09-05) this guide is verified against. |
 | `archive/dataSources.html`, `archive/dataOperations.html` | The data estate and its operating model (classes A–D, runbooks, rollback). Their test counts predate D69. |
 | `archive/exportPortingPlan.html`, `archive/exportTrace.html` | Why and how the export was cut loose from the library (D67). |
 | `spec.html` | Revision 6 of the build specification; §16 lists the open items. |
@@ -1929,9 +1937,10 @@ Replace the file in the package, or reimplement `searchAdvisors`/`advisorExists`
 ### C.6 The bake store — `SCENARIO_BAKED_DIR` (`bake.py`, `bakedAdapter.py`, `assetEstimates.py`)
 
 **This is where the risk and return figures live.** The service never computes analytics: under
-`SCENARIO_ADAPTER=baked SCENARIO_BAKED_FALLBACK=0` it reads these files and nothing else. Produce
-them either by running `bake.py` against an engine that satisfies the seam in `engine.py`
-(`SAA_ENGINE_PACKAGE`, the `_SYMBOLS` table), or by writing the files directly in this shape:
+`SCENARIO_ADAPTER=baked` it reads these files and nothing else, and since D126 it has no other
+source. They are produced in epsilon-phi, whose copy of `bake.py` runs the analytics library, or by
+any system that writes the files directly in this shape — **this is the contract between the two
+repositories**:
 
 - `manifest.json` — `slices` (the 16 slice files), `updatedAt`, `portfoliosBaked`, `currencies`,
   `source{path, modified, portfolios, holdings, unparsed, unknownTickers}` (the extract it was built

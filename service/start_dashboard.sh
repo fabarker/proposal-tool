@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the epsilon-phi mirror of the cyrus_pmg dashboard:
+# Start the mirror of the cyrus_pmg dashboard:
 #   [1/2] isgPMGService (FastAPI, uvicorn)
 #   [2/2] dashboardFrontend (Flask static server + /api proxy)
 # Mirrors the host's start_dashboard.sh, minus the optimizationService the
@@ -8,12 +8,12 @@
 set -euo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"        # .../proposal-tool/service
-REPO_ROOT="$(cd "$BASE_DIR/../.." && pwd)"                      # .../epsilon-phi-core
 
 # shellcheck disable=SC1091
 [ -f "$BASE_DIR/dashboard.env.defaults" ] && source "$BASE_DIR/dashboard.env.defaults"
 
-export PYTHONPATH="$BASE_DIR:$REPO_ROOT/src/python${PYTHONPATH:+:$PYTHONPATH}"
+# the package alone: no analytics library is on the path, by design (D126)
+export PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}"
 PY="${PYTHON:-python3}"
 
 LOG_DIR="$BASE_DIR/var/log"

@@ -8,16 +8,14 @@ to compute one live (255s before the Tier 0 fixes).
 Everything else the port owes is already cheap and stays local: the schema and
 its rules, the advisor directory, the sleeve library.
 
-Misses - an unbaked combination, or a currency this database cannot serve -
-fall through to *delegate* when one is configured (the live adapter), so
-correctness never depends on the bake being complete. With no delegate the
-service runs entirely without a database and a miss raises AnalyticsError,
-which the UI already renders as a column error with Retry.
+A miss - an unbaked combination, or a currency the bake does not cover -
+raises AnalyticsError, which the UI renders as a column error with Retry.
+There is no second source of analytics: the bake is produced in epsilon-phi
+and delivered to this service, and nothing here computes a figure (D126).
 
-Exports: never delegated (D67). The workbook is written from the payloads
-this adapter just served, plus the per-asset estimates recorded beside the
-slices, so an export costs milliseconds and imports nothing - the same four
-sheets whatever the fallback is set to.
+Exports (D67): the workbook and the deck are written from the payloads this
+adapter just served, plus the per-asset estimates recorded beside the slices,
+so an export costs milliseconds and imports no analytics.
 """
 
 from __future__ import annotations
@@ -33,9 +31,8 @@ from .workbook import writeWorkbook
 class BakedScenarioPort:
     """The eight methods, served from precomputed results."""
 
-    def __init__(self, storeDirectory: str = None, delegate=None, warm: bool = True):
+    def __init__(self, storeDirectory: str = None, warm: bool = True):
         self._dir = bake.storeDir(storeDirectory)
-        self._delegate = delegate
         self._lock = threading.RLock()
         self._slices = {}
         self._manifest = None
@@ -109,13 +106,10 @@ class BakedScenarioPort:
     def get_schema(self, basis: BasisInput, mandate: MandateInput, variant=None):
         mandateSize = mandate.mandateSize if mandate else None
         topAccountSize = mandate.topAccountSize if mandate else None
-        # Database-free, availability means "baked": a portfolio that enumerated
-        # but never completed its analytics is not offered, or a PWA would pick
-        # a column that errors (D54). With a delegate every enumerated key is
-        # offered, since a miss falls through to it.
-        available = None
-        if self._delegate is None:
-            available = set(self._slice(basis.currency, basis.hedging))
+        # Availability means "baked": a portfolio that enumerated but never
+        # completed its analytics is not offered, or a PWA would pick a column
+        # that errors (D54).
+        available = set(self._slice(basis.currency, basis.hedging))
         return rules.schemaPayload(basis, mandateSize, self.capabilities(),
                                    self.describe(), variant, topAccountSize,
                                    availableKeyStrs=available)
@@ -130,11 +124,9 @@ class BakedScenarioPort:
         payload = self._slice(basis.currency, basis.hedging).get(key.toStr())
         if payload is not None:
             return payload
-        if self._delegate is not None:
-            return self._delegate.resolve_portfolio(basis, key)
         raise AnalyticsError(
-            '{} has not been baked for {} {}. Run the bake for this slice, or '
-            'enable the live analytics fallback.'.format(
+            '{} has not been baked for {} {}. Deliver a bake that covers this '
+            'slice.'.format(
                 rules.portfolioName(basis, key), basis.currency, basis.hedging))
 
     def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None):
@@ -144,7 +136,7 @@ class BakedScenarioPort:
                      portfolios, implementation) -> bytes:
         """The workbook, written here rather than by the analytics library.
 
-        There is no delegate path any more (D67): every figure the export
+        Nothing is computed here (D67): every figure the export
         needs is in the payloads this adapter just served, and the per-asset
         estimates the assumptions sheet reports are recorded beside them. An
         export therefore costs milliseconds and imports nothing."""
@@ -192,7 +184,7 @@ class BakedScenarioPort:
                 dataversion = described['dataversion']
                 break
         return {
-            'adapter': 'baked' + ('' if self._delegate is None else ' (live fallback)'),
+            'adapter': 'baked',
             'source': source,
             'dataversion': '{} · {} portfolios baked{}'.format(
                 dataversion, coverage['portfoliosBaked'],

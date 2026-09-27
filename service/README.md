@@ -1,6 +1,6 @@
 # Proposal Tool service — the host mirror
 
-This directory reproduces, inside epsilon-phi, the topology of
+This directory reproduces the topology of
 `isg-cyrus-pmg/src/cyrus_pmg`, so the Proposal Tool back end is developed in
 its final shape. The package is literally named `cyrus_pmg` so every import in
 the transplantable files is byte-identical to what it will be in the host.
@@ -24,12 +24,11 @@ in the shell):
 |---|---|---|
 | `FRONTEND_PORT` / `PMG_SVC_PORT` | 8001 / 8002 | The host's ports |
 | `PMG_ALLOWED_KERBEROS` | `fbarker` | Comma-separated allowlist — the same variable host dev uses. Empty allows nobody. |
-| `SCENARIO_ADAPTER` | `fixtures` | `fixtures`, `live` or `baked` (see below) |
-| `SCENARIO_BAKED_DIR` | `service/var/baked` | Where the bake store lives |
-| `SCENARIO_BAKED_FALLBACK` | `1` | `0` = never fall through to live analytics (no database needed at all) |
+| `SCENARIO_ADAPTER` | `fixtures` | `fixtures` or `baked` (see below) — nothing else exists (D126) |
+| `SCENARIO_BAKED_DIR` | `service/var/baked` | Where the delivered bake lives |
 | `SCENARIO_STORE_DIR` | system temp | Where scenario state files live |
 | `SCENARIO_RETENTION_HOURS` | 24 | Scenario expiry |
-| `PMG_SVC_WORKERS` | 1 | The host runs 2; engine caches are per-process |
+| `PMG_SVC_WORKERS` | 1 | The host runs 2; adapter caches are per-process |
 | `SCENARIO_FIXTURES_*` | unset | Fixture failure/latency knobs — see `dashboard.env.defaults` |
 
 Sign-in: the GSSSO stand-in lives at `/_dev_login` (the gate redirects there).
@@ -39,49 +38,41 @@ Tests (dev-side; nothing ships to the host's untested dashboard package):
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 391 passed, 4 skipped at D125 - needs openpyxl, pandas and python-pptx
-# the bit-identity guard for the Tier 0 optimisation needs a database:
-SAA_ENGINE_LIVE=1 PYTHONPATH=".:../../src/python" \
-    python3 -m pytest tests/test_tier0_beta_equivalence.py -q
+# 394 passed at D126 (requirements-dev.txt); no analytics library is on the path, ever
 ```
 
-## The three adapters
+## The two adapters
 
 | `SCENARIO_ADAPTER` | Data | Cold resolve | Database |
 |---|---|---:|---|
 | `fixtures` | Real supplied weights, synthetic analytics | ~0ms | no |
-| `live` | Live analytics | ~97s | yes |
-| `baked` | Precomputed analytics results | **~15ms** | no (unless a miss falls through) |
+| `baked` | The delivered bake: precomputed analytics results | **~15ms** | no — a miss is an error, never a computation (D126) |
 
 `baked` is the production setting. The analytics are computed once per data
-version by an offline bake and served from disk — the tool is a lookup over a
-closed space (68 combinations per currency × 4 hedging policies), so nothing a
-PWA selects is unknown in advance. `PERFORMANCE.md` carries the profile, the
-causes and the measurements.
+version by an offline bake **in epsilon-phi**, delivered here as
+`service/var/baked` (committed: the delivery is versioned with the code that
+reads it) and served from disk — the tool is a lookup over a closed space (68
+combinations per currency × 4 hedging policies), so nothing a PWA selects is
+unknown in advance. There is no live adapter and no fallback: this repository
+holds no analytics library and no way to compute a figure (D126). The
+contract for a delivered store is `../PORTING.md` Appendix C.6; `PERFORMANCE.md`
+carries the profile that argued for baking in the first place.
 
 ```bash
-# bake one slice (about 30 minutes: 68 portfolios at the ~27s warm cost)
-PYTHONPATH=".:../../src/python" \
-  python3 -m cyrus_pmg.pmgService.scenario.bake --currency USD --hedging Hedged
+# validate the strategic extract before asking epsilon-phi for a bake
+PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.bake --census
 
-# everything, one process per slice
-PYTHONPATH=".:../../src/python" \
-  python3 -m cyrus_pmg.pmgService.scenario.bake --all --workers 4
-
-# a store for demos and tests, no database
+# a store for demos and tests, synthetic analytics
 PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.bake --all --adapter fixtures
 
-# then serve from it
+# serve the delivered bake
 SCENARIO_ADAPTER=baked ./start_dashboard.sh
 ```
 
-Bakes are resumable (existing keys are skipped, slices flush every 10
-portfolios) and a combination that cannot be resolved is recorded in
-`manifest.json` with its error rather than aborting the run. Re-bake when
-`dataversion` changes; the manifest records which slices came from where.
-
-Re-bake too when the **payload shape** changes — a new field on a resolve
-result reaches the live and fixtures adapters immediately but not the store.
+Ask epsilon-phi for a new bake when the extract changes (`--census` first),
+when the library's `dataversion` moves, or when the **payload shape** changes —
+a new field on a resolve result reaches the fixtures adapter immediately but
+not the store.
 Where a change touches only labels and no figure, migrating the slices in place
 is quicker than an hour of recompute, provided the script asserts that every
 number comes through untouched: that is how the D25 premia regrouping and the

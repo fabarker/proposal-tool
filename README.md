@@ -11,14 +11,15 @@
 > ```
 >
 > `SCENARIO_ADAPTER` picks the data layer: `fixtures` (no database),
-> `live` (live analytics, ~97s cold), or **`baked`** (precomputed, ~15ms cold, no
-> database — the production setting). All 272 USD portfolios are baked.
+> or **`baked`** (precomputed in epsilon-phi and delivered here, ~15ms cold, no
+> database — the production setting, and since D126 the only source of analytics
+> there is).
 >
 > | Read | For |
 > |---|---|
 > | `service/README.md` | running it, the wire contract, the adapters, baking |
-> | `service/TRANSPLANT.md` | the porting list — configuration only |
-> | `service/DEVIATIONS.md` | every departure from this package (D1–D46) and the spec gaps found (G1–G8) |
+> | `PORTING.md` | the porting guide; §0A updates a host that already carries a port |
+> | `service/DEVIATIONS.md` | every departure from this package (D1–D126) and the spec gaps found (G1–G8) |
 > | `service/PERFORMANCE.md` | the analytics profile and what fixed it: 255s → 15ms |
 > | `service/tests/` | the safety net around §8.4's arithmetic and §15.8's finiteness guard |
 >
@@ -50,9 +51,10 @@ invent: where a decision is still open it is listed in **spec §16** and marked 
 A client-facing page for the **Portfolio Management Group (PMG)** at Goldman Sachs. Its users are
 **Private Wealth Advisors (PWAs)**.
 
-It is built and run in **`epsilon-phi`**, but written to be **transplanted into
-`isg-cyrus-pmg/src/cyrus_pmg`** — so the back end follows that codebase's design rather than a
-convenient local one. `archive/BRIEF.md` and `HOST_AUDIT.md` cover what that means in practice.
+It lives in this repository — carved out of **`epsilon-phi`** with its history (D126), which now
+supplies only the **bake**, the precomputed analytics in `service/var/baked` — and is written to be
+**transplanted into `isg-cyrus-pmg/src/cyrus_pmg`**, so the back end follows that codebase's design
+rather than a convenient local one. No analytics library is in this repository or on its path. `archive/BRIEF.md` and `HOST_AUDIT.md` cover what that means in practice.
 
 | Step | What the PWA does | Output |
 |---|---|---|
@@ -92,6 +94,8 @@ proposal-tool/
   spec.html                  the build reference, revision 6 (as built; §1.5 maps the changes)
   PORTING.md                 dropping it into the host dashboard
   DECISIONS.md               decision log, Q1-Q50
+  cyrus-files/               the six real Cyrus host files the porting guide is verified against
+  requirements.txt           the service's dependencies; requirements-dev.txt adds the tests' and tools'
 
   proposalTool/              THE DELIVERABLE — copy this folder into the host verbatim
     proposalTool.html
@@ -137,8 +141,8 @@ runs. Change `generator/*.py` and rebuild.
 
 ## The backend, in one paragraph
 
-**Built.** `ScenarioPort` (nine methods since the deck's `build_export_deck`, D122) is implemented three times — over fixtures, over
-the SAA analytics library, and over a bake of its results — and exposed on the HTTP surface in
+**Built.** `ScenarioPort` (nine methods since the deck's `build_export_deck`, D122) is implemented twice — over fixtures, and over
+the bake epsilon-phi delivers (D126) — and exposed on the HTTP surface in
 **spec §3.4**, which the page consumes through `apiFetch()`. Endpoints live on
 `pmgService/dashboardRouter.py` under `/api/v1/`; the Flask proxy rewrites `/api/<x>` to
 `/api/v1/<x>`, so the page calls `/api/scenario/...`. The proposal flow inherits `requireAuth`;

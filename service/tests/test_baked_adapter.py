@@ -1,7 +1,7 @@
 """Tier 1: the bake store and the adapter that serves it.
 
 Baked with the fixtures port so these run with no database, exercising the
-store format, the lookup, the miss/fallback behaviour and the promise that
+store format, the lookup, what a miss does and the promise that
 matters — a COLD process (empty caches, nothing warmed) answers immediately.
 """
 
@@ -81,21 +81,11 @@ def test_schema_assembly_is_cheap(store):
     assert perCallMs < 2, 'get_schema took {:.1f}ms per call'.format(perCallMs)
 
 
-def test_miss_without_delegate_raises_analytics_error(store):
+def test_a_miss_raises_analytics_error(store):
     port = BakedScenarioPort(storeDirectory=store)
     with pytest.raises(AnalyticsError):
         port.resolve_portfolio(BasisInput(currency='USD', hedging='Unhedged'),
                                PortfolioKey('USD', 'Moderate', 'Core', False))
-
-
-def test_miss_falls_through_to_the_delegate(store):
-    port = BakedScenarioPort(storeDirectory=store, delegate=FixturesScenarioPort())
-    unbaked = BasisInput(currency='USD', hedging='Unhedged')
-    key = PortfolioKey('USD', 'Moderate', 'Core', False)
-    result = port.resolve_portfolio(unbaked, key)
-    # against the naming rule, not a frozen string: the point of this test is
-    # that the miss reached the delegate, not what the delegate calls things
-    assert result['name'] == rules.portfolioName(unbaked, key)
 
 
 def test_schema_and_library_need_no_analytics(store):
@@ -110,7 +100,7 @@ def test_schema_and_library_need_no_analytics(store):
     assert port.search_advisors('ald')
 
 
-def test_export_without_a_delegate_uses_the_payload_writer(store, tmp_path):
+def test_export_uses_the_payload_writer(store, tmp_path):
     from openpyxl import load_workbook
     port = BakedScenarioPort(storeDirectory=store)
     key = PortfolioKey('USD', 'Moderate', 'Core', False)

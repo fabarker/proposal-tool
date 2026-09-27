@@ -2,13 +2,14 @@
 
 SCENARIO_ADAPTER chooses the ScenarioPort implementation:
 
-    fixtures    static data, no analytics (spec 4.4)
-    live        live analytics over the SAA library (see engine.py)
-    baked       precomputed analytics served from disk (the default
-                for production: a cold process answers in ~1ms). Falls back to
-                the live adapter for anything unbaked unless
-                SCENARIO_BAKED_FALLBACK=0, which keeps the service entirely
-                free of a database.
+    fixtures    synthetic analytics, no bake - tests and demos (spec 4.4)
+    baked       the delivered bake, served from disk: the production
+                setting (a cold process answers in ~1ms)
+
+There is no other source of analytics. A portfolio the bake does not hold is
+refused with AnalyticsError, never computed: the analytics library that
+produces the bake lives in epsilon-phi, which delivers the store, and this
+repository never imports it (D126).
 
 The instance is a process-level singleton so adapter caches live for the
 process. Selection is configuration, not structure: the host sets the
@@ -20,6 +21,8 @@ from __future__ import annotations
 import os
 import threading
 
+ADAPTERS = ('fixtures', 'baked')
+
 _lock = threading.Lock()
 _port = None
 
@@ -30,24 +33,14 @@ def getScenarioPort():
     with _lock:
         if _port is None:
             name = os.getenv('SCENARIO_ADAPTER', 'fixtures').strip().lower()
-            if name == 'live':
-                from .liveAdapter import LiveScenarioPort
-                _port = LiveScenarioPort()
-            elif name == 'fixtures':
+            if name == 'fixtures':
                 from .fixturesAdapter import FixturesScenarioPort
                 _port = FixturesScenarioPort()
             elif name == 'baked':
                 from .bakedAdapter import BakedScenarioPort
-                delegate = None
-                if os.getenv('SCENARIO_BAKED_FALLBACK', '1').strip() != '0':
-                    from .liveAdapter import LiveScenarioPort
-                    # constructed, not connected: every engine symbol resolves
-                    # lazily through engine.py, so a fully baked service never
-                    # touches the database
-                    delegate = LiveScenarioPort()
-                _port = BakedScenarioPort(delegate=delegate)
+                _port = BakedScenarioPort()
             else:
                 raise RuntimeError(
-                    'Unknown SCENARIO_ADAPTER {!r}; expected fixtures, live '
-                    'or baked.'.format(name))
+                    'Unknown SCENARIO_ADAPTER {!r}; expected one of {}.'.format(
+                        name, ', '.join(ADAPTERS)))
         return _port
