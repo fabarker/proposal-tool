@@ -1,0 +1,14 @@
+# The Proposal Tool service, Python 3.8: the FastAPI back end, the Flask mirror
+# of the host's gate and proxy, and the two report renderers. Floors are the
+# versions proven here (PORTING.md §12). No analytics library: the bake is
+# delivered (D126).
+fastapi>=0.122.0
+starlette>=0.44.0
+uvicorn>=0.33.0
+pydantic>=2.5.3
+flask>=2.2.5
+requests>=2.32.3
+openpyxl>=3.0.10
+pandas>=2.0.3
+numpy>=1.24.1
+python-pptx>=1.0.2

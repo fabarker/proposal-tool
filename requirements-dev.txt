@@ -1,0 +1,6 @@
+-r requirements.txt
+pytest>=8.3.5
+httpx>=0.27.2          # fastapi.testclient
+fonttools>=4.57.0      # service/tools: rebuilding scenario/fonts/ and fontMetrics.py (D125)
+brotli>=1.0.9          # fontTools reading the page's woff2 sources
+# node: the JavaScript-mirror tests in test_scenario_backend.py (PORTING.md §14.4)
