@@ -107,7 +107,21 @@ class ScenarioPort(Protocol):
         (D52). ``proposalId`` is the Proposal UID the caller minted before
         asking for the file; the writer puts it in the Implementation sheet's
         first row, in every sheet's print header and in the file's properties
-        (D75)."""
+        (D75).
+
+    def build_export_deck(
+        self,
+        basis: "BasisInput",
+        mandate: "MandateInput",
+        portfolios: "Sequence[PortfolioResult]",
+        implementation: "Implementation | None",
+    ) -> bytes:
+        """Return a .pptx byte stream: the same resolved payloads as
+        ``build_export``, rendered as one slide per sheet page by the same
+        builders (D121), so the deck and the workbook cannot disagree.
+        ``proposalId`` in *implementation* is the delivered proposal the deck
+        cites; None, and every footer says the deck is a draft. A deck is
+        never a delivery: nothing is minted and nothing recorded (D122).""""""
 
     def capabilities(self) -> dict:
         """{"canExport": bool, "canEdit": bool}. One role today; this is the seam."""

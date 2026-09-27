@@ -2289,15 +2289,30 @@ function renderView() {
     + '<div class="export-icon" aria-hidden="true"><span>X</span></div>'
     + '<div class="export-copy">'
     + '<p class="eyebrow">Final deliverable</p>'
-    + '<h3 id="exporttitle">Download the proposal workbook</h3>'
-    + '<p>Generates Portfolios, Risk Dashboard and Implementation sheets from the '
-    + 'persisted scenario and the current SAA analytics.</p>'
+    + '<h3 id="exporttitle">Download the proposal</h3>'
+    /* all four sheets, by name (D122, plan A7): the old copy omitted
+       assumptions */
+    + '<p>Generates the Portfolios, Risk Dashboard, Assumptions and '
+    + 'Implementation sheets from the persisted scenario — as the Excel '
+    + 'workbook of record, or as a PowerPoint of the same tables.</p>'
     + '<p class="export-gate ' + gate.tone + '" id="implgate">' + gate.html + '</p>'
     + '</div>'
+    + '<div class="export-actions">'
     + '<button type="button" class="btn btn-export" id="implexport"'
-    + (gate.disabled ? ' disabled' : '') + ' aria-describedby="implgate"'
+    + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
+    + ' aria-describedby="implgate"'
     + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
-    + (exporting.status === 'working' ? 'Preparing…' : 'Download Excel') + '</button>'
+    + (exporting.status === 'working' && exporting.kind !== 'pptx'
+        ? 'Preparing…' : 'Download Excel') + '</button>'
+    /* the deck is never a delivery (D122): same gate, same refusals, and the
+       file cites the delivered UID only while the scenario still matches it */
+    + '<button type="button" class="btn btn-exportppt" id="implexportppt"'
+    + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
+    + ' aria-describedby="implgate"'
+    + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
+    + (exporting.status === 'working' && exporting.kind === 'pptx'
+        ? 'Preparing…' : 'Download PowerPoint') + '</button>'
+    + '</div>'
     + '</section>';
   el.innerHTML = html;
   publishPinnedColumnWidth(el);
@@ -2315,15 +2330,28 @@ function publishPinnedColumnWidth(root) {
 }
 
 /* ---- export (spec 14) --------------------------------------------------- */
-async function exportWorkbook() {
+async function exportFile(kind) {
+  /* one path for both deliverables (D122): kind is 'xlsx' or 'pptx' */
   var exporting = App.exporting();
   if (exporting.status === 'working') return;
   exporting.status = 'working';
+  exporting.kind = kind;
   exporting.error = null;
   App.refresh();
+  /* the save barrier (D122, plan A1): a click straight after a toggle must
+     not snapshot the store without it */
+  try {
+    await App.writesSettled();
+  } catch (err) {
+    exporting.status = 'error';
+    exporting.error = (err && err.message) || 'Your latest changes could not be saved.';
+    App.refresh();
+    return;
+  }
   try {
     var resp = await fetch(window.API_BASE + '/scenario/'
-        + encodeURIComponent(App.scenarioId()) + '/export',
+        + encodeURIComponent(App.scenarioId()) + '/export'
+        + (kind === 'pptx' ? '.pptx' : ''),
       { method: 'POST', credentials: 'same-origin' });
     if (!resp.ok) {
       var message = 'Export failed (' + resp.status + ')';
@@ -2335,7 +2363,7 @@ async function exportWorkbook() {
       throw new Error(message);
     }
     var blob = await resp.blob();
-    var name = 'PMG_Scenario.xlsx';
+    var name = kind === 'pptx' ? 'PMG_Scenario.pptx' : 'PMG_Scenario.xlsx';
     var disposition = resp.headers.get('Content-Disposition') || '';
     var match = disposition.match(/filename="?([^";]+)"?/);
     if (match) name = match[1];
@@ -2348,7 +2376,8 @@ async function exportWorkbook() {
     link.remove();
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     exporting.status = 'idle';
-    App.announce('polite', 'Workbook downloaded.');
+    App.announce('polite', kind === 'pptx' ? 'Presentation downloaded.'
+                                           : 'Workbook downloaded.');
   } catch (err) {
     exporting.status = 'error';
     exporting.error = (err && err.message) || 'Export failed.';
@@ -2479,7 +2508,8 @@ document.addEventListener('click', function (e) {
     var axis = document.getElementById('feeaxis'); if (axis) axis.focus();
     return;
   }
-  if (e.target.id === 'implexport') { exportWorkbook(); return; }
+  if (e.target.id === 'implexport') { exportFile('xlsx'); return; }
+  if (e.target.id === 'implexportppt') { exportFile('pptx'); return; }
   var sched = e.target.closest ? e.target.closest('[data-feesched]') : null;
   if (sched) { App.setFeeSchedule(sched.dataset.feesched); return; }
   /* Either half of the level composes the whole: the other half is read from

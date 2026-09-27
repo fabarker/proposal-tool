@@ -19,6 +19,8 @@ Handlers are sync ``def`` on purpose: FastAPI runs them in the threadpool, so
 a slow resolve_portfolio never blocks the event loop.
 """
 
+import json
+
 from fastapi import APIRouter, Body, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -763,6 +765,104 @@ def removePortfolio(scenarioId: str, portfolioKey: str,
         return _validationError(exc)
 
 
+def _assembleExport(scenarioId: str, port):
+    """Everything both export formats share (D122): read the stored state,
+    validate it exactly as the workbook export always has, resolve every
+    column through the port, and build the implementation model ONCE (D69) -
+    refusing on a missing variant or sleeve, an unpriced custom row and a
+    position below its product's minimum, so neither format can be a way
+    around the other's gate. Raises what the endpoints map: ScenarioNotFound,
+    ValidationError, AnalyticsError."""
+    state = scenarioStore.getScenario(scenarioId)
+    if not state['base']:
+        raise ValidationError('base', 'No base portfolio to implement.')
+    variant = state.get('variant')
+    validateVariant(variant)
+    # A proposal that excludes fees needs no schedule to export, and the
+    # sheet it produces carries no fee column to price (D52). One that
+    # includes them must have chosen one: there is no default.
+    includeFees = _includeFees(state)
+    feeSchedule = state.get('feeSchedule')
+    feeLevel = state.get('feeLevel')
+    if includeFees:
+        validateFeeSchedule(feeSchedule)
+        validateFeeLevel(feeLevel)
+    basis = BasisInput.fromDict(state['basis'])
+    mandate = MandateInput.fromDict(state['mandate'])
+
+    keys = [state['base']] + list(state['comparisons'])
+    results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k))
+               for k in keys]
+
+    from cyrus_pmg.pmgService.scenario.rules import (
+        AUTO_SLEEVE_CATEGORIES, sleeveCategory)
+    from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
+    sleeves = state['sleeves'] or {}
+    # one choice per sleeve category: grouped categories share theirs (D60)
+    missing, unresolved = [], []
+    baseKey = _baseKeyFrom(state['base'])
+    for c in results[0]['categories']:
+        if c['name'] in AUTO_SLEEVE_CATEGORIES:
+            continue
+        under = sleeveCategory(c['name'])
+        if not sleeves.get(under):
+            if under not in missing:
+                missing.append(under)
+        elif under not in unresolved and not sleeveExists(under, sleeves[under], variant, baseKey):
+            # chosen under a different base, or the library moved: the
+            # name has no edition for this portfolio and cannot be built
+            unresolved.append(under)
+    if missing:
+        raise ValidationError(
+            'sleeves',
+            'Attach a sleeve to every category first - missing: {}.'.format(
+                ', '.join(missing)))
+    if unresolved:
+        raise ValidationError(
+            'sleeves',
+            'The sleeve chosen for {} is not offered for this portfolio. '
+            'Choose another.'.format(', '.join(unresolved)))
+
+    implementation = {'sleeves': sleeves, 'variant': variant,
+                      'tacticalTilt': bool(state.get('tacticalTilt', True)),
+                      'volPremium': bool(state.get('volPremium', True)),
+                      'includeFees': includeFees,
+                      'feeSchedule': feeSchedule, 'feeLevel': feeLevel,
+                      'customFees': state.get('customFees') or {},
+                      'customFeesBy': state.get('customFeesBy') or '',
+                      'customFeesAt': state.get('customFeesAt')}
+    # The implemented model is built ONCE here and handed to both the
+    # writer and the register, so the sheet a client receives and the
+    # record kept of it are the same model rather than two builds (D69).
+    # An unpriced proposal is built unpriced whatever schedule the
+    # scenario happens to remember (D52) - the writer does the same.
+    model = buildImplementationRows(
+        results[0], sleeves, AUTO_SLEEVE_CATEGORIES, mandate.mandateSize, variant,
+        implementation['tacticalTilt'], feeSchedule if includeFees else None, feeLevel,
+        mandate.topAccountSize, implementation['volPremium'], basis.currency,
+        customFees=implementation['customFees'])
+    # Under the custom level a row without a rate leaves its products
+    # unpriced, and an unpriced product cannot go on a priced sheet (D96).
+    if model.get('unpricedGroups'):
+        raise ValidationError(
+            'customFees',
+            'Set a custom rate for every fee group in the model - missing: {}.'.format(
+                ', '.join(model['unpricedGroups'])))
+    # A position smaller than the product will accept is not a position:
+    # the export refuses while any survives, so the UI's block cannot be
+    # walked past by calling the endpoint directly (item 3).
+    if model['breaches']:
+        raise ValidationError('minimumInvestment',
+                              'Below mandate minimum: {}. Raise the mandate, change the '
+                              'sleeve, or drop the product before exporting.'.format(
+                                  ', '.join('{} in {} (${:,.0f} against a ${:,.0f} minimum)'.format(
+                                      b['name'], b['category'], b['notional'],
+                                      b['minimumInvestment']) for b in model['breaches'][:4])
+                                  + ('' if len(model['breaches']) <= 4
+                                     else ', and {} more'.format(len(model['breaches']) - 4))))
+    return state, basis, mandate, results, implementation, model
+
+
 @router.post('/scenario/{scenarioId}/export')
 def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
     """The Excel workbook (spec 14). Assembled from stored scenario state.
@@ -777,93 +877,8 @@ def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
     """
     port = getScenarioPort()
     try:
-        state = scenarioStore.getScenario(scenarioId)
-        if not state['base']:
-            raise ValidationError('base', 'No base portfolio to implement.')
-        variant = state.get('variant')
-        validateVariant(variant)
-        # A proposal that excludes fees needs no schedule to export, and the
-        # sheet it produces carries no fee column to price (D52). One that
-        # includes them must have chosen one: there is no default.
-        includeFees = _includeFees(state)
-        feeSchedule = state.get('feeSchedule')
-        feeLevel = state.get('feeLevel')
-        if includeFees:
-            validateFeeSchedule(feeSchedule)
-            validateFeeLevel(feeLevel)
-        basis = BasisInput.fromDict(state['basis'])
-        mandate = MandateInput.fromDict(state['mandate'])
-
-        keys = [state['base']] + list(state['comparisons'])
-        results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k))
-                   for k in keys]
-
-        from cyrus_pmg.pmgService.scenario.rules import (
-            AUTO_SLEEVE_CATEGORIES, sleeveCategory)
-        from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
-        sleeves = state['sleeves'] or {}
-        # one choice per sleeve category: grouped categories share theirs (D60)
-        missing, unresolved = [], []
-        baseKey = _baseKeyFrom(state['base'])
-        for c in results[0]['categories']:
-            if c['name'] in AUTO_SLEEVE_CATEGORIES:
-                continue
-            under = sleeveCategory(c['name'])
-            if not sleeves.get(under):
-                if under not in missing:
-                    missing.append(under)
-            elif under not in unresolved and not sleeveExists(under, sleeves[under], variant, baseKey):
-                # chosen under a different base, or the library moved: the
-                # name has no edition for this portfolio and cannot be built
-                unresolved.append(under)
-        if missing:
-            raise ValidationError(
-                'sleeves',
-                'Attach a sleeve to every category first - missing: {}.'.format(
-                    ', '.join(missing)))
-        if unresolved:
-            raise ValidationError(
-                'sleeves',
-                'The sleeve chosen for {} is not offered for this portfolio. '
-                'Choose another.'.format(', '.join(unresolved)))
-
-        implementation = {'sleeves': sleeves, 'variant': variant,
-                          'tacticalTilt': bool(state.get('tacticalTilt', True)),
-                          'volPremium': bool(state.get('volPremium', True)),
-                          'includeFees': includeFees,
-                          'feeSchedule': feeSchedule, 'feeLevel': feeLevel,
-                          'customFees': state.get('customFees') or {},
-                          'customFeesBy': state.get('customFeesBy') or '',
-                          'customFeesAt': state.get('customFeesAt')}
-        # The implemented model is built ONCE here and handed to both the
-        # writer and the register, so the sheet a client receives and the
-        # record kept of it are the same model rather than two builds (D69).
-        # An unpriced proposal is built unpriced whatever schedule the
-        # scenario happens to remember (D52) - the writer does the same.
-        model = buildImplementationRows(
-            results[0], sleeves, AUTO_SLEEVE_CATEGORIES, mandate.mandateSize, variant,
-            implementation['tacticalTilt'], feeSchedule if includeFees else None, feeLevel,
-            mandate.topAccountSize, implementation['volPremium'], basis.currency,
-            customFees=implementation['customFees'])
-        # Under the custom level a row without a rate leaves its products
-        # unpriced, and an unpriced product cannot go on a priced sheet (D96).
-        if model.get('unpricedGroups'):
-            raise ValidationError(
-                'customFees',
-                'Set a custom rate for every fee group in the model - missing: {}.'.format(
-                    ', '.join(model['unpricedGroups'])))
-        # A position smaller than the product will accept is not a position:
-        # the export refuses while any survives, so the UI's block cannot be
-        # walked past by calling the endpoint directly (item 3).
-        if model['breaches']:
-            raise ValidationError('minimumInvestment',
-                                  'Below mandate minimum: {}. Raise the mandate, change the '
-                                  'sleeve, or drop the product before exporting.'.format(
-                                      ', '.join('{} in {} (${:,.0f} against a ${:,.0f} minimum)'.format(
-                                          b['name'], b['category'], b['notional'],
-                                          b['minimumInvestment']) for b in model['breaches'][:4])
-                                      + ('' if len(model['breaches']) <= 4
-                                         else ', and {} more'.format(len(model['breaches']) - 4))))
+        state, basis, mandate, results, implementation, model = _assembleExport(
+            scenarioId, port)
 
         # The Proposal UID is minted here, before the workbook exists, so the
         # one id is written into the file, into its name and into the register
@@ -890,5 +905,88 @@ def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
         return _validationError(exc)
     except AnalyticsError as exc:
         return _analyticsError(exc)
+
+_PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+
+def _deckCitation(scenarioId: str, state, basis, mandate, implementation,
+                  model, results):
+    """The delivered proposal this deck may cite, or None (D122, plan A3).
+
+    A deck cites the scenario's latest delivered UID only while the current
+    build still matches what was delivered - basis, mandate, PWA, variant,
+    overlays, pricing terms, and both register pictures, sleeve revisions
+    included. Anything moved since delivery and the deck is a draft: the two
+    files a client holds must never disagree under one UID, and the register
+    deliberately stores no fee figures to rebuild from, so refusing to cite
+    is how the promise is kept."""
+    from cyrus_pmg.pmgService.scenario import fees
+    latest = proposalRegister.latestForScenario(scenarioId)
+    if latest is None:
+        return None
+    includeFees = bool(implementation.get('includeFees'))
+    same = (latest['currency'] == basis.currency
+            and latest['hedging'] == basis.hedging
+            and latest['baseKey'] == (state.get('base') or '')
+            and float(latest['mandateSize']) == float(mandate.mandateSize)
+            and float(latest['topAccountSize']) == float(mandate.topAccountSize)
+            and latest['primaryPwa'] == mandate.primaryPwa
+            and (latest['variant'] or '') == (implementation.get('variant') or '')
+            and latest['tacticalTilt'] == bool(implementation.get('tacticalTilt'))
+            and latest['volPremium'] == bool(implementation.get('volPremium'))
+            and latest['includeFees'] == includeFees)
+    if same and includeFees:
+        same = (latest.get('feeSchedule') == implementation.get('feeSchedule')
+                and latest.get('feeLevel') == implementation.get('feeLevel'))
+        if same and fees.isCustom(implementation.get('feeLevel')):
+            try:
+                recorded = json.loads(latest.get('customFees') or '{}')
+            except ValueError:
+                recorded = None
+            same = recorded == (implementation.get('customFees') or {})
+    if not same:
+        return None
+    if latest['allocation'] != proposalRegister.allocationPicture(results):
+        return None
+    baseKey = PortfolioKey.fromStr(state['base']) if state.get('base') else None
+    if latest['implemented'] != proposalRegister.implementedPicture(
+            model, implementation.get('variant'), baseKey):
+        return None
+    return latest['proposalId']
+
+
+@router.post('/scenario/{scenarioId}/export.pptx')
+def exportScenarioDeck(scenarioId: str, caller=Depends(requireAuth)):
+    """The proposal deck (D122): the workbook's sheets as slides, same
+    engine, same assembly, same refusals - and never a delivery.
+
+    Nothing is minted and nothing recorded: the register stays the record of
+    delivered workbooks (D69, D75). The deck cites the scenario's latest
+    delivered UID only while the current state still matches that delivery
+    (see ``_deckCitation``); otherwise every slide footer says it is a
+    draft. The filename follows the workbook's naming with the extension
+    swapped, and ``X-Proposal-Id`` travels only when a UID is cited."""
+    port = getScenarioPort()
+    try:
+        state, basis, mandate, results, implementation, model = _assembleExport(
+            scenarioId, port)
+        cited = _deckCitation(scenarioId, state, basis, mandate,
+                              implementation, model, results)
+        content = port.build_export_deck(
+            basis, mandate, results,
+            dict(implementation, model=model, proposalId=cited))
+        filename = exportFilename(basis, cited or 'draft')
+        filename = filename[:-len('.xlsx')] + '.pptx'
+        headers = {'Content-Disposition': 'attachment; filename="{}"'.format(filename)}
+        if cited:
+            headers['X-Proposal-Id'] = cited
+        return Response(content=content, media_type=_PPTX, headers=headers)
+    except ScenarioNotFound:
+        return _notFound(scenarioId)
+    except ValidationError as exc:
+        return _validationError(exc)
+    except AnalyticsError as exc:
+        return _analyticsError(exc)
+
 
 # ===== TRANSPLANT BLOCK END ==================================================

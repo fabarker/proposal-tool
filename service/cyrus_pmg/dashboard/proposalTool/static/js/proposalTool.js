@@ -756,13 +756,43 @@ async function confirmBasisChange() {
   refresh();
 }
 
+/* ---- the save barrier (D122, plan A1) -----------------------------------
+   Several setters write the scenario and move on - the page stays live while
+   the PUT lands. Exporting mid-flight would snapshot the store without the
+   change the user just made, so every fire-and-forget write is tracked here
+   and both exports wait for a quiet store before they POST. A failed save
+   blocks the export with its own message, rather than delivering a file the
+   screen does not show. */
+var pendingWrites = [];
+function trackWrite(promise) {
+  pendingWrites.push(promise);
+  var drop = function () {
+    var at = pendingWrites.indexOf(promise);
+    if (at !== -1) pendingWrites.splice(at, 1);
+  };
+  promise.then(drop, drop);
+  return promise;
+}
+function writesSettled() {
+  /* settle everything in flight NOW, then look again: a write queued while
+     waiting is caught by the recursion, so the barrier closes only on a
+     store with nothing left to land */
+  if (!pendingWrites.length) return Promise.resolve();
+  return Promise.allSettled(pendingWrites.slice()).then(function (states) {
+    if (states.some(function (one) { return one.status === 'rejected'; })) {
+      throw new Error('Your latest changes could not be saved.');
+    }
+    return writesSettled();
+  });
+}
+
 function persistBasis() {
   if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+  trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ basis: state.basis })
-  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  })).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
 /* Sleeves kept on a basis or base change, re-validated against the library
@@ -844,11 +874,11 @@ async function setVariant(name) {
      comes back 422. Ordering this after the schema fetch left a whole extra
      round trip in which a fast selection could do exactly that. */
   if (state.scenarioId) {
-    variantPending = apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    variantPending = trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ variant: name })
-    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).catch(function (err) { showAlert('error', err.message || String(err)); });
     await variantPending;
     variantPending = null;
   }
@@ -889,11 +919,11 @@ function setTacticalTilt(on) {
   if (on === state.tacticalTilt) return;
   state.tacticalTilt = on;
   if (state.scenarioId) {
-    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tacticalTilt: on })
-    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).catch(function (err) { showAlert('error', err.message || String(err)); });
   }
   announce('polite', on
     ? 'Tactical tilt added, funded from ' + opt('rules.tacticalTiltFundedFrom', '') + '.'
@@ -933,11 +963,11 @@ function feeLevel() {
 
 function pushFee(patch) {
   if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+  trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch)
-  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  })).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
 /* The strategic volatility premium (D53). Same shape as the tilt - an
@@ -958,11 +988,11 @@ function setVolPremium(on) {
   if (on === state.volPremium) return;
   state.volPremium = on;
   if (state.scenarioId) {
-    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ volPremium: on })
-    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).catch(function (err) { showAlert('error', err.message || String(err)); });
   }
   announce('polite', on
     ? 'Strategic Volatility Premium added, funded pro rata from '
@@ -1024,11 +1054,11 @@ function chooseSleeve(category, name) {
 
 function pushSleeves() {
   if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+  trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sleeves: state.sleeves })
-  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  })).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
 /* =============================================================================
@@ -4158,6 +4188,7 @@ return {
   esc: esc,
   num: num,
   refresh: refresh,
+  writesSettled: writesSettled,
   boot: boot,
   setPicker: function (p) { picker = p; },
   addRenderer: function (fn) { extras.push(fn); },
@@ -6645,15 +6676,30 @@ function renderView() {
     + '<div class="export-icon" aria-hidden="true"><span>X</span></div>'
     + '<div class="export-copy">'
     + '<p class="eyebrow">Final deliverable</p>'
-    + '<h3 id="exporttitle">Download the proposal workbook</h3>'
-    + '<p>Generates Portfolios, Risk Dashboard and Implementation sheets from the '
-    + 'persisted scenario and the current SAA analytics.</p>'
+    + '<h3 id="exporttitle">Download the proposal</h3>'
+    /* all four sheets, by name (D122, plan A7): the old copy omitted
+       assumptions */
+    + '<p>Generates the Portfolios, Risk Dashboard, Assumptions and '
+    + 'Implementation sheets from the persisted scenario — as the Excel '
+    + 'workbook of record, or as a PowerPoint of the same tables.</p>'
     + '<p class="export-gate ' + gate.tone + '" id="implgate">' + gate.html + '</p>'
     + '</div>'
+    + '<div class="export-actions">'
     + '<button type="button" class="btn btn-export" id="implexport"'
-    + (gate.disabled ? ' disabled' : '') + ' aria-describedby="implgate"'
+    + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
+    + ' aria-describedby="implgate"'
     + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
-    + (exporting.status === 'working' ? 'Preparing…' : 'Download Excel') + '</button>'
+    + (exporting.status === 'working' && exporting.kind !== 'pptx'
+        ? 'Preparing…' : 'Download Excel') + '</button>'
+    /* the deck is never a delivery (D122): same gate, same refusals, and the
+       file cites the delivered UID only while the scenario still matches it */
+    + '<button type="button" class="btn btn-exportppt" id="implexportppt"'
+    + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
+    + ' aria-describedby="implgate"'
+    + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
+    + (exporting.status === 'working' && exporting.kind === 'pptx'
+        ? 'Preparing…' : 'Download PowerPoint') + '</button>'
+    + '</div>'
     + '</section>';
   el.innerHTML = html;
   publishPinnedColumnWidth(el);
@@ -6671,15 +6717,28 @@ function publishPinnedColumnWidth(root) {
 }
 
 /* ---- export (spec 14) --------------------------------------------------- */
-async function exportWorkbook() {
+async function exportFile(kind) {
+  /* one path for both deliverables (D122): kind is 'xlsx' or 'pptx' */
   var exporting = App.exporting();
   if (exporting.status === 'working') return;
   exporting.status = 'working';
+  exporting.kind = kind;
   exporting.error = null;
   App.refresh();
+  /* the save barrier (D122, plan A1): a click straight after a toggle must
+     not snapshot the store without it */
+  try {
+    await App.writesSettled();
+  } catch (err) {
+    exporting.status = 'error';
+    exporting.error = (err && err.message) || 'Your latest changes could not be saved.';
+    App.refresh();
+    return;
+  }
   try {
     var resp = await fetch(window.API_BASE + '/scenario/'
-        + encodeURIComponent(App.scenarioId()) + '/export',
+        + encodeURIComponent(App.scenarioId()) + '/export'
+        + (kind === 'pptx' ? '.pptx' : ''),
       { method: 'POST', credentials: 'same-origin' });
     if (!resp.ok) {
       var message = 'Export failed (' + resp.status + ')';
@@ -6691,7 +6750,7 @@ async function exportWorkbook() {
       throw new Error(message);
     }
     var blob = await resp.blob();
-    var name = 'PMG_Scenario.xlsx';
+    var name = kind === 'pptx' ? 'PMG_Scenario.pptx' : 'PMG_Scenario.xlsx';
     var disposition = resp.headers.get('Content-Disposition') || '';
     var match = disposition.match(/filename="?([^";]+)"?/);
     if (match) name = match[1];
@@ -6704,7 +6763,8 @@ async function exportWorkbook() {
     link.remove();
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     exporting.status = 'idle';
-    App.announce('polite', 'Workbook downloaded.');
+    App.announce('polite', kind === 'pptx' ? 'Presentation downloaded.'
+                                           : 'Workbook downloaded.');
   } catch (err) {
     exporting.status = 'error';
     exporting.error = (err && err.message) || 'Export failed.';
@@ -6835,7 +6895,8 @@ document.addEventListener('click', function (e) {
     var axis = document.getElementById('feeaxis'); if (axis) axis.focus();
     return;
   }
-  if (e.target.id === 'implexport') { exportWorkbook(); return; }
+  if (e.target.id === 'implexport') { exportFile('xlsx'); return; }
+  if (e.target.id === 'implexportppt') { exportFile('pptx'); return; }
   var sched = e.target.closest ? e.target.closest('[data-feesched]') : null;
   if (sched) { App.setFeeSchedule(sched.dataset.feesched); return; }
   /* Either half of the level composes the whole: the other half is read from

@@ -662,13 +662,43 @@ async function confirmBasisChange() {
   refresh();
 }
 
+/* ---- the save barrier (D122, plan A1) -----------------------------------
+   Several setters write the scenario and move on - the page stays live while
+   the PUT lands. Exporting mid-flight would snapshot the store without the
+   change the user just made, so every fire-and-forget write is tracked here
+   and both exports wait for a quiet store before they POST. A failed save
+   blocks the export with its own message, rather than delivering a file the
+   screen does not show. */
+var pendingWrites = [];
+function trackWrite(promise) {
+  pendingWrites.push(promise);
+  var drop = function () {
+    var at = pendingWrites.indexOf(promise);
+    if (at !== -1) pendingWrites.splice(at, 1);
+  };
+  promise.then(drop, drop);
+  return promise;
+}
+function writesSettled() {
+  /* settle everything in flight NOW, then look again: a write queued while
+     waiting is caught by the recursion, so the barrier closes only on a
+     store with nothing left to land */
+  if (!pendingWrites.length) return Promise.resolve();
+  return Promise.allSettled(pendingWrites.slice()).then(function (states) {
+    if (states.some(function (one) { return one.status === 'rejected'; })) {
+      throw new Error('Your latest changes could not be saved.');
+    }
+    return writesSettled();
+  });
+}
+
 function persistBasis() {
   if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+  trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ basis: state.basis })
-  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  })).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
 /* Sleeves kept on a basis or base change, re-validated against the library
@@ -750,11 +780,11 @@ async function setVariant(name) {
      comes back 422. Ordering this after the schema fetch left a whole extra
      round trip in which a fast selection could do exactly that. */
   if (state.scenarioId) {
-    variantPending = apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    variantPending = trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ variant: name })
-    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).catch(function (err) { showAlert('error', err.message || String(err)); });
     await variantPending;
     variantPending = null;
   }
@@ -795,11 +825,11 @@ function setTacticalTilt(on) {
   if (on === state.tacticalTilt) return;
   state.tacticalTilt = on;
   if (state.scenarioId) {
-    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tacticalTilt: on })
-    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).catch(function (err) { showAlert('error', err.message || String(err)); });
   }
   announce('polite', on
     ? 'Tactical tilt added, funded from ' + opt('rules.tacticalTiltFundedFrom', '') + '.'
@@ -839,11 +869,11 @@ function feeLevel() {
 
 function pushFee(patch) {
   if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+  trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch)
-  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  })).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
 /* The strategic volatility premium (D53). Same shape as the tilt - an
@@ -864,11 +894,11 @@ function setVolPremium(on) {
   if (on === state.volPremium) return;
   state.volPremium = on;
   if (state.scenarioId) {
-    apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ volPremium: on })
-    }).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).catch(function (err) { showAlert('error', err.message || String(err)); });
   }
   announce('polite', on
     ? 'Strategic Volatility Premium added, funded pro rata from '
@@ -930,11 +960,11 @@ function chooseSleeve(category, name) {
 
 function pushSleeves() {
   if (!state.scenarioId) return;
-  apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+  trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sleeves: state.sleeves })
-  }).catch(function (err) { showAlert('error', err.message || String(err)); });
+  })).catch(function (err) { showAlert('error', err.message || String(err)); });
 }
 
 /* =============================================================================
@@ -4064,6 +4094,7 @@ return {
   esc: esc,
   num: num,
   refresh: refresh,
+  writesSettled: writesSettled,
   boot: boot,
   setPicker: function (p) { picker = p; },
   addRenderer: function (fn) { extras.push(fn); },

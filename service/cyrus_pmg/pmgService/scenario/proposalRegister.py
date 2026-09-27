@@ -330,6 +330,28 @@ def _sleevesFor(conn, proposalId) -> list:
     return out
 
 
+def latestForScenario(scenarioId: str):
+    """The scenario's newest delivered proposal, pictures included, or None.
+
+    What the deck export asks before citing a UID (D122): cite only what was
+    actually delivered, read from the row - never reconstructed from what the
+    scenario looks like today."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            'SELECT {}, allocation, implemented FROM proposals WHERE scenarioId = ? '
+            'ORDER BY exportedAt DESC, sequence DESC LIMIT 1'.format(_LIST_COLUMNS),
+            (scenarioId,)).fetchone()
+        if row is None:
+            return None
+        entry = _rowToEntry(row)
+        entry['allocation'] = json.loads(row['allocation'])
+        entry['implemented'] = json.loads(row['implemented'])
+        return entry
+    finally:
+        conn.close()
+
+
 def getProposal(proposalId: str, conn=None):
     """One proposal with both pictures and its sleeve pins - and no blob."""
     own = conn is None

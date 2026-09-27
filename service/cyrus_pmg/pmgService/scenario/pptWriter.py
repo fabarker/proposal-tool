@@ -527,3 +527,27 @@ def writeDeck(basis, mandate, results, sleevesMap, autoCategories,
     buffer = io.BytesIO()
     presentation.save(buffer)
     return buffer.getvalue()
+
+
+def deckFromImplementation(basis, mandate, portfolios, implementation) -> bytes:
+    """``writeDeck`` from an adapter's implementation dict - the exact
+    unpacking ``build_export`` does for the workbook, deck-shaped (D122), so
+    the three adapters cannot disagree about what a deck is either."""
+    from . import assetEstimates, rules
+    implementation = implementation or {}
+    return writeDeck(basis, mandate, list(portfolios),
+                     implementation.get('sleeves', {}),
+                     rules.AUTO_SLEEVE_CATEGORIES,
+                     implementation.get('variant'),
+                     bool(implementation.get('tacticalTilt')),
+                     implementation.get('feeSchedule'),
+                     implementation.get('feeLevel'),
+                     implementation.get('includeFees', True),
+                     bool(implementation.get('volPremium')),
+                     assets=assetEstimates.forSlice(basis.currency, basis.hedging),
+                     model=implementation.get('model'),
+                     proposalId=implementation.get('proposalId'),
+                     customFees=implementation.get('customFees'),
+                     customFeesBy=implementation.get('customFeesBy'),
+                     customFeesAt=implementation.get('customFeesAt'),
+                     cover=implementation.get('cover', True))

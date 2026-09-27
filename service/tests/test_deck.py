@@ -232,3 +232,110 @@ def test_the_cover_is_a_flag():
     assert len(withCover.slides) == len(without.slides) + 1
     assert not any(shape.has_table for shape in withCover.slides[0].shapes)
     assert any(shape.has_table for shape in without.slides[0].shapes)
+
+
+# --------------------------------------------------------------------- #
+# Phase 4 (D122): the endpoint, the citation rule, the button, the barrier.
+# --------------------------------------------------------------------- #
+
+def _request(user):
+    from starlette.requests import Request
+    return Request({'type': 'http', 'headers': [(b'x-kerberos', user.encode())]})
+
+
+def test_the_deck_endpoint_cites_only_what_still_matches(monkeypatch):
+    """Over HTTP, the whole D122 story: the deck refuses where the workbook
+    refuses, a deck before any delivery is a draft, a deck after one cites
+    its UID in the header, the stamp and the filename, an edit turns it back
+    into a draft - and editing BACK to the delivered state cites again,
+    because the comparison is on substance, not on a dirty flag."""
+    from fastapi.testclient import TestClient
+    from cyrus_pmg.pmgService.isgPMGService import app
+    from cyrus_pmg.pmgService.scenario import sleeves
+    from cyrus_pmg.pmgService.scenario.sleeves import listSleeves
+    from cyrus_pmg.pmgService.scenario.types import PortfolioKey
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'bob')
+    client = TestClient(app)
+    pwa = {'X-Kerberos': 'bob'}
+
+    made = client.post('/api/v1/scenario', headers=pwa, json={
+        'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9,
+                    'primaryPwa': 'A. Castellanos — Madrid'},
+        'basis': {'currency': 'USD', 'hedging': 'Hedged'}})
+    assert made.status_code == 200, made.text
+    sid = made.json()['id']
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa,
+                      json={'variant': sleeves.VARIANTS[0]}).status_code == 200
+    key = {'currency': 'USD', 'riskLevel': 'Moderate', 'allocationType': 'Full',
+           'excludeRealAssets': False}
+    resolved = client.post('/api/v1/scenario/' + sid + '/portfolio', headers=pwa,
+                           json={'key': key, 'role': 'base'})
+    assert resolved.status_code == 200, resolved.text
+
+    # the deck refuses exactly where the workbook refuses: no sleeves yet
+    refused = client.post('/api/v1/scenario/' + sid + '/export.pptx', headers=pwa)
+    assert refused.status_code == 422
+    assert 'sleeve' in refused.json()['error'].lower()
+
+    chosen = {}
+    for category in resolved.json()['portfolio']['categories']:
+        if category['name'] in rules.AUTO_SLEEVE_CATEGORIES:
+            continue
+        under = rules.sleeveCategory(category['name'])
+        if under not in chosen:
+            chosen[under] = listSleeves(under, sleeves.VARIANTS[0],
+                                        PortfolioKey.fromDict(key))[0]['name']
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa,
+                      json={'sleeves': chosen}).status_code == 200
+
+    # before any delivery: a draft, named as one, stamped as nothing
+    draft = client.post('/api/v1/scenario/' + sid + '/export.pptx', headers=pwa)
+    assert draft.status_code == 200, draft.text
+    assert draft.headers['content-type'].startswith(
+        'application/vnd.openxmlformats-officedocument.presentationml')
+    assert '_draft.pptx' in draft.headers['content-disposition']
+    assert 'x-proposal-id' not in draft.headers
+    assert stampedProposalId(draft.content) is None
+
+    # deliver the workbook, then the deck cites it everywhere
+    exported = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
+    assert exported.status_code == 200, exported.text
+    uid = exported.headers['x-proposal-id']
+    cited = client.post('/api/v1/scenario/' + sid + '/export.pptx', headers=pwa)
+    assert cited.headers['x-proposal-id'] == uid
+    assert stampedProposalId(cited.content) == uid
+    assert uid + '.pptx' in cited.headers['content-disposition']
+
+    # the scenario moves: the deck is a draft again...
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa,
+                      json={'tacticalTilt': False}).status_code == 200
+    moved = client.post('/api/v1/scenario/' + sid + '/export.pptx', headers=pwa)
+    assert 'x-proposal-id' not in moved.headers
+    assert stampedProposalId(moved.content) is None
+
+    # ...and moved back, it cites again
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa,
+                      json={'tacticalTilt': True}).status_code == 200
+    again = client.post('/api/v1/scenario/' + sid + '/export.pptx', headers=pwa)
+    assert again.headers.get('x-proposal-id') == uid
+
+
+def test_the_page_awaits_its_writes_and_offers_both_files():
+    """The front end, pinned at the source (D122): every fire-and-forget
+    scenario write is tracked, both exports run through one function behind
+    the save barrier, and the card names all four sheets with a button per
+    format."""
+    root = os.path.join(HERE, '..', '..', 'generator')
+    with open(os.path.join(root, 'js', 'core.js'), encoding='utf-8') as handle:
+        core = handle.read()
+    assert core.count("trackWrite(apiFetch('/scenario/'"
+                      " + encodeURIComponent(state.scenarioId), {") == 6, \
+        'six fire-and-forget writes, each tracked'
+    assert 'writesSettled: writesSettled,' in core
+    with open(os.path.join(root, 'js', 'implementation.js'), encoding='utf-8') as handle:
+        impl = handle.read()
+    assert 'await App.writesSettled();' in impl
+    assert "(kind === 'pptx' ? '.pptx' : '')" in impl
+    assert 'id="implexportppt"' in impl and 'Download PowerPoint' in impl
+    assert 'Assumptions and ' in impl, 'the card names all four sheets (A7)'
+    assert "exportFile('xlsx')" in impl and "exportFile('pptx')" in impl

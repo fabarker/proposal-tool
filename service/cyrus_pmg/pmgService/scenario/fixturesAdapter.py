@@ -176,6 +176,16 @@ class FixturesScenarioPort:
                              customFeesBy=implementation.get('customFeesBy'),
                              customFeesAt=implementation.get('customFeesAt'))
 
+    def build_export_deck(self, basis: BasisInput, mandate: MandateInput,
+                          portfolios, implementation) -> bytes:
+        """The proposal deck (D122): the payloads the workbook is written
+        from, rendered as slides by the shared builders. Imported on use, so
+        a service that never exports a deck never loads python-pptx."""
+        if _knob('SCENARIO_FIXTURES_FAIL_EXPORT') == '1':
+            raise AnalyticsError('Fixture failure: export unavailable.')
+        from .pptWriter import deckFromImplementation
+        return deckFromImplementation(basis, mandate, portfolios, implementation)
+
     def capabilities(self) -> dict:
         return {'canExport': True, 'canEdit': True}
 
