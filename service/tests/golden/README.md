@@ -35,3 +35,12 @@ The comparison therefore runs with `engineParity=True`, which restores those
 rows. That keeps this file a strict, meaningful lock on every other cell —
 and keeps it true that the writer can still reproduce the library's output
 exactly, should anyone need to check.
+
+## The faces
+
+`engineParity=True` also keeps the library's faces — Calibri, Calibri Light,
+Aptos Narrow, Grotesque — because the comparison checks every cell's font. A
+delivered workbook is re-set in GS Sans, GS Sans Light and GS Sans Condensed by
+`sheetDoc.houseFaces` (D125), and so is the deck; that is held separately by
+`test_house_fonts.py`. So a font difference in this comparison is a regression
+in the parity path, never the house faces leaking into it.

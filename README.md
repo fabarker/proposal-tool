@@ -57,7 +57,7 @@ convenient local one. `archive/BRIEF.md` and `HOST_AUDIT.md` cover what that mea
 | Step | What the PWA does | Output |
 |---|---|---|
 | **1 — Asset allocation** | Enters the client mandate, sets the scenario basis, defines a base portfolio, compares it against up to three alternatives | Allocation table, two summary charts, three-section risk dashboard |
-| **2 — Implementation** | Chooses an implementation type, then attaches one PMG-authored sleeve of investible products to each category of the base portfolio | Product-level model with weights, fees and notional, exported to Excel |
+| **2 — Implementation** | Chooses an implementation type, then attaches one PMG-authored sleeve of investible products to each category of the base portfolio | Product-level model with weights, fees and notional, delivered as an Excel workbook and a PowerPoint deck together, under one Proposal UID |
 
 Both steps live in **one page**. It ships as a page folder inside the existing PMG dashboard:
 plain HTML and JavaScript, **no build step, no framework**.
@@ -73,7 +73,7 @@ plain HTML and JavaScript, **no build step, no framework**.
 | 0.5 | **`HOST_AUDIT.md`** | How `cyrus_pmg.dashboard` is built. The back end must follow its design, because this gets transplanted there. §11, §12 and §13 are the working sections. |
 | 1 | **`spec.html`** | The complete build reference. Open in a browser. 16 sections; start with §1 Purpose, §2 Domain model, §5 Front-end architecture. |
 | 2 | **`proposalTool/proposalTool.html`** | The page. Generated — never hand-edited. Run it through `service/` rather than opening it from disk: it now fetches its data over HTTP. |
-| 3 | **`PORTING.md`** | Drop-in steps for `cyrus_pmg.dashboard`: copy the folder, add one Flask route, add one nav link. |
+| 3 | **`PORTING.md`** | Drop-in steps for `cyrus_pmg.dashboard`: copy the folder, add one Flask route, add one nav link. §0A is the update for a host that already carries an earlier port. |
 | 4 | **`backend/scenario_port.py`** | The eight-method adapter you implement. This is the entire backend contract. |
 | 4.5 | **`backend/portfolio_weights.py`** | The supplied model allocations — 272 portfolios — and the loader that selects one. It is what sits behind `resolve_portfolio`. Spec §4.5. |
 | 5 | **`DECISIONS.md`** | The decision log, Q1–Q50. Read when you want to know *why* — every rule in the spec traces back to a numbered exchange here. Q49 is the analytics profile, Q50 the interface refinements. |
@@ -107,8 +107,10 @@ proposal-tool/
   service/                   THE BACK END, as a mirror of the host's own topology
     cyrus_pmg/dashboard/     Flask: auth gate, per-page routes, /api proxy
     cyrus_pmg/pmgService/    FastAPI service, dashboardRouter, and:
-      scenario/              the transplant payload - port, adapters, rules, bake
+      scenario/              the transplant payload - port, adapters, rules, bake,
+                             the workbook and deck writers, and fonts/ (GS Sans for Office)
     tests/                   the safety net (never ships to the host)
+    tools/                   dev only: rebuild scenario/fonts/ and the deck's font metrics
     README.md TRANSPLANT.md DEVIATIONS.md PERFORMANCE.md
     var/baked/               baked analytics, one slice per currency and hedging
 
@@ -135,12 +137,12 @@ runs. Change `generator/*.py` and rebuild.
 
 ## The backend, in one paragraph
 
-**Built.** `ScenarioPort` (eight methods) is implemented three times — over fixtures, over
+**Built.** `ScenarioPort` (nine methods since the deck's `build_export_deck`, D122) is implemented three times — over fixtures, over
 the SAA analytics library, and over a bake of its results — and exposed on the HTTP surface in
 **spec §3.4**, which the page consumes through `apiFetch()`. Endpoints live on
 `pmgService/dashboardRouter.py` under `/api/v1/`; the Flask proxy rewrites `/api/<x>` to
-`/api/v1/<x>`, so the page calls `/api/scenario/...`. Writes need `Depends(requireEditor)`;
-reads inherit `requireAuth`. One endpoint was added to the surface below — `PUT
+`/api/v1/<x>`, so the page calls `/api/scenario/...`. The proposal flow inherits `requireAuth`;
+the repository console and the proposal register take `Depends(requireAdmin)` (D77). One endpoint was added to the surface below — `PUT
 /api/scenario/{id}`, without which §11.8's "restore mandate, basis, columns and sleeves"
 cannot work (deviation D2). The latencies below are the specification's estimates; the
 measured ones are in `service/PERFORMANCE.md`, and against the baked adapter every row is
@@ -156,7 +158,7 @@ a millisecond.
 | `DELETE /api/scenario/{id}/portfolio/{key}` | fast |
 | `PUT /api/scenario/{id}` | fast — added; persists mandate, basis and sleeves (D2) |
 | `GET /api/scenario/sleeves?category=` | fast |
-| `POST /api/scenario/{id}/export` | moderate |
+| `POST /api/scenario/{id}/export` | ~1.2 s measured — one zip of the workbook and the deck (D123) |
 
 Error contract is **spec §3.5**: non-2xx JSON carries `error`; 401 carries `loginUrl`.
 

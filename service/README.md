@@ -4,8 +4,9 @@ This directory reproduces, inside epsilon-phi, the topology of
 `isg-cyrus-pmg/src/cyrus_pmg`, so the Proposal Tool back end is developed in
 its final shape. The package is literally named `cyrus_pmg` so every import in
 the transplantable files is byte-identical to what it will be in the host.
-`TRANSPLANT.md` is the file-by-file porting list; `DEVIATIONS.md` records
-every departure from the hand-off package and every spec gap met on the way.
+`../PORTING.md` is the porting guide — §0A is the update for a host that already
+carries an earlier port — and `DEVIATIONS.md` records every departure from the
+hand-off package and every spec gap met on the way (D1–D125).
 
 ## Run it
 
@@ -38,6 +39,7 @@ Tests (dev-side; nothing ships to the host's untested dashboard package):
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
+# 391 passed, 4 skipped at D125 - needs openpyxl, pandas and python-pptx
 # the bit-identity guard for the Tier 0 optimisation needs a database:
 SAA_ENGINE_LIVE=1 PYTHONPATH=".:../../src/python" \
     python3 -m pytest tests/test_tier0_beta_equivalence.py -q
@@ -88,9 +90,12 @@ number comes through untouched: that is how the D25 premia regrouping and the
 ## The wire contract
 
 The page calls `/api/scenario/...`; the Flask proxy rewrites to
-`/api/v1/scenario/...`. Reads inherit `requireAuth` from the router; writes
-take `Depends(requireEditor)`. Non-2xx JSON carries top-level `error` (401
-carries `loginUrl`; validation adds `field`), per spec §3.5.
+`/api/v1/scenario/...`. The whole proposal flow inherits `requireAuth` from the
+router — an allowlisted PWA needs no other role — and the repository console and
+the proposal register take `Depends(requireAdmin)` (D77). Non-2xx JSON carries
+top-level `error` (401 carries `loginUrl`; validation adds `field`), per spec
+§3.5. The table below is the proposal flow; `../PORTING.md` §11.1 lists all 32
+routes, the admin ones included.
 
 | Endpoint | Notes |
 |---|---|
@@ -99,10 +104,10 @@ carries `loginUrl`; validation adds `field`), per spec §3.5.
 | `GET /api/scenario/sleeves?category&variant&currency&hedging` | `{category, variant, sleeves: [{name, products: [11-field records]}]}`. `variant` is required — an absent or unknown one is 422 `{error, field}`, never a default library (D29). |
 | `POST /api/scenario` | Body `{mandate, basis}` → `{id, scenario}`. 422 `{error, field}`. |
 | `GET /api/scenario/{id}` | `{id, mandate, basis, base, comparisons, variant, sleeves}` — the rehydrate shape. 404 after expiry. |
-| `PUT /api/scenario/{id}` | Any subset of `{mandate, basis, variant, sleeves}` (deviations D2, D29). Sleeve maps are validated against the variant in force *after* the update; auto categories refused. A variant change alone clears the sleeve map. |
+| `PUT /api/scenario/{id}` | Any subset of `{mandate, basis, variant, sleeves}` (deviations D2, D29), and of the fee settings, custom rates included (`customFees`, D96). Sleeve maps are validated against the variant in force *after* the update; auto categories refused. A variant change alone clears the sleeve map. |
 | `POST /api/scenario/{id}/portfolio` | Body `{key, role: "base"\|"comparison"}` → `{portfolio}`; records the column. THE EXPENSIVE CALL. 422 unavailable key, 502 analytics failure. |
 | `DELETE /api/scenario/{id}/portfolio/{key}` | Key URL-encoded canonical string. Idempotent; the base refuses with 422. |
-| `POST /api/scenario/{id}/export` | The workbook; `Content-Disposition: attachment`. 422 while no variant is chosen or a category lacks a sleeve. The variant is written above the implementation sheet's header. |
+| `POST /api/scenario/{id}/export` | The proposal: ONE zip holding the workbook (`.xlsx`) and the deck (`.pptx`), both stamped with one Proposal UID and both recorded in the register before either is returned (D123); `Content-Disposition: attachment` and `X-Proposal-Id`. Both files are locked with `workbook.SHEET_PASSWORD` (D104, D123) and set in GS Sans (D125). 422 while no variant is chosen, a category lacks a sleeve, a custom fee row is unpriced or a position is below its minimum - for both files at once. ~1.2 s, the deck being ~1 s of it. |
 
 ## Implementation Types (D29)
 
@@ -180,7 +185,15 @@ cyrus_pmg/
     dashboardRouter.py              THE TRANSPLANTED ENDPOINT BLOCK
     core/accessControl.py           stand-in for the host's auth module (same names)
     scenario/                       THE TRANSPLANTED PACKAGE — port, types, rules,
-                                    payloads, store, adapters, sleeves, advisors, workbook,
-                                    portfolio_weights.py (runtime copy of ../backend's)
-tests/                          the safety net (rounding invariants, finiteness, JS mirror)
+                                    payloads, store, adapters, sleeves, advisors,
+                                    portfolio_weights.py (runtime copy of ../backend's),
+                                    and the proposal itself: sheetDoc (the report as data,
+                                    D119) rendered by workbook (Excel) and pptWriter
+                                    (PowerPoint, D121-D125); houseFonts + fonts/ (the
+                                    GS Sans files the deck embeds) and fontMetrics (generated)
+tests/                          the safety net (rounding invariants, finiteness, JS mirror,
+                                the deck against its plan, the embedded fonts)
+tools/                          dev only: buildOfficeFonts.py and buildFontMetrics.py
+                                rebuild scenario/fonts/ and fontMetrics.py from
+                                ../generator/fonts/ (need fontTools and brotli; D125)
 ```

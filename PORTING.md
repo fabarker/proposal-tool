@@ -1,6 +1,9 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
-**Written against commit `9f4dc50` (2026-09-03).** This document is the single porting guide.
+**Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
+since the last port (`718d750`, 2026-09-10, D89) up to D125** — the PowerPoint deck, custom fees,
+the register's saved views and the page work in between. **If Cyrus already carries the
+10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
 every statement here is in `PORTING_GUIDE_AUDIT.md`.
 
@@ -42,8 +45,9 @@ only step in the guide that can break something that already works.
 Steps 1–7: dependencies, the auth names, the package copy, the endpoint block, the data delivery,
 the page folder and route, the nav link. After those, everything on the page works — the mandate,
 the basis, the base portfolio and up to three comparisons, the risk dashboard, implementation
-types, sleeves, the tilt and volatility overlays, fees, the register, the account opening request
-(D76) and the admin console — with one exception below.
+types, sleeves, the tilt and volatility overlays, fees (custom rates included, D96), the register,
+the account opening request (D76, D107, D111), the admin console, and a download that delivers the
+workbook and the PowerPoint deck together (D123) — with one exception below.
 
 ### What does not work, and what unlocks each
 
@@ -56,6 +60,7 @@ types, sleeves, the tilt and volatility overlays, fees, the register, the accoun
 | The advisor typeahead | A 24-row stub with no environment override | A code change in `advisors.py` (§6) |
 | GBP / CHF / EUR analytics | Baked in a USD context; honest and stamped, but not native | Currency configs in the library, then a re-bake |
 | Looking like Cyrus | Self-contained stylesheet, not OneGS | The retheme (§10.5) — a measured piece of work, not a token swap |
+| The workbook in the house faces on every desk | An `.xlsx` cannot carry a font, so Excel substitutes wherever GS Sans is not installed (D125). The deck embeds its faces and is unaffected | GS Sans on the desktop image, or the five files in `scenario/fonts/` installed per machine. No code change |
 | The account opening request going anywhere | Submit records the request in the register file and says *recorded*; the option lists (account types, booking centres, funding sources) are placeholders flagged on the schema (D76) | Operations' lists in `accountRequests.py`; a destination for Submit — a code change once one is named |
 
 Measured against the packaged catalogue, so you can see the shape of the export block:
@@ -78,8 +83,8 @@ there, and the PWA experience with a kerberos that is on the allowlist and in no
 
 ### Two stages, then
 
-**Demo-ready** — `requireAdmin` written; the seven mandatory variables of §11.4; `openpyxl` and
-`pandas`; the three extracts and the 688-payload bake delivered; durable storage outside `src/`.
+**Demo-ready** — `requireAdmin` written; the seven mandatory variables of §11.4; `openpyxl`,
+`pandas` and `python-pptx`; the three extracts and the 688-payload bake delivered; durable storage outside `src/`.
 Everything works except export, which needs an unrealistic mandate until minimums land.
 
 **Client-ready** — additionally: real minimums, the real fee card, real sleeve holdings, the real
@@ -88,6 +93,73 @@ SAA extract, the advisor directory, and the retheme.
 Nothing in the first list is a decision; everything in the second belongs to PMG or to a
 delivering team. §17 names the owners, and §18's remaining checks are formalities against the live
 checkout.
+
+---
+
+## 0A. Already ported? Bringing Cyrus up to date
+
+Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
+D125 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+the router block and the page folder. So the update is mostly re-copying. The table says what is
+**not** a plain copy; the steps follow it.
+
+### 0A.1 What changed since `718d750`, in porting terms
+
+| Change | Where it lands | Action on the host |
+|---|---|---|
+| **`python-pptx`**, the PowerPoint deck's library (it brings `lxml`, `Pillow`, `XlsxWriter`, `typing_extensions`) — D121–D125 | the host's virtualenv | **Install it first.** Without it every *Download proposal* fails, the workbook included: the workbook and the deck are one delivery (D123) |
+| Four new modules — `sheetDoc.py`, `pptWriter.py`, `houseFonts.py`, `fontMetrics.py` — and a `fonts/` folder of five TrueType files; changes to `workbook.py`, `proposalRegister.py`, `fees.py`, `rules.py`, `scenarioStore.py`, `scenarioPort.py`, `sleeveRepo.py` and the three adapters | `pmgService/scenario/` | Re-copy the package, keeping any file the host owns (next row) |
+| `fees.json` gains a `custom` block (D96) | the package | **Keep the host's `fees.json`** if `feeTools --accept` has been run there — accept records the delivered card's provenance in that file. The block is optional: without it `fees.py` uses the same values (`Custom`, bounded by `Management`). Likewise keep a host-replaced `advisors.xlsx` |
+| Four names in the router's import lines — `io`, `json`, `zipfile`, `validateCustomFees` | the host's `dashboardRouter.py`, **above** the block markers | Add them by hand: they sit outside the markers, so pasting the block does not bring them. §9.1 has the full import set |
+| The endpoint block: 32 routes (was 30) — `GET /scenario/repository/proposals/views` (D116) and `GET /scenario/repository/proposals/{proposalId}/deck` (D123) are new; the export returns a zip of both files (D123); `PUT /scenario/{id}` accepts `customFees` (D96) | the host's `dashboardRouter.py`, between the markers | Replace everything between `TRANSPLANT BLOCK BEGIN` and `TRANSPLANT BLOCK END` as a unit — `/proposals/views` must stay declared above `/proposals/{proposalId}` |
+| The page folder — D90–D118 and the single **Download proposal** button (D123) | `dashboard/proposalTool/` | Re-copy the folder (§10.1) |
+| The proposal register goes from schema 1 to 3: `customFees` (D96); `deck`, `deckName`, `deckSha`, `deckBytes` (D123) | `SCENARIO_REGISTER_DB` | Nothing to run — the columns are added on first open. **Back the file up first.** Rows delivered earlier keep NULLs and have no deck |
+| Configuration | — | **None.** No variable was added. The password that locks the workbook and the deck is a constant in source (`workbook.SHEET_PASSWORD`, §13.5) |
+| Auth, the Flask route, the nav link | — | **None.** The new routes use the existing `requireAdmin`; `capabilities.user` is the `caller.kerberos` the block already reads (D106) |
+| The proxy | — | **None.** It forwards the zip body and every response header bar the hop-by-hop ones, so `Content-Disposition`, `X-Proposal-Id` and `X-Deck-SHA256` arrive intact (Verified: `cyrus-files/dashboardFrontend.py:409–415`) |
+| The bake, the extracts, the sleeve seed | — | **None** — no payload, extract or seed column changed |
+
+### 0A.2 The update, step by step
+
+On the Cyrus machine. `<ep>` is the epsilon-phi checkout's `epsilon-phi-core\proposal-tool`; the host
+is `H:\cyrus-repo\isg-cyrus-pmg`.
+
+1. **Gate on this side.** §5's checks at the commit you are shipping — 391 passed, 4 skipped at D125.
+2. **Install the dependency** in the host's virtualenv and prove it imports:
+
+   ```bat
+   pip install python-pptx
+   python -c "import pptx, lxml, PIL, xlsxwriter; print('python-pptx', pptx.__version__)"
+   ```
+
+   1.0.2 is proven here, with lxml 4.9.3, Pillow 10.4.0 and XlsxWriter 3.2.9. If the firm's package
+   index does not carry it, stop: the remaining steps would leave the host unable to export.
+3. **Back up** the register (`SCENARIO_REGISTER_DB`), and set aside the host's `fees.json` and
+   `advisors.xlsx` if either has been changed there.
+4. **Re-copy the package**, then put back anything set aside in step 3:
+
+   ```bat
+   robocopy <ep>\service\cyrus_pmg\pmgService\scenario H:\cyrus-repo\isg-cyrus-pmg\src\cyrus_pmg\pmgService\scenario /E /XD __pycache__ /XF *.pyc .DS_Store
+   python -c "import cyrus_pmg.pmgService.scenario.pptWriter, cyrus_pmg.pmgService.scenario.houseFonts as h; print(sorted(h.FACES))"
+   ```
+
+   The check prints `['GS Sans', 'GS Sans Condensed', 'GS Sans Light']`. `robocopy` without `/MIR`
+   deletes nothing on the host.
+5. **Update the router.** Add `import io`, `import json` and `import zipfile` beside the host's other
+   imports and `validateCustomFees` to the `rules` import (§9.1); then replace the block between its
+   markers. Check: §8 Step 4's count prints **32**.
+6. **Re-copy the page folder** (§10.1):
+
+   ```bat
+   robocopy <ep>\proposalTool H:\cyrus-repo\isg-cyrus-pmg\src\cyrus_pmg\dashboard\proposalTool /E /XF .DS_Store
+   ```
+7. **Restart** the FastAPI service and the Flask frontend. The first request that opens the register
+   migrates it.
+8. **Walk §15**, in particular 10a, 12, 12a, 15 and 17 — the criteria D90–D125 changed.
+
+**Rollback:** re-copy the previous package, block and page folder. The register needs no restore:
+the 10 September code names its columns on every insert and never lowers the stamped schema
+version, so it writes around the new columns, and a later re-upgrade finds them already there.
 
 ---
 
@@ -104,10 +176,10 @@ FastAPI service, with no analytics library and no database on the request path.
   `isg-cyrus-pmg/src/cyrus_pmg/pmgService/`.
 - Insert the endpoint block of `service/cyrus_pmg/pmgService/dashboardRouter.py` into the host's
   `pmgService/dashboardRouter.py`.
-- Add three names to the host's `pmgService/core/accessControl.py`.
+- Add two names, `isAdmin` and `requireAdmin`, to the host's `pmgService/core/pmgEntitlement.py` (§9.2).
 - Add one Flask route and one nav link.
 - Configure twenty environment variables, deliver four data extracts and one baked store, and
-  install two Python dependencies if the host lacks them.
+  install three Python dependencies — `openpyxl`, `pandas`, `python-pptx` — if the host lacks them.
 
 **Non-goals.**
 
@@ -131,24 +203,28 @@ A single page for Private Wealth Advisors. Step 1 builds a strategic asset alloc
 mandate, choose currency and hedging, resolve a base portfolio from the supplying database's
 universe and compare it against up to three more. Step 2 implements it: choose an implementation
 type (one of four books), attach one sleeve of products to each category, price the fees, and
-download an Excel proposal. Every delivered proposal is recorded permanently.
+download the proposal — an Excel workbook and a PowerPoint deck, together in one zip under one
+Proposal UID (D123). Every delivered proposal is recorded permanently, both files with it.
 
 Behind it, in the order a request travels:
 
 1. **The page** — one generated HTML/CSS/JS folder, no framework, no build step at serve time.
 2. **The Flask gate and proxy** — the host's own; `/api/<x>` becomes `/api/v1/<x>`.
-3. **The router block** — 25 endpoints on the host's FastAPI `dashboardRouter`: 5 reads, 5 editor
-   writes, 15 admin routes for the sleeve repository console.
-4. **The scenario package** — 26 modules. A `ScenarioPort` protocol with three implementations
-   (`fixtures`, `live`, `baked`), the rules, the wire payloads, four stores and the Excel writer.
+3. **The router block** — 32 endpoints on the host's FastAPI `dashboardRouter`: 13 for the
+   proposal flow and the account opening request (router-level `requireAuth`, D77), 19 admin routes
+   for the repository console and the proposal register (`requireAdmin`).
+4. **The scenario package** — 31 modules and a `fonts/` folder. A `ScenarioPort` protocol with three
+   implementations (`fixtures`, `live`, `baked`), the rules, the wire payloads, four stores, the
+   report built once as data (`sheetDoc`) and its two renderers — Excel (`workbook`) and
+   PowerPoint (`pptWriter`).
 5. **The data** — four delivered extracts (strategic portfolios, products, fee card, advisors), a
    baked analytics store produced offline, and four stores the tool owns (scenarios, sleeves, the
    proposal register, and the bake).
 
 In production the service runs **`SCENARIO_ADAPTER=baked` with `SCENARIO_BAKED_FALLBACK=0`**: every
 portfolio a user can select is precomputed, a resolve is a dictionary lookup (measured 6–9 ms), an
-export is written by the tool in ~200 ms, and the analytics library is never imported (Verified —
-§14.3).
+export — workbook and deck — is written by the tool in ~1.2 s (the workbook ~160 ms, the deck ~1 s),
+and the analytics library is never imported (Verified — §14.3).
 
 ---
 
@@ -167,7 +243,8 @@ browser ──► Flask :8001 (host: dashboardFrontend.py)
                                               ├─ rules · payloads · types · saaKeys · universe
                                               ├─ scenarioStore (JSON files)   sleeveRepo (SQLite)
                                               ├─ proposalRegister (SQLite)    products · fees · advisors
-                                              ├─ workbook (openpyxl)          assetEstimates
+                                              ├─ sheetDoc ─► workbook (openpyxl) · pptWriter (python-pptx)
+                                              ├─ houseFonts + fonts/ (embedded in the deck)   assetEstimates
                                               └─ engine.py ─lazy─► the analytics library  (bake only)
 ```
 
@@ -175,9 +252,9 @@ browser ──► Flask :8001 (host: dashboardFrontend.py)
 
 | File | Size | Notes |
 |---|---:|---|
-| `proposalTool.html` | 11,136 B | Loads `/static/js/accessGate.js` then `/static/js/globals.js` (absolute, the host's files), then `static/js/proposalTool.js` at the end of `<body>`. Stylesheet by relative `href`. |
-| `static/css/proposalTool.css` | 123,203 B | 83 tokens on `:root`; `@font-face` `src:url("../fonts/…")` (Verified). |
-| `static/js/proposalTool.js` | 343,720 B | One file, `'use strict'`; four IIFEs concatenated in load-bearing order (core → picker → implementation → repository) plus a boot block. |
+| `proposalTool.html` | 13,078 B | Loads `/static/js/accessGate.js` then `/static/js/globals.js` (absolute, the host's files), then `static/js/proposalTool.js` at the end of `<body>`. Stylesheet by relative `href`. |
+| `static/css/proposalTool.css` | 167,896 B | 83 tokens on `:root`; `@font-face` `src:url("../fonts/…")` (Verified). |
+| `static/js/proposalTool.js` | 510,977 B | One file, `'use strict'`; four IIFEs concatenated in load-bearing order (core → picker → implementation → repository) plus a boot block. |
 | `static/fonts/*.woff2` | 5 files, ~235 KB | goldman-sans-regular, gs-sans-variable, gs-sans-condensed-variable, roboto-regular, roboto-medium. |
 
 The folder is **generated**: `python3 generator/build_styles.py`, run from `proposal-tool/`, writes it
@@ -193,7 +270,11 @@ What the page assumes of its host (all Verified in the mirror):
   `apiFetch`; a non-2xx JSON body's `error` is shown, a `loginUrl` is followed.
 - Errors render into `#alertArea`; a 502/504 from the proxy marks the service down and the page
   degrades read-only from a `localStorage` snapshot (D64).
-- Browser state: `localStorage` keys `pmg.proposalTool.railCollapsed` and `pt.snapshot.<scenarioId>`;
+- Browser state: `localStorage` keys `pt.snapshot.<scenarioId>` (D64),
+  `pmg.proposalTool.sleevesGuided.<scenarioId>` (the sleeve guide, D95) and `pmg.repository.draft`
+  (an unsaved console edit, kept across a reload); `sessionStorage` key
+  `pmg.proposalTool.implGreeted` (step 2's greeting, once a session, D97).
+  `pmg.proposalTool.railCollapsed` is no longer written and is removed on load (D92);
   URL deep link `?scenario=<id>` via `history.replaceState`; console views on the hash
   (`#repository`, `#catalogue`, `#archive`, `#activity`, `#proposals`).
 - No `onegsTheme.css`, no `dashboard.css`, no `isgCodeSelector.js`, no Chart.js, no host header
@@ -201,14 +282,15 @@ What the page assumes of its host (all Verified in the mirror):
 
 ### 3.2 The scenario package — `service/cyrus_pmg/pmgService/scenario/` (COPY)
 
-25 Python modules (7,732 lines) and four data files. Only intra-package relative imports; no
+31 Python modules (11,591 lines at D125), four data files and a `fonts/` folder of five TrueType
+files (~283 KB). Only intra-package relative imports; no
 `cyrus_pmg.*` and no `..core` import anywhere inside it (Verified). Its two outward seams are
 `engine.py` (the analytics library, lazily) and the host's `accessControl`, which only the router
 imports.
 
 | Module | Role | Runtime on the baked path? |
 |---|---|---|
-| `scenarioPort.py` | The eight-method `ScenarioPort` protocol | contract |
+| `scenarioPort.py` | The nine-method `ScenarioPort` protocol (`build_export_deck`, D122) | contract |
 | `types.py` | `BasisInput`, `MandateInput`, `PortfolioKey`, `ValidationError`, `ScenarioNotFound`, `AnalyticsError` | yes |
 | `registry.py` | `getScenarioPort()` — reads `SCENARIO_ADAPTER`, `SCENARIO_BAKED_FALLBACK` | yes |
 | `bakedAdapter.py` | `BakedScenarioPort` — dictionary lookup over slice files; export via `workbook` | **the production adapter** |
@@ -222,37 +304,47 @@ imports.
 | `portfolio_weights.py` | Asset metadata (`ASSET_METADATA`, 19 assets), hedge ratios, context window, the engine bridge (`get_context`, `get_portfolio`). Imports **pandas** and builds two frames at import | imported at start (§12) |
 | `scenarioStore.py` | One JSON file per scenario under `SCENARIO_STORE_DIR`, atomic writes, `SCENARIO_RETENTION_HOURS` | yes |
 | `sleeves.py` | Facade: `VARIANTS`, `listSleeves`, `sleeveExists`, `variantExists` | yes |
-| `sleeveRepo.py` | The sleeve library: SQLite at `SCENARIO_SLEEVES_DB`, schema v2, seeded once from `SCENARIO_SLEEVES_SEED`, append-only history, soft delete, migration | yes |
+| `sleeveRules.py` | The editions' applicability rules: which strategic portfolios each edition of a sleeve is for (D89) | yes |
+| `sleeveRepo.py` | The sleeve library: SQLite at `SCENARIO_SLEEVES_DB`, schema v3 (editions, D89), seeded once from `SCENARIO_SLEEVES_SEED`, append-only history, soft delete, migration | yes |
 | `sleeveTools.py` | CLI: census, export, import, history, archived, activity | operations |
 | `products.py` | The delivered catalogue from `SCENARIO_PRODUCTS_SOURCE`, validated at load, reloaded on mtime | yes |
-| `fees.py` | The rate card from `SCENARIO_FEES_SOURCE` + `fees.json`; tiers, groups, levels, `managementFee` | yes |
+| `fees.py` | The rate card from `SCENARIO_FEES_SOURCE` + `fees.json`; tiers, groups, levels, `managementFee`; the custom level and its bounds (D96) | yes |
 | `feeTools.py` | CLI: census, diff, accept | operations |
 | `advisors.py` | Primary PWA directory from the packaged `advisors.xlsx` (no override) | yes |
 | `assetEstimates.py` | Per-asset long-term estimates for the assumptions sheet: store copy, else packaged, `SCENARIO_ASSET_ESTIMATES` overrides | yes |
-| `workbook.py` | The whole Excel proposal with openpyxl alone: `portfolios`, `risk_dashboard`, `assumptions`, `Implementation`, hidden `chartData`; `buildImplementationRows` | yes |
-| `proposalRegister.py` | Every delivered proposal, SQLite at `SCENARIO_REGISTER_DB`, schema v1, append-only, workbook bytes + SHA-256 | yes |
+| `sheetDoc.py` | The report as data (D119): the four sheets built as `SheetDoc`s — values, number formats, neutral styles — plus `renderNumber` and `paginate` (D120), and the house faces (`houseFaces`, D125). Imports no file format | yes |
+| `workbook.py` | The Excel renderer (D119): `_renderDoc` transcribes the Docs onto openpyxl sheets `portfolios`, `risk_dashboard`, `assumptions`, `Implementation`, plus the Excel-only extras — the doughnuts on a hidden `chartData`, sheet protection under `SHEET_PASSWORD` (D98, D104), print setup, `dc:identifier`; `buildImplementationRows` | yes |
+| `pptWriter.py` | The PowerPoint deck (D121–D125): `planDeck` decides every slide and fits every table to its box, `writeDeck` draws it, embeds the house faces and locks the file (a password to modify and Mark as Final). Imports python-pptx; loaded on the first export | **yes — every export** |
+| `houseFonts.py` | Which house-face files exist, and the Embedded OpenType wrapper that puts them in a deck, with nothing but `struct` (D125) | yes — every export |
+| `fontMetrics.py` | Generated: the embedded faces' advance widths and line heights, so the deck's fit needs no fonts on the server (D124, D125). Rebuilt by `service/tools/buildFontMetrics.py` | yes |
+| `proposalRegister.py` | Every delivered proposal, SQLite at `SCENARIO_REGISTER_DB`, schema v3 (migrated in place on open), append-only; the workbook **and the deck**, each with its bytes, size and SHA-256 (D123); custom rates (D96); saved views (D116) | yes |
 | `accountRequests.py` | Account opening requests (D76): one per proposal, an `accountRequests` table in the register's own file, append-only; placeholder option lists | yes |
 | `bake.py` | Offline bake CLI and the store layout (`manifest.json`, `<CCY>_<Hedging>.json`, `assetEstimates.json`); `storeDir()` reads `SCENARIO_BAKED_DIR` | store layout at runtime; the CLI offline |
 | `__init__.py` | Package docstring (its module list is stale — ignore it) | — |
 
-Data files inside the package: `advisors.xlsx` (24 rows), `fees.json`, `feeRates.csv` (180 cells,
-placeholder), `assetEstimates.json` (the packaged fallback for the assumptions sheet).
+Data files inside the package: `advisors.xlsx` (24 rows), `fees.json` (which also names the custom
+level, D96), `feeRates.csv` (180 cells, placeholder), `assetEstimates.json` (the packaged fallback for
+the assumptions sheet). And `fonts/`: `GSSans-Regular`, `-Bold`, `-Light` and
+`GSSansCondensed-Regular`, `-Bold`, all `.ttf`, generated from the page's own woff2 files by
+`service/tools/buildOfficeFonts.py` (D125). They are read at every export, to embed in the deck, and
+they are the files to install on a desktop so Excel shows the workbook in its faces.
 
 ### 3.3 The endpoint block — `service/cyrus_pmg/pmgService/dashboardRouter.py` (INSERT)
 
-696 lines, entirely the block. Anatomy (line numbers as at `9f4dc50`):
+942 lines; the block is lines 49–941. Anatomy (line numbers as at D125):
 
-- lines 20–39: imports — `fastapi` (`APIRouter, Body, Depends, Request, Response`, `JSONResponse`),
+- lines 22–45: imports — `io`, `json`, `zipfile` (the export's zip, D123), `fastapi` (`APIRouter, Body, Depends, Request, Response`, `JSONResponse`),
   `cyrus_pmg.pmgService.core.accessControl` (`isAdmin, requireAdmin, requireAuth`
   — one line, retargeted at `pmgEntitlement` on the host, §9.2), and
   `cyrus_pmg.pmgService.scenario.*`;
-- line 41: `router = APIRouter(dependencies=[Depends(requireAuth)])` — **the host already has this
+- line 47: `router = APIRouter(dependencies=[Depends(requireAuth)])` — **the host already has this
   line; do not insert it**;
-- line 43: `_XLSX` media type; lines 51–54: `getScenarioPort()` warm-up at import, exceptions
-  swallowed and reported per request;
+- inside the block: the `_XLSX`, `_PPTX` and `_ZIP` media types; the `getScenarioPort()` warm-up at
+  import, exceptions swallowed and reported per request;
 - helpers `_validationError`, `_notFound`, `_analyticsError`, `_includeFees`, `_scenarioPayload`,
-  `_feedFilters`, `_csv`;
-- 28 handlers (§11.1). All sync `def` on purpose: FastAPI runs them in the threadpool.
+  `_feedFilters`, `_csv`, `_registerFilters`, `_baseKeyFrom`, `_UID_HINT`, and `_assembleExport` —
+  the validation and the implemented model both export formats share (D122);
+- 32 handlers (§11.1). All sync `def` on purpose: FastAPI runs them in the threadpool.
 
 The router reads no environment and opens no file itself (Verified); everything goes through the
 package.
@@ -271,7 +363,10 @@ package.
 
 ### 3.5 Development-side material — NOT shipped
 
-`generator/` (the page's source), `backend/` (the original hand-off `scenario_port.py` and
+`generator/` (the page's source), `service/tools/` (`buildOfficeFonts.py` and `buildFontMetrics.py`,
+which rebuild `scenario/fonts/` and `fontMetrics.py` and need fontTools and brotli — rerun only when
+the page's fonts change, D125), `proposals/` (design studies, and the PowerPoint export plan the
+deck was built to), `backend/` (the original hand-off `scenario_port.py` and
 `portfolio_weights.py`), `saaSource/`, `productSource/`, `sleeveSource/` (stand-in extracts — the
 **contents** are delivered as data, §11.5), `spec.html`, `DECISIONS.md`, `archive/BRIEF.md`, the design
 studies (`archive/*.html`), `service/DEVIATIONS.md`, `service/PERFORMANCE.md`.
@@ -318,6 +413,7 @@ Everything in this section is Verified against them unless it says otherwise.
 | `dashboardRouter.py` exposes a module-level `router` | `router = APIRouter(dependencies=[Depends(requireAuth)])` — byte-identical to this mirror's line 41 |
 | The proxy rewrites `/api/<x>` → `/api/v1/<x>` | `dashboardFrontend.proxy_api`: `f'{_get_backend_url()}/api/v1/{path}'`, `timeout=300`, `allow_redirects=False`, 502/504 |
 | The proxy forwards the identity | it copies every header except `host`/`connection`/`transfer-encoding`, so the GSSSO cookie travels |
+| The proxy passes a binary download and its headers | `Response(resp.content, …)`, and every response header bar `connection`/`transfer-encoding`/`content-encoding`/`content-length` — so the export's zip, `Content-Disposition`, `X-Proposal-Id` and the register's `X-Deck-SHA256` arrive intact (D123) |
 | One hand-written route per page folder | eleven of them, all `send_from_directory(os.path.join(DASHBOARD_DIR, '<page>'), filename)` |
 | `_PUBLIC_PATHS` | `/health`, `/favicon.ico`, `/_access_denied`, `/api/whoami`, `/static/css/`, `/static/js/accessGate.js` — the mirror's list exactly |
 | `/api/whoami` exists and is public | on a separate `publicRouter`; returns `{success, kerberos, allowed, role, canView, canModify, canPost, env, …}` and adds `loginUrl` when there is no identity |
@@ -376,7 +472,7 @@ And the arithmetic is decisive: the proxy builds exactly one URL, and a `/api/v1
 404s it — for the host's *own* endpoints, not only ours. That dashboard is in production use, so
 the mount cannot be `/api/v1/dashboard`.
 
-**So §11.1's twenty-five paths are correct as written** and nothing shifts. §18 keeps a one-line
+**So §11.1's thirty-two paths are correct as written** and nothing shifts. §18 keeps a one-line
 confirmation, because this is inference from the proxy plus the audit rather than from reading
 `isgPMGService.py`, which is the one host file still missing.
 
@@ -425,7 +521,7 @@ cd proposal-tool
 python3 generator/build_styles.py
 diff -rq proposalTool service/cyrus_pmg/dashboard/proposalTool && echo IDENTICAL
 
-# 2. The suite is green (289 passed, 4 skipped; the 4 need a live database)
+# 2. The suite is green (391 passed, 4 skipped at D125; the 4 need a live database)
 cd service && PYTHONPATH=. python3 -m pytest tests -q
 
 # 3. The extracts parse and the stores are consistent
@@ -436,10 +532,14 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.feeTools --census    # not
 # 4. The bake you will deliver is complete
 python3 -c "import json; m=json.load(open('var/baked/manifest.json')); print(m['portfoliosBaked'], m['currencies'], m['currencySubstitutions'])"
 # expected at 9f4dc50: 688 ['CHF','EUR','GBP','USD'] {'GBP':'USD','CHF':'USD','EUR':'USD'}
+
+# 5. Only if generator/fonts/ changed: rebuild the Office fonts and the deck's metrics, and commit
+#    both (needs fontTools and brotli; both tools write the same bytes when nothing changed)
+python3 tools/buildOfficeFonts.py && python3 tools/buildFontMetrics.py
 ```
 
 Also confirm before starting (Unverifiable here — §18): the host's Python version and whether
-`openpyxl` and `pandas` are installed; that `pmgEntitlement.py` still exports `requireAuth`,
+`openpyxl`, `pandas` and `python-pptx` are installed, or installable from the firm's package index; that `pmgEntitlement.py` still exports `requireAuth`,
 `hasRole`, `ROLE_ADMIN` and `UserData` (§9.2 builds on them); that the
 host backend answers `/api/v1/whoami`; where extracts and stores may live on the deployed box.
 
@@ -452,7 +552,7 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 | What | To |
 |---|---|
 | `proposalTool/` (html, css, js, fonts) | `isg-cyrus-pmg/src/cyrus_pmg/dashboard/proposalTool/` |
-| `service/cyrus_pmg/pmgService/scenario/` (26 modules incl. `__init__.py` + `advisors.xlsx`, `fees.json`, `feeRates.csv`, `assetEstimates.json`) | `isg-cyrus-pmg/src/cyrus_pmg/pmgService/scenario/` |
+| `service/cyrus_pmg/pmgService/scenario/` (31 modules incl. `__init__.py` + `advisors.xlsx`, `fees.json`, `feeRates.csv`, `assetEstimates.json` + `fonts/`, five `.ttf`) — on an update, keep the host's own `fees.json` and `advisors.xlsx` if they were changed there (§0A) | `isg-cyrus-pmg/src/cyrus_pmg/pmgService/scenario/` |
 | The bake store: `service/var/baked/` (16 slices, `manifest.json`, `assetEstimates.json`, ~3.0 MB) | a durable directory named by `SCENARIO_BAKED_DIR` |
 | The extracts: `saaSource/saaPortfolios.csv`, `productSource/products.csv`, `sleeveSource/sleeves.csv` | durable locations named by `SCENARIO_SAA_SOURCE`, `SCENARIO_PRODUCTS_SOURCE`, `SCENARIO_SLEEVES_SEED` (until the real deliveries replace them) |
 
@@ -460,7 +560,7 @@ host backend answers `/api/v1/whoami`; where extracts and stores may live on the
 
 | Block | Into |
 |---|---|
-| The endpoint block of `service/cyrus_pmg/pmgService/dashboardRouter.py` (§9.1) | the host's `pmgService/dashboardRouter.py` |
+| The endpoint block of `service/cyrus_pmg/pmgService/dashboardRouter.py`, **and the import lines above its markers** (§9.1) | the host's `pmgService/dashboardRouter.py` |
 | `serve_proposal_tool` route (§10.2) | the host's `dashboard/dashboardFrontend.py` |
 | The nav link (§10.3) | the host's `dashboard/index.html` |
 | `isAdmin`, `requireAdmin` (§9.2) | the host's `pmgService/core/pmgEntitlement.py` |
@@ -500,9 +600,10 @@ a register starts empty); `.DS_Store` files; `service/weo_2026_1.csv`; the mirro
 | `proposalTool/static/css/proposalTool.css` | `…/proposalTool/static/css/proposalTool.css` | COPY |
 | `proposalTool/static/js/proposalTool.js` | `…/proposalTool/static/js/proposalTool.js` | COPY |
 | `proposalTool/static/fonts/*.woff2` (5) | `…/proposalTool/static/fonts/` | COPY |
-| `service/cyrus_pmg/pmgService/scenario/*.py` (25) | `src/cyrus_pmg/pmgService/scenario/` | COPY |
+| `service/cyrus_pmg/pmgService/scenario/*.py` (31) | `src/cyrus_pmg/pmgService/scenario/` | COPY |
+| `service/cyrus_pmg/pmgService/scenario/fonts/*.ttf` (5) | `src/cyrus_pmg/pmgService/scenario/fonts/` | COPY |
 | `service/cyrus_pmg/pmgService/scenario/{advisors.xlsx,fees.json,feeRates.csv,assetEstimates.json}` | same | COPY |
-| `service/cyrus_pmg/pmgService/dashboardRouter.py` lines 20–39 (imports, deduplicated), 43–54, 57–696 | appended to `src/cyrus_pmg/pmgService/dashboardRouter.py` | INSERT |
+| `service/cyrus_pmg/pmgService/dashboardRouter.py` lines 22–45 (imports, merged with the host's), 49–941 (the block, marker to marker) | appended to `src/cyrus_pmg/pmgService/dashboardRouter.py` | INSERT |
 | `isAdmin` / `requireAdmin` as written in §9.2 | `src/cyrus_pmg/pmgService/core/pmgEntitlement.py` | INSERT — the rest of the mirror's `accessControl.py` is a stand-in and is not copied |
 | `service/cyrus_pmg/dashboard/dashboardFrontend.py` lines 165–168 | `src/cyrus_pmg/dashboard/dashboardFrontend.py` | INSERT |
 | `service/cyrus_pmg/dashboard/index.html` lines 14–19 | `src/cyrus_pmg/dashboard/index.html` header block | INSERT |
@@ -513,7 +614,7 @@ a register starts empty); `.DS_Store` files; `service/weo_2026_1.csv`; the mirro
 | `sleeveSource/sleeves.csv` | `$SCENARIO_SLEEVES_SEED` | DATA delivery (seed, read once) |
 | `service/cyrus_pmg/dashboard/{dashboardFrontend,dashboardConfig}.py`, `index.html`, `static/js/*` | — | STAND-IN, not copied |
 | `service/cyrus_pmg/pmgService/{isgPMGService,config}.py`, `core/accessControl.py` | — | STAND-IN, not copied |
-| `service/tests/`, `generator/`, `backend/`, docs | — | dev side only |
+| `service/tests/`, `service/tools/`, `generator/`, `backend/`, `proposals/`, docs | — | dev side only |
 
 ---
 
@@ -525,8 +626,8 @@ Do the steps in order; each has a check.
 and take the bake manifest's `updatedAt` and `source.modified` — they are what §15 checks the
 running host against.
 
-**Step 1 — Dependencies.** Confirm or add `openpyxl` and `pandas` to the host's requirements
-(§12). Confirm the host's Python is ≥ 3.8 (the only version this code is proven on is 3.8.20).
+**Step 1 — Dependencies.** Confirm or add `openpyxl`, `pandas` and `python-pptx` to the host's
+requirements (§12). Confirm the host's Python is ≥ 3.8 (the only version this code is proven on is 3.8.20).
 
 **Step 2 — The auth module (do this before anything else touches the host).** Establish what
 add `isAdmin` and `requireAdmin` to `pmgService/core/pmgEntitlement.py` (§9.2 gives the code)
@@ -544,11 +645,12 @@ cp -r proposal-tool/service/cyrus_pmg/pmgService/scenario  isg-cyrus-pmg/src/cyr
 ```
 
 Check: `python -c "import cyrus_pmg.pmgService.scenario.registry"` succeeds with `PYTHONPATH`
-including `isg-cyrus-pmg/src`. (Nothing is read yet: the extracts are read on first use.)
+including `isg-cyrus-pmg/src`, and so does `python -c "import cyrus_pmg.pmgService.scenario.pptWriter"`
+— the one module that needs python-pptx, which the service otherwise loads only at the first export. (Nothing is read yet: the extracts are read on first use.)
 
 **Step 4 — Insert the endpoint block** (§9.1). Check: `python -c "from cyrus_pmg.pmgService.dashboardRouter
 import router; print(len([r for r in router.routes if r.path.startswith('/scenario')]))"` prints
-`30`. This check passes **before** any data is delivered: the package reads nothing at import
+`32`. This check passes **before** any data is delivered: the package reads nothing at import
 (D86). It did once, which made this step fail with a `FileNotFoundError` for the SAA extract until
 Step 5 had been done first.
 
@@ -578,18 +680,22 @@ census, and decide which PERMIT role maintains the sleeve library (§9.2, §17).
 
 Append to the host's `pmgService/dashboardRouter.py`:
 
-1. The import lines of the mirror file (lines 20–39), **merging** with the host's existing
+1. The import lines of the mirror file (lines 22–45), **merging** with the host's existing
    `fastapi` imports and **omitting** any name the host's router already imports. Retarget the
    auth line at `pmgEntitlement` (§9.2); the rest are new:
 
    ```python
+   import io
+   import json
+   import zipfile
+
    from cyrus_pmg.pmgService.core.pmgEntitlement import (
        isAdmin, requireAdmin, requireAuth)
    from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, proposalRegister,
-                                              scenarioStore, sleeveRepo)
+                                              scenarioStore, sleeveRepo, sleeveRules)
    from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
    from cyrus_pmg.pmgService.scenario.rules import (
-       exportFilename, validateBasis, validateFeeLevel, validateFeeSchedule,
+       exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
        validateKey, validateVariant)
    from cyrus_pmg.pmgService.scenario.sleeves import sleeveExists
    from cyrus_pmg.pmgService.scenario.types import (
@@ -602,11 +708,17 @@ Append to the host's `pmgService/dashboardRouter.py`:
    §12 step 7 shows `@router.get`).
 
 3. Everything between the two marker comments in the mirror file —
-   `# ===== TRANSPLANT BLOCK BEGIN` and `# ===== TRANSPLANT BLOCK END` — unchanged: `_XLSX`, the
-   warm-up `try: getScenarioPort() except Exception: pass`, the helpers and the 28 handlers. The
-   markers exist so the block is copied by its boundaries rather than by line numbers. Names the
-   block adds at module level (`_XLSX`, `_validationError`, `_notFound`, `_analyticsError`,
-   `_includeFees`, `_scenarioPayload`, `_feedFilters`, `_csv`, `_registerFilters`, `_UID_HINT`)
+   `# ===== TRANSPLANT BLOCK BEGIN` and `# ===== TRANSPLANT BLOCK END` — unchanged: `_XLSX`,
+   `_PPTX`, `_ZIP`, the warm-up `try: getScenarioPort() except Exception: pass`, the helpers and the
+   32 handlers. The markers exist so the block is copied by its boundaries rather than by line
+   numbers — and as a unit, because order matters inside it: `GET /scenario/repository/proposals/views`
+   is declared above `/proposals/{proposalId}` or the path parameter would swallow `views` (D116).
+   **The imports are outside the markers**, so an update that re-pastes only the block misses any
+   import added since; the four added after `718d750` are `io`, `json`, `zipfile` and
+   `validateCustomFees`, and a missing one is a `NameError` on the first export or custom-fee save.
+   Names the block adds at module level (`_XLSX`, `_PPTX`, `_ZIP`, `_validationError`, `_notFound`,
+   `_analyticsError`, `_includeFees`, `_scenarioPayload`, `_feedFilters`, `_csv`, `_registerFilters`,
+   `_baseKeyFrom`, `_UID_HINT`, `_assembleExport`)
    collide with nothing in the host file you supplied (it owns `logger`, `router`, `publicRouter`,
    `service`, `_errorResponse`, `_applyNoCacheHeaders`) — re-check against the full file, since
    the copy in `cyrus-files/` is an excerpt.
@@ -793,7 +905,7 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 
 ## 11. API, models, persistence and configuration
 
-### 11.1 The HTTP surface (30 routes under `/api/v1`; the page calls `/api/…`)
+### 11.1 The HTTP surface (32 routes under `/api/v1`; the page calls `/api/…`)
 
 | Method | Path | Handler | Gate |
 |---|---|---|---|
@@ -803,10 +915,10 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | GET | `/scenario/sleeves?category&variant&currency&hedging` | `listSleeves` | requireAuth |
 | GET | `/scenario/{scenarioId}` | `getScenario` | requireAuth |
 | POST | `/scenario` | `createScenario` | requireAuth (router-level; D77) |
-| PUT | `/scenario/{scenarioId}` | `updateScenario` | requireAuth (router-level; D77) |
+| PUT | `/scenario/{scenarioId}` | `updateScenario` — takes `customFees` too (D96) | requireAuth (router-level; D77) |
 | POST | `/scenario/{scenarioId}/portfolio` | `resolvePortfolio` | requireAuth (router-level; D77) |
 | DELETE | `/scenario/{scenarioId}/portfolio/{portfolioKey:path}` | `removePortfolio` | requireAuth (router-level; D77) |
-| POST | `/scenario/{scenarioId}/export` | `exportScenario` | requireAuth (router-level; D77) |
+| POST | `/scenario/{scenarioId}/export` | `exportScenario` — the workbook and the deck, one zip (D123) | requireAuth (router-level; D77) |
 | GET | `/scenario/repository` | `getRepository` | requireAdmin |
 | POST | `/scenario/repository/sleeves` | `createRepositorySleeve` | requireAdmin |
 | PUT | `/scenario/repository/sleeves/{sleeveId}` | `updateRepositorySleeve` | requireAdmin |
@@ -820,10 +932,12 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | GET | `/scenario/repository/activity` | `getRepositoryActivity` | requireAdmin |
 | GET | `/scenario/repository/archive.csv` | `exportRepositoryArchive` | requireAdmin |
 | GET | `/scenario/repository/activity.csv` | `exportRepositoryActivity` | requireAdmin |
-| GET | `/scenario/repository/proposals` | `listRegisterProposals` | requireAdmin |
-| GET | `/scenario/repository/proposals.csv` | `exportRegisterProposals` | requireAdmin |
+| GET | `/scenario/repository/proposals` | `listRegisterProposals` — also `moved`, `noAccount` (D116) | requireAdmin |
+| GET | `/scenario/repository/proposals.csv` | `exportRegisterProposals` — the same filters and views | requireAdmin |
+| GET | `/scenario/repository/proposals/views` | `registerViewCounts` — declared above `{proposalId}` (D116) | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}` | `getRegisterProposal` | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}/workbook` | `downloadRegisterWorkbook` | requireAdmin |
+| GET | `/scenario/repository/proposals/{proposalId}/deck` | `downloadRegisterDeck` (D123) | requireAdmin |
 | GET | `/scenario/proposals/{proposalId}` | `lookupProposal` | router-level requireAuth (D76) |
 | POST | `/scenario/account-requests` | `createAccountRequest` | requireAuth (router-level; D76, D77) |
 | GET | `/scenario/account-requests/{requestId}` | `getAccountRequest` | router-level requireAuth (D76) |
@@ -832,8 +946,11 @@ Error contract (Verified over HTTP): 422 `{error, field}`; 404 `{error}` ("Scena
 longer available - scenarios are kept for 24 hours"); 502 `{error}` on analytics failure; 401
 `{loginUrl}`; 403 `{error}`; a malformed body is 422 `{error: 'Malformed request.'}`. The export
 refuses with 422 `field: sleeves` while a category lacks a sleeve, `field: feeSchedule` while fees
-are included with no schedule, and `field: minimumInvestment` while any position is below its
-product's minimum (D70).
+are included with no schedule, `field: customFees` while the custom level leaves a fee group in the
+model without a rate (D96), and `field: minimumInvestment` while any position is below its product's
+minimum (D70). A `PUT` whose custom rate falls outside its row's bounds is 422 `field: customFees`
+naming the row. The workbook and the deck pass or fail together: neither format is a way around the
+other's gate (D122, D123).
 
 ### 11.2 Contracts the page depends on
 
@@ -845,7 +962,10 @@ product's minimum (D70).
   account size; **`primaryPwa` must be a display string the advisor directory returns**
   (`advisors.advisorExists`) — a `POST /scenario` with any other name is 422 `field: primaryPwa`.
 - **Rehydrate** (`GET /scenario/{id}`): `id, mandate, basis, base, comparisons, variant,
-  tacticalTilt, volPremium, sleeves, includeFees, feeSchedule, feeLevel` (12 keys, Verified).
+  tacticalTilt, volPremium, sleeves, includeFees, feeSchedule, feeLevel, customFees` (13 keys,
+  Verified). `feeLevel` may be `"Custom"` beside the six card levels; `customFees` is
+  `{CASP: rate}` / `{RDR: {feeGroup: rate}}` in percent, each rate bounded by its row's Management
+  floor and ceiling; the store records who entered them and when (D96).
 - **`PortfolioResult`**: `key, keyStr, name, header, categories[{name, weightPct, assets[{reportingName,
   weightPct}]}], metrics{estimatedReturnPct, volatilityPct, sharpe}, stress[{period, nominalPct,
   realPct}], premia[{group, horizon, label, nominalPct, realPct, kind}]`; non-USD payloads also
@@ -854,15 +974,33 @@ product's minimum (D70).
   source, liquidity, exposureCurrency, productCost, feeGroup, distributionYield,
   minimumInvestment, weight`.
 - **Schema**: `options, availability, categories, rules, fees, capabilities{canExport, canEdit,
-  canAdmin}, dataInfo{adapter, source, dataversion, asOf}`.
-- **Export**: `Content-Disposition: attachment; filename="PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx"`
-  and `X-Proposal-Id: <uid>`, where `<uid>` is the Proposal UID (`pr_` + 12 hex) minted for this
-  delivery and written into the workbook (Implementation sheet `A1:B1`, every sheet's print header,
-  `dc:identifier`) and into the register row — one id in all of them, and the register refuses the
-  row if they differ (D75). Sheets `portfolios, risk_dashboard, assumptions, Implementation` plus a
-  hidden `chartData` sheet that feeds five native doughnut charts (D73). The page reads only
-  `Content-Disposition` today; if it comes to read `X-Proposal-Id`, the host's proxy must pass that
-  header through.
+  canAdmin, user}, dataInfo{adapter, source, dataversion, asOf}`. `fees` also carries `customLevel`
+  and `customBounds` (D96); `capabilities.user` is the caller's kerberos, for the landing page's
+  admin strip (D106).
+- **Export (D123)**: one zip — `Content-Disposition: attachment;
+  filename="PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.zip"`, stored rather than deflated — holding
+  exactly two members, `…_<uid>.xlsx` and `…_<uid>.pptx`, and `X-Proposal-Id: <uid>`. `<uid>` is the
+  Proposal UID (`pr_` + 12 hex) minted for this delivery and written into both files (the workbook's
+  Implementation `A1:B1`, every sheet's print header and `dc:identifier`; the deck's every footer and
+  `dc:identifier`), into both names and into the register row — one id in all of them, and the
+  register refuses the row if any differ (D75). Both files come from the one implemented model and
+  both are recorded before either is returned; neither can be had without the other.
+  - *The workbook*: sheets `portfolios, risk_dashboard, assumptions, Implementation` plus a hidden
+    `chartData` sheet that feeds five native doughnut charts (D73); every sheet protected under
+    `workbook.SHEET_PASSWORD` — values locked, formatting, widths, sorting and filtering open (D98,
+    D104); set in GS Sans and GS Sans Condensed (D125).
+  - *The deck*: a cover; the strategic allocation and the risk dashboard — one slide for one or two
+    portfolios, a full-width slide each for three or four (D124); the implemented model; the five
+    doughnuts; the long-term assumptions. Every table fitted to its slide (D124); the faces embedded
+    (D125); locked with a password to modify (the workbook's) and Mark as Final (D123).
+
+  The page reads only `Content-Disposition`; the host's proxy passes every header through (§4.0).
+- **The register (D116, D123)**: `GET /scenario/repository/proposals` takes the five filters plus
+  `moved=1` and `noAccount=1` (two of the saved views) and returns `{entries, next, total, summary,
+  …}`, each entry adding `moved`, `accountRequested`, `deckName`, `deckBytes` and `deckSha`;
+  `…/proposals/views` returns `{views: {recent, week, mine, moved, noAccount, all}}` as counts;
+  `…/{proposalId}/deck` returns the deck byte for byte with `X-Deck-SHA256`, and 404 for a proposal
+  delivered before D123.
 - **Account opening request (D76)**: `GET /scenario/proposals/{uid}` → `{proposal: {proposalId, scenarioId,
   sequence, exportedAt, exportedBy, createdBy, primaryPwa, topAccountSize, mandateSize, currency, hedging,
   variant, riskLevel, allocationType, excludeRealAssets, tacticalTilt, volPremium, includeFees, feeSchedule,
@@ -879,14 +1017,16 @@ product's minimum (D70).
 | Store | Module | Format | Location | Concurrency | Backup / rollback |
 |---|---|---|---|---:|---|
 | Scenario state | `scenarioStore.py` | one JSON file per scenario, atomic rename | `SCENARIO_STORE_DIR` | worker-safe (files) | none needed — expires after `SCENARIO_RETENTION_HOURS` (24) |
-| Sleeve library | `sleeveRepo.py` | SQLite, schema v2: `sleeves`, `sleeveProducts`, `sleeveHistory`, `meta`; partial unique index on live names; `_migrate` rebuilds v1→v2 and back-fills a `baseline` revision | `SCENARIO_SLEEVES_DB` | SQLite, `PRAGMA foreign_keys=ON` | dated `sleeveTools --export`; every revision kept; soft delete + restore (D65/D66) |
-| Proposal register | `proposalRegister.py` (+ `accountRequests.py`, an `accountRequests` table in the same file, D76) | SQLite, schema v1: `proposals` (with the workbook blob and SHA-256), `proposalSleeves`, `meta`; seven indexes; **append-only by construction** | `SCENARIO_REGISTER_DB` | SQLite | **daily file backup off the host — the only store whose loss is unrecoverable** |
+| Sleeve library | `sleeveRepo.py` | SQLite, schema v3: `sleeves`, `sleeveProducts`, `sleeveRules` (editions, D89), `sleeveHistory`, `meta`; partial unique index on live names; `_migrate` brings an older file to v3 on open (v1→v2 back-fills a `baseline` revision) | `SCENARIO_SLEEVES_DB` | SQLite, `PRAGMA foreign_keys=ON` | dated `sleeveTools --export`; every revision kept; soft delete + restore (D65/D66) |
+| Proposal register | `proposalRegister.py` (+ `accountRequests.py`, an `accountRequests` table in the same file, D76) | SQLite, schema v3: `proposals` (the workbook and the deck, each with its blob, size and SHA-256, D123; `customFees`, D96), `proposalSleeves`, `meta`; seven indexes; **append-only by construction** | `SCENARIO_REGISTER_DB` | SQLite | **daily file backup off the host — the only store whose loss is unrecoverable** |
 | Baked analytics | `bake.py` / `bakedAdapter.py` | `manifest.json` + one `<CCY>_<Hedging>.json` per slice + `assetEstimates.json` | `SCENARIO_BAKED_DIR` (read-only at runtime) | read-only | keep the previous store directory; swap by rename |
 
 Seeding: the sleeve database is created and seeded from `SCENARIO_SLEEVES_SEED` **once**, the first
 time it opens; after that the seed is never read (Verified: `sleeveRepo._seed`, `meta.seededAt`).
 Both SQLite stores create their schema on first open; no migration tooling is needed for a fresh
-host.
+host. **An existing register is brought to v3 in place on first open** (`ALTER TABLE … ADD COLUMN`):
+rows delivered earlier keep NULLs — no deck, no custom rates — which is the truth about them. Back the
+file up before new code first starts; rolling the code back does not need it restored (§0A.2).
 
 ### 11.3.1 Four workers on one set of files
 
@@ -998,6 +1138,11 @@ export SCENARIO_STORE_DIR SCENARIO_RETENTION_HOURS
 (`/data/pmg/proposalTool` is illustrative — where writable, durable storage lives on the deployed
 host is Unverifiable, §18.)
 
+D90–D125 added no variable. The password that protects the workbook's sheets and the deck
+(`workbook.SHEET_PASSWORD`, D104, D123) is a constant in source on purpose — a convention against
+accidental edits, not a secret (§13.5). The deck's fonts and metrics are package files, not
+configuration.
+
 ### 11.5 The bake is a delivery, not a cache
 
 The store is built where the analytics library and its database exist — today the epsilon-phi
@@ -1041,6 +1186,9 @@ Measured on the epsilon-phi side (Python 3.8.20). The host's versions are Unveri
 | `fastapi` / `starlette` / `pydantic` | 0.122.0 / 0.44.0 / 2.5.3 | the router: `APIRouter, Body, Depends, Request, Response, JSONResponse` only | present, versions not stated |
 | `openpyxl` | 3.0.10, and **3.1.5 verified** | `workbook.py` — `Workbook`, styles, `get_column_letter`, `chart.DoughnutChart`, `chart.Reference`, `chart.series.DataPoint`, `formatting.rule.CellIsRule`; `advisors.py`; the tests | the whole suite, the golden cell-for-cell comparison included, passes unchanged on 3.1.5, so either line is safe; **not named — verify/install** |
 | `pandas` | 2.0.3 | `portfolio_weights.py` imports it at module level and builds two frames at import (lines 1257–1258); `universe.py`, `rules.py` and `workbook.py` import that module for `ASSET_METADATA`. Measured: pandas import 0.73 s, then the package 0.37 s | **not named — verify/install** |
+| `python-pptx` | 1.0.2 | `pptWriter.py` — the deck. The adapters import it on the first export (D122), so a service that never exports never loads it; but every export needs it, and without it every export fails, the workbook included (D123) | **new since `718d750` — install** |
+| `lxml` / `Pillow` / `XlsxWriter` / `typing_extensions` | 4.9.3 / 10.4.0 / 3.2.9 / — | python-pptx's own requirements; `pptWriter` also uses `lxml.etree` directly, and XlsxWriter writes each deck chart's embedded data | arrive with python-pptx; lxml and Pillow are binary wheels — check the host's platform has them |
+| `fontTools`, `brotli` | 4.57.0 / — | `service/tools/` only — rebuilding the Office fonts and the deck's metrics (D125) | **not** needed on the host |
 | `requests`, `flask` | 2.32.3 / 2.2.5 | the host's own proxy and gate, not the package | present |
 | `sqlite3` | stdlib, **library ≥ 3.8.0** | the sleeve repository and the proposal register; the partial unique index needs 3.8.0 (§11.3.2) | verify — a stripped Python build without `_sqlite3`, or RHEL 7's 3.7.17, would fail |
 | `csv`, `json`, `secrets`, `hashlib`, `tempfile`, `threading` | stdlib | the stores and readers | — |
@@ -1048,9 +1196,10 @@ Measured on the epsilon-phi side (Python 3.8.20). The host's versions are Unveri
 
 What a fully baked, no-fallback service actually imports across a complete cycle (schema, create,
 resolve, sleeves, export, register, console): `fastapi, starlette, pydantic, openpyxl, anyio, httpx`
-plus `pandas, numpy, pyarrow` via `portfolio_weights.py` — and **never `epsilonPhi`** (Verified,
-§14.3). There is no requirements file in `proposal-tool/`; the two names above are what to add to
-the host's `requirements.in`.
+plus `pandas, numpy, pyarrow` via `portfolio_weights.py`, plus `pptx, lxml, PIL, xlsxwriter` once an
+export runs — and **never `epsilonPhi`** (Verified, §14.3). There is no requirements file in
+`proposal-tool/`; `openpyxl`, `pandas` and `python-pptx` are what to add to the host's
+`requirements.in`.
 
 `node` is needed only to run the JavaScript-mirror tests on the epsilon-phi side (§14).
 
@@ -1126,8 +1275,13 @@ router level — not in the package.
 - `send_from_directory` blocks traversal for the page folder (Audit §13).
 - Every write re-validates server-side; the export re-resolves every column and rebuilds the
   implemented model rather than trusting the page (Verified in `exportScenario`).
-- The register stores the delivered workbook bytes and their SHA-256; it has no update or delete
-  path (`test_the_register_is_append_only_by_construction`).
+- The register stores the delivered workbook and deck bytes and a SHA-256 of each; it has no update
+  or delete path (`test_the_register_is_append_only_by_construction`).
+- The workbook's sheet protection and the deck's password to modify share one password,
+  `workbook.SHEET_PASSWORD`, kept in source as a plain constant because it is not a secret: only
+  hashes reach the files (Excel's 16-bit sheet hash; an ISO SHA-512 verifier in the deck, 100,000
+  rounds), and nothing is encrypted. It makes an edit deliberate rather than accidental; the
+  register's stored copies are the record of what was delivered (D98, D104, D123).
 - The fee card and the product catalogue are read-only in the service; they change only through
   `feeTools --accept` / a file delivery.
 - The `/_dev_login` route, the `kerberos` cookie and the `X-Kerberos` header exist only in the
@@ -1141,16 +1295,20 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 289 passed, 4 skipped in ~50s
+# 391 passed, 4 skipped in ~2 min (at D125)
 ```
 
-| File | Tests | Covers |
+| File | Tests (collected) | Covers |
 |---|---:|---|
-| `tests/test_scenario_backend.py` | 97 defs (parametrised) | rules, availability, rounding, the workbook against the golden files, the JS mirrors (needs `node`), the implementation model, fees, the export path, the library-leak guard |
-| `tests/test_sleeve_repository.py` | 50 | the sleeve store, migration, history, archive/activity, the console routes, the admin gate on every `/scenario/repository…` route, `accessControl` semantics, and the four-worker cold start (§11.3.1) |
-| `tests/test_proposal_register.py` | 27 | the register end to end, byte-identity of the stored workbook, append-only, the panel's endpoints, the one-UID invariant (D75) |
-| `tests/test_account_requests.py` | 25 | the UID lookup, the request store and its validation, one request per proposal, the gates, the option lists on the schema (D76) |
+| `tests/test_scenario_backend.py` | 188 | rules, availability, rounding, the workbook against the golden files, the JS mirrors (needs `node`), the implementation model, fees, the export path, the library-leak guard |
+| `tests/test_sleeve_repository.py` | 76 | the sleeve store, migration, history, archive/activity, the console routes, the admin gate on every `/scenario/repository…` route, `accessControl` semantics, and the four-worker cold start (§11.3.1) |
+| `tests/test_proposal_register.py` | 32 | the register end to end, byte-identity of the stored workbook and deck, append-only, the panel's endpoints, the one-UID invariant (D75), the refusal of half a delivery and the schema 2→3 migration (D123), saved views and moved counts (D116) |
+| `tests/test_account_requests.py` | 28 | the UID lookup, the request store and its validation, one request per proposal, the gates, the option lists on the schema (D76) |
 | `tests/test_baked_adapter.py` | 10 | slice coverage, manifest provenance, no analytics on the read path, export without a delegate, resumable bake |
+| `tests/test_sleeve_editions.py` | 24 | editions of a sleeve and their applicability rules (D89) |
+| `tests/test_sheet_doc.py` | 12 | the report as data: no file format imported, deterministic builders, `renderNumber`, `paginate` (D119, D120) |
+| `tests/test_deck.py` | 15 | the deck cell for cell against its plan, the slide configurations, the fit, the lock, and one export delivering both files over HTTP (D121–D124) |
+| `tests/test_house_fonts.py` | 6 | the font files, house faces in production and the library's on the golden path, the embedded faces parsed back byte for byte (D125) |
 | `tests/test_tier0_beta_equivalence.py` | 4 | the library-side Tier 0 optimisation; **skipped** unless `SAA_ENGINE_LIVE=1` and a database |
 
 `tests/conftest.py` gives every session a throwaway sleeve database and register. The suite is
@@ -1164,7 +1322,10 @@ It is not shipped to the host and is not expected to run there unmodified.
 the analytics library's own reporting object on 3 September 2026. `test_scenario_backend.py`
 rebuilds the three engine-laid sheets from the payloads and compares every cell's value, number
 format, font, fill, border, alignment, merge, row height and column width, plus the conditional
-rule. **Do not regenerate these files**; they cannot be reproduced once the library is gone.
+rule. **Do not regenerate these files**; they cannot be reproduced once the library is gone. The
+comparison runs with `engineParity=True`, which also keeps the library's faces (Calibri, Aptos
+Narrow, Grotesque); a delivered workbook is re-set in GS Sans and GS Sans Condensed (D125), tested
+separately in `test_house_fonts.py`.
 
 ### 14.3 The portability probe (repeat on the host after Step 5)
 
@@ -1190,6 +1351,11 @@ c = TestClient(app)
 assert not any(m.split('.')[0] == 'epsilonPhi' for m in sys.modules)
 EOF
 ```
+
+Since D123 the export in that cycle returns a zip: check it holds exactly one `.xlsx` and one
+`.pptx`, both stamped with the `X-Proposal-Id` (`workbook.stampedProposalId` reads either), and that
+the register row holds both. Expect ~1.2 s rather than 194 ms — the deck is ~1 s of it — and
+~230 KB rather than 22 KB. `pptx` joins `sys.modules`; `epsilonPhi` still must not.
 
 The two tests that lock this property on the epsilon-phi side:
 `test_an_export_imports_no_part_of_the_analytics_library` (a subprocess, asserts `LEAKED []`) and
@@ -1234,21 +1400,34 @@ nav for users.
 9. Change variant: sleeve choices clear, on screen and in the store.
 10. Attach a sleeve to every category (Private Equity and Other Private Assets take one choice);
     the export card enables; with **Include fees** ticked and no schedule it says so.
+10a. Choose **Custom** as the fee level: the fee card opens pinned to this mandate with one input per
+    schedule row (CASP) or fee group (RDR); a rate outside its row's Management floor–ceiling is
+    refused; a fee group left without a rate leaves its products unpriced and the export refuses
+    naming it; once every row is priced, the workbook's header lists each custom rate and *Custom
+    Rates Entered By* (D96).
 11. Export refuses with 422 `field: minimumInvestment` when any position is below its product's
     minimum — at the packaged catalogue this happens at every mandate the tool offers (§17); raise
     the mandate in the test to prove the success path.
-12. A successful export downloads `PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.xlsx` with sheets
-    `portfolios, risk_dashboard, assumptions, Implementation` (+ hidden `chartData`); the
-    Implementation sheet's first row reads `Proposal UID` / `<uid>`, its table carries thirteen columns
-    (eleven unpriced) with no Ticker and no Minimum Investment (D78) and a Share Class beside the
-    Vehicle (D81), and the same `<uid>` is the
-    filename's last token and the new row's id in the console's Proposals tab (D75); the
-    Implementation total is exactly 100.00%; the doughnut charts render in Excel.
-12a. Start here: the card shows **Continue · Cancel** far left and **Create Account Opening Request**
-    right. The new button opens the account form; a UID from a delivered workbook fills the greyed
-    read-only fields (PWA, sizes, basis, type, risk, fees, switches, sleeves); the required fields, once
-    filled, make Submit live; Submit shows a receipt with an `ar_…` reference and the row appears in
-    the register file's `accountRequests` table. A second Submit for the same UID is refused (D76).
+12. **Download proposal** downloads one `PMG_Scenario_<CCY>_<Hedging>_<date>_<uid>.zip` holding
+    `…_<uid>.xlsx` and `…_<uid>.pptx` and nothing else (D123), and the same `<uid>` is both files' last
+    token and the new row's id in the console's Proposals tab (D75).
+    *The workbook*: sheets `portfolios, risk_dashboard, assumptions, Implementation` (+ hidden
+    `chartData`), each protected — values locked, formatting, widths, sorting and filtering allowed,
+    `PA55WORD` unprotects (D98, D104); the Implementation sheet's first row reads `Proposal UID` /
+    `<uid>`, its table carries thirteen columns (eleven unpriced) with no Ticker and no Minimum
+    Investment (D78) and a Share Class beside the Vehicle (D81); the Implementation total is exactly
+    100.00%; the doughnut charts render in Excel; the text is GS Sans / GS Sans Condensed where those
+    are installed (D125).
+    *The deck*: PowerPoint asks for the password or offers Read Only, then shows the Marked as Final
+    banner (D123); every footer and File › Properties carry the `<uid>`; with one or two portfolios
+    the allocation and risk tables share one slide, with three or four each has its own (D124); it
+    is set in GS Sans on a machine that has never installed it (embedded, D125).
+12a. The landing page has two doors: **Start Here**, and **Open an Account** at the right (D107,
+    D109, D110). Open an Account opens a card holding only the Proposal UID box (D111); a UID from a
+    delivered proposal grows it into the request — the proposal's terms as a read-only digest, then
+    the required fields — and Submit, once they are filled, shows a receipt with an `ar_…` reference
+    while the row appears in the register file's `accountRequests` table. A second Submit for the
+    same UID is refused (D76).
 13. Refresh the page: the scenario rehydrates from `?scenario=<id>` with mandate, basis, columns,
     variant, sleeves and fee settings intact. Both uvicorn workers answer for the same id.
 14. Stop the FastAPI process: the page shows the degraded banner within seconds, disables editing
@@ -1258,15 +1437,17 @@ nav for users.
 
 15. As an admin, the rail shows the console links; the console opens with Sleeves, Catalogue,
     Archive, Activity and Proposals; a save appends a revision; a delete archives and restore
-    returns it; the Proposals tab lists the export from step 12 and its workbook downloads
-    byte-identical.
+    returns it; the Proposals tab opens on its saved views with their counts (D116) and lists the
+    export from step 12, whose workbook and deck both download byte-identical (`X-Deck-SHA256`
+    matches); the landing page shows an admin the Admin strip (D106).
 16. As a non-admin, no console links render and every `/api/scenario/repository…` call is 403.
 
 **Parity**
 
 17. For one scenario, the on-screen implementation table and the workbook's Implementation sheet
     agree line for line (weights, notional, fee bp); the five on-screen doughnuts and the five
-    charts agree slice for slice.
+    charts agree slice for slice; and every table cell on the deck's slides reads exactly as the
+    workbook's cell displays (`renderNumber`, D120, D121).
 18. `sys.modules` contains no `epsilonPhi` after the §14.3 cycle on the host.
 
 ---
@@ -1276,7 +1457,7 @@ nav for users.
 ### 16.1 Rollout
 
 Ship in this order, verifying each: dependencies → auth names → package → router block → data and
-configuration → page folder and route → nav link last. Until the nav link is added the page is
+configuration → page folder and route → nav link last. Updating an existing port: §0A.2. Until the nav link is added the page is
 reachable only by URL, which is a useful soak.
 
 ### 16.2 Rollback
@@ -1289,7 +1470,7 @@ reachable only by URL, which is a useful soak.
 | The bake | Rename the previous store directory back into place (`SCENARIO_BAKED_DIR`); restart. Seconds. |
 | Extracts | Restore the previous file; products reload on mtime, the SAA extract and the fee card are read at import — restart. |
 | The sleeve library | Nothing is destroyed: restore from the console's Archive/History, or `sleeveTools --import <dated export> --replace`. |
-| The register | **No rollback** — restore the SQLite file from backup. Nothing else can recreate it. |
+| The register | **No rollback** — restore the SQLite file from backup. Nothing else can recreate it. Code rolled back to the 10 September port runs against a v3 register unchanged (§0A.2). |
 | Scenario state | None needed; 24-hour retention; users re-enter. |
 
 ### 16.3 Operating rhythm (from `archive/dataOperations.html`, adapted)
@@ -1326,7 +1507,10 @@ reachable only by URL, which is a useful soak.
 | Risk | Severity | Handling |
 |---|---|---|
 | The package's default paths resolve outside itself (§3.6) | high — the service fails on first read | Set the seven required variables; the §8 checks catch it before start. |
-| `pandas`/`openpyxl` absent or at incompatible versions on the host | high | Verify before Step 3; pin the versions proven here as a floor. |
+| `pandas`/`openpyxl`/`python-pptx` absent or at incompatible versions on the host | high — without python-pptx **no proposal downloads at all**, since the workbook and deck are one delivery (D123) | Verify before Step 3 (§8 Step 1, §0A.2 step 2); pin the versions proven here as a floor. |
+| An update re-pastes the block but not the imports above its markers | medium — a `NameError` on the first export or custom-fee save | §0A.2 step 5; §9.1 lists the full import set. |
+| Re-copying the package overwrites a host-accepted `fees.json` or a replaced `advisors.xlsx` | medium — the rail and workbook would claim the placeholder card again | Keep the host's copies (§0A.2 steps 3–4); the new `custom` block is optional. |
+| GS Sans not installed on the desks that open workbooks | cosmetic | Excel substitutes; the deck carries its faces. Install from `scenario/fonts/` or the desktop image (D125). |
 | ~~The host's `accessControl` names or signatures differ~~ | **closed** | Settled by `cyrus-files/`: `requireAuth`/`requireEditor` are `pmgEntitlement` shims returning a `UserData`, which the block now expects (§9.2). Only `requireAdmin`/`isAdmin` remain to be written, and Step 2's import check proves it. |
 | The host's error contract passes `{"detail": …}` through | medium — the page shows "Request failed (401)" instead of redirecting | §13.3 check; a test request without identity must return `{loginUrl}`. |
 | The stores land inside `src/` and get zipped or wiped by deployment | medium | Durable paths outside the tree; the reference block in §11.4. |
@@ -1342,7 +1526,7 @@ reachable only by URL, which is a useful soak.
 | Python version older than 3.8 on the host | low | `from __future__ import annotations` needs 3.7+; f-strings and `secrets` need 3.6+; proven only on 3.8.20. |
 | Theme mismatch with OneGS | cosmetic | A separate change with a measured cost (§10.5). |
 | Retention default of 24 h lands scenarios in `$TMPDIR` | low | `SCENARIO_STORE_DIR` is required. |
-| The register grows unbounded (~20–30 KB per export) | low | It is the record; back it up daily; budget storage. |
+| The register grows unbounded (~230 KB per export since the deck is stored beside the workbook, D123) | low | It is the record; back it up daily; budget storage. |
 
 **Unresolved decisions (owner needed):**
 
@@ -1352,6 +1536,8 @@ reachable only by URL, which is a useful soak.
 - Who holds the admin list, and where the host reads it from.
 - Whether the advisor directory is swapped for a table before go-live (a code change, §6).
 - The OneGS retheme (open items 1 and 2).
+- Whether GS Sans and GS Sans Condensed are on the desktop image of everyone who opens a delivered
+  workbook (D125); the deck needs nothing.
 - Where extracts, stores and the bake live on the deployed host, and who delivers the bake.
 - The account opening request (D76): Operations' option lists (account types, booking centres,
   funding sources — placeholders today); what Submit does downstream (nothing yet: the row is
@@ -1392,6 +1578,8 @@ repository. Tick each before Step 1.
 - [ ] `openpyxl` installed (3.0.10 proven; needs `openpyxl.chart.DoughnutChart` and
       `openpyxl.formatting.rule.CellIsRule`).
 - [ ] `pandas` installed (2.0.3 proven).
+- [ ] `python-pptx` installable from the firm's package index for the host's Python and platform
+      (1.0.2 proven, with lxml 4.9.3, Pillow 10.4.0, XlsxWriter 3.2.9).
 - [ ] FastAPI/Starlette/pydantic versions accept sync `def` handlers with `Body(...)`, `Depends`,
       path parameters typed `int`, and `{portfolioKey:path}` (0.122 / 0.44 / 2.5.3 proven).
 - [ ] The launcher's worker count for `isgPMGService` (env default 2, code fallback 4); the four store
@@ -1431,22 +1619,24 @@ repository. Tick each before Step 1.
 ## 19. Completion checklist
 
 - [ ] §5 pre-port checks green at the frozen commit; commit hash and bake `updatedAt` recorded.
-- [ ] `openpyxl` and `pandas` present in the host environment.
+- [ ] `openpyxl`, `pandas` and `python-pptx` present in the host environment.
 - [ ] `isAdmin` and `requireAdmin` added to `pmgEntitlement.py`; the Step 2 import check passes.
-- [ ] `pmgService/scenario/` copied verbatim (26 modules, 4 data files); importable.
-- [ ] Endpoint block appended between its markers; 30 `/scenario` routes registered; no duplicate `router` definition.
+- [ ] `pmgService/scenario/` copied verbatim (31 modules, 4 data files, `fonts/`); importable, `pptWriter` included.
+- [ ] Endpoint block appended between its markers, with its imports merged; 32 `/scenario` routes registered; no duplicate `router` definition.
 - [ ] Extracts and bake delivered to durable paths (Appendix C); the seven required variables set;
       the three censuses pass on the host.
 - [ ] Page folder copied; route and nav link added; §10.6 curls pass.
 - [ ] §14.3 probe on the host: full cycle, no `epsilonPhi` in `sys.modules`.
-- [ ] §15 acceptance criteria 1–18 pass as a user and as an admin.
+- [ ] §15 acceptance criteria 1–18 (with 10a and 12a) pass as a user and as an admin; one export
+      downloads a zip of a locked workbook and a locked deck under one UID, and the register row
+      holds both.
 - [ ] Register backup scheduled; sleeve export and census scheduled; owners named for the
       §17 decisions.
 - [ ] Nothing from §3.4/§3.5 was copied; `/_dev_login` does not exist on the host.
 
 ---
 
-## Appendix A — deviations that shape the port (`service/DEVIATIONS.md`, D1–D76)
+## Appendix A — deviations that shape the port (`service/DEVIATIONS.md`, D1–D125)
 
 One line each; the register carries the reasoning.
 
@@ -1521,13 +1711,49 @@ One line each; the register carries the reasoning.
 - **D88** Scrollbars are styled thin rather than left to the platform, so the page reads the same on
   Windows as on macOS; the navy rail carries its own light thumb.
 
+Since the 10 September port (§0A):
+
+- **D90–D95, D97, D99–D101, D103, D105, D108–D110, D112, D113, D115, D117, D118** Page only: motion,
+  the guided first build and sleeve guide, step 1 and step 2 rebalanced, the catalogue and console
+  reworked, the landing page spaced and its two doors styled, the console's sizes. They travel in
+  the page folder. D92 retires the `pmg.proposalTool.railCollapsed` key (§3.1).
+- **D96** Custom fees: a third fee level, one rate per schedule row or fee group, bounded by the
+  Management floor and ceiling; `customFees` on `PUT` and in the store; `validateCustomFees`; the
+  export refuses an unpriced row; the register gains a `customFees` column (schema 2); `fees.json`
+  names the level.
+- **D98, D104** Every sheet of the workbook is protected — values locked, presentation open — under
+  one password in source, `workbook.SHEET_PASSWORD`.
+- **D102** A base-currency change re-keys every column instead of dropping them; the page never asks
+  the store to remove the proposed portfolio.
+- **D106** The schema carries `capabilities.user`; the landing page offers an admin the console.
+- **D107, D111** Account opening has its own door on the landing page, and its card opens on the
+  Proposal UID alone. Same endpoint, same rules.
+- **D114** The catalogue opens by category and shows product fees only.
+- **D116** The register as a list and a pane with saved views; `GET …/proposals/views`; `moved` and
+  `noAccount` filters; moved counts, account flags and a summary on the list.
+- **D119, D120** The report as data: `sheetDoc` builds all four sheets once; `workbook` renders them;
+  `renderNumber` and `paginate`.
+- **D121, D122** The PowerPoint renderer, `pptWriter`; `build_export_deck` on the port; the shared
+  `_assembleExport`; the save barrier before an export.
+- **D123** One delivery: one export mints one UID and returns the workbook and the deck in one zip,
+  both recorded (register schema 3, `GET …/{id}/deck`); the deck locked with the workbook's password
+  and Mark as Final. Supersedes D122's two buttons and draft decks.
+- **D124** The deck's tables fit their slides; one slide for allocation and risk with one or two
+  portfolios, one each with three or four.
+- **D125** The exports are set in GS Sans and GS Sans Condensed: five `.ttf` files in
+  `scenario/fonts/`, embedded in every deck; an `.xlsx` cannot embed a font, so the workbook needs
+  them installed.
+
 ## Appendix B — where the rest is written down
 
 | File | What it carries |
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D76, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D125, the adapter-side decisions, the spec gaps G1–G8. |
+| `proposals/` | Design studies behind D90–D125, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
+| `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
+| `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
 | `service/PERFORMANCE.md` | The analytics profile and the Tier 0 / bake measurements. |
 | `archive/dataSources.html`, `archive/dataOperations.html` | The data estate and its operating model (classes A–D, runbooks, rollback). Their test counts predate D69. |
 | `archive/exportPortingPlan.html`, `archive/exportTrace.html` | Why and how the export was cut loose from the library (D67). |
@@ -1674,7 +1900,10 @@ console's *applicability* preview runs the same checks before a save, so the wor
 
 The **framework** is `fees.json` inside the package (schedules `CASP` — one rate for all, `RDR` — a
 rate per fee group; sources `Management`, `PMG`; points `Floor`, `Target`, `Ceiling`; the default
-level `PMG Target`) and the **rates** are the CSV, one row per cell:
+level `PMG Target`; and, since D96, an optional `custom` block naming the custom level and the
+source whose floor and ceiling bound it — `{"level": "Custom", "boundsSource": "Management"}`, which
+are also the defaults) and the **rates** are the CSV, one row per cell. Custom rates are not
+delivered: a PWA enters them per proposal.
 
 | Column | Type | Rule |
 |---|---|---|
@@ -1728,6 +1957,6 @@ them either by running `bake.py` against an engine that satisfies the seam in `e
 
 | Store | Path | Contents |
 |---|---|---|
-| Sleeve library | `SCENARIO_SLEEVES_DB` | SQLite: sleeves, products-in-sleeves, history, meta (schema v2). Seeded once from C.3. |
-| Proposal register | `SCENARIO_REGISTER_DB` | SQLite: `proposals` (with the workbook blob and its SHA-256), `proposalSleeves`, `meta`, and `accountRequests` (D76). Append-only; **the record — back it up daily.** |
+| Sleeve library | `SCENARIO_SLEEVES_DB` | SQLite: sleeves, products-in-sleeves, edition rules, history, meta (schema v3). Seeded once from C.3 and C.3b. |
+| Proposal register | `SCENARIO_REGISTER_DB` | SQLite: `proposals` (the workbook and the deck, each with its blob and SHA-256, D123), `proposalSleeves`, `meta`, and `accountRequests` (D76). Append-only; **the record — back it up daily.** |
 | Scenario state | `SCENARIO_STORE_DIR` | One JSON file per live scenario; expires after `SCENARIO_RETENTION_HOURS`. |
