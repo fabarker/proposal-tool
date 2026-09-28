@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D125** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D130** — the PowerPoint deck, custom fees,
 the register's saved views and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D125 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D130 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -129,7 +129,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 394 passed, none skipped, at D126.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 410 passed, none skipped, at D130.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -1297,7 +1297,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 394 passed, none skipped, in ~2 min (at D126)
+# 410 passed, none skipped, in ~3 min (at D130)
 ```
 
 | File | Tests (collected) | Covers |
