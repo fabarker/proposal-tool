@@ -2429,6 +2429,43 @@ def test_column_a_is_sized_to_the_longest_label_beside_a_figure():
     assert indented <= wide * 7 + 5 - 2 * 3
 
 
+def test_the_implementation_sheet_is_set_in_gs_sans_with_room_for_every_entry():
+    """D132. The Implementation sheet is in the house body face, GS Sans, not
+    the condensed one, and each column is wide enough for its header and
+    every entry below it on one line - measured in the face and converted to
+    Excel's characters; the widths the sheet asks for are the floor."""
+    from openpyxl import load_workbook
+    from openpyxl.cell.cell import MergedCell
+    from cyrus_pmg.pmgService.scenario import sheetDoc
+    from cyrus_pmg.pmgService.scenario.workbook import _WIDTHS
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
+    header = next(r for r in range(1, 12)
+                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
+    total = next(r for r in range(header, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'Total')
+    faces = {cell.font.name for row in sheet.iter_rows(min_row=1, max_row=total)
+             for cell in row if not isinstance(cell, MergedCell) and cell.value not in (None, '')}
+    assert faces == {sheetDoc.SANS}, faces
+    widened = 0
+    for column in range(1, sheet.max_column + 1):
+        name = sheet.cell(row=header, column=column).value
+        if name is None:
+            continue
+        width = sheet.column_dimensions[chr(64 + column)].width
+        assert width >= _WIDTHS[name], name
+        widened += width > _WIDTHS[name]
+        room = width * 7 + 5 - 2 * 3
+        for row in range(header, total + 1):
+            cell = sheet.cell(row=row, column=column)
+            if cell.value in (None, ''):
+                continue
+            text = sheetDoc.renderNumber(cell.value, cell.number_format
+                                         if cell.number_format != 'General' else None)
+            pixels = sheetDoc.textWidth(text, sheetDoc.SANS, bool(cell.font.b), cell.font.sz) * 96 / 72
+            assert pixels <= room, (name, text, pixels, room)
+    assert widened, 'the wider face needed room somewhere'
+
+
 def test_the_portfolios_sheet_closes_on_one_navy_block_of_metrics():
     """D127. Straight under TOTAL, no gap and no hairline: Estimated Mean
     Return on its own line, then the line naming the risk-free rate, set in

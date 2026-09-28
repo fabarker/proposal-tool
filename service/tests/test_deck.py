@@ -20,7 +20,7 @@ from cyrus_pmg.pmgService.scenario import assetEstimates, pptWriter, rules, shee
 from cyrus_pmg.pmgService.scenario.pptWriter import writeDeck
 from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput
 from cyrus_pmg.pmgService.scenario.workbook import (
-    DONUT_PALETTE, buildImplementationRows, donutBreakdown, implColumns,
+    DONUT_DIMENSIONS, DONUT_PALETTE, buildImplementationRows, donutBreakdown, implColumns,
     stampedProposalId, _TEXT_COLUMNS, _WIDTHS)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -128,10 +128,12 @@ def test_the_deck_is_the_plan_cell_for_cell():
 
 
 def test_one_or_two_portfolios_share_one_slide_without_the_repeated_rows():
-    """D124. With no comparison or one: allocation and risk on ONE slide,
-    allocation left and risk right; the risk table without the rows that
-    repeat the allocation; both set in one size, both a little in from the
-    full box, and both ending at the bottom of their boxes together."""
+    """D124, D131. With no comparison or one: allocation and risk on ONE
+    slide, allocation left and risk right; the risk table without the rows
+    that repeat the allocation; both set in one size, a little in from the
+    full box, each at its natural width (widened by at most _STRETCH_MAX),
+    top-aligned, the pair centred across and down - and no row opened to
+    make the two end together."""
     plan = _plan()
     table = [entry for entry in plan if entry['kind'] == 'table']
     first = table[0]
@@ -145,13 +147,25 @@ def test_one_or_two_portfolios_share_one_slide_without_the_repeated_rows():
         assert repeated not in labels, repeated
     assert 'Factor Based Risk Analytics' in labels and 'Financial Crisis' in labels
     assert alloc.font == risk.font, 'one size across the slide'
+    area = pptWriter.combinedBox()
     full = pptWriter.FULL_BOX
+    assert area[0] > full[0] and area[1] > full[1], 'more border than a lone table'
     for tp in (alloc, risk):
-        left, top, width, height = tp.box
-        assert left > full[0] and top > full[1], 'more border than a lone table'
-        assert left + width < full[0] + full[2] and top + height < full[1] + full[3]
-        assert abs(sum(tp.heights) - height) < 0.5, 'ends at the bottom of its box'
-    assert alloc.box[0] + alloc.box[2] < risk.box[0], 'allocation left, risk right'
+        natural = sum(pptWriter._naturalWidths(tp, tp.font))
+        width = sum(tp.widths())
+        assert natural - 1e-6 <= width <= natural * pptWriter._STRETCH_MAX + 1e-6
+        assert tp.heights == pptWriter._measure(tp, tp.font)[0], 'no row opened'
+        assert tp.origin[1] >= area[1] - 1e-6
+        assert tp.origin[1] + sum(tp.heights) <= area[1] + area[3] + 1e-6
+    assert alloc.origin[1] == risk.origin[1], 'top-aligned'
+    left = alloc.origin[0]
+    right = risk.origin[0] + sum(risk.widths())
+    assert abs((left - area[0]) - (area[0] + area[2] - right)) < 1e-6, 'centred across'
+    tallest = max(sum(alloc.heights), sum(risk.heights))
+    below = area[1] + area[3] - alloc.origin[1] - tallest
+    assert abs((alloc.origin[1] - area[1]) - below) < 1e-6, 'centred down'
+    gap = risk.origin[0] - (alloc.origin[0] + sum(alloc.widths()))
+    assert abs(gap - pptWriter._COMBINED_GUTTER) < 1e-6, 'allocation left, risk right'
     # and no Risk Dashboard slide of its own
     assert not [e for e in table if e['heading'] == 'Risk Dashboard']
 
@@ -175,10 +189,107 @@ def test_three_or_more_portfolios_take_a_slide_each_at_full_width():
     assert set(riskRows) == set(whole.rows), 'the risk table keeps every row here'
 
 
+def _baked(*keys):
+    """A lineup straight from the delivered bake, for USD Hedged."""
+    from cyrus_pmg.pmgService.scenario.bakedAdapter import BakedScenarioPort
+    from cyrus_pmg.pmgService.scenario.types import PortfolioKey
+    port = BakedScenarioPort()
+    return [port.resolve_portfolio(BASIS, PortfolioKey.fromStr(key)) for key in keys]
+
+
+def _planFor(results):
+    """planDeck for *results* with their OWN implementation model (``_plan``
+    always builds the golden one)."""
+    implementation = _goldenCase()[1]
+    return pptWriter.planDeck(
+        BASIS, MANDATE, results, _model(results, implementation),
+        assetEstimates.forSlice('USD', 'Hedged'), True, implementation['variant'],
+        implementation['feeSchedule'], implementation['feeLevel'], cover=False)
+
+
+EX_ALTS = ('USD|Conservative|ex-Alts|0', 'USD|Moderate|ex-Alts|0', 'USD|Agg|ex-Alts|0')
+
+
+def test_a_lone_table_is_centred_at_its_natural_width():
+    """D131. On a slide of its own the allocation and the risk table are set
+    at their natural width - widened by at most _STRETCH_MAX, never past the
+    box - and centred across and down; the implementation and assumptions
+    tables fill the width and are centred down."""
+    for entry in _plan(_four(_goldenCase()[0])):
+        for tp in entry.get('tables', []):
+            left, top, width, height = tp.box
+            drawn = sum(tp.widths())
+            assert abs((tp.origin[0] - left) - (left + width - tp.origin[0] - drawn)) < 1e-6
+            assert abs((tp.origin[1] - top) - (top + height - tp.origin[1] - sum(tp.heights))) < 1e-6
+            if tp.doc.name in ('portfolios', 'risk_dashboard'):
+                assert tp.natural
+                natural = sum(pptWriter._naturalWidths(tp, tp.font))
+                assert natural - 1e-6 <= drawn <= min(natural * pptWriter._STRETCH_MAX, width) + 1e-6
+
+
+def test_a_short_allocation_grows_to_use_its_slide():
+    """D131. Three ex-Alts portfolios make a short allocation table: rather
+    than sit at 11pt in the top half of a stretched box, it grows - past
+    BASE_PT, never past MAX_PT - until the next step would not fit."""
+    plans = [tp for entry in _planFor(_baked(*EX_ALTS)) for tp in entry.get('tables', [])
+             if tp.doc.name == 'portfolios']
+    assert len(plans) == 1
+    (tp,) = plans
+    assert pptWriter.BASE_PT < tp.font <= pptWriter.MAX_PT
+    if tp.font < pptWriter.MAX_PT:
+        bigger = tp.font + pptWriter._STEP_PT
+        heights, fits = pptWriter._measure(tp, bigger)
+        natural = sum(pptWriter._naturalWidths(tp, bigger))
+        assert not fits or sum(heights) > tp.box[3] or natural > tp.box[2]
+
+
+def test_the_doughnuts_join_a_short_implementation_table():
+    """D131. Where the implementation table still reads at _TOGETHER_MIN_PT
+    above a doughnut row, the doughnuts sit below it on the same slide: no
+    slide of their own, the row at least _DONUT_MIN_PT tall and inside the
+    content box, the table above it with the gap between, the pair centred
+    down the box - and the drawn slide carries the table and all five."""
+    plan = _planFor(_baked(*EX_ALTS[:2]))
+    assert not [e for e in plan if e['kind'] == 'charts']
+    (entry,) = [e for e in plan if e.get('heading') == 'Implemented Model']
+    (tp,) = entry['tables']
+    assert tp.font >= pptWriter._TOGETHER_MIN_PT
+    left, top, width, height = entry['donuts']['region']
+    box = pptWriter.FULL_BOX
+    assert height >= pptWriter._DONUT_MIN_PT - 1e-6
+    assert abs(top - (tp.origin[1] + sum(tp.heights) + pptWriter._DONUT_GAP_PT)) < 1e-6
+    assert abs((tp.origin[1] - box[1]) - (box[1] + box[3] - top - height)) < 1e-6
+    assert box[0] - 1e-6 <= left and left + width <= box[0] + box[2] + 1e-6
+    assert any('Slice colours' in note for note in entry['notes'])
+
+    prs = Presentation(io.BytesIO(_deck(cover=False, results=_baked(*EX_ALTS[:2]))))
+    index = [e.get('heading') for e in plan].index('Implemented Model')
+    slide = prs.slides[index]
+    assert len(_tables(slide)) == 1
+    charts = [shape for shape in slide.shapes if shape.has_chart]
+    assert len(charts) == len(DONUT_DIMENSIONS)
+    table = next(shape for shape in slide.shapes if shape.has_table)
+    assert all(chart.top >= table.top + table.height for chart in charts), 'below the table'
+
+
+def test_a_long_implementation_table_keeps_its_doughnuts_apart():
+    """D131. The golden model's table would drop below _TOGETHER_MIN_PT to
+    make room, so the doughnuts keep a slide of their own and the table is
+    centred down its slide."""
+    plan = _plan()
+    (entry,) = [e for e in plan if e.get('heading') == 'Implemented Model']
+    assert 'donuts' not in entry
+    assert [e for e in plan if e['kind'] == 'charts']
+    (tp,) = entry['tables']
+    top, height = tp.box[1], tp.box[3]
+    assert abs((tp.origin[1] - top) - (top + height - tp.origin[1] - sum(tp.heights))) < 1e-6
+
+
 def test_every_planned_table_fits_its_box_at_a_readable_size():
     """The fit's invariants, over both configurations and fees on and off:
-    no table taller than its box, every size between MIN_PT and BASE_PT,
-    every figure clear of its cell on one line, and one size per slide."""
+    no table taller than its box, every size between MIN_PT and its ceiling
+    (BASE_PT, or MAX_PT for a natural plan), every figure clear of its cell on
+    one line, and one size per slide."""
     golden = _goldenCase()[0]
     for results in (None, _four(golden)):
         for includeFees in (True, False):
@@ -187,7 +298,7 @@ def test_every_planned_table_fits_its_box_at_a_readable_size():
                 if len(plans) > 1:
                     assert len({tp.font for tp in plans}) == 1
                 for tp in plans:
-                    assert pptWriter.MIN_PT <= tp.font <= pptWriter.BASE_PT
+                    assert pptWriter.MIN_PT <= tp.font <= tp.ceiling
                     assert sum(tp.heights) <= tp.box[3] + 1e-6, (tp.doc.name, sum(tp.heights))
                     heights, fits = pptWriter._measure(tp, tp.font)
                     assert fits, (tp.doc.name, tp.font)
@@ -309,7 +420,10 @@ def _noLabelWraps(tp):
     """Every unspanned column-A label of *tp* on one line at its size."""
     widths = tp.widths()
     assert widths[0] >= pptWriter._labelWidth(tp, tp.font) - 1e-6
-    assert abs(sum(widths) - tp.box[2]) < 1e-6
+    if tp.natural:
+        assert sum(widths) <= tp.box[2] + 1e-6, 'never wider than its box'
+    else:
+        assert abs(sum(widths) - tp.box[2]) < 1e-6
     for r in tp.rows:
         spec = tp.doc.rows[r].cells.get(1)
         if r in tp.spans or spec is None or not spec.value:
@@ -357,7 +471,7 @@ def test_no_risk_label_wraps(lineup):
     for tp in plans:
         widths = tp.widths()
         assert widths[0] >= pptWriter._labelWidth(tp, tp.font) - 1e-6
-        assert abs(sum(widths) - tp.box[2]) < 1e-6
+        assert sum(widths) <= tp.box[2] + 1e-6
         _, fits = pptWriter._measure(tp, tp.font)
         assert fits, 'the figures still fit their narrower columns'
         seen = False

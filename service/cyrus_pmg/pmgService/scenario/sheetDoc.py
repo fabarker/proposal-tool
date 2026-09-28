@@ -87,13 +87,27 @@ def textWidth(text: str, face: str, bold: bool, size: float) -> float:
     return sum(widths.get(ch, fallback) for ch in text) * size / 1000.0
 
 
+def _excelCharacters(cell) -> float:
+    """The Excel width, in characters, that *cell*'s text needs on one line:
+    measured in its own face and converted to Excel's unit, the Normal
+    style's digit - Calibri 11, 7px (D125) - less a cell's padding; an Excel
+    indent level is about 9px."""
+    font = cell.font or {}
+    pixels = (textWidth(renderNumber(cell.value, cell.fmt), font.get('name', SANS),
+                        bool(font.get('bold')), font.get('size', 11)) * 96 / 72
+              + ((cell.align or {}).get('indent') or 0) * 9)
+    return (pixels + 1) / 7.0
+
+
+def _atLeast(floor: float, need: float) -> float:
+    return floor if need <= floor else float(int(need) + 1)
+
+
 def excelLabelWidth(doc, floor: float) -> float:
     """Column A's width in Excel characters: *floor*, or wider if a label
     that shares its row with a figure or a head would otherwise be cut off
-    by it (D130). Measured in the label's own face and converted to Excel's
-    unit, the Normal style's digit - Calibri 11, 7px (D125) - less a cell's
-    padding; an Excel indent level is about 9px. A label with nothing beside
-    it may run on into the empty cells, as Excel lets it, and is not counted."""
+    by it (D130). A label with nothing beside it may run on into the empty
+    cells, as Excel lets it, and is not counted."""
     need = 0.0
     for row in doc.rows.values():
         label = row.cells.get(1)
@@ -101,11 +115,23 @@ def excelLabelWidth(doc, floor: float) -> float:
             continue
         if all(cell.value in (None, '') for column, cell in row.cells.items() if column > 1):
             continue
-        pixels = (textWidth(str(label.value), label.font.get('name', SANS),
-                            bool(label.font.get('bold')), label.font.get('size', 11)) * 96 / 72
-                  + ((label.align or {}).get('indent') or 0) * 9)
-        need = max(need, (pixels + 1) / 7.0)
-    return floor if need <= floor else float(int(need) + 1)
+        need = max(need, _excelCharacters(label))
+    return _atLeast(floor, need)
+
+
+def excelColumnWidth(doc, column: int, floor: float, fromRow: int = 1) -> float:
+    """One column's width in Excel characters: *floor*, or wider if any of
+    its cells from *fromRow* down - a header, a name, a figure - would be cut
+    off by its neighbour (D132). Wrapping cells may take more lines instead,
+    and are not counted."""
+    need = 0.0
+    for index, row in doc.rows.items():
+        cell = row.cells.get(column)
+        if (index < fromRow or cell is None or cell.value in (None, '')
+                or not cell.font or (cell.align or {}).get('wrap')):
+            continue
+        need = max(need, _excelCharacters(cell))
+    return _atLeast(floor, need)
 
 
 def columnLetter(index: int) -> str:
@@ -852,9 +878,10 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
     (D69); this function decides only presentation."""
     doc = SheetDoc('Implementation')
     at = {name: index for index, name in enumerate(columns, start=1)}
-    headFont = {'name': 'Aptos Narrow', 'size': 12, 'bold': True, 'color': WHITE}
-    bodyFont = {'name': 'Aptos Narrow', 'size': 12}
-    boldFont = {'name': 'Aptos Narrow', 'size': 12, 'bold': True}
+    # the house body face, GS Sans, rather than the condensed one (D132)
+    headFont = {'name': SANS, 'size': 12, 'bold': True, 'color': WHITE}
+    bodyFont = {'name': SANS, 'size': 12}
+    boldFont = {'name': SANS, 'size': 12, 'bold': True}
 
     row = 0
     preamble = []
@@ -1003,15 +1030,20 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
     notional.fmt = '$#,##0'
     totalRow = row
 
-    for index, name in enumerate(columns, start=1):
-        doc.widths[columnLetter(index)] = widths[name]
     text = [at[name] for name in textColumns if name in at]
     for rowIndex in range(headerRow + 1, totalRow + 1):
         for column in range(3, len(columns) + 1):
             doc.cell(rowIndex, column).align = {'horizontal': 'right'}
         for column in text:
             doc.cell(rowIndex, column).align = {'horizontal': 'left'}
-    return houseFaces(doc), headerRow, totalRow
+    doc = houseFaces(doc)
+    # each column at its given width, or wider for its widest header or
+    # entry in the wider face - the preamble above runs across empty cells
+    # and is not counted (D132)
+    for index, name in enumerate(columns, start=1):
+        doc.widths[columnLetter(index)] = excelColumnWidth(doc, index, widths[name],
+                                                           fromRow=headerRow)
+    return doc, headerRow, totalRow
 
 
 # --------------------------------------------------------------------- #
