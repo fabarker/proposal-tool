@@ -90,7 +90,10 @@ def test_the_builders_import_no_file_format():
     assert imported == {'__future__', '__future__.annotations',
                         'datetime', 'decimal',
                         'decimal.Decimal', 'decimal.ROUND_HALF_UP',
-                        '', '.fees', '.portfolio_weights'}, sorted(imported)
+                        '', '.fees', '.portfolio_weights',
+                        # measured advance widths - data, not a file format - so
+                        # column A can be sized to its labels in Excel too (D130)
+                        'fontMetrics', 'fontMetrics.METRICS'}, sorted(imported)
 
 
 def test_the_excel_writers_hold_no_styling_literal_of_their_own():

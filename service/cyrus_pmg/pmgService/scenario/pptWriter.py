@@ -54,6 +54,9 @@ from pptx.util import Emu, Pt
 from . import houseFonts, sheetDoc
 from .fontMetrics import METRICS as _METRICS
 from .sheetDoc import SheetDoc, paginate, renderNumber
+# the measurer lives with the Docs now, which size Excel's columns with it
+# too (D130); textWidth stays public here for the tests
+from .sheetDoc import _metricsKey, textWidth
 from .workbook import (DONUT_DIMENSIONS, DONUT_PALETTE, SHEET_PASSWORD,
                        buildImplementationRows, donutBreakdown, implColumns,
                        _TEXT_COLUMNS, _WIDTHS)
@@ -223,7 +226,7 @@ _ROW_SAFETY_PT = 0.6                  # so PowerPoint never has to grow a row
 _WIDTH_SLACK = 0.97                   # predicted text must clear the cell by 3%
 #: each Doc's body size: a cell's deck size is the fitted size scaled by its
 #: own over this, so a Doc's relative sizes survive the fit
-_DOC_BASE = {'portfolios': 12.5, 'risk_dashboard': 12.0,
+_DOC_BASE = {'portfolios': 11.0, 'risk_dashboard': 12.0,
              'Implementation': 12.0, 'assumptions': 11.0}
 #: the label column's share of the width, by portfolio count; the figures
 #: share the rest equally
@@ -256,22 +259,6 @@ def _signInk(doc: SheetDoc, rowIndex: int, column: int, value):
 
 # ---- measuring text --------------------------------------------------------
 
-def _metricsKey(face: str, bold: bool) -> str:
-    key = '{}|{}'.format(face, 'b' if bold else 'r')
-    if key in _METRICS:
-        return key
-    # every Doc reaching the deck is in the house faces (sheetDoc.houseFaces),
-    # so this is a face nothing measured; GS Sans stands in for its widths
-    return '{}|{}'.format(sheetDoc.SANS, 'b' if bold else 'r')
-
-
-def textWidth(text: str, face: str, bold: bool, size: float) -> float:
-    """*text*'s advance width in points, set in *face* at *size*."""
-    widths = _METRICS[_metricsKey(face, bold)]['widths']
-    fallback = widths.get('n', 500)
-    return sum(widths.get(ch, fallback) for ch in text) * size / 1000.0
-
-
 def _lineHeight(face: str, bold: bool, size: float) -> float:
     return _METRICS[_metricsKey(face, bold)]['line'] * size
 
@@ -300,12 +287,15 @@ class TablePlan:
     Doc rows it shows, the box it fills, its column shares, the size it is
     set in and every row's height. ``header`` rows repeat on a continuation
     and may wrap; ``spans`` are deck-only merges that let a heading with no
-    figures beside it run the width of its row."""
+    figures beside it run the width of its row. With ``fitLabel`` the label
+    column is never narrower than its longest label at the size the table is
+    set in - no label that shares a row wraps - and the figures share what is
+    left (D128)."""
 
     __slots__ = ('doc', 'rows', 'header', 'box', 'shares', 'spans',
-                 'font', 'heights')
+                 'font', 'heights', 'fitLabel')
 
-    def __init__(self, doc, rows, header, box, shares, spans):
+    def __init__(self, doc, rows, header, box, shares, spans, fitLabel=False):
         self.doc = doc
         self.rows = list(rows)
         self.header = tuple(header)
@@ -314,10 +304,20 @@ class TablePlan:
         self.spans = spans
         self.font = None
         self.heights = None
+        self.fitLabel = fitLabel
 
-    def widths(self):
+    def widths(self, f=None):
+        """The column widths in points at size *f* (the plan's own size when
+        not given): the shares, bar a fitted label column."""
         total = float(sum(self.shares))
-        return [self.box[2] * share / total for share in self.shares]
+        widths = [self.box[2] * share / total for share in self.shares]
+        if self.fitLabel and len(widths) > 1:
+            need = _labelWidth(self, self.font if f is None else f)
+            if need > widths[0]:
+                others = float(sum(self.shares[1:]))
+                widths = [need] + [(self.box[2] - need) * share / others
+                                   for share in self.shares[1:]]
+        return widths
 
 
 def _shares(label: float, count: int):
@@ -349,9 +349,11 @@ def _rowPad(doc: SheetDoc, r: int) -> float:
 
 
 def _spansFor(doc: SheetDoc, rows):
-    """Deck-only merges: a risk heading with no figures beside it spans its
-    row, so a long title never forces the whole table's type down to fit the
-    label column."""
+    """Deck-only merges, row -> the column the merge ends at: a risk heading
+    with no figures beside it spans its row, so a long title never forces the
+    whole table's type down to fit the label column - but only as far as the
+    first vertical rule on the row, so a rule between portfolios runs down
+    the table unbroken (D130)."""
     spans = {}
     if doc.name != 'risk_dashboard':
         return spans
@@ -362,14 +364,24 @@ def _spansFor(doc: SheetDoc, rows):
         row = doc.rows[r]
         if all(row.cells.get(c) is None or row.cells[c].value in (None, '')
                for c in range(2, n + 1)):
-            spans[r] = n
+            end = n
+            for c in range(1, n):
+                here, after = row.cells.get(c), row.cells.get(c + 1)
+                if ((here is not None and (here.border or {}).get('right'))
+                        or (after is not None and (after.border or {}).get('left'))):
+                    end = c
+                    break
+            if end > 1:
+                spans[r] = end
     return spans
 
 
 def _cells(doc: SheetDoc, r: int, widths, spans):
     """column -> the width of the cell there, merged cells counted once."""
     if r in spans:
-        return {1: sum(widths)}
+        out = {1: sum(widths[:spans[r]])}
+        out.update((c, widths[c - 1]) for c in range(spans[r] + 1, len(widths) + 1))
+        return out
     out, covered = {}, set()
     for r1, c1, r2, c2 in doc.merges:
         if r1 == r:
@@ -382,10 +394,13 @@ def _cells(doc: SheetDoc, r: int, widths, spans):
 
 
 def _indentPt(spec, text: str, f: float, column: int) -> float:
+    """A label set in, by leading spaces or an indent level, steps in once
+    (the allocation's risk-free line has only the level, D127); a figure
+    steps in per level."""
     extra = 0.0
-    if column == 1 and text.startswith('  '):
-        extra += _INDENT_EM * f
     indent = ((spec.align or {}).get('indent') or 0) if spec is not None else 0
+    if column == 1 and (text.startswith('  ') or indent):
+        extra += _INDENT_EM * f
     if indent and column > 1:
         extra += indent * _NUM_INDENT_EM * f
     return extra
@@ -401,7 +416,7 @@ def _isFigure(spec, r: int, column: int, header) -> bool:
 def _measure(plan: TablePlan, f: float):
     """Each row's height at size *f*, and whether every figure fits."""
     doc, base = plan.doc, _base(plan.doc)
-    widths = plan.widths()
+    widths = plan.widths(f)
     heights, fits = [], True
     for r in plan.rows:
         if _isSpacer(doc, r):
@@ -426,6 +441,27 @@ def _measure(plan: TablePlan, f: float):
             tallest = max(tallest, lines * _lineHeight(face, bold, size))
         heights.append(tallest + 2 * _rowPad(doc, r) * f + _ROW_SAFETY_PT)
     return heights, fits
+
+
+def _labelWidth(plan: TablePlan, f: float) -> float:
+    """The width the label column needs so that none of its labels wraps at
+    size *f*: the widest, with its padding and indent, and the same slack
+    ``_measure`` allows. A spanned row runs the table's width and is not
+    counted."""
+    doc, base, need = plan.doc, _base(plan.doc), 0.0
+    for r in plan.rows:
+        row = doc.rows.get(r)
+        spec = row.cells.get(1) if row is not None else None
+        if spec is None or r in plan.spans or spec.value in (None, ''):
+            continue
+        font = spec.font or _DEFAULT_FONT
+        size = f * font.get('size', base) / base
+        text = renderNumber(spec.value, spec.fmt)
+        width = textWidth(text.strip(), font.get('name', sheetDoc.SANS),
+                          bool(font.get('bold')), size)
+        need = max(need, width / _WIDTH_SLACK + 2 * _PAD_H_EM * f
+                   + _indentPt(spec, text, f, 1) + 0.01)
+    return need
 
 
 def _fit(plan: TablePlan):
@@ -453,14 +489,14 @@ def _view(doc: SheetDoc, rows) -> SheetDoc:
     return view
 
 
-def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None):
+def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False):
     """One Doc as one or more TablePlans in *box*. Whole when it fits at
     MIN_PT or above; otherwise cut at the Doc's section marks with each row
     costed at MIN_PT, the header repeated, and every page set in the one
     size the tallest page allows - a table reads at one size throughout."""
     rows = sorted(doc.rows) if rows is None else list(rows)
     spans = _spansFor(doc, rows)
-    whole = TablePlan(doc, rows, header, box, shares, spans)
+    whole = TablePlan(doc, rows, header, box, shares, spans, fitLabel)
     got = _fit(whole)
     if got is not None:
         whole.font, whole.heights = got
@@ -468,8 +504,8 @@ def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None):
     floorHeights, _ = _measure(whole, MIN_PT)
     cost = dict(zip(rows, floorHeights))
     pages = paginate(_view(doc, rows), box[3], headerRows=header, costOf=cost.get)
-    plans = [TablePlan(doc, page.header + page.body, header, box, shares, spans)
-             for page in pages]
+    plans = [TablePlan(doc, page.header + page.body, header, box, shares, spans,
+                       fitLabel) for page in pages]
     sizes = []
     for plan in plans:
         fitted = _fit(plan)
@@ -519,9 +555,81 @@ def riskWithoutRepeats(doc: SheetDoc):
     return [r for r in sorted(doc.rows) if r == 1 or r >= band]
 
 
+def headedRisk(doc: SheetDoc):
+    """The risk table for the combined slide, as a view Doc and its rows:
+    ``riskWithoutRepeats``, and then the first band's title - *Factor Based
+    Risk Analytics* - moved into the header's empty corner, beside the
+    portfolio names, and the band row dropped (D128). The header and the
+    band are dressed alike, so the corner takes the band's label cell whole.
+    *doc* is not touched: its header row is replaced in the view only."""
+    rows = riskWithoutRepeats(doc)
+    band = min(doc.sections)
+    header, title = doc.rows[1], doc.rows[band].cells[1]
+    corner = header.cells.get(1) or sheetDoc.Cell()
+    top = sheetDoc.Row()
+    top.height = header.height
+    top.cells = dict(header.cells)
+    top.cells[1] = sheetDoc.Cell(title.value, title.fmt, title.font, title.fill,
+                                 corner.border, title.align)
+    rows = [r for r in rows if r != band]
+    view = _view(doc, rows)
+    view.rows[1] = top
+    return view, rows
+
+
 # ---- rendering a planned table ---------------------------------------------
 
-def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int) -> None:
+def sharedEdges(plan: TablePlan) -> dict:
+    """(Doc row, column) -> that cell's edges, with every horizontal rule
+    stated on BOTH cells that share it.
+
+    Excel draws a rule once, from whichever of the two cells carries it; the
+    Doc says it once, on one of them. A PowerPoint cell owns all four of its
+    edges, and ``_setCellBorders`` states every one of them - so a rule given
+    only to the lower cell's top met an explicit no-line on the upper cell's
+    bottom, and PowerPoint drew the no-line: the deck's tables lost their
+    rules (D127). Each rule is now given to both cells, which is how
+    PowerPoint itself writes a border. Neighbours are the rows the table
+    SHOWS, so a continuation page's header takes the rule of the row it
+    now sits on, and a dropped row's rule is not left dangling."""
+    def edges(rowIndex, column):
+        row = plan.doc.rows.get(rowIndex)
+        cell = row.cells.get(column) if row is not None else None
+        return (cell.border if cell is not None else None) or {}
+
+    out, columns = {}, len(plan.shares)
+    for position, rowIndex in enumerate(plan.rows):
+        above = plan.rows[position - 1] if position else None
+        below = plan.rows[position + 1] if position + 1 < len(plan.rows) else None
+        for column in range(1, columns + 1):
+            own = dict(edges(rowIndex, column))
+            if own.get('top') is None and above is not None:
+                own['top'] = edges(above, column).get('bottom')
+            if own.get('bottom') is None and below is not None:
+                own['bottom'] = edges(below, column).get('top')
+            # and the vertical rules the same way, left against right (D130)
+            if own.get('left') is None and column > 1:
+                own['left'] = edges(rowIndex, column - 1).get('right')
+            if own.get('right') is None and column < columns:
+                own['right'] = edges(rowIndex, column + 1).get('left')
+            out[(rowIndex, column)] = {edge: kind for edge, kind in own.items() if kind}
+    # A merged cell is drawn from its first cell, so that cell carries the
+    # merge's far edge: the right edge of the last column it covers.
+    shown = set(plan.rows)
+    merges = [(r1, c1, c2) for r1, c1, _, c2 in plan.doc.merges if r1 in shown]
+    merges += [(r, 1, end) for r, end in plan.spans.items() if r in shown]
+    for r, first, last in merges:
+        far = out[(r, last)].get('right')
+        origin = out[(r, first)]
+        if far:
+            origin['right'] = far
+        else:
+            origin.pop('right', None)
+    return out
+
+
+def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
+              border=None) -> None:
     doc, f, base = plan.doc, plan.font, _base(plan.doc)
     font = spec.font or _DEFAULT_FONT
     face = font.get('name', sheetDoc.SANS)
@@ -555,12 +663,20 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int) -> None:
         run.font.size = Pt(max(size, 1))
         run.font.bold = bool(font.get('bold'))
         run.font.color.rgb = RGBColor.from_string(ink or '000000')
+        if font.get('underline'):
+            run.font.underline = True                  # 'single', as in the Doc
+        if not run.text:
+            # an empty cell is sized by its paragraph mark, which is 18pt
+            # unless told otherwise - and would grow its row past the plan
+            # (the mean return's bar, D127, and every header's corner cell)
+            mark = paragraph._p.get_or_add_endParaRPr()
+            mark.set('sz', str(int(round(max(size, 1) * 100))))
     if spec.fill:
         cell.fill.solid()
         cell.fill.fore_color.rgb = RGBColor.from_string(spec.fill)
     else:
         cell.fill.background()
-    _setCellBorders(cell, spec.border, 1.0)
+    _setCellBorders(cell, spec.border if border is None else border, 1.0)
 
 
 def _renderPlan(slide, plan: TablePlan) -> None:
@@ -580,6 +696,7 @@ def _renderPlan(slide, plan: TablePlan) -> None:
     for index, w in enumerate(widths):
         table.columns[index].width = _pt(w)
     position = {}
+    shared = sharedEdges(plan)
     for tableRow, rowIndex in enumerate(plan.rows):
         position[rowIndex] = tableRow
         table.rows[tableRow].height = _pt(plan.heights[tableRow])
@@ -587,7 +704,8 @@ def _renderPlan(slide, plan: TablePlan) -> None:
         cells = spec.cells if spec is not None else {}
         for column in range(1, len(widths) + 1):
             _fillCell(table.cell(tableRow, column - 1),
-                      cells.get(column, sheetDoc.Cell()), plan, rowIndex, column)
+                      cells.get(column, sheetDoc.Cell()), plan, rowIndex, column,
+                      shared[(rowIndex, column)])
     for row1, col1, row2, col2 in plan.doc.merges:
         if row1 in position and row2 in position:
             table.cell(position[row1], col1 - 1).merge(
@@ -832,10 +950,13 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
 
     The configuration follows the number of portfolios. With no comparison or
     one, allocation and risk share ONE slide - allocation left, risk right,
-    the risk table less the rows that repeat the allocation, both a little
-    in from the slide's edges and set in one size. With two comparisons or
-    more, each has a slide of its own at full width and the risk table is
-    whole. Should the pair ever not fit one slide at MIN_PT, it splits.
+    the risk table less the rows that repeat the allocation and with its
+    first band's title in the header row beside the names (``headedRisk``),
+    both a little in from the slide's edges and set in one size. With two
+    comparisons or more, each has a slide of its own at full width and the
+    risk table is whole. Should the pair ever not fit one slide at MIN_PT, it
+    splits. The allocation's and the risk table's label columns are fitted to
+    their longest labels, so none wraps (D128, D130).
     """
     portDoc = sheetDoc.buildPortfoliosDoc(results)
     riskDoc = sheetDoc.buildRiskDoc(results)
@@ -868,8 +989,9 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     together = None
     if count <= 2:
         leftBox, rightBox = combinedBoxes()
-        left = planTable(portDoc, leftBox, portShares)
-        right = planTable(riskDoc, rightBox, riskShares, rows=riskWithoutRepeats(riskDoc))
+        left = planTable(portDoc, leftBox, portShares, fitLabel=True)
+        headed, headedRows = headedRisk(riskDoc)
+        right = planTable(headed, rightBox, riskShares, rows=headedRows, fitLabel=True)
         if len(left) == 1 and len(right) == 1:
             together = left + right
             shareSlide(together)
@@ -881,10 +1003,11 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
             'notes': [_NOTE_ALLOC, _NOTE_RISK + ' ' + _NOTE_TAIL],
             'tables': together})
     else:
-        tables(planTable(portDoc, FULL_BOX, portShares), 'Strategic Asset Allocation',
+        tables(planTable(portDoc, FULL_BOX, portShares, fitLabel=True),
+               'Strategic Asset Allocation',
                '{} — {}, per asset category with portfolio-level estimates'.format(
                    basisLine, names), [_NOTE_ALLOC, _NOTE_ESTIMATES])
-        tables(planTable(riskDoc, FULL_BOX, riskShares), 'Risk Dashboard',
+        tables(planTable(riskDoc, FULL_BOX, riskShares, fitLabel=True), 'Risk Dashboard',
                'Factor-based risk analytics — stress periods and tail-loss measures, '
                'nominal and real, per portfolio', [_NOTE_RISK, _NOTE_TAIL])
 

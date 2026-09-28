@@ -25,6 +25,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from . import fees
 from . import portfolio_weights as pw
+from .fontMetrics import METRICS as _METRICS
 
 # House palette from the existing report (spec 14.3). The UI navy differs by
 # design - open item 2 keeps each surface on its own until the theme decision.
@@ -33,6 +34,7 @@ HEADER_NAVY = '092532'
 SUBHEAD_NAVY = '092539'           # the bold section labels on the risk sheet
 BAND = 'D3DDEA'
 WHITE = 'FFFFFF'
+BLACK = '000000'
 BREACH_FILL = 'FDE8E8'            # a position below its product's minimum
 BREACH_INK = '9B1C1C'
 PREMIA_LOW = 'C00000'             # assumptions: the low end of a range, red
@@ -49,6 +51,12 @@ THIN = ('thin', None)
 BLACK_THIN = ('thin', '000000')
 #: the heavier rule that brackets the strategic table (D79)
 BLACK_THICK = ('thick', '000000')
+#: the rule that parts the navy metric bars on the allocation table (D127)
+WHITE_THICK = ('thick', WHITE)
+#: the vertical rule between portfolios on the risk table: thin, light silver
+#: (D130)
+SILVER = 'C0C0C0'
+SILVER_THIN = ('thin', SILVER)
 HAIR = ('hair', None)
 
 # The house faces (D125). The builders below write the faces the library's
@@ -60,6 +68,44 @@ SANS_LIGHT = 'GS Sans Light'
 CONDENSED = 'GS Sans Condensed'
 HOUSE_FACES = {'Calibri': SANS, 'Calibri Light': SANS_LIGHT, 'Grotesque': SANS,
                'Arial': SANS, 'Aptos Narrow': CONDENSED}
+
+
+def _metricsKey(face: str, bold: bool) -> str:
+    key = '{}|{}'.format(face, 'b' if bold else 'r')
+    if key in _METRICS:
+        return key
+    # every delivered Doc is in the house faces (houseFaces), so this is a
+    # face nothing measured; GS Sans stands in for its widths
+    return '{}|{}'.format(SANS, 'b' if bold else 'r')
+
+
+def textWidth(text: str, face: str, bold: bool, size: float) -> float:
+    """*text*'s advance width in points, set in *face* at *size*, from the
+    metrics measured off the very font files the deck embeds (D125)."""
+    widths = _METRICS[_metricsKey(face, bold)]['widths']
+    fallback = widths.get('n', 500)
+    return sum(widths.get(ch, fallback) for ch in text) * size / 1000.0
+
+
+def excelLabelWidth(doc, floor: float) -> float:
+    """Column A's width in Excel characters: *floor*, or wider if a label
+    that shares its row with a figure or a head would otherwise be cut off
+    by it (D130). Measured in the label's own face and converted to Excel's
+    unit, the Normal style's digit - Calibri 11, 7px (D125) - less a cell's
+    padding; an Excel indent level is about 9px. A label with nothing beside
+    it may run on into the empty cells, as Excel lets it, and is not counted."""
+    need = 0.0
+    for row in doc.rows.values():
+        label = row.cells.get(1)
+        if label is None or label.value in (None, '') or not label.font:
+            continue
+        if all(cell.value in (None, '') for column, cell in row.cells.items() if column > 1):
+            continue
+        pixels = (textWidth(str(label.value), label.font.get('name', SANS),
+                            bool(label.font.get('bold')), label.font.get('size', 11)) * 96 / 72
+                  + ((label.align or {}).get('indent') or 0) * 9)
+        need = max(need, (pixels + 1) / 7.0)
+    return floor if need <= floor else float(int(need) + 1)
 
 
 def columnLetter(index: int) -> str:
@@ -85,7 +131,7 @@ class Cell:
                  border=None, align=None):
         self.value = value
         self.fmt = fmt              # a number-format string, e.g. '0.0%'
-        self.font = font            # {'name','size','bold','color'} - set keys only
+        self.font = font            # {'name','size','bold','color','underline'} - set keys only
         self.fill = fill            # solid fill, hex
         self.border = border        # {'top': (style, colour), 'bottom': ...}
         self.align = align          # {'horizontal','vertical','indent','wrap'}
@@ -230,35 +276,128 @@ def houseFaces(doc: SheetDoc) -> SheetDoc:
     return doc
 
 
+#: the allocation table's one face and size in a delivered proposal (D127)
+ALLOCATION_FONT = {'name': SANS, 'size': 11}
+#: the line under Estimated Mean Return that says what it assumes (D127)
+RISK_FREE_LINE = 'with 2.5% Risk Free Rate'
+
+
 def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     """The strategic allocation, one column per portfolio.
 
     Note the scale asymmetry, which is the report's own: a CATEGORY row is a
     fraction formatted ``0.0%``, an ASSET row is already x100 and formatted
-    ``0.0``. They print identically and store differently."""
+    ``0.0``. They print identically and store differently.
+
+    A delivered proposal is dressed to the house table spec (D127);
+    *engineParity* keeps the library's own dress, which is what the golden
+    workbook was captured with."""
+    if engineParity:
+        return _libraryPortfoliosDoc(results)
+    doc = SheetDoc('portfolios')
+    columns = len(results)
+    plain = dict(ALLOCATION_FONT, color=BLACK)
+    header = dict(plain, bold=True)
+    heading = dict(ALLOCATION_FONT, bold=True, color=NAVY)
+    metric = dict(ALLOCATION_FONT, color=WHITE)
+
+    def style(row, font, fill=WHITE, fmt=None, rule=None, vertical='center'):
+        """One row of the table: every row is 16pt, a label left in column A
+        and figures right, set in four, beside it."""
+        doc.row(row).height = 16
+        for index in range(1, columns + 2):
+            cell = doc.cell(row, index)
+            cell.font = font
+            cell.fill = fill
+            if rule is not None:
+                cell.border = rule
+            if index == 1:
+                cell.align = {'horizontal': 'left', 'vertical': vertical}
+            else:
+                cell.align = {'horizontal': 'right', 'vertical': vertical, 'indent': 4}
+                if fmt:
+                    cell.fmt = fmt
+
+    # the names, bold and centred over a thick rule; a long name takes the
+    # row's second line rather than being cut off by its neighbour (D125)
+    for index, result in enumerate(results, start=2):
+        doc.cell(1, index).value = result['name']
+    style(1, header, rule={'bottom': BLACK_THICK})
+    doc.row(1).height = 37
+    doc.cell(1, 1).align = {'vertical': 'center'}
+    for index in range(2, columns + 2):
+        doc.cell(1, index).align = {'horizontal': 'center', 'vertical': 'center',
+                                    'wrap': True}
+
+    # each asset class on the blue band, parted from the one above by a thin
+    # rule; the first needs none, sitting on the header's thick one
+    row = 1
+    order, assets = _categoryOrder(results)
+    for position, categoryName in enumerate(order):
+        row += 1
+        doc.sections.add(row)
+        doc.cell(row, 1).value = categoryName
+        for index, r in enumerate(results, start=2):
+            w = _weight(r, categoryName)
+            doc.cell(row, index).value = None if w is None else w / 100.0
+        style(row, heading, BAND, '0.0%',
+              rule={'top': BLACK_THIN} if position else None)
+        for assetName in assets[categoryName]:
+            row += 1
+            doc.cell(row, 1).value = '  ' + assetName
+            for index, r in enumerate(results, start=2):
+                w = _weight(r, categoryName, assetName)
+                doc.cell(row, index).value = None if w is None else w
+            style(row, plain, fmt='0.0')
+
+    # TOTAL closes the table under a thick rule, the one row set to the bottom
+    row += 1
+    doc.cell(row, 1).value = 'TOTAL'
+    for index in range(2, columns + 2):
+        doc.cell(row, index).value = 1.0
+    style(row, heading, fmt='0.0%', rule={'top': BLACK_THICK}, vertical='bottom')
+    doc.cell(row, 1).align = {'vertical': 'bottom'}
+
+    # the metrics as one navy block straight under TOTAL. The mean return's
+    # label runs to a second line that names the risk-free rate its figures
+    # sit on; thick white rules part the three metrics inside the block.
+    for label, field, fmt, rule in (
+            ('Estimated Mean Return', None, '0.0%', None),
+            (RISK_FREE_LINE, 'estimatedReturnPct', '0.0%', None),
+            ('Sharpe Ratio', 'sharpe', '0.00', {'top': WHITE_THICK}),
+            ('Volatility', 'volatilityPct', '0.0%', {'top': WHITE_THICK})):
+        row += 1
+        doc.cell(row, 1).value = label
+        if field:
+            scale = 100.0 if fmt == '0.0%' else 1.0
+            for index, r in enumerate(results, start=2):
+                doc.cell(row, index).value = r['metrics'][field] / scale
+        style(row, metric, NAVY, fmt, rule=rule)
+        if label == RISK_FREE_LINE:
+            doc.cell(row, 1).align['indent'] = 1
+
+    # the spec's 34 holds every name the universe has today; a longer one
+    # widens it rather than being cut off by its figures (D130)
+    doc.widths['A'] = excelLabelWidth(doc, 34)
+    for index in range(2, columns + 2):
+        doc.widths[columnLetter(index)] = 19
+    doc.freeze = 'B2'                                          # enhancement
+    return doc
+
+
+def _libraryPortfoliosDoc(results) -> SheetDoc:
+    """The strategic allocation as the analytics library laid it out: blue
+    bands, dotted rules and hairline spacers between the metric bands, in its
+    own faces. Only the golden comparison asks for it (``engineParity``)."""
     doc = SheetDoc('portfolios')
     light = {'name': 'Calibri Light', 'size': 12.5}
     spacerFont = {'name': 'Arial', 'size': 12.5}
     metricFont = {'name': 'Calibri', 'size': 12.5, 'color': WHITE}
-
-    # How this sheet is dressed in a delivered proposal, against how the
-    # library dressed it (D79). engineParity keeps the library's own styling,
-    # which is what the golden workbook was captured with.
-    headFont = light if engineParity else {'name': 'Calibri Light', 'size': 12.5,
-                                           'bold': True}
-    headRule = {'bottom': DOTTED if engineParity else BLACK_THICK}
-    headingFont = light if engineParity else {'name': 'Calibri Light', 'size': 12.5,
-                                              'bold': True, 'color': HEADING_INK}
-    headingFill = BAND if engineParity else WHITE
-    # each category opens with a thin rule, so the blocks read apart now that
-    # the blue band no longer separates them (D80)
-    headingRule = None if engineParity else {'top': BLACK_THIN}
-    totalRule = {'top': DOTTED if engineParity else BLACK_THICK}
     right = {'horizontal': 'right', 'vertical': 'center', 'indent': 4}
     columns = len(results)
 
     def style(row, font, fill=WHITE, fmt=None, border=None, height=None,
-              labelAlign='left', vertical='center', labelFmt=False):
+              labelAlign='left', vertical='center'):
         if height is not None:
             doc.row(row).height = height
         for index in range(1, columns + 2):
@@ -269,8 +408,6 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
                 cell.border = border
             if index == 1:
                 cell.align = {'horizontal': labelAlign, 'vertical': vertical}
-                if labelFmt and fmt:
-                    cell.fmt = fmt
             else:
                 cell.align = (right if vertical
                               else {'horizontal': 'right', 'indent': 4})
@@ -280,15 +417,11 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     row = 1
     for index, result in enumerate(results, start=2):
         doc.cell(row, index).value = result['name']
-    style(1, headFont, border=headRule, height=37, labelAlign=None)
+    style(1, light, border={'bottom': DOTTED}, height=37, labelAlign=None)
     for index in range(2, columns + 2):
         doc.cell(1, index).align = {'horizontal': 'center', 'vertical': 'center'}
-        if not engineParity:
-            # a long name takes the row's second line rather than being cut
-            # off by its neighbour - the row was always two lines high (D125)
-            doc.cell(1, index).align['wrap'] = True
 
-    order, assets = _categoryOrder(results, engineParity)
+    order, assets = _categoryOrder(results, engineParity=True)
     for categoryName in order:
         row += 1
         doc.sections.add(row)
@@ -296,7 +429,7 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
         for index, r in enumerate(results, start=2):
             w = _weight(r, categoryName)
             doc.cell(row, index).value = None if w is None else w / 100.0
-        style(row, headingFont, headingFill, '0.0%', border=headingRule, height=17)
+        style(row, light, BAND, '0.0%', height=17)
         for assetName in assets[categoryName]:
             row += 1
             doc.cell(row, 1).value = '  ' + assetName
@@ -309,23 +442,15 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     doc.cell(row, 1).value = 'TOTAL'
     for index in range(2, columns + 2):
         doc.cell(row, index).value = 1.0
-    style(row, headingFont, fmt='0.0%', border=totalRule, height=23,
+    style(row, light, fmt='0.0%', border={'top': DOTTED}, height=23,
           labelAlign=None, vertical=None)
-    if not engineParity:
-        # An empty row under the total, so the metric bands below read as a
-        # separate block rather than as a continuation of the table (D79).
-        # Styled but never written to: it carries the sheet's white ground
-        # and nothing else.
-        row += 1
-        style(row, light)
 
     for label, field, fmt in (('Estimated Mean Return', 'estimatedReturnPct', '0.0%'),
                               ('Sharpe Ratio', 'sharpe', '0.00'),
                               ('Volatility', 'volatilityPct', '0.0%')):
-        if not engineParity or label != 'Sharpe Ratio':
-            # A hairline spacer above each block. The report has one above the
-            # return and the volatility but not above the Sharpe ratio; a
-            # delivered proposal parts all three evenly (D79).
+        if label != 'Sharpe Ratio':
+            # a hairline spacer above the return and the volatility bands -
+            # but not above the Sharpe ratio, which is how the report has it
             row += 1
             for index in range(2, columns + 2):
                 doc.cell(row, index).value = 0
@@ -345,7 +470,7 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     for index in range(2, columns + 2):
         doc.widths[columnLetter(index)] = 18
     doc.freeze = 'B2'                                          # enhancement
-    return doc if engineParity else houseFaces(doc)
+    return doc
 
 
 # --------------------------------------------------------------------- #
@@ -359,13 +484,16 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
     down. VaR and CVaR are printed POSITIVE: the payload stores them negated
     because the screen reads them as losses, and the sheet does not."""
     doc = SheetDoc('risk_dashboard')
-    narrow = {'name': 'Aptos Narrow', 'size': 12}
+    # The library set this sheet in Aptos Narrow; a delivered proposal sets it
+    # in the house body face, GS Sans, rather than the condensed one (D128).
+    face = 'Aptos Narrow' if engineParity else SANS
+    narrow = {'name': face, 'size': 12}
     # The category and metric labels take the strategic sheet's heading ink
     # (D80), in this sheet's own face. The LABEL only.
-    headingFont = narrow if engineParity else {'name': 'Aptos Narrow', 'size': 12,
+    headingFont = narrow if engineParity else {'name': face, 'size': 12,
                                                'bold': True, 'color': HEADING_INK}
-    onNavy = {'name': 'Aptos Narrow', 'size': 12, 'color': WHITE}
-    section = {'name': 'Aptos Narrow', 'size': 12, 'bold': True,
+    onNavy = {'name': face, 'size': 12, 'color': WHITE}
+    section = {'name': face, 'size': 12, 'bold': True,
                'color': SUBHEAD_NAVY}
     centre = {'horizontal': 'center'}
     columns = len(results)
@@ -440,9 +568,12 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
             doc.cell(row, 1).font = headingFont
         merge(row)
 
+    bands = set()
+
     def band(title):
         nonlocal row
         row += 1
+        bands.add(row)
         doc.sections.add(row)
         doc.cell(row, 1).value = title
         paint(row, onNavy, HEADER_NAVY, vertical='center')
@@ -457,8 +588,10 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
                 doc.cell(row, 2 + index * 2).value = 'Nominal'
                 doc.cell(row, 3 + index * 2).value = 'Real'
         paint(row, section, border={'top': DOTTED})
+        # the Nominal / Real heads are underlined in a delivered proposal (D129)
+        headFont = narrow if engineParity or not heads else dict(narrow, underline='single')
         for index in range(2, span + 2):
-            doc.cell(row, index).font = narrow
+            doc.cell(row, index).font = headFont
 
     def rows(entries, read, indent='  '):
         nonlocal row
@@ -519,11 +652,39 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
     doc.signRules.append((2, stressStart, span + 1, stressEnd,
                           STRESS_NEG, STRESS_POS))
 
-    doc.widths['A'] = 40
+    if not engineParity:
+        # a thin light-silver rule between one portfolio's pair and the next,
+        # down the whole table but never across a navy row - the header and
+        # the band - and never between a portfolio's own Nominal and Real
+        # (D130). Stated on both cells either side, and on a merged pair's
+        # first cell too, because Excel and PowerPoint both read a merged
+        # cell's edges from there.
+        merged = {(r, c) for r, c, _, _ in doc.merges}
+        for r in sorted(doc.rows):
+            if r == 1 or r in bands:
+                continue
+            for index in range(columns - 1):
+                last, following = 3 + index * 2, 4 + index * 2
+                for column, edge in ((last, 'right'), (following, 'left')):
+                    cell = doc.cell(r, column)
+                    cell.border = dict(cell.border or {}, **{edge: SILVER_THIN})
+                if (r, last - 1) in merged:
+                    cell = doc.cell(r, last - 1)
+                    cell.border = dict(cell.border or {}, right=SILVER_THIN)
+
+    doc.widths['A'] = 40 if engineParity else excelLabelWidth(doc, RISK_LABEL_WIDTH)
     for index in range(2, span + 2):
         doc.widths[columnLetter(index)] = 15
     doc.freeze = 'B2'                                          # enhancement
     return doc if engineParity else houseFaces(doc)
+
+
+#: the risk sheet's label column in a delivered proposal, in Excel characters:
+#: wide enough that 'Predicted Performance Over Stress Periods', bold GS Sans
+#: at 12pt, sits beside its Nominal/Real heads uncut (D128) - about 47 by the
+#: face's own metrics. It is the floor: ``excelLabelWidth`` widens the column
+#: for any longer label that shares a row with figures (D130).
+RISK_LABEL_WIDTH = 48
 
 
 # --------------------------------------------------------------------- #

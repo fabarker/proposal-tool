@@ -2185,64 +2185,95 @@ def test_the_implementation_table_stands_on_white():
     assert 'FFFFFF' in seen
 
 
-def test_the_portfolios_sheet_is_dressed_for_delivery():
-    """D79. The names bold over a thick rule; a category is a heading in
-    #092C61 rather than a row on a blue band; TOTAL is that same heading,
-    closed with the same thick rule."""
+def _ink(cell):
+    """A cell's ink as six hex digits; an unset colour is not a string."""
+    value = getattr(cell.font.color, 'rgb', None)
+    return value[-6:] if isinstance(value, str) else None
+
+
+def _edge(side):
+    """A border edge as (style, colour), (None, '') when it is not drawn."""
+    return (getattr(side, 'style', None),
+            (getattr(getattr(side, 'color', None), 'rgb', None) or '')[-6:])
+
+
+def test_the_portfolios_sheet_is_dressed_to_the_house_table_spec():
+    """D127. The names bold and black over a thick rule; each asset class
+    bold navy on the blue band; each asset regular black on white; TOTAL bold
+    navy on white under a thick rule and set to the bottom; one face at 11pt
+    and every row 16pt bar the 37pt header; columns 34 and 19; frozen at B2."""
     from openpyxl import load_workbook
-    from cyrus_pmg.pmgService.scenario import workbook as wb
+    from cyrus_pmg.pmgService.scenario import sheetDoc
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['portfolios']
     columns = sheet.max_column
+    label = lambda r: sheet.cell(row=r, column=1).value
+    fill = lambda cell: (cell.fill.fgColor.rgb or '')[-6:]
 
     for column in range(1, columns + 1):
         head = sheet.cell(row=1, column=column)
-        assert head.font.bold is True, column
-        assert head.border.bottom.style == 'thick', column
-        assert (head.border.bottom.color.rgb or '')[-6:] == '000000', column
+        assert head.font.bold is True and _ink(head) == '000000', column
+        assert _edge(head.border.bottom) == ('thick', '000000'), column
+    for column in range(2, columns + 1):
+        align = sheet.cell(row=1, column=column).alignment
+        assert (align.horizontal, align.vertical, align.wrap_text) == ('center', 'center', True)
+    assert label(1) is None
 
-    total = next(r for r in range(1, sheet.max_row + 1)
-                 if sheet.cell(row=r, column=1).value == 'TOTAL')
-    headings = [r for r in range(2, total + 1)
-                if sheet.cell(row=r, column=1).value
-                and not str(sheet.cell(row=r, column=1).value).startswith('  ')]
-    assert len(headings) > 1 and total in headings
-    for row in headings:
+    total = next(r for r in range(1, sheet.max_row + 1) if label(r) == 'TOTAL')
+    groups = assets = 0
+    for row in range(2, total):
+        assetRow = str(label(row)).startswith('  ')
+        groups += not assetRow
+        assets += assetRow
         for column in range(1, columns + 1):
             cell = sheet.cell(row=row, column=column)
-            assert cell.font.bold is True, (row, column)
-            assert (cell.font.color.rgb or '')[-6:] == wb._HEADING_INK, (row, column)
-            assert (cell.fill.fgColor.rgb or '')[-6:] == 'FFFFFF', (row, column)
+            if assetRow:
+                assert (cell.font.bold, _ink(cell), fill(cell)) == (False, '000000', 'FFFFFF'), (row, column)
+                assert column == 1 or cell.number_format == '0.0', (row, column)
+            else:
+                assert (cell.font.bold, _ink(cell), fill(cell)) == \
+                    (True, sheetDoc.NAVY, sheetDoc.BAND), (row, column)
+                assert column == 1 or cell.number_format == '0.0%', (row, column)
+            assert cell.alignment.vertical == 'center', (row, column)
+            if column > 1:
+                assert (cell.alignment.horizontal, cell.alignment.indent) == ('right', 4)
+    assert groups > 1 and assets > groups
+
     for column in range(1, columns + 1):
-        top = sheet.cell(row=total, column=column).border.top
-        assert top.style == 'thick' and (top.color.rgb or '')[-6:] == '000000', column
-    # the blue band is nowhere on the sheet any more
-    assert wb._BAND not in {(sheet.cell(row=r, column=c).fill.fgColor.rgb or '')[-6:]
-                            for r in range(1, sheet.max_row + 1)
-                            for c in range(1, columns + 1)}
+        cell = sheet.cell(row=total, column=column)
+        assert (cell.font.bold, _ink(cell), fill(cell)) == (True, sheetDoc.NAVY, 'FFFFFF'), column
+        assert _edge(cell.border.top) == ('thick', '000000'), column
+        assert cell.alignment.vertical == 'bottom', column
+    assert sheet.cell(row=total, column=1).alignment.horizontal is None
+
+    faces = {(sheet.cell(row=r, column=c).font.name, sheet.cell(row=r, column=c).font.sz)
+             for r in range(1, sheet.max_row + 1) for c in range(1, columns + 1)}
+    assert faces == {(sheetDoc.SANS, 11)}, faces
+    assert sheet.row_dimensions[1].height == 37
+    assert {sheet.row_dimensions[r].height for r in range(2, sheet.max_row + 1)} == {16}
+    assert sheet.column_dimensions['A'].width == 34
+    assert {sheet.column_dimensions[chr(64 + c)].width for c in range(2, columns + 1)} == {19}
+    assert sheet.freeze_panes == 'B2'
 
 
-def test_each_category_on_the_portfolios_sheet_opens_with_a_thin_rule():
-    """D80. The blue band no longer parts the blocks, so a thin black rule
-    does: on every category row, across the sheet, and on no asset row."""
+def test_each_asset_class_after_the_first_opens_with_a_thin_rule():
+    """D127. A thin black rule parts one asset class from the next, right
+    across the sheet; the first sits on the header's thick rule and takes
+    none; no asset row carries one."""
     from openpyxl import load_workbook
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['portfolios']
     total = next(r for r in range(1, sheet.max_row + 1)
                  if sheet.cell(row=r, column=1).value == 'TOTAL')
-    categories = assets = 0
+    categories = []
     for row in range(2, total):
-        label = sheet.cell(row=row, column=1).value
-        if not label:
-            continue
-        rules = {(getattr(sheet.cell(row=row, column=c).border.top, 'style', None),
-                  (getattr(sheet.cell(row=row, column=c).border.top.color, 'rgb', None) or '')[-6:])
+        rules = {_edge(sheet.cell(row=row, column=c).border.top)
                  for c in range(1, sheet.max_column + 1)}
-        if str(label).startswith('  '):
-            assets += 1
-            assert rules == {(None, '')}, (label, rules)
+        if str(sheet.cell(row=row, column=1).value).startswith('  '):
+            assert rules == {(None, '')}, (row, rules)
         else:
-            categories += 1
-            assert rules == {('thin', '000000')}, (label, rules)
-    assert categories > 1 and assets > 1
+            categories.append(row)
+            expected = (None, '') if row == 2 else ('thin', '000000')
+            assert rules == {expected}, (row, rules)
+    assert categories[0] == 2 and len(categories) > 1
 
 
 def test_the_risk_dashboard_writes_its_labels_in_the_heading_ink():
@@ -2274,25 +2305,170 @@ def test_the_risk_dashboard_writes_its_labels_in_the_heading_ink():
     assert len(seen) > len(metrics), 'the categories were not reached'
 
 
-def test_the_portfolios_sheet_parts_the_total_from_the_metric_bands():
-    """D79. A full-height empty row under TOTAL, then a hairline spacer above
-    each of the three metric bands - the Sharpe ratio included, where the
-    report had parted only two of them."""
+def test_the_risk_dashboard_is_set_in_gs_sans_with_room_for_its_labels():
+    """D128. The delivered risk sheet is in the house body face, GS Sans, not
+    the condensed one (parity keeps the library's Aptos Narrow), and its
+    label column is wide enough for every label that shares a row with
+    figures or heads - 'Predicted Performance Over Stress Periods', bold,
+    widest of all - measured in the face's own metrics and converted to
+    Excel's characters of Calibri 11's 7px digit, with a cell's padding."""
     from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import sheetDoc
+    from cyrus_pmg.pmgService.scenario.pptWriter import textWidth
+    from openpyxl.cell.cell import MergedCell
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    # the hidden half of a merged Nominal/Real pair keeps no style of its own
+    faces = {cell.font.name for row in sheet.iter_rows() for cell in row
+             if not isinstance(cell, MergedCell)}
+    assert faces == {sheetDoc.SANS}, faces
+    parity = sheetDoc.buildRiskDoc(_goldenCase()[0], engineParity=True)
+    assert {c.font['name'] for row in parity.rows.values() for c in row.cells.values()
+            if c.font} == {'Aptos Narrow'}
+    assert parity.widths['A'] == 40
+
+    width = sheet.column_dimensions['A'].width
+    assert width == sheetDoc.RISK_LABEL_WIDTH
+    room = width * 7 + 5 - 2 * 3                    # pixels, less a cell's padding
+    widest = None
+    for row in range(1, sheet.max_row + 1):
+        label = sheet.cell(row=row, column=1)
+        beside = [sheet.cell(row=row, column=c).value for c in range(2, sheet.max_column + 1)]
+        if not label.value or all(v in (None, '') for v in beside):
+            continue                                 # an empty neighbour lets text run on
+        text = str(label.value)
+        pixels = (textWidth(text, sheetDoc.SANS, bool(label.font.b), label.font.sz) * 96 / 72
+                  + (label.alignment.indent or 0) * 9)
+        assert pixels <= room, (text, pixels, room)
+        if widest is None or pixels > widest[0]:
+            widest = (pixels, text)
+    assert widest[1] == 'Predicted Performance Over Stress Periods', widest
+
+
+def test_the_nominal_and_real_heads_are_underlined_on_the_risk_sheet():
+    """D129. The Nominal / Real heads over the stress block are single
+    underlined; nothing else on the sheet is, and the library's layout
+    (engineParity) keeps them plain for the golden comparison."""
+    from openpyxl import load_workbook
+    from openpyxl.cell.cell import MergedCell
+    from cyrus_pmg.pmgService.scenario import sheetDoc
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    heads = 0
+    for row in sheet.iter_rows():
+        for cell in row:
+            if isinstance(cell, MergedCell) or cell.value in (None, ''):
+                continue
+            if cell.value in ('Nominal', 'Real'):
+                heads += 1
+                assert cell.font.u == 'single', cell.coordinate
+            else:
+                assert cell.font.u is None, (cell.coordinate, cell.value)
+    assert heads == 2 * len(_goldenCase()[0])
+    parity = sheetDoc.buildRiskDoc(_goldenCase()[0], engineParity=True)
+    assert not any(c.font.get('underline') for row in parity.rows.values()
+                   for c in row.cells.values() if c.font)
+
+
+def test_a_silver_rule_parts_the_portfolios_on_the_risk_sheet_below_its_header():
+    """D130. A thin light-silver rule between one portfolio's Nominal/Real
+    pair and the next, on every row but the header and the navy band - never
+    between a portfolio's own Nominal and Real, never across the header. On
+    a merged row the pair's first cell carries it too, as the merge's edge.
+    The library's layout (engineParity) has none."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import sheetDoc
+    sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
+    silver = ('thin', sheetDoc.SILVER)
+    band = next(r for r in range(1, sheet.max_row + 1)
+                if sheet.cell(row=r, column=1).value == 'Factor Based Risk Analytics')
+    merged = {(m.min_row, m.min_col) for m in sheet.merged_cells.ranges}
+    for row in range(1, sheet.max_row + 1):
+        right = lambda c: _edge(sheet.cell(row=row, column=c).border.right)
+        left = lambda c: _edge(sheet.cell(row=row, column=c).border.left)
+        if row in (1, band):
+            assert all(right(c) == (None, '') and left(c) == (None, '')
+                       for c in range(1, sheet.max_column + 1)), row
+            continue
+        assert right(3) == silver and left(4) == silver, row
+        if (row, 2) not in merged:
+            assert right(2) == (None, '') and left(3) == (None, ''), 'inside a pair: {}'.format(row)
+        assert right(1) == (None, '') and right(5) == (None, ''), 'between portfolios only'
+    parity = sheetDoc.buildRiskDoc(_goldenCase()[0], engineParity=True)
+    assert not any(set(c.border or {}) & {'left', 'right'}
+                   for row in parity.rows.values() for c in row.cells.values())
+
+
+def test_column_a_is_sized_to_the_longest_label_beside_a_figure():
+    """D130. Column A is the spec's width - 34 on the allocation, 48 on the
+    risk sheet - unless a label that shares its row with figures needs more,
+    measured in its own face: then it widens rather than cut the label off.
+    Every name the universe holds fits the allocation's 34 today; a longer one
+    widens the column, and the risk sheet likewise."""
+    import copy
+    from cyrus_pmg.pmgService.scenario import portfolio_weights as pw, sheetDoc
+    results = _goldenCase()[0]
+    assert sheetDoc.buildPortfoliosDoc(results).widths['A'] == 34
+    assert sheetDoc.buildRiskDoc(results).widths['A'] == sheetDoc.RISK_LABEL_WIDTH
+
+    def fits(text, bold, size, chars):
+        pixels = sheetDoc.textWidth(text, sheetDoc.SANS, bold, size) * 96 / 72
+        return pixels <= chars * 7 + 5 - 2 * 3
+    for _, name, category in pw.ASSET_METADATA:
+        assert fits(category, True, 11, 34) and fits('  ' + name, False, 11, 34), name
+
+    long = copy.deepcopy(results)
+    long[0]['categories'][0]['assets'][0]['reportingName'] = (
+        'US Dollar Investment Grade Corporate and Sovereign Debt, Hedged')
+    wide = sheetDoc.buildPortfoliosDoc(long).widths['A']
+    assert wide > 34 and fits('  ' + long[0]['categories'][0]['assets'][0]['reportingName'],
+                              False, 11, wide)
+    long[0]['stress'][0]['period'] = 'The Great Financial Crisis and the Sovereign Debt Crisis'
+    wide = sheetDoc.buildRiskDoc(long).widths['A']
+    assert wide > sheetDoc.RISK_LABEL_WIDTH
+    indented = (sheetDoc.textWidth('  ' + long[0]['stress'][0]['period'], sheetDoc.SANS, False, 12)
+                * 96 / 72 + 9)                                  # one indent level
+    assert indented <= wide * 7 + 5 - 2 * 3
+
+
+def test_the_portfolios_sheet_closes_on_one_navy_block_of_metrics():
+    """D127. Straight under TOTAL, no gap and no hairline: Estimated Mean
+    Return on its own line, then the line naming the risk-free rate, set in
+    one step, with the return's figures; then the Sharpe ratio and the
+    volatility, each under a thick white rule. White on navy throughout."""
+    from openpyxl import load_workbook
+    from cyrus_pmg.pmgService.scenario import sheetDoc
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['portfolios']
-    label = lambda r: sheet.cell(row=r, column=1).value
-    total = next(r for r in range(1, sheet.max_row + 1) if label(r) == 'TOTAL')
+    results = _goldenCase()[0]
+    columns = sheet.max_column
+    total = next(r for r in range(1, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'TOTAL')
 
-    blank = total + 1
-    assert all(sheet.cell(row=blank, column=c).value is None
-               for c in range(1, sheet.max_column + 1)), 'the row under TOTAL is empty'
-    assert (sheet.cell(row=blank, column=1).fill.fgColor.rgb or '')[-6:] == 'FFFFFF'
-    assert sheet.row_dimensions[blank].height != 3, 'this one is a gap, not a hairline'
+    block = [sheet.cell(row=r, column=1).value for r in range(total + 1, sheet.max_row + 1)]
+    assert block == ['Estimated Mean Return', sheetDoc.RISK_FREE_LINE,
+                     'Sharpe Ratio', 'Volatility']
+    assert sheetDoc.RISK_FREE_LINE == 'with 2.5% Risk Free Rate'
+    ret, line, sharpe, vol = range(total + 1, total + 5)
+    for row in (ret, line, sharpe, vol):
+        for column in range(1, columns + 1):
+            cell = sheet.cell(row=row, column=column)
+            assert (cell.font.bold, _ink(cell), (cell.fill.fgColor.rgb or '')[-6:]) == \
+                (False, sheetDoc.WHITE, sheetDoc.NAVY), (row, column)
+            expected = ('thick', 'FFFFFF') if row in (sharpe, vol) else (None, '')
+            assert _edge(cell.border.top) == expected, (row, column)
+    assert all(sheet.cell(row=ret, column=c).value is None for c in range(2, columns + 1))
+    assert sheet.cell(row=line, column=1).alignment.indent == 1
+    assert sheet.cell(row=ret, column=1).alignment.indent == 0
 
-    for metric in ('Estimated Mean Return', 'Sharpe Ratio', 'Volatility'):
-        row = next(r for r in range(1, sheet.max_row + 1) if label(r) == metric)
-        assert label(row - 1) is None, metric
-        assert sheet.row_dimensions[row - 1].height == 3, metric
+    for column, result in enumerate(results, start=2):
+        metrics = result['metrics']
+        # the file keeps 15 significant digits, so the round trip is close, not equal
+        assert sheet.cell(row=line, column=column).value == \
+            pytest.approx(metrics['estimatedReturnPct'] / 100.0, rel=1e-12)
+        assert sheet.cell(row=sharpe, column=column).value == \
+            pytest.approx(metrics['sharpe'], rel=1e-12)
+        assert sheet.cell(row=vol, column=column).value == \
+            pytest.approx(metrics['volatilityPct'] / 100.0, rel=1e-12)
+        formats = [sheet.cell(row=r, column=column).number_format for r in (ret, line, sharpe, vol)]
+        assert formats == ['0.0%', '0.0%', '0.00', '0.0%']
 
 
 def test_a_category_band_names_the_category_and_nothing_else():
@@ -2384,7 +2560,8 @@ def test_the_assumptions_sheet_explains_only_what_the_proposal_holds():
     book = load_workbook(io.BytesIO(_builtWorkbook()))
     assumptions, portfolios = book['assumptions'], book['portfolios']
 
-    metrics = {'TOTAL', 'Estimated Mean Return', 'Sharpe Ratio', 'Volatility'}
+    metrics = {'TOTAL', 'Estimated Mean Return', 'with 2.5% Risk Free Rate',
+               'Sharpe Ratio', 'Volatility'}
     strategic = [str(portfolios.cell(row=r, column=1).value).strip()
                  for r in range(2, portfolios.max_row + 1)
                  if portfolios.cell(row=r, column=1).value

@@ -138,7 +138,7 @@ def test_one_or_two_portfolios_share_one_slide_without_the_repeated_rows():
     assert first['heading'] == 'Strategic Asset Allocation & Risk'
     alloc, risk = first['tables']
     assert (alloc.doc.name, risk.doc.name) == ('portfolios', 'risk_dashboard')
-    assert risk.rows == pptWriter.riskWithoutRepeats(risk.doc)
+    assert risk.rows == pptWriter.headedRisk(sheetDoc.buildRiskDoc(_goldenCase()[0]))[1]
     labels = {str(risk.doc.rows[r].cells[1].value).strip()
               for r in risk.rows if 1 in risk.doc.rows[r].cells}
     for repeated in ('Public Equity', 'Estimated Mean Return', 'Sharpe Ratio', 'Volatility'):
@@ -191,6 +191,247 @@ def test_every_planned_table_fits_its_box_at_a_readable_size():
                     assert sum(tp.heights) <= tp.box[3] + 1e-6, (tp.doc.name, sum(tp.heights))
                     heights, fits = pptWriter._measure(tp, tp.font)
                     assert fits, (tp.doc.name, tp.font)
+
+
+def _edge(tc, tag):
+    """One edge of a table cell as written: ('none',) or (width, colour)."""
+    line = tc.get_or_add_tcPr().find(qn(tag))
+    if line is None or line.find(qn('a:noFill')) is not None:
+        return ('none',)
+    return (line.get('w'), line.find('.//' + qn('a:srgbClr')).get('val'))
+
+
+@pytest.mark.parametrize('lineup', ['two', 'four'])
+def test_every_rule_is_stated_on_both_cells_that_share_it(lineup):
+    """D127. A rule written on one cell and contradicted by an explicit
+    no-line on its neighbour is a rule PowerPoint does not draw. So every
+    horizontal edge in every table reads the same from above and below, and
+    the allocation table's rules - the header's, each class's, TOTAL's and
+    the white ones in the metric block - are there from both sides."""
+    golden = _goldenCase()[0]
+    prs = Presentation(io.BytesIO(_deck(results=golden if lineup == 'two' else _four(golden))))
+    ruled = 0
+    for slide in prs.slides:
+        for table in _tables(slide):
+            rows = list(table.rows)
+            for upper, lower in zip(rows, rows[1:]):
+                for above, below in zip(upper.cells, lower.cells):
+                    bottom, top = _edge(above._tc, 'a:lnB'), _edge(below._tc, 'a:lnT')
+                    assert bottom == top, (above.text, below.text, bottom, top)
+                    ruled += bottom != ('none',)
+            # and left against right (D130): a merged cell's edge is its origin's
+            for row in rows:
+                cells, origin = list(row.cells), None
+                for left, right in zip(cells, cells[1:]):
+                    origin = origin if left.is_spanned else left
+                    if right.is_spanned:
+                        continue                         # inside one merged cell
+                    assert _edge(origin._tc, 'a:lnR') == _edge(right._tc, 'a:lnL'), \
+                        (origin.text, right.text)
+    assert ruled > 0
+
+    alloc = next(t for s in prs.slides for t in _tables(s)
+                 if any(r.cells[0].text == 'TOTAL' for r in t.rows))
+    labels = [r.cells[0].text for r in alloc.rows]
+    thick, thin = str(int(round(2.25 * 12700))), str(int(round(1.0 * 12700)))
+    expected = {labels.index('Other Fixed Income'): (thin, '000000'),
+                labels.index('TOTAL'): (thick, '000000'),
+                labels.index('Sharpe Ratio'): (thick, 'FFFFFF'),
+                labels.index('Volatility'): (thick, 'FFFFFF')}
+    for index, edge in expected.items():
+        for column in range(len(alloc.columns)):
+            assert _edge(alloc.cell(index - 1, column)._tc, 'a:lnB') == edge, labels[index]
+    for column in range(len(alloc.columns)):
+        assert _edge(alloc.cell(1, column)._tc, 'a:lnT') == (thick, '000000'), 'under the names'
+
+
+def test_the_combined_risk_table_names_its_band_in_the_header_row():
+    """D128. On the combined slide the risk table opens on ONE navy row: the
+    first band's title in the corner, the portfolio names beside it; the
+    band's own row is gone, and the dotted rule that opened the stress block
+    now runs under that header from both sides. The full-width slide, with
+    four portfolios, keeps the band as its own row. The Doc is not touched."""
+    golden = _goldenCase()[0]
+    riskDoc = sheetDoc.buildRiskDoc(golden)
+    band = min(riskDoc.sections)
+    assert riskDoc.rows[band].cells[1].value == 'Factor Based Risk Analytics'
+    view, rows = pptWriter.headedRisk(riskDoc)
+    assert riskDoc.rows[1].cells[1].value is None, 'the sheet itself keeps its empty corner'
+    assert band not in rows and rows[0] == 1
+    corner = view.rows[1].cells[1]
+    assert corner.value == 'Factor Based Risk Analytics'
+    assert corner.fill == riskDoc.rows[1].cells[2].fill == sheetDoc.HEADER_NAVY
+    assert [view.rows[1].cells[c].value for c in (2, 4)] == [r['name'] for r in golden]
+
+    prs = Presentation(io.BytesIO(_deck(cover=False)))
+    risk = [t for t in _tables(prs.slides[0]) if any('Oil Embargo' in c.text
+                                                    for row in t.rows for c in row.cells)][0]
+    first = [c.text for c in risk.rows[0].cells]
+    assert first[0] == 'Factor Based Risk Analytics' and golden[0]['name'] in first
+    assert 'Factor Based Risk Analytics' not in [row.cells[0].text for row in list(risk.rows)[1:]]
+    dotted = (str(int(round(0.75 * 12700))), 'A9A9A9')
+    for column in range(len(risk.columns)):
+        assert _edge(risk.cell(0, column)._tc, 'a:lnB') == dotted, column
+        assert _edge(risk.cell(1, column)._tc, 'a:lnT') == dotted, column
+
+    four = Presentation(io.BytesIO(_deck(cover=False, results=_four(golden))))
+    whole = next(t for s in four.slides for t in _tables(s)
+                 if any('Oil Embargo' in c.text for row in t.rows for c in row.cells))
+    labels = [row.cells[0].text for row in whole.rows]
+    assert labels[0] == '' and 'Factor Based Risk Analytics' in labels[1:]
+
+
+@pytest.mark.parametrize('lineup', ['two', 'four'])
+def test_the_nominal_and_real_heads_are_underlined(lineup):
+    """D129. Every Nominal and Real head in the deck's risk tables - the
+    combined slide's and the full-width one's - is a single-underlined run;
+    the stress block's label beside them and the figures under them are not."""
+    golden = _goldenCase()[0]
+    prs = Presentation(io.BytesIO(_deck(results=golden if lineup == 'two' else _four(golden))))
+    heads = other = 0
+    for slide in prs.slides:
+        for table in _tables(slide):
+            for row in table.rows:
+                for cell in row.cells:
+                    for run in (r for p in cell.text_frame.paragraphs for r in p.runs):
+                        if not run.text:
+                            continue
+                        if run.text in ('Nominal', 'Real'):
+                            heads += 1
+                            assert run.font.underline is True, run.text
+                        else:
+                            other += 1
+                            assert not run.font.underline, run.text
+    assert heads == 2 * (len(golden) if lineup == 'two' else 2 * len(golden)) and other
+
+
+def _noLabelWraps(tp):
+    """Every unspanned column-A label of *tp* on one line at its size."""
+    widths = tp.widths()
+    assert widths[0] >= pptWriter._labelWidth(tp, tp.font) - 1e-6
+    assert abs(sum(widths) - tp.box[2]) < 1e-6
+    for r in tp.rows:
+        spec = tp.doc.rows[r].cells.get(1)
+        if r in tp.spans or spec is None or not spec.value:
+            continue
+        text = str(spec.value)
+        size = tp.font * spec.font['size'] / pptWriter._base(tp.doc)
+        inner = (widths[0] - 2 * pptWriter._PAD_H_EM * tp.font
+                 - pptWriter._indentPt(spec, text, tp.font, 1)) * pptWriter._WIDTH_SLACK
+        assert pptWriter._wrapLines(text.strip(), spec.font['name'], bool(spec.font.get('bold')),
+                                    size, inner) == 1, text
+
+
+@pytest.mark.parametrize('lineup', ['two', 'four'])
+def test_no_allocation_label_wraps(lineup):
+    """D130. The allocation's label column is fitted like the risk table's:
+    the longest category or asset name never takes a second line, on the
+    combined slide or the full-width one. And when a share is too narrow for
+    its names, the column widens to them rather than wrapping one."""
+    golden = _goldenCase()[0]
+    plans = [tp for entry in _plan(golden if lineup == 'two' else _four(golden))
+             for tp in entry.get('tables', []) if tp.doc.name == 'portfolios']
+    assert plans and all(tp.fitLabel for tp in plans)
+    for tp in plans:
+        _noLabelWraps(tp)
+        assert pptWriter._measure(tp, tp.font)[1], 'the figures still fit'
+
+    doc = sheetDoc.buildPortfoliosDoc(golden)
+    narrow = pptWriter.planTable(doc, pptWriter.FULL_BOX, pptWriter._shares(12.0, 3),
+                                 fitLabel=True)[0]
+    assert narrow.widths()[0] > pptWriter.FULL_BOX[2] * 0.12 + 1, 'the column widened'
+    _noLabelWraps(narrow)
+
+
+@pytest.mark.parametrize('lineup', ['two', 'four'])
+def test_no_risk_label_wraps(lineup):
+    """D128. The risk table's label column is fitted to its longest label at
+    the size the table is set in - 'Predicted Performance Over Stress
+    Periods' above all - so no label beside figures takes a second line, on
+    the combined slide or the full-width one; the figures share the rest and
+    still fit on one line each."""
+    golden = _goldenCase()[0]
+    plans = [tp for entry in _plan(golden if lineup == 'two' else _four(golden))
+             for tp in entry.get('tables', []) if tp.doc.name == 'risk_dashboard']
+    assert plans
+    for tp in plans:
+        widths = tp.widths()
+        assert widths[0] >= pptWriter._labelWidth(tp, tp.font) - 1e-6
+        assert abs(sum(widths) - tp.box[2]) < 1e-6
+        _, fits = pptWriter._measure(tp, tp.font)
+        assert fits, 'the figures still fit their narrower columns'
+        seen = False
+        for r in tp.rows:
+            spec = tp.doc.rows[r].cells.get(1)
+            if r in tp.spans or spec is None or not spec.value:
+                continue
+            text = str(spec.value)
+            size = tp.font * spec.font['size'] / pptWriter._base(tp.doc)
+            inner = (widths[0] - 2 * pptWriter._PAD_H_EM * tp.font
+                     - pptWriter._indentPt(spec, text, tp.font, 1)) * pptWriter._WIDTH_SLACK
+            assert pptWriter._wrapLines(text.strip(), spec.font['name'], bool(spec.font.get('bold')),
+                                        size, inner) == 1, text
+            seen = seen or text == 'Predicted Performance Over Stress Periods'
+        assert seen
+
+
+@pytest.mark.parametrize('lineup', ['two', 'four'])
+def test_a_silver_rule_parts_the_portfolios_on_the_risk_slides(lineup):
+    """D130. On every risk table in the deck, a thin light-silver rule runs
+    between one portfolio's pair and the next from under the header to the
+    last row - stated on both cells, carried by a merged cell's origin, and
+    unbroken by the block headings, which now span only to the first rule.
+    Never across the header or the navy band, never inside a pair."""
+    golden = _goldenCase()[0]
+    count = len(golden) if lineup == 'two' else 2 * len(golden)
+    prs = Presentation(io.BytesIO(_deck(results=golden if lineup == 'two' else _four(golden))))
+    silver = (str(int(round(1.0 * 12700))), sheetDoc.SILVER)
+    tables = [t for s in prs.slides for t in _tables(s)
+              if any('Oil Embargo' in c.text for row in t.rows for c in row.cells)]
+    assert tables
+    for table in tables:
+        for index, row in enumerate(table.rows):
+            cells = list(row.cells)
+            navy = index == 0 or cells[0].text == 'Factor Based Risk Analytics'
+            edges = [_edge(c._tc, 'a:lnR') for c in cells] + [_edge(c._tc, 'a:lnL') for c in cells]
+            if navy:
+                assert silver not in edges, cells[0].text
+                continue
+            for k in range(count - 1):
+                last, following = 2 + 2 * k, 3 + 2 * k        # 0-based: a pair's Real, the next Nominal
+                origin = last
+                while cells[origin].is_spanned:
+                    origin -= 1
+                assert _edge(cells[origin]._tc, 'a:lnR') == silver, (cells[0].text, k)
+                assert _edge(cells[following]._tc, 'a:lnL') == silver, (cells[0].text, k)
+            if not cells[2].is_spanned and not cells[1].is_merge_origin:
+                assert _edge(cells[1]._tc, 'a:lnR') != silver, 'inside a pair: ' + cells[0].text
+        headings = [row for row in table.rows if row.cells[0].text.startswith('Value at Risk')]
+        assert headings and headings[0].cells[0].is_merge_origin
+        assert not headings[0].cells[3].is_spanned, 'the heading stops at the first rule'
+
+
+def test_the_risk_free_line_steps_in_like_an_asset_line():
+    """D127. The allocation's risk-free line is set in by an indent level
+    alone, with no leading spaces; the deck steps it in exactly as far as an
+    asset line. The risk table's labels, which carry both, still step in
+    once, and a label with neither not at all."""
+    results = _goldenCase()[0]
+    doc = sheetDoc.buildPortfoliosDoc(results)
+    labels = {row.cells[1].value: row.cells[1] for row in doc.rows.values()
+              if 1 in row.cells and row.cells[1].value}
+    step = pptWriter._indentPt(labels['  US Dollar Debt'], '  US Dollar Debt', 10.0, 1)
+    assert step > 0
+    line = sheetDoc.RISK_FREE_LINE
+    assert not line.startswith(' ') and labels[line].align['indent'] == 1
+    assert pptWriter._indentPt(labels[line], line, 10.0, 1) == step
+    assert pptWriter._indentPt(labels['Estimated Mean Return'],
+                               'Estimated Mean Return', 10.0, 1) == 0
+    risk = sheetDoc.buildRiskDoc(results)
+    stress = [row.cells[1] for row in risk.rows.values()
+              if 1 in row.cells and str(row.cells[1].value or '').startswith('  ')]
+    assert stress and all(cell.align.get('indent') == 1 for cell in stress)
+    assert all(pptWriter._indentPt(cell, cell.value, 10.0, 1) == step for cell in stress)
 
 
 def test_a_table_too_tall_for_one_slide_continues_with_its_header():
