@@ -561,6 +561,59 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 .tbl.impl.fees-out th.fee-col,.tbl.impl.fees-out td.fee-col{
   animation:feecolout 360ms ease-in both}
 .tbl.impl.fees-out .fcw{animation:feespanout 360ms cubic-bezier(.4,0,.2,1) both}
+/* ── the initial allocation's twins (D136) ──
+   For a book that holds private markets the three twins - Initial (%),
+   Initial notional, Initial fee, each beside its long-term column - are always
+   in the table, collapsed to nothing. A column measures its widest cell, so the
+   side padding and a span's max-width are transitioned together, as the fee
+   columns' are (D52), but on a class rather than a render: the motion plays
+   both ways. Teal marks the initial world against the navy long-term one. */
+.ini-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 12px}
+.ini-btn{display:inline-flex;align-items:center;gap:8px;font:inherit;font-size:13px;font-weight:600;
+  color:#0F243E;background:#fff;border:1.5px solid #0F243E;border-radius:6px;padding:7px 13px;cursor:pointer;
+  transition:background-color 360ms ease,color 360ms ease,border-color 360ms ease}
+.ini-btn:hover{background:#EEF2F7}
+.ini-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ini-btn svg{width:16px;height:16px;flex:none}
+.ini-btn[aria-pressed="true"]{background:#0B5345;border-color:#0B5345;color:#fff}
+.ini-note{font-size:12.5px;color:var(--ink-2,#4A5A6B)}
+.ini-note i{display:inline-block;width:9px;height:9px;border-radius:2px;background:#0B5345;
+  margin-right:6px;vertical-align:-1px}
+.ini-note b{color:#0B5345}
+.ini-fee{display:inline-block;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;vertical-align:bottom;
+  transition:max-width 360ms ease,opacity 360ms ease}
+.ini-bar.ini-on .ini-fee{max-width:460px;opacity:1}
+.tbl.impl .ini{transition:padding 360ms cubic-bezier(.4,0,.2,1),background-color 360ms ease,
+  box-shadow 360ms ease}
+.tbl.impl.has-ini:not(.ini-on) .ini{padding-left:0;padding-right:0}
+.tbl.impl .iw{display:inline-block;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;
+  vertical-align:middle;transition:max-width 360ms cubic-bezier(.4,0,.2,1),opacity 360ms ease}
+.tbl.impl.ini-on .iw{max-width:220px;opacity:1}
+.tbl.impl.ini-on .ini{box-shadow:inset 2px 0 0 #7FB8A6}
+.tbl.impl.ini-on thead tr:not(.grp) th.ini{background:#DDEFE8;color:#0B5345}
+.tbl.impl.ini-on tbody td.ini{background:#EAF5F1}
+.tbl.impl.ini-on tbody tr.cat td.ini{background:#D5ECE4;color:#0B5345}
+.tbl.impl.ini-on tbody tr.grand td.ini{background:#0B4A3F;color:#fff}
+.tbl.impl td.ini .mv{font-weight:700;color:#0B5345}
+.tbl.impl td.ini .zero{color:#8B98A6}
+.tbl.impl td.ini small.called,.tbl.impl td.ini small.up{display:block;font-family:var(--f-num);
+  font-size:10.5px;font-weight:500;line-height:1.2}
+.tbl.impl td.ini small.called{color:#6A4290}
+.tbl.impl td.ini small.up{color:#0B5345}
+/* the row above the header that names each figure's world; it does not stick,
+   so the sticky header never lands on top of it */
+.tbl.impl thead tr.grp th{position:static;background:var(--surface,#fff);border:0;
+  padding-top:0;padding-bottom:0;transition:padding 360ms ease}
+.tbl.impl tr.grp .gh{width:0;min-width:100%;max-height:0;opacity:0;overflow:hidden;white-space:nowrap;
+  text-overflow:ellipsis;text-align:right;font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;transition:max-height 360ms ease,opacity 360ms ease}
+.tbl.impl.ini-on thead tr.grp th{padding-top:7px;padding-bottom:4px}
+.tbl.impl.ini-on tr.grp .gh{max-height:40px;opacity:1}
+.tbl.impl tr.grp th.lt .gh{color:#0F243E;border-bottom:2px solid #0F243E;padding-bottom:3px}
+.tbl.impl tr.grp th.ini .gh{color:#0B5345;border-bottom:2px solid #0B5345;padding-bottom:3px}
+@media (prefers-reduced-motion:reduce){
+  .tbl.impl .ini,.tbl.impl .iw,.tbl.impl thead tr.grp th,.tbl.impl tr.grp .gh,.ini-fee,.ini-btn{transition:none}
+}
 /* Remove control inside the sleeve pill. Sized to stay inside an 11px pill
    without stretching it, and given a real hit area by the negative margin
    rather than by growing the pill. */

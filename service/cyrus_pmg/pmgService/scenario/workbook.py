@@ -89,16 +89,18 @@ _CHART_SHEET = 'chartData'
 
 # The columns of spec 9.3, less the two that left the sheet on request while
 # staying on the screen: Ticker and Minimum Investment (D78, and see D74 on
-# the screen and the sheet keeping their own header lists).
+# the screen and the sheet keeping their own header lists). Notional follows
+# the products and Exposure ccy has left the table - its doughnut stays, drawn
+# from the model rather than from a column (D134).
 IMPL_COLUMNS = [
-    'Categories & Asset Classes', 'Products', 'Allocation (%)',
-    'Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity', 'Exposure ccy',
-    'Product Cost', 'Mgmt fee', 'Wtd fee (bp)', 'Notional',
+    'Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)',
+    'Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity',
+    'Product Cost', 'Mgmt fee', 'Wtd fee (bp)',
 ]
 #: The columns whose values are words rather than figures, left-aligned in the
 #: body. Named rather than sliced by position, so a column leaving the list
 #: cannot silently re-align its neighbours.
-_TEXT_COLUMNS = ('Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity', 'Exposure ccy')
+_TEXT_COLUMNS = ('Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity')
 # The two the sheet loses when the proposal excludes fees (D52). A proposal
 # that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
@@ -109,16 +111,33 @@ FEE_COLUMNS = ('Mgmt fee', 'Wtd fee (bp)')
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
     'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Source': 10, 'Liquidity': 11,
-    'Exposure ccy': 12, 'Product Cost': 12, 'Mgmt fee': 10,
+    'Product Cost': 12, 'Mgmt fee': 10,
     'Wtd fee (bp)': 12, 'Notional': 14,
+    # the initial allocation's twins (D136)
+    'Initial Notional': 14, 'Initial (%)': 11, 'Initial Wtd fee (bp)': 12,
 }
 
 
-def implColumns(includeFees: bool = True) -> list:
-    """The sheet's columns, in order, for a priced or an unpriced proposal."""
-    if includeFees:
-        return list(IMPL_COLUMNS)
-    return [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS]
+#: The initial allocation's columns (D136), each the twin of a long-term one
+#: and placed straight after it. A book that holds private markets carries
+#: them in the workbook and on the deck whatever the page was showing.
+INITIAL_TWINS = sheetDoc.INITIAL_TWIN_OF
+
+
+def implColumns(includeFees: bool = True, initial: bool = False) -> list:
+    """The sheet's columns, in order, for a priced or an unpriced proposal -
+    with the initial allocation's twins when *initial* (D136). Unpriced, the
+    fee columns go and so does the initial fee's twin."""
+    columns = (list(IMPL_COLUMNS) if includeFees
+               else [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS])
+    if not initial:
+        return columns
+    out = []
+    for name in columns:
+        out.append(name)
+        if name in INITIAL_TWINS:
+            out.append(INITIAL_TWINS[name])
+    return out
 
 
 def buildImplementationRows(baseResult: dict, sleevesMap: dict,
@@ -250,9 +269,39 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                 item['wtdFeeBp'] = None
             # A position smaller than the product will accept is not a
             # position (item 3). Flagged per line here; the export refuses
-            # while any survives, so the block cannot be walked past.
+            # while any survives, so the block cannot be walked past. A line
+            # the long-term book does not hold at all is not a position either
+            # - it is kept only for its initial figures (D136).
             minimum = item.get('minimumInvestment')
-            item['belowMinimum'] = bool(minimum) and item['notional'] < float(minimum)
+            item['belowMinimum'] = (bool(minimum) and weight > 0
+                                    and item['notional'] < float(minimum))
+
+    # The initial allocation (D136): the private line's weight parked one
+    # third in IGFI and two thirds in Public Equity, spread by each sleeve's
+    # product shares, rounded as its own column so it too closes on 100.00,
+    # priced at the very rates the long-term line carries. None for a book
+    # that holds no private markets.
+    initialModel = None
+    parked = rules.initialLines([{'name': group['category'], 'weightPct': group['weightPct']}
+                                 for group in groups])
+    if parked is not None and lineItems:
+        byName = {line['name']: line['weightPct'] for line in parked}
+        for group in groups:
+            group['initialWeightPct'] = byName.get(group['category'], 0.0)
+            for item in group['items']:
+                item['initialExactPct'] = group['initialWeightPct'] * float(item['weight'])
+        exact = [i['initialExactPct'] for i in lineItems]
+        printed = (roundWeightsLargestRemainder(exact) if complete
+                   else [round(w, 2) for w in exact])
+        for item, weight in zip(lineItems, printed):
+            item['initialPct'] = weight
+            item['initialNotional'] = round(mandateSize * weight / 100.0 / 100.0) * 100.0
+            item['initialWtdFeeBp'] = (
+                None if item.get('managementFee') is None
+                else (float(item['productCost']) + item['managementFee']) * weight)
+            minimum = item.get('minimumInvestment')
+            item['initialBelowMinimum'] = (bool(minimum) and weight > 0
+                                           and item['initialNotional'] < float(minimum))
 
     # the rows the custom level has not priced, named so the export can say
     # which - one unpriced product makes the total unpriced, never smaller
@@ -274,8 +323,51 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     # allocation is the thing the page is asking a PWA to fix.
     for group in groups:
         group['items'] = [item for item in group['items']
-                          if item.get('printedPct', 0.0) != 0]
-    groups = [group for group in groups if group['weightPct'] != 0]
+                          if item.get('printedPct', 0.0) != 0
+                          or item.get('initialPct', 0.0) != 0]
+    # a category the tilt emptied keeps its row while the initial allocation
+    # holds it (D136)
+    groups = [group for group in groups
+              if group['weightPct'] != 0 or group.get('initialWeightPct', 0.0) != 0]
+
+    if parked is not None and lineItems:
+        def held(name, field, initialField):
+            group = next((g for g in groups if g['category'] == name), None)
+            if group is None:
+                return 0.0, 0.0
+            return (sum(i.get(initialField, 0.0) for i in group['items'])
+                    - sum(i.get(field, 0.0) for i in group['items']),
+                    sum(i.get('initialNotional', 0.0) for i in group['items'])
+                    - sum(i.get('notional', 0.0) for i in group['items']))
+        private = next((g for g in groups if g['category'] == rules.PRIVATE_FUNDED_FROM), None)
+        initialItems = [i for g in groups for i in g['items']]
+        initialModel = {
+            'total': {
+                'weightPct': sum(i.get('initialPct', 0.0) for i in lineItems),
+                'notional': sum(i.get('initialNotional', 0.0) for i in lineItems),
+                'wtdFeeBp': (sum(i.get('initialWtdFeeBp') or 0.0 for i in lineItems)
+                             if priced and not unpricedGroups else None),
+            },
+            # what is committed and where it waits: the long-term private
+            # line, and the uplift each destination carries
+            # a private line with no sleeve yet commits its own weight, as its
+            # band shows it
+            'commitment': {
+                'weightPct': (sum(i['printedPct'] for i in private['items']) if private and private['items']
+                              else private['weightPct'] if private else 0.0),
+                'notional': (sum(i['notional'] for i in private['items']) if private and private['items']
+                             else round(mandateSize * private['weightPct'] / 100.0 / 100.0) * 100.0
+                             if private else 0.0),
+                'held': [{'category': name, 'share': share,
+                          'weightPct': held(name, 'printedPct', 'initialPct')[0],
+                          'notional': held(name, 'printedPct', 'initialPct')[1]}
+                         for name, share in rules.PRIVATE_FUNDING],
+            },
+            'breaches': [{'category': g['category'], 'name': i.get('name'),
+                          'notional': i['initialNotional'],
+                          'minimumInvestment': float(i['minimumInvestment'])}
+                         for g in groups for i in g['items'] if i.get('initialBelowMinimum')],
+        }
 
     breaches = [{'category': group['category'], 'name': item.get('name'),
                  'productId': item.get('productId'), 'notional': item['notional'],
@@ -294,7 +386,9 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             'priced': priced, 'tier': tier, 'marginal': marginal,
             'effectiveRate': effectiveRate, 'breaches': breaches,
             'custom': custom, 'customRates': customRates,
-            'unpricedGroups': unpricedGroups}
+            'unpricedGroups': unpricedGroups,
+            # the initial allocation of a private-markets book, or None (D136)
+            'initial': initialModel}
 
 
 SHEET_PASSWORD = 'PA55WORD'
@@ -513,7 +607,6 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
     """
     if not includeFees:
         feeSchedule = None
-    columns = implColumns(includeFees)
     # A caller that has already built the model passes it in, so that what
     # the sheet prints and what the register records are the SAME model
     # rather than two builds a few microseconds apart (D69).
@@ -522,6 +615,8 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                                         mandateSize, variant, tacticalTilt,
                                         feeSchedule, feeLevel, topAccountSize,
                                         volPremium, currency, customFees)
+    # a private-markets book carries its initial allocation's twins (D136)
+    columns = implColumns(includeFees, initial=bool(model.get('initial')))
     sheet = book.create_sheet('Implementation')
     doc, headerRow, totalRow = buildImplementationDoc(
         model, columns, _WIDTHS, _TEXT_COLUMNS,

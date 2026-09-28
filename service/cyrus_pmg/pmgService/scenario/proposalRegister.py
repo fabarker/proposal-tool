@@ -122,7 +122,10 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
 #: never a fee or a cost
 _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
                 'shareClass', 'source', 'liquidity', 'exposureCurrency',
-                'printedPct', 'notional')
+                'printedPct', 'notional',
+                # the initial allocation's figures, for a private-markets book
+                # (D136); absent - None - on anything delivered before it
+                'initialPct', 'initialNotional')
 
 _lock = threading.Lock()
 

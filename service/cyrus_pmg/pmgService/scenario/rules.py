@@ -350,6 +350,49 @@ def volPremiumCategories(categories, volPremium, currency) -> list:
     return result
 
 
+# ------------------------------------------ private markets, initially (D136) ---
+# A private-markets commitment is drawn down as managers call capital, over
+# years; until it is called, the money earmarked for it is held one third in
+# Investment Grade Fixed Income and two thirds in Public Equity. The model
+# builds this INITIAL allocation beside the long-term one: after both overlays
+# (the parked money neither funds the tilt nor grows the premium), on the
+# sleeve LINES, with each uplift spread across the chosen sleeve's products by
+# the sleeve's own shares - which is what keeps it working when the tilt has
+# taken every point of IGFI. It is a rule, not a choice: every book that holds
+# private assets carries it, and step 1 never shows it.
+PRIVATE_FUNDED_FROM = SLEEVE_GROUPS[0]['name']
+PRIVATE_FUNDING = [('Investment Grade Fixed Income', 1.0 / 3.0),
+                   ('Public Equity', 2.0 / 3.0)]
+
+
+def initialLines(lines):
+    """The sleeve lines of a book as initially invested, or None when it holds
+    no private markets (D136).
+
+    *lines* are ``{'name', 'weightPct'}`` with the private categories already
+    combined under PRIVATE_FUNDED_FROM, as ``buildImplementationRows`` makes
+    them. The private line's weight P moves to the PRIVATE_FUNDING lines in
+    their shares and the private line is left at zero - its commitment is the
+    long-term weight, which the caller keeps. Returns copies.
+
+    THE JAVASCRIPT MIRROR of this lives in implementation.js as
+    initialLines(). The two must agree exactly or the screen and the workbook
+    drift."""
+    out = [{'name': line['name'], 'weightPct': float(line['weightPct'])} for line in lines]
+    private = next((line for line in out if line['name'] == PRIVATE_FUNDED_FROM), None)
+    weight = private['weightPct'] if private else 0.0
+    if weight <= 0:
+        return None
+    for name, share in PRIVATE_FUNDING:
+        target = next((line for line in out if line['name'] == name), None)
+        if target is None:                       # never in the universe today
+            target = {'name': name, 'weightPct': 0.0}
+            out.append(target)
+        target['weightPct'] += weight * share
+    private['weightPct'] = 0.0
+    return out
+
+
 def implementedCategories(categories, tacticalTilt, volPremium=False,
                           currency=None) -> list:
     """The strategic categories as implemented: both overlays, in order.
@@ -690,6 +733,10 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'volPremiumFundedFrom': VOL_PREMIUM_FUNDED_FROM,
             'volPremiumCategory': VOL_PREMIUM_CATEGORY,
             'volPremiumCurrencies': VOL_PREMIUM_CURRENCIES,
+            # the initial allocation of a private-markets book (D136)
+            'privateFunding': {'from': PRIVATE_FUNDED_FROM,
+                               'to': [{'category': name, 'share': share}
+                                      for name, share in PRIVATE_FUNDING]},
         },
         'fees': fees.feePayload(topAccountSize, mandateSize),
         'capabilities': capabilities,

@@ -554,7 +554,17 @@ function onBaseReady() {
   var base = state.columns[0];
   if (!base || base.status !== 'ready') return;
   var have = {};
-  base.data.categories.forEach(function (c) { have[c.name] = 1; });
+  var groups = opt('rules.sleeveGroups', []) || [];
+  base.data.categories.forEach(function (c) {
+    have[c.name] = 1;
+    /* a grouped category's sleeve is chosen and kept under its group (D60):
+       Private Equity and Other Private Assets hold one sleeve, stored under
+       their group's name, which no base category carries - so without this
+       every reload dropped the private-markets sleeve (D136) */
+    groups.forEach(function (g) {
+      if ((g.categories || []).indexOf(c.name) >= 0) have[g.name] = 1;
+    });
+  });
   var dropped = [];
   Object.keys(state.sleeves).forEach(function (category) {
     if (!have[category]) { dropped.push(category); delete state.sleeves[category]; }

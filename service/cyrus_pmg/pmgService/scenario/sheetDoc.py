@@ -35,6 +35,15 @@ SUBHEAD_NAVY = '092539'           # the bold section labels on the risk sheet
 BAND = 'D3DDEA'
 WHITE = 'FFFFFF'
 BLACK = '000000'
+#: the initial allocation's own colours (D136): a deep teal against the house
+#: navy, so a long-term figure and its initial twin are never mistaken
+INITIAL_HEAD = '0B5345'
+INITIAL_BAND = 'D5ECE4'
+INITIAL_TINT = 'EAF5F1'
+#: each long-term figure and its initial twin, placed straight after it (D136)
+INITIAL_TWIN_OF = {'Notional': 'Initial Notional', 'Allocation (%)': 'Initial (%)',
+                   'Wtd fee (bp)': 'Initial Wtd fee (bp)'}
+INITIAL_COLUMN_NAMES = tuple(INITIAL_TWIN_OF.values())
 BREACH_FILL = 'FDE8E8'            # a position below its product's minimum
 BREACH_INK = '9B1C1C'
 PREMIA_LOW = 'C00000'             # assumptions: the low end of a range, red
@@ -916,6 +925,16 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         preamble.append(['Fee Card', '{}{}'.format(
             card.get('version') or 'unversioned',
             ' · placeholder' if card.get('placeholder') else '')])
+    # the initial allocation's twins are in the columns only for a book that
+    # holds private markets (D136); what it committed, and where that waits
+    initial = model.get('initial') if 'Initial (%)' in at else None
+    if initial:
+        committed = initial['commitment']
+        preamble.append(['Private Markets Commitment', '${:,.0f} ({:.2f}%), invested as capital is called'.format(
+            committed['notional'], committed['weightPct'])])
+        preamble.append(['Held Until Called', ' · '.join(
+            '{:.2f}% {} (${:,.0f})'.format(h['weightPct'], h['category'], h['notional'])
+            for h in committed['held'])])
     for line in preamble:
         row += 1
         doc.cell(row, 1).value = line[0]
@@ -925,6 +944,22 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         doc.cell(row, 2).font = bodyFont
     if preamble:
         row += 1                                     # the blank line beneath
+    initialNames = set(INITIAL_COLUMN_NAMES) if initial else set()
+    if initial:
+        # a row above the header naming each figure's world: the long-term
+        # target's three, and the initial allocation's twins beside them
+        row += 1
+        doc.row(row).height = 16
+        for index, name in enumerate(columns, start=1):
+            if name in initialNames or name in INITIAL_TWIN_OF:
+                ours = name in initialNames
+                cell = doc.cell(row, index)
+                cell.value = 'Initial' if ours else 'Long-term'
+                cell.font = {'name': SANS, 'size': 10, 'bold': True,
+                             'color': INITIAL_HEAD if ours else NAVY}
+                cell.fill = INITIAL_BAND if ours else WHITE
+                cell.align = {'horizontal': 'center', 'vertical': 'center'}
+                cell.border = {'bottom': ('thin', INITIAL_HEAD if ours else NAVY)}
     headerRow = row + 1
 
     row = headerRow
@@ -932,7 +967,7 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         cell = doc.cell(row, index)
         cell.value = name
         cell.font = headFont
-        cell.fill = HEADER_NAVY
+        cell.fill = INITIAL_HEAD if name in initialNames else HEADER_NAVY
     doc.row(row).height = 20
     doc.freeze = 'A' + str(headerRow + 1)
 
@@ -957,6 +992,32 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         if includeFees:
             bpCell(doc.cell(rowIndex, at['Wtd fee (bp)']), value)
 
+    def initialFigures(rowIndex, items, bandWeight, band=False):
+        """A row's initial twins (D136): weight, notional and - priced - the
+        weighted fee, on the teal tint; a band totals its products, or shows
+        its own weight while it has none. A product the initial allocation
+        buys below its minimum says so as the long-term notional does."""
+        weight = (sum(i.get('initialPct', 0.0) for i in items)
+                  if items or bandWeight is None else bandWeight)
+        weightCell(doc.cell(rowIndex, at['Initial (%)']), weight)
+        cell = doc.cell(rowIndex, at['Initial Notional'])
+        cell.value = sum(i.get('initialNotional', 0.0) for i in items)
+        cell.fmt = '$#,##0'
+        if includeFees and 'Initial Wtd fee (bp)' in at and items:
+            fee = [i.get('initialWtdFeeBp') for i in items]
+            bpCell(doc.cell(rowIndex, at['Initial Wtd fee (bp)']),
+                   None if any(f is None for f in fee) else sum(fee))
+        for name in initialNames:
+            if name not in at:
+                continue
+            twin = doc.cell(rowIndex, at[name])
+            twin.fill = INITIAL_BAND if band else INITIAL_TINT
+            if band:
+                twin.font = {'name': SANS, 'size': 12, 'bold': True, 'color': INITIAL_HEAD}
+        if not band and items and items[0].get('initialBelowMinimum'):
+            cell.font = {'name': 'Calibri', 'size': 11, 'bold': True, 'color': BREACH_INK}
+            cell.fill = BREACH_FILL
+
     for group in model['groups']:
         # The category alone: the Products cell of a band row is left empty
         # on request (D78) - the band names the category the products beneath
@@ -968,7 +1029,7 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
             cell = doc.cell(row, column)
             cell.fill = BAND
             cell.font = boldFont
-        weightCell(doc.cell(row, 3),
+        weightCell(doc.cell(row, at['Allocation (%)']),
                    sum(i['printedPct'] for i in group['items'])
                    if group['items'] else group['weightPct'])
         if group['items']:
@@ -977,18 +1038,19 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
             notional = doc.cell(row, at['Notional'])
             notional.value = sum(i['notional'] for i in group['items'])
             notional.fmt = '$#,##0'
+        if initial:
+            initialFigures(row, group['items'], group.get('initialWeightPct', 0.0), band=True)
         for item in group['items']:
             row += 1
-            line = [
-                '  ' + item['assetClass'], item['name'], None,
-                item['style'], item['vehicle'], item.get('shareClass'), item['source'],
-                item['liquidity'], item['exposureCurrency'], None,
-            ]
-            if includeFees:
-                line += [None, None]
-            line += [None]
-            for column, value in enumerate(line, start=1):
-                doc.cell(row, column).value = value
+            # by column name, so the order of the columns is theirs alone
+            # to decide (D134); a figure is written below with its format
+            words = {'Categories & Asset Classes': '  ' + item['assetClass'],
+                     'Products': item['name'], 'Style': item['style'],
+                     'Vehicle': item['vehicle'], 'Share Class': item.get('shareClass'),
+                     'Source': item['source'], 'Liquidity': item['liquidity']}
+            for name, value in words.items():
+                if name in at:
+                    doc.cell(row, at[name]).value = value
             for column in range(1, len(columns) + 1):
                 cell = doc.cell(row, column)
                 cell.font = bodyFont
@@ -996,7 +1058,9 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
                 # default nothing, so the grid does not show through it and
                 # the block reads as one object (D78).
                 cell.fill = WHITE
-            weightCell(doc.cell(row, 3), item['printedPct'])
+            weightCell(doc.cell(row, at['Allocation (%)']), item['printedPct'])
+            if initial:
+                initialFigures(row, [item], None)
             feeCell(doc.cell(row, at['Product Cost']), float(item['productCost']))
             if includeFees:
                 feeCell(doc.cell(row, at['Mgmt fee']), item['managementFee'])
@@ -1020,7 +1084,7 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         # ruled above and below: the total closes the table, solid black and
         # thin, so the close is a rule rather than another separator (D78)
         cell.border = {'top': BLACK_THIN, 'bottom': BLACK_THIN}
-    weightCell(doc.cell(row, 3), model['total']['weightPct'])
+    weightCell(doc.cell(row, at['Allocation (%)']), model['total']['weightPct'])
     # the blend every row carries, restated where a reader looks for a total
     if includeFees and model.get('marginal') and model.get('effectiveRate') is not None:
         feeCell(doc.cell(row, at['Mgmt fee']), model['effectiveRate'])
@@ -1028,6 +1092,16 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
     notional = doc.cell(row, at['Notional'])
     notional.value = model['total']['notional']
     notional.fmt = '$#,##0'
+    if initial:
+        weightCell(doc.cell(row, at['Initial (%)']), initial['total']['weightPct'])
+        notional = doc.cell(row, at['Initial Notional'])
+        notional.value = initial['total']['notional']
+        notional.fmt = '$#,##0'
+        if includeFees:
+            bpCell(doc.cell(row, at['Initial Wtd fee (bp)']), initial['total']['wtdFeeBp'])
+        for name in initialNames:
+            if name in at:
+                doc.cell(row, at[name]).fill = INITIAL_TINT
     totalRow = row
 
     text = [at[name] for name in textColumns if name in at]

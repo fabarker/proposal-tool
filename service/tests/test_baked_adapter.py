@@ -120,8 +120,11 @@ def test_export_uses_the_payload_writer(store, tmp_path):
                                'Implementation', 'chartData']
     assert book['chartData'].sheet_state == 'hidden'
     rows = list(book['Implementation'].iter_rows(values_only=True))
-    weights = [r[2] for r in rows
-               if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
+    # found by its header: the columns' order is the sheet's to decide (D134)
+    header = next(r for r in rows if r[0] == 'Categories & Asset Classes')
+    at = header.index('Allocation (%)')
+    weights = [r[at] for r in rows
+               if r[at] is not None and r[0] and str(r[0]).startswith('  ')]
     assert abs(sum(weights) * 100 - 100.0) < 1e-9
 
 

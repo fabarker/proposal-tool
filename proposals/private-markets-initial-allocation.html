@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Private Markets Initial Allocation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Document chrome: the same system as the other proposals in this folder */
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --accent-ink:#FFFFFF; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --tint:#EEF2F9; --good:#1E6B45; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#8E2A2A; --bad-tint:#F8E7E7; --code:#F1F3F7;
+  /* the tool's own report colours, for the mock-ups */
+  --t-navy:#0F243E; --t-head:#092532; --t-band:#D3DDEA; --t-grid:#D9DEE6; --t-paper:#FFFFFF; --t-ink:#16202B;
+  --t-private:#7A4E9E; --t-ig:#2A78D6; --t-eq:#1BAF7A;
+  --f-display:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+    --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+    --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+    --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+  --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:28px;padding-block:40px 96px}
+@media (max-width:700px){.wrap{padding-inline:16px;padding-block:28px 72px}}
+.prose{max-width:72ch}
+.mast{border-bottom:2px solid var(--navy);padding-bottom:22px;margin-bottom:40px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(34px,4.6vw,52px);line-height:1.05;margin:0 0 14px;color:var(--navy);text-wrap:balance;letter-spacing:-.01em}
+.sub{font-size:18px;color:var(--ink-2);max-width:68ch;margin:0 0 18px;text-wrap:pretty}
+.meta{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+h2{font-family:var(--f-display);font-weight:500;font-size:clamp(26px,3vw,34px);line-height:1.15;color:var(--navy);margin:64px 0 12px;text-wrap:balance;scroll-margin-top:20px}
+h3{font-size:18px;font-weight:600;margin:26px 0 6px;color:var(--ink);text-wrap:balance}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:22px} li{margin:0 0 6px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--code);padding:1px 5px;border-radius:3px}
+pre{font-family:var(--f-mono);font-size:13px;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;line-height:1.5;margin:0 0 14px}
+.toc{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin:16px 0 0;padding:0;list-style:none}
+.toc a{text-decoration:none;color:var(--ink-2)} .toc a:hover{color:var(--accent)}
+.toc b{font-family:var(--f-mono);font-size:12px;color:var(--accent);margin-right:5px}
+.note{background:var(--tint);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 6px 6px 0;margin:0 0 16px;font-size:15px;color:var(--ink-2)}
+.note b{color:var(--ink)}
+.warnbox{background:var(--warn-tint);border-left:3px solid var(--warn);padding:12px 16px;border-radius:0 6px 6px 0;margin:0 0 16px;font-size:15px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.card h3{margin-top:0;font-size:16px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.tag{display:inline-block;font:600 11px var(--f-mono);letter-spacing:.04em;padding:2px 7px;border-radius:10px;background:var(--tint);color:var(--accent);vertical-align:1px}
+.tag.good{background:var(--good-tint);color:var(--good)} .tag.warn{background:var(--warn-tint);color:var(--warn)}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---- the rule, drawn ---------------------------------------------------- */
+.rulefig{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 20px 16px;margin:18px 0}
+.rulefig .bars{display:grid;grid-template-columns:130px 1fr;gap:10px 14px;align-items:center}
+.rulefig .lbl{font-size:13px;color:var(--ink-2);font-weight:600}
+.stack{display:flex;height:34px;border-radius:5px;overflow:hidden;border:1px solid var(--line-strong)}
+.stack span{display:flex;align-items:center;justify-content:center;font:600 12px var(--f-mono);color:#fff;white-space:nowrap;overflow:hidden}
+.seg-ig{background:var(--t-ig)} .seg-eq{background:var(--t-eq)} .seg-pv{background:var(--t-private)}
+.seg-other{background:#9AA7B6} .seg-pv.hatched{background:repeating-linear-gradient(135deg,var(--t-private) 0 6px,#9d7cbd 6px 12px)}
+.rulefig .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--ink-2);margin-top:12px}
+.rulefig .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.worked{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0 0}
+.worked div{background:var(--tint);border-radius:6px;padding:10px 12px;font-size:13.5px;color:var(--ink-2)}
+.worked b{display:block;font:600 20px var(--f-mono);color:var(--ink);margin-bottom:2px}
+
+/* ---- the demo ------------------------------------------------------------- */
+.demo{background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;margin:18px 0 0;overflow:hidden}
+.controls{display:flex;flex-wrap:wrap;gap:14px 22px;padding:16px 18px;border-bottom:1px solid var(--line);background:var(--tint)}
+.ctl{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--ink-3);font-weight:600;letter-spacing:.03em}
+.ctl select{font:500 14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:6px 8px;min-width:150px}
+.chk{display:flex;align-items:center;gap:7px;font-size:14px;color:var(--ink);font-weight:500;letter-spacing:0}
+.chk input{width:16px;height:16px;accent-color:var(--accent)}
+.chk.off{color:var(--ink-3)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:7px;overflow:hidden;background:var(--surface)}
+.seg button{font:600 13px var(--f-body);border:0;background:transparent;color:var(--ink-2);padding:7px 13px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.demo-body{padding:18px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:0 0 16px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)}
+.stat small{display:block;font-size:11.5px;color:var(--ink-3);font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+.stat b{display:block;font:600 19px var(--f-mono);color:var(--ink);margin:3px 0 1px}
+.stat span{font-size:12.5px;color:var(--ink-2)}
+.stat.pv{border-left:4px solid var(--t-private)} .stat.ig{border-left:4px solid var(--t-ig)} .stat.eq{border-left:4px solid var(--t-eq)} .stat.fee{border-left:4px solid var(--accent)}
+.down{color:var(--good)} .up{color:var(--bad)}
+
+/* the screen mock: the tool's implementation page, abridged */
+.screen{display:grid;grid-template-columns:250px 1fr;gap:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;background:#F5F7FA}
+@media (max-width:860px){.screen{grid-template-columns:1fr}}
+.rail{background:#FFFFFF;border-right:1px solid #E1E6EE;padding:14px;font-size:13px;color:#2B3846}
+.rail h4{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6B7B8C;margin:0 0 8px}
+.rail .field{border:1px solid #E1E6EE;border-radius:6px;padding:8px 10px;margin:0 0 8px;background:#FBFCFE}
+.rail .field b{display:block;font-size:12.5px;color:#16202B}
+.rail .field small{color:#6B7B8C;font-size:11.5px}
+.rail .pmf{border:1px solid #CDBEDC;background:#F7F2FB;border-radius:6px;padding:10px 11px;margin:10px 0 0}
+.rail .pmf b{color:#4F2F72;font-size:12.5px}
+.rail .pmf p{margin:6px 0 0;font-size:12px;line-height:1.45;color:#3B3050}
+.rail .pmf .split{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:8px 0 2px}
+.rail .pmf .split i{display:block}
+.rail .pmf.none{border-color:#E1E6EE;background:#FBFCFE}
+.rail .pmf.none b{color:#6B7B8C}
+.main{padding:14px;min-width:0}
+.mainhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.mainhead h5{margin:0;font:600 16px var(--f-body);color:#0F243E}
+.mainhead p{margin:2px 0 0;font-size:12.5px;color:#4A5A6B}
+.feeline{font-size:12.5px;color:#2B3846;background:#FFFFFF;border:1px solid #E1E6EE;border-radius:6px;padding:6px 10px;margin:0 0 10px}
+.feeline b{font-family:var(--f-mono)}
+.tblwrap{overflow-x:auto;border:1px solid #D9DEE6;border-radius:6px;background:#FFFFFF}
+table.impl{border-collapse:collapse;width:100%;font-size:12.5px;color:#16202B;min-width:760px}
+table.impl th,table.impl td{padding:5px 9px;border-bottom:1px solid #EEF1F5;text-align:left;white-space:nowrap}
+table.impl thead th{background:#092532;color:#fff;font-weight:600;font-size:12px;position:sticky;top:0}
+table.impl td.n,table.impl th.n{text-align:right;font-variant-numeric:tabular-nums}
+table.impl tr.cat td,table.impl tr.cat th{background:#E8EEF6;font-weight:700;color:#0F243E}
+table.impl tr.cat.pv td,table.impl tr.cat.pv th{background:#EFE7F6;color:#4F2F72}
+table.impl tr.item th{font-weight:400;padding-left:22px}
+table.impl tr.grand td,table.impl tr.grand th{font-weight:700;border-top:2px solid #0F243E;border-bottom:0;background:#fff}
+table.impl small{display:block;font-size:10.5px;color:#6B7B8C;font-weight:500;line-height:1.2}
+table.impl small.up{color:#1E6B45} table.impl small.cm{color:#6A4290}
+table.impl .changed{background:#F1FAF5}
+table.impl .zero{color:#8B98A6}
+.pill{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;background:#EEF2F9;color:#2E4A77}
+.pill.draw{background:#F1EAF8;color:#5B3A80}
+.viewbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.viewbar .hint{font-size:12px;color:#6B7B8C}
+.bars2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:12px 0 0}
+.minichart{background:#fff;border:1px solid #D9DEE6;border-radius:6px;padding:10px 12px}
+.minichart h6{margin:0 0 8px;font:600 12px var(--f-body);color:#0F243E}
+.minichart .row{display:grid;grid-template-columns:62px 1fr;gap:8px;align-items:center;margin:0 0 6px;font-size:11.5px;color:#4A5A6B}
+.minichart .stack{height:18px}
+.minichart .stack span{font-size:10.5px}
+.keys{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:#4A5A6B;margin-top:4px}
+.keys i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+
+/* export previews */
+.previews{display:grid;grid-template-columns:1fr;gap:16px;margin:16px 0 0}
+.xl{border:1px solid #BFC7D2;border-radius:6px;overflow:hidden;background:#fff;color:#16202B}
+.xl .tabs{display:flex;gap:2px;background:#E9EDF2;padding:4px 6px 0;font-size:11.5px;overflow-x:auto}
+.xl .tabs span{padding:4px 10px;border-radius:4px 4px 0 0;color:#4A5A6B;white-space:nowrap;border:1px solid transparent}
+.xl .tabs span.on{background:#fff;color:#0F243E;font-weight:600;border-color:#BFC7D2;border-bottom-color:#fff;box-shadow:inset 0 3px 0 #0F243E}
+.xl .tabs span.new{color:#1E6B45;font-weight:600}
+.xlgrid{overflow-x:auto}
+table.sheet{border-collapse:collapse;font-size:11.5px;min-width:900px;width:100%}
+table.sheet td{border:1px solid #E3E7EE;padding:3px 7px;white-space:nowrap}
+table.sheet td.n{text-align:right;font-variant-numeric:tabular-nums}
+table.sheet tr.pre td{font-weight:400;border-color:#F0F2F5}
+table.sheet tr.pre td:first-child{font-weight:700}
+table.sheet tr.pre.pvn td{color:#4F2F72}
+table.sheet tr.h td{background:#092532;color:#fff;font-weight:700}
+table.sheet tr.b td{background:#D3DDEA;font-weight:700}
+table.sheet tr.t td{font-weight:700;border-top:1.5px solid #000;border-bottom:1.5px solid #000}
+table.sheet td.newcol{box-shadow:inset 0 0 0 2px #1BAF7A}
+.slide{aspect-ratio:16/9;background:#fff;border:1px solid #BFC7D2;border-radius:6px;padding:3.2% 3.6% 2.6%;display:flex;flex-direction:column;color:#16202B;max-width:980px;overflow:hidden;position:relative}
+.slide h6{margin:0;font:700 clamp(15px,2.1vw,24px)/1.1 var(--f-body);color:#0F243E}
+.slide .ssub{font-size:clamp(9px,1vw,12px);color:#4B5A6A;margin:4px 0 0}
+.slide .srule{height:3px;background:#0F243E;margin:8px 0 10px}
+.slide .stbl{flex:1;min-height:0;overflow:hidden}
+.slide table{border-collapse:collapse;width:100%;font-size:clamp(6.5px,.82vw,10px)}
+.slide td{padding:1.5px 5px;white-space:nowrap}
+.slide td.n{text-align:right;font-variant-numeric:tabular-nums}
+.slide tr.h td{background:#092532;color:#fff;font-weight:700}
+.slide tr.b td{background:#D3DDEA;font-weight:700}
+.slide tr.t td{font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000}
+.slide .snotes{font-size:clamp(6px,.72vw,9px);color:#7C8B9C;margin-top:6px;line-height:1.35}
+.slide .spage{position:absolute;right:3.6%;bottom:2.4%;font-size:clamp(6px,.7vw,9px);color:#7C8B9C}
+.caption{font-size:13px;color:var(--ink-3);margin:6px 0 0}
+
+/* tables in the prose */
+table.doc{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0 18px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+table.doc th,table.doc td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.doc th{background:var(--tint);font-size:12.5px;letter-spacing:.03em;color:var(--ink-2)}
+table.doc tr:last-child td{border-bottom:0}
+table.doc td:first-child{font-weight:600;color:var(--ink);width:26%}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 10px}
+.q h3{margin:0 0 4px;font-size:16px}
+.q .rec{font-size:14px;color:var(--good);font-weight:600;margin:6px 0 0}
+.q p{margin:0;font-size:14.5px;color:var(--ink-2)}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps li{counter-increment:s;position:relative;padding:10px 14px 10px 46px;background:var(--surface);border:1px solid var(--line);border-radius:8px;margin:0 0 8px}
+.steps li::before{content:counter(s);position:absolute;left:14px;top:10px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:600 12px/22px var(--f-mono);text-align:center}
+.steps li b{color:var(--ink)}
+.foot{margin-top:72px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Proposal · Implementation · for decision</p>
+  <h1>Private markets: the initial allocation</h1>
+  <p class="sub">A portfolio that targets private assets cannot hold them on day one: commitments are called over years. Until they are, the money earmarked for private markets is invested one third in Investment Grade Fixed Income and two thirds in Public Equity. This proposes how the Implementation screen, the workbook and the deck show that <em>initial</em> allocation, and its fees, beside the long-term target — and why the Asset Allocation screen does not.</p>
+  <div class="meta">
+    <span><b>Scope</b> Implementation screen, workbook, deck, register</span>
+    <span><b>Not in scope</b> Asset Allocation screen and the strategic sheets and slides</span>
+    <span><b>Affects</b> 448 of the 688 baked portfolios</span>
+    <span><b>Would be</b> D136</span>
+  </div>
+  <p class="note" style="margin:16px 0 0"><b>Decisions taken 28 September 2026.</b> Spread across the chosen sleeves; the initial allocation as extra columns shown and hidden by a button above the table — not a new sheet or slide; the screen opens on the long-term target; target doughnuts only; always on for private-asset books. See <a href="private-markets-initial-columns.html">the column mock-ups</a>, which supersede sections 04–06 below.</p>
+  <ul class="toc">
+    <li><a href="#rule"><b>01</b>The rule</a></li>
+    <li><a href="#demo"><b>02</b>Try it</a></li>
+    <li><a href="#calc"><b>03</b>The calculation</a></li>
+    <li><a href="#screen"><b>04</b>Implementation screen</a></li>
+    <li><a href="#excel"><b>05</b>Workbook</a></li>
+    <li><a href="#deck"><b>06</b>Deck</a></li>
+    <li><a href="#wire"><b>07</b>State, register, wire</a></li>
+    <li><a href="#edges"><b>08</b>Edge cases</a></li>
+    <li><a href="#build"><b>09</b>How it would be built</a></li>
+    <li><a href="#decide"><b>10</b>For you to decide</a></li>
+  </ul>
+</header>
+
+<section class="prose">
+  <h2 id="rule" style="margin-top:0">01 · The rule</h2>
+  <p>What the tool shows today is the <b>long-term target</b>: a book with 9% in private assets shows 9% in private assets, and prices it at private-markets fees. But a commitment to private equity, private credit or real estate is drawn down as managers call capital, and until it is called the money has to be invested somewhere. The rule is fixed:</p>
+  <div class="note"><b>The private-markets allocation — Private Equity and Other Private Assets together — is initially invested one third in Investment Grade Fixed Income and two thirds in Public Equity.</b> The commitment itself is unchanged: it is still the target amount, and it is drawn from those two positions as capital is called.</div>
+</section>
+
+<div class="rulefig" role="img" aria-label="A 100 mandate with 20 in private markets: long-term 20 in private assets; initially 6.67 more in investment grade fixed income and 13.33 more in public equity">
+  <div class="bars">
+    <span class="lbl">Long-term target</span>
+    <div class="stack"><span class="seg-ig" style="width:30%">IGFI 30</span><span class="seg-eq" style="width:40%">Equity 40</span><span class="seg-other" style="width:10%">Other 10</span><span class="seg-pv" style="width:20%">Private 20</span></div>
+    <span class="lbl">Initially</span>
+    <div class="stack"><span class="seg-ig" style="width:36.67%">IGFI 36.67</span><span class="seg-eq" style="width:53.33%">Equity 53.33</span><span class="seg-other" style="width:10%">Other 10</span></div>
+  </div>
+  <div class="legend"><span><i class="seg-ig"></i>Investment Grade Fixed Income</span><span><i class="seg-eq"></i>Public Equity</span><span><i class="seg-other"></i>Everything else, unchanged</span><span><i class="seg-pv"></i>Private Equity &amp; Other Private Assets</span></div>
+  <div class="worked">
+    <div><b>100</b>Mandate notional</div>
+    <div><b>20</b>Committed to private markets (20%), called over time</div>
+    <div><b>+6.67</b>Held in IGFI until called (⅓ of 20)</div>
+    <div><b>+13.33</b>Held in Public Equity until called (⅔ of 20)</div>
+  </div>
+</div>
+
+<section class="prose">
+  <p>So the proposal has two figures for every private-markets book: the <b>target</b> it is built to reach, and the <b>initial</b> allocation it is actually invested in on day one — with the initial one's own fees, which are lower, because the products holding the money are fixed income SMAs and equity ETFs rather than drawdown funds. In the golden case (USD Moderate Full, tilt and volatility premium on, $50m under CASP) the blended fee is <b>98.6bp at target and 87.9bp initially</b>; under RDR, which prices by fee group, <b>85.4bp and 70.5bp</b>.</p>
+  <p>The initial allocation belongs to <b>implementation</b>, not to strategy. The Asset Allocation screen, and the <code>portfolios</code> and <code>risk_dashboard</code> sheets and slides built from it, keep showing the long-term target and its analytics, unchanged — the risk and return figures there are the portfolio's design, not its first month.</p>
+</section>
+
+<h2 id="demo">02 · Try it</h2>
+<p class="prose">Real portfolios from the delivered bake, their sleeves' real products and the fee card's real rates, run through the tool's own implementation chain — tactical tilt, then the volatility premium, then the sleeves, the largest-remainder rounding, notionals and fees — with the proposed step added at the end. Every figure below matches a Python prototype built on <code>buildImplementationRows</code> to the cent. Switch the view to see what the Implementation screen, the workbook and the deck would show.</p>
+
+<div class="demo" id="demo-root">
+  <div class="controls">
+    <label class="ctl">Portfolio<select id="c-lineup"></select></label>
+    <label class="ctl">Mandate<select id="c-size"></select></label>
+    <label class="ctl">Fee schedule<select id="c-sched"></select></label>
+    <div class="ctl">Overlays
+      <label class="chk" id="l-tilt"><input type="checkbox" id="c-tilt">Tactical Tilts</label>
+      <label class="chk" id="l-vol"><input type="checkbox" id="c-vol">Strategic Volatility Premium</label>
+    </div>
+    <div class="ctl">Table shows
+      <div class="seg" role="group" aria-label="Table view">
+        <button type="button" data-view="target" aria-pressed="true">Long-term target</button>
+        <button type="button" data-view="initial" aria-pressed="false">Initial allocation</button>
+      </div>
+    </div>
+  </div>
+  <div class="demo-body">
+    <div class="summary" id="d-summary"></div>
+    <div class="screen">
+      <aside class="rail" aria-label="Implementation rail, abridged">
+        <h4>Sleeves</h4>
+        <div id="d-sleeves"></div>
+        <h4 style="margin-top:12px">Overlays</h4>
+        <div id="d-overlays"></div>
+        <div id="d-pmf"></div>
+      </aside>
+      <div class="main">
+        <div class="mainhead">
+          <div><h5>Portfolio Implementation</h5><p id="d-implementing"></p></div>
+          <div class="viewbar"><div class="seg" role="group" aria-label="Table view (screen)">
+            <button type="button" data-view="target" aria-pressed="true">Long-term target</button>
+            <button type="button" data-view="initial" aria-pressed="false">Initial allocation</button>
+          </div></div>
+        </div>
+        <div class="feeline" id="d-feeline"></div>
+        <div class="tblwrap"><table class="impl" id="d-table"></table></div>
+        <div class="bars2" id="d-charts"></div>
+      </div>
+    </div>
+
+    <h3>What the downloads would carry</h3>
+    <p style="font-size:14.5px;color:var(--ink-2);margin-bottom:8px">Built from the same model as the screen — the workbook gains a sheet and the deck a slide, both only when the book holds private assets; everything already there is unchanged.</p>
+    <div class="previews">
+      <div>
+        <div class="xl">
+          <div class="tabs"><span>portfolios</span><span>risk_dashboard</span><span>assumptions</span><span>Implementation</span><span class="on new">Initial Implementation</span></div>
+          <div class="xlgrid"><table class="sheet" id="d-sheet"></table></div>
+        </div>
+        <p class="caption">Workbook: the new <b>Initial Implementation</b> sheet, placed after <b>Implementation</b> (which keeps the target). The green-edged column is the one the target sheet does not have.</p>
+      </div>
+      <div>
+        <div class="slide" id="d-slide"></div>
+        <p class="caption">Deck: the new <b>Initial Implementation</b> slide, directly after <b>Implemented Model</b>, rendered from the same Doc as the sheet.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="prose">
+  <h2 id="calc">03 · The calculation</h2>
+  <p>A third <b>implementation overlay</b>, the same kind of thing as the tactical tilt (D50) and the volatility premium (D53): it reshapes the categories the sleeves are applied to, it lives in <code>rules.py</code>, and the page carries a JavaScript mirror that a test holds to it. Unlike those two it is not a choice — it is how the money is invested — so it has no toggle; it produces a second picture, not a different first one.</p>
+  <ol class="steps">
+    <li><b>The target is built exactly as today.</b> Strategic categories → tactical tilt → volatility premium → sleeves → largest remainder → notionals → fees. Nothing about the target changes.</li>
+    <li><b>Take the private line's implemented weight, P.</b> Private Equity and Other Private Assets are already one line against one sleeve (D60, D71); P is that line's weight after both overlays — which never touch it.</li>
+    <li><b>Move it: + P/3 to Investment Grade Fixed Income, + 2P/3 to Public Equity; the private line's invested weight is 0.</b> Applied <em>after</em> the tilt and the premium, so the parked money neither funds the tilt nor grows the premium (the premium is 7.5% of IGFI <em>as implemented</em>, and that means the long-term book).</li>
+    <li><b>Spread each uplift across the chosen sleeve's products by the sleeve's own shares</b> — the same rule every category weight already follows (product weight = category weight × the product's share of the sleeve). Using the sleeve's shares rather than scaling the positions matters in one case: see <a href="#edges">edge cases</a>.</li>
+    <li><b>Round the initial column on its own</b> by largest remainder across the whole table (spec 8.4), so it closes on exactly 100.00%. Initial notionals derive from the initial printed weights, to the nearest 100, as every notional does.</li>
+    <li><b>Price it with the same rates.</b> Management fees resolve per product exactly as for the target — same schedule, level, tier or blend, custom rates — so the difference in the weighted fee comes only from <em>where</em> the money is: product costs of 0.09–0.37% in the parking products against 1.10–1.72% in the drawdown funds, and, under a by-group schedule, the Alternatives fee group's higher rate.</li>
+    <li><b>Keep the commitment.</b> The private line's commitment is its target notional; it is what the product minimums are checked against (5,000,000 on every drawdown fund today), so the export gate is unchanged.</li>
+  </ol>
+  <pre>initial(category) = target(category)                    for every other category
+initial(IGFI)     = target(IGFI)   + P × 1/3
+initial(Equity)   = target(Equity) + P × 2/3
+initial(Private)  = 0                                    commitment = target notional
+product weight    = initial(category) × product's share of the sleeve
+printed           = largest remainder over the whole column, 2dp, closes on 100.00
+notional          = round(mandate × printed / 100, to 100)
+weighted fee (bp) = (product cost % + management fee %) × printed %</pre>
+  <p>The split and the categories are rules, not code: <code>rules.PRIVATE_FUNDING</code> — the sleeve group funded from, and <code>[(IGFI, 1/3), (Public Equity, 2/3)]</code> — served in the schema's <code>rules</code> block so the page reads it rather than restating it, as it already does for the tilt and the premium.</p>
+
+  <h2 id="screen">04 · On the Implementation screen</h2>
+  <p>Only where the book being implemented holds private assets. For every other book — ex-Alts, Core, all-equity, 240 of the 688 baked portfolios — nothing on the screen changes and no control appears.</p>
+  <div class="grid2">
+    <div class="card"><h3>A view switch above the table</h3><p><b>Long-term target</b> | <b>Initial allocation</b>, beside the table's head. It changes what the table, its totals, the fee line and the doughnuts show; it changes nothing about the proposal, so it is a view, not scenario state — not saved, not sent, not in the register. Opens on the long-term target, the screen as PWAs know it.</p></div>
+    <div class="card"><h3>In the initial view, every changed figure says what it was</h3><p>A parking product shows its initial weight and notional with <i>target 10.82%</i> beneath in the small type the table already uses for <i>min $5,000,000</i>; the private band and its products show <b>0.00%</b> invested with <i>committed $4,500,000</i> beneath. Nothing has to be compared across two views.</p></div>
+    <div class="card"><h3>A “Private markets funding” note in the rail</h3><p>Below the overlays, where the tilt and premium explain themselves: the commitment in % and $, and where it is held until called — ⅓ and ⅔, in % and $, with a small bar. Information, not a control: there is no choice to make.</p></div>
+    <div class="card"><h3>Both fees, always</h3><p>The fee line gives the blended weighted fee at target and initially, the difference in bp and in dollars a year on the mandate — in either view, because the question it answers (“what will I pay?”) has two honest answers.</p></div>
+    <div class="card"><h3>Doughnuts follow the view</h3><p>The five composition doughnuts are built from whichever picture the table shows. In the initial view the <i>Drawdown</i> slice leaves Liquidity and <i>Internal</i>/<i>Passive</i> grow — which is the point.</p></div>
+    <div class="card"><h3>Gates and pickers unchanged</h3><p>Completion still counts sleeves; the export still refuses a target position below its minimum. The initial allocation only ever <em>adds</em> to IGFI and equity positions, so it cannot create a breach — and a commitment below a fund's minimum is still a breach even though nothing is invested in it yet.</p></div>
+  </div>
+
+  <h2 id="excel">05 · In the workbook</h2>
+  <p>A new sheet, <b>Initial Implementation</b>, after <b>Implementation</b> and before the hidden <code>chartData</code>. Present only when the book holds private assets. The four sheets that exist today are unchanged, including <b>Implementation</b>, which stays the long-term target.</p>
+  <table class="doc">
+    <tr><th>Part</th><th>What it carries</th></tr>
+    <tr><td>Preamble</td><td>The same lines as Implementation (Proposal UID, Implementation Type, the fee lines), then two of its own: <b>Private Markets Commitment</b> — <i>$4,500,000 (9.00%), invested as capital is called</i> — and <b>Held Until Called</b> — <i>3.00% Investment Grade Fixed Income · 6.00% Public Equity</i>.</td></tr>
+    <tr><td>Columns</td><td>Implementation's own, in D134's order, with <b>Target (%)</b> after <b>Allocation (%)</b>: Categories &amp; Asset Classes · Products · Notional · Allocation (%) · <b>Target (%)</b> · Style · Vehicle · Share Class · Source · Liquidity · Product Cost · Mgmt fee · Wtd fee (bp). Unpriced, the two fee columns go, as on Implementation (D52).</td></tr>
+    <tr><td>Rows</td><td>Every category and product of the target sheet, in the same order. Notional, Allocation and Wtd fee are the initial figures; Target is the long-term weight. The private band and products read $0 / 0.00% against their target — the only rows that print a zero on purpose, because the target beside them is the fact being shown.</td></tr>
+    <tr><td>Total</td><td>100.00% initial, 100.00% target, the initial notional (the mandate) and the initial blended fee; ruled as Implementation's total (D78).</td></tr>
+    <tr><td>Everything else</td><td>GS Sans, columns sized to their entries (D132), protected with the workbook's password (D98, D104), the Proposal UID in the header (D75). No doughnuts on this sheet: they stay the target's, on Implementation.</td></tr>
+  </table>
+  <p>It is a new <code>SheetDoc</code>, <code>sheetDoc.buildInitialImplementationDoc</code>, rendered by the existing Excel renderer — the same way every sheet has been built since D119 — which is what gives the deck its slide for nothing.</p>
+
+  <h2 id="deck">06 · In the deck</h2>
+  <p>A new slide, <b>Initial Implementation</b>, directly after <b>Implemented Model</b>, only when the book holds private assets. It is the same Doc as the sheet, planned by <code>planDeck</code> like the implementation table — fitted to its slide, paginated if it must be, every rule drawn from both sides (D127), the indents the implementation table uses (D135). The subheading states the commitment and the split; the footnotes say how the weights were derived and that fees are charged on what is invested. The strategic slides, the Implemented Model slide and the doughnuts slide are unchanged.</p>
+
+  <h2 id="wire">07 · State, register and wire</h2>
+  <table class="doc">
+    <tr><th>Where</th><th>Change</th></tr>
+    <tr><td>Scenario state</td><td><b>None.</b> The initial allocation is derived from the target by a fixed rule; there is nothing to store and nothing to <code>PUT</code>. The screen's view switch is not state either.</td></tr>
+    <tr><td>Schema</td><td><code>rules.privateFunding</code>: the group funded from and the two destinations with their shares. The page reads it with <code>App.opt</code>, as it reads the tilt's and the premium's.</td></tr>
+    <tr><td>The model</td><td><code>buildImplementationRows</code> returns <code>model['initial']</code> beside today's groups and total — <code>groups</code>, <code>total</code> (weight, notional, weighted fee) and <code>commitment</code> (weight, notional, the two held amounts) — or <code>None</code> for a book without private assets. Built once, in the same call, from the same rates (D69).</td></tr>
+    <tr><td>Export</td><td>No new route and no new argument: the workbook and deck writers add their sheet and slide when <code>model['initial']</code> is present. One export, one UID, both files (D123).</td></tr>
+    <tr><td>Register</td><td>The implemented picture it already stores as JSON gains an <code>initial</code> key: per product the initial weight and notional, plus the commitment. <b>No schema change</b>; proposals delivered before carry none, which is the truth about them.</td></tr>
+    <tr><td>Cyrus</td><td>Re-copy the package and the page folder (PORTING.md §0A). No dependency, setting, route or register migration.</td></tr>
+  </table>
+
+  <h2 id="edges">08 · Edge cases, from the data</h2>
+  <table class="doc">
+    <tr><th>Case</th><th>What happens</th></tr>
+    <tr><td>No private assets</td><td>ex-Alts, Core, all-equity: 240 of 688 baked portfolios. No switch, no rail note, no sheet, no slide. Byte-for-byte today's files.</td></tr>
+    <tr><td>Tilt empties IGFI</td><td>32 of the 448 private-holding books hold exactly 8% IGFI, which the tactical tilt takes entirely. Their target has no IGFI row, but the initial allocation must still put P/3 there. Because the uplift is spread by the <b>sleeve's</b> shares, not by scaling existing positions, it works: EUR Higher Risk Full with the tilt shows IGFI 0.00% → 3.00%. It does mean the IGFI sleeve must be chosen even when the tilt leaves IGFI at zero — completion counts it for these books. (Try it in the demo.)</td></tr>
+    <tr><td>Volatility premium</td><td>The parked third goes to Investment Grade Fixed Income only, not Hybrid Fixed Income, and the premium's 7.5% is of the long-term IGFI — the overlay runs after it.</td></tr>
+    <tr><td>Size of the effect</td><td>Private markets are 5.0–10.1% of the books that hold them (Full and ex-HFs); the largest, USD Moderate-Aggressive ex-HFs ex-RAs, moves 3.37% to IGFI and 6.74% to equity.</td></tr>
+    <tr><td>Sleeve not yet chosen</td><td>As today: rows for a category without a sleeve have no products, and the initial view is as incomplete as the target — the same count, the same gate.</td></tr>
+    <tr><td>Fees excluded / custom / marginal</td><td>The initial table follows the target's pricing exactly: unpriced when fees are excluded (columns gone), the PWA's rates under the custom level (D96), the mandate's blend on every row under a marginal schedule (D83). Under a marginal schedule only product costs move the blend.</td></tr>
+    <tr><td>Minimums</td><td>Commitments are checked at target, as now. Parking only increases IGFI and equity positions, so no new breach is possible.</td></tr>
+    <tr><td>Rounding</td><td>Each column is rounded on its own and each closes on 100.00%. A product outside the moved categories can differ by 0.01% between the two columns where the remainders fall differently — the same property the page and workbook already have, and the reason each column is rounded rather than derived from the other.</td></tr>
+  </table>
+
+  <h2 id="build">09 · How it would be built</h2>
+  <ol class="steps">
+    <li><b>Rules and model.</b> <code>rules.PRIVATE_FUNDING</code> and <code>rules.initialCategories()</code>; <code>buildImplementationRows</code> builds <code>model['initial']</code> after the target. Tests: the split, the order after both overlays, the tilt-empties-IGFI case, closure on 100.00, pricing under every schedule kind, no change to any book without private assets.</li>
+    <li><b>The page.</b> <code>initialCategories()</code> and the initial rows in <code>implementation.js</code> (mirror, held to Python by the existing mirror-test pattern on the same fixtures); the view switch, the small-type annotations, the rail note, the fee line, the doughnuts following the view; schema <code>rules.privateFunding</code>.</li>
+    <li><b>Workbook and deck.</b> <code>sheetDoc.buildInitialImplementationDoc</code>; the Excel writer adds the sheet after Implementation; <code>planDeck</code> adds the slide after Implemented Model. Tests: sheet and slide present only with private assets, columns and totals, the two preamble lines, the deck walked cell for cell against its plan as every table is.</li>
+    <li><b>Register.</b> <code>implementedPicture</code> gains <code>initial</code>; the record pane shows it. Tests: round-trip, and a pre-D136 row reading as “not recorded”.</li>
+    <li><b>Docs.</b> D136 in DEVIATIONS.md; PORTING.md §0A (package and page re-copy, nothing else) and the acceptance checklist (the sixth sheet, the extra slide).</li>
+  </ol>
+</section>
+
+<h2 id="decide">10 · For you to decide</h2>
+<div class="q"><h3>1 · Where the parked money goes inside IGFI and Public Equity</h3><p>Pro rata across the chosen sleeves' products, as every category weight is spread — or into one designated product per category (a short-duration fund, a broad index ETF), which would read more like a cash-management position.</p><p class="rec">Recommended: pro rata. It needs no new product choice and keeps the sleeve the PWA chose as the only thing deciding what is held.</p></div>
+<div class="q"><h3>2 · Workbook and deck: a separate sheet and slide, or extra columns</h3><p>A separate <b>Initial Implementation</b> sheet and slide (one Doc, both renderers) — or Initial Notional / Initial (%) / Initial fee columns added to the existing Implementation sheet and slide.</p><p class="rec">Recommended: separate. The implementation slide is already 12 columns at 8.5–9.25pt; three more would push it below comfortable reading. One Doc keeps the sheet and the slide identical.</p></div>
+<div class="q"><h3>3 · The screen's default view</h3><p>Open on the long-term target (today's screen) or on the initial allocation (what is bought first).</p><p class="rec">Recommended: long-term target, with the initial one click away and both fees always shown.</p></div>
+<div class="q"><h3>4 · Doughnuts in the downloads</h3><p>Keep the downloads' doughnuts as the target's only, or add an initial composition to the new sheet and slide.</p><p class="rec">Recommended: target only. The composition of the long-term book is what the doughnuts are for; the initial table already shows what moved.</p></div>
+<div class="q"><h3>5 · Always on, or a PWA toggle</h3><p>Show the initial allocation for every book that holds private assets, or let a PWA switch it off for a proposal.</p><p class="rec">Recommended: always on. It is how the money will be invested and what it will cost at first; a proposal without it would overstate the day-one fee.</p></div>
+
+<section class="prose">
+  <h2 id="aside">Set aside</h2>
+  <ul>
+    <li><b>The path, not just the start.</b> How the parked money is drawn down over time — a pacing model of capital calls, distributions and recommitments — would turn one initial picture into a schedule. The rule given covers the starting point only, and a pacing model needs assumptions the tool does not hold.</li>
+    <li><b>Over-commitment.</b> Committing more than the target to reach it sooner is a common practice this proposal does not model.</li>
+    <li><b>The web page's other surfaces.</b> The register's record pane shows the stored initial picture; the Asset Allocation screen and the strategic analytics do not change, by design.</li>
+  </ul>
+  <p class="foot">Figures in this document are computed from the delivered bake (dataversion 1) and fee card 0.0-placeholder, USD Hedged and EUR Hedged slices, PMG Multi-Asset Portfolio sleeves, top account size $50m. Proposal prepared 28 September 2026.</p>
+</section>
+</div>
+
+<script id="pm-data" type="application/json">{"variant":"PMG Multi-Asset Portfolio","sizes":[25000000.0,50000000.0,100000000.0],"schedules":["CASP","RDR"],"rules":{"tiltPct":8.0,"tiltFrom":"Investment Grade Fixed Income","tiltCategory":"Asset Allocation Strategies","volShare":0.075,"volFrom":"Investment Grade Fixed Income","volCategory":"Hybrid Fixed Income","volCurrencies":["USD","GBP"],"groups":[{"name":"Private Equity & Other Private Assets","categories":["Private Equity","Other Private Assets"]}]},"lineups":[{"name":"USD Moderate Full","key":"USD|Moderate|Full|0","currency":"USD","hedging":"Hedged","categories":[{"name":"Investment Grade Fixed Income","weightPct":34.0},{"name":"Other Fixed Income","weightPct":9.0},{"name":"Public Equity","weightPct":38.0},{"name":"Hedge Funds","weightPct":10.0},{"name":"Private Equity","weightPct":5.0},{"name":"Other Private Assets","weightPct":4.0}],"sleeves":{"Investment Grade Fixed Income":{"name":"SMA Only","products":[{"name":"GSAM Core Municipal SMA","assetClass":"Municipals","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.25,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.45,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}},{"name":"GSAM Intermediate Credit SMA","assetClass":"IG Corporate","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.28,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.35,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}},{"name":"GSAM Short Duration SMA","assetClass":"Short Duration","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.22,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}}]},"Other Fixed Income":{"name":"Mutual Funds","products":[{"name":"GS High Yield Fund","assetClass":"High Yield","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.72,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.45,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}},{"name":"GS Emerging Markets Debt","assetClass":"EM Debt","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.85,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.35,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}},{"name":"GS Strategic Income Fund","assetClass":"Multi-Sector","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.79,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}}]},"Public Equity":{"name":"Passive","products":[{"name":"GS Access US Large Cap ETF","assetClass":"US Large Cap","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.09,"feeGroup":"Passive","minimumInvestment":null,"weight":0.55,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}},{"name":"GS Access Intl Equity ETF","assetClass":"Intl Developed","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"Local","shareClass":"Dis","productCost":0.25,"feeGroup":"Passive","minimumInvestment":null,"weight":0.3,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}},{"name":"GS Access EM Equity ETF","assetClass":"Emerging Markets","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"Local","shareClass":"Dis","productCost":0.37,"feeGroup":"Passive","minimumInvestment":null,"weight":0.15,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}}]},"Hedge Funds":{"name":"HFM & ART","products":[{"name":"GS HedgeWorks Multi-Strategy","assetClass":"Multi-Strategy","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Quarterly","exposureCurrency":"USD","shareClass":"Acc","productCost":1.35,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.6,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Absolute Return Tracker","assetClass":"Multi-Strategy","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Acc","productCost":0.96,"feeGroup":"Alternatives","minimumInvestment":1000.0,"weight":0.4,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}}]},"Private Equity & Other Private Assets":{"name":"Private Equity Managers","products":[{"name":"GS Private Markets Buyout","assetClass":"Buyout","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.45,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.3,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Vintage Fund IX","assetClass":"Secondaries","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.25,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.25,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Growth Equity Partners","assetClass":"Growth","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.5,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Private Credit Partners","assetClass":"Private Credit","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Quarterly","exposureCurrency":"USD","shareClass":"Dis","productCost":1.4,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.15,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Real Estate Partners","assetClass":"Core Real Estate","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Dis","productCost":1.3,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.1,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}}]},"Asset Allocation Strategies":{"name":"Tactical Tilt Overlay Portfolio","products":[{"name":"Tactical Tilt Fund","assetClass":"Tactical Tilts","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.85,"feeGroup":"Asset Allocation","minimumInvestment":1000.0,"weight":1.0,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.22,"50000000":0.22,"100000000":0.22}}}]},"Hybrid Fixed Income":{"name":"SVP","products":[{"name":"Strategic Volatility Premium","assetClass":"Volatility Premium","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.65,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":1.0,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}}]}}},{"name":"USD Moderate-Aggressive ex-HFs ex-RAs","key":"USD|ModAgg|ex-HFs|1","currency":"USD","hedging":"Hedged","categories":[{"name":"Investment Grade Fixed Income","weightPct":28.0899},{"name":"Other Fixed Income","weightPct":8.9888},{"name":"Public Equity","weightPct":52.80890000000001},{"name":"Private Equity","weightPct":6.741599999999999},{"name":"Other Private Assets","weightPct":3.3708}],"sleeves":{"Investment Grade Fixed Income":{"name":"SMA Only","products":[{"name":"GSAM Core Municipal SMA","assetClass":"Municipals","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.25,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.45,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}},{"name":"GSAM Intermediate Credit SMA","assetClass":"IG Corporate","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.28,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.35,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}},{"name":"GSAM Short Duration SMA","assetClass":"Short Duration","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.22,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}}]},"Other Fixed Income":{"name":"Mutual Funds","products":[{"name":"GS High Yield Fund","assetClass":"High Yield","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.72,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.45,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}},{"name":"GS Emerging Markets Debt","assetClass":"EM Debt","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.85,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.35,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}},{"name":"GS Strategic Income Fund","assetClass":"Multi-Sector","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.79,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}}]},"Public Equity":{"name":"Passive","products":[{"name":"GS Access US Large Cap ETF","assetClass":"US Large Cap","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.09,"feeGroup":"Passive","minimumInvestment":null,"weight":0.55,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}},{"name":"GS Access Intl Equity ETF","assetClass":"Intl Developed","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"Local","shareClass":"Dis","productCost":0.25,"feeGroup":"Passive","minimumInvestment":null,"weight":0.3,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}},{"name":"GS Access EM Equity ETF","assetClass":"Emerging Markets","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"Local","shareClass":"Dis","productCost":0.37,"feeGroup":"Passive","minimumInvestment":null,"weight":0.15,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}}]},"Private Equity & Other Private Assets":{"name":"Private Equity Managers","products":[{"name":"GS Private Markets Buyout","assetClass":"Buyout","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.45,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.3,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Vintage Fund IX","assetClass":"Secondaries","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.25,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.25,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Growth Equity Partners","assetClass":"Growth","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.5,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Private Credit Partners","assetClass":"Private Credit","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Quarterly","exposureCurrency":"USD","shareClass":"Dis","productCost":1.4,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.15,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Real Estate Partners","assetClass":"Core Real Estate","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Dis","productCost":1.3,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.1,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}}]},"Asset Allocation Strategies":{"name":"Tactical Tilt Overlay Portfolio","products":[{"name":"Tactical Tilt Fund","assetClass":"Tactical Tilts","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.85,"feeGroup":"Asset Allocation","minimumInvestment":1000.0,"weight":1.0,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.22,"50000000":0.22,"100000000":0.22}}}]},"Hybrid Fixed Income":{"name":"SVP","products":[{"name":"Strategic Volatility Premium","assetClass":"Volatility Premium","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.65,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":1.0,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}}]}}},{"name":"EUR Higher Risk Full","key":"EUR|Higher Risk|Full|0","currency":"EUR","hedging":"Hedged","categories":[{"name":"Investment Grade Fixed Income","weightPct":8.0},{"name":"Other Fixed Income","weightPct":5.0},{"name":"Public Equity","weightPct":67.99999999999999},{"name":"Hedge Funds","weightPct":10.0},{"name":"Private Equity","weightPct":6.0},{"name":"Other Private Assets","weightPct":3.0}],"sleeves":{"Investment Grade Fixed Income":{"name":"SMA Only","products":[{"name":"GSAM Core Municipal SMA","assetClass":"Municipals","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.25,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.45,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}},{"name":"GSAM Intermediate Credit SMA","assetClass":"IG Corporate","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.28,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.35,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}},{"name":"GSAM Short Duration SMA","assetClass":"Short Duration","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.22,"feeGroup":"Core Active","minimumInvestment":5000000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.32,"50000000":0.32,"100000000":0.32}}}]},"Other Fixed Income":{"name":"Mutual Funds","products":[{"name":"GS High Yield Fund","assetClass":"High Yield","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.72,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.45,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}},{"name":"GS Emerging Markets Debt","assetClass":"EM Debt","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.85,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.35,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}},{"name":"GS Strategic Income Fund","assetClass":"Multi-Sector","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.79,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}}]},"Public Equity":{"name":"Passive","products":[{"name":"GS Access US Large Cap ETF","assetClass":"US Large Cap","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.09,"feeGroup":"Passive","minimumInvestment":null,"weight":0.55,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}},{"name":"GS Access Intl Equity ETF","assetClass":"Intl Developed","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"Local","shareClass":"Dis","productCost":0.25,"feeGroup":"Passive","minimumInvestment":null,"weight":0.3,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}},{"name":"GS Access EM Equity ETF","assetClass":"Emerging Markets","style":"Passive","vehicle":"ETF","source":"Internal","liquidity":"Daily","exposureCurrency":"Local","shareClass":"Dis","productCost":0.37,"feeGroup":"Passive","minimumInvestment":null,"weight":0.15,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.14,"50000000":0.14,"100000000":0.14}}}]},"Hedge Funds":{"name":"HFM & ART","products":[{"name":"GS HedgeWorks Multi-Strategy","assetClass":"Multi-Strategy","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Quarterly","exposureCurrency":"USD","shareClass":"Acc","productCost":1.35,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.6,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Absolute Return Tracker","assetClass":"Multi-Strategy","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Acc","productCost":0.96,"feeGroup":"Alternatives","minimumInvestment":1000.0,"weight":0.4,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}}]},"Private Equity & Other Private Assets":{"name":"Private Equity Managers","products":[{"name":"GS Private Markets Buyout","assetClass":"Buyout","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.45,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.3,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Vintage Fund IX","assetClass":"Secondaries","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.25,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.25,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Growth Equity Partners","assetClass":"Growth","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Acc","productCost":1.5,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.2,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Private Credit Partners","assetClass":"Private Credit","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Quarterly","exposureCurrency":"USD","shareClass":"Dis","productCost":1.4,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.15,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}},{"name":"GS Real Estate Partners","assetClass":"Core Real Estate","style":"Active","vehicle":"SMA","source":"Internal","liquidity":"Drawdown","exposureCurrency":"USD","shareClass":"Dis","productCost":1.3,"feeGroup":"Alternatives","minimumInvestment":5000000.0,"weight":0.1,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.68,"50000000":0.68,"100000000":0.68}}}]},"Asset Allocation Strategies":{"name":"Tactical Tilt Overlay Portfolio","products":[{"name":"Tactical Tilt Fund","assetClass":"Tactical Tilts","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.85,"feeGroup":"Asset Allocation","minimumInvestment":1000.0,"weight":1.0,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.22,"50000000":0.22,"100000000":0.22}}}]},"Hybrid Fixed Income":{"name":"SVP","products":[{"name":"Strategic Volatility Premium","assetClass":"Volatility Premium","style":"Active","vehicle":"Mutual Fund","source":"Internal","liquidity":"Daily","exposureCurrency":"USD","shareClass":"Dis","productCost":0.65,"feeGroup":"Specialist Active","minimumInvestment":1000.0,"weight":1.0,"mgmt":{"CASP":{"25000000":0.512,"50000000":0.461,"100000000":0.4005},"RDR":{"25000000":0.48,"50000000":0.48,"100000000":0.48}}}]}}}]}</script>
+<script id="pm-core">
+/* ---- the calculation: the tool's implementation chain, and the proposed
+   initial overlay on top of it. Pure functions of the data; the demo below
+   only draws what they return. ------------------------------------------- */
+var PM = (function () {
+  var DATA = JSON.parse(document.getElementById('pm-data').textContent);
+  var R = DATA.rules;
+  var IG = 'Investment Grade Fixed Income', EQ = 'Public Equity';
+  var PRIVATE = R.groups[0].name;
+  var FUNDING = [{ category: IG, share: 1 / 3 }, { category: EQ, share: 2 / 3 }];
+
+  /* largest remainder to 2dp, closing on 100.00 - implementation.js roundWeights() */
+  function roundWeights(exact) {
+    var units = exact.map(function (w) { return Math.floor(w * 100 + 1e-9); });
+    var used = units.reduce(function (a, b) { return a + b; }, 0);
+    var short = 10000 - used;
+    var order = exact.map(function (w, i) { return { i: i, rem: w * 100 - units[i] }; })
+      .sort(function (a, b) { return (b.rem - a.rem) || (a.i - b.i); });
+    for (var n = 0; n < short && order.length; n++) units[order[n % order.length].i] += 1;
+    return units.map(function (u) { return u / 100; });
+  }
+  function groupOf(name) {
+    for (var i = 0; i < R.groups.length; i++) {
+      if (R.groups[i].categories.indexOf(name) >= 0) return R.groups[i].name;
+    }
+    return name;
+  }
+  /* overlay 1, the tactical tilt (D50): TACTICAL_TILT_PCT out of IGFI, appended */
+  function tilted(categories, on) {
+    var out = categories.map(function (c) { return { name: c.name, weightPct: c.weightPct }; });
+    if (!on) return out;
+    var from = out.filter(function (c) { return c.name === R.tiltFrom; })[0];
+    if (!from || from.weightPct < R.tiltPct) return out;
+    from.weightPct -= R.tiltPct;
+    out.push({ name: R.tiltCategory, weightPct: R.tiltPct });
+    return out;
+  }
+  /* overlay 2, the volatility premium (D53): a share of IGFI as implemented */
+  function premium(categories, on, currency) {
+    var out = categories.map(function (c) { return { name: c.name, weightPct: c.weightPct }; });
+    if (!on || R.volCurrencies.indexOf(currency) < 0) return out;
+    for (var i = 0; i < out.length; i++) {
+      if (out[i].name !== R.volFrom) continue;
+      if (out[i].weightPct <= 0) break;
+      var take = out[i].weightPct * R.volShare;
+      out[i].weightPct -= take;
+      out.splice(i + 1, 0, { name: R.volCategory, weightPct: take });
+      break;
+    }
+    return out;
+  }
+  /* categories that share one sleeve share one line (D60, D71) */
+  function lines(categories) {
+    var order = [], by = {};
+    categories.forEach(function (c) {
+      var key = groupOf(c.name);
+      if (!(key in by)) { by[key] = { name: key, weightPct: 0 }; order.push(key); }
+      by[key].weightPct += c.weightPct;
+    });
+    return order.map(function (k) { return by[k]; });
+  }
+  /* the proposed overlay 3: the private line's weight, parked by the rule */
+  function initialLines(target) {
+    var out = target.map(function (c) { return { name: c.name, weightPct: c.weightPct }; });
+    var priv = out.filter(function (c) { return c.name === PRIVATE; })[0];
+    var P = priv ? priv.weightPct : 0;
+    if (P <= 0) return null;
+    FUNDING.forEach(function (f) {
+      var line = out.filter(function (c) { return c.name === f.category; })[0];
+      if (line) line.weightPct += P * f.share;
+    });
+    priv.weightPct = 0;
+    return out;
+  }
+  /* sleeves -> products -> rounding -> notional -> fees: buildImplementationRows */
+  function price(lineup, categoryLines, o) {
+    var all = [], groups = [];
+    categoryLines.forEach(function (c) {
+      var sleeve = lineup.sleeves[c.name];
+      var items = sleeve ? sleeve.products.map(function (p) {
+        return { p: p, category: c.name, exact: c.weightPct * p.weight };
+      }) : [];
+      all.push.apply(all, items);
+      groups.push({ category: c.name, weightPct: c.weightPct, sleeve: sleeve ? sleeve.name : null, items: items });
+    });
+    var printed = roundWeights(all.map(function (i) { return i.exact; }));
+    all.forEach(function (it, ix) {
+      it.weight = printed[ix];
+      it.notional = Math.round(o.size * it.weight / 100 / 100) * 100;
+      it.mgmt = it.p.mgmt[o.schedule][String(o.size)];
+      it.bp = (it.p.productCost + it.mgmt) * it.weight;
+      it.below = !!it.p.minimumInvestment && it.notional < it.p.minimumInvestment;
+    });
+    var total = { weight: 0, notional: 0, bp: 0 };
+    all.forEach(function (it) { total.weight += it.weight; total.notional += it.notional; total.bp += it.bp; });
+    groups.forEach(function (g) {
+      g.weight = g.items.reduce(function (a, it) { return a + it.weight; }, 0);
+      g.notional = g.items.reduce(function (a, it) { return a + it.notional; }, 0);
+      g.bp = g.items.reduce(function (a, it) { return a + it.bp; }, 0);
+    });
+    return { groups: groups, total: total };
+  }
+  function model(lineup, o) {
+    var target = lines(premium(tilted(lineup.categories, o.tilt), o.vol, lineup.currency));
+    var t = price(lineup, target, o);
+    var init = initialLines(target);
+    var i = init ? price(lineup, init, o) : null;
+    /* nothing that prints as zero earns a line (D68) - except, in the initial
+       picture, a product whose target does not print as zero */
+    var key = function (g, it) { return g.category + '|' + it.p.name; };
+    var targetBy = {};
+    t.groups.forEach(function (g) { g.items.forEach(function (it) { targetBy[key(g, it)] = it; }); });
+    t.groups = t.groups.filter(function (g) { return g.weightPct !== 0; });
+    t.groups.forEach(function (g) { g.items = g.items.filter(function (it) { return it.weight !== 0; }); });
+    var commitment = null;
+    if (i) {
+      i.groups.forEach(function (g) {
+        g.items.forEach(function (it) { it.target = targetBy[key(g, it)] || null; });
+        g.items = g.items.filter(function (it) { return it.weight !== 0 || (it.target && it.target.weight !== 0); });
+        g.targetWeight = g.items.reduce(function (a, it) { return a + (it.target ? it.target.weight : 0); }, 0);
+        g.targetNotional = g.items.reduce(function (a, it) { return a + (it.target ? it.target.notional : 0); }, 0);
+      });
+      i.groups = i.groups.filter(function (g) { return g.items.length || g.weightPct !== 0; });
+      var pv = t.groups.filter(function (g) { return g.category === PRIVATE; })[0];
+      var held = FUNDING.map(function (f) {
+        var ig = i.groups.filter(function (g) { return g.category === f.category; })[0];
+        var tg = t.groups.filter(function (g) { return g.category === f.category; })[0];
+        return { category: f.category, share: f.share,
+                 weight: (ig ? ig.weight : 0) - (tg ? tg.weight : 0),
+                 notional: (ig ? ig.notional : 0) - (tg ? tg.notional : 0) };
+      });
+      commitment = { weight: pv.weight, notional: pv.notional, held: held };
+    }
+    return { target: t, initial: i, commitment: commitment, lineup: lineup, options: o };
+  }
+  return { DATA: DATA, model: model, PRIVATE: PRIVATE, IG: IG, EQ: EQ, roundWeights: roundWeights };
+})();
+</script>
+<script>
+/* ---- the demo: draws PM.model() as the screen, the sheet and the slide -- */
+(function () {
+  var D = PM.DATA;
+  var state = { lineup: 0, size: 50000000, schedule: D.schedules[0], tilt: true, vol: true, view: 'target' };
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var pct = function (v) { return v.toFixed(2) + '%'; };
+  var money = function (v) { return '$' + Math.round(v).toLocaleString('en-US'); };
+  var bp = function (v) { return v.toFixed(1) + 'bp'; };
+  var shortMoney = function (v) { return v >= 1e6 ? '$' + (v / 1e6).toFixed(v % 1e6 ? 2 : 0) + 'm' : money(v); };
+
+  D.lineups.forEach(function (l, ix) { $('c-lineup').add(new Option(l.name + ' (' + l.currency + ')', ix)); });
+  D.sizes.forEach(function (s) { $('c-size').add(new Option(shortMoney(s), s)); });
+  D.schedules.forEach(function (s) { $('c-sched').add(new Option(s + (s === 'CASP' ? ' · marginal blend' : ' · by fee group'), s)); });
+  $('c-size').value = String(state.size);
+  $('c-tilt').checked = state.tilt; $('c-vol').checked = state.vol;
+
+  function wire() {
+    $('c-lineup').onchange = function () { state.lineup = +this.value; draw(); };
+    $('c-size').onchange = function () { state.size = +this.value; draw(); };
+    $('c-sched').onchange = function () { state.schedule = this.value; draw(); };
+    $('c-tilt').onchange = function () { state.tilt = this.checked; draw(); };
+    $('c-vol').onchange = function () { state.vol = this.checked; draw(); };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (b) {
+      b.onclick = function () { state.view = b.getAttribute('data-view'); draw(); };
+    });
+  }
+
+  function draw() {
+    var lineup = D.lineups[state.lineup];
+    var volAllowed = D.rules.volCurrencies.indexOf(lineup.currency) >= 0;
+    $('c-vol').disabled = !volAllowed;
+    $('l-vol').className = 'chk' + (volAllowed ? '' : ' off');
+    var m = PM.model(lineup, { size: state.size, schedule: state.schedule, tilt: state.tilt, vol: state.vol && volAllowed });
+    var initial = state.view === 'initial' && m.initial;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-view]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === (initial ? 'initial' : 'target')));
+      b.disabled = !m.initial && b.getAttribute('data-view') === 'initial';
+    });
+    drawSummary(m); drawRail(m); drawTable(m, initial); drawCharts(m, initial); drawSheet(m); drawSlide(m);
+  }
+
+  function drawSummary(m) {
+    var c = m.commitment, t = m.target.total, i = m.initial && m.initial.total;
+    if (!c) { $('d-summary').innerHTML = '<div class="stat"><small>Private markets</small><b>None</b><span>This book holds no private assets: nothing changes.</span></div>'; return; }
+    var saving = t.bp - i.bp;
+    $('d-summary').innerHTML =
+      '<div class="stat pv"><small>Committed to private markets</small><b>' + pct(c.weight) + '</b><span>' + money(c.notional) + ' — called over time</span></div>'
+      + '<div class="stat ig"><small>Held in IGFI until called</small><b>+' + pct(c.held[0].weight) + '</b><span>' + money(c.held[0].notional) + ' · ⅓ of the commitment</span></div>'
+      + '<div class="stat eq"><small>Held in Public Equity until called</small><b>+' + pct(c.held[1].weight) + '</b><span>' + money(c.held[1].notional) + ' · ⅔ of the commitment</span></div>'
+      + '<div class="stat fee"><small>Blended fee: target → initial</small><b>' + bp(t.bp) + ' → ' + bp(i.bp) + '</b><span class="down">−' + saving.toFixed(1) + 'bp · ' + money(state.size * saving / 10000) + ' a year less at the start</span></div>';
+  }
+
+  function drawRail(m) {
+    var lineup = m.lineup;
+    var picked = Object.keys(lineup.sleeves).filter(function (k) { return D.rules.groups[0].name === k || lineup.categories.some(function (c) { return c.name === k; }); });
+    $('d-sleeves').innerHTML = picked.map(function (k) {
+      return '<div class="field"><b>' + esc(k) + '</b><small>' + esc(lineup.sleeves[k].name) + '</small></div>';
+    }).join('');
+    var volAllowed = D.rules.volCurrencies.indexOf(lineup.currency) >= 0;
+    $('d-overlays').innerHTML =
+      '<div class="field"><b>' + (state.tilt ? '☑' : '☐') + ' Tactical Tilts</b><small>' + D.rules.tiltPct + '% funded pro rata from ' + esc(D.rules.tiltFrom) + '.</small></div>'
+      + '<div class="field"><b>' + (state.vol && volAllowed ? '☑' : '☐') + ' Strategic Volatility Premium</b><small>' + (volAllowed ? (D.rules.volShare * 100).toFixed(1) + '% of ' + esc(D.rules.volFrom) + ' after tilts' : 'Available in USD and GBP only; this book is in ' + lineup.currency + '.') + '</small></div>';
+    var c = m.commitment;
+    if (!c) { $('d-pmf').innerHTML = '<div class="pmf none"><b>Private markets funding</b><p>No private assets in this book.</p></div>'; return; }
+    $('d-pmf').innerHTML = '<div class="pmf"><b>Private markets funding</b>'
+      + '<p><b>' + pct(c.weight) + '</b> (' + money(c.notional) + ') committed to ' + esc(PM.PRIVATE) + ', invested as capital is called.</p>'
+      + '<div class="split"><i style="width:33.333%;background:var(--t-ig)"></i><i style="width:66.667%;background:var(--t-eq)"></i></div>'
+      + '<p>Until then held <b>' + pct(c.held[0].weight) + '</b> in Investment Grade Fixed Income (' + money(c.held[0].notional) + ') and <b>' + pct(c.held[1].weight) + '</b> in Public Equity (' + money(c.held[1].notional) + ').</p></div>';
+  }
+
+  function drawTable(m, initial) {
+    var picture = initial ? m.initial : m.target;
+    var lineup = m.lineup;
+    $('d-implementing').innerHTML = 'Implementing <strong>' + esc(lineup.name) + '</strong> · ' + esc(D.variant) + ' · ' + shortMoney(state.size) + ' · '
+      + (initial ? '<b style="color:#1E6B45">initial allocation</b>' : 'long-term target');
+    var t = m.target.total, i = m.initial && m.initial.total;
+    $('d-feeline').innerHTML = 'Blended weighted fee: <b>' + bp(t.bp) + '</b> at target'
+      + (i ? ' · <b>' + bp(i.bp) + '</b> initially, while private markets capital is called' : '') + ' · ' + esc(state.schedule) + ', PMG Target';
+    var h = '<thead><tr><th>Asset Class</th><th>Products</th><th class="n">Allocation (%)</th><th class="n">Notional</th><th>Style</th><th>Vehicle</th><th>Liquidity</th><th class="n">Prod cost</th><th class="n">Mgmt fee</th><th class="n">Wtd fee</th></tr></thead><tbody>';
+    picture.groups.forEach(function (g) {
+      var pv = g.category === PM.PRIVATE;
+      var tgW = initial ? g.targetWeight : null;
+      var moved = initial && Math.abs(g.weight - tgW) > 1e-9;
+      var note = !initial ? '' : pv ? '<small class="cm">committed ' + money(g.targetNotional) + '</small>' : moved ? '<small class="up">target ' + pct(tgW) + '</small>' : '';
+      var noteN = !initial ? '' : pv ? '<small class="cm">' + pct(tgW) + ' at target</small>' : moved ? '<small class="up">target ' + money(g.targetNotional) + '</small>' : '';
+      h += '<tr class="cat' + (pv ? ' pv' : '') + '"><th>' + esc(g.category) + '</th><td><span class="pill">' + esc(g.sleeve || 'no sleeve') + '</span></td>'
+        + '<td class="n' + (moved ? ' changed' : '') + (pv && initial ? ' zero' : '') + '">' + pct(g.weight) + note + '</td>'
+        + '<td class="n' + (moved ? ' changed' : '') + (pv && initial ? ' zero' : '') + '">' + money(g.notional) + noteN + '</td><td></td><td></td><td></td><td></td><td></td>'
+        + '<td class="n">' + bp(g.bp) + '</td></tr>';
+      g.items.forEach(function (it) {
+        var p = it.p, itMoved = initial && it.target && Math.abs(it.weight - it.target.weight) > 1e-9;
+        var n1 = !initial ? '' : pv ? '<small class="cm">committed ' + money(it.target ? it.target.notional : 0) + '</small>' : itMoved ? '<small class="up">target ' + pct(it.target.weight) + '</small>' : (!it.target ? '<small class="up">target 0.00%</small>' : '');
+        h += '<tr class="item"><th>' + esc(p.assetClass) + '</th><td>' + esc(p.name) + '</td>'
+          + '<td class="n' + (itMoved || (initial && !it.target) ? ' changed' : '') + (pv && initial ? ' zero' : '') + '">' + pct(it.weight) + n1 + '</td>'
+          + '<td class="n' + (itMoved || (initial && !it.target) ? ' changed' : '') + (pv && initial ? ' zero' : '') + '">' + money(it.notional)
+          + (it.below && !initial ? '<small style="color:#9B1C1C">min ' + money(p.minimumInvestment) + '</small>' : '') + '</td>'
+          + '<td><span class="pill">' + esc(p.style) + '</span></td><td><span class="pill">' + esc(p.vehicle) + '</span></td>'
+          + '<td><span class="pill' + (p.liquidity === 'Drawdown' ? ' draw' : '') + '">' + esc(p.liquidity) + '</span></td>'
+          + '<td class="n">' + pct(p.productCost) + '</td><td class="n">' + pct(it.mgmt) + '</td><td class="n">' + bp(it.bp) + '</td></tr>';
+      });
+    });
+    h += '<tr class="grand"><th>Implemented total</th><td></td><td class="n">' + pct(picture.total.weight) + '</td><td class="n">' + money(picture.total.notional) + '</td><td></td><td></td><td></td><td></td><td></td><td class="n">' + bp(picture.total.bp) + '</td></tr></tbody>';
+    $('d-table').innerHTML = h;
+  }
+
+  var PALETTE = ['#2A78D6', '#EB6834', '#1BAF7A', '#EDA100', '#E87BA4', '#4A3AA7', '#E34948'];
+  function composition(picture, field) {
+    var by = {}, order = [];
+    picture.groups.forEach(function (g) { g.items.forEach(function (it) {
+      var k = it.p[field]; if (!(k in by)) { by[k] = 0; order.push(k); } by[k] += it.weight; }); });
+    order.sort();
+    return order.map(function (k, ix) { return { name: k, pct: by[k], color: PALETTE[ix % PALETTE.length] }; });
+  }
+  function drawCharts(m, initial) {
+    var fields = [['liquidity', 'Liquidity'], ['style', 'Style'], ['vehicle', 'Vehicle']];
+    var html = fields.map(function (f) {
+      var shown = composition(initial ? m.initial : m.target, f[0]);
+      var keys = {};
+      shown.forEach(function (s) { keys[s.name] = s.color; });
+      var bar = function (list) {
+        return '<div class="stack">' + list.map(function (s) {
+          return '<span style="width:' + s.pct + '%;background:' + (keys[s.name] || '#999') + '" title="' + esc(s.name) + ' ' + s.pct.toFixed(1) + '%">' + (s.pct >= 9 ? s.pct.toFixed(0) + '%' : '') + '</span>';
+        }).join('') + '</div>';
+      };
+      var other = m.initial ? composition(initial ? m.target : m.initial, f[0]) : null;
+      (other || []).forEach(function (s) { if (!(s.name in keys)) keys[s.name] = s.color; });
+      return '<div class="minichart"><h6>' + f[1] + '</h6>'
+        + '<div class="row"><span>' + (initial ? 'Initial' : 'Target') + '</span>' + bar(shown) + '</div>'
+        + (other ? '<div class="row"><span style="color:#9AA7B6">' + (initial ? 'Target' : 'Initial') + '</span><div style="opacity:.45">' + bar(other) + '</div></div>' : '')
+        + '<div class="keys">' + Object.keys(keys).map(function (k) { return '<span><i style="background:' + keys[k] + '"></i>' + esc(k) + '</span>'; }).join('') + '</div></div>';
+    }).join('');
+    $('d-charts').innerHTML = '<div style="grid-column:1/-1;font:600 12px var(--f-body);color:#0F243E;margin-bottom:-4px">Composition — follows the view (the tool draws doughnuts; bars here, the paler one for comparison)</div>' + html;
+  }
+
+  function drawSheet(m) {
+    var el = $('d-sheet');
+    if (!m.initial) {
+      el.innerHTML = '<tr><td style="padding:14px;color:#6B7B8C;white-space:normal">No private assets: the workbook has no Initial Implementation sheet, and its four sheets are exactly today\'s.</td></tr>';
+      return;
+    }
+    var c = m.commitment, cols = 13;
+    var blank = function (n) { return new Array(n + 1).join('<td></td>'); };
+    var h = '<tr class="pre"><td>Proposal UID</td><td>pr_…</td>' + blank(cols - 2) + '</tr>'
+      + '<tr class="pre"><td>Implementation Type</td><td>' + esc(D.variant) + '</td>' + blank(cols - 2) + '</tr>'
+      + '<tr class="pre"><td>Fee Schedule</td><td>' + esc(state.schedule) + '</td>' + blank(cols - 2) + '</tr>'
+      + '<tr class="pre pvn"><td>Private Markets Commitment</td><td>' + money(c.notional) + ' (' + pct(c.weight) + '), invested as capital is called</td>' + blank(cols - 2) + '</tr>'
+      + '<tr class="pre pvn"><td>Held Until Called</td><td>' + pct(c.held[0].weight) + ' Investment Grade Fixed Income · ' + pct(c.held[1].weight) + ' Public Equity</td>' + blank(cols - 2) + '</tr>'
+      + '<tr class="pre"><td></td>' + blank(cols - 1) + '</tr>'
+      + '<tr class="h"><td>Categories &amp; Asset Classes</td><td>Products</td><td>Notional</td><td>Allocation (%)</td><td class="newcol">Target (%)</td><td>Style</td><td>Vehicle</td><td>Share Class</td><td>Source</td><td>Liquidity</td><td>Product Cost</td><td>Mgmt fee</td><td>Wtd fee (bp)</td></tr>';
+    m.initial.groups.forEach(function (g) {
+      h += '<tr class="b"><td>' + esc(g.category) + '</td><td></td><td class="n">' + money(g.notional) + '</td><td class="n">' + pct(g.weight) + '</td><td class="n newcol">' + pct(g.targetWeight) + '</td>' + blank(7) + '<td class="n">' + g.bp.toFixed(1) + '</td></tr>';
+      g.items.forEach(function (it) {
+        var p = it.p;
+        h += '<tr><td>&nbsp;&nbsp;' + esc(p.assetClass) + '</td><td>' + esc(p.name) + '</td><td class="n">' + money(it.notional) + '</td><td class="n">' + pct(it.weight) + '</td><td class="n newcol">' + pct(it.target ? it.target.weight : 0) + '</td>'
+          + '<td>' + esc(p.style) + '</td><td>' + esc(p.vehicle) + '</td><td>' + esc(p.shareClass || '') + '</td><td>' + esc(p.source) + '</td><td>' + esc(p.liquidity) + '</td>'
+          + '<td class="n">' + pct(p.productCost) + '</td><td class="n">' + pct(it.mgmt) + '</td><td class="n">' + it.bp.toFixed(1) + '</td></tr>';
+      });
+    });
+    h += '<tr class="t"><td>Total</td><td></td><td class="n">' + money(m.initial.total.notional) + '</td><td class="n">' + pct(m.initial.total.weight) + '</td><td class="n newcol">' + pct(m.target.total.weight) + '</td>' + blank(7) + '<td class="n">' + m.initial.total.bp.toFixed(1) + '</td></tr>';
+    el.innerHTML = h;
+  }
+
+  function drawSlide(m) {
+    var el = $('d-slide');
+    if (!m.initial) {
+      el.innerHTML = '<h6>No Initial Implementation slide</h6><div class="ssub">This book holds no private assets, so the deck is exactly today\'s.</div><div class="srule"></div>';
+      return;
+    }
+    var c = m.commitment;
+    var rows = '<tr class="h"><td>Categories &amp; Asset Classes</td><td>Products</td><td class="n">Notional</td><td class="n">Allocation (%)</td><td class="n">Target (%)</td><td>Style</td><td>Vehicle</td><td>Liquidity</td><td class="n">Product Cost</td><td class="n">Mgmt fee</td><td class="n">Wtd fee (bp)</td></tr>';
+    m.initial.groups.forEach(function (g) {
+      rows += '<tr class="b"><td>' + esc(g.category) + '</td><td></td><td class="n">' + money(g.notional) + '</td><td class="n">' + pct(g.weight) + '</td><td class="n">' + pct(g.targetWeight) + '</td><td></td><td></td><td></td><td></td><td></td><td class="n">' + g.bp.toFixed(1) + '</td></tr>';
+      g.items.forEach(function (it) {
+        rows += '<tr><td style="padding-left:1.1em">' + esc(it.p.assetClass) + '</td><td>' + esc(it.p.name) + '</td><td class="n">' + money(it.notional) + '</td><td class="n">' + pct(it.weight) + '</td><td class="n">' + pct(it.target ? it.target.weight : 0) + '</td><td>' + esc(it.p.style) + '</td><td>' + esc(it.p.vehicle) + '</td><td>' + esc(it.p.liquidity) + '</td><td class="n">' + pct(it.p.productCost) + '</td><td class="n">' + pct(it.mgmt) + '</td><td class="n">' + it.bp.toFixed(1) + '</td></tr>';
+      });
+    });
+    rows += '<tr class="t"><td>Total</td><td></td><td class="n">' + money(m.initial.total.notional) + '</td><td class="n">' + pct(m.initial.total.weight) + '</td><td class="n">' + pct(m.target.total.weight) + '</td><td></td><td></td><td></td><td></td><td></td><td class="n">' + m.initial.total.bp.toFixed(1) + '</td></tr>';
+    el.innerHTML = '<h6>Initial Implementation</h6>'
+      + '<div class="ssub">Until private markets capital is called — ' + pct(c.weight) + ' committed (' + money(c.notional) + '), held ⅓ in Investment Grade Fixed Income and ⅔ in Public Equity</div>'
+      + '<div class="srule"></div><div class="stbl"><table>' + rows + '</table></div>'
+      + '<div class="snotes">The commitment is drawn from the Investment Grade Fixed Income and Public Equity positions as capital is called; Target (%) is the long-term allocation on the Implemented Model slide.<br>Fees are charged on what is invested: ' + bp(m.initial.total.bp) + ' initially against ' + bp(m.target.total.bp) + ' at target.</div>'
+      + '<div class="spage">Proposal UID pr_… · Slide 4 of 7</div>';
+    fitSlide();
+  }
+
+  /* the deck fits a table to its slide by its type size (D124); so does the
+     mock: the largest size at which every row and column shows */
+  function fitSlide() {
+    var box = document.querySelector('#d-slide .stbl');
+    var table = box && box.querySelector('table');
+    if (!table) return;
+    var size = 11;
+    table.style.fontSize = size + 'px';
+    while (size > 4 && (table.scrollHeight > box.clientHeight || table.scrollWidth > box.clientWidth)) {
+      size -= 0.25;
+      table.style.fontSize = size + 'px';
+    }
+  }
+  window.addEventListener('resize', fitSlide);
+
+  wire(); draw();
+})();
+</script>
+</body>
+</html>

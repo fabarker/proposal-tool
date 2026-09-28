@@ -231,12 +231,38 @@ var IMPL_TEXT_COLUMNS = ['Ticker', 'Style', 'Vehicle', 'Share class',
    at opposite ends of a table this wide the money was only ever reached by
    scrolling. The minimum stays on the right, and the position that breaches
    it says so beside its own notional instead. */
-function implScreenColumns(fees) {
-  return ['Asset Class', 'Products', 'Allocation (%)', 'Notional']
+function implScreenColumns(fees, initial) {
+  return ['Asset Class', 'Products', 'Allocation (%)']
+    .concat(initial ? ['Initial (%)'] : [])
+    .concat(['Notional'])
+    .concat(initial ? ['Initial notional'] : [])
     .concat(IMPL_TEXT_COLUMNS)
     .concat(['Prod cost'])
     .concat(fees ? ['Mgmt fee', 'Wtd fee'] : [])
+    .concat(fees && initial ? ['Initial fee'] : [])
     .concat(['Min Investment']);
+}
+/* which world each figure column belongs to, for the row above the header */
+var IMPL_WORLDS = { 'Allocation (%)': 'lt', 'Notional': 'lt', 'Wtd fee': 'lt',
+                    'Initial (%)': 'ini', 'Initial notional': 'ini', 'Initial fee': 'ini' };
+function shareText(share) {
+  return Math.abs(share - 1 / 3) < 1e-9 ? '⅓' : Math.abs(share - 2 / 3) < 1e-9 ? '⅔'
+    : App.num(share * 100, 0, '%');
+}
+function toggleInitial(button) {
+  initialShown = !initialShown;
+  var table = document.getElementById('implTbl');
+  var bar = button.closest('.ini-bar');
+  if (table) table.classList.toggle('ini-on', initialShown);
+  if (bar) bar.classList.toggle('ini-on', initialShown);
+  button.setAttribute('aria-pressed', String(initialShown));
+  var label = button.querySelector('.ini-lbl');
+  if (label) label.textContent = (initialShown ? 'Hide' : 'Show') + ' initial allocation';
+  if (table) table.querySelectorAll('.ini').forEach(function (cell) {
+    if (initialShown) cell.removeAttribute('aria-hidden'); else cell.setAttribute('aria-hidden', 'true');
+  });
+  /* the table changed width: let the scroll shadow catch up once it has */
+  setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 380);
 }
 
 /* A category band leaves the descriptive columns empty and fills its own
@@ -336,6 +362,36 @@ function volPremiumCategories(categories, on) {
   return out;
 }
 
+/* ---- private markets, initially (D136) -----------------------------------
+   The third overlay, and the mirror of rules.initialLines(). A book that
+   holds private markets is initially invested with the private line's weight
+   parked one third in IGFI and two thirds in Public Equity - on the sleeve
+   LINES, after both overlays, spread by each sleeve's own shares. A rule, not
+   a choice: no toggle in the rail. The button above the table only shows or
+   hides it, and that view is never saved. */
+function privateFunding() { return App.opt('rules.privateFunding', null); }
+
+function initialLines(lines) {
+  var rule = privateFunding();
+  if (!rule) return null;
+  var out = lines.map(function (l) { return { name: l.name, weightPct: l.weightPct }; });
+  var priv = out.filter(function (l) { return l.name === rule.from; })[0];
+  var weight = priv ? priv.weightPct : 0;
+  if (weight <= 0) return null;
+  rule.to.forEach(function (to) {
+    var line = out.filter(function (l) { return l.name === to.category; })[0];
+    if (!line) { line = { name: to.category, weightPct: 0 }; out.push(line); }
+    line.weightPct += weight * to.share;
+  });
+  priv.weightPct = 0;
+  return out;
+}
+/* end of the initial overlay */
+
+/* the initial columns: hidden on arrival, as the PWA leaves them after that,
+   and never part of the scenario (D136) */
+var initialShown = false;
+
 /* The categories AS IMPLEMENTED - what every row, fee and chart below is
    built from. Step 1 keeps showing the strategic allocation untouched.
    Tilt first, then the premium, the order rules.implementedCategories()
@@ -432,6 +488,7 @@ function rows() {
           cost: product.productCost, feeGroup: product.feeGroup,
           minimumInvestment: product.minimumInvestment,
           mgmt: managementFee(product.feeGroup),
+          share: product.weight,
           exact: category.weightPct * product.weight
         };
         items.push(item);
@@ -456,8 +513,32 @@ function rows() {
       item.wtdBp = item.mgmt === null ? null : (item.cost + item.mgmt) * item.weight;
       item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
       /* A position smaller than the product will accept is not a position
-         (item 3). Mirrors buildImplementationRows. */
-      item.belowMinimum = !!item.minimumInvestment && item.notional < item.minimumInvestment;
+         (item 3); nor is a line the long-term book does not hold, kept only
+         for its initial figures (D136). Mirrors buildImplementationRows. */
+      item.belowMinimum = !!item.minimumInvestment && item.weight > 0
+        && item.notional < item.minimumInvestment;
+    });
+  }
+  /* The initial allocation (D136): the private line parked, spread by each
+     sleeve's shares, rounded as its own column so it too closes on 100.00,
+     priced at the same rates. Mirrors buildImplementationRows. */
+  var parked = all.length ? initialLines(combined) : null;
+  if (parked) {
+    var byLine = {};
+    parked.forEach(function (l) { byLine[l.name] = l.weightPct; });
+    groups.forEach(function (group) {
+      group.initialWeightPct = byLine[group.category] || 0;
+      group.items.forEach(function (item) { item.initialExact = group.initialWeightPct * item.share; });
+    });
+    var printedInitial = complete()
+      ? roundWeights(all.map(function (i) { return i.initialExact; }))
+      : all.map(function (i) { return Math.round(i.initialExact * 100) / 100; });
+    all.forEach(function (item, ix) {
+      item.initialWeight = printedInitial[ix];
+      item.initialNotional = Math.round(App.mandateSize() * item.initialWeight / 100 / ROUND_TO) * ROUND_TO;
+      item.initialWtdBp = item.mgmt === null ? null : (item.cost + item.mgmt) * item.initialWeight;
+      item.initialBelowMinimum = !!item.minimumInvestment && item.initialWeight > 0
+        && item.initialNotional < item.minimumInvestment;
     });
   }
   /* Nothing that prints as zero earns a line (D68). Dropped after the
@@ -466,9 +547,52 @@ function rows() {
      weight: an unimplemented one with an allocation is precisely what this
      page is asking a PWA to fix. Mirrors buildImplementationRows. */
   groups.forEach(function (group) {
-    group.items = group.items.filter(function (item) { return item.weight !== 0; });
+    group.items = group.items.filter(function (item) {
+      return item.weight !== 0 || (item.initialWeight || 0) !== 0;
+    });
   });
-  return groups.filter(function (group) { return group.weightPct !== 0; });
+  /* a category the tilt emptied keeps its row while the initial allocation
+     holds it (D136) */
+  return groups.filter(function (group) {
+    return group.weightPct !== 0 || (group.initialWeightPct || 0) !== 0;
+  });
+}
+
+/* The initial picture's totals and the commitment, or null for a book that
+   holds no private markets (D136). Mirrors model['initial']. */
+function initialOf(groups) {
+  var rule = privateFunding();
+  if (!rule || !groups.some(function (g) { return g.initialWeightPct !== undefined; })) return null;
+  var total = { weight: 0, notional: 0, bp: 0 }, unpriced = false;
+  groups.forEach(function (g) {
+    g.items.forEach(function (i) {
+      total.weight += i.initialWeight; total.notional += i.initialNotional;
+      if (i.initialWtdBp === null) unpriced = true; else total.bp += i.initialWtdBp;
+    });
+  });
+  if (unpriced) total.bp = null;
+  function find(name) { return groups.filter(function (g) { return g.category === name; })[0]; }
+  function sum(g, field) {
+    return g ? g.items.reduce(function (a, i) { return a + (i[field] || 0); }, 0) : 0;
+  }
+  var priv = find(rule.from);
+  /* a private line with no sleeve yet commits its own weight, as its band
+     shows it. Mirrors model['initial']. */
+  var bare = priv && !priv.items.length;
+  return {
+    total: total,
+    commitment: {
+      weight: bare ? priv.weightPct : sum(priv, 'weight'),
+      notional: bare ? Math.round(App.mandateSize() * priv.weightPct / 100 / ROUND_TO) * ROUND_TO
+        : sum(priv, 'notional'),
+      held: rule.to.map(function (to) {
+        var g = find(to.category);
+        return { category: to.category, share: to.share,
+                 weight: sum(g, 'initialWeight') - sum(g, 'weight'),
+                 notional: sum(g, 'initialNotional') - sum(g, 'notional') };
+      })
+    }
+  };
 }
 
 /* Every position that falls below its product's minimum (item 3). The export
@@ -2098,6 +2222,8 @@ function renderView() {
 
   var groups = rows();
   var t = totals(groups);
+  /* the initial allocation of a private-markets book, or null (D136) */
+  var ini = initialOf(groups);
   /* The same count the rail shows, so the two never disagree about how far
      along the implementation is (D53). */
   var counts = pickedCount();
@@ -2114,6 +2240,19 @@ function renderView() {
     return fees ? '<td class="' + cls + ' fee-col"><span class="fcw">'
       + inner + '</span></td>' : '';
   }
+  /* The initial twins (D136) are in the table whenever the book holds
+     private markets, collapsed to nothing until the button opens them: the
+     motion is a class on the table, so it plays both ways without a render.
+     Each wraps its content in a span, for the same reason the fee cells do. */
+  var hidden = initialShown ? '' : ' aria-hidden="true"';
+  function iniCell(cls, inner) {
+    return ini ? '<td class="' + cls + ' ini"' + hidden + '><span class="iw">' + inner + '</span></td>' : '';
+  }
+  function iniFeeCell(cls, inner) {
+    return ini && fees ? '<td class="' + cls + ' fee-col ini"' + hidden + '><span class="fcw"><span class="iw">'
+      + inner + '</span></span></td>' : '';
+  }
+  var privateLine = ini ? privateFunding().from : null;
 
   /* The gate is worked out before anything is drawn, because the head, the
      strip under the table and the export card all say the same thing and must
@@ -2142,14 +2281,44 @@ function renderView() {
     + (counts.total ? Math.round(counts.filled / counts.total * 100) : 0) + '%"></i></div>'
     + '</div></div>';
 
+  /* The button that shows the initial allocation, only where there is one
+     (D136); the note beside it says why it is there either way. */
+  if (ini) {
+    var held = ini.commitment.held;
+    html += '<div class="ini-bar' + (initialShown ? ' ini-on' : '') + '">'
+      + '<button type="button" class="ini-btn" data-initial="1" aria-controls="implTbl" aria-pressed="'
+      + initialShown + '">'
+      + '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+      + '<path d="M6 2.5v11M10 2.5v11" stroke="currentColor" stroke-width="1.3"/></svg>'
+      + '<span class="ini-lbl">' + (initialShown ? 'Hide' : 'Show') + ' initial allocation</span></button>'
+      + '<span class="ini-note"><i aria-hidden="true"></i><b>' + App.num(ini.commitment.weight, 2, '%')
+      + '</b> committed to private markets (' + money(ini.commitment.notional) + ') · held '
+      + held.map(function (h) { return shareText(h.share) + ' in ' + App.esc(h.category); }).join(' and ')
+      + ' until capital is called'
+      + (fees && done && ini.total.bp !== null && t.bp !== null
+          ? '<span class="ini-fee"> · initial fee <b>' + bpText(ini.total.bp) + '</b> against '
+            + bpText(t.bp) + ' long-term</span>' : '')
+      + '</span></div>';
+  }
   html += '<div class="tblwrap" tabindex="0" aria-label="Implementation model, scrolls horizontally">'
     + '<table class="tbl impl' + (fees ? '' : ' no-fees')
-    + (fees && feeReveal ? ' fees-in' : '') + '" id="implTbl">'
-    + '<caption class="sr-only">Implementation model by product</caption><thead><tr>'
+    + (fees && feeReveal ? ' fees-in' : '') + (ini ? ' has-ini' + (initialShown ? ' ini-on' : '') : '')
+    + '" id="implTbl">'
+    + '<caption class="sr-only">Implementation model by product</caption><thead>'
+    /* the row that names each figure's world while the twins are open */
+    + (ini ? '<tr class="grp">' + implScreenColumns(fees, true).map(function (name) {
+        var world = IMPL_WORLDS[name] || '';
+        return '<th class="' + world + (world === 'ini' ? ' ini' : '') + (/fee/i.test(name) ? ' fee-col' : '') + '"'
+          + (world === 'ini' ? hidden : world ? '' : ' aria-hidden="true"') + '><div class="gh">'
+          + (world === 'lt' ? 'Long-term' : world === 'ini' ? 'Initial' : '') + '</div></th>';
+      }).join('') + '</tr>' : '')
+    + '<tr>'
     + '<th scope="col" class="rowhead txt">Asset Class</th>'
     + '<th scope="col" class="txt prodcol">Products</th>'
     + '<th scope="col" class="num">Allocation (%)</th>'
+    + (ini ? '<th scope="col" class="num ini"' + hidden + '><span class="iw">Initial (%)</span></th>' : '')
     + '<th scope="col" class="num">Notional</th>'
+    + (ini ? '<th scope="col" class="num ini"' + hidden + '><span class="iw">Initial notional</span></th>' : '')
     + IMPL_TEXT_COLUMNS.map(function (name) {
         return '<th scope="col" class="txt">' + App.esc(name) + '</th>';
       }).join('')
@@ -2158,6 +2327,8 @@ function renderView() {
         ? '<th scope="col" class="num fee-col"><span class="fcw">Mgmt fee</span></th>'
           + '<th scope="col" class="num fee-col"><span class="fcw">Wtd fee</span></th>'
         : '')
+    + (ini && fees ? '<th scope="col" class="num fee-col ini"' + hidden
+        + '><span class="fcw"><span class="iw">Initial fee</span></span></th>' : '')
     + '<th scope="col" class="num">Min Investment</th>'
     + '</tr></thead><tbody>';
 
@@ -2178,6 +2349,17 @@ function renderView() {
     var bandCost = (held && groupWeight) ? groupCostWt / groupWeight : null;
     var bandMgmt = (held && groupWeight && groupMgmtKnown) ? groupMgmtWt / groupWeight : null;
     var shownWeight = held ? groupWeight : group.weightPct;
+    /* the band's initial twins (D136): what it holds on day one */
+    var bandIni = null;
+    if (ini) {
+      bandIni = { weight: held ? 0 : (group.initialWeightPct || 0), notional: 0, bp: held ? 0 : null };
+      group.items.forEach(function (item) {
+        bandIni.weight += item.initialWeight; bandIni.notional += item.initialNotional;
+        if (bandIni.bp !== null) bandIni.bp = item.initialWtdBp === null ? null : bandIni.bp + item.initialWtdBp;
+      });
+    }
+    var bandPrivate = ini && group.category === privateLine;
+    var bandMoved = ini && Math.abs(bandIni.weight - shownWeight) > 1e-9;
     var shownNotional = held ? groupNotional
       : Math.round(App.mandateSize() * group.weightPct / 100 / ROUND_TO) * ROUND_TO;
     /* The pill is the way back to the picker that set it (C3): the table is
@@ -2213,11 +2395,18 @@ function renderView() {
           ? pill
           : '<span class="bdg b-warn">No sleeve attached</span>') + '</td>'
       + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
+      + (ini ? iniCell('num', bandPrivate ? '<span class="zero">' + App.num(0, 2, '%') + '</span>'
+          : '<span' + (bandMoved ? ' class="mv"' : '') + '>' + App.num(bandIni.weight, 2, '%') + '</span>') : '')
       + '<td class="num">' + money(shownNotional) + '</td>'
+      + (ini ? iniCell('num', bandPrivate
+          ? '<span class="zero">' + money(0) + '</span><small class="called">called over time</small>'
+          : '<span' + (bandMoved ? ' class="mv"' : '') + '>' + money(bandIni.notional) + '</span>'
+            + (bandMoved ? '<small class="up">+' + money(bandIni.notional - shownNotional) + '</small>' : '')) : '')
       + '<td colspan="' + implBandSpan() + '"></td>'
       + '<td class="num">' + (bandCost === null ? '' : App.num(bandCost, 2, '%')) + '</td>'
       + feeCell('num', bandMgmt === null ? '' : App.num(bandMgmt, 2, '%'))
       + feeCell('num', held ? bpText(groupBp) : '')
+      + (ini ? iniFeeCell('num', held ? bpText(bandIni.bp) : '') : '')
       + '<td class="num"></td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
@@ -2235,10 +2424,18 @@ function renderView() {
               + App.esc(money(item.minimumInvestment)) + ' minimum">below min</span>' : '')
         + '</td>'
         + '<td class="num">' + App.num(item.weight, 2, '%') + '</td>'
+        + (ini ? iniCell('num', bandPrivate ? '<span class="zero">' + App.num(0, 2, '%') + '</span>'
+            : '<span' + (item.initialWeight !== item.weight ? ' class="mv"' : '') + '>'
+              + App.num(item.initialWeight, 2, '%') + '</span>') : '')
         + '<td class="num">' + money(item.notional)
         + (item.belowMinimum
             ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')
         + '</td>'
+        + (ini ? iniCell('num', bandPrivate ? '<span class="zero">' + money(0) + '</span>'
+            : '<span' + (item.initialWeight !== item.weight ? ' class="mv"' : '') + '>'
+              + money(item.initialNotional) + '</span>'
+              + (item.initialBelowMinimum
+                  ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')) : '')
         + '<td class="txt tick">' + App.esc(item.ticker) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
@@ -2251,6 +2448,7 @@ function renderView() {
         + (fees
             ? feeCell('num', feeText(item.mgmt)) + feeCell('num', bpText(item.wtdBp))
             : '')
+        + (ini ? iniFeeCell('num', bpText(item.initialWtdBp)) : '')
         + '<td class="num">' + (typeof item.minimumInvestment === 'number'
             ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>')
         + '</td></tr>';
@@ -2269,12 +2467,15 @@ function renderView() {
     + '<td class="prodcol"></td>'
     + '<td class="num">' + App.num(t.weight, 2, '%')
     + (done ? '' : '<small class="of-all">of 100%</small>') + '</td>'
+    + (ini ? iniCell('num', App.num(ini.total.weight, 2, '%')) : '')
     + '<td class="num">' + money(t.notional)
     + (done ? '' : '<small class="of-all">' + App.num(restPct, 2, '%')
         + ' not yet implemented</small>') + '</td>'
+    + (ini ? iniCell('num', money(ini.total.notional)) : '')
     + '<td colspan="' + implTotalSpan() + '"></td>'
     + feeCell('num', feeText(effectiveFee()))
     + feeCell('num', bpText(t.bp))
+    + (ini ? iniFeeCell('num', bpText(ini.total.bp)) : '')
     + '<td class="num"></td></tr>';
   html += '</tbody></table></div>'
     /* the shadow that says the table carries on to the right (A3, H3) */
@@ -2441,6 +2642,9 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (e.target.id === 'greetok') { closeGreetPanel(); return; }
+  /* the initial allocation's columns, shown or hidden (D136) */
+  var iniButton = e.target.closest ? e.target.closest('[data-initial]') : null;
+  if (iniButton) { toggleInitial(iniButton); return; }
   /* the rate card panel (D55) */
   if (e.target.closest && e.target.closest('[data-openrepo]')) {
     var at = e.target.closest('[data-openrepo]');

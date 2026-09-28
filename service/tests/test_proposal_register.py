@@ -121,8 +121,11 @@ def test_the_implemented_picture_matches_the_workbooks_implementation_sheet():
     total = next(r for r in range(header, sheet.max_row + 1)
                  if sheet.cell(row=r, column=1).value == 'Total')
     printed = []
+    # by header: the columns' order is the sheet's to decide (D134)
+    names = [sheet.cell(row=header, column=c).value for c in range(1, sheet.max_column + 1)]
+    at = names.index('Allocation (%)') + 1
     for r in range(header + 1, total):
-        label, product, weight = (sheet.cell(row=r, column=c).value for c in (1, 2, 3))
+        label, product, weight = (sheet.cell(row=r, column=c).value for c in (1, 2, at))
         if label and not str(label).startswith('  '):
             printed.append(('group', str(label).strip(), round(float(weight) * 100, 4)))
         elif product:

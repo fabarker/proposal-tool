@@ -428,8 +428,9 @@ def test_fixtures_workbook_reconciles_and_has_four_sheets(tmp_path):
     rows_ = list(sheet.iter_rows(values_only=True))
     assert rows_[0][0] == 'Implementation Type'
     assert rows_[0][1] == sleeves.VARIANTS[0]
-    weights = [r[2] for r in rows_
-               if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
+    weight = IMPL_COLUMNS.index('Allocation (%)')      # by name (D134)
+    weights = [r[weight] for r in rows_
+               if r[weight] is not None and r[0] and str(r[0]).startswith('  ')]
     assert abs(sum(weights) * 100 - 100.0) < 1e-9
     notional = IMPL_COLUMNS.index('Notional')
     notionals = [r[notional] for r in rows_
@@ -581,8 +582,9 @@ def test_workbook_records_the_variant_it_was_built_from(tmp_path, variant):
                                        {'sleeves': chosen, 'variant': variant}))
     rows = list(load_workbook(path)['Implementation'].iter_rows(values_only=True))
     assert rows[0][:2] == ('Implementation Type', variant)
-    weights = [r[2] for r in rows
-               if r[2] is not None and r[0] and str(r[0]).startswith('  ')]
+    weight = IMPL_COLUMNS.index('Allocation (%)')      # by name (D134)
+    weights = [r[weight] for r in rows
+               if r[weight] is not None and r[0] and str(r[0]).startswith('  ')]
     assert abs(sum(weights) * 100 - 100.0) < 1e-9
 
 
@@ -823,6 +825,7 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
     assert rows[6] == tuple(IMPL_COLUMNS)
     mgmt, bp = (IMPL_COLUMNS.index(c) for c in ('Mgmt fee', 'Wtd fee (bp)'))
     cost = IMPL_COLUMNS.index('Product Cost')
+    weight = IMPL_COLUMNS.index('Allocation (%)')
     assets = _assetRows(rows)
     assert assets
     # the fee group still prices the row; it is no longer a column of its own
@@ -832,7 +835,7 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
         expected = fees.productFee(schedule, 'PMG Floor', product['feeGroup'],
                                    topAccountSize=TOP_ACCOUNT, mandateSize=26e6)
         assert row[mgmt] == pytest.approx(expected / 100.0)
-        assert row[bp] == pytest.approx((row[cost] * 100 + expected) * row[2] * 100)
+        assert row[bp] == pytest.approx((row[cost] * 100 + expected) * row[weight] * 100)
     # and the total row restates the blend a marginal schedule priced at (D83)
     total = next(r for r in rows if r[0] == 'Total')
     if fees.isMarginal(schedule):
@@ -1329,8 +1332,11 @@ def test_excluding_fees_takes_the_columns_off_the_sheet():
     assert implColumns(True) == IMPL_COLUMNS
     assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS]
     assert len(implColumns(False)) == len(IMPL_COLUMNS) - 2
-    # the columns that survive keep their order and their neighbours
-    assert implColumns(False)[-2:] == ['Product Cost', 'Notional']
+    # the columns that survive keep their order and their neighbours: the
+    # notional beside the products, the product cost last (D134)
+    assert implColumns(False)[:4] == ['Categories & Asset Classes', 'Products',
+                                      'Notional', 'Allocation (%)']
+    assert implColumns(False)[-1] == 'Product Cost'
 
 
 def test_an_excluded_workbook_carries_no_fee_column_and_no_fee_header(tmp_path):
@@ -1514,12 +1520,16 @@ def test_js_implementation_table_rows_are_all_the_same_width():
     assert 'Notional' not in priced['columns'][4:]
     assert 'Share class' in priced['columns']
 
-    # the screen and the sheet keep their own lists on purpose (D74, D78)
+    # the screen and the sheet keep their own lists on purpose (D74, D78):
+    # Ticker and the minimum are the screen's alone, and so, since the sheet
+    # dropped it (D134), is the exposure currency
     assert priced['columns'] != IMPL_COLUMNS
     assert 'Ticker' in priced['columns'] and 'Ticker' not in IMPL_COLUMNS
     assert 'Min Investment' in priced['columns']
     assert 'Minimum Investment' not in IMPL_COLUMNS
-    assert len(priced['columns']) == len(IMPL_COLUMNS) + 2
+    assert 'Exp ccy' in priced['columns']
+    assert 'Exposure ccy' not in IMPL_COLUMNS and 'Exp ccy' not in IMPL_COLUMNS
+    assert len(priced['columns']) == len(IMPL_COLUMNS) + 3
 
 def test_js_price_build_up_mirror_agrees_with_python():
     """D84. The card that shows HOW a marginal blend was reached must reach
@@ -2167,7 +2177,8 @@ def test_the_implementation_table_stands_on_white():
                   if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
     total = next(r for r in range(header, sheet.max_row + 1)
                  if sheet.cell(row=r, column=1).value == 'Total')
-    columns, items, seen = len(implColumns(True)), 0, set()
+    names = implColumns(True, initial=True)          # the golden book holds private markets
+    columns, items, seen = len(names), 0, set()
     for row in range(header, total + 1):
         label = str(sheet.cell(row=row, column=1).value or '')
         for column in range(1, columns + 1):
@@ -2179,9 +2190,14 @@ def test_the_implementation_table_stands_on_white():
             # the product's own name, never a cell the breach mark can reach
             assert (sheet.cell(row=row, column=2).fill.fgColor.rgb or '')[-6:] == 'FFFFFF', row
     assert items, 'no product rows were checked'
+    from cyrus_pmg.pmgService.scenario import sheetDoc
     for column in range(1, columns + 1):
-        assert (sheet.cell(row=total, column=column).fill.fgColor.rgb or '')[-6:] == 'FFFFFF', column
-    assert seen <= {'FFFFFF', wb._BAND, wb._HEADER_NAVY, wb._BREACH_FILL}, seen
+        # the total is white, bar its initial twins on the teal tint (D136)
+        want = sheetDoc.INITIAL_TINT if names[column - 1].startswith('Initial') else 'FFFFFF'
+        assert (sheet.cell(row=total, column=column).fill.fgColor.rgb or '')[-6:] == want, column
+    # and the initial allocation's teal, for a private-markets book (D136)
+    assert seen <= {'FFFFFF', wb._BAND, wb._HEADER_NAVY, wb._BREACH_FILL, sheetDoc.INITIAL_HEAD,
+                    sheetDoc.INITIAL_TINT, sheetDoc.INITIAL_BAND}, seen
     assert 'FFFFFF' in seen
 
 
@@ -2464,6 +2480,37 @@ def test_the_implementation_sheet_is_set_in_gs_sans_with_room_for_every_entry():
             pixels = sheetDoc.textWidth(text, sheetDoc.SANS, bool(cell.font.b), cell.font.sz) * 96 / 72
             assert pixels <= room, (name, text, pixels, room)
     assert widened, 'the wider face needed room somewhere'
+
+
+def test_the_notional_follows_the_products_and_the_exposure_currency_is_a_doughnut_only():
+    """D134. On the Implementation sheet the Notional column comes straight
+    after the products and Exposure ccy is no longer a column - priced and
+    unpriced alike - while the Exposure currency doughnut is still drawn,
+    from the model rather than from a column."""
+    import zipfile
+    from openpyxl import load_workbook
+    content = _builtWorkbook()
+    sheet = load_workbook(io.BytesIO(content))['Implementation']
+    header = next(r for r in range(1, 12)
+                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
+    names = [sheet.cell(row=header, column=c).value for c in range(1, sheet.max_column + 1)]
+    names = [n for n in names if n]
+    # the golden book holds private markets, so each figure has its initial
+    # twin beside it (D136); the order is otherwise D134's
+    assert names == implColumns(True, initial=True)
+    assert [n for n in names if not n.startswith('Initial')][:4] == [
+        'Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)']
+    assert 'Exposure ccy' not in names and 'Exposure ccy' not in implColumns(False)
+    assert implColumns(False)[:3] == ['Categories & Asset Classes', 'Products', 'Notional']
+    notional = names.index('Notional') + 1
+    total = next(r for r in range(header, sheet.max_row + 1)
+                 if sheet.cell(row=r, column=1).value == 'Total')
+    assert sheet.cell(row=total, column=notional).value == 5e7
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        charts = [archive.read(n).decode('utf-8') for n in archive.namelist()
+                  if n.startswith('xl/charts/chart')]
+    assert len(charts) == 5
+    assert any('Exposure currency' in chart for chart in charts)
 
 
 def test_the_portfolios_sheet_closes_on_one_navy_block_of_metrics():
