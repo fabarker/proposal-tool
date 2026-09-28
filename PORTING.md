@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D130** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D132** — the PowerPoint deck, custom fees,
 the register's saved views and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D130 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D132 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -129,7 +129,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 410 passed, none skipped, at D130.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 415 passed, none skipped, at D132.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -990,11 +990,14 @@ other's gate (D122, D123).
   - *The workbook*: sheets `portfolios, risk_dashboard, assumptions, Implementation` plus a hidden
     `chartData` sheet that feeds five native doughnut charts (D73); every sheet protected under
     `workbook.SHEET_PASSWORD` — values locked, formatting, widths, sorting and filtering open (D98,
-    D104); set in GS Sans and GS Sans Condensed (D125).
+    D104); set in GS Sans (D125; the risk dashboard and the Implementation sheet left the condensed
+    face in D128 and D132, each column sized to its entries, D130, D132).
   - *The deck*: a cover; the strategic allocation and the risk dashboard — one slide for one or two
-    portfolios, a full-width slide each for three or four (D124); the implemented model; the five
-    doughnuts; the long-term assumptions. Every table fitted to its slide (D124); the faces embedded
-    (D125); locked with a password to modify (the workbook's) and Mark as Final (D123).
+    portfolios, a slide each for three or four (D124); the implemented model, with the five doughnuts
+    below it where it still reads at 9pt, otherwise on a slide of their own; the long-term
+    assumptions. Every table fitted to its slide (D124), the allocation, risk and implementation
+    tables at their content's width, as large as the slide allows and centred (D131); the faces
+    embedded (D125); locked with a password to modify (the workbook's) and Mark as Final (D123).
 
   The page reads only `Content-Disposition`; the host's proxy passes every header through (§4.0).
 - **The register (D116, D123)**: `GET /scenario/repository/proposals` takes the five filters plus
@@ -1297,7 +1300,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 410 passed, none skipped, in ~3 min (at D130)
+# 415 passed, none skipped, in ~4 min (at D132)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1326,7 +1329,7 @@ rebuilds the three engine-laid sheets from the payloads and compares every cell'
 format, font, fill, border, alignment, merge, row height and column width, plus the conditional
 rule. **Do not regenerate these files**; they cannot be reproduced once the library is gone. The
 comparison runs with `engineParity=True`, which also keeps the library's faces (Calibri, Aptos
-Narrow, Grotesque); a delivered workbook is re-set in GS Sans and GS Sans Condensed (D125), tested
+Narrow, Grotesque); a delivered workbook is re-set in the house faces (D125, D128, D132), tested
 separately in `test_house_fonts.py`.
 
 ### 14.3 The portability probe (repeat on the host after Step 5)
@@ -1418,8 +1421,8 @@ nav for users.
     `PA55WORD` unprotects (D98, D104); the Implementation sheet's first row reads `Proposal UID` /
     `<uid>`, its table carries thirteen columns (eleven unpriced) with no Ticker and no Minimum
     Investment (D78) and a Share Class beside the Vehicle (D81); the Implementation total is exactly
-    100.00%; the doughnut charts render in Excel; the text is GS Sans / GS Sans Condensed where those
-    are installed (D125).
+    100.00%; the doughnut charts render in Excel; the text is GS Sans where it is installed (D125,
+    D128, D132).
     *The deck*: PowerPoint asks for the password or offers Read Only, then shows the Marked as Final
     banner (D123); every footer and File › Properties carry the `<uid>`; with one or two portfolios
     the allocation and risk tables share one slide, with three or four each has its own (D124); it
@@ -1750,6 +1753,18 @@ Since the 10 September port (§0A):
   `SAA_ENGINE_LIVE` are gone; the registry offers `fixtures` and `baked` only; a miss is an error,
   never a computation. The bake is produced in epsilon-phi and delivered (§11.5, C.6).
   `cyrus-files/` moved in beside this guide.
+- **D127** The allocation table to the house table spec: classes bold navy on the blue band,
+  thin rules between, TOTAL under a thick rule, the metrics one navy block with the risk-free line;
+  GS Sans 11. The deck's rules are drawn: each is stated on both cells that share it.
+- **D128** The risk dashboard in GS Sans; column A 48; the deck fits its label column; on the
+  combined slide *Factor Based Risk Analytics* sits in the header row beside the names.
+- **D129** The Nominal and Real heads are underlined.
+- **D130** Column A sized to the longest label beside a figure; silver rules between the risk
+  table's portfolios, below the header and off the navy band.
+- **D131** The deck's allocation, risk and implementation tables at their content's width, as
+  large as the slide allows up to 14pt, widened by at most 1.25× and centred; the combined slide's
+  pair in one size, top-aligned and centred; the doughnuts below a short implementation table.
+- **D132** The Implementation sheet in GS Sans, each column wide enough for its widest entry.
 
 ## Appendix B — where the rest is written down
 
@@ -1757,7 +1772,7 @@ Since the 10 September port (§0A):
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D125, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D132, the adapter-side decisions, the spec gaps G1–G8. |
 | `proposals/` | Design studies behind D90–D125, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
