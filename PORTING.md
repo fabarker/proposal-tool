@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D138** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D147** — the PowerPoint deck, custom fees,
 the register's saved views, a private-markets book's initial allocation and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D138 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D147 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -129,7 +129,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 433 passed, none skipped, at D138.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 436 passed, none skipped, at D147.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -1298,7 +1298,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 433 passed, none skipped, in ~3 min (at D138)
+# 436 passed, none skipped, in ~3 min (at D147)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1412,7 +1412,8 @@ nav for users.
     shows **Show initial allocation** above the table and a note naming the commitment; pressing it
     opens *Initial (%)*, *Initial notional* and *Initial fee* beside their long-term twins under a
     *Long-term / Initial* row, the private band reading *$0, called over time*, both totals 100.00%;
-    pressing again closes them. An *ex-Alts* base shows no button. Reload the page: the private-markets
+    pressing again closes them; a green rule closes each pair on its right, and scrolled across,
+    the Long-term / Initial labels slide under the frozen columns (D146). An *ex-Alts* base shows no button. Reload the page: the private-markets
     sleeve is still chosen (D136).
 11. Export refuses with 422 `field: minimumInvestment` when any position is below its product's
     minimum — at the packaged catalogue this happens at every mandate the tool offers (§17); raise
@@ -1425,22 +1426,23 @@ nav for users.
     `PA55WORD` unprotects (D98, D104); the Implementation sheet's first row reads `Proposal UID` /
     `<uid>`, its table carries twelve columns (ten unpriced) with no Ticker, no Minimum Investment
     (D78) and no Exposure ccy (D134), the Notional straight after the Products (D134) and a Share
-    Class beside the Vehicle (D81); the Implementation total is exactly
-    100.00%; for a book holding private markets the table carries fifteen columns (twelve unpriced),
-    *Initial Notional*, *Initial (%)* and *Initial Wtd fee (bp)* each straight after its long-term
-    twin under a *Long-term / Initial* row, teal-headed, the initial total also 100.00% and the
+    Class beside the Vehicle (D81), every column left-aligned (D143); the Implementation total is exactly
+    100.00%; for a book holding private markets an **Initial Allocation** sheet follows it — the
+    names, then *Allocation (%)*, *Notional* and *Weighted fee (bp)* each over a teal-headed Initial
+    and a Long-term column (no fee pair unpriced), silver rules between the measures (D142), both totals 100.00% and the mandate, the
     preamble naming the *Private Markets Commitment* and what is *Held Until Called*; a book without
-    private markets has none of them (D136); the doughnut charts render in Excel; the text is GS Sans where it is installed (D125,
+    private markets has no such sheet (D136, D141); the doughnut charts render in Excel; the text is GS Sans where it is installed (D125,
     D128, D132).
     *The deck*: PowerPoint asks for the password or offers Read Only, then shows the Marked as Final
     banner (D123); every footer and File › Properties carry the `<uid>`; with one or two portfolios
     the allocation and risk tables share one slide, with three or four each has its own (D124); it
     is set in GS Sans on a machine that has never installed it (embedded, D125); a private-markets
-    book's implementation slide carries the same fifteen columns under the same *Long-term / Initial*
-    row, and a note under it naming the commitment (D136). No table is set above 9pt; nothing in the
+    book's implementation slide is followed by **Implemented Portfolio: Initial Allocation**, the
+    Initial Allocation sheet's table, its subheading naming the commitment (D136, D141). No table is set above 9pt; nothing in the
     implementation or assumptions table takes a second line and each has one row height; the
     implementation table spans the slide's width, fees or not; the doughnuts have a half-width
-    hole and no labels on their slices (D137, D138).
+    hole and no labels on their slices (D137, D138), and each legend stacks one entry to a line,
+    centred under its ring, each entry with its share, *SMA (39.0%)* (D144, D145).
 12a. The landing page has two doors: **Start Here**, and **Open an Account** at the right (D107,
     D109, D110). Open an Account opens a card holding only the Proposal UID box (D111); a UID from a
     delivered proposal grows it into the request — the proposal's terms as a read-only digest, then
@@ -1791,6 +1793,21 @@ Since the 10 September port (§0A):
   allocation rules on the slide, dotted risk dividers in both files, labelled doughnuts.
 - **D138** Compact rows on the allocation, risk and assumptions slides; the implementation table
   across the full width, its name columns at their longest names; no shares on the doughnuts.
+- **D139** The allocation's and risk table's rows opened a little where their slide has room, and
+  both tables centred down their slide.
+- **D140** The combined slide's two tables keep a little padding on every row, setting smaller
+  (8.75pt for a two-Full pair) to have it.
+- **D141** A private-markets book's initial allocation leaves the implementation table for a slide
+  and a sheet of its own, *Implemented Portfolio: Initial Allocation* / *Initial Allocation*.
+- **D142** Initial before long-term in each pair, silver rules between the measures, larger
+  measure names; doughnut legends 10pt; the assumptions' heads row 1.4 cm, the mean return's head
+  on two lines.
+- **D143** Every column of the implementation table left-aligned, in both files.
+- **D144** The doughnut legends drawn as stacks, one entry to a line, centred under their rings.
+- **D145** Each legend entry names its share, *SMA (39.0%)*.
+- **D146** On the Implementation screen the green rule closes each pair on the right, and the
+  Long-term / Initial row pins over the frozen columns when the table scrolls.
+- **D147** The initial allocation's green lighter, its silver rules up through the header.
 
 ## Appendix B — where the rest is written down
 
@@ -1798,8 +1815,8 @@ Since the 10 September port (§0A):
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D138, the adapter-side decisions, the spec gaps G1–G8. |
-| `proposals/` | Design studies behind D90–D136, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
+| `service/DEVIATIONS.md` | D1–D147, the adapter-side decisions, the spec gaps G1–G8. |
+| `proposals/` | Design studies behind D90–D141, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
 | `service/PERFORMANCE.md` | The analytics profile and the Tier 0 / bake measurements — from before the library left (D126); the bake it argues for is what is delivered. |
