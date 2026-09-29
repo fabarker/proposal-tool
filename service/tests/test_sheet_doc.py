@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 
 from cyrus_pmg.pmgService.scenario import assetEstimates, rules, sheetDoc
 from cyrus_pmg.pmgService.scenario.workbook import (
-    _TEXT_COLUMNS, _WIDTHS, buildImplementationRows, implColumns)
+    _WIDTHS, buildImplementationRows, implColumns)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN = os.path.join(HERE, 'golden')
@@ -51,7 +51,7 @@ def _docs():
         implementation['feeSchedule'], implementation['feeLevel'],
         10_000_000, implementation['volPremium'], 'USD')
     impl, headerRow, totalRow = sheetDoc.buildImplementationDoc(
-        model, implColumns(True), _WIDTHS, _TEXT_COLUMNS,
+        model, implColumns(True), _WIDTHS,
         variant=implementation['variant'],
         feeSchedule=implementation['feeSchedule'],
         feeLevel=implementation['feeLevel'],

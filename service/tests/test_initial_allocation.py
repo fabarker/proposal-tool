@@ -1,11 +1,12 @@
-"""D136: the initial allocation of a private-markets book.
+"""D136, D141: the initial allocation of a private-markets book.
 
 A commitment to private markets is called over years; until it is, the money
 earmarked for it is held one third in Investment Grade Fixed Income and two
 thirds in Public Equity. The model carries that initial allocation beside the
 long-term one; the page shows it on demand, in columns paired with their
-long-term twins; the workbook and the deck always carry those columns for a
-book that holds private markets, and never for one that does not.
+long-term twins (D136); the workbook gives it a sheet of its own and the deck
+a slide of its own, after the long-term table's, for a book that holds
+private markets and never for one that does not (D141).
 """
 
 import io
@@ -123,7 +124,6 @@ def test_a_book_without_private_markets_is_exactly_today():
     model = _model('USD', 'USD|Moderate|ex-Alts|0', tilt=True, vol=True)
     assert model['initial'] is None
     assert not any('initialPct' in i for g in model['groups'] for i in g['items'])
-    assert implColumns(True, initial=False) == implColumns(True)
 
 
 def test_the_tilt_that_empties_igfi_still_parks_a_third_there():
@@ -165,8 +165,10 @@ def test_an_unpriced_book_has_no_initial_fee():
     model = _model('USD', 'USD|Moderate|Full|0', schedule=None)
     assert model['initial']['total']['wtdFeeBp'] is None
     assert all(i['initialWtdFeeBp'] is None for g in model['groups'] for i in g['items'])
-    assert 'Initial Wtd fee (bp)' not in implColumns(False, initial=True)
-    assert implColumns(False, initial=True).count('Initial (%)') == 1
+    assert [key for _, key in sheetDoc.initialMeasures(False)] == ['pct', 'notional']
+    doc, header, _ = sheetDoc.buildInitialAllocationDoc(model, includeFees=False)
+    assert [doc.rows[header].cells[c].value for c in sorted(doc.rows[header].cells)] == \
+        ['Categories & Asset Classes', 'Products', 'Initial', 'Long-term', 'Initial', 'Long-term']
 
 
 # ------------------------------------------------------------- the files ---
@@ -188,75 +190,147 @@ def _workbook(results, implementation):
         assets=assetEstimates.forSlice('USD', 'Hedged'))
 
 
-def test_the_workbook_pairs_each_figure_with_its_initial_twin():
+def _sheetTable(sheet, first='Categories & Asset Classes'):
+    header = next(r for r in range(1, 14) if sheet.cell(row=r, column=1).value == first)
+    names = [n for n in (sheet.cell(row=header, column=c).value
+                         for c in range(1, sheet.max_column + 1)) if n]
+    return header, names
+
+
+def test_the_workbook_gives_the_initial_allocation_a_sheet_of_its_own():
+    """D141. The Implementation sheet is the long-term target's alone - the
+    columns of a book without private markets - and an Initial Allocation
+    sheet follows it: each measure's name over a Long-term and an Initial
+    column, teal-headed where initial, the commitment in its preamble, both
+    totals closing on 100% and the mandate, the initial fee the lower."""
     from openpyxl import load_workbook
     results, implementation = _golden()
-    sheet = load_workbook(io.BytesIO(_workbook(results, implementation)))['Implementation']
-    header = next(r for r in range(1, 14)
-                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
-    names = [sheet.cell(row=header, column=c).value for c in range(1, sheet.max_column + 1)]
-    names = [n for n in names if n]
-    assert names == implColumns(True, initial=True)
-    for twin, of in (('Initial Notional', 'Notional'), ('Initial (%)', 'Allocation (%)'),
-                     ('Initial Wtd fee (bp)', 'Wtd fee (bp)')):
-        assert names.index(twin) == names.index(of) + 1, 'each beside its own'
-    worlds = {sheet.cell(row=header - 1, column=c + 1).value: [] for c in range(len(names))}
-    for c, name in enumerate(names, start=1):
-        worlds.setdefault(sheet.cell(row=header - 1, column=c).value, []).append(name)
-    assert worlds['Long-term'] == ['Notional', 'Allocation (%)', 'Wtd fee (bp)']
-    assert worlds['Initial'] == ['Initial Notional', 'Initial (%)', 'Initial Wtd fee (bp)']
+    book = load_workbook(io.BytesIO(_workbook(results, implementation)))
+    assert book.sheetnames[:5] == ['portfolios', 'risk_dashboard', 'assumptions',
+                                   'Implementation', 'Initial Allocation']
+    impl = book['Implementation']
+    _, names = _sheetTable(impl)
+    assert names == implColumns(True)
+    assert not any(str(impl.cell(row=r, column=1).value).startswith('Private Markets')
+                   for r in range(1, 14))
+    sheet = book['Initial Allocation']
+    header, names = _sheetTable(sheet)
+    # initial first in each pair (D142)
+    assert names == ['Categories & Asset Classes', 'Products'] + ['Initial', 'Long-term'] * 3
+    measures = [sheet.cell(row=header - 1, column=c).value for c in (3, 5, 7)]
+    assert measures == ['Allocation (%)', 'Notional', 'Weighted fee (bp)']
+    merged = {str(m) for m in sheet.merged_cells.ranges}
+    assert {'{0}{2}:{1}{2}'.format(a, b, header - 1)
+            for a, b in (('C', 'D'), ('E', 'F'), ('G', 'H'))} <= merged
     for c, name in enumerate(names, start=1):
         fill = (sheet.cell(row=header, column=c).fill.fgColor.rgb or '')[-6:]
-        assert fill == (sheetDoc.INITIAL_HEAD if name.startswith('Initial') else sheetDoc.HEADER_NAVY)
+        assert fill == (sheetDoc.INITIAL_HEAD if name == 'Initial' else sheetDoc.HEADER_NAVY)
     labels = {sheet.cell(row=r, column=1).value: sheet.cell(row=r, column=2).value
-              for r in range(1, header)}
+              for r in range(1, header - 1)}
     assert labels['Private Markets Commitment'].endswith('(9.00%), invested as capital is called')
     assert '3.00% Investment Grade Fixed Income' in labels['Held Until Called']
     assert '6.00% Public Equity' in labels['Held Until Called']
     total = next(r for r in range(header, sheet.max_row + 1)
                  if sheet.cell(row=r, column=1).value == 'Total')
-    at = {name: c for c, name in enumerate(names, start=1)}
-    assert sheet.cell(row=total, column=at['Initial (%)']).value == pytest.approx(1.0)
-    assert sheet.cell(row=total, column=at['Initial Notional']).value == 5e7
-    assert sheet.cell(row=total, column=at['Initial Wtd fee (bp)']).value < \
-        sheet.cell(row=total, column=at['Wtd fee (bp)']).value
+    assert [sheet.cell(row=total, column=c).value for c in (3, 4)] == [pytest.approx(1.0)] * 2
+    assert [sheet.cell(row=total, column=c).value for c in (5, 6)] == [5e7, 5e7]
+    assert sheet.cell(row=total, column=7).value < sheet.cell(row=total, column=8).value
+    private = next(r for r in range(header, total) if sheet.cell(row=r, column=1).value == PRIVATE)
+    assert sheet.cell(row=private, column=3).value == 0.0
+    assert sheet.cell(row=private, column=5).value == 0
+    # the measures' names in the header's size, and a light silver rule
+    # between the measures from their names down to the total (D142, D147)
+    assert {sheet.cell(row=header - 1, column=c).font.sz for c in (3, 5, 7)} == {12}
+    silver = ('thin', 'C0C0C0')
+
+    def edge(side):
+        if side is None or side.style is None:
+            return None
+        return (side.style, (side.color.rgb if side.color is not None else '')[-6:])
+    for row in range(header - 1, total + 1):
+        for last in (4, 6):
+            assert edge(sheet.cell(row=row, column=last).border.right) == silver, (row, last)
+            assert edge(sheet.cell(row=row, column=last + 1).border.left) == silver, (row, last)
+        if row != header - 1:                              # the names are merged over a pair
+            assert edge(sheet.cell(row=row, column=3).border.right) is None, 'inside a pair'
+    assert edge(sheet.cell(row=header - 1, column=3).border.right) == silver, 'the merge origin'
     assert sheet.freeze_panes == 'A{}'.format(header + 1)
+    assert sheet.protection.sheet, 'locked like every other sheet (D98)'
 
 
-def test_a_book_without_private_markets_writes_todays_sheet():
+def test_a_book_without_private_markets_writes_todays_sheets():
     from openpyxl import load_workbook
-    results, implementation = _golden()
     basis, plain = _book('USD', 'USD|Moderate|ex-Alts|0')
     content = writeWorkbook(basis, MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
                             [plain], _sleeves(plain), rules.AUTO_SLEEVE_CATEGORIES, VARIANT,
                             False, 'CASP', 'PMG Target', True, False,
                             assets=assetEstimates.forSlice('USD', 'Hedged'))
-    sheet = load_workbook(io.BytesIO(content))['Implementation']
-    header = next(r for r in range(1, 14)
-                  if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
-    names = [n for n in (sheet.cell(row=header, column=c).value
-                         for c in range(1, sheet.max_column + 1)) if n]
+    book = load_workbook(io.BytesIO(content))
+    assert 'Initial Allocation' not in book.sheetnames
+    sheet = book['Implementation']
+    header, names = _sheetTable(sheet)
     assert names == implColumns(True)
     assert not any(str(sheet.cell(row=r, column=1).value).startswith('Private Markets')
                    for r in range(1, header))
 
 
-def test_the_deck_carries_the_twins_under_their_worlds_at_a_readable_size():
+def test_the_deck_gives_the_initial_allocation_a_slide_of_its_own():
+    """D141. The implementation slide carries the long-term target's columns
+    alone; the slide after it, 'Implemented Portfolio: Initial Allocation',
+    compares: the names, then each measure as Long-term and Initial under
+    its name, which repeats with the header - at the cap, one line, one row
+    height, across the slide; the commitment in its subheading, the day-one
+    holdings and the fees in its notes. A book without private markets has
+    no such slide."""
     import test_deck
     plan = test_deck._plan()
-    (entry,) = [e for e in plan if e.get('heading') == 'Implemented Model']
+    headings = [e.get('heading') for e in plan]
+    at = headings.index('Implemented Model')
+    assert headings[at + 1] == 'Implemented Portfolio: Initial Allocation'
+    assert headings[at + 2] == 'Composition of the Implemented Model'
+    (impl,) = plan[at]['tables']
+    head = impl.doc.rows[impl.header[0]].cells
+    assert [head[c].value for c in sorted(head)] == implColumns(True)
+    assert plan[at]['notes'][1].endswith('is on the next slide.')
+    entry = plan[at + 1]
     (tp,) = entry['tables']
-    assert len(tp.header) == 2, 'the Long-term / Initial row repeats with the header'
-    worlds = tp.doc.rows[tp.header[0]].cells
-    names = [tp.doc.rows[tp.header[1]].cells[c].value for c in sorted(tp.doc.rows[tp.header[1]].cells)]
-    assert names == implColumns(True, initial=True)
-    assert {worlds[c].value for c in worlds if worlds[c].value} == {'Long-term', 'Initial'}
-    # fifteen columns, each entry on one line, take the slide's width at a
-    # size under MIN_PT (D137); never under the one-line floor
-    assert tp.natural and pptWriter.ONE_LINE_MIN_PT <= tp.font <= pptWriter.BASE_PT
+    assert len(tp.header) == 2, 'the measures repeat with the header'
+    measures = tp.doc.rows[tp.header[0]].cells
+    assert [measures[c].value for c in (3, 5, 7)] == ['Allocation (%)', 'Notional',
+                                                      'Weighted fee (bp)']
+    heads = tp.doc.rows[tp.header[1]].cells
+    assert [heads[c].value for c in sorted(heads)] == \
+        ['Categories & Asset Classes', 'Products'] + ['Initial', 'Long-term'] * 3
+    assert tp.natural and tp.font == pptWriter.BASE_PT
     assert pptWriter._measure(tp, tp.font)[1], 'every figure fits'
-    assert any(note.startswith('Initial columns: the 9.00%') for note in entry['notes'])
-    assert 'Private Markets Commitment' not in entry['sub'], 'said in the note, in full'
+    # the measures' names set as large as the header (D142), and the light
+    # silver rule between the measures drawn from both sides, from the
+    # names' row down - the names' merged cells carrying it from their
+    # origins (D147)
+    assert {measures[c].font['size'] for c in (3, 5, 7)} == {12}
+    edges = pptWriter.sharedEdges(tp)
+    for r in tp.rows:
+        for last in (4, 6):
+            assert edges[(r, last)].get('right') == sheetDoc.MEASURE_RULE, (r, last)
+            assert edges[(r, last + 1)].get('left') == sheetDoc.MEASURE_RULE, (r, last)
+    for origin in (3, 5):
+        assert edges[(tp.header[0], origin)].get('right') == sheetDoc.MEASURE_RULE
+    assert len(set(tp.heights)) == 1
+    assert sum(tp.widths()) == pytest.approx(tp.box[2])
+    assert entry['sub'] == ('Until capital is called, the 9.00% ($2,250,000) committed to '
+                            'private markets is held a third in Investment Grade Fixed Income '
+                            'and two thirds in Public Equity')
+    assert entry['notes'][0].endswith('3.00% in Investment Grade Fixed Income and 6.00% in '
+                                      'Public Equity.')
+    assert entry['notes'][1].startswith('Fees are charged on what is invested: 93.0bp')
+    _, plain = _book('USD', 'USD|Moderate|ex-Alts|0')
+    model = buildImplementationRows(plain, _sleeves(plain), rules.AUTO_SLEEVE_CATEGORIES,
+                                    25e6, VARIANT, False, 'CASP', 'PMG Target', 1e7, False, 'USD')
+    others = pptWriter.planDeck(BasisInput(currency='USD', hedging='Hedged'),
+                                test_deck.MANDATE, [plain], model,
+                                assetEstimates.forSlice('USD', 'Hedged'), True, VARIANT,
+                                'CASP', 'PMG Target', None)
+    assert 'Implemented Portfolio: Initial Allocation' not in [e.get('heading') for e in others]
 
 
 def test_the_register_keeps_the_initial_figures():
@@ -366,3 +440,24 @@ def test_a_reload_keeps_the_sleeve_chosen_under_a_group():
     assert sorted(kept) == sorted([IG, PRIVATE, 'Hedge Funds']) and pushed == 0 and not said
     kept, pushed, said = run([IG, EQ])
     assert kept == [IG] and pushed == 1 and len(said) == 2, 'a book without them still drops them'
+
+
+def test_the_screen_closes_each_pair_on_the_right_and_pins_the_world_row():
+    """D146. On the Implementation screen the green rule sits on the RIGHT
+    edge of each initial column, closing its Long-term / Initial pair; and
+    the world row's cells over the two pinned columns pin with them, opaque
+    and above the rest, so the labels slide under them when the table
+    scrolls across - unpinned again where the product column is (narrow)."""
+    root = os.path.join(HERE, '..', '..')
+    with open(os.path.join(root, 'proposalTool', 'static', 'css', 'proposalTool.css'),
+              encoding='utf-8') as handle:
+        css = handle.read()
+    assert '.tbl.impl.ini-on .ini{box-shadow:inset -2px 0 0 #7FB8A6}' in css
+    assert 'inset 2px 0 0 #7FB8A6' not in css
+    assert ('.tbl.impl thead tr.grp th.gpin{position:sticky;z-index:6;'
+            'background:var(--surface,#fff)}') in css
+    assert '.tbl.impl thead tr.grp th.gpin.g1{left:0}' in css
+    assert '.tbl.impl thead tr.grp th.gpin.g2{left:var(--impl-c1,248px)}' in css
+    assert '.tbl.impl thead tr.grp th.gpin.g2{position:static}' in css
+    source = _js()
+    assert "var pin = at === 0 ? ' gpin g1' : at === 1 ? ' gpin g2' : '';" in source

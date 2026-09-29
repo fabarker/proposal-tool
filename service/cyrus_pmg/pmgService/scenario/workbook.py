@@ -61,7 +61,7 @@ from .sleeves import listSleeves
 # name the tests and older callers reach for.
 from . import sheetDoc
 from .sheetDoc import (buildAssumptionsDoc, buildImplementationDoc,
-                       buildPortfoliosDoc, buildRiskDoc,
+                       buildInitialAllocationDoc, buildPortfoliosDoc, buildRiskDoc,
                        _asDate, _categoryOrder, _weight)
 
 _NAVY = sheetDoc.NAVY
@@ -97,10 +97,6 @@ IMPL_COLUMNS = [
     'Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity',
     'Product Cost', 'Mgmt fee', 'Wtd fee (bp)',
 ]
-#: The columns whose values are words rather than figures, left-aligned in the
-#: body. Named rather than sliced by position, so a column leaving the list
-#: cannot silently re-align its neighbours.
-_TEXT_COLUMNS = ('Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity')
 # The two the sheet loses when the proposal excludes fees (D52). A proposal
 # that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
@@ -113,31 +109,20 @@ _WIDTHS = {
     'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Source': 10, 'Liquidity': 11,
     'Product Cost': 12, 'Mgmt fee': 10,
     'Wtd fee (bp)': 12, 'Notional': 14,
-    # the initial allocation's twins (D136)
-    'Initial Notional': 14, 'Initial (%)': 11, 'Initial Wtd fee (bp)': 12,
 }
 
+#: The sheet a private-markets book's initial allocation is written on, after
+#: the Implementation sheet (D141; D136 carried it in the Implementation
+#: table's own columns).
+INITIAL_SHEET = 'Initial Allocation'
 
-#: The initial allocation's columns (D136), each the twin of a long-term one
-#: and placed straight after it. A book that holds private markets carries
-#: them in the workbook and on the deck whatever the page was showing.
-INITIAL_TWINS = sheetDoc.INITIAL_TWIN_OF
 
-
-def implColumns(includeFees: bool = True, initial: bool = False) -> list:
-    """The sheet's columns, in order, for a priced or an unpriced proposal -
-    with the initial allocation's twins when *initial* (D136). Unpriced, the
-    fee columns go and so does the initial fee's twin."""
-    columns = (list(IMPL_COLUMNS) if includeFees
-               else [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS])
-    if not initial:
-        return columns
-    out = []
-    for name in columns:
-        out.append(name)
-        if name in INITIAL_TWINS:
-            out.append(INITIAL_TWINS[name])
-    return out
+def implColumns(includeFees: bool = True) -> list:
+    """The sheet's columns, in order, for a priced or an unpriced proposal:
+    the long-term target's, whatever the book holds - a private-markets
+    book's initial allocation has a sheet of its own (D141)."""
+    return (list(IMPL_COLUMNS) if includeFees
+            else [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS])
 
 
 def buildImplementationRows(baseResult: dict, sleevesMap: dict,
@@ -615,18 +600,31 @@ def writeImplementationSheet(book, baseResult: dict, sleevesMap: dict,
                                         mandateSize, variant, tacticalTilt,
                                         feeSchedule, feeLevel, topAccountSize,
                                         volPremium, currency, customFees)
-    # a private-markets book carries its initial allocation's twins (D136)
-    columns = implColumns(includeFees, initial=bool(model.get('initial')))
+    columns = implColumns(includeFees)
     sheet = book.create_sheet('Implementation')
     doc, headerRow, totalRow = buildImplementationDoc(
-        model, columns, _WIDTHS, _TEXT_COLUMNS,
+        model, columns, _WIDTHS,
         variant=variant, feeSchedule=feeSchedule, feeLevel=feeLevel,
         includeFees=includeFees, proposalId=proposalId,
         customFeesBy=customFeesBy, customFeesAt=customFeesAt)
     _renderDoc(sheet, doc)
+    # a private-markets book's initial allocation, on the sheet after (D141)
+    if model.get('initial'):
+        writeInitialAllocationSheet(book, model, includeFees, proposalId)
 
     # the composition doughnuts, under the table the page draws them under
     writeDonutCharts(book, sheet, model, totalRow + 3)
+
+
+def writeInitialAllocationSheet(book, model: dict, includeFees: bool = True,
+                                proposalId: str = None):
+    """The initial allocation against the long-term target, on a sheet of
+    its own - decided by ``sheetDoc.buildInitialAllocationDoc`` (D141),
+    rendered here. Only for a book that holds private markets."""
+    sheet = book.create_sheet(INITIAL_SHEET)
+    doc, _, _ = buildInitialAllocationDoc(model, includeFees, proposalId)
+    _renderDoc(sheet, doc)
+    return sheet
 
 
 # --------------------------------------------------------------------- #
@@ -671,11 +669,13 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                   assets=None, engineParity: bool = False, model: dict = None,
                   proposalId: str = None, customFees: dict = None,
                   customFeesBy: str = None, customFeesAt=None) -> bytes:
-    """The proposal workbook: four sheets, no analytics library (D67).
+    """The proposal workbook: four sheets, no analytics library (D67), and a
+    fifth, ``Initial Allocation``, for a book that holds private markets
+    (D141).
 
     ``portfolios``, ``risk_dashboard`` and ``assumptions`` reproduce what the
-    engine's reporting object used to lay out; ``Implementation`` is the
-    tool's own and is unchanged. *assets* is the per-asset estimate block for
+    engine's reporting object used to lay out; ``Implementation`` and
+    ``Initial Allocation`` are the tool's own. *assets* is the per-asset estimate block for
     this basis, which the adapter supplies.
 
     *engineParity* restores the empty universe rows the library used to print

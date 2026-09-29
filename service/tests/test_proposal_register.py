@@ -109,7 +109,8 @@ def test_the_stored_workbook_is_byte_identical_to_the_one_delivered():
     assert kept['name'] == entry['workbookName']
     assert kept['sha'] == hashlib.sha256(content).hexdigest()
     assert load_workbook(io.BytesIO(kept['bytes'])).sheetnames == [
-        'portfolios', 'risk_dashboard', 'assumptions', 'Implementation', 'chartData']
+        'portfolios', 'risk_dashboard', 'assumptions', 'Implementation',
+        'Initial Allocation', 'chartData']                  # a private-markets book (D141)
 
 
 def test_the_implemented_picture_matches_the_workbooks_implementation_sheet():

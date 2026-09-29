@@ -485,6 +485,7 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 @media (max-width:1039px){
   .tbl.impl .prodcol{position:static;z-index:auto}
   .tbl.impl thead .prodcol{z-index:2}
+  .tbl.impl thead tr.grp th.gpin.g2{position:static}
   .tbl.impl .rowhead{max-width:34vw}
   .tbl.impl tbody th,.tbl.impl thead th.rowhead{white-space:normal;line-height:1.25}
 }
@@ -589,7 +590,9 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 .tbl.impl .iw{display:inline-block;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;
   vertical-align:middle;transition:max-width 360ms cubic-bezier(.4,0,.2,1),opacity 360ms ease}
 .tbl.impl.ini-on .iw{max-width:220px;opacity:1}
-.tbl.impl.ini-on .ini{box-shadow:inset 2px 0 0 #7FB8A6}
+/* the green rule closes each Long-term / Initial pair on its right (D146;
+   it opened the initial column on its left) */
+.tbl.impl.ini-on .ini{box-shadow:inset -2px 0 0 #7FB8A6}
 .tbl.impl.ini-on thead tr:not(.grp) th.ini{background:#DDEFE8;color:#0B5345}
 .tbl.impl.ini-on tbody td.ini{background:#EAF5F1}
 .tbl.impl.ini-on tbody tr.cat td.ini{background:#D5ECE4;color:#0B5345}
@@ -609,6 +612,12 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
   text-transform:uppercase;transition:max-height 360ms ease,opacity 360ms ease}
 .tbl.impl.ini-on thead tr.grp th{padding-top:7px;padding-bottom:4px}
 .tbl.impl.ini-on tr.grp .gh{max-height:40px;opacity:1}
+/* its cells over the two pinned columns pin with them, opaque, so the world
+   labels slide under them when the table scrolls across (D146) - as the
+   header row's own corner does */
+.tbl.impl thead tr.grp th.gpin{position:sticky;z-index:6;background:var(--surface,#fff)}
+.tbl.impl thead tr.grp th.gpin.g1{left:0}
+.tbl.impl thead tr.grp th.gpin.g2{left:var(--impl-c1,248px)}
 .tbl.impl tr.grp th.lt .gh{color:#0F243E;border-bottom:2px solid #0F243E;padding-bottom:3px}
 .tbl.impl tr.grp th.ini .gh{color:#0B5345;border-bottom:2px solid #0B5345;padding-bottom:3px}
 @media (prefers-reduced-motion:reduce){

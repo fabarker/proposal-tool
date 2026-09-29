@@ -41,7 +41,7 @@ from lxml import etree
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -59,7 +59,7 @@ from .sheetDoc import SheetDoc, paginate, renderNumber
 from .sheetDoc import _metricsKey, textWidth
 from .workbook import (DONUT_DIMENSIONS, DONUT_PALETTE, SHEET_PASSWORD,
                        buildImplementationRows, donutBreakdown, implColumns,
-                       _TEXT_COLUMNS, _WIDTHS)
+                       _WIDTHS)
 
 # ---- geometry: one 16:9 canvas, one content box --------------------------
 SLIDE_W_IN = 13.333
@@ -235,11 +235,15 @@ _INDENT_EM = 1.0125                   # an indented label's step: 1.35 less a qu
 #: asset names step in half as far (D137)
 _INDENT_EM_BY_DOC = {'portfolios': _INDENT_EM * 2 / 3,
                      'Implementation': _INDENT_EM * 2 / 3,
+                     'Initial Allocation': _INDENT_EM * 2 / 3,
                      'assumptions': _INDENT_EM / 2}
 _NUM_INDENT_EM = 0.35                 # per Excel indent level, on figures
 _SPACER_EM = 3.0 / 11.0               # the 3pt hairline between metric bars
 _ROW_SAFETY_PT = 0.6                  # so PowerPoint never has to grow a row
 _WIDTH_SLACK = 0.97                   # predicted text must clear the cell by 3%
+#: the assumptions table's second header row - the column heads - set at
+#: 1.4 cm, on request (D142)
+_ASSUMPTIONS_HEAD_PT = 1.4 / 2.54 * 72.0
 #: the space a table leaves under the slide's rule: the implementation's
 #: always, the assumptions' where its slide has the height (D137)
 _TABLE_DROP_PT = 10.0
@@ -247,10 +251,16 @@ _TABLE_DROP_PT = 10.0
 #: leaves: to this much padding a side at most (D137; the assumptions' rows
 #: no longer open, D138)
 _PAD_OPEN_EM = 0.3
+#: and the allocation's and risk table's: a little over compact, where their
+#: slide has the height, and never at the cost of their size (D139)
+_PAD_STRATEGIC_EM = 0.14
+#: the padding the combined slide's two tables keep on their rows whatever
+#: their height: the pair sets smaller to have it (D140)
+_PAD_PAIR_EM = 0.08
 #: each Doc's body size: a cell's deck size is the fitted size scaled by its
 #: own over this, so a Doc's relative sizes survive the fit
 _DOC_BASE = {'portfolios': 11.0, 'risk_dashboard': 12.0,
-             'Implementation': 12.0, 'assumptions': 11.0}
+             'Implementation': 12.0, 'Initial Allocation': 12.0, 'assumptions': 11.0}
 #: the label column's share of the width, by portfolio count; the figures
 #: share the rest equally
 _PORT_LABEL = {1: 50.0, 2: 44.0, 3: 36.0, 4: 32.0}
@@ -313,7 +323,11 @@ class TablePlan:
     figures beside it run the width of its row. With ``fitLabel`` the label
     column is never narrower than its longest label at the size the table is
     set in - no label that shares a row wraps - and the figures share what is
-    left (D128).
+    left (D128). ``pad`` is the vertical padding its rows are fitted with, in
+    ems a side: compact's, or more where the plan asks for it (D140).
+    ``fixed`` maps a Doc row to the height it is set at whatever its text,
+    and ``breaks`` names the (row, column) cells of a one-line table whose
+    own line breaks stand (D142).
 
     A ``oneLine`` table (D137) wraps nothing, its header included, and sets
     every row at one height: each column is at least as wide as its widest
@@ -328,10 +342,11 @@ class TablePlan:
 
     __slots__ = ('doc', 'rows', 'header', 'box', 'shares', 'spans',
                  'font', 'heights', 'fitLabel', 'oneLine', 'natural', 'hold',
-                 'ceiling', 'floor', 'measureRows')
+                 'ceiling', 'floor', 'measureRows', 'pad', 'fixed', 'breaks')
 
     def __init__(self, doc, rows, header, box, shares, spans, fitLabel=False,
-                 oneLine=False, natural=False, hold=()):
+                 oneLine=False, natural=False, hold=(), pad=_PAD_V_EM, fixed=None,
+                 breaks=()):
         self.doc = doc
         self.rows = list(rows)
         self.header = tuple(header)
@@ -344,6 +359,9 @@ class TablePlan:
         self.oneLine = oneLine or natural
         self.natural = natural
         self.hold = tuple(hold)
+        self.pad = pad
+        self.fixed = dict(fixed or {})
+        self.breaks = frozenset(breaks)
         self.ceiling = BASE_PT
         self.floor = MIN_PT
         self.measureRows = list(rows)
@@ -383,18 +401,19 @@ def _isSpacer(doc: SheetDoc, r: int) -> bool:
     return row is not None and row.height is not None and row.height <= 3
 
 
-def _rowPad(doc: SheetDoc, r: int) -> float:
+def _rowPad(doc: SheetDoc, r: int, pad: float = _PAD_V_EM) -> float:
     """Compact's vertical padding, in ems: the portfolios sheet's header,
-    TOTAL and metric bars keep a little more than its lines do."""
+    TOTAL and metric bars keep a little more than its lines do. *pad* is
+    the plan's padding for every other row - compact's, or more (D140)."""
     row = doc.rows.get(r)
     if doc.name == 'portfolios' and row is not None:
         if r == 1:
-            return _PAD_NAMES_EM
+            return max(_PAD_NAMES_EM, pad)
         first = row.cells.get(1)
         label = first.value if first is not None else None
         if label == 'TOTAL' or (first is not None and first.fill == sheetDoc.NAVY):
-            return _PAD_TOTAL_EM
-    return _PAD_V_EM
+            return max(_PAD_TOTAL_EM, pad)
+    return pad
 
 
 def _spansFor(doc: SheetDoc, rows):
@@ -464,15 +483,19 @@ def _oneLineText(text: str) -> str:
     return ' '.join(part.strip() for part in text.split('\n'))
 
 
-def _oneLineNeed(spec, doc: SheetDoc, f: float, column: int) -> float:
+def _oneLineNeed(spec, doc: SheetDoc, f: float, column: int, keepBreaks: bool = False) -> float:
     """The width *spec* needs at size *f* to sit on one line in its cell:
-    its text with the padding, the indent and the measure's slack."""
+    its text with the padding, the indent and the measure's slack - or,
+    *keepBreaks*, its widest line (D142)."""
     base = _base(doc)
     font = spec.font or _DEFAULT_FONT
     size = f * font.get('size', base) / base
     text = renderNumber(spec.value, spec.fmt)
-    shown = _oneLineText(text.strip() if column == 1 else text)
-    width = textWidth(shown, font.get('name', sheetDoc.SANS), bool(font.get('bold')), size)
+    shown = text.strip() if column == 1 else text
+    lines = ([part.strip() for part in shown.split('\n')] if keepBreaks
+             else [_oneLineText(shown)])
+    width = max(textWidth(line, font.get('name', sheetDoc.SANS), bool(font.get('bold')), size)
+                for line in lines)
     return (width / _WIDTH_SLACK + 2 * _PAD_H_EM * f
             + _indentPt(spec, text, f, column, doc) + 0.01)
 
@@ -495,7 +518,7 @@ def _columnNeeds(plan: TablePlan, f: float):
         for column, spec in row.cells.items():
             if column > count or (r, column) in covered or spec.value in (None, ''):
                 continue
-            need = _oneLineNeed(spec, doc, f, column)
+            need = _oneLineNeed(spec, doc, f, column, (r, column) in plan.breaks)
             if (r, column) in ends:
                 wide.append((column, min(ends[(r, column)], count), need))
             else:
@@ -583,20 +606,31 @@ def _measure(plan: TablePlan, f: float):
             inner = (width - 2 * _PAD_H_EM * f - _indentPt(spec, text, f, c, doc)) * _WIDTH_SLACK
             shown = text.strip() if c == 1 else text
             if plan.oneLine:
-                shown = _oneLineText(shown)
-            if plan.oneLine or _isFigure(spec, r, c, plan.header):
+                parts = ([part.strip() for part in shown.split('\n')]
+                         if (r, c) in plan.breaks else [_oneLineText(shown)])
+                if max(textWidth(part, face, bold, size) for part in parts) > inner:
+                    fits = False
+                lines = len(parts)
+            elif _isFigure(spec, r, c, plan.header):
                 if textWidth(shown, face, bold, size) > inner:
                     fits = False
                 lines = 1
             else:
                 lines = _wrapLines(shown, face, bold, size, inner) if shown else 1
             tallest = max(tallest, lines * _lineHeight(face, bold, size))
-        heights.append(tallest + 2 * _rowPad(doc, r) * f + _ROW_SAFETY_PT)
+        natural = tallest + 2 * _rowPad(doc, r, plan.pad) * f + _ROW_SAFETY_PT
+        if r in plan.fixed:
+            # set at its own height, which must still hold its text (D142)
+            if natural > plan.fixed[r] + 1e-9:
+                fits = False
+            natural = plan.fixed[r]
+        heights.append(natural)
     if plan.oneLine:
-        live = [h for r, h in zip(plan.rows, heights) if not _isSpacer(doc, r)]
+        # every row one height, bar a row set at its own (D137, D142)
+        free = lambda r: not _isSpacer(doc, r) and r not in plan.fixed
+        live = [h for r, h in zip(plan.rows, heights) if free(r)]
         if live:
-            heights = [h if _isSpacer(doc, r) else max(live)
-                       for r, h in zip(plan.rows, heights)]
+            heights = [max(live) if free(r) else h for r, h in zip(plan.rows, heights)]
     return heights, fits
 
 
@@ -648,7 +682,7 @@ def _view(doc: SheetDoc, rows) -> SheetDoc:
 
 
 def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False,
-              oneLine=False, natural=False, hold=()):
+              oneLine=False, natural=False, hold=(), pad=_PAD_V_EM, fixed=None, breaks=()):
     """One Doc as one or more TablePlans in *box*. Whole when it fits at
     MIN_PT or above; otherwise cut at the Doc's section marks with each row
     costed at MIN_PT, the header repeated, and every page set in the one
@@ -657,7 +691,8 @@ def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False
     and, where that is under MIN_PT, is floored there instead."""
     rows = sorted(doc.rows) if rows is None else list(rows)
     spans = _spansFor(doc, rows)
-    whole = TablePlan(doc, rows, header, box, shares, spans, fitLabel, oneLine, natural, hold)
+    whole = TablePlan(doc, rows, header, box, shares, spans, fitLabel, oneLine, natural, hold,
+                      pad, fixed, breaks)
     if whole.oneLine:
         whole.ceiling = _widthCeiling(whole)
         whole.floor = min(MIN_PT, whole.ceiling)
@@ -671,7 +706,7 @@ def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False
     plans = []
     for page in pages:
         plan = TablePlan(doc, page.header + page.body, header, box, shares, spans,
-                         fitLabel, oneLine, natural, hold)
+                         fitLabel, oneLine, natural, hold, pad, fixed, breaks)
         plan.ceiling, plan.floor, plan.measureRows = whole.ceiling, whole.floor, rows
         plans.append(plan)
     sizes = []
@@ -703,16 +738,17 @@ def settleDown(plans, drop: float = _TABLE_DROP_PT) -> None:
 
 
 def openRows(plans, upToEm: float = _PAD_OPEN_EM) -> None:
-    """A one-line table's rows opened evenly into the height its box leaves,
-    each by no more than takes its padding to *upToEm* a side, and by the
-    same on every page, so every row stays one height (D137): the room is
-    used, but a short table is not stretched to fill its slide."""
+    """A table's rows opened evenly into the height its box leaves, each by
+    no more than takes a row's fitted padding to *upToEm* a side, and by
+    the same on every page, so rows that were one height stay one height
+    (D137): the room is used, but a short table is not stretched to fill
+    its slide. The allocation and the risk table open the same way (D139)."""
     def live(plan):
         return [i for i, r in enumerate(plan.rows) if not _isSpacer(plan.doc, r)]
     if not plans:
         return
     add = min((plan.box[3] - sum(plan.heights)) / max(len(live(plan)), 1) for plan in plans)
-    add = min(add, 2 * (upToEm - _PAD_V_EM) * plans[0].font)
+    add = min(add, 2 * (upToEm - plans[0].pad) * plans[0].font)
     if add <= 0:
         return
     for plan in plans:
@@ -720,16 +756,35 @@ def openRows(plans, upToEm: float = _PAD_OPEN_EM) -> None:
             plan.heights[i] += add
 
 
+def centreDown(plans) -> None:
+    """Each planned page moved down its box by half the height its rows
+    leave, so it sits centred between the slide's rule and its footnotes
+    (D139)."""
+    for plan in plans:
+        room = plan.box[3] - sum(plan.heights)
+        if room > 0:
+            plan.box = _dropped(plan.box, room / 2.0)
+
+
+def strategicRows(plans) -> None:
+    """The allocation's and the risk table's rows: opened a little, as far
+    as each table's own box allows, and the table centred down its slide
+    (D139)."""
+    openRows(plans, _PAD_STRATEGIC_EM)
+    centreDown(plans)
+
+
 def shareSlide(plans) -> None:
     """Tables on one slide share a size: all step down to the smallest fit
-    (D124). Their rows stay at their own heights: D124 opened the shorter
-    table's rows so the two ended at the bottom together, which at the 9pt
-    cap (D137) padded every row out; now each table ends where its rows do,
-    both top-aligned (D138)."""
+    (D124). Their rows are their own: D124 opened the shorter table's rows
+    so the two ended at the bottom together, which at the 9pt cap (D137)
+    padded every row out, and D138 left them compact; each now opens a
+    little into its own box's height and sits centred down it (D139)."""
     size = min(plan.font for plan in plans)
     for plan in plans:
         plan.font = size
         plan.heights, _ = _measure(plan, size)
+        strategicRows([plan])
 
 
 def combinedBoxes():
@@ -859,7 +914,7 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
     ink = _signInk(doc, rowIndex, column, spec.value) or font.get('color')
     align = spec.align or {}
     text = renderNumber(spec.value, spec.fmt)
-    if plan.oneLine:
+    if plan.oneLine and (rowIndex, column) not in plan.breaks:
         text = _oneLineText(text)
     frame = cell.text_frame
     frame.word_wrap = not (plan.oneLine or _isFigure(spec, rowIndex, column, plan.header))
@@ -874,7 +929,7 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
         else:
             left += extra
     cell.margin_left, cell.margin_right = _pt(left), _pt(right)
-    pad = 0.0 if _isSpacer(doc, rowIndex) else _rowPad(doc, rowIndex) * f
+    pad = 0.0 if _isSpacer(doc, rowIndex) else _rowPad(doc, rowIndex, plan.pad) * f
     cell.margin_top = cell.margin_bottom = _pt(pad)
     alignment = _ALIGN.get(align.get('horizontal'), PP_ALIGN.LEFT)
     lines = (text.split('\n') if text else [''])
@@ -942,47 +997,109 @@ def _renderPlan(slide, plan: TablePlan) -> None:
 
 # ---- the charts ----------------------------------------------------------
 
-#: the doughnuts' text: titles and legends at 12pt, and the hole half the
-#: chart (D137). No share is printed on a slice (D138)
-DONUT_TEXT_PT = 12
+#: the doughnuts' text: titles at 12pt (D137), legends 2pt smaller (D142),
+#: and the hole half the chart (D137). No share is printed on a slice (D138)
+DONUT_TITLE_PT = 12
+DONUT_LEGEND_PT = 10
 DONUT_HOLE = 50
+
+
+#: the legend under each doughnut, stacked one entry to a line (D144): each
+#: line this many legend sizes tall, the colour key this many wide, and the
+#: gap between key and name this many
+_LEGEND_LINE_EM = 1.5
+_LEGEND_KEY_EM = 0.8
+_LEGEND_GAP_EM = 0.5
+#: between a doughnut's frame and its legend, in points
+_LEGEND_DROP_PT = 6.0
+#: the frame's height over its width: room for the title over the ring
+_DONUT_TITLE_ALLOW_PT = 26.0
+_DONUT_GAP_IN = 0.18
+
+
+def donutLayout(items):
+    """Where each composition doughnut and its legend go, in points (D144).
+
+    The five charts share the content width, as before. Each chart's frame
+    is as tall as it is wide plus room for its title, so the ring fills it;
+    under it its legend stacks one entry to a line - a colour key, then the
+    name and its printed share, *SMA (39.0%)* (D145) - as a block exactly as
+    wide as its widest entry, measured in the
+    house face at the legend's size, and centred on the chart's own centre.
+    The charts share one top, so the rings and the legends' first lines
+    align across the slide, and the group - frames and the tallest legend -
+    is centred down the content box. Returns one dict per chart: its
+    dimension key and label, its slices, its ``frame`` (left, top, width,
+    height) and its ``legend``: per entry its ``name``, the ``label`` it
+    shows, the ``key`` square (left, top, side) and the ``text`` box (left,
+    top, width, height)."""
+    charts = [(key, label, donutBreakdown(items, key)) for key, label in DONUT_DIMENSIONS]
+    charts = [chart for chart in charts if chart[2]]
+    across = len(DONUT_DIMENSIONS)
+    left0, top0, boxWidth, boxHeight = FULL_BOX
+    gap = _DONUT_GAP_IN * 72.0
+    width = (boxWidth - gap * (across - 1)) / across
+    frameHeight = width + _DONUT_TITLE_ALLOW_PT
+    size = float(DONUT_LEGEND_PT)
+    line = _LEGEND_LINE_EM * size
+    key = _LEGEND_KEY_EM * size
+    between = _LEGEND_GAP_EM * size
+    tallest = max((len(slices) for _, _, slices in charts), default=0)
+    group = frameHeight + _LEGEND_DROP_PT + tallest * line
+    top = top0 + max(0.0, (boxHeight - group) / 2.0)
+    out = []
+    for position, (dimension, label, slices) in enumerate(charts):
+        index = [k for k, _ in DONUT_DIMENSIONS].index(dimension)
+        frameLeft = left0 + index * (width + gap)
+        centre = frameLeft + width / 2.0
+        # the name and its share as the page's legend prints it, to one place
+        labels = ['{} ({:.1f}%)'.format(entry['name'], entry['pct']) for entry in slices]
+        widest = max(textWidth(label_, sheetDoc.SANS, False, size) for label_ in labels)
+        block = key + between + widest
+        blockLeft = centre - block / 2.0
+        legendTop = top + frameHeight + _LEGEND_DROP_PT
+        entries = []
+        for row, entry in enumerate(slices):
+            lineTop = legendTop + row * line
+            entries.append({
+                'name': entry['name'], 'label': labels[row], 'slot': entry['slot'],
+                'key': (blockLeft, lineTop + (line - key) / 2.0, key),
+                'text': (blockLeft + key + between, lineTop, widest, line)})
+        out.append({'key': dimension, 'label': label, 'slices': slices,
+                    'frame': (frameLeft, top, width, frameHeight),
+                    'legend': entries, 'block': (blockLeft, legendTop, block, len(slices) * line)})
+    return out
 
 
 def _renderDonuts(slide, items) -> None:
     """The five composition doughnuts, native charts fed straight from
     ``donutBreakdown`` - no hidden sheet, because a PowerPoint chart carries
     its data - each slice coloured by its palette slot, and no share printed
-    on it: D137 labelled every slice, and D138 took the labels off."""
-    across = len(DONUT_DIMENSIONS)
-    gap = 0.18
-    width = (SLIDE_W_IN - 2 * MARGIN_IN - gap * (across - 1)) / across
-    top = CONTENT_TOP_IN + 0.32
-    height = SLIDE_H_IN - top - FOOTER_H_IN - 0.25
-    for index, (key, label) in enumerate(DONUT_DIMENSIONS):
-        slices = donutBreakdown(items, key)
-        if not slices:
-            continue
+    on it: D137 labelled every slice, and D138 took the labels off.
+
+    The legends are drawn, not the chart's own (D144): a chart legend lays
+    its entries out as PowerPoint sees fit, and at the bottom of a frame it
+    runs them across. Each is a stack of colour keys and names placed where
+    ``donutLayout`` puts them - one entry to a line, centred under its ring -
+    in the embedded house face, so what was measured is what is shown."""
+    for chart_ in donutLayout(items):
+        slices = chart_['slices']
         # the printed shares, as fractions, so the chart's data reads them as
         # percentages to one place
         data = CategoryChartData(number_format='0.0%')
         data.categories = [entry['name'] for entry in slices]
         data.add_series('Share', [round(entry['pct'] / 100.0, 6) for entry in slices])
-        left = MARGIN_IN + index * (width + gap)
+        left, top, width, height = chart_['frame']
         chart = slide.shapes.add_chart(
-            XL_CHART_TYPE.DOUGHNUT, _in(left), _in(top), _in(width),
-            _in(height), data).chart
+            XL_CHART_TYPE.DOUGHNUT, _pt(left), _pt(top), _pt(width), _pt(height), data).chart
         chart.has_title = True
-        chart.chart_title.text_frame.text = label
+        chart.chart_title.text_frame.text = chart_['label']
         title = chart.chart_title.text_frame.paragraphs[0].runs[0].font
-        title.size = Pt(DONUT_TEXT_PT)
+        title.size = Pt(DONUT_TITLE_PT)
         title.bold = True
         title.name = sheetDoc.SANS
         title.color.rgb = RGBColor.from_string(_HEAD_INK)
-        chart.has_legend = True
-        chart.legend.position = XL_LEGEND_POSITION.BOTTOM
-        chart.legend.include_in_layout = False
-        chart.legend.font.size = Pt(DONUT_TEXT_PT)
-        chart.legend.font.name = sheetDoc.SANS
+        chart.has_legend = False
         chart.plots[0].has_data_labels = False
         series = chart.series[0]
         for offset, entry in enumerate(slices):
@@ -993,6 +1110,25 @@ def _renderDonuts(slide, items) -> None:
             point.format.line.color.rgb = RGBColor.from_string('FFFFFF')
             point.format.line.width = Pt(0.75)
         _setHoleSize(chart, DONUT_HOLE)
+        for entry in chart_['legend']:
+            x, y, side = entry['key']
+            mark = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, _pt(x), _pt(y), _pt(side), _pt(side))
+            mark.name = 'Legend key: {} / {}'.format(chart_['label'], entry['name'])
+            mark.fill.solid()
+            mark.fill.fore_color.rgb = RGBColor.from_string(DONUT_PALETTE[entry['slot']])
+            mark.line.fill.background()
+            mark.shadow.inherit = False
+            x, y, w, h = entry['text']
+            # a hair of slack so the measured name never wraps, left-aligned
+            # at the block's text edge, so the block stays centred
+            box = slide.shapes.add_textbox(_pt(x), _pt(y), _pt(w + 2.0), _pt(h))
+            box.name = 'Legend: {} / {}'.format(chart_['label'], entry['name'])
+            frame = box.text_frame
+            frame.word_wrap = False
+            frame.margin_left = frame.margin_right = 0
+            frame.margin_top = frame.margin_bottom = 0
+            frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+            _para(frame, entry['label'], DONUT_LEGEND_PT, '404040', first=True)
 
 
 # ---- the house faces (D125) ----------------------------------------------
@@ -1170,6 +1306,49 @@ _NOTE_TAIL = ('VaR and CVaR are stated as positive loss magnitudes at 99% confid
               'over 1 month, 1 year and 3 years.')
 
 
+#: the words for the shares the rule parks the commitment in (D141)
+_SHARE_WORDS = ((1.0 / 3.0, 'a third'), (2.0 / 3.0, 'two thirds'), (0.5, 'half'),
+                (1.0, 'all'))
+
+
+def _shareWords(share: float) -> str:
+    for value, words in _SHARE_WORDS:
+        if abs(share - value) < 1e-9:
+            return words
+    return '{:.0%}'.format(share)
+
+
+def _initialSlide(model: dict, includeFees: bool, proposalId: str = None):
+    """The slide after the implementation table for a private-markets book
+    (D141): its initial allocation against the long-term target - each
+    measure a Long-term and an Initial column, no descriptive columns - with
+    the table's own arguments for ``planDeck``'s ``tables``: its plans, its
+    heading, its subheading and its notes."""
+    initial = model['initial']
+    committed = initial['commitment']
+    doc, headerRow, _ = sheetDoc.buildInitialAllocationDoc(model, includeFees, proposalId)
+    # the measures' row sits above the header and repeats with it
+    view = _tableSlice(doc, headerRow - 1)
+    count = 2 + 2 * len(sheetDoc.initialMeasures(includeFees))
+    plans = planTable(view, _dropped(FULL_BOX), [1.0] * count,
+                      header=(headerRow - 1, headerRow), natural=True, hold=(0, 1))
+    openRows(plans)
+    sub = ('Until capital is called, the {:.2f}% (${:,.0f}) committed to private markets is '
+           'held {}'.format(committed['weightPct'], committed['notional'], ' and '.join(
+               '{} in {}'.format(_shareWords(h['share']), h['category'])
+               for h in committed['held'])))
+    notes = ['Long-term is the target once the private-markets commitment is fully called; '
+             'initial is what the portfolio holds on day one - {}.'.format(' and '.join(
+                 '{:.2f}% in {}'.format(h['weightPct'], h['category'])
+                 for h in committed['held']))]
+    fee, target = initial['total'].get('wtdFeeBp'), model['total'].get('wtdFeeBp')
+    notes.append(('Fees are charged on what is invested: {:.1f}bp initially against {:.1f}bp '
+                  'long-term. '.format(fee, target) if includeFees and fee is not None
+                  and target is not None else '')
+                 + 'Each allocation column closes on exactly 100.00%.')
+    return plans, 'Implemented Portfolio: Initial Allocation', sub, notes
+
+
 def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = True,
              variant: str = None, feeSchedule: str = None, feeLevel: str = None,
              proposalId: str = None, customFeesBy: str = None, customFeesAt=None,
@@ -1194,12 +1373,12 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     portDoc = sheetDoc.buildPortfoliosDoc(results)
     riskDoc = sheetDoc.buildRiskDoc(results)
     assumDoc = sheetDoc.buildAssumptionsDoc(assets, results)
-    # a private-markets book carries its initial allocation's twins on the
-    # slide, whatever the page was showing (D136)
+    # the long-term target's table; a private-markets book's initial
+    # allocation follows it on a slide of its own (D141)
     initial = model.get('initial')
-    columns = implColumns(includeFees, initial=bool(initial))
+    columns = implColumns(includeFees)
     implDoc, headerRow, _ = sheetDoc.buildImplementationDoc(
-        model, columns, _WIDTHS, _TEXT_COLUMNS,
+        model, columns, _WIDTHS,
         variant=variant, feeSchedule=feeSchedule, feeLevel=feeLevel,
         includeFees=includeFees, proposalId=proposalId,
         customFeesBy=customFeesBy, customFeesAt=customFeesAt)
@@ -1207,10 +1386,7 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     basisLine = '{} · {}'.format(basis.currency, basis.hedging)
     names = ' against '.join(str(r['name']) for r in results)
     money = renderNumber(mandate.mandateSize, '$#,##0')
-    # the commitment's two lines belong in the note under the table, where
-    # they can be said in full, not in a subheading that has one line
-    preamble = [pair for pair in _preamblePairs(implDoc, headerRow)
-                if not pair.startswith(('Private Markets Commitment', 'Held Until Called'))]
+    preamble = _preamblePairs(implDoc, headerRow)
     count = len(results)
     portShares = _shares(_PORT_LABEL.get(count, 30.0), _docColumns(portDoc))
     riskShares = _shares(_RISK_LABEL.get(count, 20.0), _docColumns(riskDoc))
@@ -1228,9 +1404,12 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     together = None
     if count <= 2:
         leftBox, rightBox = combinedBoxes()
-        left = planTable(portDoc, leftBox, portShares, fitLabel=True)
+        # the pair keeps a little padding on every row, and sets smaller
+        # where its rows need the height to have it (D140)
+        left = planTable(portDoc, leftBox, portShares, fitLabel=True, pad=_PAD_PAIR_EM)
         headed, headedRows = headedRisk(riskDoc)
-        right = planTable(headed, rightBox, riskShares, rows=headedRows, fitLabel=True)
+        right = planTable(headed, rightBox, riskShares, rows=headedRows, fitLabel=True,
+                          pad=_PAD_PAIR_EM)
         if len(left) == 1 and len(right) == 1:
             together = left + right
             shareSlide(together)
@@ -1242,30 +1421,26 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
             'notes': [_NOTE_ALLOC, _NOTE_RISK + ' ' + _NOTE_TAIL],
             'tables': together})
     else:
-        tables(planTable(portDoc, FULL_BOX, portShares, fitLabel=True),
-               'Strategic Asset Allocation',
+        # each on a slide of its own, rows opened a little and centred (D139)
+        portPlans = planTable(portDoc, FULL_BOX, portShares, fitLabel=True)
+        strategicRows(portPlans)
+        riskPlans = planTable(riskDoc, FULL_BOX, riskShares, fitLabel=True)
+        strategicRows(riskPlans)
+        tables(portPlans, 'Strategic Asset Allocation',
                '{} — {}, per asset category with portfolio-level estimates'.format(
                    basisLine, names), [_NOTE_ALLOC, _NOTE_ESTIMATES])
-        tables(planTable(riskDoc, FULL_BOX, riskShares, fitLabel=True), 'Risk Dashboard',
+        tables(riskPlans, 'Risk Dashboard',
                'Factor-based risk analytics — stress periods and tail-loss measures, '
                'nominal and real, per portfolio', [_NOTE_RISK, _NOTE_TAIL])
 
-    # the Long-term / Initial row sits above the header and repeats with it
-    first = headerRow - 1 if initial else headerRow
-    implView = _tableSlice(implDoc, first)
+    implView = _tableSlice(implDoc, headerRow)
     implNotes = ['Weights are rounded to 2dp by largest remainder across the whole table, '
-                 'so {} closes on exactly 100.00%; notionals derive from the '
-                 'printed weight on the {} mandate.'.format(
-                     'each allocation column' if initial else 'the column', money),
-                 'Management fees resolve from the schedule and level named above.']
-    if initial:
-        committed = initial['commitment']
-        implNotes.append(
-            'Initial columns: the {:.2f}% (${:,.0f}) committed to private markets is held '
-            '{} until capital is called; fees are charged on what is invested.'.format(
-                committed['weightPct'], committed['notional'],
-                ' and '.join('{:.2f}% in {}'.format(h['weightPct'], h['category'])
-                             for h in committed['held'])))
+                 'so the column closes on exactly 100.00%; notionals derive from the '
+                 'printed weight on the {} mandate.'.format(money),
+                 'Management fees resolve from the schedule and level named above.'
+                 + (' This is the long-term target; the initial allocation, held while '
+                    'private-markets capital is called, is on the next slide.'
+                    if initial else '')]
     # nothing on a second line, every row one height, a little space under
     # the rule (D137); the category and product columns exactly as wide as
     # their longest names and the rest of the slide's width shared equally
@@ -1273,11 +1448,12 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     held = [columns.index(c) for c in ('Categories & Asset Classes', 'Products')
             if c in columns]
     implPlans = planTable(implView, _dropped(FULL_BOX), [_WIDTHS[c] for c in columns],
-                          header=(first, headerRow) if initial else (headerRow,),
-                          natural=True, hold=held)
+                          header=(headerRow,), natural=True, hold=held)
     openRows(implPlans)
     tables(implPlans, 'Implemented Model', ' · '.join(preamble) if preamble else basisLine,
            implNotes)
+    if initial:
+        tables(*_initialSlide(model, includeFees, proposalId))
 
     items = [item for group in model.get('groups', []) for item in group['items']]
     if items:
@@ -1291,8 +1467,13 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     # nothing on a second line and every row one height, across the width
     # as before; moved down under the rule where the slide has the room
     # (D137); its rows at their own height, not opened into the slide (D138)
+    # its column heads' row at 1.4 cm, the mean return's head on two lines
+    # broken where the sheet breaks it, after 'Return' (D142)
+    meanReturn = [(2, c) for c, cell in assumDoc.rows[2].cells.items()
+                  if str(cell.value or '').startswith('Estimated Mean Return')]
     assumptions = planTable(assumDoc, FULL_BOX, [w for _, w in sheetDoc.ASSUMPTION_WIDTHS],
-                            header=(1, 2), oneLine=True)
+                            header=(1, 2), oneLine=True, fixed={2: _ASSUMPTIONS_HEAD_PT},
+                            breaks=meanReturn)
     settleDown(assumptions)
     tables(assumptions,
            'Long-Term Capital Market Assumptions',

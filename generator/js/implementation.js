@@ -2306,9 +2306,11 @@ function renderView() {
     + '" id="implTbl">'
     + '<caption class="sr-only">Implementation model by product</caption><thead>'
     /* the row that names each figure's world while the twins are open */
-    + (ini ? '<tr class="grp">' + implScreenColumns(fees, true).map(function (name) {
+    + (ini ? '<tr class="grp">' + implScreenColumns(fees, true).map(function (name, at) {
         var world = IMPL_WORLDS[name] || '';
-        return '<th class="' + world + (world === 'ini' ? ' ini' : '') + (/fee/i.test(name) ? ' fee-col' : '') + '"'
+        /* the two over the pinned columns pin with them (D146) */
+        var pin = at === 0 ? ' gpin g1' : at === 1 ? ' gpin g2' : '';
+        return '<th class="' + world + (world === 'ini' ? ' ini' : '') + (/fee/i.test(name) ? ' fee-col' : '') + pin + '"'
           + (world === 'ini' ? hidden : world ? '' : ' aria-hidden="true"') + '><div class="gh">'
           + (world === 'lt' ? 'Long-term' : world === 'ini' ? 'Initial' : '') + '</div></th>';
       }).join('') + '</tr>' : '')

@@ -1876,8 +1876,10 @@ def test_the_export_carries_four_sheets_and_keeps_the_assumptions():
         implementation['includeFees'], implementation['volPremium'],
         assets=assetEstimates.forSlice('USD', 'Hedged'))
     book = load_workbook(io.BytesIO(content))
+    # the golden book holds private markets: its initial allocation has a
+    # sheet of its own after the Implementation sheet (D141)
     assert book.sheetnames == ['portfolios', 'risk_dashboard', 'assumptions',
-                               'Implementation', 'chartData']
+                               'Implementation', 'Initial Allocation', 'chartData']
     assert book['chartData'].sheet_state == 'hidden', 'the chart data is not for reading'
     assumptions = book['assumptions']
     assert assumptions['A1'].value is None and assumptions['B1'].value == 'Long-Term Estimates'
@@ -2177,7 +2179,7 @@ def test_the_implementation_table_stands_on_white():
                   if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
     total = next(r for r in range(header, sheet.max_row + 1)
                  if sheet.cell(row=r, column=1).value == 'Total')
-    names = implColumns(True, initial=True)          # the golden book holds private markets
+    names = implColumns(True)          # the initial allocation has its own sheet (D141)
     columns, items, seen = len(names), 0, set()
     for row in range(header, total + 1):
         label = str(sheet.cell(row=row, column=1).value or '')
@@ -2192,13 +2194,23 @@ def test_the_implementation_table_stands_on_white():
     assert items, 'no product rows were checked'
     from cyrus_pmg.pmgService.scenario import sheetDoc
     for column in range(1, columns + 1):
-        # the total is white, bar its initial twins on the teal tint (D136)
-        want = sheetDoc.INITIAL_TINT if names[column - 1].startswith('Initial') else 'FFFFFF'
-        assert (sheet.cell(row=total, column=column).fill.fgColor.rgb or '')[-6:] == want, column
-    # and the initial allocation's teal, for a private-markets book (D136)
+        assert (sheet.cell(row=total, column=column).fill.fgColor.rgb or '')[-6:] == 'FFFFFF'
+    assert seen <= {'FFFFFF', wb._BAND, wb._HEADER_NAVY, wb._BREACH_FILL}, seen
+    assert 'FFFFFF' in seen
+    # and the Initial Allocation sheet likewise, with its teal (D141)
+    initial = load_workbook(io.BytesIO(_builtWorkbook()))['Initial Allocation']
+    header = next(r for r in range(1, 12)
+                  if initial.cell(row=r, column=1).value == 'Categories & Asset Classes')
+    total = next(r for r in range(header, initial.max_row + 1)
+                 if initial.cell(row=r, column=1).value == 'Total')
+    seen = set()
+    for row in range(header, total + 1):
+        for column in range(1, 9):
+            fill = initial.cell(row=row, column=column).fill
+            assert fill.patternType == 'solid', ('unfilled cell', row, column)
+            seen.add((fill.fgColor.rgb or '')[-6:])
     assert seen <= {'FFFFFF', wb._BAND, wb._HEADER_NAVY, wb._BREACH_FILL, sheetDoc.INITIAL_HEAD,
                     sheetDoc.INITIAL_TINT, sheetDoc.INITIAL_BAND}, seen
-    assert 'FFFFFF' in seen
 
 
 def _ink(cell):
@@ -2500,11 +2512,8 @@ def test_the_notional_follows_the_products_and_the_exposure_currency_is_a_doughn
                   if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
     names = [sheet.cell(row=header, column=c).value for c in range(1, sheet.max_column + 1)]
     names = [n for n in names if n]
-    # the golden book holds private markets, so each figure has its initial
-    # twin beside it (D136); the order is otherwise D134's
-    assert names == implColumns(True, initial=True)
-    assert [n for n in names if not n.startswith('Initial')][:4] == [
-        'Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)']
+    assert names == implColumns(True)
+    assert names[:4] == ['Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)']
     assert 'Exposure ccy' not in names and 'Exposure ccy' not in implColumns(False)
     assert implColumns(False)[:3] == ['Categories & Asset Classes', 'Products', 'Notional']
     notional = names.index('Notional') + 1
