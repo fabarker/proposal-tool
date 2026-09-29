@@ -51,7 +51,7 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 3          # 2: customFees (D96); 3: the deck (D123)
+SCHEMA_VERSION = 4          # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     deckName       TEXT,
     deckSha        TEXT,
     deckBytes      INTEGER,
+    fundingSplit   TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -116,7 +117,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
-                 'deckName, deckBytes, deckSha')
+                 'deckName, deckBytes, deckSha, fundingSplit')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -158,6 +159,11 @@ def _connect() -> sqlite3.Connection:
                              ('deckSha', 'TEXT'), ('deckBytes', 'INTEGER')):
             if column not in held:
                 conn.execute('ALTER TABLE proposals ADD COLUMN {} {}'.format(column, kind))
+        # and, from D148, which revision of the private-markets funding split
+        # parked a private-markets book's commitment; NULL for any other book,
+        # and for anything delivered before - the split was then D136's thirds
+        if 'fundingSplit' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN fundingSplit TEXT')
         conn.execute("INSERT OR IGNORE INTO meta VALUES ('schemaVersion', ?)",
                      (str(SCHEMA_VERSION),))
         conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
@@ -307,8 +313,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'createdBy, primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                 'baseKey, tacticalTilt, volPremium, includeFees, feeSchedule, '
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
-                'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -324,7 +330,10 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                   else None),
                  json.dumps(allocation), json.dumps(implemented),
                  sqlite3.Binary(workbook), filename, sha, len(workbook),
-                 sqlite3.Binary(deck), deckName, deckSha, len(deck)))
+                 sqlite3.Binary(deck), deckName, deckSha, len(deck),
+                 # the split that parked the commitment, for a book with one (D148)
+                 (json.dumps((model.get('initial') or {}).get('split'))
+                  if (model.get('initial') or {}).get('split') else None)))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName) '
                 'VALUES (?,?,?,?,?)',
@@ -341,7 +350,20 @@ def _rowToEntry(row) -> dict:
     entry = {key: row[key] for key in row.keys() if key not in ('allocation', 'implemented')}
     for flag in ('tacticalTilt', 'volPremium', 'includeFees'):
         entry[flag] = bool(entry[flag])
+    if 'fundingSplit' in entry:
+        entry['fundingSplit'] = json.loads(entry['fundingSplit']) if entry['fundingSplit'] else None
     return entry
+
+
+def fundingSplitText(split) -> str:
+    """A recorded split in one line: ``r2 (house) Investment Grade Fixed
+    Income 33.3333% · Public Equity 66.6667%``. Blank for none."""
+    if not split:
+        return ''
+    return 'r{} ({}) {}'.format(
+        split.get('revision'), 'house' if split.get('scope') == '*' else split.get('scope'),
+        ' · '.join('{} {:g}%'.format(d['category'], d['weightPct'])
+                   for d in split.get('destinations') or []))
 
 
 def _sleevesFor(conn, proposalId) -> list:
@@ -621,7 +643,7 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'PrimaryPwa', 'TopAccountSize', 'MandateSize', 'Currency', 'Hedging', 'Variant',
                   'BasePortfolio', 'TacticalTilt', 'VolPremium', 'IncludeFees',
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
-                  'WorkbookBytes', 'WorkbookSha']
+                  'WorkbookBytes', 'WorkbookSha', 'FundingSplit']
 
 
 def exportRows(**filters) -> list:
@@ -638,7 +660,8 @@ def exportRows(**filters) -> list:
                         int(e['tacticalTilt']), int(e['volPremium']),
                         int(e['includeFees']), e['feeSchedule'] or '', e['feeLevel'] or '',
                         e.get('customFees') or '', pins,
-                        e['workbookName'], e['workbookBytes'], e['workbookSha']))
+                        e['workbookName'], e['workbookBytes'], e['workbookSha'],
+                        fundingSplitText(e.get('fundingSplit'))))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

@@ -1312,10 +1312,13 @@ _SHARE_WORDS = ((1.0 / 3.0, 'a third'), (2.0 / 3.0, 'two thirds'), (0.5, 'half')
 
 
 def _shareWords(share: float) -> str:
+    """A share in words. The split is kept in percent to four places
+    (D148), so a third arrives as 0.333333: within a millionth is close
+    enough to say 'a third'. Anything else prints as a percentage."""
     for value, words in _SHARE_WORDS:
-        if abs(share - value) < 1e-9:
+        if abs(share - value) < 1e-6:
             return words
-    return '{:.0%}'.format(share)
+    return '{:g}%'.format(round(share * 100, 4))
 
 
 def _initialSlide(model: dict, includeFees: bool, proposalId: str = None):

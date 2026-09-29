@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sleeve-Driven Offer and Funding Split</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Document chrome: the same system as the other proposals in this folder */
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --accent-ink:#FFFFFF; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --tint:#EEF2F9; --good:#1E6B45; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#8E2A2A; --bad-tint:#F8E7E7; --code:#F1F3F7; --off:#F1F3F6; --off-ink:#8793A1;
+  --t-navy:#0F243E; --t-head:#092532; --t-band:#D3DDEA; --t-ig:#2A78D6; --t-eq:#1BAF7A; --t-of:#EB6834;
+  --t-hf:#EDA100; --t-pv:#7A4E9E;
+  --f-display:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+    --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+    --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+    --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133; --off:#1A2030; --off-ink:#6F7B8E;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --accent-ink:#0F1420; --line:#26304A; --line-strong:#364266;
+  --tint:#1C2438; --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133; --off:#1A2030; --off-ink:#6F7B8E;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:28px;padding-block:40px 96px}
+@media (max-width:700px){.wrap{padding-inline:16px;padding-block:28px 72px}}
+.prose{max-width:72ch}
+.mast{border-bottom:2px solid var(--navy);padding-bottom:22px;margin-bottom:40px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(34px,4.6vw,52px);line-height:1.05;margin:0 0 14px;color:var(--navy);text-wrap:balance;letter-spacing:-.01em}
+.sub{font-size:18px;color:var(--ink-2);max-width:70ch;margin:0 0 18px;text-wrap:pretty}
+.meta{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+h2{font-family:var(--f-display);font-weight:500;font-size:clamp(26px,3vw,34px);line-height:1.15;color:var(--navy);margin:64px 0 12px;text-wrap:balance;scroll-margin-top:20px}
+h3{font-size:18px;font-weight:600;margin:26px 0 6px;color:var(--ink);text-wrap:balance}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px;padding-left:22px} li{margin:0 0 6px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--code);padding:1px 5px;border-radius:3px}
+pre{font-family:var(--f-mono);font-size:13px;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:12px 14px;overflow-x:auto;line-height:1.5;margin:0 0 14px}
+.toc{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin:16px 0 0;padding:0;list-style:none}
+.toc a{text-decoration:none;color:var(--ink-2)} .toc a:hover{color:var(--accent)}
+.toc b{font-family:var(--f-mono);font-size:12px;color:var(--accent);margin-right:5px}
+.note{background:var(--tint);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 6px 6px 0;margin:0 0 16px;font-size:15px;color:var(--ink-2)}
+.note b{color:var(--ink)}
+.warnbox{background:var(--warn-tint);border-left:3px solid var(--warn);padding:12px 16px;border-radius:0 6px 6px 0;margin:0 0 16px;font-size:15px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin:16px 0}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin:16px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.card h3{margin-top:0;font-size:16px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card.rec{border-color:var(--good);box-shadow:inset 0 3px 0 var(--good)}
+.tag{display:inline-block;font:600 11px var(--f-mono);letter-spacing:.04em;padding:2px 7px;border-radius:10px;background:var(--tint);color:var(--accent);vertical-align:1px}
+.tag.good{background:var(--good-tint);color:var(--good)} .tag.warn{background:var(--warn-tint);color:var(--warn)} .tag.bad{background:var(--bad-tint);color:var(--bad)}
+.num{font-variant-numeric:tabular-nums}
+table.doc{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0 18px;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+table.doc th,table.doc td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.doc th{background:var(--tint);font-size:12.5px;letter-spacing:.03em;color:var(--ink-2)}
+table.doc tr:last-child td{border-bottom:0}
+table.doc td.n,table.doc th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:13px}
+table.doc td.strong{font-weight:600;color:var(--ink)}
+.tablewrap{overflow-x:auto}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 10px}
+.q h3{margin:0 0 4px;font-size:16px}
+.q .rec{font-size:14px;color:var(--good);font-weight:600;margin:6px 0 0}
+.q p{margin:0;font-size:14.5px;color:var(--ink-2)}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps>li{counter-increment:s;position:relative;padding:12px 16px 12px 50px;background:var(--surface);border:1px solid var(--line);border-radius:8px;margin:0 0 10px}
+.steps>li::before{content:counter(s);position:absolute;left:14px;top:12px;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:600 12px/24px var(--f-mono);text-align:center}
+.steps>li h3{margin:0 0 4px;font-size:16px}
+.steps>li p,.steps>li ul{font-size:14.5px;color:var(--ink-2)}
+.steps>li ul{margin-bottom:0}
+.foot{margin-top:72px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3)}
+
+/* the set arithmetic, drawn */
+.sets{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:stretch;margin:18px 0}
+@media (max-width:760px){.sets{grid-template-columns:1fr}.sets .op{text-align:center}}
+.sets .box{background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;padding:14px 16px}
+.sets .box b{display:block;font-size:15px;color:var(--ink);margin-bottom:4px}
+.sets .box small{display:block;font-size:13px;color:var(--ink-2);line-height:1.45}
+.sets .box.who{border-top:4px solid var(--accent)} .sets .box.lib{border-top:4px solid var(--t-eq)} .sets .box.out{border-top:4px solid var(--navy);background:var(--tint)}
+.sets .op{align-self:center;font:600 26px var(--f-mono);color:var(--ink-3)}
+
+/* ---- demos ----------------------------------------------------------------- */
+.demo{background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;margin:18px 0 0;overflow:hidden}
+.demo-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--tint)}
+.demo-h .ttl{font:600 13px var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.demo-h .crumb{font-size:13px;color:var(--ink-3)}
+.controls{display:flex;flex-wrap:wrap;gap:12px 20px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.ctl{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--ink-3);font-weight:600;letter-spacing:.03em}
+.ctl select,.ctl input[type=text],.ctl input[type=number]{font:500 14px var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:6px 8px;min-width:150px}
+.chk{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--ink);font-weight:500;letter-spacing:0}
+.chk input{width:16px;height:16px;accent-color:var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:7px;overflow:hidden;background:var(--surface);flex-wrap:wrap}
+.seg button{font:600 13px var(--f-body);border:0;background:transparent;color:var(--ink-2);padding:7px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button:disabled{color:var(--off-ink);cursor:not-allowed;background:repeating-linear-gradient(135deg,transparent 0 6px,var(--off) 6px 12px)}
+.seg button:focus-visible,.btn:focus-visible,.cellbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.demo-body{padding:16px 18px 18px}
+.btn{font:600 13px var(--f-body);border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:6px;padding:7px 12px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.small{padding:3px 8px;font-size:12px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:var(--surface)}
+.stat small{display:block;font-size:11px;color:var(--ink-3);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.stat b{display:block;font:600 19px var(--f-mono);color:var(--ink);margin:3px 0 1px}
+.stat span{font-size:12.5px;color:var(--ink-2)}
+.stat.good{border-left:4px solid var(--good)} .stat.warn{border-left:4px solid var(--warn)} .stat.acc{border-left:4px solid var(--accent)}
+
+/* the console, abridged */
+.console{display:grid;grid-template-columns:1fr 300px;gap:16px}
+@media (max-width:980px){.console{grid-template-columns:1fr}}
+.repo-tabs{display:flex;gap:2px;flex-wrap:wrap}
+.repo-tabs span{font:600 12.5px var(--f-body);padding:5px 11px;border-radius:6px;color:var(--ink-2)}
+.repo-tabs span.on{background:var(--navy);color:var(--paper)}
+.repo-tabs span.new{outline:2px dashed var(--good);outline-offset:-2px}
+.subtabs{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap}
+.mx{border-collapse:separate;border-spacing:3px;width:100%;min-width:720px;font-size:12.5px}
+.mx th{font:600 11.5px var(--f-body);color:var(--ink-2);text-align:left;padding:4px 6px;vertical-align:bottom}
+.mx th .hb{font:inherit;border:0;background:transparent;color:inherit;padding:2px 4px;border-radius:4px;cursor:pointer;text-align:left}
+.mx th .hb:hover{background:var(--tint);color:var(--accent)}
+.mx td{padding:0}
+.cellbtn{width:100%;min-height:54px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;text-align:left;cursor:pointer;font:500 12px/1.3 var(--f-body);background:var(--off);color:var(--off-ink);position:relative}
+.cellbtn b{display:block;font-size:12.5px;font-weight:600}
+.cellbtn.offered{background:var(--good-tint);border-color:color-mix(in srgb,var(--good) 35%,transparent);color:var(--good)}
+.cellbtn.gap{background:var(--warn-tint);border-color:color-mix(in srgb,var(--warn) 45%,transparent);color:var(--warn)}
+.cellbtn.off.nolib{background:repeating-linear-gradient(135deg,var(--off) 0 6px,transparent 6px 12px)}
+.cellbtn .chg{position:absolute;top:4px;right:5px;font:700 11px var(--f-mono);padding:0 5px;border-radius:8px}
+.cellbtn .chg.plus{background:var(--good);color:var(--surface)} .cellbtn .chg.minus{background:var(--bad);color:var(--surface)}
+.side{display:flex;flex-direction:column;gap:12px}
+.panel{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--surface)}
+.panel h4{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.panel p{font-size:13px;color:var(--ink-2);margin:0 0 8px}
+.libs label{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0;color:var(--ink)}
+.libs label span{font-family:var(--f-mono);font-size:12px;color:var(--ink-3)}
+.rulebox{font:12.5px/1.5 var(--f-mono);background:var(--code);border-radius:6px;padding:8px 10px;color:var(--ink);white-space:pre-wrap}
+.hist{list-style:none;padding:0;margin:0;font-size:12.5px}
+.hist li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.hist li:first-child{border-top:0}
+.hist li b{font-family:var(--f-mono);color:var(--accent)}
+.hist li span{color:var(--ink-2)}
+.hist li small{display:block;color:var(--ink-3)}
+.diff{font-size:13px;color:var(--ink-2);margin:0 0 8px}
+.diff .plus{color:var(--good);font-weight:600} .diff .minus{color:var(--bad);font-weight:600}
+.savebar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.savebar input{flex:1;min-width:180px;font:14px var(--f-body);border:1px solid var(--line-strong);border-radius:6px;padding:6px 8px;background:var(--surface);color:var(--ink)}
+.legendrow{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--ink-2);margin:10px 0 0}
+.legendrow i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-2px;border:1px solid var(--line-strong)}
+
+/* the picker, abridged */
+.pick{display:grid;grid-template-columns:260px 1fr;gap:16px}
+@media (max-width:820px){.pick{grid-template-columns:1fr}}
+.pick .rail{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--surface)}
+.pick .rail h5{margin:0 0 10px;font:600 11px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.pick .rail .ctl{margin:0 0 12px}
+.why{font-size:12px;color:var(--ink-3);margin:6px 0 0;min-height:1.2em}
+.verdict{border-radius:8px;padding:12px 14px;font-size:14px;border:1px solid var(--line)}
+.verdict b{display:block;font-size:15px;margin-bottom:3px}
+.verdict.ok{background:var(--good-tint);color:var(--good)} .verdict.no{background:var(--off);color:var(--ink-2)} .verdict.gap{background:var(--warn-tint);color:var(--warn)}
+.optlist{list-style:none;padding:0;margin:12px 0 0;font-size:13px}
+.optlist li{display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--line)}
+.optlist li:first-child{border-top:0}
+.optlist li b{min-width:120px}
+.optlist li.on b{color:var(--good)} .optlist li.offb b{color:var(--off-ink)} .optlist li.gapb b{color:var(--warn)}
+
+/* the split editor */
+.split{display:grid;grid-template-columns:1fr 330px;gap:16px}
+@media (max-width:980px){.split{grid-template-columns:1fr}}
+table.ed{border-collapse:collapse;width:100%;font-size:13.5px}
+table.ed th{font:600 11.5px var(--f-body);color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.ed td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.ed td.n{text-align:right;font-family:var(--f-mono);font-size:13px}
+table.ed select,table.ed input{font:500 13.5px var(--f-body);border:1px solid var(--line-strong);border-radius:6px;padding:5px 7px;background:var(--surface);color:var(--ink)}
+table.ed input{width:80px;text-align:right;font-family:var(--f-mono)}
+.bar{display:flex;height:22px;border-radius:5px;overflow:hidden;border:1px solid var(--line-strong);margin:10px 0 4px}
+.bar span{display:flex;align-items:center;justify-content:center;font:600 11px var(--f-mono);color:#fff;white-space:nowrap;overflow:hidden}
+.msgs{list-style:none;padding:0;margin:8px 0 0;font-size:13px}
+.msgs li{padding:5px 8px;border-radius:5px;margin:0 0 4px}
+.msgs li.bad{background:var(--bad-tint);color:var(--bad)} .msgs li.ok{background:var(--good-tint);color:var(--good)} .msgs li.info{background:var(--tint);color:var(--ink-2)}
+table.pv{border-collapse:collapse;width:100%;font-size:12.5px}
+table.pv th,table.pv td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+table.pv th{font-size:11.5px;color:var(--ink-3);font-weight:600}
+table.pv td.n{text-align:right;font-family:var(--f-mono)}
+table.pv tr.mv td{font-weight:600}
+table.pv td.up{color:var(--good)} table.pv td.dn{color:var(--bad)}
+.phrase{font-size:13px;color:var(--ink-2);background:var(--tint);border-radius:6px;padding:8px 10px;margin:10px 0 0}
+/* sleeves-only additions */
+.cellbtn{cursor:default}
+.cellbtn.withdrawn{background:var(--off);color:var(--off-ink)}
+.cellbtn .chg.plus{background:var(--warn);color:var(--surface)}
+.impact{font-size:13px;color:var(--ink-2);background:var(--warn-tint);border-radius:6px;padding:8px 10px;margin:8px 0 0}
+.impact b{color:var(--warn)}
+.impact.none{background:var(--tint)}
+.libs .sub{font-size:12px;color:var(--ink-3);margin:2px 0 6px 24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Proposal · Repository · for review · revised</p>
+  <h1>The sleeve library decides which allocations each implementation type offers; the private-markets funding split moves into the repository</h1>
+  <p class="sub">A book is offered under an implementation type when, and only when, that type's library holds a sleeve for every category the book holds. There is no second list to maintain: to stop offering Full books under ESG, the desk archives ESG's Hedge Funds sleeves, and to offer them again, adds one back. Separately, the split that holds a private-markets commitment until capital is called becomes a repository setting instead of a constant in code.</p>
+  <div class="meta"><span><b>Date</b> 29 September 2026</span><span><b>Status</b> proposal, nothing built</span><span><b>Decided</b> the library alone decides what is offered</span><span><b>Decisions still needed</b> 5, each with a recommendation</span><span><b>Figures</b> from the delivered universe and today's sleeve library</span></div>
+  <ul class="toc">
+    <li><a href="#summary"><b>1</b>Summary</a></li>
+    <li><a href="#today"><b>2</b>What happens today</a></li>
+    <li><a href="#rule"><b>3</b>The rule</a></li>
+    <li><a href="#switch"><b>4</b>Switching over</a></li>
+    <li><a href="#console"><b>5</b>In the console</a></li>
+    <li><a href="#pwa"><b>6</b>What a PWA sees</a></li>
+    <li><a href="#funding"><b>7</b>The funding split</a></li>
+    <li><a href="#data"><b>8</b>Data, API and audit</a></li>
+    <li><a href="#plan"><b>9</b>Plan</a></li>
+    <li><a href="#decisions"><b>10</b>Decisions</a></li>
+  </ul>
+</header>
+
+<section id="summary">
+<h2>1 · Summary</h2>
+<div class="grid2">
+  <div class="card rec">
+    <h3>Offered = buildable from the library <span class="tag good">decided</span></h3>
+    <p>An allocation is offered under an implementation type only if every category it holds has a sleeve in that type's library. That takes edition rules into account and leaves out broken and archived sleeves. It is worked out, never entered: there is no allow-list anywhere, and the code table that does this job today (D49) is deleted.</p>
+    <p>When a book isn't offered, the PWA is told which category has no sleeve under which type. The desk sees the same thing, per type, in a read-only view in the Repository, and the sleeve editor warns before any change that would withdraw books.</p>
+  </div>
+  <div class="card rec">
+    <h3>The funding split, in the repository</h3>
+    <p>The destinations and their parts, today <b>1 part</b> Investment Grade Fixed Income to <b>2 parts</b> Public Equity, become a Repository setting with notes, history and restore. A destination must be a category every private-markets book holds.</p>
+    <p>A change applies to scenarios still in progress. Delivered proposals keep the split they were delivered with, and the register records which one that was.</p>
+  </div>
+</div>
+<div class="warnbox prose"><b>One thing to do before switching over.</b> Today's library holds sleeves for every category under every type, Hedge Funds and Private Markets under both Onshore types included. Switched over as it stands, every type would offer all 172 books. §4 sets out the curation that keeps today's offer exactly, and the plan makes the switch the last step, after the desk has seen and approved the result.</div>
+</section>
+
+<section id="today">
+<h2>2 · What happens today</h2>
+<h3>A table in code decides (D49)</h3>
+<p class="prose"><code>rules.VARIANT_ALLOCATIONS</code> lists the allocation types each implementation type offers, and <code>VARIANTS_EXCLUDING_RE</code> forces the real-assets exclusion under ESG. The picker, the schema's availability set, the server-side key check and the pruning of columns on a type change all read it. The library plays no part: a type can hold sleeves the table never lets anyone use.</p>
+<div class="tablewrap"><table class="doc">
+  <thead><tr><th>Implementation type</th><th>The code table allows</th><th class="n">Books offered today</th><th>Library today (IGFI · OFI · Equity · HF · PM)</th></tr></thead>
+  <tbody>
+    <tr><td>PMG Multi-Asset Portfolio</td><td>everything</td><td class="n">172 of 172</td><td class="num">5 · 2 · 6 · 5 · 2</td></tr>
+    <tr><td>PMG ESG</td><td>ex-Alts; ex-HFs with real assets excluded</td><td class="n">60 of 172</td><td class="num">8 · 3 · 11 · 5 · 2</td></tr>
+    <tr><td>US Onshore</td><td>ex-Alts</td><td class="n">32 of 172</td><td class="num">5 · 3 · 9 · 5 · 2</td></tr>
+    <tr><td>Irish Onshore</td><td>ex-Alts</td><td class="n">32 of 172</td><td class="num">5 · 3 · 5 · 5 · 2</td></tr>
+  </tbody>
+</table></div>
+<p class="prose">All Equity is offered under every type. 172 books is 43 per currency: seven risk levels × Core, Full, Full ex-RAs, ex-HFs, ex-HFs ex-RAs and ex-Alts, plus All Equity.</p>
+<h3>The funding split is a constant (D136)</h3>
+<p class="prose"><code>rules.PRIVATE_FUNDING</code> is Investment Grade Fixed Income ⅓, Public Equity ⅔. The model reads it in Python and the page reads it from the schema. The workbook, the deck and the register take their figures from the model. Changing it needs a release, and nothing records which split a delivered proposal used.</p>
+</section>
+
+<section id="rule">
+<h2>3 · The rule</h2>
+<div class="sets" aria-label="Offered is what the library can build">
+  <div class="box who"><b>The book</b><small>Every category it holds, with Private Equity and Other Private Assets counted as one: the Private Markets sleeve (D60).</small></div>
+  <div class="op">+</div>
+  <div class="box lib"><b>The type's library</b><small>For each of those categories, is there a live, unbroken sleeve that serves this book, by an edition whose rules match it or by the fallback?</small></div>
+  <div class="op">=</div>
+  <div class="box out"><b>Offered</b><small>Yes for every category: offered. Otherwise not offered, with the missing categories named.</small></div>
+</div>
+<h3>Exactly what counts</h3>
+<ul class="prose">
+  <li><b>Categories:</b> those the book holds with a weight above zero, strategic weights before any toggle. Core needs Hedge Funds; Full and ex-HFs need Private Markets; every book needs Public Equity; everything but All Equity needs both fixed income categories.</li>
+  <li><b>A sleeve serves a book</b> when the resolver would put it on the rail for that book: an edition whose rules match the book's currency, risk level and allocation type, or else the fallback edition (D89). Archived sleeves don't count. Nor do broken ones, whose product has left the catalogue, since a sleeve that can't be priced is never offered.</li>
+  <li><b>The two automatic categories</b> (Asset Allocation Strategies and Hybrid Fixed Income) don't decide what is offered. They arrive with the tilt and volatility premium toggles, which already switch themselves off when their fixed sleeve is missing.</li>
+  <li><b>Worked out for the whole universe</b> (172 books × 4 types) and cached. The cache refreshes when the universe reloads, when any sleeve is saved, archived or restored, and when a new catalogue arrives.</li>
+</ul>
+<h3>Where it is enforced</h3>
+<div class="tablewrap"><table class="doc">
+  <thead><tr><th>Place</th><th>Today reads</th><th>Will read</th></tr></thead>
+  <tbody>
+    <tr><td>The schema's <code>availability</code> and <code>options.allocations</code></td><td>the code table</td><td>Offered for the chosen type, with <code>unavailableReasons</code> naming the missing categories</td></tr>
+    <tr><td><code>validateKey</code> on adding a column</td><td>the code table</td><td>Offered; 422 "US Onshore has no Hedge Funds sleeve for USD Moderate Full"</td></tr>
+    <tr><td>Pruning columns on a type change</td><td>the code table</td><td>Offered</td></tr>
+    <tr><td>The export gate</td><td>(nothing)</td><td>A scenario whose base is no longer offered is refused, naming why (decision 2)</td></tr>
+    <tr><td>The sleeve editor</td><td>(nothing)</td><td>Before a save, archive or rule change that withdraws books: "this is the last Hedge Funds sleeve under US Onshore; archiving it withdraws 84 books"</td></tr>
+  </tbody>
+</table></div>
+<h3>ESG's real-assets rule</h3>
+<p class="prose">Today the code forces ESG's ex-HFs books to exclude real assets. The library can't say this as things stand. A book with real assets and the same book without them need the same Private Markets sleeve, and sleeve edition rules deliberately leave the real-assets exclusion out (D89). There are two ways to go, and decision 1 asks which:</p>
+<div class="grid2">
+  <div class="card rec"><h3>A · Keep it, in the sleeves <span class="tag good">recommended</span></h3><p>Add the real-assets exclusion as a fourth field an edition rule can constrain. ESG's Private Markets sleeve then carries a rule "real assets excluded" and no fallback, so an ESG ex-HFs book <i>with</i> real assets has no Private Markets sleeve and isn't offered. The rule stays with the sleeve and is visible there. It's a small change to <code>sleeveRules</code>, and a restriction the desk can lift by giving the sleeve a fallback edition.</p></div>
+  <div class="card"><h3>B · Drop it</h3><p>ESG offers ex-HFs books with and without real assets, wherever its library can build them: 28 more books than today (7 per currency). This is the simplest, if real assets under ESG are acceptable in practice.</p></div>
+</div>
+</section>
+
+<section id="switch">
+<h2>4 · Switching over without changing what is offered</h2>
+<p class="prose">Once the library decides, today's library would offer everything, because every type holds sleeves for every category. To keep today's offer exactly, the desk archives the sleeves the code table has been hiding, before the switch. Archived sleeves keep their history and can be restored (D65), and restoring one brings its books back.</p>
+<div class="tablewrap"><table class="doc">
+  <thead><tr><th>Implementation type</th><th>Curate</th><th class="n">Offered today</th><th class="n">Packaged library, switched as is</th><th class="n">After curation</th></tr></thead>
+  <tbody>
+    <tr><td>PMG Multi-Asset Portfolio</td><td>nothing</td><td class="n">172</td><td class="n">172</td><td class="n">172</td></tr>
+    <tr><td>PMG ESG</td><td>archive its 5 Hedge Funds sleeves; give its 2 Private Markets sleeves the rule "real assets excluded" (decision 1, A)</td><td class="n">60</td><td class="n">172</td><td class="n">60 <span class="tag">88 under B</span></td></tr>
+    <tr><td>US Onshore</td><td>archive its 5 Hedge Funds and 2 Private Markets sleeves</td><td class="n">32</td><td class="n">172</td><td class="n">32</td></tr>
+    <tr><td>Irish Onshore</td><td>archive its 5 Hedge Funds and 2 Private Markets sleeves</td><td class="n">32</td><td class="n">172</td><td class="n">32</td></tr>
+  </tbody>
+</table></div>
+<p class="prose">The console view in §5 shows this switchover live: set "Library" to "packaged today" to see what would be offered if nothing were curated, or to "curated" to see the result above. The same view ships first as read-only in the tool itself, so the desk can do the curation and check it before the code table is removed.</p>
+</section>
+
+<section id="console">
+<h2>5 · In the console</h2>
+<p class="prose">A new <b>Rules</b> tab. Its first view, <b>Offer</b>, is read-only: choose an implementation type and see every book in one currency as a grid. Offered books are green. Each book that isn't offered names the category it has no sleeve for. A mark shows where the result differs from today's code table, which is what the desk checks before switching over. Nothing here is edited: the library is edited in the Sleeves view, as now.</p>
+<p class="prose">The panel on the right previews the sleeve editor's warning. Untick a category to see what archiving every sleeve in it under this type would withdraw. This is the warning the sleeve editor gives before such a change, so withdrawing books is always a deliberate act.</p>
+
+<div class="demo" id="demoRules">
+  <div class="demo-h">
+    <span class="ttl">Repository</span>
+    <div class="repo-tabs" aria-hidden="true"><span>Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span>Proposals</span><span class="on new">Rules</span></div>
+  </div>
+  <div class="controls">
+    <div class="subtabs seg" role="group" aria-label="Rules view"><button type="button" aria-pressed="true">Offer</button><button type="button" aria-pressed="false" data-go="funding">Private markets funding</button></div>
+    <label class="ctl">Implementation type<select id="rType"></select></label>
+    <label class="ctl">Currency<select id="rCcy"><option>USD</option><option disabled>GBP</option><option disabled>CHF</option><option disabled>EUR</option></select></label>
+    <div class="ctl">Library<div class="seg" role="group" aria-label="Library state"><button type="button" data-lib-state="packaged" aria-pressed="false">Packaged today</button><button type="button" data-lib-state="curated" aria-pressed="true">Curated</button></div></div>
+  </div>
+  <div class="demo-body">
+    <div class="summary" id="rStats"></div>
+    <div class="console">
+      <div class="tablewrap"><table class="mx" id="rMatrix" aria-label="Books offered under this implementation type"></table>
+        <div class="legendrow">
+          <span><i style="background:var(--good-tint)"></i>Offered</span>
+          <span><i style="background:var(--off)"></i>Not offered: the category named has no sleeve</span>
+          <span><i style="background:var(--warn);border-color:var(--warn)"></i>+ / − differs from today's code table</span>
+        </div>
+      </div>
+      <div class="side">
+        <div class="panel libs"><h4>This type's library</h4><p>Untick a category to preview archiving every sleeve in it.</p><div id="rLib"></div><div id="rImpact"></div></div>
+        <div class="panel"><h4>Why a book is offered</h4><p>Every category it holds has a live, unbroken sleeve in this type's library that serves it. There is nothing else to set.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<section id="pwa">
+<h2>6 · What a PWA sees</h2>
+<p class="prose">The picker lists only offered books, as now, but a book that isn't offered says why, and the reason is always a missing sleeve. The PWA can take a specific request to the desk ("US Onshore has no Hedge Funds sleeve") instead of "it's greyed out". The reasons come in the schema beside the availability set, so the page never works them out itself. This mock-up reads the library from the console above.</p>
+<div class="demo" id="demoPick">
+  <div class="demo-h"><span class="ttl">Proposal Tool · Asset allocation</span><span class="crumb">reads the library from the console above</span></div>
+  <div class="demo-body">
+    <div class="pick">
+      <div class="rail">
+        <h5>Base portfolio</h5>
+        <label class="ctl">Implementation type<select id="pType"></select></label>
+        <label class="ctl">Risk level<select id="pRisk"></select></label>
+        <div class="ctl">Allocation type<div class="seg" id="pAlloc" role="group" aria-label="Allocation type"></div><p class="why" id="pWhy"></p></div>
+        <label class="chk" id="pExWrap"><input type="checkbox" id="pEx"> Exclude real assets</label>
+      </div>
+      <div>
+        <div class="verdict" id="pVerdict"></div>
+        <ul class="optlist" id="pList" aria-label="Every allocation at this risk level"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+<h3>When the library changes under a scenario</h3>
+<p class="prose">A scenario built before a change keeps its columns, and nothing is removed from under the PWA. On opening it they see a notice: "USD Moderate Full is no longer offered under US Onshore: its Hedge Funds sleeves were archived on 3 Oct". The export is refused until the base is changed, just as it is today for a missing sleeve or a below-minimum position. Delivered proposals are never touched: the register holds what was delivered. The same applies when a new catalogue breaks a type's only sleeve for a category, in which case the Repository header also flags the withdrawal.</p>
+</section>
+
+<section id="funding">
+<h2>7 · The private-markets funding split</h2>
+<p class="prose">This is the second view of the Rules tab. The split is a short list of destination categories, each with a number of <b>parts</b>. The shares are the parts over their total, so "1 and 2" is exactly ⅓ and ⅔, with no 33.33% and 66.67% that fail to add up. Everything downstream already takes the split as data (D136): the model, the page's mirror, the workbook, the deck and the Initial Allocation sheet and slide all follow it without code changes. The page's wording handles thirds and falls back to percentages, and the deck's words ("a third", "two thirds", "half") do the same.</p>
+<h3>What the console enforces</h3>
+<ul class="prose">
+  <li><b>A destination must be held by every private-markets book.</b> Otherwise some books would have nowhere to put the money. The console checks each category against the universe: Investment Grade Fixed Income, Other Fixed Income and Public Equity are held by all 112 private-markets books; Hedge Funds by only 56, so it is refused, with that count shown.</li>
+  <li>Between one and three destinations, each once, each with parts greater than zero. Private Equity and Other Private Assets can't be destinations.</li>
+  <li>Money still goes to the sleeves chosen for each destination, split in their own proportions, as it does today. That includes the tilt case, where Investment Grade Fixed Income is emptied by the tilt (D136).</li>
+</ul>
+<div class="demo" id="demoFund">
+  <div class="demo-h"><span class="ttl">Repository · Rules · Private markets funding</span><span class="crumb">preview on USD Moderate Full, $50m, strategic weights</span></div>
+  <div class="controls">
+    <label class="ctl">Applies to<select id="fScope"></select></label>
+    <div class="ctl" style="justify-content:flex-end"><span id="fScopeNote" style="font-weight:500;letter-spacing:0;color:var(--ink-2);font-size:13px"></span></div>
+  </div>
+  <div class="demo-body">
+    <div class="split">
+      <div>
+        <table class="ed" aria-label="Destinations">
+          <thead><tr><th>Destination category</th><th>Held by</th><th class="n">Parts</th><th class="n">Share</th><th></th></tr></thead>
+          <tbody id="fRows"></tbody>
+        </table>
+        <div style="margin:8px 0 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="fAdd">Add destination</button><button type="button" class="btn small" id="fOverride">Override for this type</button></div>
+        <div class="bar" id="fBar" aria-hidden="true"></div>
+        <ul class="msgs" id="fMsgs"></ul>
+        <p class="phrase" id="fPhrase"></p>
+        <div class="savebar" style="margin-top:12px"><input id="fNote" type="text" placeholder="Note (required)" aria-label="Note for this revision"><button type="button" class="btn primary" id="fSave">Save</button><button type="button" class="btn" id="fDiscard">Discard</button></div>
+      </div>
+      <div class="side">
+        <div class="panel"><h4>Preview: USD Moderate Full, $50m</h4>
+          <table class="pv" id="fPreview"></table></div>
+        <div class="panel"><h4>History</h4><ul class="hist" id="fHist"></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+<h3>Where a change lands</h3>
+<div class="tablewrap"><table class="doc">
+  <thead><tr><th>Place</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td>Scenarios in progress</td><td>Pick up the new split on their next load, as they pick up a new fee card. The Implementation screen's note and "Show initial allocation" figures follow.</td></tr>
+    <tr><td>A download</td><td>Uses the split in force at that moment. The workbook's Held Until Called line and the slide's subheading say it in words.</td></tr>
+    <tr><td>The register</td><td>Each delivered proposal records the split's revision number beside its figures, so "which split did this proposal use?" always has an answer.</td></tr>
+    <tr><td>Delivered proposals</td><td>Never change: their files and register rows are as delivered.</td></tr>
+  </tbody>
+</table></div>
+</section>
+
+<section id="data">
+<h2>8 · Data, API and audit</h2>
+<h3>What is offered: no new data</h3>
+<p class="prose">There is nothing to store. The offer is worked out from the sleeves, their edition rules and the catalogue, all of which already have history, notes, archive and restore (D57, D65, D89). The audit trail for "why was Full withdrawn under ESG?" is the sleeve history that archived its Hedge Funds sleeves, and the Activity feed now says what each sleeve change did to the offer ("withdrew 84 books from PMG ESG"). If decision 1 goes to A, <code>sleeveRules</code> gains a fourth field, <code>realAssets</code> (excluded or held), under the same validation and overlap checks as the other three.</p>
+<h3>The funding split: a small store</h3>
+<pre>policies        kind ('funding'), scope ('*' for the house split, or an implementation type),
+                body (JSON: destinations and parts), revision, updatedBy, updatedAt
+policyHistory   one append-only row per revision: kind, scope, revision, action, body, note, actor, at</pre>
+<p class="prose">These go in the repository's own SQLite file, beside the sleeves, as schema revision 4. On first open they are seeded from today's constant with a "baseline" revision, so an upgrade changes nothing. History is append-only as for sleeves: restoring adds a revision. Changes show in Activity. The rows export and import through <code>sleeveTools</code> (<code>--policies</code>).</p>
+<h3>Endpoints</h3>
+<pre>GET  /api/scenario/repository/offer?type=&amp;currency=         read-only: every book, offered or the categories it lacks
+GET  /api/scenario/repository/offer/impact                  what a proposed sleeve save or archive would withdraw
+GET  /api/scenario/repository/policies/funding              the house split and any overrides
+PUT  /api/scenario/repository/policies/funding/{scope}      {destinations, note}   admin only; 422 {error, field}
+GET  /api/scenario/repository/policies/history?scope=
+POST /api/scenario/repository/policies/revert               {scope, revision, note}</pre>
+<p class="prose">The schema the page already fetches keeps its shape: <code>availability</code> narrows as before and gains <code>unavailableReasons</code>; <code>rules.privateFunding</code> is served from the store rather than the constant and gains its <code>revision</code>. <code>options.variantAllocations</code> stays for compatibility, derived from the offer.</p>
+<h3>Porting to Cyrus</h3>
+<p class="prose">This is the usual shape: re-copy the package and the page folder, and paste the router block, which gains six routes. There is no configuration. One thing is not a plain copy: <b>curate the host's library before deploying the switch</b>, since the host's library, not the packaged one, decides what the host offers. The read-only Offer view ships a phase earlier, so the curation can be done and checked in place. The porting guide gains a step for this, and a check that each type offers the counts the desk expects.</p>
+</section>
+
+<section id="plan">
+<h2>9 · Plan</h2>
+<p class="prose">There are four phases, each shippable on its own and each leaving the tool working. The switch that lets the library decide comes last, after the desk has seen the Offer view and curated the library, so no PWA ever sees the offer widen by accident.</p>
+<ol class="steps">
+  <li><h3>The funding split in the repository</h3>
+    <ul><li>Schema revision 4 with the two tables, seeded 1:2. The store, the endpoints, history and restore, and the console's Private markets funding view with its validation and preview.</li>
+      <li><code>initialLines</code> and the schema read the store. The register records the split's revision.</li>
+      <li>Tests: the seeded split reproduces today's figures exactly (the live scenario's 87.9bp against 98.6bp, the golden 93.0bp); a 1:1 split moves the initial model; Hedge Funds is refused as a destination; the page's JavaScript and the Python still agree when given a non-default split; the register stamps the revision.</li></ul></li>
+  <li><h3>The Offer view and the sleeve editor's warning (read-only; nothing changes for PWAs)</h3>
+    <ul><li>The offer computation and its cache. The Rules tab's Offer view, with the "differs from today" marks, and the <code>offer</code> endpoints.</li>
+      <li>The sleeve editor warns before a save, archive or rule change that would withdraw books, and Activity records each change's effect on the offer.</li>
+      <li>If decision 1 is A: the <code>realAssets</code> rule field for editions.</li>
+      <li>Tests: removing a category's sleeves withdraws exactly the books that hold it; editions, fallbacks, archived and broken sleeves are handled as the rail handles them; the cache refreshes on sleeve saves and catalogue loads; the warning counts are right.</li></ul></li>
+  <li><h3>The desk curates the library</h3>
+    <ul><li>Archive the Hedge Funds sleeves under ESG and both Onshore types, and the Private Markets sleeves under both Onshore types. Under decision 1 A, give ESG's Private Markets sleeves the rule "real assets excluded".</li>
+      <li>The Offer view then shows no marks against today: 172, 60, 32 and 32. This is desk work in the console, with no code change, and in Cyrus it is done in Cyrus.</li></ul></li>
+  <li><h3>The library decides</h3>
+    <ul><li>The schema, <code>validateKey</code>, the type-change pruning and the export gate read the offer. The picker shows the reasons, and scenarios whose base drops out show the notice and are refused at export.</li>
+      <li><code>VARIANT_ALLOCATIONS</code> and <code>VARIANTS_EXCLUDING_RE</code> are deleted.</li>
+      <li>Tests: with the curated library, the offer matches today's exactly (172, 60, 32 and 32 books); archiving and restoring a sleeve withdraws and restores its books in the picker; a 422 names the missing category; the reasons are served and shown.</li></ul></li>
+</ol>
+<p class="prose">Each phase gets its own entry in <code>DEVIATIONS.md</code> and a porting-guide update, as usual.</p>
+</section>
+
+<section id="decisions">
+<h2>10 · Decisions</h2>
+<div class="q"><h3>Decided: the library alone decides what is offered</h3><p>A book is offered under an implementation type exactly when that type's library has a sleeve for every category it holds. There is no allow-list, and the D49 table is removed.</p></div>
+<div class="q"><h3>1. ESG's real-assets rule</h3><p>Keep it, by letting a sleeve edition's rules say "real assets excluded" (ESG then offers 60 books, as today), or drop it (ESG offers 88, adding ex-HFs books with real assets).</p><p class="rec">Recommended: keep it, in the sleeves (A). It stays sleeves-driven and visible on the sleeve itself, and the desk can lift it later by adding a fallback edition.</p></div>
+<div class="q"><h3>2. A scenario whose base stops being offered</h3><p>Leave it open and deliverable, block its export, or remove the column.</p><p class="rec">Recommended: keep it open with a notice naming the sleeve change, and refuse export until the base is changed.</p></div>
+<div class="q"><h3>3. One funding split, or one per implementation type?</h3><p>The destinations are categories; the products come from each type's own sleeves, so ESG already parks in ESG products. A per-type override is only needed if a type should park in different categories or proportions.</p><p class="rec">Recommended: one house split, with per-type overrides available but none set.</p></div>
+<div class="q"><h3>4. Which categories can receive the parked money?</h3><p>Only categories every private-markets book holds (today Investment Grade FI, Other FI and Public Equity), or any category, with the share going pro rata to the others where a book lacks it.</p><p class="rec">Recommended: only categories every private-markets book holds.</p></div>
+<div class="q"><h3>5. Does a split change reach scenarios in progress?</h3><p>Immediately, as a new fee card does, or only for scenarios created after the change.</p><p class="rec">Recommended: immediately. Delivered proposals never change, and the register records the revision each used.</p></div>
+</section>
+
+<p class="foot">Figures: 172 strategic books (43 per currency); 112 of them hold private markets. Library counts are the packaged sleeve library's live sleeves per type and category. The mock-ups simulate the console and the picker in this page; nothing here writes to the tool. The first version of this proposal, which added a separate allow-list alongside the library, was superseded when the library-only rule was decided.</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  /* ---------------------------------------------------------------- data */
+  var RISKS = [['LowVol', 'Low Vol'], ['Conservative', 'Conservative'], ['ConsMod', 'Conservative-Moderate'],
+               ['Moderate', 'Moderate'], ['ModAgg', 'Moderate-Aggressive'], ['Agg', 'Aggressive'],
+               ['Higher Risk', 'Higher Risk']];
+  var CATS = {IG: 'Investment Grade Fixed Income', OF: 'Other Fixed Income', EQ: 'Public Equity',
+              HF: 'Hedge Funds', PM: 'Private Markets'};
+  var COLS = [
+    {id: 'Core|0', label: 'Core', type: 'Core', ex: false, needs: ['IG', 'OF', 'EQ', 'HF']},
+    {id: 'Full|0', label: 'Full', type: 'Full', ex: false, needs: ['IG', 'OF', 'EQ', 'HF', 'PM']},
+    {id: 'Full|1', label: 'Full ex-RAs', type: 'Full', ex: true, needs: ['IG', 'OF', 'EQ', 'HF', 'PM']},
+    {id: 'ex-HFs|0', label: 'ex-HFs', type: 'ex-HFs', ex: false, needs: ['IG', 'OF', 'EQ', 'PM']},
+    {id: 'ex-HFs|1', label: 'ex-HFs ex-RAs', type: 'ex-HFs', ex: true, needs: ['IG', 'OF', 'EQ', 'PM']},
+    {id: 'ex-Alts|0', label: 'ex-Alts', type: 'ex-Alts', ex: false, needs: ['IG', 'OF', 'EQ']}
+  ];
+  var AE = {id: 'NA|NA', label: 'All Equity', ex: false, needs: ['EQ']};
+  var TYPES = ['PMG Multi-Asset Portfolio', 'PMG ESG', 'US Onshore', 'Irish Onshore'];
+  var LIBRARY = {
+    'PMG Multi-Asset Portfolio': {IG: 5, OF: 2, EQ: 6, HF: 5, PM: 2},
+    'PMG ESG': {IG: 8, OF: 3, EQ: 11, HF: 5, PM: 2},
+    'US Onshore': {IG: 5, OF: 3, EQ: 9, HF: 5, PM: 2},
+    'Irish Onshore': {IG: 5, OF: 3, EQ: 5, HF: 5, PM: 2}
+  };
+  function keyOf(risk, colId) { return 'USD|' + risk + '|' + colId; }
+  var AE_KEY = 'USD|All Equity|NA|NA';
+  var ALL = [];
+  RISKS.forEach(function (r) { COLS.forEach(function (c) { ALL.push(keyOf(r[0], c.id)); }); });
+  ALL.push(AE_KEY);
+  function colOfKey(k) {
+    if (k === AE_KEY) return AE;
+    var id = k.split('|').slice(2).join('|');
+    return COLS.filter(function (c) { return c.id === id; })[0];
+  }
+  /* today's code table (D49), for the "differs from today" marks */
+  function offeredToday(type, k) {
+    var c = colOfKey(k);
+    return type === 'PMG Multi-Asset Portfolio' || c === AE
+      || (type === 'PMG ESG' && (c.id === 'ex-Alts|0' || c.id === 'ex-HFs|1'))
+      || ((type === 'US Onshore' || type === 'Irish Onshore') && c.id === 'ex-Alts|0');
+  }
+  /* the library: per type, per category, whether it holds live sleeves, and
+     whether its Private Markets sleeves serve real-assets-excluded books only */
+  function libraryState(kind) {
+    var lib = {};
+    TYPES.forEach(function (t) {
+      lib[t] = {IG: true, OF: true, EQ: true, HF: true, PM: true, pmExOnly: false};
+      if (kind === 'curated') {
+        if (t === 'PMG ESG') { lib[t].HF = false; lib[t].pmExOnly = true; }
+        if (t === 'US Onshore' || t === 'Irish Onshore') { lib[t].HF = false; lib[t].PM = false; }
+      }
+    });
+    return lib;
+  }
+  var S = {type: TYPES[1], libKind: 'curated', lib: libraryState('curated')};
+
+  function missing(type, k) {
+    var c = colOfKey(k), lib = S.lib[type], out = [];
+    c.needs.forEach(function (cat) {
+      if (!lib[cat]) out.push(cat);
+      else if (cat === 'PM' && lib.pmExOnly && !c.ex) out.push('PMRA');
+    });
+    return out;
+  }
+  function offered(type, k) { return !missing(type, k).length; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+  /* the reason a book is not offered, as a fragment: 'no Hedge Funds sleeve' */
+  function why(gaps) {
+    var plain = gaps.filter(function (g) { return g !== 'PMRA'; });
+    var parts = [];
+    if (plain.length) parts.push('no ' + plain.map(function (g) { return CATS[g]; }).join(' or ') + ' sleeve');
+    if (gaps.indexOf('PMRA') >= 0) parts.push('its Private Markets sleeve serves ex-RAs books only');
+    return parts.join('; ');
+  }
+  function cap(t) { return t.charAt(0).toUpperCase() + t.slice(1); }
+
+  /* ---------------------------------------------------- the Offer view */
+  var rType = document.getElementById('rType'), pType = document.getElementById('pType');
+  TYPES.forEach(function (t) {
+    rType.insertAdjacentHTML('beforeend', '<option>' + esc(t) + '</option>');
+    pType.insertAdjacentHTML('beforeend', '<option>' + esc(t) + '</option>');
+  });
+  rType.value = S.type;
+
+  function cell(k) {
+    var type = S.type, gaps = missing(type, k), on = !gaps.length, today = offeredToday(type, k);
+    var chg = on === today ? '' : '<span class="chg plus" title="' + (on ? 'offered here, not today' : 'offered today, not here') + '">' + (on ? '+' : '−') + '</span>';
+    return '<button type="button" class="cellbtn ' + (on ? 'offered' : 'withdrawn') + '" tabindex="-1"'
+      + ' aria-label="' + esc(k.replace(/\|/g, ' ')) + ': ' + (on ? 'offered' : 'not offered, ' + why(gaps)) + (chg ? (on ? ', not offered today' : ', offered today') : '') + '">'
+      + '<b>' + (on ? 'Offered' : 'Not offered') + '</b>' + (on ? '' : esc(cap(why(gaps)))) + chg + '</button>';
+  }
+  function renderMatrix() {
+    var h = '<thead><tr><th>Risk level</th>' + COLS.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    RISKS.forEach(function (r) {
+      h += '<tr><th>' + esc(r[1]) + '</th>' + COLS.map(function (c) { return '<td>' + cell(keyOf(r[0], c.id)) + '</td>'; }).join('') + '</tr>';
+    });
+    h += '<tr><th>All Equity</th><td colspan="6">' + cell(AE_KEY) + '</td></tr></tbody>';
+    document.getElementById('rMatrix').innerHTML = h;
+  }
+  function count(type) {
+    var n = 0, today = 0, plus = 0, minus = 0;
+    ALL.forEach(function (k) {
+      var on = offered(type, k), t = offeredToday(type, k);
+      if (on) n++; if (t) today++; if (on && !t) plus++; if (!on && t) minus++;
+    });
+    return {n: n, today: today, plus: plus, minus: minus};
+  }
+  function renderStats() {
+    var c = count(S.type);
+    document.getElementById('rStats').innerHTML =
+      '<div class="stat good"><small>Offered</small><b>' + c.n + ' of 43</b><span>USD books under ' + esc(S.type) + '</span></div>'
+      + '<div class="stat acc"><small>Offered today</small><b>' + c.today + '</b><span>by the D49 code table</span></div>'
+      + '<div class="stat warn"><small>Differs from today</small><b>' + (c.plus || c.minus ? '+' + c.plus + ' / −' + c.minus : '0') + '</b><span>'
+      + (c.plus || c.minus ? 'curate the library before switching' : 'ready to switch: the library reproduces today') + '</span></div>';
+  }
+  function impactOf(type, cat) {
+    var before = 0, after = 0, saved = S.lib[type][cat];
+    ALL.forEach(function (k) { if (offered(type, k)) before++; });
+    S.lib[type][cat] = false;
+    ALL.forEach(function (k) { if (offered(type, k)) after++; });
+    S.lib[type][cat] = saved;
+    return before - after;
+  }
+  function renderLib() {
+    var type = S.type, lib = S.lib[type];
+    document.getElementById('rLib').innerHTML = ['IG', 'OF', 'EQ', 'HF', 'PM'].map(function (cat) {
+      var n = LIBRARY[type][cat];
+      var row = '<label><span style="font-family:var(--f-body);font-size:13px;color:var(--ink)"><input type="checkbox" data-lib="' + cat + '"'
+        + (lib[cat] ? ' checked' : '') + '> ' + esc(CATS[cat]) + '</span><span>' + (lib[cat] ? n + ' live' : n + ' archived') + '</span></label>';
+      if (cat === 'PM' && lib.PM) row += '<p class="sub"><label style="justify-content:flex-start;gap:6px"><input type="checkbox" data-pmex' + (lib.pmExOnly ? ' checked' : '') + '> rule: real assets excluded only</label></p>';
+      return row;
+    }).join('');
+    var lines = ['IG', 'OF', 'EQ', 'HF', 'PM'].filter(function (cat) { return lib[cat]; }).map(function (cat) {
+      var n = impactOf(type, cat);
+      return n ? '<li>' + esc(CATS[cat]) + ': withdraws <b>' + n + ' USD books</b> (' + (n * 4) + ' in all)</li>' : '';
+    }).filter(Boolean);
+    document.getElementById('rImpact').innerHTML = '<div class="impact' + (lines.length ? '' : ' none') + '">'
+      + (lines.length ? 'The sleeve editor\'s warning, if every sleeve in a category were archived under ' + esc(type) + ':<ul style="margin:6px 0 0;padding-left:18px">' + lines.join('') + '</ul>'
+        : 'Archiving any remaining category here would withdraw nothing.') + '</div>';
+  }
+  function renderConsole() {
+    renderMatrix(); renderStats(); renderLib();
+    document.querySelectorAll('#demoRules [data-lib-state]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.libState === S.libKind)); });
+    renderPick();
+  }
+  document.getElementById('demoRules').addEventListener('click', function (e) {
+    var t = e.target.closest('button'); if (!t) return;
+    if (t.dataset.go === 'funding') { document.getElementById('funding').scrollIntoView(); return; }
+    if (t.dataset.libState) { S.libKind = t.dataset.libState; S.lib = libraryState(S.libKind); renderConsole(); }
+  });
+  document.getElementById('demoRules').addEventListener('change', function (e) {
+    if (e.target.dataset.lib) { S.lib[S.type][e.target.dataset.lib] = e.target.checked; S.libKind = 'edited'; renderConsole(); }
+    if (e.target.hasAttribute('data-pmex')) { S.lib[S.type].pmExOnly = e.target.checked; S.libKind = 'edited'; renderConsole(); }
+  });
+  rType.addEventListener('change', function () { S.type = rType.value; renderConsole(); });
+
+  /* ---------------------------------------------------- the picker demo */
+  var pRisk = document.getElementById('pRisk');
+  RISKS.concat([['All Equity', 'All Equity']]).forEach(function (r) {
+    pRisk.insertAdjacentHTML('beforeend', '<option value="' + esc(r[0]) + '">' + esc(r[1]) + '</option>');
+  });
+  pRisk.value = 'Moderate';
+  var P = {type: 'US Onshore', alloc: 'ex-Alts', ex: false};
+  pType.value = P.type;
+  var TYPES_ORDER = ['Core', 'Full', 'ex-HFs', 'ex-Alts'];
+  function anyOffered(risk, t) {
+    return [false, true].some(function (x) {
+      var k = keyOf(risk, t + '|' + (x ? 1 : 0));
+      return ALL.indexOf(k) >= 0 && offered(P.type, k);
+    });
+  }
+  function renderPick() {
+    var risk = pRisk.value, ae = risk === 'All Equity';
+    var seg = document.getElementById('pAlloc');
+    if (!ae && !anyOffered(risk, P.alloc)) {
+      var first = TYPES_ORDER.filter(function (t) { return anyOffered(risk, t); })[0];
+      if (first) P.alloc = first;
+    }
+    seg.innerHTML = ae ? '<button type="button" aria-pressed="true" disabled>No allocation type</button>'
+      : TYPES_ORDER.map(function (t) {
+          return '<button type="button" data-alloc="' + t + '" aria-pressed="' + (P.alloc === t) + '"' + (anyOffered(risk, t) ? '' : ' disabled') + '>' + t + '</button>';
+        }).join('');
+    var pair = ae ? [] : COLS.filter(function (c) { return c.type === P.alloc; });
+    var exOffered = pair.length === 2;
+    if (exOffered) {
+      var withRA = offered(P.type, keyOf(risk, P.alloc + '|0')), exRA = offered(P.type, keyOf(risk, P.alloc + '|1'));
+      if (!withRA && exRA) P.ex = true;
+      if (withRA && !exRA) P.ex = false;
+    }
+    document.getElementById('pExWrap').style.display = exOffered ? '' : 'none';
+    document.getElementById('pEx').checked = exOffered && P.ex;
+    var k = ae ? AE_KEY : keyOf(risk, P.alloc + '|' + (exOffered && P.ex ? 1 : 0));
+    var gaps = missing(P.type, k), on = !gaps.length;
+    var v = document.getElementById('pVerdict');
+    v.className = 'verdict ' + (on ? 'ok' : 'no');
+    var title = ae ? 'USD All Equity' : 'USD ' + pRisk.options[pRisk.selectedIndex].text + ' ' + P.alloc + (exOffered && P.ex ? ' ex-RAs' : '');
+    v.innerHTML = '<b>' + esc(title) + '</b>' + (on ? 'Offered under ' + esc(P.type) + ': every category it holds has a sleeve in this type\'s library.'
+      : 'Not offered under ' + esc(P.type) + ': ' + esc(why(gaps)) + '.');
+    var list = ae ? [AE_KEY] : COLS.map(function (c) { return keyOf(risk, c.id); });
+    document.getElementById('pList').innerHTML = list.map(function (kk) {
+      var g = missing(P.type, kk), c = colOfKey(kk);
+      return '<li class="' + (g.length ? 'offb' : 'on') + '"><b>' + esc(c.label) + '</b><span>' + (g.length ? esc(P.type) + ': ' + esc(why(g)) : 'Offered') + '</span></li>';
+    }).join('');
+    var off = ae ? [] : TYPES_ORDER.filter(function (t) { return !anyOffered(risk, t); });
+    document.getElementById('pWhy').textContent = off.length ? off.join(', ') + (off.length === 1 ? ' is' : ' are') + ' not offered here; the list says which sleeve is missing.' : '';
+  }
+  document.getElementById('demoPick').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-alloc]'); if (!b || b.disabled) return;
+    P.alloc = b.dataset.alloc; renderPick();
+  });
+  pType.addEventListener('change', function () { P.type = pType.value; renderPick(); });
+  pRisk.addEventListener('change', renderPick);
+  document.getElementById('pEx').addEventListener('change', function (e) { P.ex = e.target.checked; renderPick(); });
+
+  /* ---------------------------------------------------- the funding demo */
+  var stamp = '29 Sep 2026';
+  var HELD = {IG: 112, OF: 112, EQ: 112, HF: 56};
+  var DEST = ['IG', 'OF', 'EQ', 'HF'];
+  var COLOURS = {IG: 'var(--t-ig)', OF: 'var(--t-of)', EQ: 'var(--t-eq)', HF: 'var(--t-hf)'};
+  var SAMPLE = [['IG', 34.0], ['OF', 9.0], ['EQ', 38.0], ['HF', 10.0], ['PM', 9.0]];
+  var F = {scope: '*', saved: {'*': [{cat: 'IG', parts: 1}, {cat: 'EQ', parts: 2}]}, hist: {}, work: null};
+  F.hist['*'] = [{rev: 1, action: 'baseline', note: 'Seeded from D136: a third and two thirds', actor: 'system', at: stamp}];
+  var fScope = document.getElementById('fScope');
+  fScope.innerHTML = '<option value="*">House split: every implementation type</option>'
+    + TYPES.map(function (t) { return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
+  function effective(scope) { return (scope !== '*' && F.saved[scope]) ? F.saved[scope] : F.saved['*']; }
+  function clone(rows) { return rows.map(function (r) { return {cat: r.cat, parts: r.parts}; }); }
+  function startWork() { F.work = (F.scope === '*' || F.saved[F.scope]) ? clone(effective(F.scope)) : null; }
+  function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+  function words(share) {
+    var pairs = [[1 / 3, 'a third'], [2 / 3, 'two thirds'], [0.5, 'half'], [1, 'all'], [0.25, 'a quarter'], [0.75, 'three quarters']];
+    for (var i = 0; i < pairs.length; i++) if (Math.abs(share - pairs[i][0]) < 1e-9) return pairs[i][1];
+    return (share * 100).toFixed(0) + '%';
+  }
+  function validate(rows) {
+    var msgs = [], seen = {}, total = 0;
+    if (!rows.length) msgs.push(['bad', 'At least one destination is needed.']);
+    if (rows.length > 3) msgs.push(['bad', 'At most three destinations.']);
+    rows.forEach(function (r) {
+      if (seen[r.cat]) msgs.push(['bad', CATS[r.cat] + ' is listed twice.']);
+      seen[r.cat] = 1;
+      if (!(r.parts > 0)) msgs.push(['bad', CATS[r.cat] + ' needs more than zero parts.']);
+      total += Math.max(0, r.parts || 0);
+      if (HELD[r.cat] < 112) msgs.push(['bad', CATS[r.cat] + ' is held by only ' + HELD[r.cat] + ' of the 112 private-markets books; the other ' + (112 - HELD[r.cat]) + ' would have nowhere to put the money.']);
+    });
+    if (!msgs.length) msgs.push(['ok', 'Valid: every private-markets book holds every destination.']);
+    return {msgs: msgs, total: total, ok: msgs[0][0] === 'ok'};
+  }
+  function renderFund() {
+    var inherits = !F.work;
+    var rows = F.work || effective(F.scope);
+    document.getElementById('fScopeNote').textContent = F.scope === '*' ? 'Applies to every implementation type without an override.'
+      : inherits ? 'No override: ' + F.scope + ' uses the house split.' : 'Override for ' + F.scope + ' only.';
+    var v = validate(rows), total = v.total || 1;
+    var g = rows.reduce(function (a, r) { return gcd(a, Math.round(r.parts) || 0); }, 0) || 1;
+    document.getElementById('fRows').innerHTML = rows.map(function (r, i) {
+      var share = (r.parts > 0 ? r.parts : 0) / total;
+      return '<tr><td>' + (inherits ? esc(CATS[r.cat]) : '<select data-frow="' + i + '" aria-label="Destination ' + (i + 1) + '">'
+          + DEST.map(function (d) { return '<option value="' + d + '"' + (d === r.cat ? ' selected' : '') + '>' + esc(CATS[d]) + '</option>'; }).join('') + '</select>')
+        + '</td><td class="n">' + HELD[r.cat] + ' of 112</td><td class="n">' + (inherits ? r.parts
+          : '<input type="number" min="0" step="1" value="' + r.parts + '" data-fparts="' + i + '" aria-label="Parts for destination ' + (i + 1) + '">')
+        + '</td><td class="n">' + (Math.round(r.parts) === r.parts && Math.round(r.parts / g) * g === r.parts ? (r.parts / g) + '/' + (Math.round(v.total) / g) + ' · ' : '')
+        + (share * 100).toFixed(2) + '%</td><td>' + (inherits || rows.length < 2 ? '' : '<button type="button" class="btn small" data-fdel="' + i + '" aria-label="Remove destination ' + (i + 1) + '">Remove</button>') + '</td></tr>';
+    }).join('');
+    document.getElementById('fAdd').disabled = inherits || rows.length >= 3;
+    var ob = document.getElementById('fOverride');
+    ob.style.display = F.scope === '*' ? 'none' : '';
+    ob.textContent = inherits ? 'Override for this type' : 'Remove override';
+    document.getElementById('fBar').innerHTML = rows.map(function (r) {
+      var share = (r.parts > 0 ? r.parts : 0) / total;
+      return share > 0 ? '<span style="width:' + (share * 100) + '%;background:' + COLOURS[r.cat] + '">' + (share * 100).toFixed(1) + '%</span>' : '';
+    }).join('');
+    document.getElementById('fMsgs').innerHTML = inherits ? '<li class="info">Inherited. Choose "Override for this type" to set a different split for ' + esc(F.scope) + '.</li>'
+      : v.msgs.map(function (m) { return '<li class="' + m[0] + '">' + esc(m[1]) + '</li>'; }).join('');
+    document.getElementById('fPhrase').innerHTML = v.ok ? '<b>Slide subheading:</b> Until capital is called, the 9.00% ($4,500,000) committed to private markets is held '
+      + esc(rows.map(function (r) { return words(r.parts / total) + ' in ' + CATS[r.cat]; }).join(' and ')) : '<b>Slide subheading:</b> not available until the split is valid';
+    var shareBy = {}; rows.forEach(function (r) { shareBy[r.cat] = (shareBy[r.cat] || 0) + (r.parts > 0 ? r.parts : 0) / total; });
+    var pv = '<thead><tr><th>Category</th><th class="n">Long-term</th><th class="n">Initial</th><th class="n">Initial notional</th></tr></thead><tbody>';
+    SAMPLE.forEach(function (s) {
+      var init = s[0] === 'PM' ? 0 : s[1] + (v.ok ? 9.0 * (shareBy[s[0]] || 0) : 0);
+      var moved = Math.abs(init - s[1]) > 1e-9;
+      pv += '<tr class="' + (moved ? 'mv' : '') + '"><td>' + esc(s[0] === 'PM' ? 'Private Markets' : CATS[s[0]]) + '</td><td class="n">' + s[1].toFixed(2) + '%</td><td class="n ' + (init > s[1] + 1e-9 ? 'up' : init < s[1] - 1e-9 ? 'dn' : '') + '">'
+        + init.toFixed(2) + '%</td><td class="n">$' + Math.round(init / 100 * 50e6).toLocaleString('en-US') + '</td></tr>';
+    });
+    document.getElementById('fPreview').innerHTML = pv + '</tbody>';
+    var dirty = !inherits && JSON.stringify(F.work) !== JSON.stringify(effective(F.scope));
+    document.getElementById('fSave').disabled = !(dirty && v.ok && document.getElementById('fNote').value.trim());
+    document.getElementById('fDiscard').disabled = !dirty;
+    var hist = F.hist[F.scope] || [];
+    document.getElementById('fHist').innerHTML = hist.length ? hist.slice().reverse().map(function (h, i) {
+      return '<li><div><b>r' + h.rev + '</b> <span>' + esc(h.note) + '</span><small>' + esc(h.action) + ' · ' + esc(h.actor) + ' · ' + esc(h.at) + '</small></div>' + (i ? '' : '<small>in force</small>') + '</li>';
+    }).join('') : '<li><span>No override has been saved for this type.</span></li>';
+  }
+  document.getElementById('demoFund').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'fAdd') { var used = F.work.map(function (r) { return r.cat; }); var next = DEST.filter(function (d) { return used.indexOf(d) < 0; })[0] || 'OF'; F.work.push({cat: next, parts: 1}); }
+    else if (b.dataset.fdel) { F.work.splice(+b.dataset.fdel, 1); }
+    else if (b.id === 'fOverride') {
+      if (F.work) {
+        if (F.saved[F.scope]) {
+          delete F.saved[F.scope];
+          (F.hist[F.scope] = F.hist[F.scope] || []).push({rev: F.hist[F.scope].length + 1, action: 'removed', note: 'Back to the house split', actor: 'fbarker', at: stamp});
+        }
+        F.work = null;
+      } else { F.work = clone(F.saved['*']); }
+    } else if (b.id === 'fSave') {
+      var note = document.getElementById('fNote').value.trim(); if (!note) return;
+      F.saved[F.scope] = clone(F.work);
+      (F.hist[F.scope] = F.hist[F.scope] || []).push({rev: (F.hist[F.scope] || []).length + 1, action: 'updated', note: note, actor: 'fbarker', at: stamp});
+      document.getElementById('fNote').value = '';
+    } else if (b.id === 'fDiscard') { startWork(); }
+    else return;
+    renderFund();
+  });
+  document.getElementById('demoFund').addEventListener('change', function (e) {
+    if (e.target.dataset.frow) { F.work[+e.target.dataset.frow].cat = e.target.value; renderFund(); }
+    /* on change, not input: re-rendering on each keystroke would take the caret away */
+    if (e.target.dataset.fparts) { F.work[+e.target.dataset.fparts].parts = parseFloat(e.target.value); renderFund(); }
+  });
+  document.getElementById('demoFund').addEventListener('input', function (e) {
+    if (e.target.id === 'fNote') renderFund();
+  });
+  fScope.addEventListener('change', function () { F.scope = fScope.value; startWork(); renderFund(); });
+
+  startWork();
+  renderConsole();
+  renderFund();
+})();
+</script>
+</body>
+</html>

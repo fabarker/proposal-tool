@@ -74,7 +74,14 @@ def test_the_rule_parks_the_private_line_a_third_and_two_thirds():
     assert lines[3]['weightPct'] == 9.0, 'the caller keeps its lines'
     assert [line['name'] for line in parked] == [line['name'] for line in lines], 'order kept'
     assert rules.initialLines([{'name': IG, 'weightPct': 60.0}, {'name': EQ, 'weightPct': 40.0}]) is None
-    assert rules.PRIVATE_FUNDING == [(IG, pytest.approx(1 / 3)), (EQ, pytest.approx(2 / 3))]
+    # the house split in force: D136's thirds, kept to four places (D148)
+    assert rules.privateFunding() == [(IG, pytest.approx(1 / 3, abs=1e-6)),
+                                      (EQ, pytest.approx(2 / 3, abs=1e-6))]
+    # and any split handed in parks by that split instead
+    halves = rules.initialLines(lines, [('Other Fixed Income', 0.5), (EQ, 0.5)])
+    by = {line['name']: line['weightPct'] for line in halves}
+    assert by['Other Fixed Income'] == pytest.approx(13.5) and by[EQ] == pytest.approx(42.5)
+    assert by[IG] == 24.0 and by[PRIVATE] == 0.0
 
 
 def test_the_schema_serves_the_rule_so_the_page_never_restates_it():
@@ -82,7 +89,10 @@ def test_the_schema_serves_the_rule_so_the_page_never_restates_it():
                              MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'))
     served = schema['rules']['privateFunding']
     assert served['from'] == PRIVATE
-    assert [(t['category'], t['share']) for t in served['to']] == rules.PRIVATE_FUNDING
+    assert [(t['category'], t['share']) for t in served['to']] == rules.privateFunding()
+    # the split as entered, and which revision of which scope is in force (D148)
+    assert [t['weightPct'] for t in served['to']] == [33.3333, 66.6667]
+    assert served['scope'] == '*' and served['revision'] >= 1 and not served['inherited']
 
 
 # -------------------------------------------------------------- the model ---
@@ -373,7 +383,7 @@ def test_js_initial_lines_mirror_agrees_with_python():
                          for s in rules.sleeveCategories(categories)]
                 cases.append(lines)
                 expected.append(rules.initialLines(lines))
-    served = {'from': PRIVATE, 'to': [{'category': c, 'share': s} for c, s in rules.PRIVATE_FUNDING]}
+    served = {'from': PRIVATE, 'to': [{'category': c, 'share': s} for c, s in rules.privateFunding()]}
     stub = ('var App = { opt: function (path, fallback) { return ({'
             "'rules.privateFunding': " + json.dumps(served) + '})[path]; } };\n')
     script = stub + fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \

@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allocation Table Styles</title>
+<style>
+/* The tool's own faces, from the page's static folder beside this one */
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+@font-face{font-family:"GS Sans Condensed";src:url("../proposalTool/static/fonts/gs-sans-condensed-variable.woff2") format("woff2");font-weight:100 900}
+:root{
+  /* the tool's tokens (generator/themes.py) */
+  --bg:#FBFCFE; --surface:#FFFFFF; --surface-2:#F0F2F5; --ink:#1C2733; --ink-2:#5B6B7C; --ink-3:#8494A4;
+  --line:#EEF1F4; --line-strong:#D4DAE2; --accent:#1F5FBF; --cat-bg:#E9EDF2; --metric-bg:#F0F2F5;
+  --navy:#0F243E; --navy-2:#16243A; --band:#D3DDEA; --rail:#12233f;
+  --f-display:'GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+  --f-num:'GS Sans Condensed','GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+  --good:#176A33; --good-tint:#E7F4EC; --warn:#B45309;
+  /* category colours: the tool's category key (core.js PALETTE_SLOT, the
+     allocation chart's legend), slot 1 being Asset Allocation Strategies */
+  --c-ig:#EB6834; --c-of:#1BAF7A; --c-eq:#EDA100; --c-hf:#E87BA4; --c-pe:#4A3AA7; --c-oa:#E34948;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-display);font-size:15px;line-height:1.5}
+.wrap{max-width:1200px;margin:0 auto;padding:36px 28px 140px}
+@media (max-width:700px){.wrap{padding:24px 16px 140px}}
+.mast{border-bottom:2px solid var(--navy-2);padding-bottom:20px;margin-bottom:22px}
+.eyebrow{font-family:var(--f-num);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;font-weight:600}
+h1{font-size:clamp(30px,4vw,42px);line-height:1.08;margin:0 0 10px;color:var(--navy-2);font-weight:600;letter-spacing:-.01em}
+.sub{font-size:16.5px;color:var(--ink-2);max-width:74ch;margin:0}
+.bar{position:sticky;top:0;z-index:20;background:rgba(251,252,254,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line-strong);
+  margin:0 -28px 26px;padding:10px 28px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+@media (max-width:700px){.bar{margin:0 -16px 22px;padding:10px 16px}}
+.jump{display:flex;flex-wrap:wrap;gap:6px}
+.jump a{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line-strong);
+  border-radius:15px;font:600 13px var(--f-num);color:var(--ink-2);text-decoration:none;background:var(--surface)}
+.jump a:hover{border-color:var(--accent);color:var(--accent)}
+.jump a.picked{background:var(--accent);border-color:var(--accent);color:#fff}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{font:600 12.5px var(--f-num);letter-spacing:.04em;border:0;background:transparent;color:var(--ink-2);padding:6px 11px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--navy-2);color:#fff}
+.seg button:focus-visible,.pick:focus-visible,.jump a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ctl{display:flex;align-items:center;gap:8px;font:600 11.5px var(--f-num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.spacer{flex:1}
+
+.option{margin:0 0 44px;scroll-margin-top:70px}
+.opt-h{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:start;margin:0 0 12px}
+.opt-n{grid-row:span 2;width:40px;height:40px;border-radius:50%;background:var(--navy-2);color:#fff;display:flex;align-items:center;justify-content:center;
+  font:600 17px var(--f-num)}
+.option.ref .opt-n{background:var(--ink-3)}
+.opt-h h2{margin:0;font-size:21px;color:var(--navy-2);font-weight:600}
+.opt-h p{margin:0;grid-column:2;color:var(--ink-2);font-size:14.5px;max-width:78ch}
+.pick{grid-row:1 / span 2;grid-column:3;align-self:center;font:600 13px var(--f-num);letter-spacing:.06em;text-transform:uppercase;
+  border:1.5px solid var(--accent);color:var(--accent);background:var(--surface);border-radius:6px;padding:8px 14px;cursor:pointer;white-space:nowrap}
+.pick:hover{background:#EEF3FC}
+.pick[aria-pressed="true"]{background:var(--accent);color:#fff}
+.option.picked .stage{box-shadow:0 0 0 3px var(--accent)}
+.stage{background:#F5F7FA;border:1px solid var(--line-strong);border-radius:10px;padding:18px;overflow-x:auto}
+.traits{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0 0;padding:0;list-style:none;font-size:13px;color:var(--ink-2)}
+.traits li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);margin-right:7px;vertical-align:2px}
+.traits li.con::before{background:var(--warn)}
+@media (max-width:700px){.opt-h{grid-template-columns:auto 1fr}.pick{grid-column:1 / -1;grid-row:auto;justify-self:start;margin-top:6px}}
+
+.picked-bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--navy-2);color:#fff;padding:12px 20px;display:flex;gap:12px 18px;
+  align-items:center;justify-content:center;flex-wrap:wrap;font-size:14.5px;transform:translateY(110%);transition:transform .25s ease}
+.picked-bar.on{transform:none}
+.picked-bar b{color:#F3C46B}
+.picked-bar code{font:13px var(--f-num);background:rgba(255,255,255,.12);padding:3px 8px;border-radius:4px}
+.picked-bar button{font:600 12.5px var(--f-num);letter-spacing:.05em;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:5px;padding:5px 10px;cursor:pointer}
+
+/* ---------------------------------------------------------------- mocks */
+.mock{background:var(--surface);min-width:640px}
+.mock table{border-collapse:collapse;width:100%;font-family:var(--f-display);font-size:14px;color:var(--ink)}
+.mock th,.mock td{white-space:nowrap}
+.mock td{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.mock thead th{text-align:right}
+.mock thead th:first-child,.mock tbody th{text-align:left}
+.mock .nil{color:#B8C2CE}
+.pname{display:block;font:600 13px var(--f-num);letter-spacing:.08em;text-transform:uppercase}
+.prole{display:block;font:700 10.5px var(--f-num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:2px}
+.prole.blank{visibility:hidden}
+
+/* 0 · today, for reference */
+.m-today{border:1px solid var(--line-strong)}
+.m-today thead th{font:700 12.5px var(--f-num);color:var(--ink-2);letter-spacing:.08em;text-transform:uppercase;padding:14px 15px;border-bottom:1px solid var(--ink);height:64px;vertical-align:middle}
+.m-today th,.m-today td{padding:2px 15px}
+.m-today tr.cat th,.m-today tr.cat td{background:var(--cat-bg);font-weight:700;border-bottom:1px solid var(--line-strong)}
+.m-today tr.asset th{font-weight:400;color:#4B5A6A;padding-left:15px}
+.m-today tr.asset td{color:#4B5A6A}
+.m-today tr.total th,.m-today tr.total td{background:var(--metric-bg);font-weight:700;border-top:1px solid var(--line-strong)}
+.m-today tr.metric th,.m-today tr.metric td{background:var(--metric-bg);font-weight:700}
+.m-today tr.metric.first th,.m-today tr.metric.first td{border-top:1px solid var(--line-strong)}
+
+/* 1 · ledger */
+.m-ledger{padding:6px 18px 14px}
+.m-ledger thead th{padding:12px 12px 10px;border-bottom:1.5px solid var(--ink);vertical-align:bottom}
+.m-ledger thead th:first-child{font:600 11px var(--f-num);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.m-ledger th,.m-ledger td{padding:5px 12px}
+.m-ledger tr.cat th{font-variant:small-caps;letter-spacing:.06em;font-weight:600;font-size:15px}
+.m-ledger tr.cat th,.m-ledger tr.cat td{border-top:1px solid var(--line-strong);padding-top:9px;font-weight:600}
+.m-ledger tr.cat.first th,.m-ledger tr.cat.first td{border-top:0}
+.m-ledger tr.asset th{padding-left:30px;font-weight:400;color:var(--ink-2)}
+.m-ledger tr.asset td{color:var(--ink-2)}
+.m-ledger tr.total th,.m-ledger tr.total td{border-top:3px double var(--ink);font-weight:700;padding-top:8px}
+.m-ledger tr.sec th{padding:18px 12px 4px;font:600 11px var(--f-num);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.m-ledger tr.metric th{font-style:italic;font-weight:400;color:var(--ink-2)}
+.m-ledger tr.metric td{font-weight:600}
+
+/* 2 · house report */
+.m-house thead th{background:#fff;padding:14px 14px 10px;border-bottom:3px solid #000;font-weight:700;color:#000;vertical-align:bottom}
+.m-house thead th .pname{letter-spacing:.02em;text-transform:none;font:700 14px var(--f-display)}
+.m-house thead th .prole{color:var(--navy)}
+.m-house th,.m-house td{padding:3px 14px}
+.m-house tr.cat th,.m-house tr.cat td{background:var(--band);color:var(--navy);font-weight:700;border-top:1px solid #000}
+.m-house tr.cat.first th,.m-house tr.cat.first td{border-top:0}
+.m-house tr.asset th{padding-left:30px;font-weight:400}
+.m-house tr.total th,.m-house tr.total td{border-top:3px solid #000;font-weight:700;color:var(--navy);padding-top:6px;padding-bottom:6px}
+.m-house tr.metric th,.m-house tr.metric td{background:var(--navy);color:#fff}
+.m-house tr.metric.later th,.m-house tr.metric.later td{border-top:3px solid #fff}
+/* 3 · weight bars */
+.m-bars thead th{padding:12px 14px;border-bottom:1px solid var(--ink);vertical-align:bottom}
+.m-bars th,.m-bars td{padding:3px 14px}
+.m-bars td{width:190px}
+.m-bars .bx{display:grid;grid-template-columns:1fr 50px;gap:10px;align-items:center}
+.m-bars .bx i{display:block;height:8px;border-radius:4px;background:#DCE6F6;justify-self:start}
+.m-bars .bx.p i{background:#9DB9E6}
+.m-bars tr.cat .bx i{height:12px;background:#5E8FD6}
+.m-bars tr.cat .bx.p i{background:var(--navy-2)}
+.m-bars tr.cat th,.m-bars tr.cat td{font-weight:700;padding-top:9px;border-top:1px solid var(--line)}
+.m-bars tr.cat.first th,.m-bars tr.cat.first td{border-top:0}
+.m-bars tr.asset th{padding-left:28px;font-weight:400;color:var(--ink-2)}
+.m-bars tr.asset td{color:var(--ink-2)}
+.m-bars tr.total th,.m-bars tr.total td{border-top:1px solid var(--ink);font-weight:700;padding-top:7px}
+.m-bars tr.metric th,.m-bars tr.metric td{background:var(--metric-bg);font-weight:600}
+
+/* 4 · differences */
+.m-diff thead th{padding:12px 14px;border-bottom:1px solid var(--ink);vertical-align:bottom}
+.m-diff thead th small{display:block;font:600 10.5px var(--f-num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:3px}
+.m-diff th,.m-diff td{padding:3px 14px}
+.m-diff .dv{display:inline-flex;gap:8px;align-items:baseline;justify-content:flex-end}
+.m-diff .d{display:inline-block;min-width:48px;text-align:right;font:600 11.5px var(--f-num);padding:1px 6px;border-radius:9px}
+.m-diff .d.up{background:#E3EBFA;color:#1E4FA3}
+.m-diff .d.dn{background:#FDEBDD;color:#A2470D}
+.m-diff .d.eq{color:#B8C2CE}
+.m-diff tr.big th{box-shadow:inset 3px 0 0 var(--accent)}
+.m-diff tr.cat th,.m-diff tr.cat td{background:var(--cat-bg);font-weight:700}
+.m-diff tr.asset th{padding-left:28px;font-weight:400;color:var(--ink-2)}
+.m-diff tr.asset td{color:var(--ink-2)}
+.m-diff td.p{background:rgba(31,95,191,.035)}
+.m-diff tr.total th,.m-diff tr.total td{border-top:1px solid var(--ink);font-weight:700}
+.m-diff tr.metric th,.m-diff tr.metric td{background:var(--metric-bg);font-weight:600}
+
+/* 5 · summary first */
+.m-sum thead th{padding:12px 14px;border-bottom:1px solid var(--ink);vertical-align:bottom}
+.m-sum th,.m-sum td{padding:6px 14px}
+.m-sum .tools{display:flex;justify-content:flex-end;padding:0 0 8px}
+.m-sum .tools button{font:600 12px var(--f-num);letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line-strong);background:#fff;color:var(--ink-2);border-radius:5px;padding:5px 10px;cursor:pointer}
+.m-sum tr.cat th,.m-sum tr.cat td{font-weight:700;border-top:1px solid var(--line);font-size:15px}
+.m-sum tr.cat th button{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.m-sum tr.cat th button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.m-sum .chev{display:inline-block;width:16px;height:16px;border-radius:4px;background:var(--surface-2);color:var(--ink-2);font-size:11px;line-height:16px;text-align:center;transition:transform .2s}
+.m-sum tr.cat.open .chev{transform:rotate(90deg)}
+.m-sum .cnt{font:500 12px var(--f-num);color:var(--ink-3)}
+.m-sum tr.asset{display:none}
+.m-sum tr.asset.show{display:table-row}
+.m-sum tr.asset th{padding-left:46px;font-weight:400;color:var(--ink-2);font-size:13.5px}
+.m-sum tr.asset td{color:var(--ink-2);font-size:13.5px;padding-top:3px;padding-bottom:3px}
+.m-sum tr.total th,.m-sum tr.total td{border-top:1.5px solid var(--ink);font-weight:700}
+.m-sum tr.metric th,.m-sum tr.metric td{background:var(--metric-bg);font-weight:600;padding-top:4px;padding-bottom:4px}
+
+/* 6 · heatmap */
+.m-heat thead th{padding:12px 14px;border-bottom:1px solid var(--ink);vertical-align:bottom}
+.m-heat th,.m-heat td{padding:3px 14px}
+.m-heat td{border-left:2px solid #fff}
+.m-heat tr.cat th{font-weight:700;padding-top:8px}
+.m-heat tr.cat td{font-weight:700}
+.m-heat tr.asset th{padding-left:28px;font-weight:400;color:var(--ink-2)}
+.m-heat tr.total th,.m-heat tr.total td{border-top:1px solid var(--ink);font-weight:700;background:#fff}
+.m-heat tr.metric th,.m-heat tr.metric td{background:var(--metric-bg);font-weight:600}
+.m-heat .legend{display:flex;align-items:center;gap:8px;justify-content:flex-end;font:500 12px var(--f-num);color:var(--ink-3);padding:10px 14px 0}
+.m-heat .legend i{display:block;width:120px;height:8px;border-radius:4px;background:linear-gradient(90deg,#F2F6FC,#1F5FBF)}
+
+/* 7 · composition header */
+.m-comp thead th{padding:12px 14px 12px;border-bottom:1px solid var(--ink);vertical-align:bottom}
+.m-comp .stack{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:8px;width:170px;margin-left:auto}
+.m-comp .stack span{display:block;height:100%}
+.m-comp th,.m-comp td{padding:3px 14px}
+.m-comp .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:9px;vertical-align:0}
+.m-comp tr.cat th,.m-comp tr.cat td{font-weight:700;padding-top:9px;border-top:1px solid var(--line)}
+.m-comp tr.cat.first th,.m-comp tr.cat.first td{border-top:0}
+.m-comp tr.asset th{padding-left:33px;font-weight:400;color:var(--ink-2)}
+.m-comp tr.asset td{color:var(--ink-2)}
+.m-comp tr.total th,.m-comp tr.total td{border-top:1px solid var(--ink);font-weight:700;padding-top:7px}
+.m-comp tr.metric th,.m-comp tr.metric td{background:var(--metric-bg);font-weight:600}
+/* 7b · the category rows on the same grey as the estimates at the foot */
+.m-comp.grey tr.cat th,.m-comp.grey tr.cat td{background:var(--metric-bg);padding-top:6px;padding-bottom:6px;border-top:0}
+.m-comp.grey tr.asset + tr.cat th,.m-comp.grey tr.asset + tr.cat td{border-top:6px solid #fff}
+.m-comp.grey tr.cat + tr.asset th,.m-comp.grey tr.cat + tr.asset td{padding-top:5px}
+
+/* 8 · minimal */
+.m-min{padding:10px 22px 18px}
+.m-min thead th{padding:10px 18px 14px;border-bottom:1px solid var(--ink);vertical-align:bottom}
+.m-min thead th .pname{font:500 15px var(--f-display);letter-spacing:0;text-transform:none}
+.m-min th,.m-min td{padding:2px 18px}
+.m-min td+td{border-left:1px solid var(--line)}
+.m-min tr.cat th{font-size:15.5px;font-weight:500;padding-top:14px}
+.m-min tr.cat td{font:500 17px var(--f-num);padding-top:14px}
+.m-min tr.asset th{font-weight:400;color:var(--ink-3);font-size:13px;padding-left:18px}
+.m-min tr.asset td{color:var(--ink-3);font-size:13px}
+.m-min tr.total th,.m-min tr.total td{border-top:1px solid var(--ink);padding-top:10px;font-weight:500}
+.m-min tr.metric th{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);padding-top:12px}
+.m-min tr.metric td{font:500 19px var(--f-num);padding-top:12px}
+
+/* 9 · metrics first */
+.m-kpi thead th{padding:14px 12px;vertical-align:top;background:#fff;border-bottom:1px solid var(--line-strong)}
+.m-kpi thead th:first-child{vertical-align:bottom;font:600 11px var(--f-num);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.m-kpi .card{border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px;text-align:left;min-width:190px}
+.m-kpi .card.p{border-color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+.m-kpi .kp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}
+.m-kpi .kp small{display:block;font:600 10px var(--f-num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.m-kpi .kp b{display:block;font:600 16px var(--f-num);color:var(--ink)}
+.m-kpi th,.m-kpi td{padding:3px 14px}
+.m-kpi tr.cat th,.m-kpi tr.cat td{background:var(--cat-bg);font-weight:700}
+.m-kpi tr.asset th{padding-left:28px;font-weight:400;color:var(--ink-2)}
+.m-kpi tr.asset td{color:var(--ink-2)}
+.m-kpi tr.total th,.m-kpi tr.total td{border-top:1px solid var(--ink);font-weight:700;padding-top:6px}
+
+/* 10 · category cards */
+.m-cards{background:transparent;min-width:640px}
+.m-cards .hd,.m-cards .row{display:grid;align-items:center}
+.m-cards .hd{padding:0 16px 10px;border-bottom:1px solid var(--ink);margin-bottom:10px}
+.m-cards .hd>div{text-align:right}
+.m-cards .hd>div:first-child{text-align:left;font:600 11px var(--f-num);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.m-cards .card{background:#fff;border:1px solid var(--line-strong);border-left:4px solid var(--cc);border-radius:8px;margin:0 0 8px;overflow:hidden;
+  box-shadow:0 1px 2px rgba(16,24,40,.05)}
+.m-cards .row{padding:3px 16px}
+.m-cards .row>div{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.m-cards .row>div:first-child{text-align:left;font-family:var(--f-display)}
+.m-cards .row.cat{padding:8px 16px;font-weight:700;background:linear-gradient(90deg,color-mix(in srgb,var(--cc) 9%,#fff),#fff)}
+.m-cards .row.asset{color:var(--ink-2);font-size:13.5px}
+.m-cards .row.asset>div:first-child{padding-left:14px}
+.m-cards .row.asset:last-child{padding-bottom:8px}
+.m-cards .foot{background:var(--navy-2);color:#fff;border-radius:8px;margin-top:12px}
+.m-cards .foot .row{padding:5px 16px}
+.m-cards .foot .row.total{font-weight:700;border-bottom:1px solid rgba(255,255,255,.18);padding:8px 16px}
+.m-cards .foot .row.metric>div:first-child{color:#B6C2D2}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Proposal · Asset allocation screen</p>
+    <h1>Ten ways to style the allocation table</h1>
+    <p class="sub">The table on the Asset allocation step, restyled ten ways, each using the tool's own fonts and your scenario's real figures (USD Moderate Full proposed, against USD Conservative Full). Today's table is first, for reference. Switch to three portfolios to see how each style copes with a comparison that lacks some categories. Press <b>Choose</b> on the one you want.</p>
+  </header>
+
+  <div class="bar">
+    <span class="ctl">Portfolios</span>
+    <div class="seg" role="group" aria-label="Portfolios shown"><button type="button" data-n="2" aria-pressed="true">Two</button><button type="button" data-n="3" aria-pressed="false">Three</button></div>
+    <span class="spacer"></span>
+    <nav class="jump" aria-label="Jump to a style" id="jump"></nav>
+  </div>
+
+  <main id="options"></main>
+</div>
+<div class="picked-bar" id="pickedBar" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  var PORTFOLIOS = [
+    {name: 'Moderate Full', ret: 5.957, sharpe: 0.4756, vol: 7.270,
+     cats: {'Investment Grade Fixed Income': [34.0, [['US Dollar Debt', 34.0]]],
+            'Other Fixed Income': [9.0, [['US High Yield', 9.0]]],
+            'Public Equity': [38.0, [['US Large Cap Growth Equity', 8.4], ['US Large Cap Value Equity', 8.4], ['US Small Cap Equity', 3.0], ['Europe ex-UK Equity', 5.3], ['UK Equity', 1.9], ['Japanese Equity', 2.7], ['Asia-Pacific Equity', 2.7], ['Emerging Market Equity', 5.7]]],
+            'Hedge Funds': [10.0, [['Event Driven', 3.5], ['Equity Long/Short', 4.0], ['Tactical Trading', 2.5]]],
+            'Private Equity': [5.0, [['Buyout', 2.8], ['Growth', 1.5], ['Venture', 0.8]]],
+            'Other Private Assets': [4.0, [['Private Credit', 2.4], ['Core Real Estate', 1.6]]]}},
+    {name: 'Conservative Full', ret: 5.265, sharpe: 0.5277, vol: 5.239,
+     cats: {'Investment Grade Fixed Income': [50.0, [['US Dollar Debt', 50.0]]],
+            'Other Fixed Income': [10.0, [['US High Yield', 10.0]]],
+            'Public Equity': [24.0, [['US Large Cap Growth Equity', 5.3], ['US Large Cap Value Equity', 5.3], ['US Small Cap Equity', 1.9], ['Europe ex-UK Equity', 3.4], ['UK Equity', 1.2], ['Japanese Equity', 1.7], ['Asia-Pacific Equity', 1.7], ['Emerging Market Equity', 3.6]]],
+            'Hedge Funds': [9.0, [['Event Driven', 3.1], ['Equity Long/Short', 3.6], ['Tactical Trading', 2.3]]],
+            'Private Equity': [4.0, [['Buyout', 2.2], ['Growth', 1.2], ['Venture', 0.6]]],
+            'Other Private Assets': [3.0, [['Private Credit', 1.8], ['Core Real Estate', 1.2]]]}},
+    {name: 'Moderate ex-Alts', ret: 5.853, sharpe: 0.4573, vol: 7.332,
+     cats: {'Investment Grade Fixed Income': [42.0, [['US Dollar Debt', 42.0]]],
+            'Other Fixed Income': [11.1, [['US High Yield', 11.1]]],
+            'Public Equity': [46.9, [['US Large Cap Growth Equity', 10.3], ['US Large Cap Value Equity', 10.3], ['US Small Cap Equity', 3.8], ['Europe ex-UK Equity', 6.6], ['UK Equity', 2.3], ['Japanese Equity', 3.3], ['Asia-Pacific Equity', 3.3], ['Emerging Market Equity', 7.0]]]}}
+  ];
+  var ORDER = ['Investment Grade Fixed Income', 'Other Fixed Income', 'Public Equity', 'Hedge Funds',
+               'Private Equity', 'Other Private Assets'];
+  var COLOUR = {'Investment Grade Fixed Income': 'var(--c-ig)', 'Other Fixed Income': 'var(--c-of)',
+                'Public Equity': 'var(--c-eq)', 'Hedge Funds': 'var(--c-hf)', 'Private Equity': 'var(--c-pe)',
+                'Other Private Assets': 'var(--c-oa)'};
+  var METRICS = [['Estimated Mean Return', 'ret', 2, '%'], ['Sharpe Ratio', 'sharpe', 2, ''], ['Volatility', 'vol', 2, '%']];
+  var n = 2;
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+  function pct(v) { return v == null ? '<span class="nil">–</span>' : v.toFixed(1) + '%'; }
+  function cols() { return PORTFOLIOS.slice(0, n); }
+  /* the union of rows, in the page's order: category, then its assets */
+  function rows() {
+    var out = [];
+    ORDER.forEach(function (cat) {
+      var held = cols().filter(function (p) { return p.cats[cat]; });
+      if (!held.length) return;
+      var assets = [];
+      held.forEach(function (p) { p.cats[cat][1].forEach(function (a) { if (assets.indexOf(a[0]) < 0) assets.push(a[0]); }); });
+      out.push({kind: 'cat', cat: cat, label: cat, vals: cols().map(function (p) { return p.cats[cat] ? p.cats[cat][0] : null; }), count: assets.length});
+      assets.forEach(function (name) {
+        out.push({kind: 'asset', cat: cat, label: name, vals: cols().map(function (p) {
+          var c = p.cats[cat]; if (!c) return null;
+          var a = c[1].filter(function (x) { return x[0] === name; })[0];
+          return a ? a[1] : null;
+        })});
+      });
+    });
+    return out;
+  }
+  function metric(p, m) { return p[m[1]].toFixed(m[2]) + m[3]; }
+  function nameHtml(p, i) {
+    return '<span class="prole' + (i ? ' blank' : '') + '">Proposed</span><span class="pname">' + esc(p.name) + '</span>';
+  }
+  function head(extraFn, cellFn) {
+    return cols().map(function (p, i) {
+      return '<th scope="col">' + (cellFn ? cellFn(p, i) : nameHtml(p, i) + (extraFn ? extraFn(p, i) : '')) + '</th>';
+    }).join('');
+  }
+  /* a plain table, the rows given classes a style dresses */
+  function table(cls, opts) {
+    opts = opts || {};
+    var h = '<table><thead><tr><th scope="col">' + (opts.corner || 'Asset class') + '</th>' + head(opts.headExtra, opts.headCell) + '</tr></thead><tbody>';
+    var firstCat = true;
+    rows().forEach(function (r) {
+      var rc = r.kind + (r.kind === 'cat' && firstCat ? ' first' : '') + (opts.rowClass ? ' ' + opts.rowClass(r) : '');
+      if (r.kind === 'cat') firstCat = false;
+      h += '<tr class="' + rc + '"' + (opts.rowAttr ? opts.rowAttr(r) : '') + '><th scope="row">' + (opts.label ? opts.label(r) : esc(r.label)) + '</th>'
+        + r.vals.map(function (v, i) { return '<td' + (opts.cellAttr ? opts.cellAttr(r, v, i) : '') + '>' + (opts.cell ? opts.cell(r, v, i) : pct(v)) + '</td>'; }).join('') + '</tr>';
+    });
+    if (!opts.noTotal) {
+      h += '<tr class="total"><th scope="row">' + (opts.totalLabel || 'Total') + '</th>' + cols().map(function () { return '<td>100.0%</td>'; }).join('') + '</tr>';
+    }
+    if (!opts.noMetrics) {
+      if (opts.metricSection) h += '<tr class="sec"><th scope="rowgroup" colspan="' + (n + 1) + '">' + opts.metricSection + '</th></tr>';
+      METRICS.forEach(function (m, k) {
+        h += '<tr class="metric' + (k ? ' later' : ' first') + '"><th scope="row">' + m[0] + '</th>'
+          + cols().map(function (p) { return '<td>' + metric(p, m) + '</td>'; }).join('') + '</tr>';
+      });
+    }
+    return '<div class="mock ' + cls + '">' + (opts.before || '') + h + '</tbody></table>' + (opts.after || '') + '</div>';
+  }
+
+  var STYLES = [
+    {id: 'today', ref: true, name: 'Today, for reference',
+     text: 'The table as it is now: grey category bands, plain asset rows, and the total and the three estimates on grey.',
+     render: function () { return table('m-today'); }},
+    {id: 'ledger', name: 'Ledger',
+     text: 'A financial statement. Hairline rules instead of fills, categories in small capitals, assets indented, a double rule over the total, and the estimates set apart under their own heading.',
+     pros: ['Quiet and printable', 'Reads like the report the client receives'], cons: ['Less colour to find a category by'],
+     render: function () { return table('m-ledger', {metricSection: 'Portfolio estimates'}); }},
+    {id: 'house', name: 'House report',
+     text: 'The workbook and deck’s own allocation table (D127) brought to the screen: category rows on the blue band, a thick black rule under the names and over the total, and the estimates as one navy block.',
+     pros: ['The screen, the workbook and the deck match', 'Strong category grouping'], cons: ['Heavier than the other steps’ tables'],
+     render: function () { return table('m-house'); }},
+    {id: 'bars', name: 'Weight bars',
+     text: 'Every figure carries a bar drawn to its weight, strong for categories and light for assets, so the shape of each portfolio is visible before a number is read.',
+     pros: ['Differences are seen, not computed', 'Keeps every figure'], cons: ['Wider columns; busier with four portfolios'],
+     render: function () {
+       var max = 55;
+       return table('m-bars', {cell: function (r, v, i) {
+         if (v == null) return '<span class="nil">–</span>';
+         var w = Math.max(2, Math.min(100, v / (r.kind === 'cat' ? max : max / 2.2) * 100));
+         return '<span class="bx' + (i === 0 ? ' p' : '') + '"><i style="width:' + w + '%"></i><span>' + v.toFixed(1) + '%</span></span>';
+       }});
+     }},
+    {id: 'diff', name: 'Differences from the proposed',
+     text: 'Each comparison shows how far it sits from the proposed portfolio, in points, beside its own figure. A category that differs by 5 points or more is marked at the left.',
+     pros: ['Answers “how is this different?” directly', 'Good for client conversations'], cons: ['More to read in each cell'],
+     render: function () {
+       return table('m-diff', {
+         headExtra: function (p, i) { return i ? '<small>vs proposed</small>' : '<small> </small>'; },
+         rowClass: function (r) {
+           if (r.kind !== 'cat') return '';
+           return r.vals.slice(1).some(function (v) { return v != null && r.vals[0] != null && Math.abs(v - r.vals[0]) >= 5; }) ? 'big' : '';
+         },
+         cellAttr: function (r, v, i) { return i === 0 ? ' class="p"' : ''; },
+         cell: function (r, v, i) {
+           if (i === 0 || v == null) return pct(v);
+           var base = r.vals[0] == null ? 0 : r.vals[0], d = v - base;
+           var cls = Math.abs(d) < 0.05 ? 'eq' : d > 0 ? 'up' : 'dn';
+           var txt = Math.abs(d) < 0.05 ? '–' : (d > 0 ? '+' : '−') + Math.abs(d).toFixed(1);
+           return '<span class="dv"><span class="d ' + cls + '">' + txt + '</span><span>' + v.toFixed(1) + '%</span></span>';
+         }
+       });
+     }},
+    {id: 'sum', name: 'Summary first',
+     text: 'Categories only, with each one’s assets a click away. The table starts at eight rows instead of thirty, and “Show every asset” opens them all.',
+     pros: ['The overview fits on one screen', 'Detail stays one click away'], cons: ['Asset weights are hidden until asked for'],
+     interactive: true,
+     render: function () {
+       var toolbar = '<div class="tools"><button type="button" data-sumall>Show every asset</button></div>';
+       return table('m-sum', {
+         before: toolbar,
+         rowAttr: function (r) { return ' data-cat="' + esc(r.cat) + '"'; },
+         label: function (r) {
+           if (r.kind !== 'cat') return esc(r.label);
+           return '<button type="button" data-sumcat="' + esc(r.cat) + '" aria-expanded="false"><span class="chev" aria-hidden="true">▶</span>'
+             + esc(r.label) + ' <span class="cnt">' + r.count + (r.count === 1 ? ' asset' : ' assets') + '</span></button>';
+         }
+       });
+     }},
+    {id: 'heat', name: 'Heatmap',
+     text: 'Each cell is tinted by its weight: the darker the blue, the larger the holding. Categories are scaled against each other and assets against each other, so both read at a glance.',
+     pros: ['Concentrations stand out instantly', 'No extra width'], cons: ['Colour carries meaning, so the legend matters'],
+     render: function () {
+       function tint(v, kind) {
+         if (v == null) return '';
+         var t = Math.min(1, v / (kind === 'cat' ? 50 : 20));
+         var mix = function (a, b) { return Math.round(a + (b - a) * t); };
+         var bg = 'rgb(' + mix(242, 31) + ',' + mix(246, 95) + ',' + mix(252, 191) + ')';
+         return ' style="background:' + bg + ';color:' + (t > 0.55 ? '#fff' : 'var(--ink)') + '"';
+       }
+       return table('m-heat', {cellAttr: function (r, v) { return tint(v, r.kind); },
+         after: '<div class="legend"><span>0%</span><i></i><span>50% (category) · 20% (asset)</span></div>'});
+     }},
+    {id: 'comp', name: 'Composition in the headings',
+     text: 'Each portfolio’s heading carries a bar of its category mix, and each category row a colour key that matches it, the colours being the category key’s from the allocation chart. The mix is read at a glance, and every figure is still there.',
+     pros: ['Shape at a glance, figures below', 'Ties in with the allocation chart’s colours'], cons: ['Six colours to learn'],
+     render: function () {
+       return table('m-comp', {
+         headExtra: function (p) {
+           return '<span class="stack" aria-hidden="true">' + ORDER.filter(function (c) { return p.cats[c]; }).map(function (c) {
+             return '<span style="width:' + p.cats[c][0] + '%;background:' + COLOUR[c] + '"></span>';
+           }).join('') + '</span>';
+         },
+         label: function (r) { return r.kind === 'cat' ? '<span class="sw" style="background:' + COLOUR[r.cat] + '"></span>' + esc(r.label) : esc(r.label); }
+       });
+     }},
+    {id: 'comp-grey', tag: '7b', name: 'Composition in the headings, grey categories',
+     text: 'Style 7 with each category row on the same grey as the estimates at the foot of the table, so the categories and the estimates read as one family. The colour keys and the heading bars stay.',
+     pros: ['Categories stand out without a new colour', 'Top and bottom of the table match'], cons: ['More grey on screen than style 7'],
+     render: function () {
+       return table('m-comp grey', {
+         headExtra: function (p) {
+           return '<span class="stack" aria-hidden="true">' + ORDER.filter(function (c) { return p.cats[c]; }).map(function (c) {
+             return '<span style="width:' + p.cats[c][0] + '%;background:' + COLOUR[c] + '"></span>';
+           }).join('') + '</span>';
+         },
+         label: function (r) { return r.kind === 'cat' ? '<span class="sw" style="background:' + COLOUR[r.cat] + '"></span>' + esc(r.label) : esc(r.label); }
+       });
+     }},
+    {id: 'min', name: 'Minimal',
+     text: 'No fills and almost no rules. Category weights are set larger, assets smaller and lighter, and a single hairline separates the portfolios. It relies on space and type size rather than boxes.',
+     pros: ['The calmest option', 'Category weights are the loudest thing on screen'], cons: ['Fewer visual anchors in a long table'],
+     render: function () { return table('m-min'); }},
+    {id: 'kpi', name: 'Estimates first',
+     text: 'The return, Sharpe ratio and volatility move up into a card that heads each portfolio, so the outcome is read before the recipe; the table below is the allocation alone.',
+     pros: ['Puts the numbers clients ask about first', 'Shorter table'], cons: ['Taller headings'],
+     render: function () {
+       return table('m-kpi', {
+         noMetrics: true,
+         headCell: function (p, i) {
+           return '<div class="card' + (i ? '' : ' p') + '">' + nameHtml(p, i) + '<div class="kp">' + METRICS.map(function (m) {
+             return '<span><small>' + (m[1] === 'ret' ? 'Return' : m[1] === 'sharpe' ? 'Sharpe' : 'Volatility') + '</small><b>' + metric(p, m) + '</b></span>';
+           }).join('') + '</div></div>';
+         }
+       });
+     }},
+    {id: 'cards', name: 'Category cards',
+     text: 'Each category is a card with a coloured edge and its assets inside it; the total and the estimates sit together in a navy footer. Roomy, and easy to scan one category at a time.',
+     pros: ['Very clear grouping', 'Works well on smaller screens'], cons: ['Takes the most height'],
+     render: function () {
+       var grid = 'grid-template-columns:minmax(220px,1fr) ' + cols().map(function () { return '150px'; }).join(' ');
+       var h = '<div class="mock m-cards"><div class="hd" style="' + grid + '"><div>Asset class</div>' + cols().map(function (p, i) {
+         return '<div><span class="prole' + (i ? ' blank' : '') + '">Proposed</span><span class="pname">' + esc(p.name) + '</span></div>';
+       }).join('') + '</div>';
+       var open = null;
+       rows().forEach(function (r) {
+         if (r.kind === 'cat') {
+           if (open) h += '</div>';
+           h += '<div class="card" style="--cc:' + COLOUR[r.cat] + '">';
+           open = true;
+         }
+         h += '<div class="row ' + r.kind + '" style="' + grid + '"><div>' + esc(r.label) + '</div>'
+           + r.vals.map(function (v) { return '<div>' + pct(v) + '</div>'; }).join('') + '</div>';
+       });
+       if (open) h += '</div>';
+       h += '<div class="foot"><div class="row total" style="' + grid + '"><div>Total</div>' + cols().map(function () { return '<div>100.0%</div>'; }).join('') + '</div>'
+         + METRICS.map(function (m) {
+           return '<div class="row metric" style="' + grid + '"><div>' + m[0] + '</div>' + cols().map(function (p) { return '<div>' + metric(p, m) + '</div>'; }).join('') + '</div>';
+         }).join('') + '</div></div>';
+       return h;
+     }}
+  ];
+
+  var picked = null;
+  try { picked = window.localStorage.getItem('allocTableStyle'); } catch (e) { picked = null; }
+
+  function render() {
+    var main = document.getElementById('options'), jump = document.getElementById('jump');
+    var number = 0;
+    main.innerHTML = STYLES.map(function (s) {
+      var label = s.ref ? '–' : (s.tag || String(++number));
+      s.number = s.ref ? null : label;
+      var isPicked = picked === s.id;
+      return '<section class="option' + (s.ref ? ' ref' : '') + (isPicked ? ' picked' : '') + '" id="opt-' + s.id + '" aria-labelledby="h-' + s.id + '">'
+        + '<div class="opt-h"><div class="opt-n" aria-hidden="true">' + label + '</div><h2 id="h-' + s.id + '">' + (s.ref ? '' : label + ' · ') + esc(s.name) + '</h2>'
+        + '<p>' + s.text + '</p>'
+        + (s.ref ? '' : '<button type="button" class="pick" data-pick="' + s.id + '" aria-pressed="' + isPicked + '">' + (isPicked ? 'Chosen' : 'Choose') + '</button>')
+        + '</div>'
+        + '<div class="stage">' + s.render() + '</div>'
+        + (s.pros ? '<ul class="traits">' + s.pros.map(function (p) { return '<li>' + p + '</li>'; }).join('')
+            + s.cons.map(function (c) { return '<li class="con">' + c + '</li>'; }).join('') + '</ul>' : '')
+        + '</section>';
+    }).join('');
+    jump.innerHTML = STYLES.filter(function (s) { return !s.ref; }).map(function (s) {
+      return '<a href="#opt-' + s.id + '" title="' + esc(s.name) + '"' + (picked === s.id ? ' class="picked"' : '') + '>' + s.number + '</a>';
+    }).join('');
+    var bar = document.getElementById('pickedBar');
+    var chosen = STYLES.filter(function (s) { return s.id === picked; })[0];
+    bar.classList.toggle('on', !!chosen);
+    bar.innerHTML = chosen ? 'You chose <b>' + chosen.number + ' · ' + esc(chosen.name) + '</b>. Tell Claude: <code id="say">Go with allocation table style ' + chosen.number + ' (' + esc(chosen.name) + ')</code>'
+      + '<button type="button" data-copy>Copy</button><button type="button" data-clear>Clear</button>' : '';
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.n) {
+      n = +b.dataset.n;
+      document.querySelectorAll('[data-n]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      render(); return;
+    }
+    if (b.dataset.pick) {
+      picked = picked === b.dataset.pick ? null : b.dataset.pick;
+      try { if (picked) window.localStorage.setItem('allocTableStyle', picked); else window.localStorage.removeItem('allocTableStyle'); } catch (err) { /* private window */ }
+      render(); return;
+    }
+    if (b.hasAttribute('data-clear')) {
+      picked = null;
+      try { window.localStorage.removeItem('allocTableStyle'); } catch (err) { /* ignore */ }
+      render(); return;
+    }
+    if (b.hasAttribute('data-copy')) {
+      var text = (document.getElementById('say') || {}).textContent || '';
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { b.textContent = 'Copied'; }, function () {});
+      return;
+    }
+    if (b.dataset.sumcat) {
+      var mock = b.closest('.m-sum'), cat = b.dataset.sumcat;
+      var open = b.getAttribute('aria-expanded') !== 'true';
+      b.setAttribute('aria-expanded', String(open));
+      b.closest('tr').classList.toggle('open', open);
+      mock.querySelectorAll('tr.asset').forEach(function (tr) { if (tr.dataset.cat === cat) tr.classList.toggle('show', open); });
+      return;
+    }
+    if (b.hasAttribute('data-sumall')) {
+      var m = b.closest('.m-sum');
+      var all = b.textContent.indexOf('Show') === 0;
+      m.querySelectorAll('tr.asset').forEach(function (tr) { tr.classList.toggle('show', all); });
+      m.querySelectorAll('tr.cat').forEach(function (tr) { tr.classList.toggle('open', all); });
+      m.querySelectorAll('[data-sumcat]').forEach(function (x) { x.setAttribute('aria-expanded', String(all)); });
+      b.textContent = all ? 'Show categories only' : 'Show every asset';
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

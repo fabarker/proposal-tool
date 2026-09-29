@@ -49,7 +49,7 @@ from openpyxl.drawing.text import (CharacterProperties, Font as DrawingFont,
                                    Paragraph, ParagraphProperties)
 from openpyxl.formatting.rule import CellIsRule
 
-from . import fees, rules
+from . import fees, fundingSplit, rules
 from . import portfolio_weights as pw
 from .payloads import roundWeightsLargestRemainder
 from .rules import sleeveCategory
@@ -267,8 +267,12 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     # priced at the very rates the long-term line carries. None for a book
     # that holds no private markets.
     initialModel = None
+    # the split in force for this type, read once for the whole model, so
+    # the figures and the record of which split made them agree (D148)
+    split = fundingSplit.current(variant)
+    funding = [(d['category'], d['weightPct'] / 100.0) for d in split['destinations']]
     parked = rules.initialLines([{'name': group['category'], 'weightPct': group['weightPct']}
-                                 for group in groups])
+                                 for group in groups], funding)
     if parked is not None and lineItems:
         byName = {line['name']: line['weightPct'] for line in parked}
         for group in groups:
@@ -346,8 +350,11 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                 'held': [{'category': name, 'share': share,
                           'weightPct': held(name, 'printedPct', 'initialPct')[0],
                           'notional': held(name, 'printedPct', 'initialPct')[1]}
-                         for name, share in rules.PRIVATE_FUNDING],
+                         for name, share in funding],
             },
+            # which split parked it: what the register records (D148)
+            'split': {'scope': split['scope'], 'revision': split['revision'],
+                      'destinations': split['destinations']},
             'breaches': [{'category': g['category'], 'name': i.get('name'),
                           'notional': i['initialNotional'],
                           'minimumInvestment': float(i['minimumInvestment'])}

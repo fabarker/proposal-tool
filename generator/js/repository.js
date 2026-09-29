@@ -54,6 +54,21 @@ var repo = {
   previewStamp: 0
 };
 
+/* The Uncalled Capital Allocation view (D148, named by D149): how a private-
+   markets commitment is held until capital is called. Its own state,
+   kept across a switch to another view, so a half-typed split survives a
+   look at the catalogue. The draft is the rows as typed - a weight is the
+   text in its box, so '33.3333' stays exactly what the desk wrote. */
+var fund = {
+  loaded: false, busy: false, saving: false, error: null,
+  data: null,                  /* describe(): house, overrides, eligible, variants */
+  scope: '*',                  /* '*' for the house split, or a type */
+  draft: null,                 /* [{ category, weight }] while the desk is editing */
+  note: '',
+  history: null,               /* { scope, entries } */
+  historyBusy: false
+};
+
 /* the three fields an edition's rules may constrain (D89), in the order
    the builder shows them, and the words it shows them under */
 var RULE_FIELDS = ['currency', 'riskLevel', 'allocationType'];
@@ -87,7 +102,7 @@ var arc = {
 var ARC_COLUMNS = [
   { key: 'name', label: 'Sleeve' },
   { key: 'category', label: 'Category' },
-  { key: 'variant', label: 'Book' },
+  { key: 'variant', label: 'Implementation type' },
   { key: 'held', label: 'Held', num: true },
   { key: 'archivedAt', label: 'Archived' },
   { key: 'revisions', label: 'Versions', num: true }
@@ -146,7 +161,7 @@ var CAT_FACETS = [
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
-  { key: 'book', label: 'Book' }
+  { key: 'book', label: 'Implementation type' }
 ];
 /* Every column, in order. The product column cannot be taken away; the
    rest can, and the picker remembers. num: right-aligned condensed figures.
@@ -606,6 +621,7 @@ function hashFor(view) {
   if (view === 'archive') return arcHash();
   if (view === 'activity') return actHash();
   if (view === 'proposals') return regHash();
+  if (view === 'uncalled') return '#uncalled';
   return '#repository';
 }
 function syncHash() {
@@ -616,7 +632,7 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = ['catalogue', 'archive', 'activity', 'proposals'].indexOf(view) !== -1 ? view : 'sleeves';
+  repo.view = ['catalogue', 'archive', 'activity', 'proposals', 'uncalled'].indexOf(view) !== -1 ? view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -635,6 +651,7 @@ function switchView(view) {
     if (!reg.loaded) loadRegister(true);
     if (reg.detail && !(reg.record && reg.record.proposalId === reg.detail)) loadProposal(reg.detail);
   }
+  if (view === 'uncalled' && !fund.loaded) loadFunding();
 }
 
 async function api(method, path, body) {
@@ -664,6 +681,7 @@ async function loadRepository() {
       if (!reg.loaded) loadRegister(true);
       if (reg.detail) loadProposal(reg.detail);
     }
+    if (repo.view === 'uncalled') loadFunding();
   } catch (err) { repo.error = err.message; }
   repo.busy = false;
   render();
@@ -707,7 +725,7 @@ function closeRepository(force) {
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (/^#(repository|catalogue|archive|activity|proposals)/.test(window.location.hash)) {
+  if (/^#(repository|catalogue|archive|activity|proposals|uncalled)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -1534,7 +1552,7 @@ function sleeveHitsHtml() {
   var hits = sleeveHits();
   if (!hits.length) {
     return '<p class="repo-none">Nothing matches \u201c' + esc(repo.query.trim())
-      + '\u201d in any category or book.</p>';
+      + '\u201d in any category or implementation type.</p>';
   }
   return '<p class="repo-hits">' + hits.length + ' sleeve' + (hits.length === 1 ? '' : 's')
     + ' match</p>'
@@ -1628,8 +1646,8 @@ function sleevesViewHtml() {
           + (searching ? ' disabled' : '') + '>' + esc(v) + '</button>';
       }).join('') + '</div>'
     + '<label class="repo-find"><span aria-hidden="true">\u2315</span>'
-    + '<input type="search" id="repoFind" placeholder="Search every book\u2026" autocomplete="off"'
-    + ' aria-label="Search sleeves by name, edition or product, across every category and book"'
+    + '<input type="search" id="repoFind" placeholder="Search every implementation type\u2026" autocomplete="off"'
+    + ' aria-label="Search sleeves by name, edition or product, across every category and implementation type"'
     + ' value="' + esc(repo.query) + '"><kbd aria-hidden="true">/</kbd></label>'
     + body + '</div>'
     + '<div class="repo-pane repo-ed">' + editorHtml() + '</div>'
@@ -1700,7 +1718,7 @@ function arcToolbarHtml() {
     + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
     + '<input type="search" id="arcSearch" placeholder="Search sleeve, product, who…" value="' + esc(arc.query) + '"'
     + ' aria-label="Search the archive"><kbd aria-hidden="true">/</kbd></label>'
-    + arcSelect('variant', 'Book', repo.data.variants)
+    + arcSelect('variant', 'Implementation type', repo.data.variants)
     + arcSelect('category', 'Category', repo.data.categories)
     + arcSelect('archivedBy', 'Archived by')
     + (arcFiltersInForce() ? '<button type="button" class="cat-clear" data-arcclear>Clear</button>' : '')
@@ -1876,14 +1894,14 @@ function actToolbarHtml() {
   }).join('');
   var people = [['', 'Anyone']].concat(Object.keys(facets.actor).map(function (k) { return [k, k + ' (' + facets.actor[k] + ')']; }));
   if (act.actor && !facets.actor[act.actor]) people.push([act.actor, act.actor + ' (0)']);
-  var books = [['', 'All books']].concat((repo.data.variants || []).map(function (v) { return [v, v + ' (' + (facets.variant[v] || 0) + ')']; }));
+  var books = [['', 'All implementation types']].concat((repo.data.variants || []).map(function (v) { return [v, v + ' (' + (facets.variant[v] || 0) + ')']; }));
   return '<div class="cat-tools act-tools">'
     + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
     + '<input type="search" id="actSearch" placeholder="Search sleeve, product, who, what changed…" value="' + esc(act.query) + '"'
     + ' aria-label="Search the record"><kbd aria-hidden="true">/</kbd></label>'
     + '<span class="act-chips" role="group" aria-label="Actions">' + chips + '</span>'
     + actSelect('who', 'actwho', 'Who', people, act.actor)
-    + actSelect('book', 'actbook', 'Book', books, act.variant)
+    + actSelect('book', 'actbook', 'Implementation type', books, act.variant)
     + actSelect('range', 'actrange', 'When', ACT_RANGES, act.range)
     + ((act.query.trim() || act.actions.length || act.actor || act.variant || act.range !== '30d')
         ? '<button type="button" class="cat-clear" data-actclear>Clear</button>' : '')
@@ -2122,7 +2140,7 @@ function regToolbarHtml() {
           + regSelect('regwho', 'By', regFacetOptions('exportedBy', reg.exportedBy, 'Anyone'), reg.exportedBy)
           + regSelect('regpwa', 'PWA', regFacetOptions('primaryPwa', reg.primaryPwa, 'Any PWA'), reg.primaryPwa)
           + regSelect('regccy', 'Currency', regFacetOptions('currency', reg.currency, 'Any'), reg.currency)
-          + regSelect('regbook', 'Book', regFacetOptions('variant', reg.variant, 'All books'), reg.variant)
+          + regSelect('regbook', 'Implementation type', regFacetOptions('variant', reg.variant, 'All implementation types'), reg.variant)
           + regSelect('regrange', 'When', REG_RANGES, reg.range)
           + '</div>'
         : '')
@@ -2644,7 +2662,7 @@ function catCompareHtml() {
     + line('Distribution yield', function (r) { return catFigure(r.p.distributionYield, 2); }, 'distributionYield')
     + line('<em>Net of product cost</em>', function (r) { return r.net === null ? '—' : (r.net >= 0 ? '+' : '−') + Math.abs(r.net).toFixed(2); }, 'net')
     + section('Placement')
-    + line('Offered in', function (r) { return r.books.length ? r.books.length + ' book' + (r.books.length === 1 ? '' : 's') : '—'; })
+    + line('Offered in', function (r) { return r.books.length ? r.books.length + ' implementation type' + (r.books.length === 1 ? '' : 's') : '—'; })
     + line('Used in sleeves', function (r) { return String(r.used); })
     + '</tbody></table>'
     + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row. Product fees only: management fees belong to a proposal, not to the catalogue.</p>'
@@ -2893,8 +2911,8 @@ function render() {
   var d = repo.data;
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
-  var onRegister = repo.view === 'proposals';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister;
+  var onRegister = repo.view === 'proposals', onUncalled = repo.view === 'uncalled';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled;
 
   /* One tab strip in the header, and it navigates (A1). The implementation
      type used to sit beside it, identical in shape and selected state but
@@ -2905,7 +2923,8 @@ function render() {
                ['catalogue', 'Catalogue', onCatalogue, 0],
                ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
                ['activity', 'Activity', onActivity, 0],
-               ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0]];
+               ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0],
+               ['uncalled', 'Uncalled Capital Allocation', onUncalled, 0]];
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
     + VIEWS.map(function (v) {
@@ -2935,6 +2954,8 @@ function render() {
     body = activityViewHtml();
   } else if (onRegister) {
     body = registerViewHtml();
+  } else if (onUncalled) {
+    body = uncalledViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -2954,6 +2975,8 @@ function render() {
     footer = actFooterHtml();
   } else if (onRegister && d) {
     footer = regFooterHtml();
+  } else if (onUncalled) {
+    footer = uncalledFooterHtml();
   } else if (onCatalogue && d) {
     footer = catKeysHtml()
       + '<div class="repo-f cat-f">' + catTrayHtml()
@@ -2986,7 +3009,7 @@ function render() {
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
     + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '')
-    + (!onCatalogue && !onArchive && !onActivity && !onRegister ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
+    + (onUncalled ? ' uncalled' : '') + (onSleeves ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
   keepDraft();                  /* the local copy follows the draft (F1) */
@@ -3090,7 +3113,7 @@ function catEdge() {
    "Repository" link, because the admin knows which of them they came for. */
 var LANDING_VIEWS = [
   ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['archive', 'Archive'],
-  ['activity', 'Activity'], ['proposals', 'Proposals']
+  ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation']
 ];
 
 function renderLandingAdmin(show) {
@@ -3140,6 +3163,7 @@ function renderEntryLinks() {
       regFromHash(window.location.hash);
       openRepository(null, 'proposals');
     }
+    if (show && window.location.hash.indexOf('#uncalled') === 0) openRepository(null, 'uncalled');
   }
 }
 
@@ -3155,6 +3179,308 @@ function renderEntryLinks() {
     }
   }).observe(feeHost, { attributes: true, attributeFilter: ['hidden'] });
 })();
+
+/* ---- the Uncalled Capital Allocation view (D148, D149) -------------------
+   How a private-markets commitment is held until capital is called. The house
+   split applies to every implementation type; a type may carry its own. The
+   weights are percentages to four places adding up to exactly 100, and only a
+   category every private-markets book holds may take a share - the server
+   says which, with the count, and refuses the rest; the checks here only
+   save a round trip. Every change carries a note and adds a revision. */
+var FUND_PLACES = 4;
+
+async function loadFunding() {
+  fund.busy = true; fund.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/funding');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the funding split (' + r.status + ')'));
+    fund.data = r.body; fund.loaded = true;
+    if (fund.scope !== '*' && fund.data.variants.indexOf(fund.scope) === -1) fund.scope = '*';
+  } catch (err) { fund.error = err.message; }
+  fund.busy = false;
+  render();
+  loadFundingHistory();
+}
+
+async function loadFundingHistory() {
+  var scope = fund.scope;
+  fund.historyBusy = true;
+  try {
+    var r = await api('GET', '/scenario/repository/funding/history?scope=' + encodeURIComponent(scope));
+    if (r && r.ok && scope === fund.scope) fund.history = { scope: scope, entries: r.body.history || [] };
+  } catch (err) { /* the history is a side panel; the split itself still shows */ }
+  fund.historyBusy = false;
+  if (repo.open && repo.view === 'uncalled') render();
+}
+
+/* the split in force for the chosen scope, and whether it is the house
+   split standing in for a type with none of its own */
+function fundInForce() {
+  var d = fund.data; if (!d) return null;
+  if (fund.scope === '*') return { entry: d.house, inherited: false };
+  var own = (d.overrides || {})[fund.scope];
+  return own ? { entry: own, inherited: false } : { entry: d.house, inherited: true };
+}
+function fundRowsFrom(entry) {
+  return (entry && entry.destinations || []).map(function (x) {
+    return { category: x.category, weight: String(x.weightPct) };
+  });
+}
+/* the rows on screen: the draft while there is one, else the split in force */
+function fundRows() {
+  if (fund.draft) return fund.draft;
+  var now = fundInForce();
+  return now ? fundRowsFrom(now.entry) : [];
+}
+function fundDirty() {
+  if (!fund.draft) return false;
+  var now = fundInForce();
+  if (!now || now.inherited) return true;          /* a new override is a change */
+  var was = fundRowsFrom(now.entry);
+  if (was.length !== fund.draft.length) return true;
+  return fund.draft.some(function (row, i) {
+    return row.category !== was[i].category || parseFloat(row.weight) !== parseFloat(was[i].weight);
+  });
+}
+function fundEligible() { return (fund.data && fund.data.eligible) || []; }
+function fundUnits(text) {
+  var v = parseFloat(String(text).replace(/[%,\s]/g, ''));
+  return isFinite(v) ? v : NaN;
+}
+/* what the server would refuse, in its words, so Save stays off until none */
+function fundProblems(rows) {
+  var out = [], seen = {}, units = 0, scale = Math.pow(10, FUND_PLACES);
+  var byName = {}; fundEligible().forEach(function (e) { byName[e.category] = e; });
+  if (!rows.length) out.push('Name at least one category to hold the money.');
+  var most = (fund.data && fund.data.maxDestinations) || 3;
+  if (rows.length > most) out.push('At most ' + most + ' categories can hold the money.');
+  rows.forEach(function (row) {
+    var name = row.category;
+    if (seen[name]) out.push(name + ' is named twice.');
+    seen[name] = 1;
+    var e = byName[name];
+    if (e && !e.eligible) {
+      out.push(name + ' is held by only ' + e.heldBy + ' of the ' + e.of + ' private-markets portfolios; the other '
+        + (e.of - e.heldBy) + ' would have nowhere to put its share.');
+    }
+    var w = fundUnits(row.weight);
+    if (!(w > 0)) { out.push('Give ' + name + ' a weight above zero.'); return; }
+    if (w > 100) out.push(name + '’s weight is over 100%.');
+    if (Math.abs(w * scale - Math.round(w * scale)) > 1e-6) out.push(name + '’s weight has more than ' + FUND_PLACES + ' decimal places.');
+    units += Math.round(w * scale);
+  });
+  if (rows.length && units !== 100 * scale && !out.some(function (m) { return /above zero/.test(m); })) {
+    out.push('The weights add up to ' + (units / scale).toFixed(FUND_PLACES) + '%; they must add up to exactly 100%.');
+  }
+  return out;
+}
+function fundTotalText(rows) {
+  var scale = Math.pow(10, FUND_PLACES), units = 0;
+  rows.forEach(function (row) { var w = fundUnits(row.weight); if (w > 0) units += Math.round(w * scale); });
+  return (units / scale).toFixed(FUND_PLACES) + '%';
+}
+/* the rule in words: what a 10% commitment is held as until called */
+function fundExample(rows) {
+  if (fundProblems(rows).length) return '';
+  return 'A 10.00% commitment is held '
+    + rows.map(function (row) {
+        return (fundUnits(row.weight) / 10).toFixed(2) + '% in ' + esc(row.category);
+      }).join(' and ') + ' until capital is called.';
+}
+var FUND_COLOURS = ['#2A78D6', '#1BAF7A', '#EB6834'];
+function fundBarHtml(rows) {
+  var total = 0; rows.forEach(function (r) { var w = fundUnits(r.weight); if (w > 0) total += w; });
+  if (!(total > 0)) return '';
+  return rows.map(function (r, i) {
+    var w = fundUnits(r.weight); if (!(w > 0)) return '';
+    return '<span style="width:' + (w / total * 100) + '%;background:' + FUND_COLOURS[i % 3] + '">'
+      + esc(String(+w.toFixed(FUND_PLACES))) + '%</span>';
+  }).join('');
+}
+
+function uncalledViewHtml() {
+  if (!fund.data) {
+    return '<div class="ucap-b"><p class="repo-loading">'
+      + (fund.error ? esc(fund.error) : 'Loading the funding split…') + '</p></div>';
+  }
+  var d = fund.data, now = fundInForce(), rows = fundRows(), editing = !!fund.draft;
+  var readOnly = now.inherited && !editing;
+  var scopes = '<option value="*"' + (fund.scope === '*' ? ' selected' : '') + '>House split · every implementation type</option>'
+    + d.variants.map(function (v) {
+        var own = (d.overrides || {})[v];
+        return '<option value="' + esc(v) + '"' + (fund.scope === v ? ' selected' : '') + '>'
+          + esc(v) + (own ? ' · its own split' : ' · uses the house split') + '</option>';
+      }).join('');
+  var said = fund.scope === '*'
+    ? 'Applies to every implementation type that has no split of its own.'
+    : now.inherited ? esc(fund.scope) + ' has no split of its own: it uses the house split.'
+    : 'Applies to ' + esc(fund.scope) + ' only. Remove it to put the type back on the house split.';
+  var elig = fundEligible();
+  var body = rows.map(function (row, i) {
+    var e = elig.filter(function (x) { return x.category === row.category; })[0];
+    var choose = readOnly ? esc(row.category)
+      : '<select id="fundCat' + i + '" data-fundcat="' + i + '" aria-label="Category ' + (i + 1) + '">'
+        + elig.map(function (x) {
+            return '<option value="' + esc(x.category) + '"' + (x.category === row.category ? ' selected' : '')
+              + (x.eligible ? '' : ' disabled') + '>' + esc(x.category)
+              + (x.eligible ? '' : ' (held by ' + x.heldBy + ' of ' + x.of + ')') + '</option>';
+          }).join('') + '</select>';
+    var weight = readOnly ? esc(row.weight) + '%'
+      : '<span class="fund-w"><input id="fundW' + i + '" data-fundw="' + i + '" inputmode="decimal" autocomplete="off"'
+        + ' value="' + esc(row.weight) + '" aria-label="Weight for ' + esc(row.category) + ', percent"><span>%</span></span>';
+    return '<tr><td>' + choose + '</td><td class="fund-held">'
+      + (e ? e.heldBy + ' of ' + e.of + ' portfolios' : '') + '</td><td class="num">' + weight + '</td><td>'
+      + (readOnly || rows.length < 2 ? '' : '<button type="button" class="btn btn-danger fund-rm" data-fundrm="' + i + '" aria-label="Remove ' + esc(row.category) + '">Remove</button>')
+      + '</td></tr>';
+  }).join('');
+  var most = d.maxDestinations || 3;
+  var canAdd = !readOnly && rows.length < most && elig.some(function (x) {
+    return x.eligible && !rows.some(function (r) { return r.category === x.category; });
+  });
+  var problems = readOnly ? [] : fundProblems(rows);
+  var hist = fund.history && fund.history.scope === fund.scope ? fund.history.entries : null;
+  var histHtml = hist == null ? '<p class="repo-loading">' + (fund.historyBusy ? 'Loading…' : '') + '</p>'
+    : !hist.length ? '<p class="fund-none">No revisions yet: ' + esc(fund.scope) + ' has always used the house split.</p>'
+    : '<ol class="fund-hist">' + hist.map(function (h, i) {
+        var what = h.destinations ? h.destinations.map(function (x) { return esc(x.category) + ' ' + esc(String(x.weightPct)) + '%'; }).join(' · ')
+          : 'Back on the house split';
+        var restorable = i > 0 && h.destinations;
+        return '<li><div class="fund-hist-h"><b>r' + h.revision + '</b> <span class="act">' + esc(h.action) + '</span>'
+          + (i === 0 && !now.inherited ? ' <span class="now">in force</span>' : '')
+          + (restorable ? '<button type="button" class="cat-link" data-fundrestore="' + h.revision + '">Restore</button>' : '')
+          + '</div><div class="fund-hist-w">' + what + '</div>'
+          + (h.note ? '<div class="fund-hist-n">' + esc(h.note) + '</div>' : '')
+          + '<div class="fund-hist-by">' + esc(h.actor || '') + ' · ' + esc(shortDate(h.at)) + '</div></li>';
+      }).join('') + '</ol>';
+  return '<div class="ucap-b">'
+    + '<section class="ucap-main" aria-labelledby="fundTitle">'
+    + '<h3 id="fundTitle">Uncalled capital allocation</h3>'
+    + '<p class="ucap-lede">Until capital is called, a private-markets commitment is held in these categories, in these weights. '
+    + 'The initial allocation on the Implementation screen, the workbook’s Initial Allocation sheet and the deck’s slide all follow it. '
+    + 'A change applies to scenarios in progress at once; a delivered proposal keeps the split it was built with, and the register records which.</p>'
+    + '<div class="ucap-scope"><label for="fundScope">Applies to</label><select id="fundScope">' + scopes + '</select>'
+    + '<span class="ucap-said">' + said + '</span></div>'
+    + '<table class="fund-ed"><thead><tr><th scope="col">Held in</th><th scope="col">Held by</th><th scope="col" class="num">Weight</th><th></th></tr></thead>'
+    + '<tbody>' + body + '</tbody>'
+    + '<tfoot><tr><th scope="row">Total</th><td></td><td class="num" id="fundTotal">' + fundTotalText(rows) + '</td><td></td></tr></tfoot></table>'
+    + '<div class="fund-acts">'
+    + (canAdd ? '<button type="button" class="btn" data-fundadd>+ Add a category</button>' : '')
+    + (fund.scope !== '*' && now.inherited && !editing ? '<button type="button" class="btn" data-fundown>Give ' + esc(fund.scope) + ' its own split</button>' : '')
+    + (fund.scope !== '*' && !now.inherited && !editing ? '<button type="button" class="btn btn-danger" data-funddrop>Put ' + esc(fund.scope) + ' back on the house split</button>' : '')
+    + '</div>'
+    + '<div class="fund-bar" id="fundBar" aria-hidden="true">' + fundBarHtml(rows) + '</div>'
+    + '<ul class="fund-msgs" id="fundMsgs">' + problems.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>'
+    + '<p class="fund-eg" id="fundEg">' + fundExample(rows) + '</p>'
+    + '<p class="fund-rule">Only a category every private-markets portfolio holds can take a share: otherwise a portfolio without it would have nowhere to put it. '
+    + 'Weights are percentages with up to ' + FUND_PLACES + ' decimal places, so a third is 33.3333.</p>'
+    + '</section>'
+    + '<aside class="ucap-side" aria-label="History"><h4>History · ' + (fund.scope === '*' ? 'house split' : esc(fund.scope)) + '</h4>' + histHtml + '</aside>'
+    + '</div>';
+}
+
+function uncalledFooterHtml() {
+  var rows = fundRows(), dirty = fundDirty();
+  var ok = dirty && !fundProblems(rows).length && fund.note.trim() && !fund.saving;
+  return '<div class="repo-f">'
+    + '<label class="fund-note" for="fundNote">Note</label>'
+    + '<input id="fundNote" class="fund-note-in" type="text" autocomplete="off" value="' + esc(fund.note) + '"'
+    + ' placeholder="Why the split is changing (required)">'
+    + '<span class="spacer"></span>'
+    + (fund.error ? '<span class="md-err" role="alert">' + esc(fund.error) + '</span>' : '')
+    + (fund.draft ? '<button type="button" class="btn" data-funddiscard>Discard</button>' : '')
+    + '<button type="button" class="btn btn-primary" id="fundSave" data-fundsave' + (ok ? '' : ' disabled') + '>'
+    + (fund.saving ? 'Saving…' : 'Save split') + '</button></div>';
+}
+
+/* the parts of the view that follow typing, redrawn without the boxes so the
+   caret stays where it was */
+function fundUpdate() {
+  var rows = fundRows();
+  var total = document.getElementById('fundTotal'); if (total) total.textContent = fundTotalText(rows);
+  var bar = document.getElementById('fundBar'); if (bar) bar.innerHTML = fundBarHtml(rows);
+  var msgs = document.getElementById('fundMsgs');
+  if (msgs) msgs.innerHTML = fundProblems(rows).map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('');
+  var eg = document.getElementById('fundEg'); if (eg) eg.innerHTML = fundExample(rows);
+  var save = document.getElementById('fundSave');
+  if (save) save.disabled = !(fundDirty() && !fundProblems(rows).length && fund.note.trim() && !fund.saving);
+}
+
+function fundStartDraft() {
+  if (!fund.draft) fund.draft = fundRows().map(function (r) { return { category: r.category, weight: r.weight }; });
+}
+
+async function fundPost(method, path, body) {
+  fund.saving = true; fund.error = null; render();
+  try {
+    var r = await api(method, path, body);
+    if (!r) return false;
+    if (!r.ok) { fund.error = r.body.error || ('Could not save (' + r.status + ')'); return false; }
+    fund.data = r.body.funding || fund.data;
+    fund.draft = null; fund.note = '';
+    return true;
+  } catch (err) { fund.error = err.message; return false; }
+  finally {
+    fund.saving = false; render(); loadFundingHistory();
+  }
+}
+
+function fundClick(ds) {
+  if (ds.fundadd !== undefined) {
+    fundStartDraft();
+    var free = fundEligible().filter(function (x) {
+      return x.eligible && !fund.draft.some(function (r) { return r.category === x.category; });
+    })[0];
+    if (free) fund.draft.push({ category: free.category, weight: '' });
+    render(); return true;
+  }
+  if (ds.fundrm !== undefined) {
+    fundStartDraft(); fund.draft.splice(parseInt(ds.fundrm, 10), 1); render(); return true;
+  }
+  if (ds.fundown !== undefined) { fundStartDraft(); render(); return true; }
+  if (ds.funddiscard !== undefined) { fund.draft = null; fund.note = ''; fund.error = null; render(); return true; }
+  if (ds.fundsave !== undefined) {
+    fundPost('PUT', '/scenario/repository/funding', {
+      scope: fund.scope, note: fund.note,
+      destinations: fund.draft.map(function (r) { return { category: r.category, weightPct: fundUnits(r.weight) }; })
+    });
+    return true;
+  }
+  if (ds.funddrop !== undefined) {
+    if (!fund.note.trim()) { fund.error = 'Write a note first: removing a type’s split is a change like any other.'; render(); return true; }
+    fundPost('POST', '/scenario/repository/funding/remove', { scope: fund.scope, note: fund.note });
+    return true;
+  }
+  if (ds.fundrestore !== undefined) {
+    if (!fund.note.trim()) { fund.error = 'Write a note first: a restore is a new revision, and it says why.'; render(); return true; }
+    fundPost('POST', '/scenario/repository/funding/revert', {
+      scope: fund.scope, revision: parseInt(ds.fundrestore, 10), note: fund.note
+    });
+    return true;
+  }
+  return false;
+}
+
+document.addEventListener('change', function (e) {
+  if (!repo.open || repo.view !== 'uncalled') return;
+  var el = e.target;
+  if (el.id === 'fundScope') {
+    fund.scope = el.value; fund.draft = null; fund.note = ''; fund.error = null; fund.history = null;
+    render(); loadFundingHistory(); return;
+  }
+  if (el.dataset && el.dataset.fundcat !== undefined) {
+    fundStartDraft(); fund.draft[parseInt(el.dataset.fundcat, 10)].category = el.value; render();
+  }
+});
+
+document.addEventListener('input', function (e) {
+  if (!repo.open || repo.view !== 'uncalled') return;
+  var el = e.target;
+  if (el.id === 'fundNote') { fund.note = el.value; fund.error = null; fundUpdate(); return; }
+  if (el.dataset && el.dataset.fundw !== undefined) {
+    fundStartDraft(); fund.draft[parseInt(el.dataset.fundw, 10)].weight = el.value.trim(); fundUpdate();
+  }
+});
 
 /* ---- events ------------------------------------------------------------- */
 document.addEventListener('click', function (e) {
@@ -3185,7 +3511,8 @@ document.addEventListener('click', function (e) {
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
     + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
     + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose],'
-    + '[data-regview],[data-regfilters],[data-reguid]') : null;
+    + '[data-regview],[data-regfilters],[data-reguid],'
+    + '[data-fundadd],[data-fundrm],[data-fundsave],[data-funddiscard],[data-fundown],[data-funddrop],[data-fundrestore]') : null;
   if (!el) {
     /* a click anywhere else closes an open picker, chip menu or context menu */
     if (repo.picker && !e.target.closest('.repo-menu, #repoSearch')) closePicker();
@@ -3198,6 +3525,7 @@ document.addEventListener('click', function (e) {
   var ds = el.dataset;
   if (ds.repoclose !== undefined || ds.reposcrim !== undefined) { closeRepository(false); return; }
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
+  if (fundClick(ds)) return;
   if (ds.repovariant !== undefined) { goTo({ variant: ds.repovariant }); return; }
   if (ds.repocat !== undefined) { goTo({ category: ds.repocat }); return; }
   if (ds.reposleeve !== undefined) { selectSleeve(parseInt(ds.reposleeve, 10)); return; }

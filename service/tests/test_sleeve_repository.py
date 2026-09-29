@@ -428,6 +428,12 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/proposals/{proposalId}', ('GET',)),
         ('/scenario/repository/proposals/{proposalId}/workbook', ('GET',)),
         ('/scenario/repository/proposals/{proposalId}/deck', ('GET',)),
+        # the private-markets funding split (D148)
+        ('/scenario/repository/funding', ('GET',)),
+        ('/scenario/repository/funding', ('PUT',)),
+        ('/scenario/repository/funding/remove', ('POST',)),
+        ('/scenario/repository/funding/history', ('GET',)),
+        ('/scenario/repository/funding/revert', ('POST',)),
     }
     for key, names in found.items():
         assert 'requireAdmin' in names, key

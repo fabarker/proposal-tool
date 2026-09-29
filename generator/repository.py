@@ -785,6 +785,65 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
   text-transform:uppercase;color:#1E4FA3;cursor:pointer;text-align:left;justify-self:start}
 .cat-link:hover{text-decoration:underline}
 .cat-detail .acts{display:flex;gap:8px;margin-top:auto;padding-top:6px;flex-wrap:wrap}
+/* ── the Uncalled Capital Allocation view (D148, named by D149) ──
+   One editor and its history, side by side; the note and Save in the footer
+   as on the Sleeves view. */
+.dialog.repo.uncalled{width:min(1180px,calc(100vw - 32px))}
+.ucap-b{display:grid;grid-template-columns:minmax(0,1fr) 320px;min-height:0;flex:1 1 auto}
+.ucap-main{padding:18px 22px;overflow:auto;min-height:0}
+.ucap-main h3{margin:0 0 6px;font-size:17px;color:var(--ink)}
+.ucap-lede{margin:0 0 14px;font-size:13.5px;color:var(--ink-2);max-width:78ch;line-height:1.5}
+.ucap-scope{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+.ucap-scope label{font-family:var(--f-num);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.ucap-scope select{font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);color:var(--ink);min-width:280px}
+.ucap-said{font-size:13px;color:var(--ink-2)}
+.fund-ed{border-collapse:collapse;width:100%;max-width:760px;font-size:14px}
+.fund-ed th{font-family:var(--f-num);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+  text-align:left;padding:6px 8px;border-bottom:1px solid var(--line-strong);font-weight:600}
+.fund-ed td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.fund-ed .num{text-align:right}
+.fund-ed tfoot th,.fund-ed tfoot td{border-bottom:0;border-top:1px solid var(--line-strong);font-weight:700;color:var(--ink);
+  font-size:13px;text-transform:none;letter-spacing:0}
+.fund-ed tfoot td.num{font-family:var(--f-num)}
+.fund-ed select{font:inherit;font-size:14px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);color:var(--ink);min-width:260px}
+.fund-held{font-family:var(--f-num);font-size:12.5px;color:var(--ink-3);white-space:nowrap}
+.fund-w{display:inline-flex;align-items:center;gap:4px}
+.fund-w input{width:104px;text-align:right;font-family:var(--f-num);font-size:14px;padding:5px 7px;
+  border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink)}
+.fund-w span{font-family:var(--f-num);color:var(--ink-3)}
+.fund-rm{padding:4px 9px;font-size:11px}
+.fund-acts{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 0}
+.fund-acts .btn{padding:6px 11px;font-size:11.5px}
+.fund-bar{display:flex;height:22px;max-width:760px;border-radius:4px;overflow:hidden;margin:14px 0 0;background:var(--surface-2)}
+.fund-bar span{display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--f-num);font-size:11px;
+  white-space:nowrap;overflow:hidden}
+.fund-msgs{list-style:none;padding:0;margin:10px 0 0;max-width:760px}
+.fund-msgs li{background:#FDE8E8;color:#9B1C1C;border-radius:4px;padding:6px 10px;margin:0 0 4px;font-size:13px}
+.fund-eg{margin:10px 0 0;font-size:13.5px;color:var(--ink);max-width:760px}
+.fund-rule{margin:14px 0 0;font-size:12.5px;color:var(--ink-3);max-width:78ch;line-height:1.5}
+.ucap-side{border-left:1px solid var(--line);padding:18px 18px;overflow:auto;min-height:0;background:var(--surface-2)}
+.ucap-side h4{margin:0 0 10px;font-family:var(--f-num);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.fund-hist{list-style:none;padding:0;margin:0}
+.fund-hist li{padding:9px 0;border-top:1px solid var(--line)}
+.fund-hist li:first-child{border-top:0;padding-top:0}
+.fund-hist-h{display:flex;align-items:baseline;gap:8px}
+.fund-hist-h b{font-family:var(--f-num);color:#1E4FA3}
+.fund-hist-h .act{font-size:12px;color:var(--ink-2)}
+.fund-hist-h .now{font-family:var(--f-num);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#176A33}
+.fund-hist-h .cat-link{margin-left:auto}
+.fund-hist-w{font-size:13px;color:var(--ink);margin-top:2px}
+.fund-hist-n{font-size:12.5px;color:var(--ink-2);margin-top:2px}
+.fund-hist-by{font-family:var(--f-num);font-size:11.5px;color:var(--ink-3);margin-top:2px}
+.fund-none{font-size:13px;color:var(--ink-3);margin:0}
+.fund-note{font-family:var(--f-num);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.fund-note-in{flex:0 1 460px;min-width:200px;font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line-strong);
+  border-radius:4px;background:var(--surface);color:var(--ink)}
+@media (max-width:900px){
+  .ucap-b{grid-template-columns:1fr}
+  .ucap-side{border-left:0;border-top:1px solid var(--line)}
+}
 @media (max-width:1320px){
   .repo-h .repo-src{display:none}
 }

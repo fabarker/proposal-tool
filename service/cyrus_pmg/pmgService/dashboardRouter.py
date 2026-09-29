@@ -28,8 +28,9 @@ from fastapi.responses import JSONResponse
 
 from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
-from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, proposalRegister,
-                                           scenarioStore, sleeveRepo, sleeveRules)
+from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, products,
+                                           proposalRegister, scenarioStore, sleeveRepo,
+                                           sleeveRules)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
     exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
@@ -561,6 +562,67 @@ def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
         return _validationError(exc)
     except products.BadCatalogue as exc:
         return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+# ---- the private-markets funding split (D148) ----------------------------
+# How a private-markets commitment is held until capital is called: a house
+# split for every implementation type and, optionally, a type's own override.
+# Admin only, like every repository write; every change carries a note and
+# adds a revision (fundingSplit.py).
+
+@router.get('/scenario/repository/funding')
+def getFundingSplit(caller=Depends(requireAdmin)):
+    """The house split, every override, and which categories may hold the
+    money - with how many private-markets books hold each."""
+    return fundingSplit.describe()
+
+
+@router.put('/scenario/repository/funding')
+def saveFundingSplit(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a split in force: {scope: '*' or a type, destinations: [{category,
+    weightPct}], note}. The weights are percentages adding up to exactly 100."""
+    try:
+        entry = fundingSplit.save(payload.get('scope'), payload.get('destinations'),
+                                  payload.get('note'), user=caller.kerberos)
+        return {'split': entry, 'funding': fundingSplit.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/funding/remove')
+def removeFundingOverride(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a type back on the house split: {scope, note}."""
+    try:
+        fundingSplit.removeOverride(payload.get('scope'), payload.get('note'),
+                                    user=caller.kerberos)
+        return {'funding': fundingSplit.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/funding/history')
+def getFundingHistory(scope: str = '*', caller=Depends(requireAdmin)):
+    """Every revision of one scope's split, newest first."""
+    try:
+        return {'scope': scope, 'history': fundingSplit.history(scope)}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/funding/revert')
+def revertFundingSplit(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {scope, revision, note}. It is
+    a new revision; nothing is rewound."""
+    try:
+        number = int(payload.get('revision', 0))
+    except (TypeError, ValueError):
+        return _validationError(ValidationError('revision', 'Choose a revision to restore.'))
+    try:
+        entry = fundingSplit.revert(payload.get('scope'), number, payload.get('note'),
+                                    user=caller.kerberos)
+        return {'split': entry, 'funding': fundingSplit.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
 
 
 # ---- account opening requests (D76) --------------------------------------

@@ -273,7 +273,7 @@ def test_an_overlap_that_arrives_after_the_fact_withholds_the_name_and_flags_bot
 
 def test_the_old_seed_loads_unchanged_as_fallbacks():
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == 3
+    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 4      # D148
     entries = sleeveRepo.listAll()
     assert len(entries) == 102 and all(e['fallback'] for e in entries)
     assert sleeveRepo.census()['editions'] == 0
@@ -391,7 +391,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
 
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == 3 and store['sleeves'] == 1
+    assert store['schemaVersion'] == 4 and store['sleeves'] == 1       # to 4 in one open (D148)
     conn = sqlite3.connect(str(path))
     columns = {r[1] for r in conn.execute('PRAGMA table_info(sleeves)')}
     history = {r[1] for r in conn.execute('PRAGMA table_info(sleeveHistory)')}
@@ -400,6 +400,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     conn.close()
     assert 'label' in columns and {'label', 'rules'} <= history
     assert 'sleeveRules' in tables
+    assert {'policies', 'policyHistory'} <= tables, 'the funding split\'s tables (D148)'
     assert 'sleeves_live_edition' in indexes and 'sleeves_live_name' not in indexes
     old = sleeveRepo.getSleeve(7)
     assert old['fallback'] and old['label'] == '' and old['rules'] == []
@@ -407,7 +408,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     # and the migrated store takes an edition like any other
     made = sleeveRepo.addEdition(7, 'GBP', [{'currency': 'GBP'}], _products(), user='desk')
     assert made['applies'] == 43
-    assert sleeveRepo.describe()['schemaVersion'] == 3, 'opening again is a no-op'
+    assert sleeveRepo.describe()['schemaVersion'] == 4, 'opening again is a no-op'
 
 
 # ---- the endpoints ---------------------------------------------------------------
@@ -474,13 +475,13 @@ def test_the_console_payload_and_the_two_new_endpoints(monkeypatch):
         _archive(made['sleeve']['id'])
 
 
-def test_the_new_routes_are_admin_only_and_the_count_is_thirty_two():
+def test_the_new_routes_are_admin_only_and_the_count_is_thirty_seven():
     found = {}
     for route in dashboardRouter.router.routes:
         if route.path.startswith('/scenario'):
             found[(route.path, tuple(sorted(route.methods)))] = [
                 d.call.__name__ for d in route.dependant.dependencies]
-    assert len(found) == 32
+    assert len(found) == 37              # 32, and the funding split's five (D148)
     assert 'requireAdmin' in found[('/scenario/repository/sleeves/{sleeveId}/editions', ('POST',))]
     assert 'requireAdmin' in found[('/scenario/repository/applicability', ('POST',))]
 

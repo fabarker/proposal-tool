@@ -352,28 +352,36 @@ def volPremiumCategories(categories, volPremium, currency) -> list:
 
 # ------------------------------------------ private markets, initially (D136) ---
 # A private-markets commitment is drawn down as managers call capital, over
-# years; until it is called, the money earmarked for it is held one third in
-# Investment Grade Fixed Income and two thirds in Public Equity. The model
-# builds this INITIAL allocation beside the long-term one: after both overlays
-# (the parked money neither funds the tilt nor grows the premium), on the
-# sleeve LINES, with each uplift spread across the chosen sleeve's products by
-# the sleeve's own shares - which is what keeps it working when the tilt has
-# taken every point of IGFI. It is a rule, not a choice: every book that holds
-# private assets carries it, and step 1 never shows it.
+# years; until it is called, the money earmarked for it is held in other
+# categories - by the split the repository holds (fundingSplit, D148; D136
+# wrote it here as a third Investment Grade Fixed Income and two thirds Public
+# Equity). The model builds this INITIAL allocation beside the long-term one:
+# after both overlays (the parked money neither funds the tilt nor grows the
+# premium), on the sleeve LINES, with each uplift spread across the chosen
+# sleeve's products by the sleeve's own shares - which is what keeps it
+# working when the tilt has taken every point of IGFI. It is a rule, not a
+# choice: every book that holds private assets carries it, and step 1 never
+# shows it.
 PRIVATE_FUNDED_FROM = SLEEVE_GROUPS[0]['name']
-PRIVATE_FUNDING = [('Investment Grade Fixed Income', 1.0 / 3.0),
-                   ('Public Equity', 2.0 / 3.0)]
 
 
-def initialLines(lines):
+def privateFunding(variant=None) -> list:
+    """The split in force for *variant* as ``[(category, share)]``, shares as
+    fractions: the type's own override, or the house split (D148)."""
+    from . import fundingSplit
+    return fundingSplit.shares(variant)
+
+
+def initialLines(lines, funding=None):
     """The sleeve lines of a book as initially invested, or None when it holds
     no private markets (D136).
 
     *lines* are ``{'name', 'weightPct'}`` with the private categories already
     combined under PRIVATE_FUNDED_FROM, as ``buildImplementationRows`` makes
-    them. The private line's weight P moves to the PRIVATE_FUNDING lines in
-    their shares and the private line is left at zero - its commitment is the
-    long-term weight, which the caller keeps. Returns copies.
+    them. The private line's weight P moves to the *funding* lines -
+    ``[(category, share)]``, the house split when not given - in their shares,
+    and the private line is left at zero: its commitment is the long-term
+    weight, which the caller keeps. Returns copies.
 
     THE JAVASCRIPT MIRROR of this lives in implementation.js as
     initialLines(). The two must agree exactly or the screen and the workbook
@@ -383,7 +391,7 @@ def initialLines(lines):
     weight = private['weightPct'] if private else 0.0
     if weight <= 0:
         return None
-    for name, share in PRIVATE_FUNDING:
+    for name, share in (privateFunding() if funding is None else funding):
         target = next((line for line in out if line['name'] == name), None)
         if target is None:                       # never in the universe today
             target = {'name': name, 'weightPct': 0.0}
@@ -679,6 +687,19 @@ def validateMandate(mandate: MandateInput, advisorExists) -> None:
         raise ValidationError('primaryPwa', 'Choose a Primary PWA from the list.')
 
 
+def _servedFunding(variant) -> dict:
+    """The funding split as the schema serves it: shares as fractions for the
+    page's mirror, the weights as entered, and which revision of which scope
+    is in force."""
+    from . import fundingSplit
+    entry = fundingSplit.current(variant)
+    return {'from': PRIVATE_FUNDED_FROM,
+            'to': [{'category': d['category'], 'share': d['weightPct'] / 100.0,
+                    'weightPct': d['weightPct']} for d in entry['destinations']],
+            'scope': entry['scope'], 'revision': entry['revision'],
+            'inherited': entry['inherited']}
+
+
 def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
                   dataInfo: dict, variant=None, topAccountSize=None,
                   availableKeyStrs=None) -> dict:
@@ -733,10 +754,10 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'volPremiumFundedFrom': VOL_PREMIUM_FUNDED_FROM,
             'volPremiumCategory': VOL_PREMIUM_CATEGORY,
             'volPremiumCurrencies': VOL_PREMIUM_CURRENCIES,
-            # the initial allocation of a private-markets book (D136)
-            'privateFunding': {'from': PRIVATE_FUNDED_FROM,
-                               'to': [{'category': name, 'share': share}
-                                      for name, share in PRIVATE_FUNDING]},
+            # the initial allocation of a private-markets book (D136), by the
+            # split in force for this type (D148): the page's mirror reads it
+            # here, so the screen and the files park the money alike
+            'privateFunding': _servedFunding(variant),
         },
         'fees': fees.feePayload(topAccountSize, mandateSize),
         'capabilities': capabilities,

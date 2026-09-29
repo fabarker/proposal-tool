@@ -14,6 +14,12 @@ app. Five tables:
                     stood after that action, with who did it and when
     meta            schema version and the seed stamp
 
+and, since schema revision 4, the repository's other settings (D148):
+
+    policies        kind, scope, body - one setting in force per scope; the
+                    private-markets funding split (fundingSplit.py)
+    policyHistory   one append-only row per revision of a setting
+
 Editions (D89). A row is an EDITION of a sleeve name. A name a PWA picks may
 have several: a fallback with no rules, which applies wherever nothing else
 does, and any number of editions each carrying rules over the strategic
@@ -105,8 +111,8 @@ WEIGHT_TOLERANCE = 1e-6
 
 #: schema revision written to meta. 1 was the original two-table store; 2
 #: added the soft delete and the history table (D65); 3 added the edition
-#: label and the rules table (D89).
-SCHEMA_VERSION = 3
+#: label and the rules table (D89); 4 the policies and their history (D148).
+SCHEMA_VERSION = 4
 
 #: what a history row's action can say. baseline is the one nobody performed:
 #: it is the state a sleeve was in when history started being kept.
@@ -175,6 +181,27 @@ CREATE INDEX IF NOT EXISTS history_by_sleeve ON sleeveHistory (sleeveId, revisio
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS policies (
+    kind      TEXT NOT NULL,
+    scope     TEXT NOT NULL,
+    body      TEXT NOT NULL,
+    revision  INTEGER NOT NULL,
+    updatedBy TEXT NOT NULL DEFAULT '',
+    updatedAt TEXT NOT NULL,
+    PRIMARY KEY (kind, scope)
+);
+CREATE TABLE IF NOT EXISTS policyHistory (
+    id       INTEGER PRIMARY KEY,
+    kind     TEXT NOT NULL,
+    scope    TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    action   TEXT NOT NULL,
+    body     TEXT NOT NULL,
+    note     TEXT NOT NULL DEFAULT '',
+    actor    TEXT NOT NULL DEFAULT '',
+    at       TEXT NOT NULL,
+    UNIQUE (kind, scope, revision)
 );
 """
 
@@ -263,6 +290,13 @@ def _connect() -> sqlite3.Connection:
         _seedOnce(conn)
     conn.execute('PRAGMA foreign_keys = ON')
     return conn
+
+
+def connection() -> sqlite3.Connection:
+    """A connection to the repository's file, schema in place, for the other
+    settings kept beside the sleeves (fundingSplit, D148). The caller closes
+    it."""
+    return _connect()
 
 
 def _seedOnce(conn: sqlite3.Connection) -> None:
@@ -368,6 +402,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 conn.execute("ALTER TABLE sleeveHistory ADD COLUMN rules TEXT NOT NULL DEFAULT '[]'")
             conn.execute('DROP INDEX IF EXISTS sleeves_live_name')
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('schemaVersion', ?)",
+                         (str(SCHEMA_VERSION),))
+            conn.execute("INSERT OR REPLACE INTO meta VALUES ('migratedAt', ?)", (_now(),))
+
+    # 3 -> 4 (D148): the policies and their history. New tables only, which
+    # _SCHEMA creates on every connection; the version is all there is to move.
+    version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()
+    if version is not None and int(version[0]) < SCHEMA_VERSION:
+        with conn:
+            conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
                          (str(SCHEMA_VERSION),))
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('migratedAt', ?)", (_now(),))
 

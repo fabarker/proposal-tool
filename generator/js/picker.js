@@ -86,7 +86,7 @@ function paint() {
     + ((allEquity || (cur.allocationType && !canRA)) ? ' aria-describedby="prenote"' : '') + '>'
     + '<label for="pre">Exclude Real Assets</label></div>'
     + (allEquity
-        ? '<p class="chk-note" id="prenote">An all-equity book holds no alternatives, so '
+        ? '<p class="chk-note" id="prenote">An all-equity portfolio holds no alternatives, so '
           + 'no allocation type or exclusion applies.</p>'
         : (cur.allocationType && !canRA)
         ? '<p class="chk-note" id="prenote">Not available — ' + App.esc(cur.allocationType)

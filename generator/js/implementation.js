@@ -245,9 +245,12 @@ function implScreenColumns(fees, initial) {
 /* which world each figure column belongs to, for the row above the header */
 var IMPL_WORLDS = { 'Allocation (%)': 'lt', 'Notional': 'lt', 'Wtd fee': 'lt',
                     'Initial (%)': 'ini', 'Initial notional': 'ini', 'Initial fee': 'ini' };
+/* A share of the funding split in a glyph or a percentage. The split is kept
+   in percent to four places (D148), so a third arrives as 0.333333: within a
+   millionth reads as a third. */
 function shareText(share) {
-  return Math.abs(share - 1 / 3) < 1e-9 ? '⅓' : Math.abs(share - 2 / 3) < 1e-9 ? '⅔'
-    : App.num(share * 100, 0, '%');
+  return Math.abs(share - 1 / 3) < 1e-6 ? '⅓' : Math.abs(share - 2 / 3) < 1e-6 ? '⅔'
+    : Math.abs(share - 1 / 2) < 1e-6 ? '½' : (+(share * 100).toFixed(4)) + '%';
 }
 function toggleInitial(button) {
   initialShown = !initialShown;
@@ -671,7 +674,7 @@ function volPremiumField() {
   var note;
   if (!allowed) {
     note = 'Available in ' + App.esc(currencies.join(' and '))
-      + ' only; this book is in ' + App.esc(App.basis().currency) + '.';
+      + ' only; this portfolio is in ' + App.esc(App.basis().currency) + '.';
   } else if (!fundable) {
     note = 'Funded from ' + App.esc(from) + '; this portfolio holds none.';
   } else {
@@ -873,7 +876,7 @@ function feeFields() {
     + '<div class="fee-seg" role="group" aria-labelledby="feeschedlabel">' + seg + '</div>'
     + '<p class="vr-note">' + (entry
         ? App.esc(entry.note || '')
-        : 'Choose how the book is priced. Nothing is priced until it is chosen.')
+        : 'Choose how the portfolio is priced. Nothing is priced until it is chosen.')
     + '</p></div>';
 
   /* The level is one value with two halves - a source and a point on that

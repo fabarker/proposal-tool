@@ -1384,7 +1384,7 @@ function renderBase() {
 
   var raNote = '';
   if (allEquity) {
-    raNote = 'An all-equity book holds no alternatives, so no allocation type '
+    raNote = 'An all-equity portfolio holds no alternatives, so no allocation type '
       + 'or exclusion applies.';
   } else if (allocationType && !canRA) {
     raNote = 'Not available — ' + esc(allocationType) + ' holds no real assets.';
@@ -1547,7 +1547,21 @@ var METRIC_ROWS = [['Estimated Mean Return', 'ret'], ['Sharpe Ratio', 'sharpe'],
 var BASE_COLUMN_TITLE = 'Proposed';
 function columnMark(i) { return i === 0 ? 'P' : String(i); }
 
-function columnHeadCell(col, i, scope) {
+/* The allocation table's heads carry each portfolio's category mix as a bar
+   under the name (D151), in the category key's colours - the same colour as
+   the swatch on that category's row, so a band in the bar is read against
+   its row. Drawn only once the column has figures: a loading column without
+   earlier ones, or a failed one, keeps an empty head rather than a guess. */
+function mixBar(col) {
+  if (col.status === 'error' || !col.data || (col.status === 'loading' && !holdsPreviousData(col))) return '';
+  var bands = col.data.categories.filter(function (c) { return isFinite(c.weightPct) && c.weightPct >= 0.05; })
+    .map(function (c) {
+      return '<span style="flex:' + c.weightPct + ' 0 0;background:' + catColor(c.name) + '"></span>';
+    }).join('');
+  return bands ? '<span class="col-mix" aria-hidden="true">' + bands + '</span>' : '';
+}
+
+function columnHeadCell(col, i, scope, below) {
   var isBase = (i === 0);
   var label = headerName(col.key);
   var extra = '';
@@ -1565,14 +1579,14 @@ function columnHeadCell(col, i, scope) {
       + ' aria-label="Remove ' + esc(headerName(col.key)) + '">×</button>'
     : '';
   return '<th scope="' + scope + '"' + (scope === 'colgroup' ? ' colspan="2"' : '')
-    + ' class="num' + (i === App.lastAdded ? ' just-added' : '') + '"'
+    + ' class="num' + (i === App.lastAdded ? ' just-added' : '') + (remove ? ' has-rm' : '') + '"'
     + (col.status === 'loading' ? ' aria-busy="true"' : '')
     + ' title="' + esc(fullName(col.key)) + '"'
     + ' aria-label="' + esc(fullName(col.key)) + '">'
     + '<span class="col-head"><span class="col-mark' + (isBase ? ' is-prop' : '') + '" aria-hidden="true">'
     + columnMark(i) + '</span><span class="col-nm">'
     + (isBase ? '<small class="col-role">' + BASE_COLUMN_TITLE + '</small>' : '')
-    + esc(label) + '</span>' + extra + remove + '</span></th>';
+    + esc(label) + '</span>' + extra + remove + '</span>' + (below || '') + '</th>';
 }
 
 /* ---- guiding the first build (D91) ---------------------------------------
@@ -1778,7 +1792,7 @@ function renderAlloc() {
     && state.columns.length < opt('rules.maxPortfolios', 4) && state.columns.length > 0;
   var html = '<caption class="sr-only">Portfolio allocation and metrics</caption><thead><tr>'
     + '<th scope="col" class="rowhead">Asset Class</th>';
-  state.columns.forEach(function (col, i) { html += columnHeadCell(col, i, 'col'); });
+  state.columns.forEach(function (col, i) { html += columnHeadCell(col, i, 'col', mixBar(col)); });
   if (plus) {
     html += '<th scope="col" class="num addcol"><button type="button" id="plusbtn" '
       + 'class="plus" aria-label="Add a comparison portfolio">+</button></th>';
@@ -1790,9 +1804,9 @@ function renderAlloc() {
      block: sizeFixedColumns measures column widths with the table in auto
      layout, where a block child would claim the full column and the
      measurement would be meaningless. */
-  function row(cls, label, cellFn, key) {
+  function row(cls, label, cellFn, key, lead) {
     var r = '<tr class="' + cls + '"' + (key ? ' data-rk="' + esc(key) + '"' : '')
-      + '><th scope="row"><span class="cw">' + esc(label) + '</span></th>'
+      + '><th scope="row"><span class="cw">' + (lead || '') + esc(label) + '</span></th>'
       + state.columns.map(function (col) {
           return '<td class="num"><span class="cw">' + cellFn(col) + '</span></td>';
         }).join('');
@@ -1809,9 +1823,11 @@ function renderAlloc() {
     }
   } else {
     union.forEach(function (category) {
+      /* the category's key colour, the one its band in the heads' bars takes */
       html += row('cat', category.name, function (col) {
         return cellFor(col, category.name, null);
-      }, 'c:' + category.name);
+      }, 'c:' + category.name,
+      '<span class="cat-sw" aria-hidden="true" style="background:' + catColor(category.name) + '"></span>');
       category.assets.forEach(function (assetName, si) {
         html += row('asset' + (si % 2 ? ' alt' : ''), assetName, function (col) {
           return cellFor(col, category.name, assetName);

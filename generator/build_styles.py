@@ -391,6 +391,29 @@ tr.asset td,tr.asset th{color:var(--ink-row,var(--ink-2))}
 tr.total th,tr.total td{font-weight:800;color:var(--ink);background:var(--cat-bg);
   border-top:2px solid var(--line-strong);border-bottom:2px solid var(--line-strong)}
 tr.metric th,tr.metric td{font-weight:700;color:var(--ink);background:var(--metric-bg)}
+/* The allocation table as chosen from the style sheet (D151, style 7b of
+   proposals/allocation-table-styles.html). Each category row is on the grey
+   of the estimates at the foot, carries its key colour in a swatch, and is
+   set off from the assets above it by a band of white rather than a rule;
+   the assets are indented past the swatch so their names line up with the
+   category's. Each head carries its portfolio's category mix in the same
+   colours (mixBar). The total drops its fill for a single dark rule, so the
+   grey below it reads as the estimates' alone. Scoped to .alloc: the
+   implementation table's category rows keep the shared rules. */
+.col-mix{display:flex;width:100%;max-width:150px;height:8px;margin:7px 0 0 auto;border-radius:4px;overflow:hidden}
+.col-mix span{display:block;min-width:1px}
+/* ends under the name, not under a comparison's remove control */
+.has-rm .col-mix{margin-right:21px}
+.cat-sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:9px;vertical-align:0}
+.tbl.alloc tr.cat th,.tbl.alloc tr.cat td{background:var(--metric-bg);border-top:0;border-bottom:0;
+  padding-top:5px;padding-bottom:5px}
+.tbl.alloc tr.asset + tr.cat th,.tbl.alloc tr.asset + tr.cat td{border-top:6px solid var(--surface)}
+.tbl.alloc tr.cat + tr.asset th,.tbl.alloc tr.cat + tr.asset td{padding-top:4px}
+.tbl.alloc tr.asset th{padding-left:34px}
+.tbl.alloc tr.asset th,.tbl.alloc tr.asset td{color:var(--ink-2)}
+.tbl.alloc tr.total th,.tbl.alloc tr.total td{background:var(--surface);font-weight:700;
+  border-top:1px solid var(--ink);border-bottom:0;padding-top:5px;padding-bottom:3px}
+.tbl.alloc tr.metric th,.tbl.alloc tr.metric td{font-weight:600}
 tr.band th{background:var(--band-bg);color:var(--band-ink);font-size:11.5px;letter-spacing:.18em;
   text-transform:uppercase;font-weight:800;padding:12px 14px;position:sticky;left:0}
 .tbl tbody tr:not(.band):hover td,.tbl tbody tr:not(.band):hover th{background:var(--row-hover)}
