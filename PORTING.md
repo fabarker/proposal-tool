@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D136** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D138** — the PowerPoint deck, custom fees,
 the register's saved views, a private-markets book's initial allocation and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D136 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D138 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -129,7 +129,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 428 passed, none skipped, at D136.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 433 passed, none skipped, at D138.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -1298,7 +1298,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 428 passed, none skipped, in ~3 min (at D136)
+# 433 passed, none skipped, in ~3 min (at D138)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1437,7 +1437,10 @@ nav for users.
     the allocation and risk tables share one slide, with three or four each has its own (D124); it
     is set in GS Sans on a machine that has never installed it (embedded, D125); a private-markets
     book's implementation slide carries the same fifteen columns under the same *Long-term / Initial*
-    row, and a note under it naming the commitment (D136).
+    row, and a note under it naming the commitment (D136). No table is set above 9pt; nothing in the
+    implementation or assumptions table takes a second line and each has one row height; the
+    implementation table spans the slide's width, fees or not; the doughnuts have a half-width
+    hole and no labels on their slices (D137, D138).
 12a. The landing page has two doors: **Start Here**, and **Open an Account** at the right (D107,
     D109, D110). Open an Account opens a card holding only the Proposal UID box (D111); a UID from a
     delivered proposal grows it into the request — the proposal's terms as a read-only digest, then
@@ -1783,6 +1786,11 @@ Since the 10 September port (§0A):
 - **D136** A private-markets book's initial allocation — the commitment held ⅓ in IGFI and ⅔ in
   Public Equity until called — shown on the Implementation screen by a button, its columns beside
   their long-term twins, and always in both files; a reload no longer drops the private sleeve.
+- **D137** The deck's tables capped at 9pt; the implementation and assumptions tables on one line
+  with one row height, the implementation's columns only as wide as their entries; lighter
+  allocation rules on the slide, dotted risk dividers in both files, labelled doughnuts.
+- **D138** Compact rows on the allocation, risk and assumptions slides; the implementation table
+  across the full width, its name columns at their longest names; no shares on the doughnuts.
 
 ## Appendix B — where the rest is written down
 
@@ -1790,7 +1798,7 @@ Since the 10 September port (§0A):
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D136, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D138, the adapter-side decisions, the spec gaps G1–G8. |
 | `proposals/` | Design studies behind D90–D136, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
