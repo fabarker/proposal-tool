@@ -116,6 +116,8 @@ def test_the_deck_is_the_plan_cell_for_cell():
                                     else sheetDoc.renderNumber(cell.value, cell.fmt))
                         if column == 1:
                             expected = expected.strip()
+                        if tp.oneLine:
+                            expected = pptWriter._oneLineText(expected)     # D137
                         got = table.cell(tableRow, column - 1)
                         assert _normal(got.text) == _normal(expected), (
                             tp.doc.name, rowIndex, column)
@@ -131,7 +133,8 @@ def test_one_or_two_portfolios_share_one_slide_without_the_repeated_rows():
     """D124. With no comparison or one: allocation and risk on ONE slide,
     allocation left and risk right; the risk table without the rows that
     repeat the allocation; both set in one size, both a little in from the
-    full box, and both ending at the bottom of their boxes together."""
+    full box. Each table's rows are at their own height - none opened to
+    make the two end together (D138)."""
     plan = _plan()
     table = [entry for entry in plan if entry['kind'] == 'table']
     first = table[0]
@@ -150,7 +153,8 @@ def test_one_or_two_portfolios_share_one_slide_without_the_repeated_rows():
         left, top, width, height = tp.box
         assert left > full[0] and top > full[1], 'more border than a lone table'
         assert left + width < full[0] + full[2] and top + height < full[1] + full[3]
-        assert abs(sum(tp.heights) - height) < 0.5, 'ends at the bottom of its box'
+        assert tp.heights == pptWriter._measure(tp, tp.font)[0], 'no row opened'
+        assert sum(tp.heights) <= height + 1e-6
     assert alloc.box[0] + alloc.box[2] < risk.box[0], 'allocation left, risk right'
     # and no Risk Dashboard slide of its own
     assert not [e for e in table if e['heading'] == 'Risk Dashboard']
@@ -177,8 +181,11 @@ def test_three_or_more_portfolios_take_a_slide_each_at_full_width():
 
 def test_every_planned_table_fits_its_box_at_a_readable_size():
     """The fit's invariants, over both configurations and fees on and off:
-    no table taller than its box, every size between MIN_PT and BASE_PT,
-    every figure clear of its cell on one line, and one size per slide."""
+    no table taller than its box, every size between MIN_PT and BASE_PT -
+    9pt, the cap (D137) - or, for a one-line table its width holds under
+    MIN_PT, no smaller than ONE_LINE_MIN_PT; every figure clear of its cell
+    on one line, and one size per slide."""
+    assert pptWriter.BASE_PT == 9.0
     golden = _goldenCase()[0]
     for results in (None, _four(golden)):
         for includeFees in (True, False):
@@ -187,7 +194,8 @@ def test_every_planned_table_fits_its_box_at_a_readable_size():
                 if len(plans) > 1:
                     assert len({tp.font for tp in plans}) == 1
                 for tp in plans:
-                    assert pptWriter.MIN_PT <= tp.font <= pptWriter.BASE_PT
+                    floor = pptWriter.ONE_LINE_MIN_PT if tp.oneLine else pptWriter.MIN_PT
+                    assert floor <= tp.font <= pptWriter.BASE_PT
                     assert sum(tp.heights) <= tp.box[3] + 1e-6, (tp.doc.name, sum(tp.heights))
                     heights, fits = pptWriter._measure(tp, tp.font)
                     assert fits, (tp.doc.name, tp.font)
@@ -207,7 +215,8 @@ def test_every_rule_is_stated_on_both_cells_that_share_it(lineup):
     no-line on its neighbour is a rule PowerPoint does not draw. So every
     horizontal edge in every table reads the same from above and below, and
     the allocation table's rules - the header's, each class's, TOTAL's and
-    the white ones in the metric block - are there from both sides."""
+    the white ones in the metric block - are there from both sides. The one
+    under the names and each class's are the deck's lighter weights (D137)."""
     golden = _goldenCase()[0]
     prs = Presentation(io.BytesIO(_deck(results=golden if lineup == 'two' else _four(golden))))
     ruled = 0
@@ -233,7 +242,8 @@ def test_every_rule_is_stated_on_both_cells_that_share_it(lineup):
     alloc = next(t for s in prs.slides for t in _tables(s)
                  if any(r.cells[0].text == 'TOTAL' for r in t.rows))
     labels = [r.cells[0].text for r in alloc.rows]
-    thick, thin = str(int(round(2.25 * 12700))), str(int(round(1.0 * 12700)))
+    thick = str(int(round(2.25 * 12700)))
+    names, thin = str(int(round(1.25 * 12700))), str(int(round(0.5 * 12700)))
     expected = {labels.index('Other Fixed Income'): (thin, '000000'),
                 labels.index('TOTAL'): (thick, '000000'),
                 labels.index('Sharpe Ratio'): (thick, 'FFFFFF'),
@@ -242,7 +252,8 @@ def test_every_rule_is_stated_on_both_cells_that_share_it(lineup):
         for column in range(len(alloc.columns)):
             assert _edge(alloc.cell(index - 1, column)._tc, 'a:lnB') == edge, labels[index]
     for column in range(len(alloc.columns)):
-        assert _edge(alloc.cell(1, column)._tc, 'a:lnT') == (thick, '000000'), 'under the names'
+        assert _edge(alloc.cell(1, column)._tc, 'a:lnT') == (names, '000000'), 'under the names'
+        assert _edge(alloc.cell(0, column)._tc, 'a:lnB') == (names, '000000'), 'under the names'
 
 
 def test_the_combined_risk_table_names_its_band_in_the_header_row():
@@ -376,16 +387,17 @@ def test_no_risk_label_wraps(lineup):
 
 
 @pytest.mark.parametrize('lineup', ['two', 'four'])
-def test_a_silver_rule_parts_the_portfolios_on_the_risk_slides(lineup):
-    """D130. On every risk table in the deck, a thin light-silver rule runs
-    between one portfolio's pair and the next from under the header to the
-    last row - stated on both cells, carried by a merged cell's origin, and
-    unbroken by the block headings, which now span only to the first rule.
-    Never across the header or the navy band, never inside a pair."""
+def test_a_dotted_rule_parts_the_portfolios_on_the_risk_slides(lineup):
+    """D130, D137. On every risk table in the deck, a rule runs between one
+    portfolio's pair and the next from under the header to the last row -
+    drawn exactly as the dotted grey rules across the table are, stated on
+    both cells, carried by a merged cell's origin, and unbroken by the block
+    headings, which span only to the first rule. Never across the header or
+    the navy band, never inside a pair."""
     golden = _goldenCase()[0]
     count = len(golden) if lineup == 'two' else 2 * len(golden)
     prs = Presentation(io.BytesIO(_deck(results=golden if lineup == 'two' else _four(golden))))
-    silver = (str(int(round(1.0 * 12700))), sheetDoc.SILVER)
+    silver = (str(int(round(0.75 * 12700))), 'A9A9A9')
     tables = [t for s in prs.slides for t in _tables(s)
               if any('Oil Embargo' in c.text for row in t.rows for c in row.cells)]
     assert tables
@@ -408,6 +420,14 @@ def test_a_silver_rule_parts_the_portfolios_on_the_risk_slides(lineup):
                 assert _edge(cells[1]._tc, 'a:lnR') != silver, 'inside a pair: ' + cells[0].text
         headings = [row for row in table.rows if row.cells[0].text.startswith('Value at Risk')]
         assert headings and headings[0].cells[0].is_merge_origin
+        assert _edge(headings[0].cells[0]._tc, 'a:lnT') == silver, 'the same rule across'
+        line = headings[0].cells[0]._tc.get_or_add_tcPr().find(qn('a:lnT'))
+        assert line.find(qn('a:prstDash')).get('val') == 'sysDot'
+        for row in table.rows:
+            for cell in row.cells:
+                right = cell._tc.get_or_add_tcPr().find(qn('a:lnR'))
+                if _edge(cell._tc, 'a:lnR') == silver:
+                    assert right.find(qn('a:prstDash')).get('val') == 'sysDot'
         assert not headings[0].cells[3].is_spanned, 'the heading stops at the first rule'
 
 
@@ -434,16 +454,18 @@ def test_the_deck_indents_a_quarter_less_and_follows_the_sheets_columns():
 def test_the_allocation_and_implementation_indent_a_third_less_than_the_risk_table():
     """D135. In the drawn deck an asset line on the allocation and a product
     line on the implementation step in by a third less than D134's step;
-    a crisis or a horizon on the risk table keeps D134's. Read off each
-    cell's left margin: the padding plus the step, at the table's size."""
+    a crisis or a horizon on the risk table keeps D134's; an asset on the
+    assumptions steps in half as far (D137). Read off each cell's left
+    margin: the padding plus the step, at the table's size."""
     third = pptWriter._INDENT_EM * 2 / 3
-    assert pptWriter._INDENT_EM_BY_DOC == {'portfolios': third, 'Implementation': third}
+    assert pptWriter._INDENT_EM_BY_DOC == {'portfolios': third, 'Implementation': third,
+                                           'assumptions': pptWriter._INDENT_EM / 2}
     plan = _plan()                                     # with its cover, as _deck() draws it
     prs = Presentation(io.BytesIO(_deck()))
     assert len(plan) == len(prs.slides)
     for entry, slide in zip(plan, prs.slides):
         for tp, table in zip(entry.get('tables', []), _tables(slide)):
-            step = third if tp.doc.name in ('portfolios', 'Implementation') else pptWriter._INDENT_EM
+            step = pptWriter._INDENT_EM_BY_DOC.get(tp.doc.name, pptWriter._INDENT_EM)
             checked = 0
             for position, r in enumerate(tp.rows):
                 spec = tp.doc.rows[r].cells.get(1)
@@ -575,7 +597,7 @@ def test_the_implementation_slide_keeps_the_bands_and_the_rules():
 
 def test_the_doughnuts_are_native_with_the_pages_palette_and_the_hole():
     """Five doughnut charts, slice colours by the alphabetical palette rule,
-    the workbook's 55% hole written where python-pptx has no property."""
+    a 50% hole written where python-pptx has no property (D137)."""
     results, implementation = _goldenCase()
     model = _model(results, implementation)
     items = [item for group in model['groups'] for item in group['items']]
@@ -586,12 +608,138 @@ def test_the_doughnuts_are_native_with_the_pages_palette_and_the_hole():
     for chart in charts:
         assert chart.chart_type == XL_CHART_TYPE.DOUGHNUT
         holes = chart._chartSpace.findall('.//' + qn('c:holeSize'))
-        assert holes and all(hole.get('val') == '55' for hole in holes)
+        assert holes and all(hole.get('val') == '50' for hole in holes)
     styleSlices = donutBreakdown(items, 'style')
     points = charts[0].series[0].points
     got = [str(points[index].format.fill.fore_color.rgb)
            for index in range(len(styleSlices))]
     assert got == [DONUT_PALETTE[entry['slot']] for entry in styleSlices]
+
+
+def test_the_doughnuts_print_no_shares_on_their_slices():
+    """D137, D138. Each chart's title and legend are 12pt; no slice carries
+    a label (D137 printed each share, D138 took them off); the chart's data
+    still holds the printed shares, as percentages to one place."""
+    results, implementation = _goldenCase()
+    items = [item for group in _model(results, implementation)['groups']
+             for item in group['items']]
+    prs = Presentation(io.BytesIO(_deck()))
+    charts = [shape.chart for shape in prs.slides[3].shapes if shape.has_chart]
+    assert len(charts) == 5
+    for chart in charts:
+        assert chart.chart_title.text_frame.paragraphs[0].runs[0].font.size.pt == 12
+        assert chart.legend.font.size.pt == 12
+        assert not chart.plots[0].has_data_labels
+        assert not chart._chartSpace.findall('.//' + qn('c:dLbl'))
+    series = charts[0].series[0]
+    assert list(series.values) == pytest.approx(
+        [e['pct'] / 100.0 for e in donutBreakdown(items, 'style')])
+
+
+def _implementationPlan(includeFees=True):
+    (entry,) = [e for e in _plan(includeFees=includeFees) if e.get('heading') == 'Implemented Model']
+    (tp,) = entry['tables']
+    return tp
+
+
+@pytest.mark.parametrize('includeFees', [True, False])
+def test_the_implementation_table_spans_the_slide_with_its_names_at_their_width(includeFees):
+    """D137, D138. On the slide, the implementation table spans the full
+    width, fees or not, and so sits centred: the category and product
+    columns exactly as wide as their longest names, every other column its
+    widest entry plus an equal share of the width left over; nothing on a
+    second line, the heads included; every row one height; a little under
+    the slide's rule; each head aligned as the figures or words beneath it."""
+    tp = _implementationPlan(includeFees)
+    assert tp.natural and tp.oneLine
+    widths = tp.widths()
+    needs = pptWriter._columnNeeds(tp, tp.font)
+    assert sum(widths) == pytest.approx(tp.box[2]), 'the full width'
+    assert tp.box[0] == pptWriter.FULL_BOX[0] and tp.box[2] == pptWriter.FULL_BOX[2]
+    assert widths[:2] == needs[:2]
+    extra = {round(w - n, 6) for w, n in zip(widths[2:], needs[2:])}
+    assert len(extra) == 1 and extra.pop() >= 0, 'the rest shared equally'
+    assert len(set(tp.heights)) == 1, 'every row one height'
+    assert tp.box[1] == pytest.approx(pptWriter.FULL_BOX[1] + pptWriter._TABLE_DROP_PT)
+    doc, base = tp.doc, pptWriter._base(tp.doc)
+    for column in (1, 2):
+        longest = max(pptWriter._oneLineNeed(doc.rows[r].cells[column], doc, tp.font, column)
+                      for r in tp.rows if column in doc.rows[r].cells
+                      and doc.rows[r].cells[column].value)
+        assert widths[column - 1] == pytest.approx(longest)
+    for r in tp.rows:
+        for column, spec in doc.rows[r].cells.items():
+            if spec.value in (None, ''):
+                continue
+            text = sheetDoc.renderNumber(spec.value, spec.fmt)
+            font = spec.font or pptWriter._DEFAULT_FONT
+            size = tp.font * font.get('size', base) / base
+            inner = (widths[column - 1] - 2 * pptWriter._PAD_H_EM * tp.font
+                     - pptWriter._indentPt(spec, text, tp.font, column, doc))
+            assert pptWriter.textWidth(text.strip(), font['name'], bool(font.get('bold')),
+                                       size) <= inner, (r, text)
+    head = doc.rows[tp.header[-1]].cells
+    body = [r for r in tp.rows if r not in tp.header]
+    for column, cell in head.items():
+        below = {(doc.rows[r].cells[column].align or {}).get('horizontal', 'left')
+                 for r in body if column in doc.rows[r].cells}
+        assert below == {cell.align['horizontal']}, cell.value
+
+    prs = Presentation(io.BytesIO(_deck(includeFees=includeFees)))
+    table = next(t for s in prs.slides for t in _tables(s)
+                 if any(c.text == 'Categories & Asset Classes' for row in list(t.rows)[:2]
+                        for c in row.cells))
+    for row in table.rows:
+        for cell in row.cells:
+            assert cell.text_frame.word_wrap is False
+    heads = list(table.rows)[len(tp.header) - 1].cells
+    assert heads[0].text_frame.paragraphs[0].alignment == pptWriter.PP_ALIGN.LEFT
+    notional = [c.text for c in heads].index('Notional')
+    assert heads[notional].text_frame.paragraphs[0].alignment == pptWriter.PP_ALIGN.RIGHT
+
+
+def test_the_assumptions_table_wraps_nothing_and_sits_under_the_rule():
+    """D137. The assumptions table keeps every entry on one line - its two
+    two-line heads read as one - across the slide's width, each column at
+    least its widest entry; every row is one height, and no taller than its
+    text needs (D138); its asset names step in half as far as the risk
+    table's; and it moves a little down under the slide's rule where the
+    slide has the room."""
+    plans = [tp for e in _plan() for tp in e.get('tables', []) if tp.doc.name == 'assumptions']
+    assert plans
+    for tp in plans:
+        assert tp.oneLine and not tp.natural
+        widths = tp.widths()
+        needs = pptWriter._columnNeeds(tp, tp.font)
+        assert all(w >= n - 1e-6 for w, n in zip(widths, needs))
+        assert sum(widths) == pytest.approx(tp.box[2])
+        assert len(set(tp.heights)) == 1
+        assert pptWriter._measure(tp, tp.font)[1]
+        tight, _ = pptWriter._measure(tp, tp.font)
+        room = pptWriter.FULL_BOX[3] - sum(tight)
+        assert tp.box[1] == pytest.approx(pptWriter.FULL_BOX[1] + min(pptWriter._TABLE_DROP_PT, room))
+        # and its rows at their own height, not opened into the slide (D138)
+        assert tp.heights == tight
+        assert sum(tp.heights) <= tp.box[3] + 1e-6
+    heads = [tp.doc.rows[2].cells[c].value for c in (2, 7)]
+    assert all('\n' in head for head in heads), 'the sheet keeps its two lines'
+    prs = Presentation(io.BytesIO(_deck()))
+    table = next(t for s in prs.slides for t in _tables(s)
+                 if any('Long-Term Estimates' in c.text for c in t.rows[0].cells))
+    texts = [c.text for c in table.rows[1].cells]
+    assert 'Risk Premia with Estimated Range' in texts
+    assert 'Estimated Mean Return (2.5% Risk Free Rate)' in texts
+    assert pptWriter._INDENT_EM_BY_DOC['assumptions'] == pptWriter._INDENT_EM / 2
+
+
+def test_a_one_line_table_fills_between_its_needs_and_its_shares():
+    """D137. The widths of a one-line table that fills its box: a column
+    that needs more than its share holds its need, the others share what is
+    left in proportion, and the whole is the box's width."""
+    widths = pptWriter._fillWidths([50.0, 10.0, 10.0], [1.0, 1.0, 2.0], 200.0)
+    assert widths[0] == 50.0 and widths[2] == pytest.approx(2 * widths[1])
+    assert sum(widths) == pytest.approx(200.0)
+    assert pptWriter._fillWidths([150.0, 80.0], [1.0, 1.0], 200.0) == [150.0, 80.0]
 
 
 def test_the_deck_is_stamped_like_a_workbook_and_a_draft_is_not():

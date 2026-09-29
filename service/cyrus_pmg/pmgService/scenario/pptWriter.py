@@ -83,9 +83,15 @@ _SUB_INK = '4B5A6A'
 _NOTE_INK = '7C8B9C'
 #: a cell no style touched, in the house face (D125)
 _DEFAULT_FONT = {'name': sheetDoc.SANS, 'size': 11}
-#: border kinds to (width in points, dash) - the Excel edges, drawn
+#: border kinds to (width in points, dash) - the Excel edges, drawn - and the
+#: two lighter weights only the deck draws (D137, ``_deckRules``)
 _EDGE_PT = {'hair': (0.25, None), 'dotted': (0.75, 'sysDot'),
-            'thin': (1.0, None), 'thick': (2.25, None)}
+            'thin': (1.0, None), 'thick': (2.25, None),
+            'names': (1.25, None), 'class': (0.5, None)}
+#: the allocation's rule under the portfolio names and its rule over each
+#: asset class, lighter on a slide than the sheet's thick and thin (D137)
+_NAMES_RULE = ('names', '000000')
+_CLASS_RULE = ('class', '000000')
 
 _A_NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
 
@@ -131,8 +137,8 @@ def _setCellBorders(cell, border, scale: float) -> None:
 
 
 def _setHoleSize(chart, value: int) -> None:
-    """The doughnut's hole, matched to the workbook's 55 - python-pptx has
-    no property for it, so the one element is written by hand."""
+    """The doughnut's hole - python-pptx has no property for it, so the one
+    element is written by hand."""
     space = chart._chartSpace
     holes = space.findall('.//' + qn('c:holeSize'))
     if holes:
@@ -210,9 +216,13 @@ def _chrome(slide, heading, subheading, footnotes, footer, pageText):
 # font files the deck embeds (D125) - and each row is set to its predicted
 # height plus a little, so PowerPoint never needs to grow one.
 
-#: compact's starting size, and the floor below which a table paginates
-BASE_PT = 11.0
+#: compact's starting size - no table in the deck is set larger than 9pt,
+#: on request (D137; it was 11) - and the floor below which a table paginates
+BASE_PT = 9.0
 MIN_PT = 8.0
+#: a one-line table (D137) sets below MIN_PT when its entries, each on one
+#: line, need the width: rows can continue on a second slide, columns cannot
+ONE_LINE_MIN_PT = 6.5
 _STEP_PT = 0.25
 #: compact padding, in ems of the fitted size
 _PAD_V_EM = 0.04
@@ -221,13 +231,22 @@ _PAD_NAMES_EM = 0.25                  # the portfolios header row
 _PAD_TOTAL_EM = 0.12                  # its TOTAL and navy metric bars
 _INDENT_EM = 1.0125                   # an indented label's step: 1.35 less a quarter (D134)
 #: the allocation's and the implementation's step, a third less again; the
-#: risk table's crises and horizons keep _INDENT_EM (D135)
+#: risk table's crises and horizons keep _INDENT_EM (D135); the assumptions'
+#: asset names step in half as far (D137)
 _INDENT_EM_BY_DOC = {'portfolios': _INDENT_EM * 2 / 3,
-                     'Implementation': _INDENT_EM * 2 / 3}
+                     'Implementation': _INDENT_EM * 2 / 3,
+                     'assumptions': _INDENT_EM / 2}
 _NUM_INDENT_EM = 0.35                 # per Excel indent level, on figures
 _SPACER_EM = 3.0 / 11.0               # the 3pt hairline between metric bars
 _ROW_SAFETY_PT = 0.6                  # so PowerPoint never has to grow a row
 _WIDTH_SLACK = 0.97                   # predicted text must clear the cell by 3%
+#: the space a table leaves under the slide's rule: the implementation's
+#: always, the assumptions' where its slide has the height (D137)
+_TABLE_DROP_PT = 10.0
+#: how far the implementation table's rows open into the height its box
+#: leaves: to this much padding a side at most (D137; the assumptions' rows
+#: no longer open, D138)
+_PAD_OPEN_EM = 0.3
 #: each Doc's body size: a cell's deck size is the fitted size scaled by its
 #: own over this, so a Doc's relative sizes survive the fit
 _DOC_BASE = {'portfolios': 11.0, 'risk_dashboard': 12.0,
@@ -294,12 +313,25 @@ class TablePlan:
     figures beside it run the width of its row. With ``fitLabel`` the label
     column is never narrower than its longest label at the size the table is
     set in - no label that shares a row wraps - and the figures share what is
-    left (D128)."""
+    left (D128).
+
+    A ``oneLine`` table (D137) wraps nothing, its header included, and sets
+    every row at one height: each column is at least as wide as its widest
+    entry, and the columns share out the rest of the box by their shares -
+    or, ``natural``, the columns in ``hold`` stay exactly as wide as their
+    widest entry and the rest of the box is shared EQUALLY among the others,
+    so the table always spans its box (D138; D137 left it only as wide as
+    its columns). Its size runs from ``ceiling`` - the largest at which the
+    entries fit the box - down to ``floor``; ``measureRows`` are the rows
+    the widths are read from, the whole table's on every page, so a
+    continued table keeps its columns."""
 
     __slots__ = ('doc', 'rows', 'header', 'box', 'shares', 'spans',
-                 'font', 'heights', 'fitLabel')
+                 'font', 'heights', 'fitLabel', 'oneLine', 'natural', 'hold',
+                 'ceiling', 'floor', 'measureRows')
 
-    def __init__(self, doc, rows, header, box, shares, spans, fitLabel=False):
+    def __init__(self, doc, rows, header, box, shares, spans, fitLabel=False,
+                 oneLine=False, natural=False, hold=()):
         self.doc = doc
         self.rows = list(rows)
         self.header = tuple(header)
@@ -309,14 +341,27 @@ class TablePlan:
         self.font = None
         self.heights = None
         self.fitLabel = fitLabel
+        self.oneLine = oneLine or natural
+        self.natural = natural
+        self.hold = tuple(hold)
+        self.ceiling = BASE_PT
+        self.floor = MIN_PT
+        self.measureRows = list(rows)
 
     def widths(self, f=None):
         """The column widths in points at size *f* (the plan's own size when
-        not given): the shares, bar a fitted label column."""
+        not given): the shares, bar a fitted label column; a one-line
+        table's by its entries."""
+        f = self.font if f is None else f
+        if self.oneLine:
+            needs = _columnNeeds(self, f)
+            if self.natural:
+                return _spreadWidths(needs, self.hold, self.box[2])
+            return _fillWidths(needs, self.shares, self.box[2])
         total = float(sum(self.shares))
         widths = [self.box[2] * share / total for share in self.shares]
         if self.fitLabel and len(widths) > 1:
-            need = _labelWidth(self, self.font if f is None else f)
+            need = _labelWidth(self, f)
             if need > widths[0]:
                 others = float(sum(self.shares[1:]))
                 widths = [need] + [(self.box[2] - need) * share / others
@@ -410,6 +455,103 @@ def _indentPt(spec, text: str, f: float, column: int, doc: SheetDoc = None) -> f
     return extra
 
 
+def _oneLineText(text: str) -> str:
+    """A cell's text on one line: a head the sheet breaks over two lines
+    ('Risk Premia\\n with Estimated Range') reads as one on a one-line
+    table (D137)."""
+    if '\n' not in text:
+        return text
+    return ' '.join(part.strip() for part in text.split('\n'))
+
+
+def _oneLineNeed(spec, doc: SheetDoc, f: float, column: int) -> float:
+    """The width *spec* needs at size *f* to sit on one line in its cell:
+    its text with the padding, the indent and the measure's slack."""
+    base = _base(doc)
+    font = spec.font or _DEFAULT_FONT
+    size = f * font.get('size', base) / base
+    text = renderNumber(spec.value, spec.fmt)
+    shown = _oneLineText(text.strip() if column == 1 else text)
+    width = textWidth(shown, font.get('name', sheetDoc.SANS), bool(font.get('bold')), size)
+    return (width / _WIDTH_SLACK + 2 * _PAD_H_EM * f
+            + _indentPt(spec, text, f, column, doc) + 0.01)
+
+
+def _columnNeeds(plan: TablePlan, f: float):
+    """Each column's width at size *f* with every entry on one line (D137):
+    its widest entry, the header's included. A merged cell's need is shared
+    across the columns it covers, in proportion to their shares, where they
+    do not already hold it between them."""
+    doc = plan.doc
+    count = len(plan.shares)
+    needs = [2 * _PAD_H_EM * f] * count
+    ends = {(r1, c1): c2 for r1, c1, _, c2 in doc.merges}
+    covered = {(r1, c) for r1, c1, _, c2 in doc.merges for c in range(c1 + 1, c2 + 1)}
+    wide = []
+    for r in plan.measureRows:
+        row = doc.rows.get(r)
+        if row is None or _isSpacer(doc, r):
+            continue
+        for column, spec in row.cells.items():
+            if column > count or (r, column) in covered or spec.value in (None, ''):
+                continue
+            need = _oneLineNeed(spec, doc, f, column)
+            if (r, column) in ends:
+                wide.append((column, min(ends[(r, column)], count), need))
+            else:
+                needs[column - 1] = max(needs[column - 1], need)
+    for first, last, need in wide:
+        span = range(first - 1, last)
+        have = sum(needs[i] for i in span)
+        if need > have:
+            weight = float(sum(plan.shares[i] for i in span)) or 1.0
+            for i in span:
+                needs[i] += (need - have) * plan.shares[i] / weight
+    return needs
+
+
+def _fillWidths(needs, shares, width: float):
+    """Widths that fill *width*, each column at least its need and otherwise
+    in proportion to its share: the shares scaled until what is left over,
+    after the columns held at their needs, is used exactly. When the needs
+    alone overflow, they are returned as they are - the fit refuses them."""
+    if sum(needs) >= width:
+        return list(needs)
+    held = set()
+    while True:
+        rest = width - sum(needs[i] for i in held)
+        free = float(sum(shares[i] for i in range(len(needs)) if i not in held)) or 1.0
+        scale = rest / free
+        more = {i for i in range(len(needs))
+                if i not in held and shares[i] * scale < needs[i]}
+        if not more:
+            return [needs[i] if i in held else shares[i] * scale for i in range(len(needs))]
+        held |= more
+
+
+def _spreadWidths(needs, hold, width: float):
+    """Widths that span *width*: every column its need, and what the box has
+    left over them shared equally among the columns not in *hold*, which
+    stay exactly as wide as their widest entry (D138). When the needs alone
+    overflow they are returned as they are - the fit refuses them."""
+    rest = width - sum(needs)
+    free = [i for i in range(len(needs)) if i not in hold] or list(range(len(needs)))
+    if rest <= 0:
+        return list(needs)
+    return [need + (rest / len(free) if i in free else 0.0) for i, need in enumerate(needs)]
+
+
+def _widthCeiling(plan: TablePlan) -> float:
+    """The largest size, from BASE_PT down to ONE_LINE_MIN_PT, at which a
+    one-line table's columns fit its box's width with every entry on one
+    line."""
+    f = BASE_PT
+    while f - _STEP_PT >= ONE_LINE_MIN_PT - 1e-9 and \
+            sum(_columnNeeds(plan, f)) > plan.box[2] + 1e-6:
+        f = round(f - _STEP_PT, 2)
+    return f
+
+
 def _isFigure(spec, r: int, column: int, header) -> bool:
     """A figure must fit its cell on one line; everything else may wrap."""
     if spec is None or column == 1 or r in header:
@@ -418,10 +560,14 @@ def _isFigure(spec, r: int, column: int, header) -> bool:
 
 
 def _measure(plan: TablePlan, f: float):
-    """Each row's height at size *f*, and whether every figure fits."""
+    """Each row's height at size *f*, and whether every figure fits - on a
+    one-line table every entry, in a table no wider than its box, and every
+    row the height of the tallest (D137)."""
     doc, base = plan.doc, _base(plan.doc)
     widths = plan.widths(f)
     heights, fits = [], True
+    if plan.oneLine and sum(widths) > plan.box[2] + 1e-6:
+        fits = False
     for r in plan.rows:
         if _isSpacer(doc, r):
             heights.append(_SPACER_EM * f)
@@ -436,7 +582,9 @@ def _measure(plan: TablePlan, f: float):
             text = renderNumber(spec.value, spec.fmt) if spec is not None else ''
             inner = (width - 2 * _PAD_H_EM * f - _indentPt(spec, text, f, c, doc)) * _WIDTH_SLACK
             shown = text.strip() if c == 1 else text
-            if _isFigure(spec, r, c, plan.header):
+            if plan.oneLine:
+                shown = _oneLineText(shown)
+            if plan.oneLine or _isFigure(spec, r, c, plan.header):
                 if textWidth(shown, face, bold, size) > inner:
                     fits = False
                 lines = 1
@@ -444,6 +592,11 @@ def _measure(plan: TablePlan, f: float):
                 lines = _wrapLines(shown, face, bold, size, inner) if shown else 1
             tallest = max(tallest, lines * _lineHeight(face, bold, size))
         heights.append(tallest + 2 * _rowPad(doc, r) * f + _ROW_SAFETY_PT)
+    if plan.oneLine:
+        live = [h for r, h in zip(plan.rows, heights) if not _isSpacer(doc, r)]
+        if live:
+            heights = [h if _isSpacer(doc, r) else max(live)
+                       for r, h in zip(plan.rows, heights)]
     return heights, fits
 
 
@@ -469,14 +622,15 @@ def _labelWidth(plan: TablePlan, f: float) -> float:
 
 
 def _fit(plan: TablePlan):
-    """The largest size from BASE_PT down to MIN_PT at which *plan* fits its
-    box, with its row heights; None when not even MIN_PT does."""
-    f = BASE_PT
+    """The largest size from the plan's ceiling (BASE_PT) down to its floor
+    (MIN_PT) at which *plan* fits its box, with its row heights; None when
+    not even the floor does."""
+    f = plan.ceiling
     while True:
         heights, fits = _measure(plan, f)
         if fits and sum(heights) <= plan.box[3]:
             return f, heights
-        if f - _STEP_PT < MIN_PT - 1e-9:
+        if f - _STEP_PT < plan.floor - 1e-9:
             return None
         f = round(f - _STEP_PT, 2)
 
@@ -493,27 +647,37 @@ def _view(doc: SheetDoc, rows) -> SheetDoc:
     return view
 
 
-def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False):
+def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False,
+              oneLine=False, natural=False, hold=()):
     """One Doc as one or more TablePlans in *box*. Whole when it fits at
     MIN_PT or above; otherwise cut at the Doc's section marks with each row
     costed at MIN_PT, the header repeated, and every page set in the one
-    size the tallest page allows - a table reads at one size throughout."""
+    size the tallest page allows - a table reads at one size throughout.
+    A one-line table (D137) starts no larger than its columns' width allows
+    and, where that is under MIN_PT, is floored there instead."""
     rows = sorted(doc.rows) if rows is None else list(rows)
     spans = _spansFor(doc, rows)
-    whole = TablePlan(doc, rows, header, box, shares, spans, fitLabel)
+    whole = TablePlan(doc, rows, header, box, shares, spans, fitLabel, oneLine, natural, hold)
+    if whole.oneLine:
+        whole.ceiling = _widthCeiling(whole)
+        whole.floor = min(MIN_PT, whole.ceiling)
     got = _fit(whole)
     if got is not None:
         whole.font, whole.heights = got
         return [whole]
-    floorHeights, _ = _measure(whole, MIN_PT)
+    floorHeights, _ = _measure(whole, whole.floor)
     cost = dict(zip(rows, floorHeights))
     pages = paginate(_view(doc, rows), box[3], headerRows=header, costOf=cost.get)
-    plans = [TablePlan(doc, page.header + page.body, header, box, shares, spans,
-                       fitLabel) for page in pages]
+    plans = []
+    for page in pages:
+        plan = TablePlan(doc, page.header + page.body, header, box, shares, spans,
+                         fitLabel, oneLine, natural, hold)
+        plan.ceiling, plan.floor, plan.measureRows = whole.ceiling, whole.floor, rows
+        plans.append(plan)
     sizes = []
     for plan in plans:
         fitted = _fit(plan)
-        sizes.append(fitted[0] if fitted else MIN_PT)
+        sizes.append(fitted[0] if fitted else plan.floor)
     size = min(sizes)
     for plan in plans:
         plan.font = size
@@ -521,20 +685,51 @@ def planTable(doc: SheetDoc, box, shares, header=(1,), rows=None, fitLabel=False
     return plans
 
 
+def _dropped(box, drop: float = _TABLE_DROP_PT):
+    """*box* less *drop* points off its top: a table set a little further
+    under the slide's rule (D137)."""
+    left, top, width, height = box
+    return (left, top + drop, width, height - drop)
+
+
+def settleDown(plans, drop: float = _TABLE_DROP_PT) -> None:
+    """Each planned page moved down by up to *drop* points, as far as the
+    height its rows leave in its box allows, and not at all where they fill
+    it (D137)."""
+    for plan in plans:
+        room = plan.box[3] - sum(plan.heights)
+        if room > 0:
+            plan.box = _dropped(plan.box, min(drop, room))
+
+
+def openRows(plans, upToEm: float = _PAD_OPEN_EM) -> None:
+    """A one-line table's rows opened evenly into the height its box leaves,
+    each by no more than takes its padding to *upToEm* a side, and by the
+    same on every page, so every row stays one height (D137): the room is
+    used, but a short table is not stretched to fill its slide."""
+    def live(plan):
+        return [i for i, r in enumerate(plan.rows) if not _isSpacer(plan.doc, r)]
+    if not plans:
+        return
+    add = min((plan.box[3] - sum(plan.heights)) / max(len(live(plan)), 1) for plan in plans)
+    add = min(add, 2 * (upToEm - _PAD_V_EM) * plans[0].font)
+    if add <= 0:
+        return
+    for plan in plans:
+        for i in live(plan):
+            plan.heights[i] += add
+
+
 def shareSlide(plans) -> None:
-    """Tables on one slide share a size: all step down to the smallest fit,
-    and the shorter open their rows to use the height they gave back, so the
-    slide's tables end at the bottom together (D124)."""
+    """Tables on one slide share a size: all step down to the smallest fit
+    (D124). Their rows stay at their own heights: D124 opened the shorter
+    table's rows so the two ended at the bottom together, which at the 9pt
+    cap (D137) padded every row out; now each table ends where its rows do,
+    both top-aligned (D138)."""
     size = min(plan.font for plan in plans)
     for plan in plans:
         plan.font = size
         plan.heights, _ = _measure(plan, size)
-        live = [i for i, r in enumerate(plan.rows) if not _isSpacer(plan.doc, r)]
-        extra = plan.box[3] - sum(plan.heights)
-        if extra > 1 and live:
-            add = min(extra / len(live), 0.9 * size)
-            for i in live:
-                plan.heights[i] += add
 
 
 def combinedBoxes():
@@ -632,6 +827,29 @@ def sharedEdges(plan: TablePlan) -> dict:
     return out
 
 
+def _deckRules(plan: TablePlan, shared: dict) -> dict:
+    """The allocation's rule under the portfolio names, and the rule over
+    each of its asset classes, drawn lighter on a slide (D137): the sheet's
+    thick and thin become ``_NAMES_RULE`` and ``_CLASS_RULE``, from both
+    cells that share them. TOTAL's thick rule and the metric block's white
+    ones are the sheet's still. Every other table is drawn as its Doc says."""
+    if plan.doc.name != 'portfolios':
+        return shared
+    sections = plan.doc.sections
+    for position, r in enumerate(plan.rows):
+        above = plan.rows[position - 1] if position else None
+        below = plan.rows[position + 1] if position + 1 < len(plan.rows) else None
+        for column in range(1, len(plan.shares) + 1):
+            edges = shared[(r, column)]
+            for edge, upper, lower in (('top', above, r), ('bottom', r, below)):
+                kind = edges.get(edge)
+                if kind == sheetDoc.BLACK_THICK and upper == 1:
+                    edges[edge] = _NAMES_RULE
+                elif kind == sheetDoc.BLACK_THIN and lower in sections:
+                    edges[edge] = _CLASS_RULE
+    return shared
+
+
 def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
               border=None) -> None:
     doc, f, base = plan.doc, plan.font, _base(plan.doc)
@@ -641,8 +859,10 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
     ink = _signInk(doc, rowIndex, column, spec.value) or font.get('color')
     align = spec.align or {}
     text = renderNumber(spec.value, spec.fmt)
+    if plan.oneLine:
+        text = _oneLineText(text)
     frame = cell.text_frame
-    frame.word_wrap = not _isFigure(spec, rowIndex, column, plan.header)
+    frame.word_wrap = not (plan.oneLine or _isFigure(spec, rowIndex, column, plan.header))
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
     padH = _PAD_H_EM * f
     left = right = padH
@@ -686,10 +906,10 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
 def _renderPlan(slide, plan: TablePlan) -> None:
     """A planned table, transcribed: its box, its column widths, its rows at
     their planned heights, every cell at the planned size (D124)."""
-    left, top, width, _ = plan.box
+    left, top, _, _ = plan.box
     widths = plan.widths()
     frame = slide.shapes.add_table(len(plan.rows), len(widths), _pt(left), _pt(top),
-                                   _pt(width), _pt(sum(plan.heights)))
+                                   _pt(sum(widths)), _pt(sum(plan.heights)))
     table = frame.table
     table.first_row = False
     table.last_row = False
@@ -700,7 +920,7 @@ def _renderPlan(slide, plan: TablePlan) -> None:
     for index, w in enumerate(widths):
         table.columns[index].width = _pt(w)
     position = {}
-    shared = sharedEdges(plan)
+    shared = _deckRules(plan, sharedEdges(plan))
     for tableRow, rowIndex in enumerate(plan.rows):
         position[rowIndex] = tableRow
         table.rows[tableRow].height = _pt(plan.heights[tableRow])
@@ -722,10 +942,17 @@ def _renderPlan(slide, plan: TablePlan) -> None:
 
 # ---- the charts ----------------------------------------------------------
 
+#: the doughnuts' text: titles and legends at 12pt, and the hole half the
+#: chart (D137). No share is printed on a slice (D138)
+DONUT_TEXT_PT = 12
+DONUT_HOLE = 50
+
+
 def _renderDonuts(slide, items) -> None:
     """The five composition doughnuts, native charts fed straight from
     ``donutBreakdown`` - no hidden sheet, because a PowerPoint chart carries
-    its data - each slice coloured by its palette slot, hole at 55."""
+    its data - each slice coloured by its palette slot, and no share printed
+    on it: D137 labelled every slice, and D138 took the labels off."""
     across = len(DONUT_DIMENSIONS)
     gap = 0.18
     width = (SLIDE_W_IN - 2 * MARGIN_IN - gap * (across - 1)) / across
@@ -735,9 +962,11 @@ def _renderDonuts(slide, items) -> None:
         slices = donutBreakdown(items, key)
         if not slices:
             continue
-        data = CategoryChartData()
+        # the printed shares, as fractions, so the chart's data reads them as
+        # percentages to one place
+        data = CategoryChartData(number_format='0.0%')
         data.categories = [entry['name'] for entry in slices]
-        data.add_series('Share', [entry['pct'] for entry in slices])
+        data.add_series('Share', [round(entry['pct'] / 100.0, 6) for entry in slices])
         left = MARGIN_IN + index * (width + gap)
         chart = slide.shapes.add_chart(
             XL_CHART_TYPE.DOUGHNUT, _in(left), _in(top), _in(width),
@@ -745,25 +974,25 @@ def _renderDonuts(slide, items) -> None:
         chart.has_title = True
         chart.chart_title.text_frame.text = label
         title = chart.chart_title.text_frame.paragraphs[0].runs[0].font
-        title.size = Pt(11)
+        title.size = Pt(DONUT_TEXT_PT)
         title.bold = True
         title.name = sheetDoc.SANS
         title.color.rgb = RGBColor.from_string(_HEAD_INK)
         chart.has_legend = True
         chart.legend.position = XL_LEGEND_POSITION.BOTTOM
         chart.legend.include_in_layout = False
-        chart.legend.font.size = Pt(7.5)
+        chart.legend.font.size = Pt(DONUT_TEXT_PT)
         chart.legend.font.name = sheetDoc.SANS
         chart.plots[0].has_data_labels = False
         series = chart.series[0]
         for offset, entry in enumerate(slices):
+            fill = DONUT_PALETTE[entry['slot']]
             point = series.points[offset]
             point.format.fill.solid()
-            point.format.fill.fore_color.rgb = RGBColor.from_string(
-                DONUT_PALETTE[entry['slot']])
+            point.format.fill.fore_color.rgb = RGBColor.from_string(fill)
             point.format.line.color.rgb = RGBColor.from_string('FFFFFF')
             point.format.line.width = Pt(0.75)
-        _setHoleSize(chart, 55)
+        _setHoleSize(chart, DONUT_HOLE)
 
 
 # ---- the house faces (D125) ----------------------------------------------
@@ -1037,9 +1266,18 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
                 committed['weightPct'], committed['notional'],
                 ' and '.join('{:.2f}% in {}'.format(h['weightPct'], h['category'])
                              for h in committed['held'])))
-    tables(planTable(implView, FULL_BOX, [_WIDTHS[c] for c in columns],
-                     header=(first, headerRow) if initial else (headerRow,)),
-           'Implemented Model', ' · '.join(preamble) if preamble else basisLine, implNotes)
+    # nothing on a second line, every row one height, a little space under
+    # the rule (D137); the category and product columns exactly as wide as
+    # their longest names and the rest of the slide's width shared equally
+    # among the others, so the table always spans the slide (D138)
+    held = [columns.index(c) for c in ('Categories & Asset Classes', 'Products')
+            if c in columns]
+    implPlans = planTable(implView, _dropped(FULL_BOX), [_WIDTHS[c] for c in columns],
+                          header=(first, headerRow) if initial else (headerRow,),
+                          natural=True, hold=held)
+    openRows(implPlans)
+    tables(implPlans, 'Implemented Model', ' · '.join(preamble) if preamble else basisLine,
+           implNotes)
 
     items = [item for group in model.get('groups', []) for item in group['items']]
     if items:
@@ -1050,8 +1288,13 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
                       'the screen uses; printed shares close on exactly 100.0.'],
             'items': items})
 
-    tables(planTable(assumDoc, FULL_BOX, [w for _, w in sheetDoc.ASSUMPTION_WIDTHS],
-                     header=(1, 2)),
+    # nothing on a second line and every row one height, across the width
+    # as before; moved down under the rule where the slide has the room
+    # (D137); its rows at their own height, not opened into the slide (D138)
+    assumptions = planTable(assumDoc, FULL_BOX, [w for _, w in sheetDoc.ASSUMPTION_WIDTHS],
+                            header=(1, 2), oneLine=True)
+    settleDown(assumptions)
+    tables(assumptions,
            'Long-Term Capital Market Assumptions',
            'Per-asset estimates behind the analytics — risk premia ranges, volatility '
            'and modelling windows',

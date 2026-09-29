@@ -251,7 +251,9 @@ def test_the_deck_carries_the_twins_under_their_worlds_at_a_readable_size():
     names = [tp.doc.rows[tp.header[1]].cells[c].value for c in sorted(tp.doc.rows[tp.header[1]].cells)]
     assert names == implColumns(True, initial=True)
     assert {worlds[c].value for c in worlds if worlds[c].value} == {'Long-term', 'Initial'}
-    assert tp.font >= pptWriter.MIN_PT
+    # fifteen columns, each entry on one line, take the slide's width at a
+    # size under MIN_PT (D137); never under the one-line floor
+    assert tp.natural and pptWriter.ONE_LINE_MIN_PT <= tp.font <= pptWriter.BASE_PT
     assert pptWriter._measure(tp, tp.font)[1], 'every figure fits'
     assert any(note.startswith('Initial columns: the 9.00%') for note in entry['notes'])
     assert 'Private Markets Commitment' not in entry['sub'], 'said in the note, in full'

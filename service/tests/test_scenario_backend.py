@@ -2384,16 +2384,21 @@ def test_the_nominal_and_real_heads_are_underlined_on_the_risk_sheet():
                    for c in row.cells.values() if c.font)
 
 
-def test_a_silver_rule_parts_the_portfolios_on_the_risk_sheet_below_its_header():
-    """D130. A thin light-silver rule between one portfolio's Nominal/Real
-    pair and the next, on every row but the header and the navy band - never
-    between a portfolio's own Nominal and Real, never across the header. On
-    a merged row the pair's first cell carries it too, as the merge's edge.
-    The library's layout (engineParity) has none."""
+def test_a_dotted_rule_parts_the_portfolios_on_the_risk_sheet_below_its_header():
+    """D130, D137. A rule between one portfolio's Nominal/Real pair and the
+    next - the same dotted grey that parts the blocks across - on every row
+    but the header and the navy band: never between a portfolio's own
+    Nominal and Real, never across the header. On a merged row the pair's
+    first cell carries it too, as the merge's edge. The library's layout
+    (engineParity) has none."""
     from openpyxl import load_workbook
     from cyrus_pmg.pmgService.scenario import sheetDoc
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['risk_dashboard']
-    silver = ('thin', sheetDoc.SILVER)
+    assert sheetDoc.DIVIDER == sheetDoc.DOTTED
+    silver = sheetDoc.DOTTED
+    across = next(r for r in range(1, sheet.max_row + 1)
+                  if sheet.cell(row=r, column=1).value == 'Value at Risk with 99% Confidence')
+    assert _edge(sheet.cell(row=across, column=1).border.top) == silver, 'the rule across'
     band = next(r for r in range(1, sheet.max_row + 1)
                 if sheet.cell(row=r, column=1).value == 'Factor Based Risk Analytics')
     merged = {(m.min_row, m.min_col) for m in sheet.merged_cells.ranges}

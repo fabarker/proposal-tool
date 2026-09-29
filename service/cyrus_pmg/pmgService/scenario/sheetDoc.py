@@ -62,10 +62,9 @@ BLACK_THIN = ('thin', '000000')
 BLACK_THICK = ('thick', '000000')
 #: the rule that parts the navy metric bars on the allocation table (D127)
 WHITE_THICK = ('thick', WHITE)
-#: the vertical rule between portfolios on the risk table: thin, light silver
-#: (D130)
-SILVER = 'C0C0C0'
-SILVER_THIN = ('thin', SILVER)
+#: the vertical rule between portfolios on the risk table: the dotted grey
+#: that parts its blocks across (D137; D130 drew it thin, light silver)
+DIVIDER = DOTTED
 HAIR = ('hair', None)
 
 # The house faces (D125). The builders below write the faces the library's
@@ -688,12 +687,14 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
                           STRESS_NEG, STRESS_POS))
 
     if not engineParity:
-        # a thin light-silver rule between one portfolio's pair and the next,
-        # down the whole table but never across a navy row - the header and
-        # the band - and never between a portfolio's own Nominal and Real
-        # (D130). Stated on both cells either side, and on a merged pair's
-        # first cell too, because Excel and PowerPoint both read a merged
-        # cell's edges from there.
+        # a rule between one portfolio's pair and the next, down the whole
+        # table but never across a navy row - the header and the band - and
+        # never between a portfolio's own Nominal and Real (D130). Drawn as
+        # the dotted grey that parts the blocks across, so the table's rules
+        # read as one set (D137; D130's was a thin light silver). Stated on
+        # both cells either side, and on a merged pair's first cell too,
+        # because Excel and PowerPoint both read a merged cell's edges from
+        # there.
         merged = {(r, c) for r, c, _, _ in doc.merges}
         for r in sorted(doc.rows):
             if r == 1 or r in bands:
@@ -702,10 +703,10 @@ def buildRiskDoc(results, engineParity: bool = False) -> SheetDoc:
                 last, following = 3 + index * 2, 4 + index * 2
                 for column, edge in ((last, 'right'), (following, 'left')):
                     cell = doc.cell(r, column)
-                    cell.border = dict(cell.border or {}, **{edge: SILVER_THIN})
+                    cell.border = dict(cell.border or {}, **{edge: DIVIDER})
                 if (r, last - 1) in merged:
                     cell = doc.cell(r, last - 1)
-                    cell.border = dict(cell.border or {}, right=SILVER_THIN)
+                    cell.border = dict(cell.border or {}, right=DIVIDER)
 
     doc.widths['A'] = 40 if engineParity else excelLabelWidth(doc, RISK_LABEL_WIDTH)
     for index in range(2, span + 2):
@@ -958,7 +959,8 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
                 cell.font = {'name': SANS, 'size': 10, 'bold': True,
                              'color': INITIAL_HEAD if ours else NAVY}
                 cell.fill = INITIAL_BAND if ours else WHITE
-                cell.align = {'horizontal': 'center', 'vertical': 'center'}
+                # over a figure column, so aligned as its figures are (D137)
+                cell.align = {'horizontal': 'right', 'vertical': 'center'}
                 cell.border = {'bottom': ('thin', INITIAL_HEAD if ours else NAVY)}
     headerRow = row + 1
 
@@ -968,6 +970,10 @@ def buildImplementationDoc(model: dict, columns, widths, textColumns,
         cell.value = name
         cell.font = headFont
         cell.fill = INITIAL_HEAD if name in initialNames else HEADER_NAVY
+        # each head aligned as its column is - left over the names and the
+        # words, right over the figures - so a column reads as one (D137)
+        words = index <= 2 or name in textColumns
+        cell.align = {'horizontal': 'left' if words else 'right', 'vertical': 'center'}
     doc.row(row).height = 20
     doc.freeze = 'A' + str(headerRow + 1)
 
