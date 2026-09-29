@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D147** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D151** — the PowerPoint deck, custom fees,
 the register's saved views, a private-markets book's initial allocation and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D147 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D151 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -115,8 +115,9 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 | **`python-pptx`**, the PowerPoint deck's library (it brings `lxml`, `Pillow`, `XlsxWriter`, `typing_extensions`) — D121–D125 | the host's virtualenv | **Install it first.** Without it every *Download proposal* fails, the workbook included: the workbook and the deck are one delivery (D123) |
 | Four new modules — `sheetDoc.py`, `pptWriter.py`, `houseFonts.py`, `fontMetrics.py` — and a `fonts/` folder of five TrueType files; changes to `workbook.py`, `proposalRegister.py`, `fees.py`, `rules.py`, `scenarioStore.py`, `scenarioPort.py`, `sleeveRepo.py` and the three adapters | `pmgService/scenario/` | Re-copy the package, keeping any file the host owns (next row) |
 | `fees.json` gains a `custom` block (D96) | the package | **Keep the host's `fees.json`** if `feeTools --accept` has been run there — accept records the delivered card's provenance in that file. The block is optional: without it `fees.py` uses the same values (`Custom`, bounded by `Management`). Likewise keep a host-replaced `advisors.xlsx` |
-| Four names in the router's import lines — `io`, `json`, `zipfile`, `validateCustomFees` | the host's `dashboardRouter.py`, **above** the block markers | Add them by hand: they sit outside the markers, so pasting the block does not bring them. §9.1 has the full import set |
-| The endpoint block: 32 routes (was 30) — `GET /scenario/repository/proposals/views` (D116) and `GET /scenario/repository/proposals/{proposalId}/deck` (D123) are new; the export returns a zip of both files (D123); `PUT /scenario/{id}` accepts `customFees` (D96) | the host's `dashboardRouter.py`, between the markers | Replace everything between `TRANSPLANT BLOCK BEGIN` and `TRANSPLANT BLOCK END` as a unit — `/proposals/views` must stay declared above `/proposals/{proposalId}` |
+| Four names in the router's import lines — `io`, `json`, `zipfile`, `validateCustomFees` — and, from D148, `fundingSplit` in the `scenario` import | the host's `dashboardRouter.py`, **above** the block markers | Add them by hand: they sit outside the markers, so pasting the block does not bring them. §9.1 has the full import set |
+| A new module, `fundingSplit.py` (D148): the private-markets funding split, kept in the repository's own SQLite file, which moves to schema revision 4 (two new tables, `policies` and `policyHistory`) | `pmgService/scenario/`, and the host's `SCENARIO_SLEEVES_DB` | Nothing to run: the tables are added and the house split is seeded to D136's thirds on first open. **Back the file up first**, as for any schema move. The register (`SCENARIO_REGISTER_DB`) likewise gains a `fundingSplit` column (its schema 4) |
+| The endpoint block: 37 routes (was 30) — `GET /scenario/repository/proposals/views` (D116) and `GET /scenario/repository/proposals/{proposalId}/deck` (D123) are new, and the funding split's five (D148); the export returns a zip of both files (D123); `PUT /scenario/{id}` accepts `customFees` (D96) | the host's `dashboardRouter.py`, between the markers | Replace everything between `TRANSPLANT BLOCK BEGIN` and `TRANSPLANT BLOCK END` as a unit — `/proposals/views` must stay declared above `/proposals/{proposalId}` |
 | The page folder — D90–D118, the single **Download proposal** button (D123) and the *Show initial allocation* button with its columns (D136) | `dashboard/proposalTool/` | Re-copy the folder (§10.1). `core.js` carries D136's fix to `onBaseReady`, without which a reload drops a scenario's private-markets sleeve — the folder must go over whole |
 | The proposal register goes from schema 1 to 3: `customFees` (D96); `deck`, `deckName`, `deckSha`, `deckBytes` (D123) | `SCENARIO_REGISTER_DB` | Nothing to run — the columns are added on first open. **Back the file up first.** Rows delivered earlier keep NULLs and have no deck |
 | Configuration | — | **None to add.** D126 removed `SCENARIO_BAKED_FALLBACK`; a host that still exports it is harmless, since nothing reads it. The password that locks the workbook and the deck is a constant in source (`workbook.SHEET_PASSWORD`, §13.5) |
@@ -129,7 +130,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 436 passed, none skipped, at D147.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 460 passed, none skipped, at D151.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -475,7 +476,7 @@ And the arithmetic is decisive: the proxy builds exactly one URL, and a `/api/v1
 404s it — for the host's *own* endpoints, not only ours. That dashboard is in production use, so
 the mount cannot be `/api/v1/dashboard`.
 
-**So §11.1's thirty-two paths are correct as written** and nothing shifts. §18 keeps a one-line
+**So §11.1's thirty-seven paths are correct as written** and nothing shifts. §18 keeps a one-line
 confirmation, because this is inference from the proxy plus the audit rather than from reading
 `isgPMGService.py`, which is the one host file still missing.
 
@@ -652,7 +653,7 @@ including `isg-cyrus-pmg/src`, and so does `python -c "import cyrus_pmg.pmgServi
 
 **Step 4 — Insert the endpoint block** (§9.1). Check: `python -c "from cyrus_pmg.pmgService.dashboardRouter
 import router; print(len([r for r in router.routes if r.path.startswith('/scenario')]))"` prints
-`32`. This check passes **before** any data is delivered: the package reads nothing at import
+`37`. This check passes **before** any data is delivered: the package reads nothing at import
 (D86). It did once, which made this step fail with a `FileNotFoundError` for the SAA extract until
 Step 5 had been done first.
 
@@ -693,8 +694,9 @@ Append to the host's `pmgService/dashboardRouter.py`:
 
    from cyrus_pmg.pmgService.core.pmgEntitlement import (
        isAdmin, requireAdmin, requireAuth)
-   from cyrus_pmg.pmgService.scenario import (accountRequests, fees, products, proposalRegister,
-                                              scenarioStore, sleeveRepo, sleeveRules)
+   from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, products,
+                                              proposalRegister, scenarioStore, sleeveRepo,
+                                              sleeveRules)
    from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
    from cyrus_pmg.pmgService.scenario.rules import (
        exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
@@ -907,7 +909,7 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 
 ## 11. API, models, persistence and configuration
 
-### 11.1 The HTTP surface (32 routes under `/api/v1`; the page calls `/api/…`)
+### 11.1 The HTTP surface (37 routes under `/api/v1`; the page calls `/api/…`)
 
 | Method | Path | Handler | Gate |
 |---|---|---|---|
@@ -940,6 +942,11 @@ Unauthenticated, the first two return the host's 302 to login (the mirror: `302 
 | GET | `/scenario/repository/proposals/{proposalId}` | `getRegisterProposal` | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}/workbook` | `downloadRegisterWorkbook` | requireAdmin |
 | GET | `/scenario/repository/proposals/{proposalId}/deck` | `downloadRegisterDeck` (D123) | requireAdmin |
+| GET | `/scenario/repository/funding` | `getFundingSplit` — the house split, overrides and eligible categories (D148) | requireAdmin |
+| PUT | `/scenario/repository/funding` | `saveFundingSplit` — `{scope, destinations, note}` (D148) | requireAdmin |
+| POST | `/scenario/repository/funding/remove` | `removeFundingOverride` — `{scope, note}` (D148) | requireAdmin |
+| GET | `/scenario/repository/funding/history?scope` | `getFundingHistory` (D148) | requireAdmin |
+| POST | `/scenario/repository/funding/revert` | `revertFundingSplit` — `{scope, revision, note}` (D148) | requireAdmin |
 | GET | `/scenario/proposals/{proposalId}` | `lookupProposal` | router-level requireAuth (D76) |
 | POST | `/scenario/account-requests` | `createAccountRequest` | requireAuth (router-level; D76, D77) |
 | GET | `/scenario/account-requests/{requestId}` | `getAccountRequest` | router-level requireAuth (D76) |
@@ -1298,7 +1305,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 436 passed, none skipped, in ~3 min (at D147)
+# 460 passed, none skipped, in ~4 min (at D151)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1415,6 +1422,12 @@ nav for users.
     pressing again closes them; a green rule closes each pair on its right, and scrolled across,
     the Long-term / Initial labels slide under the frozen columns (D146). An *ex-Alts* base shows no button. Reload the page: the private-markets
     sleeve is still chosen (D136).
+10c. As an admin, the Repository's **Uncalled Capital Allocation** tab (D149) shows the private-markets funding split: the house
+    split at *Investment Grade Fixed Income 33.3333%* and *Public Equity 66.6667%*, revision 1,
+    *baseline*. Hedge Funds is offered but disabled (*held by 56 of 112*). Give *PMG ESG* its own
+    split — Other Fixed Income 50, Public Equity 50, with a note — and an ESG private-markets book's
+    **Show initial allocation** parks the commitment half in each, while a Multi-Asset book still
+    parks a third and two thirds; put ESG back on the house split and it follows again (D148).
 11. Export refuses with 422 `field: minimumInvestment` when any position is below its product's
     minimum — at the packaged catalogue this happens at every mandate the tool offers (§17); raise
     the mandate in the test to prove the success path.
@@ -1808,6 +1821,13 @@ Since the 10 September port (§0A):
 - **D146** On the Implementation screen the green rule closes each pair on the right, and the
   Long-term / Initial row pins over the frozen columns when the table scrolls.
 - **D147** The initial allocation's green lighter, its silver rules up through the header.
+- **D148** The private-markets funding split in the repository: percentage weights, a house split
+  and per-type overrides, noted and restorable, on a new tab; the register records the split.
+- **D149** That tab is named *Uncalled Capital Allocation*.
+- **D150** The page never says *book*: portfolio, allocation or implementation type, by context.
+- **D151** The allocation table restyled (style 7b of `proposals/allocation-table-styles.html`):
+  category rows on the estimates' grey with their key colour in a swatch, each head carrying its
+  portfolio's category mix. Page only - `generator/js/core.js` and `build_styles.py`, re-copied.
 
 ## Appendix B — where the rest is written down
 
@@ -1815,7 +1835,7 @@ Since the 10 September port (§0A):
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D147, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D151, the adapter-side decisions, the spec gaps G1–G8. |
 | `proposals/` | Design studies behind D90–D141, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
