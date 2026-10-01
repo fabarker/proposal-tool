@@ -4,9 +4,11 @@
    viewer - the page behind it goes inert, Escape closes it, focus returns to
    whatever opened it - with two views behind a switch in its header.
 
-   SLEEVES: three panes - the categories under one implementation type, the
-   sleeves in one category, and the editor for one sleeve. Products are picked
-   from the delivered catalogue (D56), never typed.
+   SLEEVES: the library two ways behind a switch (D156) - Cards (the
+   implementation type, the categories as tiles, one category's sleeves as
+   cards, one sleeve's page) and Table (every sleeve, filtered and sorted,
+   opening in a drawer). A sleeve reads first and edits on request. Products
+   are picked from the delivered catalogue (D56), never typed.
 
    CATALOGUE: the whole delivered table, view only - searched, filtered by
    vocabularies derived from the data, sorted by any column, with a drawer for
@@ -31,6 +33,8 @@ var repo = {
   open: false, view: 'sleeves', busy: false, saving: false, error: null, data: null,
   variant: null, category: null, sleeveId: null,
   draft: null, dirty: false, fieldError: null,
+  draftStart: '',              /* what the draft said when it was loaded: dirty means changed (D156) */
+  stale: null,                 /* someone else saved the open sleeve since it was loaded (409, D156) */
   savedAt: null,               /* when the open draft was last written, for the footer (F2) */
   kept: null,                  /* an unsaved draft that outlived a reload (F1) */
   query: '',                   /* searching the sleeve list, across every book (C1) */
@@ -441,7 +445,8 @@ function newDraft(create, edition) {
   var draft = { id: null, name: '', note: '', label: '', rules: [], products: [] };
   if (edition) {
     var from = sleeveById(edition.ofId);
-    draft.edition = { ofId: edition.ofId, variant: from ? from.variant : repo.variant };
+    draft.edition = { ofId: edition.ofId, variant: from ? from.variant : repo.variant,
+                      category: from ? from.category : repo.category };
     draft.name = from ? from.name : edition.name;
     draft.note = from ? (from.note || '') : '';
     draft.products = from ? from.products.map(function (row) {
@@ -450,11 +455,45 @@ function newDraft(create, edition) {
     return draft;
   }
   if (create) {
+    /* the category in hand, or the first with room; and only a type whose
+       fixed category is not already full (D156) */
     draft.create = true;
-    draft.category = repo.category;
-    draft.variants = [repo.variant];
+    draft.category = create.category || svFirstRoom(create.variant || repo.variant);
+    var v = create.variant || repo.variant;
+    draft.variants = svRoomIn(v, draft.category) ? [v] : [];
   }
   return draft;
+}
+/* Where a draft lives - its own type and category, read from the draft,
+   never from whatever the view happens to be showing (D156): the editor's
+   checks for a fixed category, sibling editions and the applicability count
+   all depend on it. */
+function draftVariant(d) {
+  if (!d) return repo.variant;
+  if (d.edition) return d.edition.variant;
+  if (d.create) return (d.variants || [])[0] || repo.variant;
+  var e = d.id ? sleeveById(d.id) : null;
+  return e ? e.variant : repo.variant;
+}
+function draftCategory(d) {
+  if (!d) return repo.category;
+  if (d.edition) return d.edition.category || repo.category;
+  if (d.create) return d.category;
+  var e = d.id ? sleeveById(d.id) : null;
+  return e ? e.category : repo.category;
+}
+/* dirty means the draft says something it did not when it was loaded */
+function markDirty() { repo.dirty = !!repo.draft && svDraftSig(repo.draft) !== repo.draftStart; }
+/* Renaming a sleeve renames it under this implementation type only; the
+   sleeves of the old name under the others keep it, and are no longer the
+   same sleeve (D156 QA 15). Said before the save, not discovered after. */
+function renameWarning() {
+  var d = repo.draft; if (!d || !d.id) return '';
+  var e = sleeveById(d.id); if (!e || d.name.trim() === e.name) return '';
+  var others = (e.offeredUnder || []).filter(function (v) { return v !== e.variant; });
+  if (!others.length) return '';
+  return 'Renaming changes the name under ' + e.variant + ' only. The sleeves called ' + e.name + ' under '
+    + others.join(', ') + ' keep their name and stop being offered as the same sleeve.';
 }
 /* the rules as the server takes them: only the fields with something ticked */
 function cleanRules(rules) {
@@ -476,8 +515,8 @@ function describeRules(rules) {
 /* the live editions of one name in one book and category, the draft's own
    siblings: what its label and rules must not collide with */
 function siblingsOf(d) {
-  var variant = d.edition ? d.edition.variant : (d.create ? (d.variants || [])[0] : repo.variant);
-  var category = d.create ? d.category : repo.category;
+  var variant = draftVariant(d);
+  var category = draftCategory(d);
   return sleevesIn(variant, category).filter(function (s) {
     return s.name.trim().toLowerCase() === (d.name || '').trim().toLowerCase() && s.id !== d.id;
   });
@@ -509,9 +548,18 @@ function draftProblems() {
   }
   if (!d.products.length) out.push('Add at least one product.');
   if (d.products.some(function (r) { return !r.productId; })) out.push('Every row needs a product.');
+  var badWeight = d.products.filter(function (r) { return r.weightText != null && String(r.weightText).trim() !== '' && !isFinite(r.weightPct); })[0];
+  if (badWeight) out.push('“' + String(badWeight.weightText).trim() + '” is not a plain number: write a weight like 12.5.');
   if (d.products.some(function (r) { return !(r.weightPct > 0); })) out.push('Every product needs a weight above zero.');
   if (d.products.length && Math.abs(total() - 100) > 0.005) {
     out.push('Weights sum to ' + money2(total()) + '%; a sleeve must sum to 100%.');
+  }
+  /* the server counts the rules' overlap with the name's other editions;
+     a draft it says collides cannot be saved, so Save says why (D156 QA 11) */
+  var pv = repo.preview;
+  if (pv && pv.overlaps && pv.overlaps.length && (d.rules || []).some(function (r) { return !ruleIsEmpty(r); })) {
+    out.push('Its rules overlap the ' + pv.overlaps.map(function (o) { return o.label; }).join(' and ')
+      + ' edition' + (pv.overlaps.length === 1 ? '' : 's') + '; narrow them so each portfolio gets exactly one edition.');
   }
   return out;
 }
@@ -646,6 +694,8 @@ function openRepository(trigger, view, at) {
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
+  sv.level = 0; sv.drawer = false; sv.compare = false; sv.sel = []; sv.editing = false; sv.focus = null; sv.lastPlace = null;
+  sv.fv = at && at.variant ? at.variant : ''; sv.fc = '';
   render();
   loadRepository();
 }
@@ -686,6 +736,7 @@ async function loadRepository() {
     if (!r.ok) throw new Error(r.body.error || ('Could not load the repository (' + r.status + ')'));
     repo.data = r.body; forgetJoins();
     chooseDefaults();
+    sv.keptOffer = svReadKeptOffer();
     repo.error = null;
     if (repo.view === 'activity' && !act.loaded) loadActivity(true);
     if (repo.view === 'proposals') {
@@ -723,10 +774,14 @@ function loadDraft(sleeveId, create, edition) {
   var entry = sleeveId ? sleeveById(sleeveId) : null;
   repo.sleeveId = entry ? entry.id : null;
   repo.draft = entry ? draftFrom(entry) : newDraft(create, edition);
+  /* the version this edit starts from, sent with the save (D156) */
+  if (entry) repo.draft.base = entry.revisions;
+  repo.draftStart = svDraftSig(repo.draft); repo.stale = null;
   repo.dirty = false; repo.fieldError = null; repo.picker = null;
   repo.savedAt = null; repo.edMenu = false;
   repo.kept = keptDraftFor(repo.draft);        /* a copy that outlived a reload (F1) */
   repo.confirmDelete = false; repo.leaving = null; repo.menu = null;
+  sv.editing = false;                          /* a sleeve opens to be read (D156) */
   /* an existing edition already knows how many portfolios it names */
   repo.preview = entry && entry.rules && entry.rules.length ? { applies: entry.applies } : null;
   repo.previewStamp += 1;
@@ -758,12 +813,40 @@ function goTo(target) {
 }
 function applyTarget(t) {
   if (t.view) {
-    /* a move to another view, held back by an unsaved draft and now released */
+    /* a move to another view, held back by an unsaved draft and now released:
+       the changes were discarded, so the draft goes back to what is stored
+       rather than travelling on with them (D156) */
+    var gone = repo.draft;
     repo.dirty = false;
+    if (gone) {
+      if (gone.id && sleeveById(gone.id)) loadDraft(gone.id);
+      else { repo.draft = null; if (sv.level === 2) sv.level = 1; sv.drawer = false; }
+    }
+    sv.editing = false;
     if (t.detail != null) arc.detail = t.detail;
     switchView(t.view);
     if (t.then) t.then();
     return;
+  }
+  /* the Sleeves view's own place (D156): what the move asked for, or - for
+     a move that lands on a sleeve from elsewhere (a save, a revert, a
+     restore, the feed, the catalogue) - that sleeve, open, with the table's
+     filters following it and a search that would hide it cleared */
+  var arriving = !t.sv && (t.to != null || t.fresh);
+  if (t.sv) Object.keys(t.sv).forEach(function (k) { sv[k] = t.sv[k]; });
+  else if (arriving) { if (sv.mode === 'table') sv.drawer = true; else sv.level = 2; }
+  if (sv.drawer) sv.compare = false;
+  if (t.to != null) {
+    var landing = sleeveById(t.to);
+    if (landing && arriving) {
+      if (!svMatches(landing, repo.query)) repo.query = '';
+      if (sv.mode === 'table') { var fol = svFollow({ fv: sv.fv, fc: sv.fc }, landing); sv.fv = fol.fv; sv.fc = fol.fc; sv.returnTo = landing.id; }
+      else repo.query = '';
+    }
+  }
+  if (!sv.focus) {
+    if (t.fresh) sv.focus = '#repoName||#repoLabel||#repoNote';
+    else if (t.to != null) sv.focus = sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle';
   }
   if (t.variant) repo.variant = t.variant;
   if (t.category) repo.category = t.category;
@@ -773,22 +856,12 @@ function applyTarget(t) {
     repo.historyOpen = false; repo.history = null; repo.openRevision = null;
   }
   try { window.history.replaceState(null, '', hashFor('sleeves')); } catch (e) { /* file: */ }
-  if (t.fresh) { loadDraft(null, t.create, t.edition); }
+  if (t.fresh) { loadDraft(null, t.create ? { variant: t.variant || repo.variant, category: t.category || null } : null, t.edition); }
   else if (t.to != null) { loadDraft(t.to); }
   else { repo.sleeveId = null; repo.dirty = false; chooseDefaults(); }
+  if (t.fresh && t.edition) sv.focus = '#repoLabel';
   render();
-  if (t.fresh) {
-    var focusOn = document.getElementById(t.edition ? 'repoLabel' : 'repoName');
-    if (focusOn) focusOn.focus();
-  }
   if (t.then) t.then();
-}
-function selectSleeve(id) {
-  if (id === repo.sleeveId && repo.draft && repo.draft.id === id) return;
-  /* a search hit can live under another category or book, so following it
-     moves both - and the row said where it was going (C1) */
-  var entry = sleeveById(id);
-  goTo(entry ? { to: id, category: entry.category, variant: entry.variant } : { to: id });
 }
 
 /* From the feed to the thing it names: a live sleeve opens in the editor with
@@ -811,6 +884,11 @@ function openRevisionFrom(sleeveId, revisionNumber, archived) {
 
 function resolveLeaving(discard) {
   var leaving = repo.leaving; repo.leaving = null;
+  /* where the held move meant to put focus goes with it; keeping the edit
+     puts focus back on the editing controls (D156) */
+  sv.focus = discard ? sv.pending
+    : (sv.editFocus ? sv.editFocus + '||' : '') + '[data-reposave]||#repoName||#repoNote';
+  sv.pending = null;
   if (!discard || !leaving) { render(); return; }
   /* discarding means discarding: the copy kept against a reload goes with the
      changes, or reopening the sleeve would offer back what was just refused (F1) */
@@ -835,6 +913,7 @@ async function saveDraft() {
   try {
     var r;
     if (d.id) {
+      if (typeof d.base === 'number') payload.base = d.base;
       r = await api('PUT', '/scenario/repository/sleeves/' + d.id, payload);
     } else if (d.edition) {
       r = await api('POST', '/scenario/repository/sleeves/' + d.edition.ofId + '/editions', payload);
@@ -845,8 +924,14 @@ async function saveDraft() {
     }
     if (!r) return;
     if (!r.ok) {
-      if (r.body.field) repo.fieldError = { field: r.body.field, message: r.body.error };
+      /* someone else saved it since it was opened: say so, keep the edits on
+         screen, and offer the reload rather than overwrite theirs (D156) */
+      if (r.status === 409) repo.stale = r.body.error || 'Someone else saved this sleeve since you opened it.';
+      else if (r.body.field) repo.fieldError = { field: r.body.field, message: r.body.error };
       else repo.error = r.body.error || ('Could not save (' + r.status + ')');
+      var fieldIds = { name: 'repoName', label: 'repoLabel', note: 'repoNote', category: 'repoCategory' };
+      sv.focus = (repo.fieldError && fieldIds[repo.fieldError.field] ? '#' + fieldIds[repo.fieldError.field] + '||' : '')
+        + (repo.stale ? '[data-svreload]||' : '') + '[data-svstate]||[data-svcancel]';
     } else {
       var madeAll = r.body.sleeves || [r.body.sleeve];
       var list = repo.data.sleeves;
@@ -883,6 +968,8 @@ async function saveDraft() {
       if (act.loaded) act.loaded = false;
       repo.savedAt = new Date().toISOString();
       repo.kept = null; forgetKeptDraft();     /* it is in the store now (F1) */
+      if (sv.mode === 'table') { sv.drawer = true; sv.compare = false; } else sv.level = 2;
+      sv.focus = sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle';   /* back on the page, read (D156) */
       /* the outcome, not just the redraw (G2): the revision it became is the
          part an admin checks, and it is the part a screen reader could not see */
       App.announce('polite', madeAll.length > 1
@@ -926,6 +1013,12 @@ async function deleteCurrent() {
       if (act.loaded) act.loaded = false;        /* the feed is a page behind now */
       var left = sleevesIn(repo.variant, repo.category);
       loadDraft(left[0] ? left[0].id : null);
+      /* its page and its drawer go with it (D156) */
+      if (sv.level === 2) sv.level = 1;
+      sv.drawer = false; sv.sel = sv.sel.filter(function (x) { return x !== gone.id; });
+      if (sv.sel.length < 2) sv.compare = false;
+      sv.returnTo = null;
+      sv.focus = sv.mode === 'table' ? svRowFocus() : '#svCatTitle||.sv-tile';
       forgetLibrary(gone.category);
       App.announce('polite', gone.name + ' archived. It keeps its history and can be restored from the Archive.');
     }
@@ -956,12 +1049,17 @@ async function copyToVariant(sleeveId, variant) {
     } else {
       var made = (r.body.sleeves || [r.body.sleeve])[0];
       repo.data.sleeves.push(made);
+      if (repo.data.store) {
+        repo.data.store.sleeves = (repo.data.store.sleeves || 0) + 1;
+        repo.data.store.revisions = (repo.data.store.revisions || 0) + 1;
+      }
       repo.data.sleeves.forEach(function (x) {
         if (x.category === made.category && x.name === made.name) x.offeredUnder = made.offeredUnder;
       });
       catRowCache = null;
       forgetLibrary(made.category);
-      App.announce('polite', made.name + ' added to ' + variant + '.');
+      sv.focus = '.sv-offer:not([disabled])||#svOffers';
+      App.announce('polite', made.name + ' is now offered under ' + variant + '.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -977,6 +1075,10 @@ async function removeFromCategory(sleeveId) {
     repo.error = entry.category + ' always holds one sleeve - it cannot be removed.';
     render(); return;
   }
+  if (repo.dirty && repo.draft && repo.draft.id === sleeveId) {
+    repo.error = 'Save or discard your changes to ' + entry.name + ' before archiving it.';
+    sv.focus = '[data-svcancel]||[data-reposave]'; render(); return;
+  }
   repo.saving = true; repo.error = null; render();
   try {
     var r = await api('DELETE', '/scenario/repository/sleeves/' + sleeveId);
@@ -990,7 +1092,12 @@ async function removeFromCategory(sleeveId) {
       if (repo.sleeveId === gone.id) {
         var left = sleevesIn(repo.variant, repo.category);
         loadDraft(left[0] ? left[0].id : null);
+        if (sv.level === 2) sv.level = 1;
+        sv.drawer = false;
       }
+      sv.sel = sv.sel.filter(function (x) { return x !== gone.id; });
+      if (sv.sel.length < 2) sv.compare = false;
+      sv.focus = sv.mode === 'table' ? svRowFocus() : '#svCatTitle||.sv-card||.sv-tile';
       forgetLibrary(gone.category);
       App.announce('polite', gone.name + ' archived from ' + gone.category
         + '. It keeps its history and can be restored from the Archive.');
@@ -1026,8 +1133,8 @@ async function runPreview() {
   repo.preview = { busy: true }; updateApplies();
   try {
     var r = await api('POST', '/scenario/repository/applicability', {
-      variant: d.edition ? d.edition.variant : (d.create ? (d.variants || [])[0] || repo.variant : repo.variant),
-      category: d.create ? d.category : repo.category,
+      variant: draftVariant(d),
+      category: draftCategory(d),
       name: d.name.trim(), label: d.label.trim(), rules: rules, sleeveId: d.id || null
     });
     if (stamp !== repo.previewStamp || !r) return;
@@ -1109,18 +1216,18 @@ function pickerMatches() {
 function choose(productId) {
   var row = repo.picker.row;
   repo.draft.products[row].productId = productId;
-  repo.dirty = true; repo.fieldError = null;
+  markDirty(); repo.fieldError = null;
   closePicker(false); render();
   var w = document.querySelector('[data-repoweight="' + row + '"]'); if (w) { w.focus(); w.select(); }
 }
 function addRow() {
   repo.draft.products.push({ productId: null, weightPct: NaN });
-  repo.dirty = true;
+  markDirty();
   openPicker(repo.draft.products.length - 1);
 }
 function removeRow(i) {
   repo.draft.products.splice(i, 1);
-  repo.dirty = true; repo.picker = null; render();
+  markDirty(); repo.picker = null; render();
 }
 
 /* ---- rendering: the sleeve view ---------------------------------------- */
@@ -1165,7 +1272,8 @@ function productsHtml() {
     }
     return '<div class="pr">' + cell
       + '<input type="text" inputmode="decimal" class="repo-w" data-repoweight="' + i + '" aria-label="Weight, percent"'
-      + ' value="' + (isFinite(r.weightPct) ? esc(money2(r.weightPct)) : '') + '">'
+      + (r.weightText != null && String(r.weightText).trim() !== '' && !isFinite(r.weightPct) ? ' aria-invalid="true"' : '')
+      + ' value="' + (r.weightText != null ? esc(r.weightText) : isFinite(r.weightPct) ? esc(money2(r.weightPct)) : '') + '">'
       + '<button type="button" class="repo-rm" data-reporm="' + i + '" aria-label="Remove product">×</button>'
       + '</div>';
   }).join('');
@@ -1230,7 +1338,7 @@ function editorHtml() {
   var d = repo.draft;
   if (!d) return '<p class="repo-empty">Choose a sleeve, or start a new one.</p>';
   var entry = d.id ? sleeveById(d.id) : null;
-  var fixed = isFixed(repo.category);
+  var fixed = isFixed(draftCategory(d));
   var problems = draftProblems();
   var prov = '';
   if (entry) {
@@ -1246,11 +1354,11 @@ function editorHtml() {
     prov = 'New sleeve · ' + esc(d.category) + ' · '
       + (picked.length ? 'will be created under ' + esc(picked.join(', ')) : 'no implementation type chosen');
   } else {
-    prov = 'New sleeve · ' + esc(repo.category) + ' under ' + esc(repo.variant);
+    prov = 'New sleeve · ' + esc(draftCategory(d)) + ' under ' + esc(draftVariant(d));
   }
   if (d.edition) {
     var of = sleeveById(d.edition.ofId);
-    prov = 'New edition of ' + esc(d.name) + ' · ' + esc(repo.category) + ' under ' + esc(d.edition.variant)
+    prov = 'New edition of ' + esc(d.name) + ' · ' + esc(draftCategory(d)) + ' under ' + esc(d.edition.variant)
       + (of ? ' · starts as a copy of the ' + (of.label ? esc(of.label) + ' edition' : 'fallback') : '');
   }
   var serverProblems = entry && entry.problems && entry.problems.length
@@ -1269,7 +1377,7 @@ function editorHtml() {
         }).join('')
       + '</select>' + fieldErr('category') + '</div>';
   } else {
-    categoryField = '<div class="repo-fld"><label>Category</label><div class="ro">' + esc(repo.category)
+    categoryField = '<div class="repo-fld"><label>Category</label><div class="ro">' + esc(draftCategory(d))
       + (fixed ? ' <span class="repo-fixed">fixed</span>' : '') + '</div></div>';
   }
   var variantField = '';
@@ -1305,7 +1413,8 @@ function editorHtml() {
   } else {
     nameField = '<div class="repo-fld"><label for="repoName">Sleeve name</label>'
       + '<input type="text" id="repoName" maxlength="80" value="' + esc(d.name) + '"'
-      + (repo.fieldError && repo.fieldError.field === 'name' ? ' aria-invalid="true"' : '') + '>' + fieldErr('name') + '</div>';
+      + (repo.fieldError && repo.fieldError.field === 'name' ? ' aria-invalid="true"' : '') + '>' + fieldErr('name')
+      + '<p class="sv-rename" id="repoRenameNote" role="status">' + esc(renameWarning()) + '</p></div>';
   }
   var editionField = '<div class="repo-fld repo-edn"><label for="repoLabel">Edition</label>'
     + '<input type="text" id="repoLabel" maxlength="80" placeholder="Leave blank for the fallback, or label it: GBP, GBP ex-Alts, EUR Moderate…"'
@@ -1434,8 +1543,8 @@ function toggleHistory(sleeveId) {
    control that looks broken is worse than one that is missing, because it
    gets pressed again. */
 function showHistory() {
-  var pane = document.querySelector('.repo-ed');
-  var panel = document.querySelector('.repo-hist');
+  var pane = document.querySelector('#repoDialog .sv-scroll') || document.querySelector('.repo-ed');
+  var panel = document.querySelector('#repoDialog .repo-hist');
   if (!pane || !panel) return;
   var top = panel.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
   /* Set directly rather than smoothly: a smooth scroll is driven by animation
@@ -1485,11 +1594,16 @@ async function revertTo(revisionNumber) {
   var id = repo.history && repo.history.sleeveId; if (!id) return;
   repo.saving = true; repo.error = null; render();
   try {
+    var live = sleeveById(id);
     var r = await api('POST', '/scenario/repository/sleeves/' + id + '/revert',
-                      { revision: revisionNumber });
+                      live ? { revision: revisionNumber, base: live.revisions } : { revision: revisionNumber });
     if (!r) return;
     if (!r.ok) {
-      repo.error = r.body.error || ('Could not put that version back (' + r.status + ')');
+      repo.error = r.status === 409
+        ? (r.body.error || 'Someone else saved this sleeve since you opened it.') + ' Reload it before putting a version back.'
+        : (r.body.error || ('Could not put that version back (' + r.status + ')'));
+      if (r.status === 409) repo.stale = repo.error;
+      sv.focus = '[data-svreload]||[data-reporevert]';
     } else {
       var sleeve = r.body.sleeve;
       App.announce('polite', 'r' + revisionNumber + ' is in force again for ' + sleeve.name + '.');
@@ -1531,9 +1645,14 @@ function sleeveMenuHtml() {
     + '<p class="sep"></p>'
     + '<button type="button" class="repo-mi" data-repoedition="' + entry.id + '">Add an edition for particular portfolios…</button>'
     + '<p class="sep"></p>'
-    + '<button type="button" class="repo-mi danger" data-reporemove="' + entry.id + '"'
-    + (entry.fixed ? ' disabled title="A fixed category always holds one sleeve"' : '')
-    + '>Archive from ' + esc(entry.category) + '</button>'
+    + (repo.menu.confirm
+        ? '<div class="repo-mconf" role="group" aria-label="Confirm archive"><p>Archive <b>' + esc(entry.name) + '</b> from '
+          + esc(entry.category) + '? It keeps its history and can be restored from the Archive.</p>'
+          + '<button type="button" class="btn" data-repomenukeep>Keep</button>'
+          + '<button type="button" class="btn btn-danger" data-reporemoveyes="' + entry.id + '">Archive it</button></div>'
+        : '<button type="button" class="repo-mi danger" data-reporemove="' + entry.id + '"'
+          + (entry.fixed ? ' disabled title="A fixed category always holds one sleeve"' : '')
+          + '>Archive from ' + esc(entry.category) + '\u2026</button>')
     + '</div>';
 }
 
@@ -1574,110 +1693,859 @@ function sleeveHits() {
   });
 }
 
-function sleeveHitsHtml() {
+/* ---- the Sleeves view: cards and a table (D156) --------------------------
+   Proposal 11 of proposals/sleeves-screen-redesign.html. One view, two ways
+   of looking at the library behind a switch:
+
+   CARDS is the guided path - the implementation type, then the categories
+   as tiles, then the sleeves of one category as cards that show what each
+   holds, then one sleeve's page - with a breadcrumb back up.
+   TABLE is the whole library as one sortable, filterable list; a row opens
+   the same sleeve page in a drawer, and up to three ticked rows line up
+   in a comparison above the table.
+
+   The sleeve page reads first and edits on request: Edit sleeve turns it
+   into the editor the console always had (editorHtml), under a bar that
+   says so and holds Save. Nothing about saving, editions, history or the
+   archive changed - only where they live.
+
+   The state below is the VIEW's. What is open, the draft and whether it is
+   dirty stay in repo, and every move that would leave a dirty draft still
+   goes through goTo, so the Keep editing / Discard notice guards both
+   views the way it guarded the three panes. Switching views is not a move:
+   your place and an unsaved edit carry across. */
+var SV_VIEW_KEY = 'pmg.repository.sleevesView';
+var sv = {
+  mode: 'cards',            /* 'cards' | 'table', remembered per browser */
+  level: 0,                 /* cards: 0 the categories, 1 one category's sleeves, 2 a sleeve */
+  editing: false,           /* the sleeve page is in edit mode */
+  fv: '', fc: '',           /* table: implementation type and category, '' for every one */
+  sort: null,               /* table: { key, dir }, or null for the library's own order */
+  sel: [],                  /* table: sleeve ids ticked to compare, at most SV_COMPARE_MAX */
+  compare: false,
+  drawer: false,            /* table: the open sleeve is in the drawer */
+  returnTo: null,           /* the row a closed drawer gives focus back to */
+  focus: null,              /* selectors, '||'-separated, to focus once the next render lands */
+  pending: null,            /* and the ones a move held by unsaved changes would have used */
+  leavingSeen: null,
+  editFocus: null,          /* the editor field last focused, for Keep editing */
+  lastPlace: null,          /* where the last redraw left the view, for its scroll */
+  lastTable: null,          /* the table as it was when you went to the cards (D156 QA 8) */
+  keptOffer: null           /* an unsaved draft kept from an earlier visit, offered back */
+};
+var SV_COMPARE_MAX = 3;
+try { if (window.localStorage.getItem(SV_VIEW_KEY) === 'table') sv.mode = 'table'; } catch (e) { /* private window */ }
+
+/* sleeve-view-helpers-begin
+   Pure functions over the fetched sleeves, DOM-free so the suite runs them
+   in node against fixture data (D156). A sleeve is the repository's own
+   record: { id, variant, category, name, label, products: [{ weight,
+   product: { name, vehicle, productCost } }], problems, createdAt }. */
+function svPlural(n, word, many) { return n + ' ' + (n === 1 ? word : (many || word + 's')); }
+function svCost(s) {
+  /* the weighted product cost, in percent, of the products the catalogue
+     prices; svUnpriced says how many it could not - a sleeve none of whose
+     products is priced has no figure at all */
+  var t = 0, any = false;
+  (s.products || []).forEach(function (r) {
+    var c = r.product && r.product.productCost;
+    if (typeof c === 'number' && isFinite(c)) { t += (Number(r.weight) || 0) * c; any = true; }
+  });
+  return any ? t : null;
+}
+function svUnpriced(s) {
+  return (s.products || []).filter(function (r) {
+    var c = r.product && r.product.productCost;
+    return !(typeof c === 'number' && isFinite(c));
+  }).length;
+}
+function svCostText(s) {
+  var c = svCost(s), n = svUnpriced(s);
+  var figure = c === null ? '—' : (Math.round(c * 100) / 100).toFixed(2) + '%';
+  return n ? figure + ' \u00b7 ' + svPlural(n, 'product') + ' unpriced' : figure;
+}
+function svVehicles(s) {
+  var out = [];
+  (s.products || []).forEach(function (r) {
+    var v = r.product && r.product.vehicle;
+    if (v && out.indexOf(v) === -1) out.push(v);
+  });
+  return out;
+}
+function svStatus(s) {
+  /* a sleeve the server finds a problem with is withheld from the pickers */
+  var n = (s.problems || []).length;
+  return { ok: !n, label: n ? 'Withheld \u00b7 ' + svPlural(n, 'problem') : 'Ready' };
+}
+function svMatches(s, query) {
+  var q = (query || '').trim().toLowerCase();
+  if (!q) return true;
+  if ((s.name || '').toLowerCase().indexOf(q) !== -1) return true;
+  if ((s.label || '').toLowerCase().indexOf(q) !== -1) return true;
+  return (s.products || []).some(function (r) {
+    return r.product && (r.product.name || '').toLowerCase().indexOf(q) !== -1;
+  });
+}
+function svFilter(sleeves, f) {
+  /* f: { variant, category, query } - an empty variant or category is every one */
+  return (sleeves || []).filter(function (s) {
+    if (f.variant && s.variant !== f.variant) return false;
+    if (f.category && s.category !== f.category) return false;
+    return svMatches(s, f.query);
+  });
+}
+function svSortValue(s, key) {
+  if (key === 'name') return ((s.name || '') + ' ' + (s.label || '')).toLowerCase();
+  if (key === 'category') return (s.category || '').toLowerCase() || null;
+  if (key === 'variant') return (s.variant || '').toLowerCase() || null;
+  if (key === 'products') return (s.products || []).length;
+  if (key === 'vehicles') return svVehicles(s).join(', ').toLowerCase() || null;
+  if (key === 'cost') return svCost(s);
+  if (key === 'status') return (s.problems || []).length;
+  if (key === 'created') return s.createdAt || null;
+  return null;
+}
+function svSort(rows, sort, order) {
+  /* by the key asked for, A-Z or Z-A, a blank always last; no key is the
+     library's own order - the cards' order: category, type, then name */
+  order = order || {};
+  var at = function (list, v) { var i = (list || []).indexOf(v); return i === -1 ? 1e9 : i; };
+  var key = sort && sort.key, dir = sort && sort.dir === 'desc' ? -1 : 1;
+  var library = function (a, b) {
+    var an = svSortValue(a, 'name'), bn = svSortValue(b, 'name');
+    return (at(order.categories, a.category) - at(order.categories, b.category))
+      || (at(order.variants, a.variant) - at(order.variants, b.variant))
+      || (an < bn ? -1 : an > bn ? 1 : 0) || ((a.id || 0) - (b.id || 0));
+  };
+  return (rows || []).slice().sort(function (a, b) {
+    if (!key) return library(a, b);
+    var x = svSortValue(a, key), y = svSortValue(b, key);
+    var xn = x === null || x === undefined, yn = y === null || y === undefined;
+    if (xn && !yn) return 1;
+    if (yn && !xn) return -1;
+    if (!xn && !yn) {
+      if (x < y) return -dir;
+      if (x > y) return dir;
+    }
+    return library(a, b);
+  });
+}
+function svTick(sel, id, on, max) {
+  /* the compare selection: ticking a fourth does nothing, unticking always works */
+  var out = (sel || []).filter(function (x) { return x !== id; });
+  if (on && out.length < (max || 3)) out.push(id);
+  return out;
+}
+function svEditing(draft, editing, dirty) {
+  /* the page edits when asked to, and always for a draft that is new or
+     unsaved - a read view of changes nobody can see would hide them */
+  return !!draft && (!!editing || draft.id == null || !!dirty);
+}
+function svToTable(c) {
+  /* the cards' place as the table's: the type and category become its
+     filters, and a sleeve open on its page opens in the drawer. A search
+     spans every type and category, so it keeps every one. */
+  if ((c.query || '').trim()) return { fv: '', fc: '', drawer: c.level === 2 };
+  return { fv: c.variant || '', fc: c.level >= 1 ? (c.category || '') : '', drawer: c.level === 2 };
+}
+function svToCards(t, open) {
+  /* the table's place as the cards': the sleeve in the drawer opens on its
+     page; otherwise the filters choose the type and the category */
+  if (t.drawer && open) return { variant: open.variant, category: open.category, level: 2 };
+  var out = { level: t.fc ? 1 : 0 };
+  if (t.fv) out.variant = t.fv;
+  if (t.fc) out.category = t.fc;
+  return out;
+}
+function svFollow(f, s) {
+  /* the table's filters, moved to include a sleeve arriving from elsewhere,
+     so its row is there and the line above it names the right place */
+  return { fv: f.fv && f.fv !== s.variant ? s.variant : f.fv,
+           fc: f.fc && f.fc !== s.category ? s.category : f.fc };
+}
+var SV_NUMBER = /^\s*(\d+(\.\d*)?|\.\d+)\s*%?\s*$/;
+function svWeight(text) {
+  /* a weight as typed: a plain number, or NaN - '1,5' and '5abc' are not
+     read as 15 and 5 (D156) */
+  var t = String(text == null ? '' : text);
+  return SV_NUMBER.test(t) ? parseFloat(t) : NaN;
+}
+function svDraftSig(d) {
+  /* what a draft says, as one string, so dirty means changed: retyping 60
+     over 60.00 is not a change (D156) */
+  if (!d) return '';
+  var rules = (d.rules || []).map(function (r) {
+    var out = {};
+    ['currency', 'riskLevel', 'allocationType'].forEach(function (f) { if ((r[f] || []).length) out[f] = r[f].slice(); });
+    return out;
+  });
+  return JSON.stringify({
+    name: (d.name || '').trim(), note: (d.note || '').trim(), label: (d.label || '').trim(), rules: rules,
+    products: (d.products || []).map(function (r) {
+      return [r.productId || null, isFinite(r.weightPct) ? Math.round(r.weightPct * 10000) / 10000 : String(r.weightText || '')];
+    }),
+    category: d.category || null, variants: d.variants || null
+  });
+}
+/* sleeve-view-helpers-end */
+
+/* the category's colour from the key the allocation chart uses; the two
+   categories the key has no slot for take the colours the console already
+   gives them elsewhere */
+var SV_FALLBACK_COLOUR = { 'Hybrid Fixed Income': '#5E7690', 'Private Equity & Other Private Assets': 'var(--cat-6)' };
+function svColour(category) {
+  return (App.categoryColour && App.categoryColour(category)) || SV_FALLBACK_COLOUR[category] || '#9AA7B5';
+}
+function svSw(category) { return '<i class="sv-sw" aria-hidden="true" style="background:' + svColour(category) + '"></i>'; }
+function svPct(n) { return (typeof n === 'number' && isFinite(n)) ? money2(n) + '%' : '—'; }
+function svOrder() { return { categories: repo.data.categories, variants: repo.data.variants }; }
+function svSiblings(s) {
+  return sleevesIn(s.variant, s.category).filter(function (x) {
+    return x.id !== s.id && x.name.trim().toLowerCase() === s.name.trim().toLowerCase();
+  });
+}
+function svStatusChip(s) {
+  var st = svStatus(s);
+  return '<span class="sv-chip ' + (st.ok ? 'ok' : 'bad') + '">' + (st.ok ? '\u2713 ' : '! ') + esc(st.label) + '</span>';
+}
+function svEditionChip(s) {
+  if (s.label) return '<span class="sv-chip info">Edition: ' + esc(s.label) + '</span>';
+  return svSiblings(s).length ? '<span class="sv-chip mute">Fallback edition</span>' : '';
+}
+function svFixedChip(category) {
+  return isFixed(category) ? '<span class="sv-chip mute">Fixed \u00b7 one per type</span>' : '';
+}
+function svWhere(variant, category) {
+  return '<span class="sv-cell">' + svSw(category) + esc(category) + '</span><span class="sv-dot" aria-hidden="true">\u00b7</span><span>' + esc(variant) + '</span>';
+}
+/* the first category under a type that can take another sleeve: a fixed
+   one already holding its sleeve cannot */
+function svRoomIn(variant, category) {
+  return !(isFixed(category) && sleevesIn(variant, category).length >= 1);
+}
+function svFirstRoom(variant) {
+  return repo.data.categories.filter(function (c) { return svRoomIn(variant, c); })[0] || repo.data.categories[0];
+}
+/* where a new sleeve would go from here: the cards' type and category, or
+   the table's filters; with no category in hand, the first with room */
+function svNewContext() {
+  var variant = sv.mode === 'table' ? (sv.fv || repo.variant) : repo.variant;
+  var category = sv.mode === 'table' ? sv.fc : (sv.level >= 1 ? repo.category : '');
+  return { variant: variant, category: category || null };
+}
+function svOpenEntry() { return repo.draft && repo.draft.id ? sleeveById(repo.draft.id) : null; }
+function svDraftName() {
+  var d = repo.draft; if (!d) return '';
+  if (d.create) return d.name.trim() || 'New sleeve';
+  if (d.edition) return 'New edition of ' + d.name;
+  var e = svOpenEntry();
+  return e ? e.name + (e.label ? ' (' + e.label + ')' : '') : d.name;
+}
+/* the draft in words, for the notice that guards it: what is actually being
+   edited, a new edition by the label it has been given */
+function svDraftWords() {
+  var d = repo.draft; if (!d) return 'this sleeve';
+  if (d.edition) return d.label.trim() ? 'the new ' + d.label.trim() + ' edition of ' + d.name : 'a new edition of ' + d.name;
+  if (d.create) return d.name.trim() ? 'the new sleeve ' + d.name.trim() : 'a new sleeve';
+  return svDraftName();
+}
+
+/* ---- the bar: the switch, where you are, search and New sleeve --------- */
+var SV_ICON_CARDS = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg>';
+var SV_ICON_TABLE = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1" y="2" width="14" height="2.4" rx="1"/><rect x="1" y="6.8" width="14" height="2.4" rx="1"/><rect x="1" y="11.6" width="14" height="2.4" rx="1"/></svg>';
+/* The context line is the table's: the cards have their breadcrumb, and a
+   second copy of the path above it was noise (D156 QA). */
+function svContextHtml() {
+  if (sv.mode !== 'table') return '';
+  if (repo.query.trim()) return 'Searching every implementation type and category';
+  return 'Showing ' + esc(sv.fv || 'every implementation type') + ' \u00b7 ' + esc(sv.fc || 'every category');
+}
+function svBarHtml() {
+  var cards = sv.mode !== 'table';
+  var at = svNewContext();
+  var full = at.category && !svRoomIn(at.variant, at.category);
+  /* the page in Cards has no list behind it to search: the box stays, so the
+     bar never changes shape, but waits */
+  var waiting = cards && sv.level === 2;
+  return '<div class="sv-bar">'
+    + '<div class="sv-mode" role="group" aria-label="View">'
+    + '<button type="button" data-svmode="cards" aria-pressed="' + cards + '">' + SV_ICON_CARDS + 'Cards</button>'
+    + '<button type="button" data-svmode="table" aria-pressed="' + !cards + '">' + SV_ICON_TABLE + 'Table</button></div>'
+    + '<span class="sv-ctx" id="svCtx">' + svContextHtml() + '</span>'
+    + '<label class="repo-find sv-find' + (waiting ? ' is-off' : '') + '"><span aria-hidden="true">\u2315</span>'
+    + '<input type="search" id="repoFind" placeholder="' + (waiting ? 'Go back to search' : 'Search names and products\u2026') + '" autocomplete="off"'
+    + ' aria-label="Search sleeves by name, edition or product, across every category and implementation type"'
+    + (waiting ? ' disabled' : '') + ' value="' + esc(waiting ? '' : repo.query) + '"><kbd aria-hidden="true">/</kbd></label>'
+    + '<span class="sv-newwrap">'
+    + (full ? '<span class="sv-newwhy" id="svNewWhy">' + esc(at.category) + ' holds one sleeve per type</span>' : '')
+    + '<button type="button" class="btn btn-primary sv-new" data-reponew'
+    + (full ? ' disabled aria-describedby="svNewWhy"' : '') + (repo.saving && !full ? ' disabled' : '') + '>+ New sleeve</button></span>'
+    + '</div>';
+}
+/* an unsaved draft kept from an earlier visit (F1), offered where it can be
+   seen rather than only on the page of the sleeve it belongs to (D156 QA 13) */
+function svKeptOfferHtml() {
+  var k = sv.keptOffer;
+  if (!k || (repo.draft && draftKeyFor(repo.draft) === k.key)) return '';
+  var what = k.key.indexOf('sleeve:') === 0 ? (k.draft.name || 'a sleeve')
+    : k.key.indexOf('edition:') === 0 ? 'a new edition of ' + (k.draft.name || 'a sleeve')
+    : (k.draft.name ? 'the new sleeve ' + k.draft.name : 'a new sleeve');
+  return '<div class="sv-kept" role="status"><span>You have unsaved changes to <b>' + esc(what) + '</b>, kept from '
+    + esc(clockTime(k.at)) + '.</span><button type="button" class="btn btn-primary" data-svkeptopen>Open them</button>'
+    + '<button type="button" class="btn" data-svkeptdrop>Discard</button></div>';
+}
+
+/* ---- cards ---------------------------------------------------------------- */
+function svTypesHtml() {
+  return '<div class="sv-types" role="group" aria-label="Implementation type">'
+    + repo.data.variants.map(function (v) {
+        return '<button type="button" data-repovariant="' + esc(v) + '" aria-pressed="' + (v === repo.variant) + '">' + esc(v) + '</button>';
+      }).join('') + '</div>';
+}
+function svTilesHtml() {
+  return '<div class="sv-tiles">' + repo.data.categories.map(function (c) {
+    var list = sleevesIn(repo.variant, c), names = [];
+    list.forEach(function (s) { if (names.indexOf(s.name) === -1) names.push(s.name); });
+    var withheld = list.filter(function (s) { return !svStatus(s).ok; }).length;
+    return '<button type="button" class="sv-tile" data-svtile="' + esc(c) + '" style="--cc:' + svColour(c) + '">'
+      + '<span class="sv-tile-h">' + esc(c) + '</span>'
+      + '<span class="sv-tile-n"><b>' + list.length + '</b> ' + (list.length === 1 ? 'sleeve' : 'sleeves') + '</span>'
+      + '<span class="sv-tile-names">' + (names.length
+          ? esc(names.slice(0, 4).join(' \u00b7 ')) + (names.length > 4 ? ' \u00b7 +' + (names.length - 4) + ' more' : '')
+          : 'No sleeve yet') + '</span>'
+      + ((isFixed(c) || withheld) ? '<span class="sv-tile-c">' + svFixedChip(c)
+          + (withheld ? '<span class="sv-chip bad">' + withheld + ' withheld</span>' : '') + '</span>' : '')
+      + '</button>';
+  }).join('') + '</div>';
+}
+function svCardHtml(s, why) {
+  var rows = (s.products || []).map(function (r) {
+    return '<span class="sv-card-r"><span>' + esc(r.product ? r.product.name : r.productId) + '</span><b>' + money2(r.weight * 100) + '%</b></span>';
+  }).join('');
+  return '<button type="button" class="sv-card" data-svcard="' + s.id + '" data-svmenu="' + s.id + '">'
+    + '<span class="sv-card-h"><b>' + esc(s.name) + '</b>' + svEditionChip(s) + '</span>'
+    + (why !== undefined ? '<span class="sv-card-w">' + svWhere(s.variant, s.category) + '</span>'
+        + (why ? '<span class="sv-card-why">' + esc(why.charAt(0).toUpperCase() + why.slice(1)) + '</span>' : '') : '')
+    + '<span class="sv-card-p">' + rows + '</span>'
+    + '<span class="sv-card-f">' + svStatusChip(s) + '<small>' + svPlural(s.products.length, 'product')
+    + ' \u00b7 weighted cost ' + esc(svCostText(s)) + '</small></span></button>';
+}
+function svCrumbsHtml() {
+  var h = '<nav class="sv-crumbs" aria-label="Where you are">';
+  if (sv.level === 0) return h + '<b>Choose a category</b><span class="sv-hint">then a sleeve</span></nav>';
+  h += '<button type="button" data-svcrumb="0">All categories \u00b7 ' + esc(repo.variant) + '</button>';
+  var category = repo.draft && repo.draft.create && sv.level === 2 ? repo.draft.category : repo.category;
+  h += '<span class="sv-sep" aria-hidden="true">\u203a</span>';
+  h += sv.level === 1 ? '<b aria-current="page">' + esc(category) + '</b>'
+                      : '<button type="button" data-svcrumb="1">' + esc(category) + '</button>';
+  if (sv.level === 2) h += '<span class="sv-sep" aria-hidden="true">\u203a</span><b aria-current="page">' + esc(svDraftName()) + '</b>';
+  return h + '</nav>';
+}
+function svHitsHtml() {
   var hits = sleeveHits();
   if (!hits.length) {
-    return '<p class="repo-none">Nothing matches \u201c' + esc(repo.query.trim())
-      + '\u201d in any category or implementation type.</p>';
+    return '<p class="sv-none">Nothing matches \u201c' + esc(repo.query.trim()) + '\u201d in any category or implementation type.</p>';
   }
-  return '<p class="repo-hits">' + hits.length + ' sleeve' + (hits.length === 1 ? '' : 's')
-    + ' match</p>'
-    + hits.map(function (h) {
-        var s = h.s;
-        return '<button type="button" class="repo-sleeve" data-reposleeve="' + s.id + '"'
-          + ' aria-selected="' + (s.id === repo.sleeveId ? 'true' : 'false') + '">'
-          + '<b>' + esc(s.name) + (s.label ? ' <span class="repo-fixed">' + esc(s.label) + '</span>' : '')
-          + (s.problems && s.problems.length
-              ? ' <span class="warn">' + s.problems.length + ' problem'
-                + (s.problems.length === 1 ? '' : 's') + '</span>' : '')
-          + '</b>'
-          /* where it lives, because following a hit moves the category and
-             the book under the admin: saying so makes that read as navigation */
-          + '<small>' + esc(s.category) + ' \u00b7 ' + esc(s.variant)
-          + (h.why ? ' \u00b7 ' + esc(h.why) : '') + '</small></button>';
-      }).join('');
+  return '<h3 class="sv-h3">' + svPlural(hits.length, 'sleeve') + ' match \u201c' + esc(repo.query.trim()) + '\u201d</h3>'
+    + '<p class="sv-hint">Across every implementation type and category. Clear the search to go back to the categories.</p>'
+    + '<div class="sv-cards">' + hits.map(function (h) { return svCardHtml(h.s, h.why); }).join('') + '</div>';
+}
+function svCardsBodyHtml() {
+  if (repo.query.trim() && sv.level < 2) return svHitsHtml();
+  if (sv.level === 0) {
+    return svCrumbsHtml() + '<div class="sv-row">' + svTypesHtml() + '</div>' + svTilesHtml();
+  }
+  if (sv.level === 1) {
+    var list = sleevesIn(repo.variant, repo.category);
+    return svCrumbsHtml()
+      + '<div class="sv-cathead"><h3 class="sv-h3" id="svCatTitle" tabindex="-1">' + svSw(repo.category) + esc(repo.category) + '</h3>'
+      + '<span class="sv-hint">' + svPlural(list.length, 'sleeve') + ' under ' + esc(repo.variant) + '</span>'
+      + svFixedChip(repo.category) + '<span class="spacer"></span>' + svTypesHtml() + '</div>'
+      + (list.length ? '<div class="sv-cards">' + list.map(function (s) { return svCardHtml(s); }).join('') + '</div>'
+                     : '<p class="sv-none">No sleeve in ' + esc(repo.category) + ' under ' + esc(repo.variant) + ' yet. Use + New sleeve to make one.</p>');
+  }
+  return svCrumbsHtml() + svPageHtml(false);
 }
 
-/* The sleeves of the category and book in hand, editions of one name
-   gathered under it (D89). Its own function because the search redraws just
-   this part, leaving the box the query was typed into alone (C1). */
-function sleeveRowHtml(s, grouped) {
-  var vehicles = [];
-  s.products.forEach(function (r) {
-    if (r.product && vehicles.indexOf(r.product.vehicle) === -1) vehicles.push(r.product.vehicle);
-  });
-  var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
-    + (vehicles.length ? ' \u00b7 ' + vehicles.join(', ') : '')
-    + ' \u00b7 created ' + shortDateTime(s.createdAt) + (s.createdBy ? ' by ' + s.createdBy : '');
-  var head = grouped
-    ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
-                  : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
-    : esc(s.name) + (s.fallback ? '' : ' <span class="repo-fixed">' + esc(s.label) + '</span>');
-  return '<button type="button" class="repo-sleeve' + (grouped ? ' ed' : '') + '" data-reposleeve="' + s.id + '"'
-    + ' aria-selected="' + (s.id === repo.sleeveId && !(repo.draft && repo.draft.id === null) ? 'true' : 'false') + '">'
-    + '<b>' + head + (s.problems.length ? ' <span class="warn">' + s.problems.length + ' problem'
-        + (s.problems.length === 1 ? '' : 's') + '</span>' : '') + '</b>'
-    + '<small>' + esc(sub) + '</small></button>';
+/* ---- the sleeve page: read first, edit on request ----------------------- */
+function svSection(title, sub, body, cls) {
+  return '<section class="sv-sect' + (cls ? ' ' + cls : '') + '"><h4 class="sv-sect-h">' + esc(title)
+    + (sub ? ' <small>' + esc(sub) + '</small>' : '') + '</h4><div class="sv-sect-b">' + body + '</div></section>';
+}
+function svProductsHtml(entry) {
+  var rows = entry.products.map(function (r) {
+    var p = r.product, row = p ? catRow(p.productId) : null;
+    var facts = p ? [p.assetClass, p.vehicle, p.style, p.source, p.liquidity].filter(Boolean).join(' \u00b7 ') : 'Not in the catalogue';
+    var w = r.weight * 100;
+    return '<tr><td><b>' + esc(p ? p.name : r.productId) + '</b><small' + (p ? '' : ' class="warn"') + '>' + esc(facts) + '</small></td>'
+      + '<td class="num">' + (p ? svPct(p.productCost) : '—') + '</td>'
+      + '<td class="num">' + (p ? esc(catMoney(p.minimumInvestment)) : '—')
+      + (row && row.tooBig ? ' <span class="sv-chip warn" title="Above the mandate open in the tool">above mandate</span>' : '') + '</td>'
+      + '<td class="num"><span class="sv-wbar" aria-hidden="true"><i style="width:' + Math.max(0, Math.min(100, w)) + '%"></i></span>' + money2(w) + '%</td></tr>';
+  }).join('');
+  var t = entry.products.reduce(function (a, r) { return a + r.weight * 100; }, 0);
+  var ok = entry.products.length && Math.abs(t - 100) <= 0.005;
+  return '<div class="sv-ptwrap"><table class="sv-pt"><thead><tr><th scope="col">Product</th><th scope="col" class="num">Cost</th>'
+    + '<th scope="col" class="num">Minimum</th><th scope="col" class="num">Weight</th></tr></thead><tbody>' + rows + '</tbody>'
+    + '<tfoot><tr><td>Total <span class="sv-hint">\u00b7 weighted product cost ' + esc(svCostText(entry)) + '</span></td><td></td><td></td>'
+    + '<td class="num ' + (ok ? 'ok' : 'bad') + '">' + money2(t) + '% ' + (ok ? '\u2713' : '\u2717') + '</td></tr></tfoot></table></div>';
+}
+function svWhoHtml(entry) {
+  var sibs = svSiblings(entry), text;
+  if (entry.label) {
+    text = 'The <b>' + esc(entry.label) + '</b> edition applies to <b>' + (entry.applies == null ? 'some strategic portfolios'
+        : svPlural(entry.applies, 'strategic portfolio')) + '</b>'
+      + (entry.rules && entry.rules.length ? ': ' + esc(describeRules(entry.rules)) : '')
+      + '. Every other portfolio gets the fallback edition of ' + esc(entry.name) + '.';
+  } else if (sibs.length) {
+    text = 'This is the <b>fallback</b>: it applies wherever no other edition of ' + esc(entry.name) + ' does. Other editions: '
+      + sibs.map(function (x) {
+          return '<b>' + esc(x.label || 'fallback') + '</b>' + (x.applies != null ? ' (' + svPlural(x.applies, 'portfolio') + ')' : '');
+        }).join(', ') + '.';
+  } else {
+    text = 'One version for every portfolio under ' + esc(entry.variant) + '. An <b>edition</b> is a variant of this sleeve for '
+      + 'particular portfolios, such as GBP portfolios; PWAs pick the sleeve by name and get the edition for their portfolio.';
+  }
+  return '<p class="sv-p">' + text + '</p>'
+    + '<button type="button" class="btn" data-repoedition="' + entry.id + '"' + (repo.saving ? ' disabled' : '') + '>+ Add an edition for particular portfolios</button>';
+}
+function svDetailsHtml(entry) {
+  var fixed = isFixed(entry.category);
+  var offered = entry.offeredUnder || [entry.variant];
+  var more = repo.data.variants.filter(function (v) { return offered.indexOf(v) === -1; });
+  var offer = offered.map(function (v) {
+    return '<span class="sv-chip ' + (v === entry.variant ? 'info' : 'mute') + '">' + esc(v) + '</span>';
+  }).join(' ') + more.map(function (v) {
+    var blocked = fixed && sleevesIn(v, entry.category).some(function (x) { return x.name !== entry.name; });
+    return ' <button type="button" class="btn sv-offer" data-svcopy="' + esc(v) + '"'
+      + (blocked || repo.saving ? ' disabled' : '')
+      + (blocked ? ' title="' + esc(entry.category + ' already holds its one sleeve under ' + v) + '"' : '')
+      + '>+ Offer under ' + esc(v) + '</button>';
+  }).join('');
+  var archive;
+  if (fixed) {
+    archive = '<p class="sv-hint">' + esc(entry.category) + ' is fixed: it always holds exactly one sleeve per implementation type, so this one cannot be archived.</p>';
+  } else if (repo.confirmDelete) {
+    archive = editorTopHtml(entry, fixed);
+  } else {
+    archive = '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>Archive this sleeve\u2026</button>'
+      + '<span class="sv-hint">It keeps its history and can be restored from the Archive.</span>';
+  }
+  return '<dl class="sv-kv">'
+    + '<dt>Note to PWAs</dt><dd>' + (entry.note ? esc(entry.note) : '<span class="sv-hint">None</span>') + '</dd>'
+    + '<dt>Offered under</dt><dd class="sv-offers" id="svOffers" tabindex="-1">' + offer + '</dd>'
+    + '<dt>This version</dt><dd>Created ' + esc(shortDateTime(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
+    + ' <span class="sv-hint">\u00b7 saving a change puts this version in the Archive</span></dd>'
+    + (entry.firstCreatedAt && entry.firstCreatedAt !== entry.createdAt
+        ? '<dt>First created</dt><dd>' + esc(shortDateTime(entry.firstCreatedAt)) + '</dd>' : '')
+    + '<dt>Vehicles</dt><dd>' + esc(svVehicles(entry).join(', ') || '—') + '</dd>'
+    + '</dl><div class="sv-archive">' + archive + '</div>';
+}
+function svReadHtml(entry, inDrawer) {
+  var serverProblems = entry.problems && entry.problems.length
+    ? '<div class="repo-notice sv-notice" role="status">' + entry.problems.map(esc).join(' ')
+      + ' The sleeve is withheld from the pickers until this is fixed.</div>' : '';
+  /* in the drawer its header names the sleeve, so the page does not again */
+  return '<div class="sv-head"><div class="sv-head-t">'
+    + (inDrawer ? '' : '<h3 id="svTitle" tabindex="-1">' + esc(entry.name) + '</h3>')
+    + '<p class="sv-where">' + svWhere(entry.variant, entry.category) + '</p>'
+    + '<p class="sv-chips">' + svStatusChip(entry) + svEditionChip(entry) + svFixedChip(entry.category) + '</p></div>'
+    + '<button type="button" class="btn btn-primary sv-edit-btn" data-svedit' + (repo.saving ? ' disabled' : '') + '>Edit sleeve</button></div>'
+    + keptNoticeHtml() + serverProblems
+    + svSection('What it holds', svPlural(entry.products.length, 'product'), svProductsHtml(entry))
+    + svSection('Who gets it', 'editions', svWhoHtml(entry))
+    + svSection('Details', '', svDetailsHtml(entry))
+    + historyPanelHtml(entry.id, entry.revisions);
+}
+function svSaveLabel() {
+  var d = repo.draft;
+  if (repo.saving) return 'Saving\u2026';
+  return d && d.create ? 'Create sleeve' : (d && d.edition ? 'Create edition' : 'Save sleeve');
+}
+/* what the editing controls say, most urgent first: a save in flight, what
+   the server refused, someone else's newer save, the first problem with the
+   draft, then a warning that does not block, then the state */
+function svStateHtml() {
+  if (repo.saving) return '<span class="repo-state">Saving\u2026</span>';
+  if (repo.stale) return '<span class="repo-state is-bad">' + esc(repo.stale) + '</span>';
+  if (repo.fieldError) return '<span class="repo-state is-bad">' + esc(repo.fieldError.message) + '</span>';
+  if (repo.error && repo.draft) return '<span class="repo-state is-bad">' + esc(repo.error) + '</span>';
+  var p = repo.dirty ? draftProblems() : [];
+  if (p.length) return '<span class="repo-state is-bad">' + esc(p[0]) + '</span>';
+  var warn = repo.dirty ? renameWarning() : '';
+  if (warn) return '<span class="repo-state is-warn">' + esc(warn) + '</span>';
+  return saveStateHtml() || '<span class="repo-state">No changes yet</span>';
+}
+function svCancelLabel() {
+  if (repo.dirty) return 'Discard changes';
+  return repo.draft && repo.draft.id ? 'Done' : 'Cancel';
+}
+function svCanSave() {
+  return !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving && !repo.stale;
+}
+/* the editing controls: a bar over the page in Cards, the drawer's footer in
+   Table. The message takes the room and wraps; the actions stay right. While
+   the unsaved-changes notice is up its Discard is the only one on screen. */
+function svEditControlsHtml() {
+  return '<span class="sv-state" data-svstate>' + svStateHtml() + '</span>'
+    + '<span class="sv-actions">'
+    + (repo.stale ? '<button type="button" class="btn" data-svreload>Reload the sleeve</button>' : '')
+    + (repo.leaving ? '' : '<button type="button" class="btn" data-svcancel>' + svCancelLabel() + '</button>')
+    + '<button type="button" class="btn btn-primary" data-reposave' + (svCanSave() ? '' : ' disabled') + '>' + svSaveLabel() + '</button>'
+    + '</span>';
+}
+function svPageHtml(inDrawer) {
+  var d = repo.draft;
+  if (!d) return '<p class="sv-none">Choose a sleeve.</p>';
+  if (svEditing(d, sv.editing, repo.dirty)) {
+    var title = d.create ? 'New sleeve' : d.edition ? 'New edition of ' + d.name : 'Editing this sleeve';
+    return (inDrawer ? '' : '<div class="sv-editbar" role="region" aria-label="Editing"><b class="sv-editbar-t">' + esc(title) + '</b>'
+        + svEditControlsHtml() + '</div>')
+      + '<div class="sv-edit repo-ed">' + editorHtml() + '</div>';
+  }
+  var entry = svOpenEntry();
+  return entry ? svReadHtml(entry, inDrawer) : '<p class="sv-none">Choose a sleeve.</p>';
 }
 
-function sleeveListHtml() {
-  var offered = sleevesIn(repo.variant, repo.category);
-  var groups = [], byName = {};
-  offered.forEach(function (s) {
-    if (!byName[s.name]) { byName[s.name] = []; groups.push(s.name); }
-    byName[s.name].push(s);
-  });
-  var list = groups.map(function (name) {
-    var eds = byName[name];
-    if (eds.length === 1) return sleeveRowHtml(eds[0], false);
-    return '<div class="repo-grp"><b>' + esc(name) + '</b><small>' + eds.length + ' editions</small></div>'
-      + eds.map(function (s) { return sleeveRowHtml(s, true); }).join('');
-  }).join('') || '<p class="repo-none">No sleeve under ' + esc(repo.variant) + ' yet.</p>';
-  if (repo.draft && repo.draft.id === null) {
-    list += '<div class="repo-sleeve new" aria-current="true"><b>' + (esc(repo.draft.name) || 'New sleeve')
-      + (repo.draft.edition ? ' <span class="repo-fixed">' + (esc(repo.draft.label) || 'new edition') + '</span>' : '')
-      + '</b><small>unsaved</small></div>';
+/* ---- the table ------------------------------------------------------------ */
+var SV_COLUMNS = [
+  ['name', 'Sleeve'], ['category', 'Category'], ['variant', 'Implementation type'],
+  ['products', 'Products', 'num'], ['vehicles', 'Vehicles'], ['cost', 'Weighted cost', 'num'],
+  ['status', 'Status'], ['created', 'This version created']
+];
+function svRows() {
+  return svSort(svFilter(repo.data.sleeves, { variant: sv.fv, category: sv.fc, query: repo.query }), sv.sort, svOrder());
+}
+function svCountText(n) {
+  var all = (repo.data.sleeves || []).length;
+  return n === all ? svPlural(all, 'sleeve') : n + ' of ' + svPlural(all, 'sleeve');
+}
+function svTbodyHtml(rows) {
+  if (!rows.length) {
+    return '<tr><td colspan="' + (SV_COLUMNS.length + 1) + '" class="sv-none">No sleeve matches. Clear the search or a filter.</td></tr>';
   }
-  return list;
+  var full = sv.sel.length >= SV_COMPARE_MAX;
+  return rows.map(function (s) {
+    var on = sv.sel.indexOf(s.id) !== -1;
+    var open = sv.drawer && repo.draft && repo.draft.id === s.id;
+    return '<tr data-svrow="' + s.id + '" data-svmenu="' + s.id + '"' + (open ? ' class="on" aria-current="true"' : '') + '>'
+      + '<td class="tick"><input type="checkbox" data-svtick="' + s.id + '"' + (on ? ' checked' : '') + (full && !on ? ' disabled' : '')
+      + ' aria-label="Compare ' + esc(s.name + (s.label ? ' (' + s.label + ')' : '') + ', ' + s.variant) + '"></td>'
+      + '<td class="nm"><button type="button" class="sv-rowbtn" data-svrow="' + s.id + '">' + esc(s.name) + '</button>' + svEditionChip(s) + '</td>'
+      + '<td><span class="sv-cell">' + svSw(s.category) + esc(s.category) + '</span>' + (isFixed(s.category) ? ' <span class="sv-chip mute">Fixed</span>' : '') + '</td>'
+      + '<td class="sv-nw">' + esc(s.variant) + '</td>'
+      + '<td class="num">' + s.products.length + '</td>'
+      + '<td class="sv-nw">' + esc(svVehicles(s).join(', ')) + '</td>'
+      + '<td class="num">' + esc(svCostText(s)) + '</td>'
+      + '<td>' + svStatusChip(s) + '</td>'
+      + '<td class="sv-when">' + esc(shortDateTime(s.createdAt)) + '</td></tr>';
+  }).join('');
+}
+function svSelect(attr, label, all, values, chosen) {
+  return '<label class="sv-sel"><span class="sr-only">' + esc(label) + '</span><select ' + attr + ' aria-label="' + esc(label) + '">'
+    + '<option value="">' + esc(all) + '</option>'
+    + values.map(function (v) { return '<option value="' + esc(v) + '"' + (v === chosen ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('')
+    + '</select></label>';
+}
+/* The comparison lines the ticked sleeves up product by product - one row
+   per product any of them holds, a column per sleeve, a row whose weights
+   differ marked - in a panel above the table that closes, rather than a
+   page over it (D156 QA). */
+function svCompareHtml() {
+  var list = sv.sel.map(sleeveById).filter(Boolean);
+  if (list.length < 2) return '';
+  var names = [], weights = {};
+  list.forEach(function (s, i) {
+    s.products.forEach(function (r) {
+      var key = r.productId;
+      if (!weights[key]) { weights[key] = { name: r.product ? r.product.name : r.productId, w: [] }; names.push(key); }
+      weights[key].w[i] = r.weight * 100;
+    });
+  });
+  var head = list.map(function (s) {
+    return '<th scope="col"><span class="sv-cmp-n">' + esc(s.name) + '</span>' + svEditionChip(s)
+      + '<span class="sv-cmp-w">' + svWhere(s.variant, s.category) + '</span>'
+      + '<button type="button" class="btn sv-cmp-open" data-svopen="' + s.id + '">Open</button></th>';
+  }).join('');
+  var body = names.map(function (key) {
+    var row = weights[key], vals = list.map(function (s, i) { return row.w[i]; });
+    var differ = vals.some(function (v) { return v === undefined || Math.abs(v - vals[0]) > 1e-9; });
+    return '<tr' + (differ ? ' class="diff"' : '') + '><th scope="row">' + esc(row.name) + '</th>'
+      + vals.map(function (v) { return '<td class="num">' + (v === undefined ? '<span class="sv-hint">not held</span>' : money2(v) + '%') + '</td>'; }).join('') + '</tr>';
+  }).join('');
+  return '<section class="sv-cmp" aria-labelledby="svCmpTitle"><div class="sv-cmp-h">'
+    + '<h3 id="svCmpTitle" tabindex="-1">Comparing ' + svPlural(list.length, 'sleeve') + '</h3>'
+    + '<span class="sv-hint">Rows whose weights differ are marked.</span>'
+    + '<span class="spacer"></span><button type="button" class="btn" data-svcmpclose>Close the comparison</button></div>'
+    + '<div class="sv-cmp-b"><table class="sv-cmpt"><thead><tr><th scope="col">Product</th>' + head + '</tr></thead><tbody>' + body + '</tbody>'
+    + '<tfoot><tr><th scope="row">Weighted product cost</th>' + list.map(function (s) { return '<td class="num">' + esc(svCostText(s)) + '</td>'; }).join('') + '</tr>'
+    + '<tr><th scope="row">Vehicles</th>' + list.map(function (s) { return '<td>' + esc(svVehicles(s).join(', ')) + '</td>'; }).join('') + '</tr>'
+    + '<tr><th scope="row">Status</th>' + list.map(function (s) { return '<td>' + svStatusChip(s) + '</td>'; }).join('') + '</tr>'
+    + '</tfoot></table></div></section>';
+}
+function svDrawerHtml() {
+  if (!sv.drawer || !repo.draft) return '';
+  var d = repo.draft, editing = svEditing(d, sv.editing, repo.dirty);
+  var title = d.create ? 'New sleeve' : d.edition ? 'New edition of ' + d.name : (editing ? 'Editing ' : '') + svDraftName();
+  return '<div class="sv-scrim" data-svclose></div>'
+    + '<aside class="sv-drawer" role="dialog" aria-labelledby="svDrawerTitle">'
+    + '<div class="sv-drawer-h"><h3 id="svDrawerTitle" tabindex="-1">' + esc(title) + '</h3>'
+    + '<button type="button" class="btn" data-svclose>Close</button></div>'
+    + '<div class="sv-drawer-b sv-scroll" id="svDrawerBody">' + svPageHtml(true) + '</div>'
+    + (editing ? '<div class="sv-drawer-f">' + svEditControlsHtml() + '</div>' : '')
+    + '</aside>';
+}
+function svTableViewHtml() {
+  var rows = svRows();
+  var head = SV_COLUMNS.map(function (c) {
+    var on = sv.sort && sv.sort.key === c[0];
+    var dirWords = c[2] ? (sv.sort && sv.sort.dir === 'desc' ? 'highest first' : 'lowest first')
+                        : (sv.sort && sv.sort.dir === 'desc' ? 'Z to A' : 'A to Z');
+    return '<th scope="col"' + (c[2] ? ' class="num"' : '') + ' aria-sort="' + (on ? (sv.sort.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '">'
+      + '<button type="button" data-svsort="' + c[0] + '"' + (on ? ' title="Sorted ' + dirWords + '"' : '') + '>' + esc(c[1])
+      + '<span class="sv-arrow" aria-hidden="true">' + (on ? (sv.sort.dir === 'desc' ? '\u25bc' : '\u25b2') : '') + '</span></button></th>';
+  }).join('');
+  var tools = '<div class="sv-tools">'
+    + svSelect('data-svfv', 'Implementation type', 'All implementation types', repo.data.variants, sv.fv)
+    + svSelect('data-svfc', 'Category', 'All categories', repo.data.categories, sv.fc)
+    + '<span class="sv-count" id="svCount" role="status">' + svCountText(rows.length) + '</span>'
+    + (sv.sort ? '<button type="button" class="btn sv-libord" data-svsort="">Library order</button>' : '')
+    + '<span class="spacer"></span>'
+    + (sv.sel.length
+        ? '<span class="sv-hint">' + sv.sel.length + ' ticked</span><button type="button" class="btn" data-svclearticks>Clear ticks</button>'
+          + '<button type="button" class="btn" data-svcompare' + (sv.sel.length < 2 ? ' disabled title="Tick two or three sleeves to compare"' : '') + '>Compare ' + sv.sel.length + '</button>'
+        : '<span class="sv-hint">Tick up to three rows to compare them</span>')
+    + '</div>';
+  return '<div class="sv-tarea">'
+    + '<div class="sv-tmain"' + (sv.drawer ? ' inert' : '') + '>' + tools
+    + (sv.compare ? svCompareHtml() : '')
+    + '<div class="sv-tblwrap" id="svTblWrap"><table class="sv-tbl"><caption class="sr-only">Sleeves in the library</caption>'
+    + '<thead><tr><th scope="col" class="tick"><span class="sr-only">Compare</span></th>' + head + '</tr></thead>'
+    + '<tbody id="svTbody">' + svTbodyHtml(rows) + '</tbody></table></div>'
+    + '</div>' + svDrawerHtml() + '</div>';
 }
 
 function sleevesViewHtml() {
-  var d = repo.data;
-  var cats = d.categories.map(function (c) {
-    var n = sleevesIn(repo.variant, c).length;
-    return '<button type="button" class="repo-cat" role="tab" data-repocat="' + esc(c) + '"'
-      + ' aria-selected="' + (c === repo.category ? 'true' : 'false') + '">' + esc(c)
-      + (isFixed(c) ? ' <span class="repo-fixed">fixed</span>' : '')
-      + '<span class="n">' + n + '</span></button>';
-  }).join('');
-  var newDisabled = isFixed(repo.category)
-    && sleevesIn(repo.variant, repo.category).length >= 1;
-  /* Searching (C1) replaces the list rather than filtering it in place: a hit
-     may live under another category or book, and the point of asking is that
-     you do not remember which. */
-  var searching = !!repo.query.trim();
-  var body = searching ? sleeveHitsHtml() : sleeveListHtml();
-  return '<div class="repo-b">'
-    + '<div class="repo-pane"><div class="repo-pane-h">Categories</div>' + cats + '</div>'
-    + '<div class="repo-pane repo-list">'
-    + '<div class="repo-pane-h">' + (searching ? 'Search results' : esc(repo.category))
-    + '<button type="button" class="btn" data-reponew'
-    + (newDisabled && !searching ? ' disabled title="A fixed category holds exactly one sleeve"' : '')
-    + '>+ New sleeve</button></div>'
-    /* the book strip belongs to this list, not to the console's header (A1) */
-    + '<div class="repo-books" role="group" aria-label="Implementation type">'
-    + d.variants.map(function (v) {
-        return '<button type="button" class="repo-book" data-repovariant="' + esc(v) + '"'
-          + ' aria-pressed="' + (v === repo.variant ? 'true' : 'false') + '"'
-          + (searching ? ' disabled' : '') + '>' + esc(v) + '</button>';
-      }).join('') + '</div>'
-    + '<label class="repo-find"><span aria-hidden="true">\u2315</span>'
-    + '<input type="search" id="repoFind" placeholder="Search every implementation type\u2026" autocomplete="off"'
-    + ' aria-label="Search sleeves by name, edition or product, across every category and implementation type"'
-    + ' value="' + esc(repo.query) + '"><kbd aria-hidden="true">/</kbd></label>'
-    + body + '</div>'
-    + '<div class="repo-pane repo-ed">' + editorHtml() + '</div>'
-    + '</div>' + sleeveMenuHtml();
+  var body = sv.mode === 'table'
+    ? svTableViewHtml()
+    : '<div class="sv-body sv-scroll" id="svBody">' + svCardsBodyHtml() + '</div>';
+  return '<div class="sv is-' + sv.mode + '">' + '<div class="sv-top">' + svBarHtml() + svKeptOfferHtml() + '</div>'
+    + body + '</div>' + sleeveMenuHtml();
+}
+
+/* ---- moving about --------------------------------------------------------- */
+function svCardsKey() { return [repo.variant, sv.level, repo.category, repo.draft && repo.draft.id].join('|'); }
+function svSwitchMode(to) {
+  if (to === sv.mode || (to !== 'cards' && to !== 'table')) return;
+  /* not while unsaved changes are holding a move: the notice answers first */
+  if (repo.leaving) { sv.focus = '[data-repokeep]'; render(); return; }
+  if (to === 'table') {
+    var category = repo.draft && repo.draft.create && sv.level === 2 ? repo.draft.category : repo.category;
+    var t = svToTable({ variant: repo.variant, category: category, level: sv.level, query: repo.query });
+    /* back from a look at the cards that changed nothing: the table as it was */
+    var was = sv.lastTable;
+    if (was && was.cardsKey === svCardsKey() && !repo.query.trim()) { t.fv = was.fv; t.fc = was.fc; sv.compare = was.compare; }
+    sv.fv = t.fv; sv.fc = t.fc; sv.drawer = t.drawer && !!repo.draft;
+    if (sv.drawer) sv.compare = false;
+    sv.returnTo = repo.draft && repo.draft.id;
+  } else {
+    var open = sv.drawer ? (svOpenEntry() || (repo.draft ? { variant: repo.draft.edition ? repo.draft.edition.variant : repo.variant,
+      category: repo.draft.create ? repo.draft.category : repo.category } : null)) : null;
+    var c = svToCards({ fv: sv.fv, fc: sv.fc, drawer: sv.drawer }, open);
+    var keep = { fv: sv.fv, fc: sv.fc, compare: sv.compare };
+    if (c.variant && repo.data.variants.indexOf(c.variant) !== -1) repo.variant = c.variant;
+    if (c.category && repo.data.categories.indexOf(c.category) !== -1) repo.category = c.category;
+    sv.level = c.level; sv.drawer = false;
+    keep.cardsKey = svCardsKey(); sv.lastTable = keep;
+  }
+  sv.mode = to;
+  try { window.localStorage.setItem(SV_VIEW_KEY, to); } catch (e) { /* private window */ }
+  sv.focus = '[data-svmode="' + to + '"]';
+  render();
+  App.announce('polite', (to === 'table' ? 'Table' : 'Cards') + ' view' + (repo.dirty ? '. Your unsaved changes are still open.' : '.'));
+}
+/* Opening a sleeve: through goTo, so an unsaved draft asks first. The
+   type and category always come from the sleeve itself - the editor's
+   checks (fixed, editions, the preview) read them. */
+function svOpen(id) {
+  var s = sleeveById(id); if (!s) return;
+  var table = sv.mode === 'table';
+  if (table) sv.returnTo = id;
+  var place = table ? { drawer: true, compare: false } : { level: 2 };
+  if (table) { var f = svFollow({ fv: sv.fv, fc: sv.fc }, s); place.fv = f.fv; place.fc = f.fc; }
+  sv.focus = table ? '#svDrawerTitle' : '#svTitle';
+  if (repo.draft && repo.draft.id === id && !repo.draft.create && !repo.draft.edition) {
+    repo.variant = s.variant; repo.category = s.category;
+    Object.keys(place).forEach(function (k) { sv[k] = place[k]; });
+    if (!table) repo.query = '';
+    render(); return;
+  }
+  var go = { to: id, variant: s.variant, category: s.category, sv: place };
+  if (!table) go.then = function () { repo.query = ''; };
+  goTo(go);
+}
+function svRowFocus() {
+  return (sv.returnTo != null ? '.sv-rowbtn[data-svrow="' + sv.returnTo + '"]||' : '') + '.sv-rowbtn||[data-svfv]';
+}
+function svCloseDrawer() {
+  sv.focus = svRowFocus();
+  goTo({ sv: { drawer: false } });
+}
+/* up one level, the way Escape and Cancel read it: a sleeve's page to its
+   category, a category to the tiles; a new edition back to the sleeve it
+   came from */
+function svUp() {
+  var d = repo.draft;
+  if (sv.mode === 'table') { if (sv.drawer) svCloseDrawer(); return; }
+  if (sv.level === 2 && d && d.edition && sleeveById(d.edition.ofId)) {
+    var of = sleeveById(d.edition.ofId);
+    sv.focus = '#svTitle';
+    goTo({ to: of.id, variant: of.variant, category: of.category, sv: { level: 2 } }); return;
+  }
+  if (sv.level === 2) { sv.focus = '#svCatTitle'; goTo({ sv: { level: 1 } }); return; }
+  if (sv.level === 1) {
+    sv.focus = '.sv-tile[data-svtile="' + svCssEscape(repo.category) + '"]||.sv-tile';
+    goTo({ sv: { level: 0 } });
+  }
+}
+function svCancel() {
+  var d = repo.draft; if (!d) return;
+  var was = repo.dirty;
+  /* the kept copy (F1) goes only with changes to this draft that are given up */
+  if (was && keptDraftFor(d)) { forgetKeptDraft(); repo.kept = null; }
+  repo.dirty = false; repo.fieldError = null; repo.error = null; repo.picker = null; repo.stale = null;
+  if (d.id) {
+    var kept = repo.kept;
+    loadDraft(d.id);
+    if (!was) repo.kept = kept;
+    sv.focus = '[data-svedit]';
+    render();
+  } else if (d.edition && sleeveById(d.edition.ofId)) {
+    var of = sleeveById(d.edition.ofId);
+    sv.focus = sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle';
+    applyTarget({ to: of.id, variant: of.variant, category: of.category,
+                  sv: sv.mode === 'table' ? { drawer: true } : { level: 2 } });
+  } else {
+    /* a new sleeve that is given up goes back where it came from */
+    sv.focus = sv.mode === 'table' ? svRowFocus() : '#svCatTitle||.sv-tile';
+    applyTarget(sv.mode === 'table' ? { sv: { drawer: false } } : { sv: { level: sv.level === 2 ? 1 : sv.level } });
+  }
+  if (was) App.announce('polite', 'Changes discarded.');
+}
+function svEdit() {
+  sv.editing = true; repo.confirmDelete = false;
+  sv.focus = '#repoName||#repoLabel||#repoNote';
+  render();
+}
+function svCssEscape(v) {
+  return (window.CSS && CSS.escape) ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, '\\$&');
+}
+/* the first of '||'-separated selectors that finds something enabled and
+   visible; failing all of them the view switch, so focus never drops to
+   the page behind */
+function svFocusNow(selectors) {
+  var list = String(selectors || '').split('||').concat(['[data-svmode][aria-pressed="true"]']);
+  for (var i = 0; i < list.length; i += 1) {
+    var sel = list[i].trim(); if (!sel) continue;
+    var el = null;
+    try { el = document.querySelector('#repoDialog ' + sel); } catch (e) { el = null; }
+    if (el && el.focus && !el.disabled && (el.offsetParent !== null || el.getClientRects().length)) {
+      el.focus({ preventScroll: false });
+      if (document.activeElement === el) return;
+    }
+  }
+}
+/* after every render of the view: focus where the move asked, keep the
+   keyboard in the drawer while it is open, and put it on the notice when
+   unsaved changes block a move */
+function svAfterRender() {
+  var dialog = document.querySelector('#repoDialog .dialog.repo'); if (!dialog) return;
+  var modal = repo.view === 'sleeves' && sv.mode === 'table' && sv.drawer;
+  ['.repo-h', '.repo-f'].forEach(function (sel) {
+    var el = dialog.querySelector(':scope > ' + sel);
+    if (el && repo.view === 'sleeves') { if (modal) el.setAttribute('inert', ''); else el.removeAttribute('inert'); }
+  });
+  if (repo.view !== 'sleeves') return;
+  if (repo.leaving && sv.leavingSeen !== repo.leaving) {
+    sv.leavingSeen = repo.leaving; sv.pending = sv.focus; sv.focus = null;
+    var keep = dialog.querySelector('[data-repokeep]'); if (keep) keep.focus();
+    return;
+  }
+  if (!repo.leaving) sv.leavingSeen = null;
+  if (sv.focus) { var f = sv.focus; sv.focus = null; svFocusNow(f); }
+}
+/* A redraw replaces the boxes that scroll, and a new box starts at its top:
+   ticking a rule chip or opening a revision far down a sleeve's page threw
+   the reader back to its title. Where the redraw leaves you in the same place
+   - the same view, level, sleeve and drawer - each box is put back where it
+   was; a move somewhere else starts at the top, as it should. */
+function svPlace() {
+  return [repo.view, sv.mode, sv.level, sv.drawer, sv.compare, !!repo.query.trim(),
+          repo.draft ? (repo.draft.id || (repo.draft.edition ? 'edition' : 'new')) : ''].join('|');
+}
+function svScrollKeep() {
+  var same = sv.lastPlace === svPlace();
+  var saved = ['svBody', 'svTblWrap', 'svDrawerBody'].map(function (id) {
+    var el = document.getElementById(id);
+    return el ? { id: id, top: el.scrollTop, left: el.scrollLeft } : null;
+  });
+  return function () {
+    if (same) {
+      saved.forEach(function (x) {
+        var el = x && document.getElementById(x.id);
+        if (el) { el.scrollTop = x.top; el.scrollLeft = x.left; }
+      });
+    }
+    sv.lastPlace = repo.open ? svPlace() : null;
+  };
+}
+/* typing in the search redraws the results, never the box (C1) */
+function svRefreshResults() {
+  if (sv.mode === 'table') {
+    var rows = svRows();
+    var body = document.getElementById('svTbody'); if (body) body.innerHTML = svTbodyHtml(rows);
+    var count = document.getElementById('svCount'); if (count) count.textContent = svCountText(rows.length);
+  } else {
+    var pane = document.getElementById('svBody'); if (pane) pane.innerHTML = svCardsBodyHtml();
+  }
+  var ctx = document.getElementById('svCtx'); if (ctx) ctx.innerHTML = svContextHtml();
+}
+/* the editing controls follow typing without a redraw (F2) */
+function svRefreshControls() {
+  document.querySelectorAll('#repoDialog [data-svstate]').forEach(function (el) { el.innerHTML = svStateHtml(); });
+  document.querySelectorAll('#repoDialog [data-svcancel]').forEach(function (el) { el.textContent = svCancelLabel(); });
+  document.querySelectorAll('#repoDialog [data-reposave]').forEach(function (b) { b.disabled = !svCanSave(); });
+  var note = document.getElementById('repoRenameNote'); if (note) note.textContent = renameWarning();
+}
+/* an unsaved draft kept from an earlier visit, read once the library is in */
+function svReadKeptOffer() {
+  try {
+    var held = JSON.parse(window.localStorage.getItem(DRAFT_KEY) || 'null');
+    if (!held || !held.key || !held.draft) return null;
+    var m = /^(sleeve|edition):(\d+)$/.exec(held.key);
+    if (m && !sleeveById(parseInt(m[2], 10))) return null;     /* what it belonged to is gone */
+    return held;
+  } catch (e) { return null; }
+}
+function svOpenKept() {
+  var k = sv.keptOffer; if (!k) return;
+  sv.keptOffer = null;
+  var m = /^(sleeve|edition):(\d+)$/.exec(k.key);
+  var place = sv.mode === 'table' ? { drawer: true, compare: false } : { level: 2 };
+  var then = function () {
+    repo.draft = k.draft; repo.kept = null; sv.editing = true; markDirty();
+    sv.focus = '#repoName||#repoLabel||#repoNote';
+    render();
+  };
+  if (m && m[1] === 'sleeve') {
+    var s = sleeveById(parseInt(m[2], 10));
+    goTo({ to: s.id, variant: s.variant, category: s.category, sv: place, then: then });
+  } else if (m) {
+    var of = sleeveById(parseInt(m[2], 10));
+    goTo({ variant: of.variant, category: of.category, fresh: true, edition: { ofId: of.id, name: of.name }, sv: place, then: then });
+  } else {
+    goTo({ variant: k.variant, category: k.category, fresh: true, create: true, sv: place, then: then });
+  }
 }
 
 /* ---- rendering: the archive (D66, option A) -----------------------------
@@ -2938,6 +3806,7 @@ function render() {
   App.setBackgroundInert(true);
   var focused = document.activeElement && document.activeElement.id;
   var putBack = catScrollKeep();
+  var svPutBack = svScrollKeep();
   var d = repo.data;
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
@@ -2997,7 +3866,7 @@ function render() {
   var leaving = '';
   if (repo.leaving) {
     leaving = '<div class="repo-notice" role="alertdialog" aria-live="assertive">'
-      + '<span>You have unsaved changes to ' + esc(repo.draft && repo.draft.name || 'this sleeve') + '.</span>'
+      + '<span>You have unsaved changes to ' + esc(svDraftWords()) + '.</span>'
       + '<button type="button" class="btn" data-repokeep>Keep editing</button>'
       + '<button type="button" class="btn btn-danger" data-repodiscard>Discard changes</button></div>';
   }
@@ -3019,23 +3888,17 @@ function render() {
       + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
       + '</div>';
   } else {
-    /* One primary action on the right, and nothing destructive beside it
-       (A2). Archiving and adding an edition act on the sleeve being edited,
-       so they have moved into the editor where that sleeve is named; what is
-       left here is the library's own provenance and Save. */
-    var canSave = !!repo.draft && repo.dirty && !draftProblems().length && !repo.saving;
+    /* Save lives with the sleeve it saves - the bar over the page in Cards,
+       the drawer's footer in Table (D156) - so the footer only says what the
+       library holds, in words rather than as a file name */
+    var editingNow = !!repo.draft && svEditing(repo.draft, sv.editing, repo.dirty)
+      && (sv.mode === 'table' ? sv.drawer : sv.level === 2);
     footer = '<div class="repo-f">'
-      + (d ? '<button type="button" class="btn btn-create" data-repocreate'
-          + (repo.saving ? ' disabled' : '') + '>+ Create sleeve</button>' : '')
-      + (d ? '<span class="repo-src">Library · ' + esc(d.store.path.split('/').pop()) + ' · ' + d.store.sleeves
-          + ' sleeves · ' + (d.store.revisions || 0) + ' versions on record'
-          + (d.store.archived ? ' · ' + d.store.archived + ' archived' : '') + '</span>' : '')
+      + (d ? '<span class="repo-src">' + d.store.sleeves + ' sleeves in the library \u00b7 '
+          + (d.store.revisions || 0) + ' versions on record'
+          + (d.store.archived ? ' \u00b7 ' + d.store.archived + ' in the Archive' : '') + '</span>' : '')
       + '<span class="spacer"></span>'
-      + (repo.error ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
-      + saveStateHtml()
-      + '<button type="button" class="btn btn-primary" data-reposave' + (canSave ? '' : ' disabled') + '>'
-        + (repo.saving ? 'Saving…' : (repo.draft && repo.draft.create ? 'Create sleeve'
-           : (repo.draft && repo.draft.edition ? 'Create edition' : 'Save sleeve'))) + '</button>'
+      + (repo.error && !editingNow ? '<span class="md-err" role="alert">' + esc(repo.error) + '</span>' : '')
       + '</div>';
   }
 
@@ -3050,7 +3913,7 @@ function render() {
   syncHash();
   if (onOverlays) ovlAfterRender();
   keepDraft();                  /* the local copy follows the draft (F1) */
-  putBack(); catEdge();
+  putBack(); catEdge(); svPutBack();
 
   if (focused) {
     var again = document.getElementById(focused);
@@ -3063,16 +3926,17 @@ function render() {
       }
     }
   }
+  /* the Sleeves view's own focus, after the restore above (D156) */
+  if (onSleeves) svAfterRender();
 }
 
 function updateTotals() {
   var tot = document.getElementById('repoTotal'); if (tot) tot.innerHTML = totalHtml();
-  var save = document.querySelector('[data-reposave]');
-  if (save) save.disabled = !(repo.dirty && !draftProblems().length && !repo.saving);
-  /* typing is a partial redraw, so the footer's marker has to be told (F2) */
-  var state = document.querySelector('.repo-f .repo-state');
-  if (state) state.outerHTML = saveStateHtml();
-  else if (save) save.insertAdjacentHTML('beforebegin', saveStateHtml());
+  document.querySelectorAll('#repoDialog [data-reposave]').forEach(function (b) {
+    b.disabled = !(repo.dirty && !draftProblems().length && !repo.saving);
+  });
+  /* typing is a partial redraw, so the editing controls have to be told (F2) */
+  svRefreshControls();
   keepDraft();
   var probs = document.querySelector('.repo-problems');
   if (probs) probs.remove();
@@ -4481,14 +5345,17 @@ document.addEventListener('click', function (e) {
   var host = document.getElementById('repoDialog');
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
-    '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],[data-repocat],[data-reposleeve],'
+    '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
+    + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
+    + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svcopy],[data-svopen],'
+    + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],'
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-repodelete],[data-repocanceldelete],[data-repokeep],[data-repodiscard],'
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
     + '[data-catrow],[data-catopen],[data-catgroup],[data-catfold],[data-catfoldall],'
-    + '[data-repocreate],[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
+    + '[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
     + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
@@ -4510,15 +5377,69 @@ document.addEventListener('click', function (e) {
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
   if (fundClick(ds)) return;
   if (ovlClick(el)) return;
-  if (ds.repovariant !== undefined) { goTo({ variant: ds.repovariant }); return; }
-  if (ds.repocat !== undefined) { goTo({ category: ds.repocat }); return; }
-  if (ds.reposleeve !== undefined) { selectSleeve(parseInt(ds.reposleeve, 10)); return; }
-  /* One create path (B2). Two buttons a verb apart used to make forms that
-     differed in which fields existed, with nothing on screen to say which was
-     which; now both open the create form, which arrives with the category and
-     the book already filled in from wherever the admin was standing. */
-  if (ds.reponew !== undefined || ds.repocreate !== undefined) {
-    goTo({ fresh: true, create: true }); return;
+  /* the Sleeves view (D156): every move that leaves the open sleeve goes
+     through goTo, so an unsaved draft asks first in either view */
+  if (ds.svmode !== undefined) { svSwitchMode(ds.svmode); return; }
+  if (ds.repovariant !== undefined) {
+    sv.focus = '[data-repovariant="' + ds.repovariant.replace(/"/g, '\\"') + '"]';
+    goTo({ variant: ds.repovariant, sv: { level: sv.level === 2 ? 1 : sv.level } }); return;
+  }
+  if (ds.svtile !== undefined) { sv.focus = '#svCatTitle'; goTo({ category: ds.svtile, sv: { level: 1 } }); return; }
+  if (ds.svcard !== undefined) { svOpen(parseInt(ds.svcard, 10)); return; }
+  if (ds.svcrumb !== undefined) {
+    var lvl = parseInt(ds.svcrumb, 10);
+    sv.focus = lvl === 0 ? '.sv-tile' : '#svCatTitle';
+    goTo({ sv: { level: lvl } }); return;
+  }
+  if (ds.svedit !== undefined) { svEdit(); return; }
+  if (ds.svcancel !== undefined) { svCancel(); return; }
+  if (ds.svrow !== undefined) {
+    if (e.target.closest('input')) return;                 /* the compare box has its own handler */
+    svOpen(parseInt(ds.svrow, 10)); return;
+  }
+  if (ds.svclose !== undefined) { svCloseDrawer(); return; }
+  if (ds.svsort !== undefined) {
+    var key = ds.svsort;
+    if (!key) { sv.sort = null; sv.focus = '[data-svsort="category"]'; render(); return; }   /* library order */
+    if (sv.sort && sv.sort.key === key) sv.sort.dir = sv.sort.dir === 'asc' ? 'desc' : 'asc';
+    else sv.sort = { key: key, dir: (key === 'products' || key === 'cost' || key === 'created') ? 'desc' : 'asc' };
+    sv.focus = '[data-svsort="' + key + '"]'; render(); return;
+  }
+  if (ds.svcompare !== undefined) { if (sv.sel.length >= 2) { sv.compare = true; sv.focus = '#svCmpTitle'; render(); } return; }
+  if (ds.svcmpclose !== undefined) { sv.compare = false; sv.focus = '[data-svcompare]||.sv-rowbtn'; render(); return; }
+  if (ds.svclearticks !== undefined) { sv.sel = []; sv.compare = false; sv.focus = '.sv-rowbtn||[data-svfv]'; render(); return; }
+  if (ds.svkeptopen !== undefined) { svOpenKept(); return; }
+  if (ds.svkeptdrop !== undefined) {
+    sv.keptOffer = null; forgetKeptDraft(); repo.kept = null;
+    sv.focus = '[data-reponew]||[data-svmode][aria-pressed="true"]';
+    App.announce('polite', 'The kept changes are discarded.'); render(); return;
+  }
+  if (ds.svreload !== undefined) {
+    /* someone else's save stands: read the library again and open what is stored */
+    var reId = repo.draft && repo.draft.id;
+    repo.stale = null; repo.dirty = false; repo.error = null;
+    if (repo.draft && keptDraftFor(repo.draft)) forgetKeptDraft();
+    repo.pending = reId ? { variant: repo.variant, category: repo.category } : null;
+    loadRepository().then(function () {
+      if (reId && sleeveById(reId)) { sv.focus = sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle'; loadDraft(reId); render(); }
+      App.announce('polite', 'Reloaded. Your changes were not saved.');
+    });
+    return;
+  }
+  if (ds.repomenukeep !== undefined) { repo.menu = null; render(); return; }
+  if (ds.reporemoveyes !== undefined) { removeFromCategory(parseInt(ds.reporemoveyes, 10)); return; }
+  if (ds.svopen !== undefined) { sv.compare = false; svOpen(parseInt(ds.svopen, 10)); return; }
+  if (ds.svcopy !== undefined) { copyToVariant(repo.draft && repo.draft.id, ds.svcopy); return; }
+  /* One create path (B2), from wherever the admin is standing: the cards'
+     type and category, or the table's filters, fill the form in (D156) */
+  if (ds.reponew !== undefined) {
+    /* with no category in hand the form opens on the first with room, and
+       its Category field says which (D156) */
+    var here = svNewContext();
+    sv.focus = '#repoName';
+    goTo({ fresh: true, create: true, variant: here.variant, category: here.category || svFirstRoom(here.variant),
+           sv: sv.mode === 'table' ? { drawer: true, compare: false } : { level: 2 } });
+    return;
   }
   if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
   /* editions (D89) */
@@ -4529,21 +5450,37 @@ document.addEventListener('click', function (e) {
   }
   if (ds.reporuleadd !== undefined) {
     var blank = {}; RULE_FIELDS.forEach(function (f) { blank[f] = []; });
-    repo.draft.rules.push(blank); repo.dirty = true; repo.fieldError = null; render(); return;
+    repo.draft.rules.push(blank); markDirty(); repo.fieldError = null; render(); return;
   }
   if (ds.reporulerm !== undefined) {
-    repo.draft.rules.splice(parseInt(ds.reporulerm, 10), 1); repo.dirty = true; repo.fieldError = null;
+    repo.draft.rules.splice(parseInt(ds.reporulerm, 10), 1); markDirty(); repo.fieldError = null;
     render(); schedulePreview(); return;
   }
-  if (ds.reporemove !== undefined) { removeFromCategory(parseInt(ds.reporemove, 10)); return; }
+  /* archiving from the menu asks first, as it does on the page (D156 QA 15) */
+  if (ds.reporemove !== undefined) { if (repo.menu) { repo.menu.confirm = true; sv.focus = '[data-repomenukeep]'; render(); } return; }
   /* the record (D65) */
   if (ds.repohistory !== undefined) { toggleHistory(parseInt(ds.repohistory, 10)); return; }
   if (ds.reporev !== undefined) {
     var n = parseInt(ds.reporev, 10);
     repo.openRevision = repo.openRevision === n ? null : n;
-    render(); return;
+    render();
+    /* a revision opened at the foot of the page comes into view (D156) */
+    var opened = document.querySelector('#repoDialog .rev.open');
+    if (opened && opened.scrollIntoView) opened.scrollIntoView({ block: 'nearest' });
+    return;
   }
-  if (ds.reporevert !== undefined) { revertTo(parseInt(ds.reporevert, 10)); return; }
+  if (ds.reporevert !== undefined) {
+    /* putting a version back replaces the sleeve in force: unsaved changes
+       to it ask first, like any other move away from them (D156) */
+    var revN = parseInt(ds.reporevert, 10);
+    if (repo.view === 'sleeves' && repo.dirty && repo.draft && repo.draft.id) {
+      var revE = sleeveById(repo.draft.id);
+      goTo({ to: repo.draft.id, variant: revE ? revE.variant : repo.variant, category: revE ? revE.category : repo.category,
+             sv: sv.mode === 'table' ? { drawer: true } : { level: 2 }, then: function () { revertTo(revN); } });
+      return;
+    }
+    revertTo(revN); return;
+  }
   /* the archive (D66) */
   if (ds.arcsort !== undefined) {
     if (arc.sort.key === ds.arcsort) arc.sort.dir = arc.sort.dir === 'asc' ? 'desc' : 'asc';
@@ -4599,17 +5536,21 @@ document.addEventListener('click', function (e) {
   if (ds.repopick !== undefined) { openPicker(parseInt(ds.repopick, 10)); return; }
   if (ds.repochoose !== undefined) { choose(ds.repochoose); return; }
   if (ds.reposave !== undefined) { saveDraft(); return; }
-  if (ds.repodelete !== undefined) { deleteCurrent(); return; }
-  if (ds.repocanceldelete !== undefined) { repo.confirmDelete = false; render(); return; }
+  if (ds.repodelete !== undefined) {
+    if (!repo.confirmDelete) sv.focus = '[data-repocanceldelete]';
+    deleteCurrent(); return;
+  }
+  if (ds.repocanceldelete !== undefined) { repo.confirmDelete = false; sv.focus = '[data-repodelete]'; render(); return; }
   if (ds.repokeptrestore !== undefined) {
     var held = repo.kept; repo.kept = null;
     if (held && held.draft) {
-      repo.draft = held.draft; repo.dirty = true;
+      repo.draft = held.draft; markDirty(); sv.editing = true;
+      sv.focus = '#repoName||#repoLabel||#repoNote';
       App.announce('polite', 'Unsaved changes restored.');
     }
     render(); return;
   }
-  if (ds.repokeptdrop !== undefined) { repo.kept = null; forgetKeptDraft(); render(); return; }
+  if (ds.repokeptdrop !== undefined) { repo.kept = null; forgetKeptDraft(); sv.focus = '[data-svedit]'; render(); return; }
   if (ds.repokeep !== undefined) { resolveLeaving(false); return; }
   if (ds.repodiscard !== undefined) { resolveLeaving(true); return; }
   /* the catalogue (D63) */
@@ -4639,6 +5580,14 @@ document.addEventListener('click', function (e) {
   if (ds.catclearpins !== undefined) { cat.pins = []; cat.compare = false; render(); return; }
   if (ds.catcompare !== undefined) { if (cat.pins.length || cat.compare) { cat.compare = !cat.compare; cat.detail = null; render(); } return; }
   if (ds.catdetailclose !== undefined) { cat.detail = null; render(); catFocusCursor(); return; }
+  if (ds.catopen !== undefined) {
+    var used = sleeveById(parseInt(ds.catopen, 10));
+    if (used) {
+      cat.detail = null; cat.compare = false;
+      goTo({ to: used.id, variant: used.variant, category: used.category });
+    }
+    return;
+  }
   if (ds.catrow !== undefined) {
     cat.cursor = ds.catrow;
     cat.cursorBand = ds.catband === undefined ? null : ds.catband;
@@ -4665,6 +5614,15 @@ document.addEventListener('change', function (e) {
     if (!e.target.checked) hidden.push(ds.catcol);
     cat.hidden = hidden; render(); return;
   }
+  /* the Sleeves table's compare boxes and filters (D156) */
+  if (ds.svtick !== undefined) {
+    var tid = parseInt(ds.svtick, 10);
+    sv.sel = svTick(sv.sel, tid, e.target.checked, SV_COMPARE_MAX);
+    if (sv.sel.length < 2) sv.compare = false;
+    sv.focus = '[data-svtick="' + tid + '"]'; render(); return;
+  }
+  if (ds.svfv !== undefined) { sv.fv = e.target.value; sv.focus = '[data-svfv]'; render(); return; }
+  if (ds.svfc !== undefined) { sv.fc = e.target.value; sv.focus = '[data-svfc]'; render(); return; }
   /* the archive's filters and tick boxes (D66) */
   if (ds.arcfilter !== undefined) { arc.filters[ds.arcfilter] = e.target.value; render(); return; }
   if (ds.arcsel !== undefined) {
@@ -4694,10 +5652,10 @@ document.addEventListener('change', function (e) {
 
 document.addEventListener('contextmenu', function (e) {
   if (!repo.open || repo.view !== 'sleeves') return;
-  var row = e.target.closest ? e.target.closest('[data-reposleeve]') : null;
+  var row = e.target.closest ? e.target.closest('[data-svmenu]') : null;
   if (!row) return;
   e.preventDefault();
-  var id = parseInt(row.dataset.reposleeve, 10);
+  var id = parseInt(row.dataset.svmenu, 10);
   var host = document.getElementById('repoDialog');
   var box = host.querySelector('.dialog.repo').getBoundingClientRect();
   /* positioned inside the dialog, and kept off its edges so the menu is
@@ -4705,16 +5663,11 @@ document.addEventListener('contextmenu', function (e) {
   repo.menu = { id: id,
                 x: Math.min(e.clientX - box.left, box.width - 250),
                 y: Math.min(e.clientY - box.top, box.height - 210) };
-  if (repo.dirty) { repo.menu = null; goTo({ to: id }); return; }
-  loadDraftKeepingMenu(id);
+  /* it acts on the sleeve it was opened on, by id; the draft in hand and
+     the place it reads its checks from are left alone (D156) */
+  sv.focus = '.repo-ctx .repo-mi:not([disabled])';
   render();
 });
-
-function loadDraftKeepingMenu(id) {
-  var menu = repo.menu;
-  loadDraft(id);
-  repo.menu = menu;
-}
 
 document.addEventListener('change', function (e) {
   if (!repo.open || !repo.draft) return;
@@ -4725,14 +5678,14 @@ document.addEventListener('change', function (e) {
     repo.draft.variants = (repo.draft.variants || []).filter(function (v) {
       return !(isFixed(el.value) && sleevesIn(v, el.value).length >= 1);
     });
-    repo.dirty = true; render(); return;
+    markDirty(); sv.focus = '#repoCategory'; render(); return;
   }
   if (el.dataset && el.dataset.repovar !== undefined) {
     var picked = (repo.draft.variants || []).slice();
     var at = picked.indexOf(el.dataset.repovar);
     if (el.checked && at === -1) picked.push(el.dataset.repovar);
     if (!el.checked && at !== -1) picked.splice(at, 1);
-    repo.draft.variants = picked; repo.dirty = true; render();
+    repo.draft.variants = picked; markDirty(); sv.focus = '[data-repovar="' + svCssEscape(el.dataset.repovar) + '"]'; render();
     return;
   }
   /* a rule's chip (D89): the value goes in or out of that rule's field, in
@@ -4744,7 +5697,7 @@ document.addEventListener('change', function (e) {
     if (el.checked) have.push(value);
     var order = (repo.data.ruleVocabulary || {})[field] || [];
     rule[field] = order.filter(function (v) { return have.indexOf(v) !== -1; });
-    repo.dirty = true; repo.fieldError = null;
+    markDirty(); repo.fieldError = null;
     el.closest('.repo-chip').classList.toggle('on', el.checked);
     schedulePreview(); updateTotals();
   }
@@ -4758,39 +5711,34 @@ document.addEventListener('input', function (e) {
   if (el.id === 'actSearch') { act.query = el.value; syncHash(); actRefresh(); return; }
   if (el.id === 'regSearch') { reg.query = el.value; syncHash(); regRefresh(); return; }
   if (!repo.draft) return;
-  if (el.id === 'repoName') { repo.draft.name = el.value; repo.dirty = true; updateTotals(); return; }
-  if (el.id === 'repoNote') { repo.draft.note = el.value; repo.dirty = true; updateTotals(); return; }
+  if (el.id === 'repoName') { repo.draft.name = el.value; markDirty(); updateTotals(); return; }
+  if (el.id === 'repoNote') { repo.draft.note = el.value; markDirty(); updateTotals(); return; }
   if (el.id === 'repoLabel') {
-    repo.draft.label = el.value; repo.dirty = true; repo.fieldError = null;
+    repo.draft.label = el.value; markDirty(); repo.fieldError = null;
     /* the words under the rules speak of the label */
     var applies = document.getElementById('repoApplies'); if (applies && !(repo.draft.rules || []).length) applies.innerHTML = appliesHtml();
     updateTotals(); return;
   }
   if (el.dataset && el.dataset.repoweight !== undefined) {
     var i = parseInt(el.dataset.repoweight, 10);
-    var v = parseFloat(el.value.replace(/[%,\s]/g, ''));
-    repo.draft.products[i].weightPct = isFinite(v) ? v : NaN;
-    repo.dirty = true; updateTotals(); return;
+    /* a plain number or nothing: '1,5' is not 15 (D156 QA 15) */
+    var v = svWeight(el.value);
+    repo.draft.products[i].weightText = el.value;
+    repo.draft.products[i].weightPct = v;
+    if (el.value.trim() !== '' && !isFinite(v)) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid');
+    markDirty(); updateTotals(); return;
   }
   if (el.id === 'repoSearch' && repo.picker) {
     repo.picker.query = el.value; repo.picker.index = 0; updatePickerList();
   }
 });
 
-/* The sleeve search redraws the list and the pane heading, never the box, so
-   the caret stays where it was typed (C1). */
+/* The sleeve search redraws the results, never the box, so the caret stays
+   where it was typed (C1): the cards' results, or the table's rows (D156). */
 document.addEventListener('input', function (e) {
   if (!repo.open || repo.view !== 'sleeves' || !e.target || e.target.id !== 'repoFind') return;
   repo.query = e.target.value;
-  var pane = document.querySelector('.repo-list'); if (!pane) return;
-  var head = pane.querySelector('.repo-pane-h');
-  var searching = !!repo.query.trim();
-  if (head) head.firstChild.nodeValue = searching ? 'Search results' : repo.category;
-  pane.querySelectorAll('.repo-book').forEach(function (b) { b.disabled = searching; });
-  var keep = pane.querySelector('.repo-find');
-  var after = keep && keep.nextSibling;
-  while (after) { var next = after.nextSibling; after.remove(); after = next; }
-  keep.insertAdjacentHTML('afterend', searching ? sleeveHitsHtml() : sleeveListHtml());
+  svRefreshResults();
 });
 
 /* Capture phase, on purpose: the fee card's own Escape handler was
@@ -4812,7 +5760,11 @@ document.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowDown') { e.preventDefault(); repo.picker.index = Math.min(repo.picker.index + 1, Math.min(hits.length, 40) - 1); updatePickerList(); return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); repo.picker.index = Math.max(repo.picker.index - 1, 0); updatePickerList(); return; }
     if (e.key === 'Enter') { e.preventDefault(); if (hits[repo.picker.index]) choose(hits[repo.picker.index].productId); return; }
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePicker(); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      sv.focus = '[data-repopick="' + repo.picker.row + '"]||[data-repoadd]';
+      closePicker(); return;
+    }
     return;
   }
   if (repo.view === 'archive' || repo.view === 'activity' || repo.view === 'proposals') {
@@ -4871,6 +5823,32 @@ document.addEventListener('keydown', function (e) {
     }
     return;
   }
+  /* the drawer keeps the keyboard (D156): Tab cycles through it and the view
+     switch above it - the one control outside it that still applies - and
+     never wanders to the page behind the console */
+  if (repo.view === 'sleeves' && e.key === 'Tab' && sv.mode === 'table' && sv.drawer && !repo.leaving) {
+    var ring = [].slice.call(document.querySelectorAll('#repoDialog .sv-mode button, #repoDialog .sv-drawer button, '
+      + '#repoDialog .sv-drawer input, #repoDialog .sv-drawer select, #repoDialog .sv-drawer [tabindex="0"]'))
+      .filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+    if (ring.length) {
+      var at = ring.indexOf(document.activeElement);
+      var next = at === -1 ? (e.shiftKey ? ring.length - 1 : 0)
+        : e.shiftKey ? (at === 0 ? ring.length - 1 : -1) : (at === ring.length - 1 ? 0 : -1);
+      if (next !== -1) { e.preventDefault(); ring[next].focus(); return; }
+    }
+  }
+  /* Escape climbs the Sleeves view a level at a time - the comparison, the
+     drawer, a sleeve's page, a category - and closes the console only from
+     the top, as the catalogue and the archive do once their panels are shut
+     (D156). Unsaved changes still ask first: every step goes through goTo. */
+  if (repo.view === 'sleeves' && e.key === 'Escape' && !repo.leaving && !repo.menu && !repo.confirmDelete && !repo.picker) {
+    var feeOn = document.getElementById('feeDialog');
+    if (!(feeOn && !feeOn.hidden) && e.target.id !== 'repoFind') {
+      if (sv.compare && !sv.drawer) { e.preventDefault(); e.stopPropagation(); sv.compare = false; sv.focus = '[data-svcompare]||.sv-rowbtn'; render(); return; }
+      if (sv.mode === 'table' && sv.drawer) { e.preventDefault(); e.stopPropagation(); svCloseDrawer(); return; }
+      if (sv.mode !== 'table' && sv.level > 0 && !repo.query.trim()) { e.preventDefault(); e.stopPropagation(); svUp(); return; }
+    }
+  }
   if (repo.view === 'sleeves') {
     var find = document.getElementById('repoFind');
     var typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT'
@@ -4909,6 +5887,10 @@ document.addEventListener('scroll', function (e) {
    band that cannot be seen: the keyboard's arrival brings it back. */
 document.addEventListener('focusin', function (e) {
   var el = e.target;
+  if (repo.open && el && el.closest && el.closest('#repoDialog .sv-edit')) {
+    sv.editFocus = el.id ? '#' + svCssEscape(el.id)
+      : (el.dataset && el.dataset.repoweight !== undefined ? '[data-repoweight="' + el.dataset.repoweight + '"]' : null);
+  }
   if (!repo.open || !el.classList || !el.classList.contains('cat-fold')) return;
   if (el.matches && el.matches(':focus-visible')) catBandIntoView(el.closest('tr'));
 });

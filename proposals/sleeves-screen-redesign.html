@@ -1,0 +1,1407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sleeves Screen Redesign</title>
+<style>
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+@font-face{font-family:"GS Sans Condensed";src:url("../proposalTool/static/fonts/gs-sans-condensed-variable.woff2") format("woff2");font-weight:100 900}
+:root{
+  --bg:#F4F6F9; --surface:#FFFFFF; --surface-2:#F0F2F5; --ink:#1C2733; --ink-2:#4B5A6A; --ink-3:#6E7E90;
+  --line:#E1E6EC; --line-strong:#C9D2DC; --frame:#AEBAC7; --zone:#EDF1F6; --zone-2:#F7F9FB;
+  --accent:#1F5FBF; --accent-2:#174C99; --accent-tint:#EAF1FC; --navy:#16243A; --rail:#12233f;
+  --good:#176A33; --good-tint:#E3F2E8; --warn:#8A5300; --warn-tint:#FFF1D6; --bad:#B42318; --bad-tint:#FDECEA;
+  --edit:#FFF6DD; --edit-line:#E8C46A;
+  --f:'GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+  --fn:'GS Sans Condensed','GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.5}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1320px;margin:0 auto;padding:36px 28px 150px}
+@media (max-width:700px){.wrap{padding:24px 16px 150px}}
+.mast{border-bottom:2px solid var(--navy);padding-bottom:20px;margin-bottom:22px}
+.eyebrow{font-family:var(--fn);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;font-weight:600}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1;margin:0 0 10px;color:var(--navy);font-weight:600}
+.sub{font-size:16.5px;color:var(--ink-2);max-width:80ch;margin:0}
+h2.sec{font-size:24px;color:var(--navy);margin:40px 0 8px;font-weight:600}
+p.lead{color:var(--ink-2);max-width:82ch;margin:0 0 16px}
+
+/* findings */
+.shotbox{position:relative;border:1px solid var(--frame);border-radius:10px;overflow:hidden;background:#fff;margin:10px 0 6px}
+.shotbox img{display:block;width:100%;height:auto}
+.mk{position:absolute;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#C2410C;color:#fff;
+  font:700 14px var(--fn);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff,0 2px 6px rgba(0,0,0,.3)}
+.cap{font-size:13px;color:var(--ink-3);margin:0 0 18px}
+.finds{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px 22px;margin:14px 0 8px;padding:0;list-style:none}
+.finds li{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;font-size:14.5px}
+.finds li b.n{width:26px;height:26px;border-radius:50%;background:#C2410C;color:#fff;font:700 13px var(--fn);display:flex;align-items:center;justify-content:center}
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0 0}
+.principles div{background:#fff;border:1px solid var(--line-strong);border-left:4px solid var(--accent);border-radius:8px;padding:10px 14px;font-size:14px}
+.principles b{display:block;color:var(--navy);margin-bottom:2px}
+
+/* the pick bar and jump chips (as allocation-table-styles) */
+.bar{position:sticky;top:0;z-index:40;background:rgba(244,246,249,.95);backdrop-filter:blur(6px);border-bottom:1px solid var(--line-strong);
+  margin:0 -28px 26px;padding:10px 28px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+@media (max-width:700px){.bar{margin:0 -16px 22px;padding:10px 16px}}
+.ctl{font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.jump{display:flex;flex-wrap:wrap;gap:6px}
+.jump a{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line-strong);
+  border-radius:15px;font:600 13px var(--fn);color:var(--ink-2);text-decoration:none;background:var(--surface)}
+.jump a:hover{border-color:var(--accent);color:var(--accent)}
+.jump a.picked{background:var(--accent);border-color:var(--accent);color:#fff}
+.picked-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--navy);color:#fff;padding:12px 20px;display:flex;gap:12px 18px;
+  align-items:center;flex-wrap:wrap;transform:translateY(110%);transition:transform .2s ease;font-size:14.5px}
+.picked-bar.on{transform:none}
+.picked-bar b{color:#F3C46B}
+.picked-bar code{font:13px var(--fn);background:rgba(255,255,255,.12);padding:3px 8px;border-radius:4px}
+.picked-bar button{font:600 12.5px var(--fn);letter-spacing:.05em;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:5px;padding:5px 10px;cursor:pointer}
+
+/* an option */
+.option{margin:0 0 56px;scroll-margin-top:70px}
+.opt-h{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:start;margin:0 0 12px}
+.opt-n{grid-row:span 2;width:42px;height:42px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font:600 18px var(--fn)}
+.opt-h h3{margin:0;font-size:22px;color:var(--navy);font-weight:600}
+.opt-h p{margin:0;grid-column:2;color:var(--ink-2);font-size:15px;max-width:86ch}
+.pick{grid-row:1 / span 2;grid-column:3;align-self:center;font:600 13px var(--fn);letter-spacing:.06em;text-transform:uppercase;
+  border:1.5px solid var(--accent);color:var(--accent);background:var(--surface);border-radius:6px;padding:9px 16px;cursor:pointer;white-space:nowrap}
+.pick:hover{background:var(--accent-tint)}
+.pick[aria-pressed="true"]{background:var(--accent);color:#fff}
+.option.picked .con{box-shadow:0 0 0 3px var(--accent)}
+.after{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0 0}
+@media (max-width:900px){.after{grid-template-columns:1fr}}
+.pc{background:#fff;border:1px solid var(--line-strong);border-radius:8px;padding:12px 16px}
+.pc h4{margin:0 0 6px;font-size:13px;font-family:var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.pc ul{margin:0;padding-left:18px;font-size:14px}
+.pc ul.pros li::marker{color:var(--good)}
+.pc ul.cons li::marker{color:#C2410C}
+.caps{width:100%;border-collapse:collapse;font-size:13.5px}
+.caps td{padding:4px 6px;border-top:1px solid var(--line);vertical-align:top}
+.caps td:first-child{width:42%;color:var(--ink-2)}
+.caps td:last-child::before{content:"✓ ";color:var(--good);font-weight:700}
+details.capd summary{cursor:pointer;font:600 13px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:12px 0 6px}
+
+/* ===== the console frame every mock-up sits in ===== */
+.con{background:var(--surface);border:1px solid var(--frame);border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(16,24,40,.08)}
+.con-h{display:flex;align-items:center;gap:14px;padding:0 16px;height:52px;border-bottom:1px solid var(--frame);background:#fff;overflow-x:auto}
+.con-h .t{font:700 13px var(--fn);letter-spacing:.18em;text-transform:uppercase;color:var(--navy);white-space:nowrap}
+.con-h .tabs{display:flex;gap:2px;white-space:nowrap}
+.con-h .tabs span{font-size:14px;color:var(--ink-2);padding:6px 11px;border-radius:5px}
+.con-h .tabs span.on{background:var(--navy);color:#fff;font-weight:600}
+.con-h .x{margin-left:auto;font-size:20px;color:var(--ink-3)}
+.con-b{height:660px;position:relative;overflow:hidden;background:var(--bg)}
+.con-b.auto{height:auto;min-height:420px}
+.con-f{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--frame);background:#fff;font-size:13px;color:var(--ink-3);flex-wrap:wrap}
+.spacer{flex:1}
+
+/* shared controls */
+.btn{display:inline-flex;align-items:center;gap:6px;font:600 14px var(--f);border:1px solid var(--frame);background:#fff;color:var(--ink);border-radius:6px;padding:7px 14px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:var(--accent-2);color:#fff}
+.btn.pri:disabled{background:#A9BEDF;border-color:#A9BEDF;color:#fff;cursor:not-allowed}
+.btn:disabled{cursor:not-allowed;opacity:.6}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent)}
+.btn.ghost:hover{background:var(--accent-tint)}
+.btn.danger{color:var(--bad);border-color:#E7B7B1}
+.btn.danger:hover{background:var(--bad-tint);color:var(--bad)}
+.btn.sm{font-size:13px;padding:4px 10px}
+.btn.lg{font-size:15px;padding:9px 18px}
+.lnk{border:0;background:none;color:var(--accent);font-weight:600;cursor:pointer;padding:2px 4px;font-size:14px}
+.lnk:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--frame);border-radius:8px;overflow:hidden;background:#fff;flex-wrap:wrap}
+.seg button{border:0;border-right:1px solid var(--line-strong);background:#fff;color:var(--ink-2);padding:8px 14px;font-size:14px;cursor:pointer;white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--navy);color:#fff;font-weight:600}
+.fld{display:block;margin:0 0 12px}
+.fld>span{display:block;font-size:13.5px;font-weight:600;color:var(--ink);margin:0 0 4px}
+.fld>small{display:block;font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.in{width:100%;border:1px solid var(--frame);border-radius:6px;padding:8px 10px;background:#fff;font-size:14.5px}
+.in:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(31,95,191,.15)}
+select.in{padding:7px 8px}
+.srch{position:relative}
+.srch input{padding-left:32px}
+.srch::before{content:"⌕";position:absolute;left:11px;top:50%;transform:translateY(-52%);color:var(--ink-3);font-size:16px}
+.chip{display:inline-flex;align-items:center;gap:5px;font:600 12px var(--fn);letter-spacing:.04em;border-radius:12px;padding:2px 9px;white-space:nowrap;border:1px solid transparent}
+.chip.ok{background:var(--good-tint);color:var(--good);border-color:#BFE0CA}
+.chip.bad{background:var(--bad-tint);color:var(--bad);border-color:#F1C4BF}
+.chip.warn{background:var(--warn-tint);color:var(--warn);border-color:#EED29A}
+.chip.info{background:var(--accent-tint);color:var(--accent-2);border-color:#C8D8F2}
+.chip.mute{background:var(--surface-2);color:var(--ink-2);border-color:var(--line-strong)}
+.chip.edit{background:var(--edit);color:#7A5200;border-color:var(--edit-line)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.muted{color:var(--ink-3)}
+.toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:var(--navy);color:#fff;border-radius:8px;padding:10px 16px;font-size:14px;
+  box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:30;max-width:90%}
+.toast b{color:#9FE0B5}
+
+/* product table */
+table.pt{width:100%;border-collapse:collapse;font-size:14.5px;background:#fff}
+table.pt th{font:600 12px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);text-align:left;padding:8px 10px;background:var(--zone);border-bottom:1px solid var(--line-strong)}
+table.pt td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.pt th.r,table.pt td.r{text-align:right}
+table.pt td.nm b{display:block;font-weight:600}
+table.pt td.nm small{display:block;font-size:13px;color:var(--ink-3)}
+table.pt tfoot td{font-weight:700;background:var(--zone-2);border-top:2px solid var(--line-strong);border-bottom:0}
+table.pt tr.picker td{background:var(--accent-tint)}
+.wbar{display:inline-block;width:90px;height:8px;border-radius:4px;background:var(--surface-2);vertical-align:middle;margin-right:8px;overflow:hidden}
+.wbar i{display:block;height:100%;background:var(--accent)}
+.win{width:84px;text-align:right;border:1px solid var(--frame);border-radius:6px;padding:6px 8px;font:15px var(--fn);background:#fff}
+.win:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(31,95,191,.15)}
+.win.bad{border-color:var(--bad);background:var(--bad-tint)}
+.rmx{border:1px solid transparent;background:none;color:var(--ink-3);border-radius:5px;padding:3px 8px;cursor:pointer;font-size:13px}
+.rmx:hover{color:var(--bad);border-color:#E7B7B1;background:var(--bad-tint)}
+.tot-ok{color:var(--good)}
+.tot-bad{color:var(--bad)}
+.plist{list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--frame);border-radius:6px;background:#fff;max-height:220px;overflow:auto}
+.plist li button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:7px 10px;cursor:pointer;font-size:14px}
+.plist li button:hover{background:var(--accent-tint)}
+.plist li button small{color:var(--ink-3);font-size:12.5px}
+.plist li.none{padding:8px 10px;color:var(--ink-3);font-size:13.5px}
+.comp{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--surface-2)}
+.comp i{display:block;height:100%;border-right:2px solid #fff}
+.comp i:last-child{border-right:0}
+.rulebox{border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px;background:#fff}
+.rulebox .rf{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:start;margin:4px 0}
+.rulebox .rf>span{font-size:13px;color:var(--ink-2);font-weight:600;padding-top:3px}
+.rchips{display:flex;flex-wrap:wrap;gap:5px}
+.rchips button{font:13px var(--f);border:1px solid var(--line-strong);background:#fff;border-radius:14px;padding:2px 10px;cursor:pointer;color:var(--ink-2)}
+.rchips button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.rchips button:disabled{cursor:default}
+.hist{list-style:none;margin:0;padding:0}
+.hist li{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
+.hist li:first-child{border-top:0}
+.hist .rv{font:700 12px var(--fn);background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;padding:2px 0;text-align:center}
+.hist small{display:block;color:var(--ink-3);font-size:12.5px}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:14px;margin:0}
+.kv dt{color:var(--ink-3)}
+.kv dd{margin:0}
+.empty{padding:40px 20px;text-align:center;color:var(--ink-3)}
+.illus{font:600 11px var(--fn);letter-spacing:.06em;text-transform:uppercase;color:#7A5200;background:var(--edit);border:1px dashed var(--edit-line);border-radius:4px;padding:1px 6px}
+
+/* ===== 1 · framed panes ===== */
+.o1{display:grid;grid-template-rows:auto 1fr;height:100%}
+.o1-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;background:#fff;border-bottom:1px solid var(--frame)}
+.o1-top .lbl{font-size:13.5px;font-weight:600;color:var(--ink-2)}
+.o1-top .srch{width:260px}
+.o1-grid{display:grid;grid-template-columns:215px 285px 1fr;gap:12px;padding:12px;min-height:0}
+.zone{background:#fff;border:1px solid var(--frame);border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.zone-h{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--zone);border-bottom:1px solid var(--frame);font-weight:600;font-size:15px;color:var(--navy)}
+.zone-h .step{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font:700 12px var(--fn);display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.zone-h small{font-weight:400;color:var(--ink-3);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.zone-b{overflow:auto;min-height:0;flex:1}
+.navi{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:11px 14px;cursor:pointer;font-size:14.5px}
+.navi:hover{background:var(--zone-2)}
+.navi[aria-selected="true"]{background:var(--accent-tint);box-shadow:inset 4px 0 0 var(--accent);font-weight:600}
+.navi .n{margin-left:auto;font:600 12.5px var(--fn);background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;padding:0 8px;color:var(--ink-2)}
+.navi .two{display:block;min-width:0}
+.navi .two small{display:block;color:var(--ink-3);font-size:13px;font-weight:400}
+.sect{border:1px solid var(--line-strong);border-radius:8px;margin:0 0 14px;background:#fff;overflow:hidden}
+.sect-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--zone-2);border-bottom:1px solid var(--line-strong);font-weight:600;font-size:14.5px}
+.sect-h small{font-weight:400;color:var(--ink-3)}
+.sect-b{padding:12px}
+.sect-b.flush{padding:0}
+.savebar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--frame);background:var(--zone-2)}
+.savebar.dirty{background:var(--edit);border-top-color:var(--edit-line)}
+
+/* ===== 2 · category tiles ===== */
+.o2{height:100%;overflow:auto;padding:18px 22px}
+.crumbs{display:flex;align-items:center;gap:6px;font-size:14.5px;margin:0 0 14px;flex-wrap:wrap}
+.crumbs button{border:0;background:none;color:var(--accent);cursor:pointer;font-weight:600;padding:2px 2px}
+.crumbs span.sep{color:var(--ink-3)}
+.crumbs b{color:var(--navy)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.tile{position:relative;text-align:left;border:1px solid var(--frame);border-radius:10px;background:#fff;padding:16px 16px 14px 20px;cursor:pointer;min-height:132px;display:flex;flex-direction:column;gap:6px}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;border-radius:10px 0 0 10px;background:var(--cc)}
+.tile:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(31,95,191,.12)}
+.tile h4{margin:0;font-size:16.5px;color:var(--navy)}
+.tile .big{font:600 28px var(--fn);color:var(--ink)}
+.tile .big small{font:400 14px var(--f);color:var(--ink-2);margin-left:6px}
+.tile .names{font-size:13px;color:var(--ink-3);line-height:1.4}
+.scards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.scard{border:1px solid var(--frame);border-radius:10px;background:#fff;padding:14px 16px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:8px}
+.scard:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(31,95,191,.12)}
+.scard h4{margin:0;font-size:16.5px;color:var(--navy);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.scard ul{margin:0;padding:0;list-style:none;font-size:13.5px}
+.scard li{display:flex;justify-content:space-between;gap:10px;padding:2px 0;border-bottom:1px dashed var(--line)}
+.scard li:last-child{border-bottom:0}
+.detail-h{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 14px}
+.detail-h h3{margin:0;font-size:24px;color:var(--navy)}
+.detail-h .where{color:var(--ink-2);font-size:14.5px;margin-top:2px}
+
+/* ===== 3 · coverage matrix ===== */
+.o3{display:grid;grid-template-columns:1fr;height:100%;position:relative}
+.o3-main{overflow:auto;padding:16px 18px}
+table.mx{border-collapse:separate;border-spacing:0;width:100%;background:#fff;border:1px solid var(--frame);border-radius:10px;overflow:hidden;font-size:14px}
+table.mx th{background:var(--zone);font-weight:600;color:var(--navy);padding:10px 12px;text-align:left;border-bottom:1px solid var(--frame);border-right:1px solid var(--line-strong)}
+table.mx th:last-child,table.mx td:last-child{border-right:0}
+table.mx tbody th{background:#fff;font-weight:600;white-space:nowrap}
+table.mx td{padding:0;border-bottom:1px solid var(--line-strong);border-right:1px solid var(--line-strong);vertical-align:top}
+table.mx tr:last-child td,table.mx tr:last-child th{border-bottom:0}
+.cell{display:block;width:100%;height:100%;min-height:74px;text-align:left;border:0;background:#fff;padding:9px 11px;cursor:pointer;font-size:13px;color:var(--ink-2)}
+.cell:hover{background:var(--accent-tint)}
+.cell[aria-pressed="true"]{background:var(--accent-tint);box-shadow:inset 0 0 0 2px var(--accent)}
+.cell .cn{display:block;font:600 18px var(--fn);color:var(--ink);margin-bottom:2px}
+.cell .cn small{font:400 12.5px var(--f);color:var(--ink-3);margin-left:4px}
+.cell.none{background:var(--bad-tint)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(560px,92%);background:#fff;border-left:1px solid var(--frame);box-shadow:-10px 0 30px rgba(16,24,40,.18);display:flex;flex-direction:column;z-index:10}
+.drawer-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--frame);background:var(--zone)}
+.drawer-h h4{margin:0;font-size:17px;color:var(--navy)}
+.drawer-b{flex:1;overflow:auto;padding:14px 16px}
+.drawer-f{padding:10px 16px;border-top:1px solid var(--frame);display:flex;gap:10px;align-items:center;background:var(--zone-2)}
+.drawer-f.dirty{background:var(--edit);border-top-color:var(--edit-line)}
+.scrim{position:absolute;inset:0;background:rgba(18,35,63,.25);z-index:9}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink-2);margin:10px 0 0}
+
+/* ===== 4 · sleeve sheet ===== */
+.o4{display:grid;grid-template-columns:260px 1fr;height:100%}
+.o4-nav{background:#fff;border-right:1px solid var(--frame);display:flex;flex-direction:column;min-height:0}
+.o4-nav .top{padding:12px;border-bottom:1px solid var(--frame);display:grid;gap:8px}
+.o4-nav .acc{overflow:auto;flex:1}
+.acc-h{display:flex;align-items:center;gap:8px;width:100%;border:0;border-bottom:1px solid var(--line-strong);background:var(--zone-2);padding:9px 12px;font-weight:600;font-size:14px;cursor:pointer;text-align:left;color:var(--navy)}
+.acc-h .n{margin-left:auto;font:600 12px var(--fn);color:var(--ink-3);white-space:nowrap}
+.acc-i{display:block;width:100%;border:0;border-bottom:1px solid var(--line);background:#fff;text-align:left;padding:8px 12px 8px 30px;cursor:pointer;font-size:14px}
+.acc-i:hover{background:var(--zone-2)}
+.acc-i[aria-selected="true"]{background:var(--accent-tint);box-shadow:inset 4px 0 0 var(--accent);font-weight:600}
+.o4-doc{overflow:auto;padding:22px 28px;min-height:0}
+.sheet{max-width:860px;margin:0 auto;background:#fff;border:1px solid var(--frame);border-radius:12px;padding:24px 28px}
+.sheet.editing{border-color:var(--edit-line);box-shadow:0 0 0 4px var(--edit)}
+.sheet h3{margin:0;font-size:28px;color:var(--navy);line-height:1.15}
+.sheet .where{color:var(--ink-2);font-size:15px;margin:4px 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sheet h5{font-size:13px;font-family:var(--fn);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin:22px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--navy)}
+.editbar{position:sticky;top:0;z-index:5;box-shadow:0 4px 12px rgba(16,24,40,.12);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--edit);border:1px solid var(--edit-line);border-radius:8px;padding:10px 14px;margin:0 auto 14px;max-width:860px}
+.editbar b{color:#7A5200}
+.o2 .editbar,.o3 .editbar,.o10 .editbar{max-width:none}
+
+/* ===== 5 · tabbed detail ===== */
+.o5{display:grid;grid-template-columns:280px 1fr;height:100%}
+.o5-list{background:#fff;border-right:1px solid var(--frame);display:flex;flex-direction:column;min-height:0}
+.o5-list .top{padding:12px;display:grid;gap:8px;border-bottom:1px solid var(--frame);background:var(--zone-2)}
+.o5-list .items{overflow:auto;flex:1}
+.o5-main{display:flex;flex-direction:column;min-height:0}
+.sum{background:#fff;border-bottom:1px solid var(--frame);padding:16px 20px 0}
+.sum-top{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.sum h3{margin:0;font-size:23px;color:var(--navy)}
+.sum .where{font-size:14px;color:var(--ink-2)}
+.sum .chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}
+.tabsx{display:flex;gap:4px;margin-top:12px}
+.tabsx button{border:0;background:none;padding:9px 14px;font-size:14.5px;color:var(--ink-2);cursor:pointer;border-bottom:3px solid transparent;font-weight:600}
+.tabsx button[aria-selected="true"]{color:var(--navy);border-bottom-color:var(--accent)}
+.tabsx button .n{font:600 12px var(--fn);background:var(--surface-2);border-radius:9px;padding:0 6px;margin-left:5px;color:var(--ink-2)}
+.o5-body{overflow:auto;padding:16px 20px;flex:1;min-height:0}
+
+/* ===== 6 · spreadsheet ===== */
+.o6{display:flex;flex-direction:column;height:100%}
+.o6-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:#fff;border-bottom:1px solid var(--frame)}
+.o6-body{overflow:auto;flex:1;padding:14px 16px}
+table.ss{width:100%;border-collapse:collapse;background:#fff;font-size:14px;border:1px solid var(--frame)}
+table.ss th{position:sticky;top:0;z-index:2;background:var(--navy);color:#fff;font:600 12.5px var(--fn);letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;text-align:left;border-right:1px solid #2F4260}
+table.ss th.r,table.ss td.r{text-align:right}
+table.ss td{border:1px solid var(--line-strong);padding:5px 10px;vertical-align:middle}
+table.ss tr.sh td{background:var(--zone);font-weight:700;color:var(--navy);border-top:2px solid var(--frame)}
+table.ss tr.sh td .chip{margin-left:6px}
+table.ss tr.chg td{background:var(--edit)}
+table.ss tr.sum td{background:var(--zone-2);font-weight:600}
+table.ss td.cellin input{width:80px;text-align:right;border:1px solid var(--line-strong);border-radius:4px;padding:4px 6px;font:14.5px var(--fn);background:#fff}
+table.ss td.cellin input:hover{border-color:var(--frame)}
+table.ss td.cellin input:focus{border-color:var(--accent);background:#fff;outline:none;box-shadow:0 0 0 2px rgba(31,95,191,.2)}
+table.ss td.cellin input.bad{border-color:var(--bad);background:var(--bad-tint)}
+.o6-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--frame);background:var(--zone-2)}
+.o6-bar.dirty{background:var(--edit);border-top-color:var(--edit-line)}
+
+/* ===== 7 · guided edit ===== */
+.o7{display:grid;grid-template-columns:300px 1fr;height:100%;position:relative}
+.o7-list{background:#fff;border-right:1px solid var(--frame);overflow:auto}
+.o7-list .top{padding:12px;display:grid;gap:8px;border-bottom:1px solid var(--frame);background:var(--zone-2);position:sticky;top:0;z-index:1}
+.o7-view{overflow:auto;padding:20px 24px}
+.wiz{position:absolute;inset:0;background:var(--bg);z-index:12;display:flex;flex-direction:column}
+.wiz-h{background:#fff;border-bottom:1px solid var(--frame);padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.wiz-h h4{margin:0;font-size:18px;color:var(--navy)}
+.steps{display:flex;gap:0;margin-left:auto;flex-wrap:wrap}
+.steps span{display:flex;align-items:center;gap:7px;padding:6px 14px;font-size:14px;color:var(--ink-3);border-bottom:3px solid var(--line-strong)}
+.steps span b{width:22px;height:22px;border-radius:50%;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center;font:700 12px var(--fn)}
+.steps span.on{color:var(--navy);font-weight:600;border-bottom-color:var(--accent)}
+.steps span.on b{background:var(--accent);color:#fff;border-color:var(--accent)}
+.steps span.done b{background:var(--good);color:#fff;border-color:var(--good)}
+.wiz-b{flex:1;overflow:auto;padding:20px 24px}
+.wiz-b .card{max-width:880px;margin:0 auto;background:#fff;border:1px solid var(--frame);border-radius:10px;padding:18px 22px}
+.wiz-f{background:#fff;border-top:1px solid var(--frame);padding:12px 20px;display:flex;gap:10px;align-items:center}
+.diff{list-style:none;margin:0;padding:0}
+.diff li{display:grid;grid-template-columns:90px 1fr auto;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14.5px;align-items:center}
+.diff li:first-child{border-top:0}
+.diff .k{font:700 11.5px var(--fn);letter-spacing:.06em;text-transform:uppercase;border-radius:4px;padding:2px 6px;text-align:center}
+.diff .k.add{background:var(--good-tint);color:var(--good)}
+.diff .k.rem{background:var(--bad-tint);color:var(--bad)}
+.diff .k.chg{background:var(--warn-tint);color:var(--warn)}
+.diff s{color:var(--ink-3)}
+
+/* ===== 8 · cards ===== */
+.o8{height:100%;display:flex;flex-direction:column}
+.o8-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 18px;background:#fff;border-bottom:1px solid var(--frame)}
+.o8-cats{display:flex;gap:6px;flex-wrap:wrap;padding:10px 18px;background:var(--zone-2);border-bottom:1px solid var(--line-strong)}
+.o8-cats button{border:1px solid var(--line-strong);background:#fff;border-radius:16px;padding:4px 12px;font-size:13.5px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.o8-cats button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.o8-body{overflow:auto;flex:1;padding:16px 18px}
+.o8-body h4.cat{display:flex;align-items:center;gap:8px;margin:6px 0 10px;font-size:17px;color:var(--navy);padding-bottom:6px;border-bottom:2px solid var(--line-strong)}
+.o8-body h4.cat small{font-weight:400;color:var(--ink-3);font-size:13.5px}
+.bcard{background:#fff;border:1px solid var(--frame);border-radius:10px;margin:0 0 12px;overflow:hidden}
+.bcard.open{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.bcard.editing{border-color:var(--edit-line);box-shadow:0 0 0 3px var(--edit)}
+.bcard-h{display:grid;grid-template-columns:1fr auto;gap:8px 16px;align-items:center;padding:12px 16px;cursor:pointer}
+.bcard-h h5{margin:0;font-size:16px;color:var(--navy);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pchips{display:flex;flex-wrap:wrap;gap:6px;grid-column:1 / -1}
+.pchips span{font-size:13px;background:var(--zone-2);border:1px solid var(--line-strong);border-radius:5px;padding:2px 8px;color:var(--ink-2)}
+.pchips span b{color:var(--ink);font-family:var(--fn);margin-left:4px}
+.bcard-b{border-top:1px solid var(--line-strong);padding:14px 16px;background:var(--zone-2)}
+.bcard-a{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+
+/* ===== 9 · focused page ===== */
+.o9{height:100%;overflow:auto;position:relative}
+.o9-home{padding:18px 22px}
+.o9-home .top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.o9-sec{background:#fff;border:1px solid var(--frame);border-radius:10px;margin:0 0 14px;overflow:hidden}
+.o9-sec-h{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--zone);border-bottom:1px solid var(--frame);font-weight:600;color:var(--navy)}
+.o9-row{display:grid;grid-template-columns:1fr 150px 190px 110px;gap:12px;align-items:center;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:10px 14px;cursor:pointer;font-size:14.5px}
+.o9-row:last-child{border-bottom:0}
+.o9-row:hover{background:var(--accent-tint)}
+.o9-row small{color:var(--ink-3);font-size:13px}
+.o9-page{padding:0 0 80px}
+.o9-head{background:#fff;border-bottom:1px solid var(--frame);padding:14px 26px}
+.o9-head h3{margin:4px 0 0;font-size:26px;color:var(--navy)}
+.o9-cont{max-width:900px;margin:0 auto;padding:18px 26px}
+.nsec{background:#fff;border:1px solid var(--frame);border-radius:10px;margin:0 0 16px}
+.nsec-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line-strong)}
+.nsec-h .num{width:26px;height:26px;border-radius:50%;background:var(--navy);color:#fff;display:inline-flex;align-items:center;justify-content:center;font:700 13px var(--fn)}
+.nsec-h h4{margin:0;font-size:17px;color:var(--navy)}
+.nsec-h small{color:var(--ink-3);font-size:13.5px}
+.nsec-b{padding:14px 16px}
+.stickbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 26px;background:#fff;border-top:1px solid var(--frame);box-shadow:0 -4px 14px rgba(16,24,40,.08)}
+.stickbar.dirty{background:var(--edit);border-top-color:var(--edit-line)}
+
+/* ===== 11 · cards and table together ===== */
+.o11{display:flex;flex-direction:column;height:100%}
+.o11-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:#fff;border-bottom:1px solid var(--frame)}
+.o11-bar .lbl{font-size:13.5px;font-weight:600;color:var(--ink-2)}
+.o11-bar .seg button{display:inline-flex;align-items:center;gap:7px}
+.o11-bar .seg svg{width:15px;height:15px;fill:currentColor}
+.o11-bar .ctx{font-size:13.5px;color:var(--ink-3)}
+.o11-body{flex:1;min-height:0;position:relative}
+.combo-note{background:var(--accent-tint);border:1px solid #C8D8F2;border-left:4px solid var(--accent);border-radius:8px;padding:12px 16px;margin:0 0 22px;font-size:15px}
+.combo-note a{color:var(--accent-2);font-weight:600}
+
+/* ===== 10 · table + drawer ===== */
+.o10{display:flex;flex-direction:column;height:100%;position:relative}
+.o10-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:#fff;border-bottom:1px solid var(--frame)}
+.o10-body{overflow:auto;flex:1}
+table.lt{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
+table.lt th{position:sticky;top:0;z-index:2;background:var(--zone);border-bottom:1px solid var(--frame);text-align:left;padding:9px 10px;font-weight:600;color:var(--navy);white-space:nowrap}
+table.lt th button{border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:0}
+table.lt td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.lt tbody tr{cursor:pointer}
+table.lt tbody tr:hover td{background:var(--zone-2)}
+table.lt tbody tr.on td{background:var(--accent-tint)}
+table.lt td.r,table.lt th.r{text-align:right}
+.cmp{position:absolute;inset:0;z-index:14;background:var(--bg);display:flex;flex-direction:column}
+.cmp-b{flex:1;overflow:auto;padding:16px;display:grid;gap:14px}
+.cmp-col{background:#fff;border:1px solid var(--frame);border-radius:10px;overflow:hidden}
+.cmp-col h5{margin:0;padding:12px 14px;background:var(--zone);border-bottom:1px solid var(--frame);font-size:16px;color:var(--navy)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Proposal · Repository · Sleeves</p>
+    <h1>Ten ways to make the Sleeves screen clearer</h1>
+    <p class="sub">The Sleeves tab today, what makes it hard to read, and ten redesigns built on your live library: the 101 sleeves, 4 implementation types, 7 categories and 73 catalogue products, read from the repository without changing it. Every mock-up works: pick a type and category, open a sleeve, edit its weights, add or remove a product, and save. Saving is simulated in the page and resets on reload. Press <b>Choose</b> on the one you want.</p>
+  </header>
+
+  <div class="bar">
+    <span class="ctl">Jump to</span>
+    <nav class="jump" aria-label="Jump to a proposal" id="jump"></nav>
+  </div>
+
+  <section id="today">
+    <h2 class="sec">What's hard today</h2>
+    <p class="lead">The Sleeves tab at 1600px, on the first sleeve of Investment Grade Fixed Income under PMG Multi-Asset Portfolio. The numbered points are explained below.</p>
+    <div class="shotbox">
+      <img src="sleeves-screen-redesign/today-1600.png" alt="The current Sleeves tab: three panes - categories, sleeves, and an always-open editor - with a footer holding Create sleeve and Save sleeve">
+      <span class="mk" style="left:18.1%;top:52%">1</span>
+      <span class="mk" style="left:23%;top:17.5%">2</span>
+      <span class="mk" style="left:35.5%;top:11.4%">3</span>
+      <span class="mk" style="left:7.6%;top:94.6%">3</span>
+      <span class="mk" style="left:44%;top:11.1%">4</span>
+      <span class="mk" style="left:88%;top:20.9%">5</span>
+      <span class="mk" style="left:69%;top:46.9%">6</span>
+      <span class="mk" style="left:46%;top:64%">7</span>
+      <span class="mk" style="left:28.5%;top:31.4%">8</span>
+      <span class="mk" style="left:93.3%;top:94.6%">9</span>
+      <span class="mk" style="left:24%;top:94.6%">10</span>
+    </div>
+    <p class="cap">Live console, 1 October 2026. Nothing was saved while taking it.</p>
+    <ul class="finds">
+      <li><b class="n">1</b><span><b>The three panes barely separate.</b> Categories, the sleeve list and the editor are divided by 1px lines in #EEF1F4 on white, so the screen reads as one sheet of text, not three areas with three jobs.</span></li>
+      <li><b class="n">2</b><span><b>The implementation type is easy to miss.</b> It decides everything in the list, yet it is four 10px pills wrapping onto two lines inside the middle pane, looking like tags rather than the screen's main filter.</span></li>
+      <li><b class="n">3</b><span><b>Two buttons create a sleeve.</b> "+ New sleeve" in the list header and a large green "+ Create sleeve" in the footer do the same thing, and the green one is the loudest control on the screen.</span></li>
+      <li><b class="n">4</b><span><b>The sleeve has no heading.</b> Its name only appears inside a text box; where it lives (category · type) is 11px grey, and "+ Add edition" and "Archive this sleeve…" are tiny buttons beside it.</span></li>
+      <li><b class="n">5</b><span><b>It is always a form.</b> Opening a sleeve to read it drops you straight into editable fields, including a greyed Category box that repeats the left pane. There is no calm "this is what the sleeve holds" view.</span></li>
+      <li><b class="n">6</b><span><b>Editions dominate.</b> An advanced feature (none of the 101 live sleeves uses one) takes a paragraph of grey help and a full-width "+ Add a rule" bar above the products, which are what you came to see.</span></li>
+      <li><b class="n">7</b><span><b>Product facts are tiny.</b> Each product's asset class, vehicle, source and fee group is a 10px grey line starting "— ·", and cost, liquidity and minimum are not shown at all.</span></li>
+      <li><b class="n">8</b><span><b>The list repeats noise.</b> Every row says "created 2 Sept 2026, 19:17 by francisbarker" - identical for all 101 - while what differs (status, what it holds) is not there.</span></li>
+      <li><b class="n">9</b><span><b>Save is far from the work.</b> It sits in the footer's far corner, pale blue whether or not anything has changed, and nothing on screen says "you have unsaved changes" until you try to leave.</span></li>
+      <li><b class="n">10</b><span><b>The footer speaks to developers.</b> "Library · sleeves.db · 101 sleeves · 107 versions on record" names a database file. History is a collapsed row at the very bottom of a scrolling pane.</span></li>
+    </ul>
+    <div class="shotbox" style="max-width:820px">
+      <img src="sleeves-screen-redesign/today-history-1280.png" alt="The current Sleeves tab at 1280px, scrolled to the bottom of the editor, where History is a collapsed row">
+    </div>
+    <p class="cap">At 1280px, scrolled to the foot of the editor: History is the last row, under the provenance line in 10px grey.</p>
+    <h2 class="sec" style="font-size:20px">What every proposal does differently</h2>
+    <div class="principles">
+      <div><b>Visible areas</b>Panels have real borders (#AEBAC7), titled headers on a tinted band, and space between them.</div>
+      <div><b>The type is the main filter</b>A full-size segmented control or selector that says what the list is showing.</div>
+      <div><b>A heading per sleeve</b>The sleeve's name as a title, where it lives in words, and status chips that say what they mean.</div>
+      <div><b>Read, then edit</b>Most proposals open a sleeve read-only with one clear Edit; while editing, a tinted bar says so and holds Save.</div>
+      <div><b>Products first</b>What the sleeve holds, with weights, a total and the product facts in readable type. Editions are kept but sit lower.</div>
+      <div><b>One way to create</b>A single "New sleeve" action, placed where its category is in hand.</div>
+    </div>
+  </section>
+
+  <div class="combo-note"><b>New: 11 · Cards and table together.</b> Proposals 2 and 10 combined, with a Cards / Table switch that keeps your place. <a href="#opt-combo">Go to proposal 11 ›</a></div>
+  <h2 class="sec">The proposals</h2>
+  <p class="lead">Each is live on your data. Implementation types, categories, sleeves and products are real; the "GBP" edition on Active Passive (Public Equity, PMG Multi-Asset Portfolio) is the one illustrative addition, marked as such, so you can see how editions read - none of the live sleeves uses one yet.</p>
+  <main id="options"></main>
+</div>
+<div class="picked-bar" id="pickedBar" role="status" aria-live="polite"></div>
+
+<script>
+var D = {"variants":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"categories":["Investment Grade Fixed Income","Hybrid Fixed Income","Other Fixed Income","Public Equity","Hedge Funds","Private Equity & Other Private Assets","Asset Allocation Strategies"],"fixed":["Asset Allocation Strategies","Hybrid Fixed Income"],"vocab":{"currency":["USD","GBP","CHF","EUR"],"riskLevel":["LowVol","Conservative","ConsMod","Moderate","ModAgg","Agg","Higher Risk","All Equity"],"allocationType":["Full","Core","ex-Alts","ex-HFs","NA"]},"sleeves":[{"id":100,"v":3,"c":6,"name":"Tactical Tilt Overlay Portfolio","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"tactical-tilt-fund-ucits","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","Irish Onshore"]},{"id":95,"v":3,"c":4,"name":"HFM & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-absolute-return-ucits","w":60.0},{"pid":"calderwood-global-macro-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":96,"v":3,"c":4,"name":"HFO & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"calderwood-global-macro-ucits","w":55.0},{"pid":"gs-absolute-return-ucits","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":97,"v":3,"c":4,"name":"GMMAP & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"calderwood-global-macro-ucits","w":60.0},{"pid":"gs-absolute-return-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":98,"v":3,"c":4,"name":"Aptitude & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-absolute-return-ucits","w":55.0},{"pid":"calderwood-global-macro-ucits","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":99,"v":3,"c":4,"name":"HFO Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-absolute-return-ucits","w":60.0},{"pid":"calderwood-global-macro-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":85,"v":3,"c":1,"name":"SVP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"strategic-volatility-premium","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":80,"v":3,"c":0,"name":"SMA Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":81,"v":3,"c":0,"name":"SMA & ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-global-aggregate-ucits","w":30.0},{"pid":"gs-access-euro-government-ucits","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":82,"v":3,"c":0,"name":"ETFs Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-global-aggregate-ucits","w":60.0},{"pid":"gs-access-euro-government-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":83,"v":3,"c":0,"name":"SMA Sov. Agency","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-euro-government-ucits","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":84,"v":3,"c":0,"name":"SMA: Gilts Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":86,"v":3,"c":2,"name":"Mutual Funds","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-global-high-yield-ucits","w":60.0},{"pid":"gs-emerging-markets-debt-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":87,"v":3,"c":2,"name":"Funds Irish","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-global-high-yield-ucits","w":60.0},{"pid":"gs-emerging-markets-debt-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["Irish Onshore"]},{"id":88,"v":3,"c":2,"name":"GPP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-global-high-yield-ucits","w":55.0},{"pid":"gs-emerging-markets-debt-ucits","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":101,"v":3,"c":5,"name":"Private Equity Managers","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-private-markets-icav-feeder","w":40.0},{"pid":"gs-private-credit-icav-feeder","w":30.0},{"pid":"gs-vintage-fund-ix","w":30.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":102,"v":3,"c":5,"name":"Alternative Portfolio Services","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-private-credit-icav-feeder","w":40.0},{"pid":"gs-private-markets-icav-feeder","w":35.0},{"pid":"gs-real-assets-program","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":89,"v":3,"c":3,"name":"Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-world-equity-ucits","w":60.0},{"pid":"gs-access-em-equity-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":90,"v":3,"c":3,"name":"Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-world-equity-ucits","w":55.0},{"pid":"gs-europe-core-equity-ucits","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":92,"v":3,"c":3,"name":"Concentrated Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-europe-core-equity-ucits","w":50.0},{"pid":"gs-access-world-equity-ucits","w":50.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":93,"v":3,"c":3,"name":"Concentrated Active Passive (Low TE)","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-world-equity-ucits","w":65.0},{"pid":"gs-europe-core-equity-ucits","w":35.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":94,"v":3,"c":3,"name":"Global Concentrated","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-europe-core-equity-ucits","w":60.0},{"pid":"gs-emerging-markets-equity-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":51,"v":1,"c":6,"name":"Tactical Tilt Overlay Portfolio","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"esg-tactical-tilt-fund","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","Irish Onshore"]},{"id":46,"v":1,"c":4,"name":"HFM & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-hedgeworks-esg-multi-strategy","w":60.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":47,"v":1,"c":4,"name":"HFO & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"ashfield-select-equity-l-s","w":35.0},{"pid":"northbrook-relative-value","w":25.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":48,"v":1,"c":4,"name":"GMMAP & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"calderwood-global-macro","w":55.0},{"pid":"gs-absolute-return-tracker","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":49,"v":1,"c":4,"name":"Aptitude & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"northbrook-relative-value","w":50.0},{"pid":"gs-absolute-return-tracker","w":50.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":50,"v":1,"c":4,"name":"HFO Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"ashfield-select-equity-l-s","w":40.0},{"pid":"northbrook-relative-value","w":35.0},{"pid":"gs-managed-futures-strategy","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":31,"v":1,"c":1,"name":"SVP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"strategic-volatility-premium","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":23,"v":1,"c":0,"name":"SMA Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":24,"v":1,"c":0,"name":"SMA & ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-esg-aggregate-etf","w":50.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":25,"v":1,"c":0,"name":"ETFs Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-esg-aggregate-etf","w":55.0},{"pid":"gs-access-ig-corporate-etf","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":26,"v":1,"c":0,"name":"SMA ESG","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-intermediate-credit-sma","w":55.0},{"pid":"gs-esg-us-corporate-bond-fund","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":27,"v":1,"c":0,"name":"SMA & ETFs ESG","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-intermediate-credit-sma","w":40.0},{"pid":"gs-access-esg-aggregate-etf","w":35.0},{"pid":"gs-esg-us-corporate-bond-fund","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":28,"v":1,"c":0,"name":"Funds Only ESG","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-esg-us-corporate-bond-fund","w":45.0},{"pid":"gs-green-bond-fund","w":30.0},{"pid":"ashfield-social-impact-bond","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":29,"v":1,"c":0,"name":"SMA Sov. Agency","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-treasury-0-1-etf","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":30,"v":1,"c":0,"name":"SMA: Gilts Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":32,"v":1,"c":2,"name":"Mutual Funds","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-esg-high-yield-fund","w":55.0},{"pid":"gs-esg-emerging-markets-debt","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":33,"v":1,"c":2,"name":"ESG High Yield","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-esg-high-yield-fund","w":65.0},{"pid":"gs-esg-emerging-markets-debt","w":35.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":34,"v":1,"c":2,"name":"GPP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-strategic-income-fund","w":50.0},{"pid":"gs-access-high-yield-etf","w":30.0},{"pid":"gs-access-em-usd-bond-etf","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":52,"v":1,"c":5,"name":"Private Equity Managers","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-sustainable-investing-group-fund","w":30.0},{"pid":"gs-private-markets-buyout","w":25.0},{"pid":"gs-vintage-fund-ix","w":20.0},{"pid":"gs-sustainable-real-estate","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":53,"v":1,"c":5,"name":"Alternative Portfolio Services","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-sustainable-real-estate","w":35.0},{"pid":"gs-real-assets-program","w":30.0},{"pid":"gs-sustainable-investing-group-fund","w":20.0},{"pid":"calderwood-energy-transition","w":15.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":35,"v":1,"c":3,"name":"Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-esg-us-equity-etf","w":60.0},{"pid":"gs-access-em-equity-etf","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":36,"v":1,"c":3,"name":"Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":40.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"northbrook-intl-equity","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":37,"v":1,"c":3,"name":"Global Active","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-us-equity-insights-fund","w":45.0},{"pid":"northbrook-intl-equity","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore"]},{"id":38,"v":1,"c":3,"name":"Concentrated Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-intl-equity-etf","w":30.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":39,"v":1,"c":3,"name":"Concentrated Active Passive (Low TE)","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-concentrated-growth-sma","w":25.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":40,"v":1,"c":3,"name":"Global Concentrated","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"northbrook-focused-intl","w":35.0},{"pid":"gs-emerging-markets-equity","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":41,"v":1,"c":3,"name":"Active Passive Funds ESG","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-esg-us-equity-etf","w":45.0},{"pid":"gs-esg-international-equity","w":35.0},{"pid":"gs-esg-emerging-markets-equity","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":42,"v":1,"c":3,"name":"GEP + ESG Screened ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-esg-international-equity","w":40.0},{"pid":"gs-access-esg-us-equity-etf","w":40.0},{"pid":"gs-access-em-equity-etf","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":43,"v":1,"c":3,"name":"GEP + ESG SRI ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"northbrook-paris-aligned-equity","w":40.0},{"pid":"gs-access-esg-us-equity-etf","w":40.0},{"pid":"gs-climate-solutions-fund","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":44,"v":1,"c":3,"name":"ESG Screened ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-esg-us-equity-etf","w":60.0},{"pid":"gs-access-intl-equity-etf","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":45,"v":1,"c":3,"name":"ESG SRI ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-esg-us-equity-etf","w":55.0},{"pid":"gs-access-em-equity-etf","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG ESG"]},{"id":20,"v":0,"c":6,"name":"Tactical Tilt Overlay Portfolio","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"tactical-tilt-fund","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","Irish Onshore"]},{"id":15,"v":0,"c":4,"name":"HFM & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-hedgeworks-multi-strategy","w":60.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":16,"v":0,"c":4,"name":"HFO & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"ashfield-select-equity-l-s","w":35.0},{"pid":"northbrook-relative-value","w":25.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":17,"v":0,"c":4,"name":"GMMAP & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"calderwood-global-macro","w":55.0},{"pid":"gs-absolute-return-tracker","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":18,"v":0,"c":4,"name":"Aptitude & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"northbrook-relative-value","w":50.0},{"pid":"gs-absolute-return-tracker","w":50.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":19,"v":0,"c":4,"name":"HFO Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"ashfield-select-equity-l-s","w":40.0},{"pid":"northbrook-relative-value","w":35.0},{"pid":"gs-managed-futures-strategy","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":3,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":6,"v":0,"c":1,"name":"SVP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"strategic-volatility-premium","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":1,"v":0,"c":0,"name":"SMA Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":2,"v":0,"c":0,"name":"SMA & ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-ig-corporate-etf","w":30.0},{"pid":"gs-access-treasury-0-1-etf","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":3,"v":0,"c":0,"name":"ETFs Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-ig-corporate-etf","w":60.0},{"pid":"gs-access-treasury-0-1-etf","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":4,"v":0,"c":0,"name":"SMA Sov. Agency","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-treasury-0-1-etf","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":5,"v":0,"c":0,"name":"SMA: Gilts Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":7,"v":0,"c":2,"name":"Mutual Funds","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-high-yield-fund","w":45.0},{"pid":"gs-emerging-markets-debt","w":35.0},{"pid":"gs-strategic-income-fund","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":8,"v":0,"c":2,"name":"GPP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-strategic-income-fund","w":50.0},{"pid":"gs-access-high-yield-etf","w":30.0},{"pid":"gs-access-em-usd-bond-etf","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":21,"v":0,"c":5,"name":"Private Equity Managers","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-private-markets-buyout","w":60.0},{"pid":"gs-vintage-fund-ix","w":40.0}],"at":"2026-09-30T18:01:43","by":"francisbarker","first":"2026-09-02T19:17:38","rev":2,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":22,"v":0,"c":5,"name":"Alternative Portfolio Services","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-real-assets-program","w":25.0},{"pid":"gs-real-estate-partners","w":20.0},{"pid":"gs-private-credit-partners","w":20.0},{"pid":"ashfield-direct-lending","w":15.0},{"pid":"ashfield-co-investment","w":10.0},{"pid":"gs-venture-access-fund","w":10.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":9,"v":0,"c":3,"name":"Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-access-intl-equity-etf","w":30.0},{"pid":"gs-access-em-equity-etf","w":15.0}],"at":"2026-09-03T13:59:56","by":"francisbarker","first":"2026-09-02T19:17:38","rev":3,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":10,"v":0,"c":3,"name":"Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":40.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"northbrook-intl-equity","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":11,"v":0,"c":3,"name":"Global Active","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-us-equity-insights-fund","w":45.0},{"pid":"northbrook-intl-equity","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore"]},{"id":12,"v":0,"c":3,"name":"Concentrated Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-intl-equity-etf","w":30.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":13,"v":0,"c":3,"name":"Concentrated Active Passive (Low TE)","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-concentrated-growth-sma","w":25.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":14,"v":0,"c":3,"name":"Global Concentrated","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"northbrook-focused-intl","w":35.0},{"pid":"gs-emerging-markets-equity","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":77,"v":2,"c":6,"name":"Tactical Tilt Overlay Portfolio Onshore","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"tactical-tilt-fund","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["US Onshore"]},{"id":72,"v":2,"c":4,"name":"HFM & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-hedgeworks-multi-strategy","w":60.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":73,"v":2,"c":4,"name":"HFO & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"ashfield-select-equity-l-s","w":35.0},{"pid":"northbrook-relative-value","w":25.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":74,"v":2,"c":4,"name":"GMMAP & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"calderwood-global-macro","w":55.0},{"pid":"gs-absolute-return-tracker","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":75,"v":2,"c":4,"name":"Aptitude & ART","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"northbrook-relative-value","w":50.0},{"pid":"gs-absolute-return-tracker","w":50.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":76,"v":2,"c":4,"name":"HFO Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"ashfield-select-equity-l-s","w":40.0},{"pid":"northbrook-relative-value","w":35.0},{"pid":"gs-managed-futures-strategy","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":59,"v":2,"c":1,"name":"SVP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"strategic-volatility-premium","w":100}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":54,"v":2,"c":0,"name":"SMA Only","note":"SMA Only will be managed by GSAM","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"at":"2026-09-12T10:40:50","by":"francisbarker","first":"2026-09-02T19:17:38","rev":2,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":55,"v":2,"c":0,"name":"SMA & ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-ig-corporate-etf","w":30.0},{"pid":"gs-access-treasury-0-1-etf","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":56,"v":2,"c":0,"name":"ETFs Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-ig-corporate-etf","w":60.0},{"pid":"gs-access-treasury-0-1-etf","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":57,"v":2,"c":0,"name":"SMA Sov. Agency","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-treasury-0-1-etf","w":45.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":58,"v":2,"c":0,"name":"SMA: Gilts Only","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":60,"v":2,"c":2,"name":"Mutual Funds","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-high-yield-fund","w":45.0},{"pid":"gs-emerging-markets-debt","w":35.0},{"pid":"gs-strategic-income-fund","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":61,"v":2,"c":2,"name":"Funds US Onshore","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-high-yield-fund","w":50.0},{"pid":"gs-emerging-markets-debt","w":30.0},{"pid":"calderwood-local-em-debt","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["US Onshore"]},{"id":62,"v":2,"c":2,"name":"GPP","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-strategic-income-fund","w":50.0},{"pid":"gs-access-high-yield-etf","w":30.0},{"pid":"gs-access-em-usd-bond-etf","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":78,"v":2,"c":5,"name":"Private Equity Managers","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-private-markets-buyout","w":30.0},{"pid":"gs-vintage-fund-ix","w":25.0},{"pid":"gs-growth-equity-partners","w":20.0},{"pid":"gs-private-credit-partners","w":15.0},{"pid":"gs-real-estate-partners","w":10.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":79,"v":2,"c":5,"name":"Alternative Portfolio Services","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-real-assets-program","w":25.0},{"pid":"gs-real-estate-partners","w":20.0},{"pid":"gs-private-credit-partners","w":20.0},{"pid":"ashfield-direct-lending","w":15.0},{"pid":"ashfield-co-investment","w":10.0},{"pid":"gs-venture-access-fund","w":10.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":63,"v":2,"c":3,"name":"Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-access-intl-equity-etf","w":30.0},{"pid":"gs-access-em-equity-etf","w":15.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":64,"v":2,"c":3,"name":"Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":40.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"northbrook-intl-equity","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":65,"v":2,"c":3,"name":"Global Active","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-us-equity-insights-fund","w":45.0},{"pid":"northbrook-intl-equity","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore"]},{"id":66,"v":2,"c":3,"name":"Concentrated Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-intl-equity-etf","w":30.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":67,"v":2,"c":3,"name":"Concentrated Active Passive (Low TE)","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-concentrated-growth-sma","w":25.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":68,"v":2,"c":3,"name":"Global Concentrated","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"northbrook-focused-intl","w":35.0},{"pid":"gs-emerging-markets-equity","w":25.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"]},{"id":69,"v":2,"c":3,"name":"US Onshore ETFs","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":60.0},{"pid":"gs-access-intl-equity-etf","w":25.0},{"pid":"gs-access-em-equity-etf","w":15.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["US Onshore"]},{"id":70,"v":2,"c":3,"name":"US Onshore Concentrated Active Passive","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-us-large-cap-etf","w":30.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["US Onshore"]},{"id":71,"v":2,"c":3,"name":"US Onshore Concentrated Active Passive (Low TE)","note":"","label":"","rules":[],"applies":null,"rows":[{"pid":"gs-access-us-large-cap-etf","w":60.0},{"pid":"gs-concentrated-growth-sma","w":20.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["US Onshore"]},{"id":900,"v":0,"c":3,"name":"Active Passive","note":"","label":"GBP","rules":[{"currency":["GBP"]}],"applies":43,"rows":[{"pid":"northbrook-intl-equity","w":45.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"at":"2026-09-02T19:17:38","by":"francisbarker","first":"2026-09-02T19:17:38","rev":1,"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"illustrative":true}],"products":{"gsam-core-municipal-sma":{"n":"GSAM Core Municipal SMA","ac":"Municipals","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.25,"fg":"Core Active","mi":5000000,"cur":"USD","sc":"Dis"},"gsam-intermediate-credit-sma":{"n":"GSAM Intermediate Credit SMA","ac":"IG Corporate","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.28,"fg":"Core Active","mi":5000000,"cur":"USD","sc":"Dis"},"gsam-short-duration-sma":{"n":"GSAM Short Duration SMA","ac":"Short Duration","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.22,"fg":"Core Active","mi":5000000,"cur":"USD","sc":"Dis"},"gs-us-corporate-bond-fund":{"n":"GS US Corporate Bond Fund","ac":"IG Corporate","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.42,"fg":"Core Active","mi":1000,"cur":"USD","sc":"Dis"},"ashfield-global-credit-fund":{"n":"Ashfield Global Credit Fund","ac":"IG Corporate","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.55,"fg":"Core Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-short-duration-income":{"n":"GS Short Duration Income","ac":"Short Duration","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.38,"fg":"Core Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-access-ig-corporate-etf":{"n":"GS Access IG Corporate ETF","ac":"IG Corporate","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.14,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-access-treasury-0-1-etf":{"n":"GS Access Treasury 0-1 ETF","ac":"Government","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.12,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-core-fixed-income-fund":{"n":"GS Core Fixed Income Fund","ac":"Aggregate","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.46,"fg":"Core Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-high-yield-fund":{"n":"GS High Yield Fund","ac":"High Yield","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.72,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-emerging-markets-debt":{"n":"GS Emerging Markets Debt","ac":"EM Debt","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.85,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-strategic-income-fund":{"n":"GS Strategic Income Fund","ac":"Multi-Sector","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.79,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"calderwood-local-em-debt":{"n":"Calderwood Local EM Debt","ac":"EM Debt","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.91,"fg":"Specialist Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-access-high-yield-etf":{"n":"GS Access High Yield ETF","ac":"High Yield","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.34,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-access-em-usd-bond-etf":{"n":"GS Access EM USD Bond ETF","ac":"EM Debt","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.39,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-access-us-large-cap-etf":{"n":"GS Access US Large Cap ETF","ac":"US Large Cap","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.09,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-us-equity-insights-fund":{"n":"GS US Equity Insights Fund","ac":"US All Cap","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.71,"fg":"Core Active","mi":1000,"cur":"USD","sc":"Dis"},"northbrook-intl-equity":{"n":"Northbrook Intl Equity","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.68,"fg":"Core Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-emerging-markets-equity":{"n":"GS Emerging Markets Equity","ac":"Emerging Markets","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":1.12,"fg":"Specialist Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-access-intl-equity-etf":{"n":"GS Access Intl Equity ETF","ac":"Intl Developed","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.25,"fg":"Passive","mi":null,"cur":"Local","sc":"Dis"},"gs-access-em-equity-etf":{"n":"GS Access EM Equity ETF","ac":"Emerging Markets","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.37,"fg":"Passive","mi":null,"cur":"Local","sc":"Dis"},"gs-concentrated-growth-sma":{"n":"GS Concentrated Growth SMA","ac":"US Large Cap","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.55,"fg":"Core Active","mi":5000000,"cur":"USD","sc":"Dis"},"gs-us-focused-value-sma":{"n":"GS US Focused Value SMA","ac":"US Large Cap","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.55,"fg":"Core Active","mi":5000000,"cur":"USD","sc":"Dis"},"northbrook-focused-intl":{"n":"Northbrook Focused Intl","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.94,"fg":"Core Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-hedgeworks-multi-strategy":{"n":"GS HedgeWorks Multi-Strategy","ac":"Multi-Strategy","ve":"SMA","st":"Active","so":"Internal","li":"Quarterly","co":1.35,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"calderwood-global-macro":{"n":"Calderwood Global Macro","ac":"Global Macro","ve":"SMA","st":"Active","so":"External","li":"Quarterly","co":1.48,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"ashfield-select-equity-l-s":{"n":"Ashfield Select Equity L/S","ac":"Equity Long/Short","ve":"SMA","st":"Active","so":"External","li":"Quarterly","co":1.62,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"northbrook-relative-value":{"n":"Northbrook Relative Value","ac":"Relative Value","ve":"SMA","st":"Active","so":"External","li":"Monthly","co":1.55,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"gs-absolute-return-tracker":{"n":"GS Absolute Return Tracker","ac":"Multi-Strategy","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.96,"fg":"Alternatives","mi":1000,"cur":"USD","sc":"Acc"},"gs-managed-futures-strategy":{"n":"GS Managed Futures Strategy","ac":"Managed Futures","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":1.08,"fg":"Alternatives","mi":1000,"cur":"USD","sc":"Acc"},"gs-vintage-fund-ix":{"n":"GS Vintage Fund IX","ac":"Secondaries","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.25,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"gs-private-markets-buyout":{"n":"GS Private Markets Buyout","ac":"Buyout","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.45,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"gs-growth-equity-partners":{"n":"GS Growth Equity Partners","ac":"Growth","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.5,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"ashfield-co-investment":{"n":"Ashfield Co-Investment","ac":"Co-Investment","ve":"SMA","st":"Active","so":"External","li":"Drawdown","co":1.1,"fg":"Alternatives","mi":5000000,"cur":"EUR","sc":"Acc"},"gs-venture-access-fund":{"n":"GS Venture Access Fund","ac":"Venture","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.72,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"gs-real-estate-partners":{"n":"GS Real Estate Partners","ac":"Core Real Estate","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.3,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Dis"},"gs-private-credit-partners":{"n":"GS Private Credit Partners","ac":"Private Credit","ve":"SMA","st":"Active","so":"Internal","li":"Quarterly","co":1.4,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Dis"},"ashfield-direct-lending":{"n":"Ashfield Direct Lending","ac":"Direct Lending","ve":"SMA","st":"Active","so":"External","li":"Quarterly","co":1.35,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Dis"},"gs-real-assets-program":{"n":"GS Real Assets Program","ac":"Real Assets","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.22,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Dis"},"calderwood-energy-transition":{"n":"Calderwood Energy Transition","ac":"Energy","ve":"SMA","st":"Active","so":"External","li":"Drawdown","co":1.38,"fg":"Alternatives","mi":5000000,"cur":"EUR","sc":"Dis"},"tactical-tilt-fund":{"n":"Tactical Tilt Fund","ac":"Tactical Tilts","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.85,"fg":"Asset Allocation","mi":1000,"cur":"USD","sc":"Dis"},"strategic-volatility-premium":{"n":"Strategic Volatility Premium","ac":"Volatility Premium","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.65,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-esg-us-corporate-bond-fund":{"n":"GS ESG US Corporate Bond Fund","ac":"IG Corporate","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.44,"fg":"Core Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-access-esg-aggregate-etf":{"n":"GS Access ESG Aggregate ETF","ac":"Aggregate","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.16,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-green-bond-fund":{"n":"GS Green Bond Fund","ac":"Green Bonds","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.48,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"ashfield-social-impact-bond":{"n":"Ashfield Social Impact Bond","ac":"Social Bonds","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.62,"fg":"Specialist Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-esg-high-yield-fund":{"n":"GS ESG High Yield Fund","ac":"High Yield","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.76,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-esg-emerging-markets-debt":{"n":"GS ESG Emerging Markets Debt","ac":"EM Debt","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.89,"fg":"Specialist Active","mi":1000,"cur":"USD","sc":"Dis"},"gs-access-esg-us-equity-etf":{"n":"GS Access ESG US Equity ETF","ac":"US Large Cap","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.14,"fg":"Passive","mi":null,"cur":"USD","sc":"Dis"},"gs-esg-international-equity":{"n":"GS ESG International Equity","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.72,"fg":"Core Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-esg-emerging-markets-equity":{"n":"GS ESG Emerging Markets Equity","ac":"Emerging Markets","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":1.05,"fg":"Specialist Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-climate-solutions-fund":{"n":"GS Climate Solutions Fund","ac":"Global Thematic","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.88,"fg":"Specialist Active","mi":1000,"cur":"Local","sc":"Dis"},"northbrook-paris-aligned-equity":{"n":"Northbrook Paris-Aligned Equity","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.79,"fg":"Core Active","mi":1000,"cur":"Local","sc":"Dis"},"gs-hedgeworks-esg-multi-strategy":{"n":"GS HedgeWorks ESG Multi-Strategy","ac":"Multi-Strategy","ve":"SMA","st":"Active","so":"Internal","li":"Quarterly","co":1.38,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"gs-sustainable-investing-group-fund":{"n":"GS Sustainable Investing Group Fund","ac":"Impact","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.55,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Acc"},"gs-sustainable-real-estate":{"n":"GS Sustainable Real Estate","ac":"Core Real Estate","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.32,"fg":"Alternatives","mi":5000000,"cur":"USD","sc":"Dis"},"esg-tactical-tilt-fund":{"n":"ESG Tactical Tilt Fund","ac":"Tactical Tilts","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.88,"fg":"Asset Allocation","mi":1000,"cur":"USD","sc":"Dis"},"gs-global-credit-portfolio-ucits":{"n":"GS Global Credit Portfolio (UCITS)","ac":"IG Corporate","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.52,"fg":"Core Active","mi":10000,"cur":"EUR","sc":"Dis"},"gs-sterling-credit-portfolio-ucits":{"n":"GS Sterling Credit Portfolio (UCITS)","ac":"IG Corporate","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.54,"fg":"Core Active","mi":10000,"cur":"GBP","sc":"Dis"},"gs-global-short-duration-ucits":{"n":"GS Global Short Duration (UCITS)","ac":"Short Duration","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.4,"fg":"Core Active","mi":10000,"cur":"EUR","sc":"Dis"},"gs-access-global-aggregate-ucits":{"n":"GS Access Global Aggregate (UCITS)","ac":"Aggregate","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.18,"fg":"Passive","mi":10000,"cur":"EUR","sc":"Dis"},"gs-access-euro-government-ucits":{"n":"GS Access Euro Government (UCITS)","ac":"Government","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.15,"fg":"Passive","mi":10000,"cur":"EUR","sc":"Dis"},"gs-global-high-yield-ucits":{"n":"GS Global High Yield (UCITS)","ac":"High Yield","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.81,"fg":"Specialist Active","mi":10000,"cur":"EUR","sc":"Dis"},"gs-emerging-markets-debt-ucits":{"n":"GS Emerging Markets Debt (UCITS)","ac":"EM Debt","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.94,"fg":"Specialist Active","mi":10000,"cur":"EUR","sc":"Dis"},"gs-access-world-equity-ucits":{"n":"GS Access World Equity (UCITS)","ac":"Global Developed","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.2,"fg":"Passive","mi":10000,"cur":"EUR","sc":"Dis"},"gs-europe-core-equity-ucits":{"n":"GS Europe Core Equity (UCITS)","ac":"Europe","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.78,"fg":"Core Active","mi":10000,"cur":"EUR","sc":"Dis"},"gs-emerging-markets-equity-ucits":{"n":"GS Emerging Markets Equity (UCITS)","ac":"Emerging Markets","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":1.08,"fg":"Specialist Active","mi":10000,"cur":"EUR","sc":"Dis"},"gs-access-em-equity-ucits":{"n":"GS Access EM Equity (UCITS)","ac":"Emerging Markets","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.32,"fg":"Passive","mi":10000,"cur":"EUR","sc":"Dis"},"gs-absolute-return-ucits":{"n":"GS Absolute Return (UCITS)","ac":"Multi-Strategy","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":1.12,"fg":"Alternatives","mi":10000,"cur":"EUR","sc":"Acc"},"calderwood-global-macro-ucits":{"n":"Calderwood Global Macro (UCITS)","ac":"Global Macro","ve":"UCITS","st":"Active","so":"External","li":"Daily","co":1.24,"fg":"Alternatives","mi":10000,"cur":"EUR","sc":"Acc"},"gs-private-markets-icav-feeder":{"n":"GS Private Markets ICAV Feeder","ac":"Buyout","ve":"ICAV","st":"Active","so":"Internal","li":"Drawdown","co":1.58,"fg":"Alternatives","mi":5000000,"cur":"EUR","sc":"Acc"},"gs-private-credit-icav-feeder":{"n":"GS Private Credit ICAV Feeder","ac":"Private Credit","ve":"ICAV","st":"Active","so":"Internal","li":"Quarterly","co":1.48,"fg":"Alternatives","mi":5000000,"cur":"EUR","sc":"Dis"},"tactical-tilt-fund-ucits":{"n":"Tactical Tilt Fund (UCITS)","ac":"Tactical Tilts","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.92,"fg":"Asset Allocation","mi":10000,"cur":"EUR","sc":"Dis"}},"store":{"sleeves":101,"revisions":107,"archived":0},"catalogue":{"modified":"2026-09-27T16:53:51","products":73}};
+</script>
+<script>
+(function () {
+'use strict';
+/* ---------------------------------------------------------------- data */
+var COLOUR = {
+  'Investment Grade Fixed Income': '#EB6834', 'Hybrid Fixed Income': '#5E7690', 'Other Fixed Income': '#1BAF7A',
+  'Public Equity': '#EDA100', 'Hedge Funds': '#E87BA4', 'Private Equity & Other Private Assets': '#4A3AA7',
+  'Asset Allocation Strategies': '#2A78D6'
+};
+var V = D.variants, C = D.categories;
+var SHORT = {'PMG Multi-Asset Portfolio': 'PMG Multi-Asset', 'PMG ESG': 'PMG ESG', 'US Onshore': 'US Onshore', 'Irish Onshore': 'Irish Onshore'};
+var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+function clone(x) { return JSON.parse(JSON.stringify(x)); }
+function prod(pid) { return D.products[pid]; }
+function fmtDT(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+}
+function fmtD(iso) { var d = new Date(iso); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(); }
+function nowIso() { var d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 19); }
+function pct(n, dp) { return isFinite(n) ? Number(n).toFixed(dp == null ? 2 : dp) : '–'; }
+function money(n) { if (n == null || !isFinite(n) || n <= 0) return 'None'; return n >= 1e6 ? '$' + (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'm' : n >= 1e3 ? '$' + (n / 1e3).toFixed(0) + 'k' : '$' + n; }
+function sw(cat) { return '<span class="sw" style="background:' + COLOUR[C[cat]] + '"></span>'; }
+function total(rows) { return rows.reduce(function (a, r) { return a + (isFinite(r.w) ? Number(r.w) : 0); }, 0); }
+function wcost(rows) { return rows.reduce(function (a, r) { var p = prod(r.pid); return a + (p && isFinite(r.w) ? r.w / 100 * p.co : 0); }, 0); }
+function vehicles(rows) { var v = []; rows.forEach(function (r) { var p = prod(r.pid); if (p && v.indexOf(p.ve) < 0) v.push(p.ve); }); return v; }
+function meta(p) { return [p.ac, p.ve, p.st, p.so, p.li].filter(function (x) { return x && x !== '—'; }).join(' · '); }
+function problems(d) {
+  var out = [];
+  if (!d.name || !d.name.trim()) out.push('Give the sleeve a name.');
+  if (!d.rows.length) out.push('Add at least one product.');
+  if (d.rows.some(function (r) { return !isFinite(r.w) || r.w <= 0; })) out.push('Every product needs a weight above 0.');
+  var t = total(d.rows);
+  if (d.rows.length && Math.abs(t - 100) > 0.005) out.push('Weights add up to ' + pct(t) + '%; they must make exactly 100%.');
+  return out;
+}
+function statusChip(rows) {
+  var t = total(rows);
+  return Math.abs(t - 100) <= 0.005 && rows.length
+    ? '<span class="chip ok">✓ Ready · offered to PWAs</span>'
+    : '<span class="chip bad">✗ Not offered · weights make ' + pct(t) + '%</span>';
+}
+function totalChip(rows) {
+  var t = total(rows), ok = rows.length && Math.abs(t - 100) <= 0.005;
+  return '<span class="chip ' + (ok ? 'ok' : 'bad') + '">Total ' + pct(t) + '% ' + (ok ? '✓' : '✗ must be 100%') + '</span>';
+}
+
+/* ---------------------------------------------------------------- state */
+var ST = {};
+function state(o) {
+  if (!ST[o]) {
+    var lib = clone(D.sleeves);
+    ST[o] = {lib: lib, v: 0, c: 0, sid: null, draft: null, editing: false, pickq: '', picking: false,
+             hist: {}, histOpen: false, toast: '', tab: 'products', level: 0, q: '', open: {}, drawer: false,
+             review: false, step: 1, drafts: {}, addFor: null, fv: 0, fc: -1, sort: 'cat', sel: [], compare: false, cell: null};
+    var first = sleevesIn(ST[o], 0, 0)[0];
+    ST[o].sid = first ? first.id : null;
+    ST[o].mode = 'cards';
+    if (o === 'combo') { try { if (window.localStorage.getItem('sleevesComboView') === 'table') ST[o].mode = 'table'; } catch (e) { /* private window */ } }
+  }
+  return ST[o];
+}
+function sleevesIn(s, v, c) { return s.lib.filter(function (x) { return x.v === v && x.c === c; }); }
+function byId(s, id) { for (var i = 0; i < s.lib.length; i++) if (s.lib[i].id === id) return s.lib[i]; return null; }
+function current(s) { return s.sid != null ? byId(s, s.sid) : null; }
+function draftFrom(sl) { return {name: sl.name, note: sl.note || '', label: sl.label || '', rules: clone(sl.rules || []), rows: clone(sl.rows)}; }
+function siblings(s, sl) { return s.lib.filter(function (x) { return x.v === sl.v && x.c === sl.c && x.name === sl.name; }); }
+function historyOf(s, sl) {
+  if (!s.hist[sl.id]) s.hist[sl.id] = [{r: 1, what: 'Created', at: sl.first || sl.at, by: sl.by, rows: clone(sl.rows), cur: true}];
+  return s.hist[sl.id];
+}
+function sig(rows) { return JSON.stringify(rows.map(function (r) { return [r.pid, isFinite(r.w) ? +r.w : null]; })); }
+function parseW(t) { t = String(t).trim(); return /^(\d+(\.\d*)?|\.\d+)$/.test(t) ? parseFloat(t) : NaN; }
+function bare(rows) { return rows.map(function (r) { return {pid: r.pid, w: r.w}; }); }
+function wval(r) { return r.t != null ? r.t : (isFinite(r.w) ? r.w : ''); }
+function isDirty(s) {
+  var sl = current(s); if (!sl || !s.draft) return false;
+  var d = s.draft;
+  return d.name !== sl.name || (d.note || '') !== (sl.note || '') || sig(d.rows) !== sig(sl.rows)
+      || JSON.stringify(d.rules) !== JSON.stringify(sl.rules || []);
+}
+function saveDraft(s) {
+  var sl = current(s); var d = s.draft;
+  if (!sl || !d || problems(d).length) return false;
+  var h = historyOf(s, sl);
+  var prevAt = sl.at;
+  h.forEach(function (e) { e.cur = false; });
+  sl.name = d.name; sl.note = d.note; sl.rows = bare(d.rows); sl.rules = clone(d.rules);
+  sl.at = nowIso(); sl.by = 'fbarker'; sl.rev = (sl.rev || 1) + 1;
+  h.unshift({r: sl.rev, what: 'Edited', at: sl.at, by: 'fbarker', rows: clone(sl.rows), cur: true});
+  s.toast = '<b>Saved.</b> The previous version (created ' + esc(fmtDT(prevAt)) + ') is now in the Archive. Mock-up only: nothing was written.';
+  return true;
+}
+function selectSleeve(s, id) { s.sid = id; s.draft = null; s.editing = false; s.picking = false; s.pickq = ''; s.histOpen = false; s.review = false; }
+function firstIn(s) { var f = sleevesIn(s, s.v, s.c)[0]; return f ? f.id : null; }
+
+/* --------------------------------------------------------- shared pieces */
+function typeSeg(o, s, act) {
+  return '<div class="seg" role="group" aria-label="Implementation type">' + V.map(function (v, i) {
+    return '<button type="button" data-a="' + (act || 'type') + '" data-x="' + i + '" aria-pressed="' + (s.v === i) + '">' + esc(v) + '</button>';
+  }).join('') + '</div>';
+}
+function typeSelect(o, s, act) {
+  return '<label class="fld" style="margin:0"><span>Implementation type</span><select class="in" data-a="' + (act || 'type') + '" data-k="tsel">' + V.map(function (v, i) {
+    return '<option value="' + i + '"' + (s.v === i ? ' selected' : '') + '>' + esc(v) + '</option>';
+  }).join('') + '</select></label>';
+}
+function catSelect(o, s) {
+  return '<label class="fld" style="margin:0"><span>Category</span><select class="in" data-a="cat" data-k="csel">' + C.map(function (c, i) {
+    return '<option value="' + i + '"' + (s.c === i ? ' selected' : '') + '>' + esc(c) + '</option>';
+  }).join('') + '</select></label>';
+}
+function whereLine(sl) { return sw(sl.c) + '<span>' + esc(C[sl.c]) + '</span><span class="muted">·</span><span>' + esc(V[sl.v]) + '</span>'; }
+function editionChip(s, sl) {
+  if (sl.label) return '<span class="chip info">Edition: ' + esc(sl.label) + '</span>' + (sl.illustrative ? ' <span class="illus">illustrative</span>' : '');
+  return siblings(s, sl).length > 1 ? '<span class="chip mute">Fallback edition</span>' : '';
+}
+function fixedChip(sl) { return D.fixed.indexOf(C[sl.c]) >= 0 ? '<span class="chip mute">Fixed category · one sleeve per type</span>' : ''; }
+function chips(s, sl, rows) { return [statusChip(rows || sl.rows), editionChip(s, sl), fixedChip(sl)].filter(Boolean).join(' '); }
+
+/* the products table: read or edit */
+function prodTable(o, s, rows, editing, opts) {
+  opts = opts || {};
+  var body = rows.map(function (r, i) {
+    var p = prod(r.pid) || {n: r.pid, ac: '', ve: '', co: 0, mi: 0};
+    var w = editing
+      ? '<input class="win' + (!isFinite(r.w) || r.w <= 0 ? ' bad' : '') + '" data-a="w" data-x="' + i + '" data-k="w' + i + '" inputmode="decimal" aria-label="Weight of ' + esc(p.n) + ', percent" value="' + esc(wval(r)) + '">'
+      : '<span class="wbar"><i style="width:' + Math.min(100, r.w) + '%"></i></span><b style="font-family:var(--fn);font-size:15px">' + pct(r.w) + '%</b>';
+    return '<tr><td class="nm"><b>' + esc(p.n) + '</b><small>' + esc(meta(p)) + '</small></td>'
+      + (opts.compact ? '' : '<td class="r">' + pct(p.co) + '%</td><td class="r">' + money(p.mi) + '</td>')
+      + '<td class="r">' + w + '</td>'
+      + (editing ? '<td class="r"><button type="button" class="rmx" data-a="rm" data-x="' + i + '" aria-label="Remove ' + esc(p.n) + '">Remove</button></td>' : '')
+      + '</tr>';
+  }).join('');
+  var picker = '';
+  if (editing) {
+    if (s.picking) {
+      var q = s.pickq.trim().toLowerCase();
+      var taken = rows.map(function (r) { return r.pid; });
+      var hits = Object.keys(D.products).filter(function (pid) {
+        var p = D.products[pid];
+        return taken.indexOf(pid) < 0 && (!q || (p.n + ' ' + p.ac + ' ' + p.ve + ' ' + p.fg).toLowerCase().indexOf(q) >= 0);
+      }).slice(0, 8);
+      picker = '<tr class="picker"><td colspan="' + (opts.compact ? 3 : 5) + '"><div class="srch"><input class="in" data-a="pickq" data-k="pickq" placeholder="Search the catalogue by name, asset class or vehicle…" value="' + esc(s.pickq) + '" aria-label="Search the product catalogue"></div>'
+        + '<ul class="plist">' + (hits.map(function (pid) {
+          var p = D.products[pid];
+          return '<li><button type="button" data-a="pick" data-x="' + esc(pid) + '"><span><b>' + esc(p.n) + '</b><br><small>' + esc(meta(p)) + '</small></span><small>' + pct(p.co) + '% · min ' + esc(money(p.mi)) + '</small></button></li>';
+        }).join('') || '<li class="none">Nothing in the catalogue matches.</li>') + '</ul>'
+        + '<div style="margin-top:6px"><button type="button" class="lnk" data-a="pickclose">Close the search</button></div></td></tr>';
+    }
+  }
+  var t = total(rows), ok = rows.length && Math.abs(t - 100) <= 0.005;
+  var foot = '<tfoot><tr><td>Total' + (editing ? '' : ' <span class="muted" style="font-weight:400">· weighted product cost ' + pct(wcost(rows)) + '%</span>') + '</td>'
+    + (opts.compact ? '' : '<td></td><td></td>')
+    + '<td class="r ' + (ok ? 'tot-ok' : 'tot-bad') + '" style="font-family:var(--fn);font-size:15.5px">' + pct(t) + '% ' + (ok ? '✓' : '✗') + '</td>'
+    + (editing ? '<td></td>' : '') + '</tr></tfoot>';
+  return '<table class="pt"><thead><tr><th>Product</th>' + (opts.compact ? '' : '<th class="r">Cost</th><th class="r">Minimum</th>')
+    + '<th class="r">Weight</th>' + (editing ? '<th></th>' : '') + '</tr></thead><tbody>' + body + picker + '</tbody>' + foot + '</table>'
+    + (editing && !s.picking ? '<div style="margin-top:10px"><button type="button" class="btn" data-a="addprod">+ Add a product from the catalogue</button></div>' : '')
+    + (editing && !ok && rows.length ? '<p class="tot-bad" style="margin:8px 0 0;font-size:14px">Weights add up to ' + pct(t) + '%. They must make exactly 100% before you can save.</p>' : '');
+}
+
+function rulesBlock(o, s, sl, editing) {
+  var d = editing && s.draft ? s.draft : sl;
+  var rules = d.rules || [];
+  var sibs = siblings(s, sl);
+  var lead;
+  if (!d.label && sibs.length < 2) {
+    lead = '<p style="margin:0 0 8px">One version for every portfolio under ' + esc(V[sl.v]) + '. An <b>edition</b> is a variant of this sleeve for particular portfolios - for example GBP portfolios - that PWAs get automatically when they pick the sleeve.</p>';
+  } else if (!d.label) {
+    lead = '<p style="margin:0 0 8px">This is the <b>fallback</b>: it applies wherever no other edition of "' + esc(sl.name) + '" does. Editions: ' + sibs.filter(function (x) { return x.label; }).map(function (x) { return '<b>' + esc(x.label) + '</b> (' + x.applies + ' portfolios)'; }).join(', ') + '.</p>';
+  } else {
+    lead = '<p style="margin:0 0 8px">The <b>' + esc(d.label) + '</b> edition applies to <b>' + sl.applies + ' strategic portfolios</b>; every other portfolio gets the fallback.</p>';
+  }
+  var rb = rules.map(function (r, i) {
+    return '<div class="rulebox" style="margin:0 0 8px"><div style="font-weight:600;font-size:13.5px;margin-bottom:4px">Rule ' + (i + 1) + (i ? ' (or)' : '') + '</div>'
+      + ['currency', 'riskLevel', 'allocationType'].map(function (f) {
+        var lab = {currency: 'Currency', riskLevel: 'Risk level', allocationType: 'Allocation'}[f];
+        return '<div class="rf"><span>' + lab + '</span><span class="rchips">' + D.vocab[f].map(function (v) {
+          var on = (r[f] || []).indexOf(v) >= 0;
+          return '<button type="button"' + (editing ? ' data-a="rule" data-x="' + i + '|' + f + '|' + esc(v) + '"' : ' disabled') + ' aria-pressed="' + on + '">' + esc(v) + '</button>';
+        }).join('') + '</span></div>';
+      }).join('') + '</div>';
+  }).join('');
+  return lead + rb + '<button type="button" class="btn sm" data-a="mockonly" data-x="Adding an edition opens a copy of this sleeve with its own rules.">+ Add an edition for particular portfolios</button>';
+}
+
+function detailsBlock(s, sl) {
+  var under = sl.under || [];
+  return '<dl class="kv">'
+    + '<dt>Note to PWAs</dt><dd>' + (sl.note ? esc(sl.note) : '<span class="muted">None</span>') + '</dd>'
+    + '<dt>Offered under</dt><dd>' + under.map(function (u) { return '<span class="chip ' + (u === V[sl.v] ? 'info' : 'mute') + '">' + esc(u) + '</span>'; }).join(' ')
+    + (under.length < V.length ? ' <button type="button" class="lnk" data-a="mockonly" data-x="Offering it under another type copies this sleeve there.">+ Offer under another type</button>' : '') + '</dd>'
+    + '<dt>This version</dt><dd>Created ' + esc(fmtDT(sl.at)) + ' by ' + esc(sl.by) + '</dd>'
+    + (sl.first && sl.first !== sl.at ? '<dt>First created</dt><dd>' + esc(fmtDT(sl.first)) + '</dd>' : '')
+    + '<dt>Vehicles</dt><dd>' + esc(vehicles(sl.rows).join(', ')) + '</dd>'
+    + '</dl>';
+}
+function historyBlock(o, s, sl) {
+  var h = historyOf(s, sl);
+  return '<p class="muted" style="margin:0 0 8px;font-size:13.5px">Saving a change moves the version it replaces into the Archive, stamped with when that version was created.</p>'
+    + '<ul class="hist">' + h.map(function (e) {
+      return '<li><span class="rv">r' + e.r + '</span><span><b>' + esc(e.what) + '</b><small>' + esc(fmtDT(e.at)) + ' · ' + esc(e.by) + ' · ' + e.rows.length + ' products</small></span>'
+        + (e.cur ? '<span class="chip ok">In force</span>' : '<button type="button" class="btn sm" data-a="mockonly" data-x="Putting r' + e.r + ' back saves it as a new version.">Put this version back</button>') + '</li>';
+    }).join('') + '</ul>';
+}
+function dangerRow(sl) {
+  return D.fixed.indexOf(C[sl.c]) >= 0
+    ? '<p class="muted" style="font-size:13.5px;margin:0">' + esc(C[sl.c]) + ' is fixed: it always holds exactly one sleeve, so this one cannot be archived.</p>'
+    : '<button type="button" class="btn danger sm" data-a="mockonly" data-x="Archive asks you to confirm; the sleeve keeps its history and can be restored from the Archive tab.">Archive this sleeve…</button>';
+}
+function toastHtml(s) { return s.toast ? '<div class="toast" role="status">' + s.toast + '</div>' : ''; }
+function saveBtn(s, label) {
+  var dirty = isDirty(s), bad = s.draft ? problems(s.draft) : [];
+  return '<button type="button" class="btn pri" data-a="save"' + (dirty && !bad.length ? '' : ' disabled') + '>' + (label || 'Save changes') + '</button>';
+}
+function dirtyText(s) {
+  if (!s.draft) return '';
+  var bad = problems(s.draft);
+  if (!isDirty(s)) return '<span class="muted">No changes yet</span>';
+  return bad.length ? '<span class="tot-bad" style="font-weight:600">' + esc(bad[0]) + '</span>' : '<b style="color:#7A5200">Unsaved changes</b>';
+}
+function nameFields(s) {
+  var d = s.draft;
+  return '<label class="fld"><span>Sleeve name</span><input class="in" data-a="name" data-k="name" value="' + esc(d.name) + '"><small>What PWAs pick in the implementation step.</small></label>'
+    + '<label class="fld"><span>Note to PWAs <span class="muted" style="font-weight:400">(optional)</span></span><input class="in" data-a="note" data-k="note" value="' + esc(d.note) + '" placeholder="Shown as a hint beside the sleeve in the picker"></label>';
+}
+
+/* =============================================================== options */
+var CAPS = [
+  ['find', 'Find a sleeve: implementation type, category, search by name or product'],
+  ['see', 'See what it holds: products, weights, cost, minimum, product facts'],
+  ['edit', 'Edit name, note, products and weights (catalogue search)'],
+  ['check', 'Checks: weights to exactly 100%; problems that withhold a sleeve from PWAs'],
+  ['save', 'Save (the replaced version goes to the Archive) and the unsaved-changes guard'],
+  ['new', 'Create a new sleeve: category and implementation types'],
+  ['editions', 'Editions and their rules, and the overlap check'],
+  ['offer', 'Offer under another implementation type; where it is offered'],
+  ['history', 'History: every version, put an earlier one back'],
+  ['archive', 'Archive a sleeve (restore stays in the Archive tab)'],
+  ['fixed', 'Fixed categories: one sleeve per type'],
+  ['source', 'Library facts: catalogue date, counts']
+];
+
+var OPTS = [];
+
+/* ---- 1 · framed panes ---- */
+OPTS.push({id: 'framed', name: 'Framed panes', alwaysEdit: true,
+  text: 'The layout you know, made legible. The implementation type moves to the top as a full-size switch that says what the screen is showing, and the three areas become framed, titled panels - numbered so the order of use is obvious. The sleeve gets a heading and status, and its editor is grouped into bordered sections with Save attached to the bottom of the sleeve, highlighted when there is something to save.',
+  pros: ['Least to relearn - same three columns', 'Clear areas, clear order (1 → 2 → 3)', 'Save sits with the sleeve it saves'],
+  cons: ['Still dense on a laptop', 'Always a form - no read-only view'],
+  caps: {find: 'Type switch at the top, panel 1 categories, search box beside the type', see: 'Panel 3 › What it holds', edit: 'Panel 3, always editable', check: 'Total row and the save bar message', save: 'Save bar at the foot of panel 3, tinted when there are changes', new: 'One "+ New sleeve" in panel 2\'s header', editions: 'Panel 3 › Who gets it', offer: 'Panel 3 › Details › Offered under', history: 'Panel 3 › History section', archive: 'Panel 3 › Details, at the foot', fixed: 'Chip on the sleeve, note instead of Archive', source: 'Console footer, in plain words'},
+  render: function (o, s) {
+    var sl = current(s);
+    if (sl && !s.draft) s.draft = draftFrom(sl);
+    var cats = C.map(function (c, i) {
+      return '<button type="button" class="navi" data-a="cat" data-x="' + i + '" aria-selected="' + (s.c === i) + '">' + sw(i) + '<span>' + esc(c) + '</span><span class="n">' + sleevesIn(s, s.v, i).length + '</span></button>';
+    }).join('');
+    var list = (s.q ? searchHits(s) : sleevesIn(s, s.v, s.c)).map(function (x) {
+      return '<button type="button" class="navi" data-a="sleeve" data-x="' + x.id + '" aria-selected="' + (x.id === s.sid) + '"><span class="two">' + esc(x.name) + (x.label ? ' <span class="chip info">' + esc(x.label) + '</span>' : '')
+        + '<small>' + (s.q ? esc(C[x.c]) + ' · ' + esc(SHORT[V[x.v]]) : x.rows.length + ' products · ' + esc(vehicles(x.rows).join(', '))) + '</small></span></button>';
+    }).join('') || '<p class="empty">No sleeves here yet.</p>';
+    var det = sl ? '<div class="zone-h"><span class="step">3</span><span style="min-width:0">' + esc(s.draft.name || 'Untitled') + '</span><span style="margin-left:auto;display:flex;gap:6px">' + statusChip(s.draft.rows) + '</span></div>'
+      + '<div class="zone-b" style="padding:14px">'
+      + '<p style="margin:0 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--ink-2)">' + whereLine(sl) + ' ' + editionChip(s, sl) + ' ' + fixedChip(sl) + '</p>'
+      + '<div class="sect"><div class="sect-h">Name and note</div><div class="sect-b">' + nameFields(s) + '</div></div>'
+      + '<div class="sect"><div class="sect-h">What it holds <small>· ' + s.draft.rows.length + ' products</small></div><div class="sect-b flush">' + prodTable(o, s, s.draft.rows, true) + '<div style="height:12px"></div></div></div>'
+      + '<div class="sect"><div class="sect-h">Who gets it <small>· editions</small></div><div class="sect-b">' + rulesBlock(o, s, sl, true) + '</div></div>'
+      + '<div class="sect"><div class="sect-h">Details</div><div class="sect-b">' + detailsBlock(s, sl) + '<div style="margin-top:12px">' + dangerRow(sl) + '</div></div></div>'
+      + '<div class="sect"><div class="sect-h">History <small>· ' + historyOf(s, sl).length + ' version' + (historyOf(s, sl).length === 1 ? '' : 's') + '</small></div><div class="sect-b">' + historyBlock(o, s, sl) + '</div></div>'
+      + '</div><div class="savebar' + (isDirty(s) ? ' dirty' : '') + '">' + dirtyText(s) + '<span class="spacer"></span>'
+      + (isDirty(s) ? '<button type="button" class="btn" data-a="discard">Discard</button>' : '') + saveBtn(s, 'Save sleeve') + '</div>'
+      : '<div class="zone-h"><span class="step">3</span>Sleeve</div><p class="empty">Choose a sleeve.</p>';
+    return '<div class="o1"><div class="o1-top"><span class="lbl">Showing sleeves for</span>' + typeSeg(o, s)
+      + '<span class="spacer"></span><div class="srch"><input class="in" data-a="q" data-k="q" placeholder="Search names and products…" value="' + esc(s.q) + '" aria-label="Search every sleeve"></div></div>'
+      + '<div class="o1-grid">'
+      + '<div class="zone"><div class="zone-h"><span class="step">1</span>Category</div><div class="zone-b">' + cats + '</div></div>'
+      + '<div class="zone"><div class="zone-h"><span class="step">2</span>' + (s.q ? 'Search results' : 'Sleeves') + ' <small>· ' + (s.q ? 'every type' : sleevesIn(s, s.v, s.c).length + ' in this category') + '</small></div><div class="zone-b">' + list + '</div>'
+      + (s.q || D.fixed.indexOf(C[s.c]) >= 0 ? '' : '<div style="padding:10px;border-top:1px solid var(--frame);background:var(--zone-2)"><button type="button" class="btn" style="width:100%;justify-content:center" data-a="mockonly" data-x="New sleeve opens an empty sleeve in this category.">+ New sleeve here</button></div>') + '</div>'
+      + '<div class="zone">' + det + '</div>'
+      + '</div></div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+function searchHits(s) {
+  var q = s.q.trim().toLowerCase();
+  return s.lib.filter(function (x) {
+    return x.name.toLowerCase().indexOf(q) >= 0 || (x.label || '').toLowerCase().indexOf(q) >= 0
+      || x.rows.some(function (r) { var p = prod(r.pid); return p && p.n.toLowerCase().indexOf(q) >= 0; });
+  }).sort(function (a, b) { return (a.v === s.v ? 0 : 1) - (b.v === s.v ? 0 : 1) || a.c - b.c; }).slice(0, 40);
+}
+
+/* ---- 2 · category tiles ---- */
+OPTS.push({id: 'tiles', name: 'Category tiles, one step at a time',
+  text: 'Start from the shape of the library: pick an implementation type, see the seven categories as tiles with how many sleeves each holds and their names, open a category to see its sleeves as cards showing what each holds, then open one. A breadcrumb always says where you are. Each screen does one job, so nothing competes.',
+  pros: ['Very low density - one decision per screen', 'The breadcrumb makes position obvious', 'Cards show contents before you click'],
+  cons: ['More clicks to reach a sleeve', 'Less suited to jumping between many sleeves'],
+  caps: {find: 'Type switch, then a tile, then a card; search box on the first screen', see: 'Sleeve cards list products and weights; the sleeve page shows all', edit: 'Sleeve page › Edit', check: 'Status chip on every card and the page', save: 'Edit bar on the sleeve page', new: '"+ New sleeve" on the category screen', editions: 'Sleeve page › Who gets it', offer: 'Sleeve page › Details', history: 'Sleeve page › History', archive: 'Sleeve page, under Details', fixed: '"Fixed · one per type" on its tile', source: 'Footer'},
+  render: function (o, s) {
+    var crumbs = s.level === 0 ? '<div class="crumbs"><b>Choose a category</b><span class="muted">· then a sleeve</span>' : '<div class="crumbs"><button type="button" data-a="lvl" data-x="0">All categories · ' + esc(V[s.v]) + '</button>';
+    if (s.level >= 1) crumbs += '<span class="sep">›</span>' + (s.level === 1 ? '<b>' + esc(C[s.c]) + '</b>' : '<button type="button" data-a="lvl" data-x="1">' + esc(C[s.c]) + '</button>');
+    if (s.level === 2) crumbs += '<span class="sep">›</span><b>' + esc(current(s).name) + '</b>';
+    crumbs += '</div>';
+    var body;
+    if (s.level === 0) {
+      body = '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 16px">' + typeSeg(o, s) + '</div>'
+        + '<div class="tiles">' + C.map(function (c, i) {
+          var list = sleevesIn(s, s.v, i);
+          return '<button type="button" class="tile" style="--cc:' + COLOUR[c] + '" data-a="tile" data-x="' + i + '"><h4>' + esc(c) + '</h4>'
+            + '<span class="big">' + list.length + '<small>sleeve' + (list.length === 1 ? '' : 's') + '</small></span>'
+            + '<span class="names">' + esc(list.map(function (x) { return x.name + (x.label ? ' (' + x.label + ')' : ''); }).slice(0, 4).join(' · ')) + (list.length > 4 ? ' · +' + (list.length - 4) + ' more' : '') + '</span>'
+            + (D.fixed.indexOf(c) >= 0 ? '<span><span class="chip mute">Fixed · one per type</span></span>' : '') + '</button>';
+        }).join('') + '</div>';
+    } else if (s.level === 1) {
+      var list = sleevesIn(s, s.v, s.c);
+      body = '<div style="display:flex;align-items:center;gap:10px;margin:0 0 14px"><h3 style="margin:0;font-size:22px;color:var(--navy);display:flex;align-items:center;gap:8px">' + sw(s.c) + esc(C[s.c]) + '</h3><span class="muted">' + list.length + ' sleeves under ' + esc(V[s.v]) + '</span><span class="spacer"></span>'
+        + (D.fixed.indexOf(C[s.c]) >= 0 ? '' : '<button type="button" class="btn pri" data-a="mockonly" data-x="New sleeve opens an empty sleeve in this category.">+ New sleeve</button>') + '</div>'
+        + '<div class="scards">' + list.map(function (x) {
+          return '<button type="button" class="scard" data-a="card" data-x="' + x.id + '"><h4>' + esc(x.name) + ' ' + editionChip(s, x) + '</h4>'
+            + '<ul>' + x.rows.map(function (r) { var p = prod(r.pid); return '<li><span>' + esc(p ? p.n : r.pid) + '</span><b style="font-family:var(--fn)">' + pct(r.w, 0) + '%</b></li>'; }).join('') + '</ul>'
+            + '<span>' + statusChip(x.rows) + '</span></button>';
+        }).join('') + '</div>';
+    } else {
+      body = sleevePage(o, s);
+    }
+    return '<div class="o2">' + crumbs + body + '</div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+/* a read-then-edit sleeve page, shared by 2 and 3's drawer and 8 */
+function sleevePage(o, s, compact) {
+  var sl = current(s);
+  if (!sl) return '<p class="empty">Choose a sleeve.</p>';
+  var editing = s.editing && s.draft;
+  var rows = editing ? s.draft.rows : sl.rows;
+  var head = '<div class="detail-h"><div style="min-width:0"><h3>' + esc(editing ? s.draft.name || 'Untitled' : sl.name) + '</h3><div class="where" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + whereLine(sl) + '</div>'
+    + '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' + chips(s, sl, rows) + '</div></div><span class="spacer"></span>'
+    + (editing ? '' : '<button type="button" class="btn pri lg" data-a="edit">Edit sleeve</button>') + '</div>';
+  var bar = editing ? '<div class="editbar"><b>Editing ' + esc(sl.name) + '</b>' + dirtyText(s) + '<span class="spacer"></span><button type="button" class="btn" data-a="cancel">Cancel</button>' + saveBtn(s) + '</div>' : '';
+  return bar + head
+    + (editing ? '<div class="sect"><div class="sect-h">Name and note</div><div class="sect-b">' + nameFields(s) + '</div></div>' : '')
+    + '<div class="sect"><div class="sect-h">What it holds <small>· ' + rows.length + ' products</small></div><div class="sect-b flush">' + prodTable(o, s, rows, editing, {compact: compact}) + (editing ? '<div style="height:12px"></div>' : '') + '</div></div>'
+    + '<div class="sect"><div class="sect-h">Who gets it <small>· editions</small></div><div class="sect-b">' + rulesBlock(o, s, sl, editing) + '</div></div>'
+    + '<div class="sect"><div class="sect-h">Details</div><div class="sect-b">' + detailsBlock(s, sl) + '<div style="margin-top:12px">' + dangerRow(sl) + '</div></div></div>'
+    + '<div class="sect"><div class="sect-h">History <small>· ' + historyOf(s, sl).length + '</small></div><div class="sect-b">' + historyBlock(o, s, sl) + '</div></div>';
+}
+
+/* ---- 3 · coverage matrix ---- */
+OPTS.push({id: 'matrix', name: 'Coverage map',
+  text: 'One screen answers "what do we offer, where?": categories down the side, implementation types across the top, and in each cell how many sleeves there are and their names. A gap shows red. Click a cell to list its sleeves in a side drawer; open one to read it, then Edit. Good for managing the library as a whole, not just one sleeve.',
+  pros: ['The whole library at a glance', 'Gaps and differences between types stand out', 'Sleeve detail never crowds the map'],
+  cons: ['Cell text is small when a category has many sleeves', 'Editing happens in a drawer - narrower than a full page'],
+  caps: {find: 'The map (type × category) and the search box above it', see: 'Drawer › sleeve', edit: 'Drawer › Edit sleeve', check: 'Red cells for gaps; status chip on each sleeve', save: 'Drawer footer, tinted when there are changes', new: '"+ New sleeve" in the cell drawer', editions: 'Drawer › Who gets it', offer: 'Drawer › Details; the map shows each type\'s set', history: 'Drawer › History', archive: 'Drawer › Details', fixed: '"Fixed" beside the category name', source: 'Footer'},
+  render: function (o, s) {
+    var head = '<tr><th>Category</th>' + V.map(function (v) { return '<th>' + esc(v) + '</th>'; }).join('') + '</tr>';
+    var rows = C.map(function (c, ci) {
+      return '<tr><th>' + '<span style="display:inline-flex;align-items:center;gap:8px">' + sw(ci) + esc(c) + '</span>' + (D.fixed.indexOf(c) >= 0 ? '<br><span class="chip mute" style="margin-top:4px">Fixed</span>' : '') + '</th>'
+        + V.map(function (v, vi) {
+          var list = sleevesIn(s, vi, ci);
+          var on = s.cell && s.cell[0] === vi && s.cell[1] === ci;
+          return '<td><button type="button" class="cell' + (list.length ? '' : ' none') + '" data-a="cell" data-x="' + vi + '|' + ci + '" aria-pressed="' + !!on + '"><span class="cn">' + list.length + '<small>sleeve' + (list.length === 1 ? '' : 's') + '</small></span>'
+            + esc(list.map(function (x) { return x.name + (x.label ? ' (' + x.label + ')' : ''); }).slice(0, 4).join(' · ')) + (list.length > 4 ? ' · +' + (list.length - 4) : '') + '</button></td>';
+        }).join('') + '</tr>';
+    }).join('');
+    var drawer = '';
+    if (s.drawer) {
+      var inner, foot = '';
+      if (s.drawer === 'cell') {
+        var list = sleevesIn(s, s.v, s.c);
+        inner = '<div class="drawer-h"><h4>' + esc(C[s.c]) + '</h4><span class="muted">' + esc(V[s.v]) + '</span><span class="spacer"></span><button type="button" class="btn sm" data-a="dclose">Close</button></div>'
+          + '<div class="drawer-b">' + list.map(function (x) {
+            return '<button type="button" class="navi" style="border:1px solid var(--line-strong);border-radius:8px;margin:0 0 8px" data-a="dsleeve" data-x="' + x.id + '"><span class="two"><b>' + esc(x.name) + '</b> ' + editionChip(s, x) + '<small>' + x.rows.map(function (r) { var p = prod(r.pid); return esc(p ? p.n : r.pid) + ' ' + pct(r.w, 0) + '%'; }).join(' · ') + '</small></span></button>';
+          }).join('') + (D.fixed.indexOf(C[s.c]) >= 0 ? '' : '<button type="button" class="btn" data-a="mockonly" data-x="New sleeve opens an empty sleeve in this cell.">+ New sleeve here</button>') + '</div>';
+      } else {
+        var sl = current(s);
+        inner = '<div class="drawer-h"><button type="button" class="btn sm" data-a="dback">‹ ' + esc(C[sl.c]) + '</button><span class="spacer"></span><button type="button" class="btn sm" data-a="dclose">Close</button></div>'
+          + '<div class="drawer-b">' + sleevePage(o, s, true).replace('<div class="editbar">', '<div class="editbar" style="display:none">') + '</div>';
+        if (s.editing) foot = '<div class="drawer-f' + (isDirty(s) ? ' dirty' : '') + '">' + dirtyText(s) + '<span class="spacer"></span><button type="button" class="btn" data-a="cancel">Cancel</button>' + saveBtn(s) + '</div>';
+      }
+      drawer = '<div class="scrim" data-a="dclose"></div><div class="drawer" role="dialog" aria-label="Sleeves">' + inner + foot + '</div>';
+    }
+    return '<div class="o3"><div class="o3-main"><div style="display:flex;gap:12px;align-items:center;margin:0 0 12px;flex-wrap:wrap"><b style="font-size:16px;color:var(--navy)">Which sleeves are offered where</b><span class="muted">Click a cell to see and manage its sleeves.</span></div>'
+      + '<table class="mx"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>'
+      + '<div class="legend"><span><span class="chip mute">Fixed</span> one sleeve per type, attached automatically</span><span><span class="sw" style="background:var(--bad-tint);border:1px solid #F1C4BF"></span> no sleeve: the category cannot be implemented under that type</span></div>'
+      + '</div>' + drawer + '</div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 4 · the sleeve sheet ---- */
+OPTS.push({id: 'sheet', name: 'Sleeve sheet: read first, then edit',
+  text: 'Opening a sleeve shows it as a clean, readable sheet - its name as a title, where it lives, a bar of its composition, what it holds with weights and product facts, who gets it, and its record. One Edit button turns the same sheet into a form and a yellow bar across the top says you are editing and holds Save and Cancel. A compact navigator on the left picks the type, then a category and sleeve.',
+  pros: ['Reading is calm and the default', 'Editing is unmistakable (yellow sheet and bar)', 'Fewest controls on screen at once'],
+  cons: ['One more click to change anything', 'The navigator is narrow for long names'],
+  caps: {find: 'Navigator: type selector, search, categories as an accordion', see: 'The sheet', edit: 'Edit sleeve → the sheet becomes a form', check: 'Status chip; total row; the edit bar names the first problem', save: 'Yellow edit bar: Save changes / Cancel', new: '"+ New sleeve" in the navigator', editions: 'Sheet › Who gets it', offer: 'Sheet › Details', history: 'Sheet › History', archive: 'Sheet › Details', fixed: 'Chip on the sheet', source: 'Footer'},
+  render: function (o, s) {
+    var sl = current(s);
+    var nav = '<div class="o4-nav"><div class="top">' + typeSelect(o, s) + '<div class="srch"><input class="in" data-a="q" data-k="q" placeholder="Search…" value="' + esc(s.q) + '" aria-label="Search sleeves"></div>'
+      + '<button type="button" class="btn" data-a="mockonly" data-x="New sleeve asks for a category and the implementation types first.">+ New sleeve</button></div><div class="acc">'
+      + (s.q ? searchHits(s).map(function (x) { return '<button type="button" class="acc-i" style="padding-left:12px" data-a="sleeve" data-x="' + x.id + '" aria-selected="' + (x.id === s.sid) + '">' + esc(x.name) + '<br><small class="muted">' + esc(C[x.c]) + ' · ' + esc(SHORT[V[x.v]]) + '</small></button>'; }).join('')
+        : C.map(function (c, i) {
+          var list = sleevesIn(s, s.v, i), open = s.c === i;
+          return '<button type="button" class="acc-h" data-a="acc" data-x="' + i + '" aria-expanded="' + open + '">' + sw(i) + esc(c) + '<span class="n">' + list.length + ' ' + (open ? '▾' : '▸') + '</span></button>'
+            + (open ? list.map(function (x) { return '<button type="button" class="acc-i" data-a="sleeve" data-x="' + x.id + '" aria-selected="' + (x.id === s.sid) + '">' + esc(x.name) + (x.label ? ' <span class="chip info">' + esc(x.label) + '</span>' : '') + '</button>'; }).join('') : '');
+        }).join('')) + '</div></div>';
+    if (!sl) return '<div class="o4">' + nav + '<div class="o4-doc"><p class="empty">Choose a sleeve.</p></div></div>';
+    var editing = s.editing && s.draft, rows = editing ? s.draft.rows : sl.rows;
+    var comp = '<div class="comp" aria-hidden="true">' + rows.map(function (r, i) { return '<i style="width:' + Math.max(0, r.w) + '%;background:' + ['#16243A', '#1F5FBF', '#6B9BE0', '#9DB9E6', '#C3D4EE', '#5E7690'][i % 6] + '"></i>'; }).join('') + '</div>';
+    var doc = (editing ? '<div class="editbar"><b>You are editing this sleeve.</b> ' + dirtyText(s) + '<span class="spacer"></span><button type="button" class="btn" data-a="cancel">Cancel</button>' + saveBtn(s) + '</div>' : '')
+      + '<article class="sheet' + (editing ? ' editing' : '') + '"><div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap"><div style="min-width:0;flex:1"><h3>' + esc(editing ? s.draft.name || 'Untitled' : sl.name) + '</h3>'
+      + '<div class="where">' + whereLine(sl) + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + chips(s, sl, rows) + '</div></div>'
+      + (editing ? '' : '<button type="button" class="btn pri lg" data-a="edit">Edit sleeve</button>') + '</div>'
+      + (editing ? '<h5>Name and note</h5>' + nameFields(s) : (sl.note ? '<p style="margin:12px 0 0;font-size:15px">' + esc(sl.note) + '</p>' : ''))
+      + '<h5>What it holds</h5>' + comp + '<div style="height:10px"></div>' + prodTable(o, s, rows, editing)
+      + '<h5>Who gets it</h5>' + rulesBlock(o, s, sl, editing)
+      + '<h5>Details</h5>' + detailsBlock(s, sl) + '<div style="margin-top:12px">' + dangerRow(sl) + '</div>'
+      + '<h5>History</h5>' + historyBlock(o, s, sl) + '</article>';
+    return '<div class="o4">' + nav + '<div class="o4-doc">' + doc + '</div></div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 5 · tabbed detail ---- */
+OPTS.push({id: 'tabs', name: 'Summary header with tabs', alwaysEdit: true,
+  text: 'The sleeve gets a header that never scrolls away: its name, where it lives, status, product count and weighted cost, and the Save button. Below it, four tabs split the work - Products, Who gets it, Details, History - so only one subject is on screen at a time. The list on the left is plain: two selectors and the sleeves.',
+  pros: ['Status and Save always in view', 'One subject at a time', 'Scales as more sleeve features arrive'],
+  cons: ['History and editions are a click away, out of sight', 'Tabs hide that a sleeve has editions until you look'],
+  caps: {find: 'Left: type and category selectors, search', see: 'Products tab (default)', edit: 'Products tab and the name/note on Details', check: 'Status chip in the header; total row', save: 'Header: Save sleeve, with "Unsaved changes" beside it', new: '"+ New sleeve" under the selectors', editions: 'Who gets it tab', offer: 'Details tab', history: 'History tab, with its count', archive: 'Details tab', fixed: 'Header chip', source: 'Footer'},
+  render: function (o, s) {
+    var sl = current(s);
+    if (sl && !s.draft) s.draft = draftFrom(sl);
+    var items = (s.q ? searchHits(s) : sleevesIn(s, s.v, s.c)).map(function (x) {
+      return '<button type="button" class="navi" data-a="sleeve" data-x="' + x.id + '" aria-selected="' + (x.id === s.sid) + '"><span class="two">' + esc(x.name) + (x.label ? ' <span class="chip info">' + esc(x.label) + '</span>' : '') + '<small>' + x.rows.length + ' products · ' + esc(vehicles(x.rows).join(', ')) + '</small></span></button>';
+    }).join('') || '<p class="empty">No sleeves.</p>';
+    var left = '<div class="o5-list"><div class="top">' + typeSelect(o, s) + catSelect(o, s) + '<div class="srch"><input class="in" data-a="q" data-k="q" placeholder="Search…" value="' + esc(s.q) + '" aria-label="Search sleeves"></div>'
+      + '<button type="button" class="btn" data-a="mockonly" data-x="New sleeve opens an empty sleeve in this category.">+ New sleeve</button></div><div class="items">' + items + '</div></div>';
+    if (!sl) return '<div class="o5">' + left + '<div class="o5-main"><p class="empty">Choose a sleeve.</p></div></div>';
+    var d = s.draft, h = historyOf(s, sl);
+    var TABS = [['products', 'Products', d.rows.length], ['who', 'Who gets it', 0], ['details', 'Details', 0], ['history', 'History', h.length]];
+    var body;
+    if (s.tab === 'products') body = prodTable(o, s, d.rows, true);
+    else if (s.tab === 'who') body = rulesBlock(o, s, sl, true);
+    else if (s.tab === 'details') body = nameFields(s) + '<div style="height:6px"></div>' + detailsBlock(s, sl) + '<div style="margin-top:14px">' + dangerRow(sl) + '</div>';
+    else body = historyBlock(o, s, sl);
+    var main = '<div class="o5-main"><div class="sum"><div class="sum-top"><div style="min-width:0;flex:1"><h3>' + esc(d.name || 'Untitled') + '</h3><div class="where" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + whereLine(sl) + '</div>'
+      + '<div class="chips">' + chips(s, sl, d.rows) + '<span class="chip mute">' + d.rows.length + ' products</span><span class="chip mute">Weighted cost ' + pct(wcost(d.rows)) + '%</span></div></div>'
+      + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">' + '<div style="display:flex;gap:8px">' + (isDirty(s) ? '<button type="button" class="btn" data-a="discard">Discard</button>' : '') + saveBtn(s, 'Save sleeve') + '</div><span style="font-size:13.5px">' + dirtyText(s) + '</span></div></div>'
+      + '<div class="tabsx" role="tablist">' + TABS.map(function (t) { return '<button type="button" role="tab" data-a="tab" data-x="' + t[0] + '" aria-selected="' + (s.tab === t[0]) + '">' + t[1] + (t[2] ? '<span class="n">' + t[2] + '</span>' : '') + '</button>'; }).join('') + '</div></div>'
+      + '<div class="o5-body">' + body + '</div></div>';
+    return '<div class="o5">' + left + main + '</div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 6 · spreadsheet ---- */
+OPTS.push({id: 'sheetgrid', name: 'Every sleeve in a category, as one grid',
+  text: 'For changing many sleeves at once: every sleeve in the chosen category and type is one block of a strongly ruled grid, a header row per sleeve with its total and status, a row per product with its facts and an editable weight cell. Changed rows turn yellow; a bar at the bottom counts what has changed and saves it all, each changed sleeve archiving its previous version.',
+  pros: ['Fastest for bulk re-weighting', 'Compare sleeves in a category side by side', 'Strong grid lines - nothing ambiguous'],
+  cons: ['Editions and history live in a side link per sleeve', 'Dense by design; not for occasional users'],
+  caps: {find: 'Type and category selectors above the grid; search filters rows', see: 'The grid: every product with cost, minimum and facts', edit: 'Weight cells; "+ Add product" per sleeve; Remove per row; name via the sleeve header', check: 'Per-sleeve total in its header row, red until 100%', save: 'Bottom bar: "Save 2 sleeves" with Discard', new: '"+ New sleeve" adds a block', editions: 'Sleeve header › "Editions and details"', offer: 'Sleeve header › "Editions and details"', history: 'Sleeve header › "History"', archive: 'Sleeve header › "Editions and details"', fixed: 'Chip in the sleeve header', source: 'Footer'},
+  render: function (o, s) {
+    var list = sleevesIn(s, s.v, s.c);
+    var q = s.q.trim().toLowerCase();
+    var changed = 0, bad = 0;
+    var rows = list.map(function (sl) {
+      var d = s.drafts[sl.id] || sl.rows;
+      var ch = s.drafts[sl.id] && sig(s.drafts[sl.id]) !== sig(sl.rows);
+      if (ch) changed++;
+      var t = total(d), ok = d.length && Math.abs(t - 100) <= 0.005;
+      if (ch && !ok) bad++;
+      var hit = !q || sl.name.toLowerCase().indexOf(q) >= 0 || d.some(function (r) { var p = prod(r.pid); return p && p.n.toLowerCase().indexOf(q) >= 0; });
+      if (!hit) return '';
+      var out = '<tr class="sh"><td colspan="5">' + esc(sl.name) + ' ' + (sl.label ? '<span class="chip info">' + esc(sl.label) + '</span>' : '') + (ch ? '<span class="chip edit">changed</span>' : '')
+        + ' <span style="float:right;font-weight:400;font-size:13.5px"><button type="button" class="lnk" data-a="mockonly" data-x="Opens the sleeve\'s editions, note and archive in a side panel.">Editions and details</button> · <button type="button" class="lnk" data-a="mockonly" data-x="Opens this sleeve\'s versions in a side panel.">History (' + historyOf(s, sl).length + ')</button></span></td>'
+        + '<td class="r"><span class="' + (ok ? 'tot-ok' : 'tot-bad') + '" style="font-family:var(--fn);font-size:15px">' + pct(t) + '% ' + (ok ? '✓' : '✗') + '</span></td><td></td></tr>';
+      out += d.map(function (r, i) {
+        var p = prod(r.pid) || {n: r.pid};
+        var rc = s.drafts[sl.id] && (!sl.rows[i] || sl.rows[i].pid !== r.pid || sl.rows[i].w !== r.w);
+        return '<tr' + (rc ? ' class="chg"' : '') + '><td>' + esc(p.n) + '</td><td>' + esc(p.ac) + '</td><td>' + esc(p.ve) + '</td><td class="r">' + pct(p.co) + '%</td><td class="r">' + money(p.mi) + '</td>'
+          + '<td class="r cellin"><input data-a="sw" data-x="' + sl.id + '|' + i + '" data-k="sw' + sl.id + '_' + i + '" value="' + esc(wval(r)) + '" inputmode="decimal" aria-label="Weight of ' + esc(p.n) + ' in ' + esc(sl.name) + '"' + (!isFinite(r.w) || r.w <= 0 ? ' class="bad"' : '') + '></td>'
+          + '<td><button type="button" class="rmx" data-a="srm" data-x="' + sl.id + '|' + i + '" aria-label="Remove ' + esc(p.n) + '">Remove</button></td></tr>';
+      }).join('');
+      if (s.addFor === sl.id) {
+        var taken = d.map(function (r) { return r.pid; }), pq = s.pickq.trim().toLowerCase();
+        var hits = Object.keys(D.products).filter(function (pid) { var p = D.products[pid]; return taken.indexOf(pid) < 0 && (!pq || (p.n + ' ' + p.ac + ' ' + p.ve).toLowerCase().indexOf(pq) >= 0); }).slice(0, 6);
+        out += '<tr class="sum"><td colspan="7"><div class="srch" style="max-width:420px"><input class="in" data-a="pickq" data-k="pickq6" placeholder="Search the catalogue…" value="' + esc(s.pickq) + '" aria-label="Search the product catalogue"></div><ul class="plist" style="max-width:620px">'
+          + (hits.map(function (pid) { var p = D.products[pid]; return '<li><button type="button" data-a="spick" data-x="' + sl.id + '|' + esc(pid) + '"><span>' + esc(p.n) + '<br><small>' + esc(meta(p)) + '</small></span><small>' + pct(p.co) + '%</small></button></li>'; }).join('') || '<li class="none">Nothing matches.</li>')
+          + '</ul><button type="button" class="lnk" data-a="saddclose">Close</button></td></tr>';
+      } else {
+        out += '<tr class="sum"><td colspan="7"><button type="button" class="lnk" data-a="sadd" data-x="' + sl.id + '">+ Add product to ' + esc(sl.name) + '</button></td></tr>';
+      }
+      return out;
+    }).join('');
+    return '<div class="o6"><div class="o6-top">' + typeSeg(o, s) + '<label style="display:flex;gap:8px;align-items:center"><b style="font-size:14px">Category</b><select class="in" style="width:auto" data-a="cat" data-k="csel">' + C.map(function (c, i) { return '<option value="' + i + '"' + (s.c === i ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></label>'
+      + '<div class="srch" style="width:220px"><input class="in" data-a="q" data-k="q" placeholder="Filter sleeves or products…" value="' + esc(s.q) + '" aria-label="Filter"></div><span class="spacer"></span><button type="button" class="btn" data-a="mockonly" data-x="New sleeve adds an empty block to this grid.">+ New sleeve</button></div>'
+      + '<div class="o6-body"><table class="ss"><thead><tr><th>Product</th><th>Asset class</th><th>Vehicle</th><th class="r">Cost</th><th class="r">Minimum</th><th class="r">Weight %</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+      + '<div class="o6-bar' + (changed ? ' dirty' : '') + '">' + (changed ? '<b style="color:#7A5200">' + changed + ' sleeve' + (changed === 1 ? '' : 's') + ' changed</b>' + (bad ? ' <span class="tot-bad" style="font-weight:600">· ' + bad + ' not at 100% yet</span>' : '') : '<span class="muted">No changes</span>')
+      + '<span class="spacer"></span>' + (changed ? '<button type="button" class="btn" data-a="sdiscard">Discard all</button>' : '') + '<button type="button" class="btn pri" data-a="ssave"' + (changed && !bad ? '' : ' disabled') + '>Save ' + (changed || '') + ' sleeve' + (changed === 1 ? '' : 's') + '</button></div></div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 7 · guided edit ---- */
+OPTS.push({id: 'guided', name: 'Read view, guided edit with a review step',
+  text: 'Browsing is read-only and simple. Editing opens a focused full-screen editor in three steps - Name and note, Products and weights, then Review - so a change is built calmly and checked before it lands: the review lists exactly what will change (products added, removed, re-weighted) and reminds you the current version goes to the Archive. Nothing saves by accident.',
+  pros: ['Safest: every change is reviewed', 'The editor has the whole screen', 'Clear for occasional users'],
+  cons: ['Slow for a one-number tweak', 'Editions edited in a separate flow'],
+  caps: {find: 'Left list: type and category selectors, search', see: 'Right: read view', edit: '"Edit sleeve" → steps 1 and 2', check: 'Each step blocks Next until it is valid; the review repeats the checks', save: 'Step 3 › "Save these changes"; leaving the editor asks first', new: '"+ New sleeve" runs the same steps from empty', editions: 'Read view › Who gets it, with its own Edit', offer: 'Read view › Details', history: 'Read view › History', archive: 'Read view › Details', fixed: 'Chip in the read view', source: 'Footer'},
+  render: function (o, s) {
+    var sl = current(s);
+    var items = (s.q ? searchHits(s) : sleevesIn(s, s.v, s.c)).map(function (x) {
+      return '<button type="button" class="navi" data-a="sleeve" data-x="' + x.id + '" aria-selected="' + (x.id === s.sid) + '"><span class="two">' + esc(x.name) + (x.label ? ' <span class="chip info">' + esc(x.label) + '</span>' : '') + '<small>' + x.rows.length + ' products · ' + esc(vehicles(x.rows).join(', ')) + '</small></span></button>';
+    }).join('');
+    var left = '<div class="o7-list"><div class="top">' + typeSelect(o, s) + catSelect(o, s) + '<div class="srch"><input class="in" data-a="q" data-k="q" placeholder="Search…" value="' + esc(s.q) + '" aria-label="Search sleeves"></div></div>' + items + '</div>';
+    var view = sl ? '<div class="detail-h"><div><h3>' + esc(sl.name) + '</h3><div class="where" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + whereLine(sl) + '</div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' + chips(s, sl) + '</div></div><span class="spacer"></span><button type="button" class="btn pri lg" data-a="wizopen">Edit sleeve</button></div>'
+      + '<div class="sect"><div class="sect-h">What it holds</div><div class="sect-b flush">' + prodTable(o, s, sl.rows, false) + '</div></div>'
+      + '<div class="sect"><div class="sect-h">Who gets it</div><div class="sect-b">' + rulesBlock(o, s, sl, false) + '</div></div>'
+      + '<div class="sect"><div class="sect-h">Details</div><div class="sect-b">' + detailsBlock(s, sl) + '<div style="margin-top:12px">' + dangerRow(sl) + '</div></div></div>'
+      + '<div class="sect"><div class="sect-h">History</div><div class="sect-b">' + historyBlock(o, s, sl) + '</div></div>' : '<p class="empty">Choose a sleeve.</p>';
+    var wiz = '';
+    if (s.editing && sl) {
+      var d = s.draft, st = s.step;
+      var stepNames = ['Name and note', 'Products and weights', 'Review and save'];
+      var stepper = '<div class="steps">' + stepNames.map(function (n, i) { return '<span class="' + (st === i + 1 ? 'on' : st > i + 1 ? 'done' : '') + '"><b>' + (st > i + 1 ? '✓' : i + 1) + '</b>' + n + '</span>'; }).join('') + '</div>';
+      var card;
+      if (st === 1) card = '<h4 style="margin:0 0 12px;font-size:18px;color:var(--navy)">1 · Name and note</h4>' + nameFields(s);
+      else if (st === 2) card = '<h4 style="margin:0 0 12px;font-size:18px;color:var(--navy)">2 · Products and weights</h4>' + prodTable(o, s, d.rows, true);
+      else card = '<h4 style="margin:0 0 6px;font-size:18px;color:var(--navy)">3 · Review the changes</h4><p class="muted" style="margin:0 0 12px">Saving makes this the version PWAs get. The current version (created ' + esc(fmtDT(sl.at)) + ') moves to the Archive and can be put back from History.</p>' + diffHtml(sl, d);
+      var p = problems(d);
+      var canNext = st === 1 ? !!d.name.trim() : st === 2 ? !p.length : !p.length && isDirty(s);
+      wiz = '<div class="wiz"><div class="wiz-h"><h4>Editing ' + esc(sl.name) + '</h4><span class="muted">' + esc(C[sl.c]) + ' · ' + esc(V[sl.v]) + '</span>' + stepper + '</div>'
+        + '<div class="wiz-b"><div class="card">' + card + '</div></div>'
+        + '<div class="wiz-f"><button type="button" class="btn" data-a="cancel">Cancel editing</button><span class="spacer"></span>' + (st === 2 && p.length ? '<span class="tot-bad" style="font-weight:600;font-size:14px">' + esc(p[0]) + '</span>' : '') + (st === 3 && !isDirty(s) ? '<span class="muted">Nothing has changed yet.</span>' : '')
+        + (st > 1 ? '<button type="button" class="btn" data-a="wback">‹ Back</button>' : '')
+        + (st < 3 ? '<button type="button" class="btn pri" data-a="wnext"' + (canNext ? '' : ' disabled') + '>Next ›</button>' : '<button type="button" class="btn pri" data-a="save"' + (canNext ? '' : ' disabled') + '>Save these changes</button>') + '</div></div>';
+    }
+    return '<div class="o7">' + left + '<div class="o7-view">' + view + '</div>' + wiz + '</div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+function diffHtml(sl, d) {
+  var out = [];
+  if (d.name !== sl.name) out.push(['chg', 'Name', '<s>' + esc(sl.name) + '</s> → <b>' + esc(d.name) + '</b>']);
+  if ((d.note || '') !== (sl.note || '')) out.push(['chg', 'Note', (sl.note ? '<s>' + esc(sl.note) + '</s> → ' : '') + '<b>' + esc(d.note || '(none)') + '</b>']);
+  var before = {}; sl.rows.forEach(function (r) { before[r.pid] = r.w; });
+  var after = {}; d.rows.forEach(function (r) { after[r.pid] = r.w; });
+  d.rows.forEach(function (r) {
+    var p = prod(r.pid);
+    if (!(r.pid in before)) out.push(['add', 'Added', '<b>' + esc(p.n) + '</b> at ' + pct(r.w) + '%']);
+    else if (before[r.pid] !== r.w) out.push(['chg', 'Weight', esc(p.n) + ': <s>' + pct(before[r.pid]) + '%</s> → <b>' + pct(r.w) + '%</b>']);
+  });
+  sl.rows.forEach(function (r) { if (!(r.pid in after)) out.push(['rem', 'Removed', '<b>' + esc(prod(r.pid).n) + '</b> (was ' + pct(r.w) + '%)']); });
+  if (!out.length) return '<p class="muted">No changes.</p>';
+  return '<ul class="diff">' + out.map(function (x) { return '<li><span class="k ' + x[0] + '">' + x[1] + '</span><span>' + x[2] + '</span></li>'; }).join('') + '</ul>'
+    + '<p style="margin:12px 0 0">' + totalChip(d.rows) + '</p>';
+}
+
+/* ---- 8 · cards ---- */
+OPTS.push({id: 'cards', name: 'One scrolling list of sleeve cards',
+  text: 'No panes at all: one column of cards, grouped under category headings, each showing the sleeve name, its products as labelled weights and its status - so the library can be read like a page. Category chips at the top jump or filter. Open a card to see the full table and its actions; Edit turns that card yellow and gives it its own Save and Cancel.',
+  pros: ['Reads like a document; nothing hidden behind clicks', 'What each sleeve holds is visible without opening it', 'Works at any width'],
+  cons: ['Long page for Public Equity under PMG ESG (11 sleeves)', 'Only one sleeve editable at a time'],
+  caps: {find: 'Type switch, category chips, search', see: 'Every card shows its products and weights; open for the full table', edit: 'Open card › Edit', check: 'Status chip on every card', save: 'The open card\'s own Save / Cancel', new: '"+ New sleeve" at each category heading', editions: 'Open card › Who gets it', offer: 'Open card › Details', history: 'Open card › History', archive: 'Open card › actions', fixed: 'Chip at the category heading', source: 'Footer'},
+  render: function (o, s) {
+    var q = s.q.trim().toLowerCase();
+    var cats = '<div class="o8-cats"><button type="button" data-a="fcat" data-x="-1" aria-pressed="' + (s.fc === -1) + '">All categories</button>' + C.map(function (c, i) {
+      return '<button type="button" data-a="fcat" data-x="' + i + '" aria-pressed="' + (s.fc === i) + '">' + sw(i) + esc(c) + ' · ' + sleevesIn(s, s.v, i).length + '</button>';
+    }).join('') + '</div>';
+    var body = C.map(function (c, ci) {
+      if (s.fc !== -1 && s.fc !== ci) return '';
+      var list = sleevesIn(s, s.v, ci).filter(function (x) { return !q || x.name.toLowerCase().indexOf(q) >= 0 || x.rows.some(function (r) { var p = prod(r.pid); return p && p.n.toLowerCase().indexOf(q) >= 0; }); });
+      if (!list.length && q) return '';
+      return '<h4 class="cat">' + sw(ci) + esc(c) + ' <small>' + list.length + ' sleeve' + (list.length === 1 ? '' : 's') + '</small>' + (D.fixed.indexOf(c) >= 0 ? ' <span class="chip mute">Fixed · one per type</span>' : '') + '<span class="spacer"></span>'
+        + (D.fixed.indexOf(c) >= 0 ? '' : '<button type="button" class="btn sm" data-a="mockonly" data-x="New sleeve adds a card here, open for editing.">+ New sleeve</button>') + '</h4>'
+        + list.map(function (x) {
+          var open = s.sid === x.id && s.open[x.id];
+          var editing = open && s.editing;
+          var rows = editing ? s.draft.rows : x.rows;
+          return '<div class="bcard' + (editing ? ' editing' : open ? ' open' : '') + '"><div class="bcard-h" data-a="ctoggle" data-x="' + x.id + '" role="button" tabindex="0" aria-expanded="' + !!open + '"><h5>' + esc(editing ? s.draft.name || 'Untitled' : x.name) + ' ' + editionChip(s, x) + '</h5><span style="display:flex;gap:8px;align-items:center">' + statusChip(rows) + '<span class="muted">' + (open ? '▾' : '▸') + '</span></span>'
+            + (open ? '' : '<div class="pchips">' + x.rows.map(function (r) { var p = prod(r.pid); return '<span>' + esc(p ? p.n : r.pid) + '<b>' + pct(r.w, 0) + '%</b></span>'; }).join('') + '</div>') + '</div>'
+            + (open ? '<div class="bcard-b">' + (editing ? nameFields(s) : '') + prodTable(o, s, rows, editing)
+              + '<div class="bcard-a">' + (editing ? dirtyText(s) + '<span class="spacer"></span><button type="button" class="btn" data-a="cancel">Cancel</button>' + saveBtn(s)
+                : '<button type="button" class="btn pri" data-a="edit">Edit sleeve</button><button type="button" class="btn" data-a="cpanel" data-x="who">Who gets it</button><button type="button" class="btn" data-a="cpanel" data-x="details">Details</button><button type="button" class="btn" data-a="cpanel" data-x="history">History (' + historyOf(s, x).length + ')</button><span class="spacer"></span>' + dangerRow(x)) + '</div>'
+              + (!editing && s.tab !== 'products' ? '<div class="sect" style="margin:12px 0 0"><div class="sect-h">' + {who: 'Who gets it', details: 'Details', history: 'History'}[s.tab] + '</div><div class="sect-b">' + (s.tab === 'who' ? rulesBlock(o, s, x, false) : s.tab === 'details' ? detailsBlock(s, x) : historyBlock(o, s, x)) + '</div></div>' : '')
+              + '</div>' : '') + '</div>';
+        }).join('');
+    }).join('');
+    return '<div class="o8"><div class="o8-top">' + typeSeg(o, s) + '<span class="spacer"></span><div class="srch" style="width:260px"><input class="in" data-a="q" data-k="q" placeholder="Search names and products…" value="' + esc(s.q) + '" aria-label="Search sleeves"></div></div>' + cats + '<div class="o8-body">' + body + '</div></div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 9 · library home + focused page ---- */
+OPTS.push({id: 'page', name: 'Library home, then a focused sleeve page',
+  text: 'Two screens. The library home lists every sleeve for the chosen type under its category, one clear row each with what it holds and its status. Opening one replaces the screen with that sleeve\'s own page - a breadcrumb back, the name as a title, and numbered sections: 1 Name and note, 2 Products, 3 Who gets it, 4 History - with a save bar pinned to the bottom that turns yellow when there are changes.',
+  pros: ['Each screen has one purpose', 'Full width for the products table', 'Numbered sections make the editor self-explanatory'],
+  cons: ['Back-and-forth to compare two sleeves', 'Home is long for PMG ESG'],
+  caps: {find: 'Home: type switch, search, category sections', see: 'Sleeve page › 2 Products', edit: 'Sleeve page (always editable, sections 1-3)', check: 'Status chip in the title; the pinned bar names problems', save: 'Pinned bar: Save changes / Discard', new: 'Home: "+ New sleeve" per category', editions: 'Sleeve page › 3 Who gets it', offer: 'Sleeve page › 4 Details and history', history: 'Sleeve page › 4 Details and history', archive: 'Sleeve page › 4', fixed: 'Chip on the category section', source: 'Footer'},
+  render: function (o, s) {
+    if (s.level === 1 && current(s)) {
+      var sl = current(s);
+      if (!s.draft) s.draft = draftFrom(sl);
+      var d = s.draft;
+      return '<div class="o9"><div class="o9-page"><div class="o9-head"><div class="crumbs" style="margin:0"><button type="button" data-a="lvl" data-x="0">‹ All sleeves</button><span class="sep">›</span><span>' + esc(V[sl.v]) + '</span><span class="sep">›</span><span>' + esc(C[sl.c]) + '</span></div>'
+        + '<h3>' + esc(d.name || 'Untitled') + '</h3><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' + chips(s, sl, d.rows) + '</div></div>'
+        + '<div class="o9-cont">'
+        + '<div class="nsec"><div class="nsec-h"><span class="num">1</span><h4>Name and note</h4><small>what PWAs see</small></div><div class="nsec-b">' + nameFields(s) + '</div></div>'
+        + '<div class="nsec"><div class="nsec-h"><span class="num">2</span><h4>Products</h4><small>weights must make 100%</small></div><div class="nsec-b">' + prodTable(o, s, d.rows, true) + '</div></div>'
+        + '<div class="nsec"><div class="nsec-h"><span class="num">3</span><h4>Who gets it</h4><small>editions, optional</small></div><div class="nsec-b">' + rulesBlock(o, s, sl, true) + '</div></div>'
+        + '<div class="nsec"><div class="nsec-h"><span class="num">4</span><h4>Details and history</h4></div><div class="nsec-b">' + detailsBlock(s, sl) + '<div style="height:12px"></div>' + historyBlock(o, s, sl) + '<div style="margin-top:12px">' + dangerRow(sl) + '</div></div></div>'
+        + '</div><div class="stickbar' + (isDirty(s) ? ' dirty' : '') + '">' + dirtyText(s) + '<span class="spacer"></span>' + (isDirty(s) ? '<button type="button" class="btn" data-a="discard">Discard</button>' : '') + saveBtn(s) + '</div></div></div>' + toastHtml(s);
+    }
+    var q = s.q.trim().toLowerCase();
+    var secs = C.map(function (c, ci) {
+      var list = sleevesIn(s, s.v, ci).filter(function (x) { return !q || x.name.toLowerCase().indexOf(q) >= 0 || x.rows.some(function (r) { var p = prod(r.pid); return p && p.n.toLowerCase().indexOf(q) >= 0; }); });
+      if (!list.length && q) return '';
+      return '<div class="o9-sec"><div class="o9-sec-h">' + sw(ci) + esc(c) + ' <span class="muted" style="font-weight:400">· ' + list.length + '</span>' + (D.fixed.indexOf(c) >= 0 ? ' <span class="chip mute">Fixed · one per type</span>' : '') + '<span class="spacer"></span>' + (D.fixed.indexOf(c) >= 0 ? '' : '<button type="button" class="btn sm" data-a="mockonly" data-x="New sleeve opens an empty sleeve page in this category.">+ New sleeve</button>') + '</div>'
+        + list.map(function (x) {
+          return '<button type="button" class="o9-row" data-a="open9" data-x="' + x.id + '"><span><b>' + esc(x.name) + '</b> ' + editionChip(s, x) + '<br><small>' + esc(x.rows.map(function (r) { var p = prod(r.pid); return (p ? p.n : r.pid) + ' ' + pct(r.w, 0) + '%'; }).join(' · ')) + '</small></span>'
+            + '<span><small>Vehicles</small><br>' + esc(vehicles(x.rows).join(', ')) + '</span><span><small>Weighted cost</small><br>' + pct(wcost(x.rows)) + '%</span><span>' + statusChip(x.rows).replace(' · offered to PWAs', '') + '</span></button>';
+        }).join('') + '</div>';
+    }).join('');
+    return '<div class="o9"><div class="o9-home"><div class="top"><b style="font-size:16px;color:var(--navy)">Sleeves for</b>' + typeSeg(o, s) + '<span class="spacer"></span><div class="srch" style="width:280px"><input class="in" data-a="q" data-k="q" placeholder="Search names and products…" value="' + esc(s.q) + '" aria-label="Search sleeves"></div></div>' + secs + '</div></div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 10 · table + drawer ---- */
+OPTS.push({id: 'table', name: 'Sortable library table with a side drawer',
+  text: 'The library as one table, like the Catalogue tab next door: a row per sleeve with its category, implementation type, products, vehicles, weighted cost, status and when this version was created. Filter by type and category, sort any column, search. Click a row to open the sleeve in a drawer to read and edit; tick up to three rows to compare them side by side.',
+  pros: ['Matches the Catalogue tab - one way of working', 'Sort and filter answer management questions fast', 'Compare sleeves side by side'],
+  cons: ['Rows say less about contents than cards', 'Editing in a drawer is narrower'],
+  caps: {find: 'Filters (type, category), search, sortable columns', see: 'Row summary; drawer for the full sleeve', edit: 'Drawer › Edit sleeve', check: 'Status column; drawer chip', save: 'Drawer footer, tinted when changed', new: '"+ New sleeve" above the table', editions: 'Drawer › Who gets it; edition shown in the row', offer: 'Type column; drawer › Details', history: 'Drawer › History', archive: 'Drawer › Details', fixed: '"Fixed" beside the category', source: 'Footer'},
+  render: function (o, s) {
+    var q = s.q.trim().toLowerCase();
+    var rows = s.lib.filter(function (x) {
+      return (s.fv === -1 || x.v === s.fv) && (s.fc === -1 || x.c === s.fc)
+        && (!q || x.name.toLowerCase().indexOf(q) >= 0 || x.rows.some(function (r) { var p = prod(r.pid); return p && p.n.toLowerCase().indexOf(q) >= 0; }));
+    });
+    var key = s.sort;
+    rows.sort(function (a, b) {
+      if (key === 'name') return a.name < b.name ? -1 : 1;
+      if (key === 'cost') return wcost(b.rows) - wcost(a.rows);
+      if (key === 'n') return b.rows.length - a.rows.length;
+      if (key === 'type') return a.v - b.v || a.c - b.c;
+      return a.c - b.c || a.v - b.v || (a.name < b.name ? -1 : 1);
+    });
+    function th(k, label, cls) { return '<th' + (cls ? ' class="' + cls + '"' : '') + '><button type="button" data-a="sort" data-x="' + k + '">' + label + (s.sort === k ? ' ▾' : '') + '</button></th>'; }
+    var body = rows.map(function (x) {
+      var sel = s.sel.indexOf(x.id) >= 0;
+      return '<tr class="' + (s.drawer && s.sid === x.id ? 'on' : '') + '" data-a="row" data-x="' + x.id + '"><td><input type="checkbox" data-a="tick" data-x="' + x.id + '"' + (sel ? ' checked' : '') + (s.sel.length >= 3 && !sel ? ' disabled' : '') + ' aria-label="Compare ' + esc(x.name) + '"></td>'
+        + '<td><b>' + esc(x.name) + '</b> ' + editionChip(s, x) + '</td><td><span style="display:inline-flex;gap:7px;align-items:center">' + sw(x.c) + esc(C[x.c]) + '</span></td><td>' + esc(SHORT[V[x.v]]) + '</td>'
+        + '<td class="r">' + x.rows.length + '</td><td>' + esc(vehicles(x.rows).join(', ')) + '</td><td class="r">' + pct(wcost(x.rows)) + '%</td><td>' + statusChip(x.rows).replace(' · offered to PWAs', '') + '</td><td class="muted">' + esc(fmtD(x.at)) + '</td></tr>';
+    }).join('');
+    var drawer = '';
+    if (s.drawer && current(s)) {
+      drawer = '<div class="drawer" role="dialog" aria-label="Sleeve"><div class="drawer-h"><h4>Sleeve</h4><span class="spacer"></span><button type="button" class="btn sm" data-a="dclose">Close</button></div><div class="drawer-b">'
+        + sleevePage(o, s, true).replace('<div class="editbar">', '<div class="editbar" style="display:none">') + '</div>'
+        + (s.editing ? '<div class="drawer-f' + (isDirty(s) ? ' dirty' : '') + '">' + dirtyText(s) + '<span class="spacer"></span><button type="button" class="btn" data-a="cancel">Cancel</button>' + saveBtn(s) + '</div>' : '') + '</div>';
+    }
+    var cmp = '';
+    if (s.compare) {
+      var cs = s.sel.map(function (id) { return byId(s, id); });
+      cmp = '<div class="cmp"><div class="drawer-h"><h4>Comparing ' + cs.length + ' sleeves</h4><span class="spacer"></span><button type="button" class="btn sm" data-a="cmpclose">Close</button></div>'
+        + '<div class="cmp-b" style="grid-template-columns:repeat(' + cs.length + ',minmax(260px,1fr))">' + cs.map(function (x) {
+          return '<div class="cmp-col"><h5>' + esc(x.name) + '<br><small class="muted" style="font-weight:400">' + esc(C[x.c]) + ' · ' + esc(SHORT[V[x.v]]) + '</small></h5>' + prodTable(o, s, x.rows, false, {compact: true}) + '</div>';
+        }).join('') + '</div></div>';
+    }
+    return '<div class="o10"><div class="o10-top"><select class="in" style="width:auto" data-a="fv" data-k="fv" aria-label="Implementation type"><option value="-1">All implementation types</option>' + V.map(function (v, i) { return '<option value="' + i + '"' + (s.fv === i ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>'
+      + '<select class="in" style="width:auto" data-a="fc" data-k="fc" aria-label="Category"><option value="-1">All categories</option>' + C.map(function (c, i) { return '<option value="' + i + '"' + (s.fc === i ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>'
+      + '<div class="srch" style="width:240px"><input class="in" data-a="q" data-k="q" placeholder="Search names and products…" value="' + esc(s.q) + '" aria-label="Search sleeves"></div>'
+      + '<span class="muted">' + rows.length + ' sleeve' + (rows.length === 1 ? '' : 's') + '</span><span class="spacer"></span>'
+      + (s.sel.length ? '<button type="button" class="btn" data-a="cmpopen"' + (s.sel.length < 2 ? ' disabled' : '') + '>Compare ' + s.sel.length + '</button>' : '') + '<button type="button" class="btn pri" data-a="mockonly" data-x="New sleeve asks for a category and the implementation types.">+ New sleeve</button></div>'
+      + '<div class="o10-body"><table class="lt"><thead><tr><th style="width:32px"><span class="muted" title="Tick up to three to compare">☐</span></th>' + th('name', 'Sleeve') + th('cat', 'Category') + th('type', 'Type') + th('n', 'Products', 'r') + '<th>Vehicles</th>' + th('cost', 'Weighted cost', 'r') + '<th>Status</th><th>This version</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+      + drawer + cmp + '</div>' + toastHtml(s);
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+
+/* ---- 11 · cards (2) and table (10) together ---- */
+function tilesOpt() { return OPTS.filter(function (x) { return x.id === 'tiles'; })[0]; }
+function tableOpt() { return OPTS.filter(function (x) { return x.id === 'table'; })[0]; }
+OPTS.push({id: 'combo', name: 'Cards and table together (2 + 10)',
+  text: 'Proposals 2 and 10 as one screen with a switch at the top. Cards is the guided path: implementation type, then category tiles, then sleeve cards, then the sleeve page. Table is the whole library in one sortable, filterable list with a side drawer and side-by-side compare. Switching keeps your place: the type and category you were looking at become the table\'s filters, an open sleeve stays open (as the page in Cards, in the drawer in Table), and an unsaved edit carries across. The switch remembers your last view.',
+  pros: ['Browse by category or manage the whole library, on one tab', 'Your place and any unsaved edit survive the switch', 'Same sleeve page and the same Save in both views'],
+  cons: ['Two layouts to learn and maintain', 'The table drawer is narrower than the card view\'s sleeve page'],
+  caps: {find: 'Cards: type switch, tiles, cards. Table: type and category filters, search, sortable columns', see: 'Cards: sleeve cards and the sleeve page. Table: row summary and the drawer', edit: 'Edit sleeve, on the sleeve page or in the drawer', check: 'Status chip on cards, rows and the sleeve', save: 'Edit bar (Cards) or drawer footer (Table), tinted when changed', new: '"+ New sleeve" on the category screen and above the table', editions: 'Who gets it, in both views', offer: 'Details, in both views; the Type column in Table', history: 'History, in both views', archive: 'Details, in both views', fixed: 'Tile chip (Cards); chip beside the category (Table)', source: 'Footer'},
+  render: function (o, s) {
+    var sl = current(s);
+    var ICON_CARDS = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg>';
+    var ICON_TABLE = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="14" height="2.4" rx="1"/><rect x="1" y="6.8" width="14" height="2.4" rx="1"/><rect x="1" y="11.6" width="14" height="2.4" rx="1"/></svg>';
+    var ctx;
+    if (s.mode === 'table') {
+      ctx = (s.fv === -1 ? 'Every implementation type' : esc(V[s.fv])) + ' · ' + (s.fc === -1 ? 'every category' : esc(C[s.fc]));
+    } else {
+      ctx = esc(V[s.v]) + (s.level >= 1 ? ' · ' + esc(C[s.c]) : '') + (s.level === 2 && sl ? ' · ' + esc(sl.name) : '');
+    }
+    if (s.editing && isDirty(s)) ctx += ' · <b style="color:#7A5200">unsaved changes to ' + esc(sl ? sl.name : '') + '</b>';
+    var bar = '<div class="o11-bar"><span class="lbl">View</span><div class="seg" role="group" aria-label="View">'
+      + '<button type="button" data-a="mode" data-x="cards" aria-pressed="' + (s.mode !== 'table') + '">' + ICON_CARDS + 'Cards</button>'
+      + '<button type="button" data-a="mode" data-x="table" aria-pressed="' + (s.mode === 'table') + '">' + ICON_TABLE + 'Table</button></div>'
+      + '<span class="ctx">' + ctx + '</span></div>';
+    var inner = s.mode === 'table' ? tableOpt().render(o, s) : tilesOpt().render(o, s);
+    return '<div class="o11">' + bar + '<div class="o11-body">' + inner + '</div></div>';
+  },
+  footer: function () { return 'Product catalogue as of ' + fmtD(D.catalogue.modified) + ' · ' + D.store.sleeves + ' sleeves in the library'; }
+});
+/* switching keeps your place: Cards' type and category become Table's
+   filters, an open sleeve stays open, and an edit in progress carries over */
+function switchMode(s, to) {
+  if (to === s.mode) return;
+  var sl = current(s);
+  if (to === 'table') {
+    s.fv = s.v;
+    s.fc = s.level >= 1 ? s.c : -1;
+    s.drawer = s.level === 2 && !!sl;
+    s.compare = false;
+  } else {
+    if (s.drawer && sl) { s.v = sl.v; s.c = sl.c; s.level = 2; }
+    else {
+      if (s.fv !== -1) s.v = s.fv;
+      if (s.fc !== -1) { s.c = s.fc; s.level = 1; } else s.level = 0;
+    }
+    s.drawer = false; s.compare = false;
+  }
+  s.mode = to;
+  try { window.localStorage.setItem('sleevesComboView', to); } catch (e) { /* private window */ }
+}
+
+/* ============================================================ the page */
+var picked = null;
+try { picked = window.localStorage.getItem('sleevesScreenProposal'); } catch (e) { picked = null; }
+
+function stageHtml(o) {
+  var opt = OPTS.filter(function (x) { return x.id === o; })[0];
+  var s = state(o);
+  return '<div class="con"><div class="con-h"><span class="t">Repository</span><span class="tabs"><span class="on">Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span>Proposals</span><span>Uncalled Capital Allocation</span><span>Overlay Funding</span></span><span class="x" aria-hidden="true">×</span></div>'
+    + '<div class="con-b" data-stage="' + o + '">' + opt.render(o, s) + '</div>'
+    + '<div class="con-f">' + esc(opt.footer()) + '</div></div>';
+}
+function renderOpt(o) {
+  var host = document.querySelector('[data-stage="' + o + '"]'); if (!host) return;
+  var a = document.activeElement, key = a && a.dataset && a.dataset.k, sel = null;
+  if (key && a.closest('[data-stage="' + o + '"]')) { try { sel = [a.selectionStart, a.selectionEnd]; } catch (e) { sel = null; } } else key = null;
+  var scrolls = Array.prototype.map.call(host.querySelectorAll('.zone-b,.o2,.o3-main,.o4-doc,.acc,.o5-body,.items,.o6-body,.o7-view,.o7-list,.o8-body,.o9,.o10-body,.drawer-b,.wiz-b'), function (el) { return el.scrollTop; });
+  var opt = OPTS.filter(function (x) { return x.id === o; })[0];
+  host.innerHTML = opt.render(o, state(o));
+  var again = host.querySelectorAll('.zone-b,.o2,.o3-main,.o4-doc,.acc,.o5-body,.items,.o6-body,.o7-view,.o7-list,.o8-body,.o9,.o10-body,.drawer-b,.wiz-b');
+  if (again.length === scrolls.length) Array.prototype.forEach.call(again, function (el, i) { el.scrollTop = scrolls[i]; });
+  if (key) {
+    var el = host.querySelector('[data-k="' + key + '"]');
+    if (el) { el.focus(); if (sel && el.setSelectionRange && sel[0] != null) { try { el.setSelectionRange(sel[0], sel[1]); } catch (e) { /* select */ } } }
+  }
+}
+function renderAll() {
+  var main = document.getElementById('options');
+  main.innerHTML = OPTS.map(function (opt, i) {
+    var n = i + 1, isPicked = picked === opt.id;
+    return '<section class="option' + (isPicked ? ' picked' : '') + '" id="opt-' + opt.id + '" data-opt="' + opt.id + '" aria-labelledby="h-' + opt.id + '">'
+      + '<div class="opt-h"><div class="opt-n" aria-hidden="true">' + n + '</div><h3 id="h-' + opt.id + '">' + n + ' · ' + esc(opt.name) + '</h3><p>' + esc(opt.text) + '</p>'
+      + '<button type="button" class="pick" data-pick="' + opt.id + '" aria-pressed="' + isPicked + '">' + (isPicked ? 'Chosen' : 'Choose') + '</button></div>'
+      + stageHtml(opt.id)
+      + '<div class="after"><div class="pc"><h4>Why it helps</h4><ul class="pros">' + opt.pros.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>'
+      + '<h4 style="margin-top:10px">Trade-offs</h4><ul class="cons">' + opt.cons.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></div>'
+      + '<div class="pc"><h4>Where everything lives</h4><table class="caps">' + CAPS.map(function (c) { return '<tr><td>' + esc(c[1]) + '</td><td>' + esc(opt.caps[c[0]]) + '</td></tr>'; }).join('') + '</table></div></div>'
+      + '</section>';
+  }).join('');
+  renderChrome();
+}
+function renderChrome() {
+  document.getElementById('jump').innerHTML = '<a href="#today">Today</a>' + OPTS.map(function (opt, i) {
+    return '<a href="#opt-' + opt.id + '" title="' + esc(opt.name) + '"' + (picked === opt.id ? ' class="picked"' : '') + '>' + (i + 1) + '</a>';
+  }).join('');
+  OPTS.forEach(function (opt) {
+    var sec = document.getElementById('opt-' + opt.id); if (!sec) return;
+    sec.classList.toggle('picked', picked === opt.id);
+    var b = sec.querySelector('[data-pick]'); b.setAttribute('aria-pressed', String(picked === opt.id)); b.textContent = picked === opt.id ? 'Chosen' : 'Choose';
+  });
+  var bar = document.getElementById('pickedBar');
+  var i = -1; OPTS.forEach(function (opt, k) { if (opt.id === picked) i = k; });
+  bar.classList.toggle('on', i >= 0);
+  bar.innerHTML = i >= 0 ? 'You chose <b>' + (i + 1) + ' · ' + esc(OPTS[i].name) + '</b>. Tell Claude: <code id="say">Go with sleeves screen proposal ' + (i + 1) + ' (' + esc(OPTS[i].name) + ')</code>'
+    + '<button type="button" data-copy>Copy</button><button type="button" data-clear>Clear</button>' : '';
+}
+
+/* ------------------------------------------------------------- actions */
+function act(o, a, x, el) {
+  var s = state(o), opt = OPTS.filter(function (z) { return z.id === o; })[0];
+  s.toast = '';
+  var sl = current(s);
+  switch (a) {
+    case 'type': s.v = +x; s.q = ''; selectSleeve(s, firstIn(s)); if (o === 'tiles' || o === 'combo') s.level = 0; break;
+    case 'mode': switchMode(s, x); break;
+    case 'cat': s.c = +x; s.q = ''; selectSleeve(s, firstIn(s)); break;
+    case 'acc': s.c = +x; break;
+    case 'sleeve': selectSleeve(s, +x); var nsl = current(s); if (nsl) { s.c = nsl.c; s.v = nsl.v; } break;
+    case 'q': s.q = el.value; break;
+    case 'edit': if (sl) { s.editing = true; s.draft = draftFrom(sl); s.picking = false; } break;
+    case 'cancel': s.editing = false; s.picking = false; s.draft = opt.alwaysEdit && sl ? draftFrom(sl) : null; s.step = 1; break;
+    case 'discard': if (sl) s.draft = draftFrom(sl); s.picking = false; break;
+    case 'save': if (saveDraft(s)) { s.editing = false; s.picking = false; s.step = 1; s.draft = opt.alwaysEdit || o === 'page' ? draftFrom(current(s)) : null; } break;
+    case 'w': if (s.draft) { s.draft.rows[+x].t = el.value; s.draft.rows[+x].w = parseW(el.value); } break;
+    case 'rm': if (s.draft) { s.draft.rows.splice(+x, 1); } break;
+    case 'addprod': s.picking = true; s.pickq = ''; break;
+    case 'pickclose': s.picking = false; break;
+    case 'pickq': s.pickq = el.value; break;
+    case 'pick': if (s.draft) { s.draft.rows.push({pid: x, w: NaN}); s.picking = false; s.pickq = ''; } break;
+    case 'name': if (s.draft) s.draft.name = el.value; break;
+    case 'note': if (s.draft) s.draft.note = el.value; break;
+    case 'rule':
+      if (s.draft) {
+        var parts = x.split('|'), r = s.draft.rules[+parts[0]], f = parts[1], v = parts[2];
+        r[f] = r[f] || []; var k = r[f].indexOf(v); if (k >= 0) r[f].splice(k, 1); else r[f].push(v);
+      }
+      break;
+    case 'tab': s.tab = x; break;
+    case 'mockonly': s.toast = esc(x) + ' <span style="opacity:.75">(Not part of this mock-up.)</span>'; break;
+    /* 2 */
+    case 'tile': s.c = +x; s.level = 1; break;
+    case 'card': selectSleeve(s, +x); s.level = 2; break;
+    case 'lvl': if (s.editing && isDirty(s)) { s.toast = 'You have unsaved changes. Save or cancel them first.'; break; } s.level = +x; s.editing = false; s.draft = null; break;
+    /* 3 */
+    case 'cell': var cp = x.split('|'); s.v = +cp[0]; s.c = +cp[1]; s.cell = [s.v, s.c]; s.drawer = 'cell'; s.editing = false; s.draft = null; break;
+    case 'dsleeve': selectSleeve(s, +x); s.drawer = 'sleeve'; break;
+    case 'dback': s.drawer = o === 'matrix' ? 'cell' : false; s.editing = false; s.draft = null; break;
+    case 'dclose': if (s.editing && isDirty(s)) { s.toast = 'You have unsaved changes. Save or cancel them first.'; break; } s.drawer = false; s.editing = false; s.draft = null; if (o === 'matrix') s.cell = null; break;
+    /* 6 */
+    case 'sw':
+      var sp = x.split('|'), id6 = +sp[0], i6 = +sp[1], s6 = byId(s, id6);
+      if (!s.drafts[id6]) s.drafts[id6] = clone(s6.rows);
+      s.drafts[id6][i6].t = el.value; s.drafts[id6][i6].w = parseW(el.value); break;
+    case 'srm': var sr = x.split('|'), idr = +sr[0]; if (!s.drafts[idr]) s.drafts[idr] = clone(byId(s, idr).rows); s.drafts[idr].splice(+sr[1], 1); break;
+    case 'sadd': s.addFor = +x; s.pickq = ''; break;
+    case 'saddclose': s.addFor = null; break;
+    case 'spick': var spk = x.split('|'), ida = +spk[0]; if (!s.drafts[ida]) s.drafts[ida] = clone(byId(s, ida).rows); s.drafts[ida].push({pid: spk[1], w: NaN}); s.addFor = null; break;
+    case 'sdiscard': s.drafts = {}; s.addFor = null; break;
+    case 'ssave':
+      var n6 = 0;
+      Object.keys(s.drafts).forEach(function (id) {
+        var x6 = byId(s, +id), d6 = s.drafts[id];
+        if (sig(d6) === sig(x6.rows)) return;
+        var h6 = historyOf(s, x6); h6.forEach(function (e) { e.cur = false; });
+        x6.rows = bare(d6); x6.at = nowIso(); x6.by = 'fbarker'; x6.rev = (x6.rev || 1) + 1;
+        h6.unshift({r: x6.rev, what: 'Edited', at: x6.at, by: 'fbarker', rows: clone(d6), cur: true}); n6++;
+      });
+      s.drafts = {}; s.toast = '<b>Saved ' + n6 + ' sleeve' + (n6 === 1 ? '' : 's') + '.</b> Each previous version is now in the Archive. Mock-up only: nothing was written.';
+      break;
+    /* 7 */
+    case 'wizopen': if (sl) { s.editing = true; s.draft = draftFrom(sl); s.step = 1; s.picking = false; } break;
+    case 'wnext': s.step = Math.min(3, s.step + 1); s.picking = false; break;
+    case 'wback': s.step = Math.max(1, s.step - 1); break;
+    /* 8 */
+    case 'fcat': s.fc = +x; break;
+    case 'ctoggle':
+      if (s.editing && s.sid !== +x) break;
+      if (s.sid === +x && s.open[x]) { s.open = {}; s.editing = false; s.draft = null; }
+      else { s.open = {}; s.open[x] = true; selectSleeve(s, +x); s.tab = 'products'; }
+      break;
+    case 'cpanel': s.tab = s.tab === x ? 'products' : x; break;
+    /* 9 */
+    case 'open9': selectSleeve(s, +x); s.draft = draftFrom(current(s)); s.level = 1; break;
+    /* 10 */
+    case 'fv': s.fv = +el.value; break;
+    case 'fc': s.fc = +el.value; break;
+    case 'sort': s.sort = x; break;
+    case 'row': if (s.editing && isDirty(s) && +x !== s.sid) { s.toast = 'You have unsaved changes to ' + esc(sl.name) + '. Save or cancel them first.'; break; } if (+x !== s.sid) selectSleeve(s, +x); s.drawer = true; break;
+    case 'tick': var id10 = +x, k10 = s.sel.indexOf(id10); if (k10 >= 0) s.sel.splice(k10, 1); else if (s.sel.length < 3) s.sel.push(id10); break;
+    case 'cmpopen': s.compare = true; break;
+    case 'cmpclose': s.compare = false; break;
+    default: return;
+  }
+  renderOpt(o);
+}
+
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('button,[data-a]');
+  if (!b) return;
+  if (b.dataset.pick) {
+    picked = picked === b.dataset.pick ? null : b.dataset.pick;
+    try { if (picked) window.localStorage.setItem('sleevesScreenProposal', picked); else window.localStorage.removeItem('sleevesScreenProposal'); } catch (err) { /* private window */ }
+    renderChrome(); return;
+  }
+  if (b.hasAttribute('data-clear')) { picked = null; try { window.localStorage.removeItem('sleevesScreenProposal'); } catch (err) { /* ignore */ } renderChrome(); return; }
+  if (b.hasAttribute('data-copy')) {
+    var text = (document.getElementById('say') || {}).textContent || '';
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { b.textContent = 'Copied'; }, function () {});
+    return;
+  }
+  var a = b.dataset.a; if (!a) return;
+  var sec = b.closest('[data-opt]'); if (!sec) return;
+  if (b.tagName === 'INPUT' && b.type === 'checkbox') { e.stopPropagation(); act(sec.dataset.opt, a, b.dataset.x, b); return; }
+  if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
+  if (a === 'row' && e.target.closest('input')) return;
+  e.preventDefault();
+  act(sec.dataset.opt, a, b.dataset.x, b);
+});
+document.addEventListener('input', function (e) {
+  var el = e.target; var a = el.dataset && el.dataset.a; if (!a || el.tagName === 'SELECT') return;
+  var sec = el.closest('[data-opt]'); if (!sec) return;
+  act(sec.dataset.opt, a, el.dataset.x, el);
+});
+document.addEventListener('change', function (e) {
+  var el = e.target; if (el.tagName !== 'SELECT') return;
+  var a = el.dataset.a; var sec = el.closest('[data-opt]'); if (!a || !sec) return;
+  act(sec.dataset.opt, a, el.value, el);
+});
+document.addEventListener('keydown', function (e) {
+  var el = e.target;
+  if ((e.key === 'Enter' || e.key === ' ') && el.getAttribute && el.getAttribute('role') === 'button' && el.dataset.a) {
+    e.preventDefault(); var sec = el.closest('[data-opt]'); if (sec) act(sec.dataset.opt, el.dataset.a, el.dataset.x, el);
+  }
+  if (e.key === 'Escape') {
+    var sec2 = el.closest && el.closest('[data-opt]'); if (!sec2) return;
+    var s = state(sec2.dataset.opt);
+    if (s.picking) { s.picking = false; renderOpt(sec2.dataset.opt); }
+    else if (s.compare) { s.compare = false; renderOpt(sec2.dataset.opt); }
+    else if (s.drawer && !s.editing) { s.drawer = false; renderOpt(sec2.dataset.opt); }
+  }
+});
+
+renderAll();
+})();
+</script>
+</body>
+</html>

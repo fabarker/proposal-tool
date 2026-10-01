@@ -12,9 +12,8 @@ import os
 
 REPO_CSS = r"""
 /* ── the sleeve repository console (D57) ──
-   A three-pane overlay on the dialog base: categories, the sleeves in one,
-   the editor for one. Sized to the viewport rather than to its content so
-   the panes scroll independently and the footer stays put. */
+   An overlay on the dialog base, sized to the viewport rather than to its
+   content so each view's own boxes scroll and the footer stays put. */
 .dialog.repo{width:min(1280px,calc(100vw - 32px));height:min(940px,calc(100vh - 32px));
   padding:0;display:flex;flex-direction:column;overflow:hidden}
 /* A column of fixed bands around one band that takes the rest. Flex rather
@@ -54,50 +53,19 @@ REPO_CSS = r"""
 .dialog.repo .dlg-close{position:static;margin-left:4px}
 .repo-b{display:grid;grid-template-columns:232px 300px minmax(0,1fr);min-height:0}
 /* The Sleeves view at the catalogue's width, so switching between the two
-   does not jump, and with the extra room shared by all three panes - the
-   editor, which holds the product table, taking most of it (D115). */
+   does not jump (D115). */
 .dialog.repo.sleeves{width:min(1560px,calc(100vw - 32px))}
-/* only where the card actually gets wider; below that the panes keep their
-   widths, and the 900px rule still narrows them */
-@media (min-width:1320px){.dialog.repo.sleeves .repo-b{grid-template-columns:268px 340px minmax(0,1fr)}}
 .repo-pane{border-right:1px solid var(--line);min-height:0;overflow:auto;display:flex;flex-direction:column}
 .repo-pane:last-child{border-right:0}
 .repo-pane-h{font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.14em;
   text-transform:uppercase;color:var(--ink-3);padding:14px 16px 8px;display:flex;align-items:center;
   gap:8px;flex:0 0 auto;min-height:44px}
 .repo-pane-h .btn{margin-left:auto;padding:5px 10px;font-size:11px}
-.repo-cat{display:flex;align-items:center;gap:6px;width:100%;text-align:left;appearance:none;
-  background:none;border:0;border-left:3px solid transparent;font:inherit;font-size:13.5px;
-  color:var(--ink);padding:9px 16px 9px 13px;cursor:pointer;line-height:1.3}
-.repo-cat:hover{background:var(--surface-2)}
-.repo-cat .n{margin-left:auto;font-family:var(--f-num);font-size:12px;color:var(--ink-3)}
-.repo-cat[aria-selected="true"]{background:#E3EBFA;border-left-color:var(--accent);color:#1E4FA3;font-weight:600}
-.repo-cat[aria-selected="true"] .n{color:#1E4FA3}
 .repo-fixed{display:inline-block;font-family:var(--f-num);font-size:10.5px;font-weight:700;
   letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:var(--surface-2);
   border-radius:8px;padding:0 6px;line-height:16px;vertical-align:middle}
-.repo-sleeve{display:grid;gap:2px;width:100%;text-align:left;appearance:none;background:none;
-  border:0;border-bottom:1px solid var(--line);font:inherit;padding:10px 16px;cursor:pointer;
-  color:var(--ink);line-height:1.35}
-.repo-sleeve:hover{background:var(--surface-2)}
-.repo-sleeve b{font-size:13.5px;font-weight:600}
-.repo-sleeve small{font-size:12px;color:var(--ink-2)}
-.repo-sleeve[aria-selected="true"],.repo-sleeve.new{background:#F0F4FB;box-shadow:inset 3px 0 0 var(--accent)}
-.repo-sleeve .warn,.repo-pick .warn{color:#B45309;font-weight:600}
 .repo-none{margin:10px 16px;font-size:13px;color:var(--ink-3)}
-/* ── the sleeve list's own controls (A1, C1) ──
-   The book strip moved here from the console header, where it was a second
-   segmented control identical to the view switch; and the search that the
-   library of 101 sleeves had never had sits under it. */
-.repo-list{display:flex;flex-direction:column}
-.repo-books{display:flex;flex-wrap:wrap;gap:4px;padding:8px 12px 0}
-.repo-book{appearance:none;border:1px solid var(--line-strong);background:var(--surface);
-  border-radius:12px;padding:3px 9px;font-family:var(--f-num);font-size:11.5px;color:var(--ink-2);
-  cursor:pointer;white-space:nowrap;line-height:1.5}
-.repo-book:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
-.repo-book[aria-pressed="true"]{background:#16243A;border-color:#16243A;color:#fff;font-weight:700}
-.repo-book:disabled{opacity:.45;cursor:default}
-.repo-book:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* ── the sleeve search box (C1), in the Sleeves view's bar since D156 ── */
 .repo-find{display:flex;align-items:center;gap:6px;margin:8px 12px 6px;padding:0 8px;
   border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink-3)}
 .repo-find input{border:0;background:none;font:inherit;font-size:13px;color:var(--ink);
@@ -106,7 +74,6 @@ REPO_CSS = r"""
 .repo-find kbd{font-family:var(--f-num);font-size:10.5px;border:1px solid var(--line-strong);
   border-radius:3px;padding:0 5px;color:var(--ink-3);background:var(--surface-2)}
 .repo-find:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,95,191,.18)}
-.repo-hits{margin:2px 16px 4px;font-family:var(--f-num);font-size:11.5px;color:var(--ink-3)}
 /* ── the editor's own actions (A2) ──
    Archiving and adding an edition act on the sleeve being edited, so they sit
    where it is named rather than in the footer beside Save. */
@@ -159,6 +126,7 @@ REPO_CSS = r"""
 .repo-pick b{font-weight:500;font-size:13.5px}
 .repo-pick small{font-family:var(--f-num);font-size:12px;color:var(--ink-2)}
 .repo-pick.empty b{color:var(--ink-3);font-weight:400}
+.repo-pick .warn{color:#B45309;font-weight:600}
 .repo-w{font-family:var(--f-num);font-size:13.5px;text-align:right;border:1px solid var(--line-strong);
   border-radius:4px;padding:5px 8px;width:96px;background:var(--surface);color:var(--ink)}
 .repo-rm{appearance:none;background:none;border:0;color:var(--ink-3);font-size:18px;line-height:1;
@@ -197,11 +165,6 @@ REPO_CSS = r"""
 .repo-f .md-err{margin:0;padding:6px 10px}
 .btn.btn-danger{color:#9B1C1C;border-color:#F1B8B2;background:var(--surface)}
 .btn.btn-danger:hover{background:#FDE8E8}
-/* Create sits at the far left of the footer, away from Save and Delete: it
-   does not act on the sleeve being edited, it starts a different one (D61). */
-.btn.btn-create{background:#176A33;border-color:#176A33;color:#fff}
-.btn.btn-create:hover{background:#12572A;border-color:#12572A}
-.btn.btn-create:disabled{opacity:.5}
 /* the two answers only a new sleeve gives */
 .repo-fld select{border:1px solid var(--line-strong);border-radius:4px;padding:7px 10px;
   font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);min-height:34px;width:100%}
@@ -214,12 +177,6 @@ REPO_CSS = r"""
    field: the label, then the rules as rows of chips - one row per rule,
    rules being alternatives - and under them the count the server gives
    back, green when it is clean and red when it collides. */
-.repo-grp{display:flex;align-items:baseline;gap:8px;padding:9px 16px 3px;border-bottom:1px solid var(--line);
-  background:var(--surface-2)}
-.repo-grp b{font-size:13.5px;font-weight:600;color:var(--ink)}
-.repo-grp small{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-.repo-sleeve.ed{padding-left:28px}
-.repo-sleeve.ed b small{font-weight:400;color:var(--ink-3);font-size:12px;margin-left:4px}
 .repo-edn .repo-sub{font-size:12px;color:var(--ink-3);line-height:1.45}
 .repo-rules{display:grid;gap:8px}
 .repo-rule{border:1px solid var(--line-strong);border-radius:6px;padding:8px 10px 6px;display:grid;gap:6px;
@@ -963,6 +920,254 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
   .ucap-side{border-left:0;border-top:1px solid var(--line)}
   .ovl-drawer{position:fixed;width:min(520px,100vw)}
   .ovl-scrim{position:fixed}
+}
+/* ── the Sleeves view: cards and a table (D156) ──
+   Proposal 11 of proposals/sleeves-screen-redesign.html. Regions are framed
+   with a border that reads (--sv-frame, over 3:1 against white where the
+   three panes used #EEF1F4 at 1.13:1), rows are ruled with a line that can
+   be seen, titled sections sit on a tinted band, and small text is the body
+   face at 13.5px or more in a tone that passes AA. */
+#repoPanel>.sv{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;
+  --sv-frame:#7F8D9D;--sv-rule:#A9B4C0;--sv-ink2:#4F5E6E;--sv-zone:#EAEFF5;--sv-zone2:#F5F7FA;--sv-ground:#F2F4F8;
+  --sv-edit:#FFF6DD;--sv-edit-line:#C9A23E;--sv-diff:#FFF3D1}
+.sv,.sv .sv-chip,.sv .sv-hint,.sv .sv-count{font-family:var(--f-body)}
+.sv-top{flex:0 0 auto}
+/* the bar keeps one shape whatever is open, so the View switch never moves */
+.sv-bar{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(220px,320px) auto;align-items:center;gap:12px 14px;
+  height:64px;padding:0 20px;border-bottom:1px solid var(--sv-frame);background:var(--surface)}
+.sv-mode{display:inline-flex;border:1px solid var(--sv-frame);border-radius:7px;overflow:hidden;background:var(--surface)}
+.sv-mode button{appearance:none;border:0;border-left:1px solid var(--sv-frame);background:var(--surface);color:var(--sv-ink2);
+  font:inherit;font-size:14px;padding:7px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.sv-mode button:first-child{border-left:0}
+.sv-mode button svg{width:15px;height:15px;fill:currentColor}
+.sv-mode button:hover{background:var(--surface-2);color:var(--ink)}
+.sv-mode button[aria-pressed="true"]{background:#16243A;color:#fff;font-weight:600}
+.sv button:focus-visible,.sv select:focus-visible,.sv input:focus-visible,.sv [tabindex="-1"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* a heading that takes focus on arrival is a landmark, not a control: no ring */
+.sv h3[tabindex="-1"]:focus-visible{outline:none}
+.sv-ctx{font-size:13.5px;color:var(--sv-ink2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-find{margin:0;padding:0 9px;border-color:var(--sv-frame)}
+.sv-find input{padding:8px 0;font-size:14px}
+.sv-find.is-off{opacity:.55}
+.sv-newwrap{display:flex;align-items:center;gap:10px;justify-content:flex-end}
+.sv-newwhy{font-size:13px;color:var(--sv-ink2);max-width:170px;line-height:1.25;text-align:right}
+.sv-new{white-space:nowrap}
+.sv-kept{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 20px;background:#E3EBFA;color:#173E80;
+  border-bottom:1px solid #8FAEE0;font-size:14px}
+.sv-kept span{flex:1 1 280px}
+.sv-kept .btn{padding:5px 12px;font-size:12px}
+.sv-body{flex:1 1 auto;min-height:0;overflow:auto;background:var(--sv-ground);padding:18px 22px 26px}
+.sv-none{margin:14px 0;font-size:14px;color:var(--sv-ink2)}
+.sv-hint{font-size:13.5px;color:var(--sv-ink2)}
+.sv-h3{margin:0;font-size:20px;color:#16243A;font-weight:600;display:flex;align-items:center;gap:9px}
+.sv-h3:focus,.sv h3:focus{outline:none}
+.sv-sw{display:inline-block;width:11px;height:11px;border-radius:3px;flex:0 0 auto;vertical-align:-1px}
+.sv-dot{color:var(--sv-ink2);margin:0 2px}
+.sv-cell,.sv-nw{white-space:nowrap}
+.sv-cell{display:inline-flex;align-items:center;gap:7px}
+.sv-chip{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;
+  border-radius:11px;padding:1px 9px;white-space:nowrap;border:1px solid transparent;line-height:19px}
+.sv-chip.ok{background:#E3F2E8;color:#155F2E;border-color:#86C29B}
+.sv-chip.bad{background:#FDECEA;color:#A11F15;border-color:#E39A92}
+.sv-chip.warn{background:#FFF1D6;color:#7A4A00;border-color:#D9AD55}
+.sv-chip.info{background:#EAF1FC;color:#174C99;border-color:#91B1E3}
+.sv-chip.mute{background:var(--surface-2);color:var(--sv-ink2);border-color:var(--sv-rule)}
+.sv-crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14.5px;margin:0 0 14px;color:#16243A}
+.sv-crumbs button{appearance:none;border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:2px 3px;border-radius:3px}
+.sv-crumbs button:hover{text-decoration:underline}
+.sv-crumbs .sv-sep{color:var(--sv-ink2)}
+.sv-crumbs .sv-hint{margin-left:4px}
+.sv-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+.sv-types{display:inline-flex;flex-wrap:wrap;border:1px solid var(--sv-frame);border-radius:7px;overflow:hidden;background:var(--surface)}
+.sv-types button{appearance:none;border:0;border-right:1px solid var(--sv-frame);background:var(--surface);color:var(--sv-ink2);
+  font:inherit;font-size:14px;padding:7px 13px;cursor:pointer;white-space:nowrap}
+.sv-types button:last-child{border-right:0}
+.sv-types button:hover{background:var(--surface-2);color:var(--ink)}
+.sv-types button[aria-pressed="true"]{background:#16243A;color:#fff;font-weight:600}
+.sv-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.sv-tile{position:relative;appearance:none;text-align:left;font:inherit;color:var(--ink);background:var(--surface);
+  border:1px solid var(--sv-frame);border-radius:10px;padding:15px 16px 14px 21px;cursor:pointer;min-height:132px;
+  display:flex;flex-direction:column;gap:6px}
+.sv-tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;border-radius:10px 0 0 10px;background:var(--cc)}
+.sv-tile:hover,.sv-card:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(31,95,191,.14)}
+.sv-tile-h{font-size:16px;font-weight:600;color:#16243A;line-height:1.25}
+.sv-tile-n{font-size:14px;color:var(--sv-ink2)}
+.sv-tile-n b{font-size:26px;font-weight:600;color:var(--ink);margin-right:4px;vertical-align:-2px}
+.sv-tile-names{font-size:13.5px;color:var(--sv-ink2);line-height:1.4}
+.sv-tile-c{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.sv-cathead{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin:0 0 14px}
+.sv-cathead .spacer{flex:1}
+.sv-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;margin-top:12px}
+.sv-card{appearance:none;text-align:left;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--sv-frame);
+  border-radius:10px;padding:14px 16px;cursor:pointer;display:flex;flex-direction:column;gap:9px}
+.sv-card-h,.sv-card-w,.sv-card-f,.sv-card-p{width:100%}
+.sv-card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sv-card-h b{font-size:16px;font-weight:600;color:#16243A}
+.sv-card-w{display:block;font-size:13.5px;color:var(--sv-ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sv-card-w .sv-sw{margin-right:2px}
+.sv-card-why{font-size:13.5px;color:var(--sv-ink2);margin-top:-4px}
+.sv-card-p{display:grid}
+.sv-card-r{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:4px 0;border-bottom:1px solid var(--sv-rule)}
+.sv-card-r:last-child{border-bottom:0}
+.sv-card-r b{font-family:var(--f-num);font-weight:600;font-variant-numeric:tabular-nums}
+.sv-card-f{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:auto}
+.sv-card-f small{font-size:13.5px;color:var(--sv-ink2)}
+/* the sleeve page */
+.sv-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 16px}
+.sv-head-t{flex:1 1 320px;min-width:0}
+.sv-head h3{margin:0 0 4px;font-size:25px;line-height:1.2;color:#16243A;font-weight:600}
+.sv-where{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0;font-size:14.5px;color:var(--sv-ink2)}
+.sv-chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 0}
+.sv-edit-btn{font-size:14px;padding:8px 18px}
+.sv-notice{margin:0 0 14px;border:1px solid #D9AD55;border-radius:6px}
+.sv-sect{background:var(--surface);border:1px solid var(--sv-frame);border-radius:10px;margin:0 0 14px;overflow:hidden}
+.sv-sect-h{margin:0;padding:10px 14px;background:var(--sv-zone);border-bottom:1px solid var(--sv-frame);font-size:15px;font-weight:600;color:#16243A}
+.sv-sect-h small{font-weight:400;font-size:13.5px;color:var(--sv-ink2);margin-left:4px}
+.sv-sect-b{padding:12px 14px}
+.sv-p{margin:0 0 10px;font-size:14px;line-height:1.5;color:var(--ink)}
+.sv-ptwrap{overflow-x:auto;margin:-12px -14px}
+.sv-pt{width:100%;border-collapse:collapse;font-size:14px}
+.sv-pt th{font-size:12.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--sv-ink2);
+  text-align:left;padding:8px 12px;background:var(--sv-zone2);border-bottom:1px solid var(--sv-rule);white-space:nowrap}
+.sv-pt td{padding:9px 12px;border-bottom:1px solid var(--sv-rule);vertical-align:middle}
+.sv-pt .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sv-pt td b{display:block;font-weight:600}
+.sv-pt td small{display:block;font-size:13px;color:var(--sv-ink2)}
+.sv-pt td small.warn{color:#8A4B00;font-weight:600}
+.sv-pt tfoot td{font-weight:700;background:var(--sv-zone2);border-top:2px solid var(--sv-frame);border-bottom:0}
+.sv-pt tfoot .sv-hint{font-weight:400}
+.sv-pt .ok{color:#155F2E}
+.sv-pt .bad{color:#A11F15}
+.sv-wbar{display:inline-block;width:80px;height:7px;border-radius:4px;background:#DCE2EA;margin-right:9px;overflow:hidden;vertical-align:middle}
+.sv-wbar i{display:block;height:100%;background:var(--accent)}
+.sv-kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:9px 16px;margin:0;font-size:14px}
+.sv-kv dt{color:var(--sv-ink2)}
+.sv-kv dd{margin:0;min-width:0}
+.sv-offers{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.sv-offers:focus{outline:none}
+.sv-offer{padding:3px 10px;font-size:12px}
+.sv-archive{margin-top:14px;padding-top:12px;border-top:1px solid var(--sv-rule);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sv-archive .repo-ed-top{flex:1 1 100%;margin:0}
+.sv .repo-hist{border:1px solid var(--sv-frame);border-radius:10px;overflow:hidden;background:var(--surface);margin:0 0 14px}
+.sv .repo-histh{padding:10px 14px;background:var(--sv-zone);font-family:var(--f-body);font-size:15px;font-weight:600;
+  letter-spacing:0;text-transform:none;color:#16243A}
+.sv .repo-hist.open .repo-histh{color:#16243A;border-bottom:1px solid var(--sv-frame)}
+.sv .repo-histh .n{margin-left:8px;font-size:13.5px;color:var(--sv-ink2)}
+.sv .repo-histh .rev-caret{margin-left:auto}
+.sv .repo-hist-b{margin:0;padding:0 14px 8px;max-height:none;border-top:0}
+.sv .rev{border-bottom-color:var(--sv-rule)}
+.sv .rev-what small,.sv .rev-changes li{font-family:var(--f-body);font-size:13px;color:var(--sv-ink2)}
+.sv .sv-edit .repo-hist{margin:0}
+/* editing: the console's editor, under a bar that says so and holds Save.
+   The message takes the room and wraps; the actions stay right. */
+.sv-editbar{position:sticky;top:-18px;z-index:3;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0 0 14px;
+  background:var(--sv-edit);border:1px solid var(--sv-edit-line);border-radius:8px;padding:10px 14px;box-shadow:0 4px 12px rgba(16,24,40,.10)}
+.sv-editbar-t{color:#6B4500;font-size:14.5px;flex:none}
+.sv-state{flex:1 1 220px;min-width:0}
+.sv-state .repo-state{font-family:var(--f-body);font-size:13.5px;white-space:normal;line-height:1.35}
+.sv-actions{display:flex;gap:8px;margin-left:auto;flex:none;align-items:center}
+.repo-state.is-bad{color:#A11F15;font-weight:600}
+.repo-state.is-warn{color:#7A4A00;font-weight:600}
+.sv-rename{margin:2px 0 0;font-size:13px;color:#7A4A00;line-height:1.4}
+.sv-rename:empty{display:none}
+.repo-w[aria-invalid="true"]{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+.sv .sv-edit.repo-ed{display:grid;gap:14px;background:var(--surface);border:1px solid var(--sv-edit-line);border-radius:10px;padding:16px 18px}
+.sv-drawer .sv-edit.repo-ed{border:0;padding:0;border-radius:0}
+/* the table */
+.sv-tarea{flex:1 1 auto;min-height:0;position:relative;display:flex;flex-direction:column}
+.sv-tmain{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative}
+.sv-tools{flex:0 0 auto;display:flex;align-items:center;gap:10px 12px;flex-wrap:wrap;padding:10px 20px;border-bottom:1px solid var(--sv-frame);background:var(--sv-zone2)}
+.sv-tools .spacer{flex:1}
+.sv-sel select{font:inherit;font-size:14px;color:var(--ink);border:1px solid var(--sv-frame);border-radius:6px;padding:6px 28px 6px 9px;
+  min-width:200px;max-width:260px;-webkit-appearance:none;appearance:none;cursor:pointer;
+  background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%234F5E6E' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center}
+.sv-count{font-size:13.5px;color:var(--sv-ink2)}
+.sv-tools .btn{padding:5px 11px;font-size:12px}
+/* a shadow at either edge while the table has more to scroll to */
+.sv-tblwrap,.sv-cmp-b{overflow:auto;
+  background:linear-gradient(to right,var(--surface) 30%,rgba(255,255,255,0)) left/40px 100% no-repeat local,
+    linear-gradient(to left,var(--surface) 30%,rgba(255,255,255,0)) right/40px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%,rgba(16,24,40,.25),rgba(16,24,40,0)) left/14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%,rgba(16,24,40,.25),rgba(16,24,40,0)) right/14px 100% no-repeat scroll;
+  background-color:var(--surface)}
+.sv-tblwrap{flex:1 1 auto;min-height:0}
+.sv-tbl{width:100%;border-collapse:collapse;font-size:14px}
+.sv-tbl th{position:sticky;top:0;z-index:2;background:var(--sv-zone);border-bottom:1px solid var(--sv-frame);text-align:left;padding:0;white-space:nowrap}
+.sv-tbl th button{appearance:none;border:0;background:none;font:inherit;font-weight:600;color:#16243A;cursor:pointer;padding:9px 12px;width:100%;text-align:inherit;display:flex;gap:5px;align-items:center}
+.sv-tbl th.num button{justify-content:flex-end}
+.sv-tbl th.tick{width:40px;padding:9px 12px}
+.sv-arrow{font-size:10px;color:var(--accent)}
+.sv-tbl td{padding:9px 12px;border-bottom:1px solid var(--sv-rule);vertical-align:middle}
+.sv-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sv-tbl td.tick input{width:16px;height:16px;margin:0;accent-color:#1F5FBF}
+.sv-tbl td.nm{min-width:220px}
+.sv-tbl td.nm .sv-chip{margin-left:6px}
+.sv-tbl td.sv-when{white-space:nowrap;color:var(--sv-ink2);font-size:13.5px}
+.sv-tbl tbody tr{cursor:pointer}
+.sv-tbl tbody tr:hover td{background:rgba(31,95,191,.05)}
+.sv-tbl tbody tr.on td{background:#E3EBFA}
+.sv-rowbtn{appearance:none;border:0;background:none;font:inherit;font-weight:600;color:#16243A;cursor:pointer;padding:0;text-align:left}
+.sv-rowbtn:hover{text-decoration:underline}
+.sv-libord{text-transform:none}
+/* the comparison: a panel above the table that closes */
+.sv-cmp{flex:0 1 auto;max-height:48%;min-height:0;display:flex;flex-direction:column;border-bottom:2px solid var(--sv-frame);background:var(--surface)}
+.sv-cmp-h{flex:none;display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:10px 20px;background:var(--sv-zone);border-bottom:1px solid var(--sv-frame)}
+.sv-cmp-h h3{margin:0;font-size:16px;color:#16243A}
+.sv-cmp-h .spacer{flex:1}
+.sv-cmp-h .btn{padding:5px 11px;font-size:12px}
+.sv-cmp-b{flex:1 1 auto;min-height:0}
+.sv-cmpt{border-collapse:collapse;font-size:14px;min-width:100%}
+.sv-cmpt th,.sv-cmpt td{padding:8px 12px;border-bottom:1px solid var(--sv-rule);text-align:left;vertical-align:top}
+.sv-cmpt thead th{background:var(--sv-zone2);min-width:220px;position:sticky;top:0;z-index:1}
+.sv-cmpt thead th:first-child{min-width:200px}
+.sv-cmpt tbody th,.sv-cmpt tfoot th{font-weight:600;color:var(--ink);white-space:nowrap}
+.sv-cmpt td.num{text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sv-cmpt tr.diff th,.sv-cmpt tr.diff td{background:var(--sv-diff)}
+.sv-cmpt tr.diff th{box-shadow:inset 3px 0 0 #C9A23E}
+.sv-cmpt tfoot th,.sv-cmpt tfoot td{background:var(--sv-zone2)}
+.sv-cmp-n{display:block;font-weight:600;color:#16243A;font-size:15px}
+.sv-cmp-w{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:3px 0 6px;font-weight:400;font-size:13px;color:var(--sv-ink2)}
+.sv-cmp-open{padding:3px 10px;font-size:11.5px}
+.sv-scrim{position:absolute;inset:0;background:rgba(15,36,62,.22);z-index:5}
+.sv-drawer{position:absolute;top:0;right:0;bottom:0;width:min(660px,100%);z-index:6;background:var(--surface);
+  border-left:1px solid var(--sv-frame);box-shadow:-12px 0 28px -12px rgba(16,24,40,.35);display:flex;flex-direction:column}
+.sv-drawer-h{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:12px 18px;background:var(--sv-zone);border-bottom:1px solid var(--sv-frame)}
+.sv-drawer-h h3{margin:0;font-size:18px;color:#16243A;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-drawer-b{flex:1 1 auto;min-height:0;overflow:auto;padding:16px 18px}
+.sv-drawer-f{flex:0 0 auto;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;padding:11px 18px;
+  background:var(--sv-edit);border-top:1px solid var(--sv-edit-line)}
+.repo-ctx{max-width:340px}
+.repo-mconf{padding:8px 12px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line)}
+.repo-mconf p{margin:0 0 4px;flex:1 1 100%;font-size:13px;color:#7A1D1D;line-height:1.4}
+.repo-mconf .btn{padding:4px 10px;font-size:11.5px}
+.dialog.repo.sleeves .repo-f .repo-src{font-family:var(--f-body);font-size:13.5px;color:var(--sv-ink2,#4F5E6E)}
+@media (max-width:900px){
+  /* narrow: the console's header on one line, the bar on two compact ones -
+     the switch and New sleeve, then the search - and less padding around */
+  .dialog.repo .repo-h{flex-wrap:nowrap;padding:8px 10px 8px 14px;gap:10px}
+  .dialog.repo .repo-h h2{flex:none}
+  .dialog.repo .repo-h>.repo-seg{flex:1 1 auto}
+  .dialog.repo .repo-h .dlg-close{flex:none}
+  .sv-bar{grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:44px 40px;height:auto;padding:8px 14px;gap:6px 10px}
+  .sv-ctx{grid-column:2;grid-row:1}
+  .sv-find{grid-column:1 / -1;grid-row:2}
+  .sv-newwrap{grid-column:3;grid-row:1}
+  .sv-newwhy{display:none}
+  .sv-body{padding:12px 14px}
+  .sv-tools{padding:8px 14px}
+  .sv-sel select{min-width:0;max-width:200px}
+  .sv-kv{grid-template-columns:1fr}
+  .sv-kv dt{margin-top:4px}
+  .sv-drawer{width:100%}
+  .sv-cmp{max-height:56%}
+}
+@media (max-width:640px){
+  .sv-tiles{grid-template-columns:1fr 1fr;gap:10px}
+  .sv-tile{min-height:0;padding:12px 12px 12px 17px}
+  .sv-cards{grid-template-columns:1fr}
+  .sv-ctx{display:none}
+  .sv-mode button{padding:7px 10px}
+  .sv-tools .sv-hint{display:none}
 }
 @media (max-width:1320px){
   .repo-h .repo-src{display:none}

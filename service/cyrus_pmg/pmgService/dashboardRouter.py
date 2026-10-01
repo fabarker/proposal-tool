@@ -79,6 +79,9 @@ except Exception:                                     # noqa: BLE001 - reported 
 
 
 def _validationError(exc: ValidationError):
+    # a sleeve saved by someone else since the editor opened it (D156)
+    if isinstance(exc, sleeveRepo.StaleError):
+        return JSONResponse(status_code=409, content={'error': exc.message, 'field': exc.field})
     return JSONResponse(status_code=422,
                         content={'error': exc.message, 'field': exc.field})
 
@@ -324,13 +327,16 @@ def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
                            caller=Depends(requireAdmin)):
     """Rename, re-note, re-weight or re-scope a sleeve. Its type and category
     are fixed at creation - a sleeve moved between them is a different sleeve.
-    `label` and `rules` absent from the payload leave the edition as it is."""
+    `label` and `rules` absent from the payload leave the edition as it is.
+    `base`, the revision count the edit started from, makes a save over
+    someone else's newer one a 409 rather than a silent overwrite (D156)."""
     try:
         sleeve = sleeveRepo.updateSleeve(
             sleeveId, payload.get('name'), payload.get('products') or [],
             note=payload.get('note', ''), user=caller.kerberos,
             label=payload.get('label') if 'label' in payload else None,
-            rules=payload.get('rules') if 'rules' in payload else None)
+            rules=payload.get('rules') if 'rules' in payload else None,
+            base=payload.get('base'))
         return {'sleeve': sleeve}
     except ValidationError as exc:
         return _validationError(exc)
@@ -557,7 +563,8 @@ def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
     except (TypeError, ValueError):
         return _validationError(ValidationError('revision', 'Choose a revision to restore.'))
     try:
-        return {'sleeve': sleeveRepo.revertSleeve(sleeveId, number, user=caller.kerberos)}
+        return {'sleeve': sleeveRepo.revertSleeve(sleeveId, number, user=caller.kerberos,
+                                                  base=payload.get('base'))}
     except ValidationError as exc:
         return _validationError(exc)
     except products.BadCatalogue as exc:

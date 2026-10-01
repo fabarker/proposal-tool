@@ -752,9 +752,11 @@ def test_the_built_stylesheet_still_carries_every_console_section():
         built = fh.read()
     sections = {
         'console frame':      ['.dialog.repo{', '.repo-h{', '.repo-seg button[aria-selected="true"]'],
-        'sleeve panes':       ['.repo-cat[aria-selected="true"]', '.repo-sleeve{', '.repo-fixed{'],
+        # the three panes became the cards and the table (D156)
+        'sleeves view':       ['.sv-mode button[aria-pressed="true"]', '.sv-tile{', '.sv-card{', '.sv-sect{',
+                               '.sv-editbar{', '.sv-tbl th{', '.sv-drawer{', '.sv-cmp{', '.repo-fixed{'],
         'editor':             ['.repo-prods .pr{', '.repo-search{', '.repo-menu li[aria-selected="true"]', '.repo-tot{'],
-        'creation and menu':  ['.btn.btn-create{', '.repo-vars{', '.repo-ctx{', '.repo-mi.danger{'],
+        'creation and menu':  ['.sv-new{', '.repo-vars{', '.repo-ctx{', '.repo-mi.danger{'],
         'catalogue view':     ['.cat-tools{', '.cat-facets{', '.cat-fo.on{', '.cat-menu{', '.cat-tbl th{',
                                '.cat-tbl td.nm{', '.cat-tbl tr.pin td{', '.cat-tbl tr.cur td{', '.cat-tbl td.used.zero{',
                                '.liq.slow{', '.cat-tray{', '.cat-cmp td.best{', '.cat-detail{', '.cat-usedin .r{',

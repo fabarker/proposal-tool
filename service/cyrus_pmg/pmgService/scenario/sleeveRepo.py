@@ -83,6 +83,11 @@ import threading
 from . import products, sleeveRules, universe
 from .types import ValidationError
 
+
+class StaleError(ValidationError):
+    """The sleeve a save was made against is no longer the version in force:
+    someone else saved it since the editor opened it -> HTTP 409 (D156)."""
+
 # The order the UI offers implementation types in. First is not a default -
 # nothing is selected until a PWA selects it (spec 8.1). Configuration, not
 # data: a fifth type is a line here, and sleeves for it are rows in the store.
@@ -1303,20 +1308,53 @@ def addEdition(sleeveId, label, rules, productRows, note='', user='') -> dict:
                         label=label, rules=rules)
 
 
+def _base(base):
+    """The revision count an edit started from, or None when the caller did
+    not say (D156)."""
+    if base is None:
+        return None
+    if isinstance(base, bool) or not isinstance(base, int) or base < 0:
+        raise ValidationError('base', 'The version the edit started from is not a revision number.')
+    return base
+
+
+def _refuseStale(conn, row, base) -> None:
+    """Optimistic concurrency (D156): a save names the revision count the
+    editor opened, and a sleeve saved by someone else since then is refused
+    rather than silently overwritten - last save no longer wins."""
+    if base is None:
+        return
+    now = _revisionCount(conn, row['id'])
+    if now != base:
+        raise StaleError(
+            'base', '{} was changed by {} at {} since you opened it (now revision {}). '
+            'Reload it to see the change, then make yours again.'.format(
+                row['name'], row['updatedBy'] or 'someone', (row['updatedAt'] or '').replace('T', ' '), now))
+
+
 def updateSleeve(sleeveId, name, productRows, note='', user='', action='updated',
-                 label=None, rules=None) -> dict:
+                 label=None, rules=None, base=None) -> dict:
     """Save a sleeve and append the revision that records it. A deleted sleeve
     is not editable: restore it first, so the history reads in the order the
     events happened. *label* and *rules* left None keep what the edition has;
-    given, they are validated with everything else (D89)."""
+    given, they are validated with everything else (D89).
+
+    *base* is the revision count the edit started from (D156): given, the
+    check and the write happen under SQLite's write lock, and a sleeve saved
+    by someone else in between raises StaleError instead of being overwritten."""
+    base = _base(base)
     conn = _connect()
     try:
+        if base is not None:
+            conn.commit()                       # nothing open, so BEGIN is legal
+            conn.execute('BEGIN IMMEDIATE')
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
         if row is None:
             raise ValidationError('id', 'That sleeve no longer exists.')
         if row['deletedAt']:
             raise ValidationError('id', 'That sleeve was removed from the library. '
                                         'Restore it before editing it.')
+        _refuseStale(conn, row, base)
         if label is None:
             label = row['label']
         if rules is None:
@@ -1506,7 +1544,7 @@ def restoreSleeves(ids, user='') -> list:
         conn.close()
 
 
-def revertSleeve(sleeveId, number: int, user='') -> dict:
+def revertSleeve(sleeveId, number: int, user='', base=None) -> dict:
     """Put an earlier revision back in force.
 
     A revert is an ordinary save of an old state, not a rewind: the revision
@@ -1522,7 +1560,7 @@ def revertSleeve(sleeveId, number: int, user='') -> dict:
                    for p in stored['products']]
     return updateSleeve(sleeveId, stored['name'], productRows, note=stored['note'],
                         user=user, action='reverted', label=stored['label'],
-                        rules=stored['rules'])
+                        rules=stored['rules'], base=base)
 
 
 # ----------------------------------------------------------- interchange ---
