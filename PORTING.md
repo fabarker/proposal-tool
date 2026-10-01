@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D151** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D155** — the PowerPoint deck, custom fees,
 the register's saved views, a private-markets book's initial allocation and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D151 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D155 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -115,11 +115,12 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 | **`python-pptx`**, the PowerPoint deck's library (it brings `lxml`, `Pillow`, `XlsxWriter`, `typing_extensions`) — D121–D125 | the host's virtualenv | **Install it first.** Without it every *Download proposal* fails, the workbook included: the workbook and the deck are one delivery (D123) |
 | Four new modules — `sheetDoc.py`, `pptWriter.py`, `houseFonts.py`, `fontMetrics.py` — and a `fonts/` folder of five TrueType files; changes to `workbook.py`, `proposalRegister.py`, `fees.py`, `rules.py`, `scenarioStore.py`, `scenarioPort.py`, `sleeveRepo.py` and the three adapters | `pmgService/scenario/` | Re-copy the package, keeping any file the host owns (next row) |
 | `fees.json` gains a `custom` block (D96) | the package | **Keep the host's `fees.json`** if `feeTools --accept` has been run there — accept records the delivered card's provenance in that file. The block is optional: without it `fees.py` uses the same values (`Custom`, bounded by `Management`). Likewise keep a host-replaced `advisors.xlsx` |
-| Four names in the router's import lines — `io`, `json`, `zipfile`, `validateCustomFees` — and, from D148, `fundingSplit` in the `scenario` import | the host's `dashboardRouter.py`, **above** the block markers | Add them by hand: they sit outside the markers, so pasting the block does not bring them. §9.1 has the full import set |
+| Four names in the router's import lines — `io`, `json`, `zipfile`, `validateCustomFees` — and, from D148, `fundingSplit` in the `scenario` import, and from D155 `overlayRules` | the host's `dashboardRouter.py`, **above** the block markers | Add them by hand: they sit outside the markers, so pasting the block does not bring them. §9.1 has the full import set |
 | A new module, `fundingSplit.py` (D148): the private-markets funding split, kept in the repository's own SQLite file, which moves to schema revision 4 (two new tables, `policies` and `policyHistory`) | `pmgService/scenario/`, and the host's `SCENARIO_SLEEVES_DB` | Nothing to run: the tables are added and the house split is seeded to D136's thirds on first open. **Back the file up first**, as for any schema move. The register (`SCENARIO_REGISTER_DB`) likewise gains a `fundingSplit` column (its schema 4) |
-| The endpoint block: 37 routes (was 30) — `GET /scenario/repository/proposals/views` (D116) and `GET /scenario/repository/proposals/{proposalId}/deck` (D123) are new, and the funding split's five (D148); the export returns a zip of both files (D123); `PUT /scenario/{id}` accepts `customFees` (D96) | the host's `dashboardRouter.py`, between the markers | Replace everything between `TRANSPLANT BLOCK BEGIN` and `TRANSPLANT BLOCK END` as a unit — `/proposals/views` must stay declared above `/proposals/{proposalId}` |
+| A new module, `overlayRules.py` (D155): the overlay rules - the tilt, the premium and any the desk adds - as an ordered list in the same `policies` tables under kind `overlay`; the repository's file moves to schema revision 6 (no new table) | `pmgService/scenario/`, and the host's `SCENARIO_SLEEVES_DB` | Nothing to run: the house list is seeded with today's two overlays, figure for figure, on the first open. **Back the file up first.** The register gains an `overlays` column (its schema 5) |
+| The endpoint block: 42 routes (was 30) — `GET /scenario/repository/proposals/views` (D116) and `GET /scenario/repository/proposals/{proposalId}/deck` (D123) are new, the funding split's five (D148) and the overlay rules' five (D155); the export returns a zip of both files (D123); `PUT /scenario/{id}` accepts `customFees` (D96) | the host's `dashboardRouter.py`, between the markers | Replace everything between `TRANSPLANT BLOCK BEGIN` and `TRANSPLANT BLOCK END` as a unit — `/proposals/views` must stay declared above `/proposals/{proposalId}` |
 | The page folder — D90–D118, the single **Download proposal** button (D123) and the *Show initial allocation* button with its columns (D136) | `dashboard/proposalTool/` | Re-copy the folder (§10.1). `core.js` carries D136's fix to `onBaseReady`, without which a reload drops a scenario's private-markets sleeve — the folder must go over whole |
-| The proposal register goes from schema 1 to 3: `customFees` (D96); `deck`, `deckName`, `deckSha`, `deckBytes` (D123) | `SCENARIO_REGISTER_DB` | Nothing to run — the columns are added on first open. **Back the file up first.** Rows delivered earlier keep NULLs and have no deck |
+| The proposal register goes from schema 1 to 5: `customFees` (D96); `deck`, `deckName`, `deckSha`, `deckBytes` (D123); `fundingSplit` (D148); `overlays` (D155) | `SCENARIO_REGISTER_DB` | Nothing to run — the columns are added on first open. **Back the file up first.** Rows delivered earlier keep NULLs and have no deck |
 | Configuration | — | **None to add.** D126 removed `SCENARIO_BAKED_FALLBACK`; a host that still exports it is harmless, since nothing reads it. The password that locks the workbook and the deck is a constant in source (`workbook.SHEET_PASSWORD`, §13.5) |
 | Auth, the Flask route, the nav link | — | **None.** The new routes use the existing `requireAdmin`; `capabilities.user` is the `caller.kerberos` the block already reads (D106) |
 | The proxy | — | **None.** It forwards the zip body and every response header bar the hop-by-hop ones, so `Content-Disposition`, `X-Proposal-Id` and `X-Deck-SHA256` arrive intact (Verified: `cyrus-files/dashboardFrontend.py:409–415`) |
@@ -130,7 +131,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 460 passed, none skipped, at D151.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 536 passed, none skipped, at D155.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -694,9 +695,9 @@ Append to the host's `pmgService/dashboardRouter.py`:
 
    from cyrus_pmg.pmgService.core.pmgEntitlement import (
        isAdmin, requireAdmin, requireAuth)
-   from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, products,
-                                              proposalRegister, scenarioStore, sleeveRepo,
-                                              sleeveRules)
+   from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, overlayRules,
+                                              products, proposalRegister, scenarioStore,
+                                              sleeveRepo, sleeveRules)
    from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
    from cyrus_pmg.pmgService.scenario.rules import (
        exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
@@ -1305,7 +1306,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 460 passed, none skipped, in ~4 min (at D151)
+# 536 passed, none skipped, in ~4 min (at D155)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1828,6 +1829,20 @@ Since the 10 September port (§0A):
 - **D151** The allocation table restyled (style 7b of `proposals/allocation-table-styles.html`):
   category rows on the estimates' grey with their key colour in a swatch, each head carrying its
   portfolio's category mix. Page only - `generator/js/core.js` and `build_styles.py`, re-copied.
+- **D152** Unpriced: no cost columns in the deck; the workbook keeps Product Cost and adds Wtd cost
+  (bp). Silver rules after Allocation and Liquidity; the initial allocation slide loses its green
+  for Change columns.
+- **D153** Sleeves schema 5 (`firstCreatedAt`, `supersededBy`): a changed save archives the old
+  version. The migration runs on first open; back up `sleeves.db` first.
+- **D154** Initial Allocation: long-term before initial; D152's silver separators removed.
+- **D155** The overlays are an ordered list of rules in the repository, edited on a new *Overlay
+  Funding* tab: a new module `overlayRules.py`, five routes (42), sleeves schema 6 (the house list
+  seeded to today's tilt and premium on first open) and register schema 5 (an `overlays` column).
+  **Back up `sleeves.db` and `proposals.db` first.** `fundingSplit` and `overlayRules` both go in the
+  router's `scenario` import.
+  The overlay writes take SQLite's write lock (`BEGIN IMMEDIATE`) and may answer **409** to a stale
+  write; the proxy passes the status through. The read cache keys on SQLite's own file change counter
+  as well as the file's stat, so it holds on the Windows/SMB share Cyrus runs from.
 
 ## Appendix B — where the rest is written down
 
@@ -1835,7 +1850,7 @@ Since the 10 September port (§0A):
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D151, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D155, the adapter-side decisions, the spec gaps G1–G8. |
 | `proposals/` | Design studies behind D90–D141, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
