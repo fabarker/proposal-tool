@@ -1,0 +1,1539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New Sleeve Card</title>
+<style>
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+@font-face{font-family:"GS Sans Condensed";src:url("../proposalTool/static/fonts/gs-sans-condensed-variable.woff2") format("woff2");font-weight:100 900}
+/* Layout: a proposal page of numbered options, each a live mock-up inside the D156 console frame. */
+:root{
+  --bg:#F4F6F9; --surface:#FFFFFF; --surface-2:#F0F2F5; --ink:#1C2733; --ink-2:#4F5E6E; --ink-3:#5F6E7E;
+  --line:#D9DFE6; --line-strong:#A9B4C0; --frame:#7F8D9D; --zone:#EDF1F6; --zone-2:#F7F9FB;
+  --accent:#1F5FBF; --accent-2:#174C99; --accent-tint:#EAF1FC; --navy:#16243A;
+  --good:#176A33; --good-tint:#E3F2E8; --warn:#8A5300; --warn-tint:#FFF1D6; --bad:#B42318; --bad-tint:#FDECEA;
+  --edit:#FFF6DD; --edit-line:#D9A93A; --info-line:#C8D8F2;
+  --f:'GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+  --fn:'GS Sans Condensed','GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.5}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1320px;margin:0 auto;padding:36px 28px 150px}
+@media (max-width:700px){.wrap{padding:24px 16px 150px}}
+.mast{border-bottom:2px solid var(--navy);padding-bottom:20px;margin-bottom:22px}
+.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;font-weight:600}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1;margin:0 0 10px;color:var(--navy);font-weight:600;text-wrap:balance}
+.sub{font-size:16.5px;color:var(--ink-2);max-width:82ch;margin:0}
+h2.sec{font-size:24px;color:var(--navy);margin:40px 0 8px;font-weight:600}
+p.lead{color:var(--ink-2);max-width:84ch;margin:0 0 16px}
+
+/* findings */
+.shots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:12px 0 4px}
+@media (max-width:900px){.shots{grid-template-columns:1fr}}
+.shotbox{position:relative;border:1px solid var(--frame);border-radius:10px;overflow:hidden;background:#fff}
+.shotbox img{display:block;width:100%;height:auto}
+.shotcap{font-size:13.5px;color:var(--ink-2);padding:8px 12px;border-top:1px solid var(--line);background:#fff}
+.mk{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;background:#C2410C;color:#fff;
+  font:700 13px var(--f);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 3px #fff,0 2px 6px rgba(0,0,0,.3)}
+.finds{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px 24px;margin:16px 0 8px;padding:0;list-style:none}
+.finds li{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;font-size:14.5px}
+.finds li b.n{width:26px;height:26px;border-radius:50%;background:#C2410C;color:#fff;font:700 13px var(--f);display:flex;align-items:center;justify-content:center}
+.keep{background:#fff;border:1px solid var(--frame);border-radius:10px;padding:14px 18px;margin:14px 0 0}
+.keep h3{margin:0 0 6px;font-size:16px;color:var(--navy)}
+.keep ul{margin:0;padding-left:20px;columns:2;column-gap:32px;font-size:14px}
+@media (max-width:800px){.keep ul{columns:1}}
+
+/* the pick bar and jump chips */
+.bar{position:sticky;top:0;z-index:40;background:rgba(244,246,249,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line-strong);
+  margin:0 -28px 26px;padding:10px 28px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+@media (max-width:700px){.bar{margin:0 -16px 22px;padding:10px 16px}}
+.ctl{font:600 12px var(--f);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.jump{display:flex;flex-wrap:wrap;gap:6px}
+.jump a{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 9px;border:1px solid var(--line-strong);
+  border-radius:15px;font:600 13px var(--f);color:var(--ink-2);text-decoration:none;background:var(--surface)}
+.jump a:hover{border-color:var(--accent);color:var(--accent)}
+.jump a.picked{background:var(--accent);border-color:var(--accent);color:#fff}
+.picked-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--navy);color:#fff;padding:12px 20px;display:flex;gap:12px 18px;
+  align-items:center;flex-wrap:wrap;transform:translateY(110%);transition:transform .2s ease;font-size:14.5px}
+.picked-bar.on{transform:none}
+.picked-bar b{color:#F3C46B}
+.picked-bar code{font:13.5px var(--f);background:rgba(255,255,255,.12);padding:3px 8px;border-radius:4px}
+.picked-bar button{font:600 13px var(--f);border:1px solid rgba(255,255,255,.55);background:transparent;color:#fff;border-radius:5px;padding:5px 11px;cursor:pointer}
+
+/* an option */
+.option{margin:0 0 60px;scroll-margin-top:70px}
+.opt-h{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:start;margin:0 0 12px}
+.opt-n{grid-row:span 2;width:42px;height:42px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font:600 18px var(--f)}
+.opt-h h3{margin:0;font-size:22px;color:var(--navy);font-weight:600}
+.opt-h p{margin:0;grid-column:2;color:var(--ink-2);font-size:15px;max-width:88ch}
+.pick{grid-row:1 / span 2;grid-column:3;align-self:center;font:600 13.5px var(--f);letter-spacing:.04em;text-transform:uppercase;
+  border:1.5px solid var(--accent);color:var(--accent);background:var(--surface);border-radius:6px;padding:9px 16px;cursor:pointer;white-space:nowrap}
+.pick:hover{background:var(--accent-tint)}
+.pick[aria-pressed="true"]{background:var(--accent);color:#fff}
+@media (max-width:700px){.opt-h{grid-template-columns:auto 1fr}.pick{grid-column:1 / -1;grid-row:auto;justify-self:start}}
+.option.picked .con{box-shadow:0 0 0 3px var(--accent)}
+.after{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0 0}
+@media (max-width:900px){.after{grid-template-columns:1fr}}
+.pc{background:#fff;border:1px solid var(--line-strong);border-radius:8px;padding:12px 16px}
+.pc h4{margin:0 0 6px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.pc ul{margin:0;padding-left:18px;font-size:14px}
+.pc ul.pros li::marker{color:var(--good)}
+.pc ul.cons li::marker{color:#C2410C}
+.caps{width:100%;border-collapse:collapse;font-size:13.5px}
+.caps td{padding:5px 6px;border-top:1px solid var(--line);vertical-align:top}
+.caps td:first-child{width:38%;color:var(--ink-2)}
+.caps td:last-child::before{content:"✓ ";color:var(--good);font-weight:700}
+.stagewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+.stagewrap .con{min-width:1060px}
+.stagehint{display:none;font-size:13px;color:var(--ink-3);margin:0 0 6px}
+@media (max-width:1100px){.stagehint{display:block}}
+
+/* ===== the console frame (D156 look) ===== */
+.con{background:var(--surface);border:1px solid var(--frame);border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(16,24,40,.08)}
+.con-h{display:flex;align-items:center;gap:14px;padding:0 16px;height:50px;border-bottom:1px solid var(--line-strong);background:#fff}
+.con-h .t{font:700 13px var(--f);letter-spacing:.18em;text-transform:uppercase;color:var(--navy);white-space:nowrap}
+.con-h .tabs{display:flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden;white-space:nowrap}
+.con-h .tabs span{font-size:13.5px;color:var(--ink-2);padding:5px 11px;border-right:1px solid var(--line-strong)}
+.con-h .tabs span:last-child{border-right:0}
+.con-h .tabs span.on{background:var(--navy);color:#fff;font-weight:600}
+.con-h .x{margin-left:auto;font-size:20px;color:var(--ink-3)}
+.con-bar{display:flex;align-items:center;gap:12px;height:62px;padding:0 18px;border-bottom:1px solid var(--frame);background:#fff}
+.vsw{display:inline-flex;border:1px solid var(--frame);border-radius:7px;overflow:hidden}
+.vsw span{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;font-size:14.5px;color:var(--ink-2)}
+.vsw span.on{background:var(--navy);color:#fff;font-weight:600}
+.vsw svg{width:15px;height:15px;fill:currentColor}
+.con-bar .ctx{font-size:14px;color:var(--ink-2)}
+.con-bar .fakesearch{margin-left:auto;width:300px;border:1px solid var(--frame);border-radius:6px;padding:7px 11px;color:var(--ink-3);font-size:14px;background:#fff}
+.con-b{height:680px;position:relative;overflow:hidden;background:var(--bg)}
+.con-f{display:flex;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--line-strong);background:#fff;font-size:13.5px;color:var(--ink-2)}
+.spacer{flex:1}
+.scroll{height:100%;overflow:auto}
+
+/* shared controls */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font:600 14px var(--f);border:1px solid var(--frame);background:#fff;color:var(--ink);border-radius:6px;padding:7px 14px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:var(--accent-2);color:#fff}
+.btn.pri[aria-disabled="true"]{background:#9DB3D6;border-color:#9DB3D6;color:#fff}
+.btn.pri:disabled{background:#9DB3D6;border-color:#9DB3D6;color:#fff;cursor:not-allowed}
+.btn:disabled{cursor:not-allowed;opacity:.65}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent)}
+.btn.ghost:hover{background:var(--accent-tint)}
+.btn.danger{color:var(--bad);border-color:#D9A39C}
+.btn.sm{font-size:13.5px;padding:4px 10px}
+.btn.lg{font-size:15.5px;padding:10px 18px}
+.lnk{border:0;background:none;color:var(--accent);font-weight:600;cursor:pointer;padding:2px 3px;font-size:14px}
+.lnk:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fld{display:block;margin:0 0 14px}
+.fld>.lab{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:600;color:var(--ink);margin:0 0 5px}
+.fld>.lab small{font-weight:400;color:var(--ink-2);font-size:13.5px}
+.help{display:block;font-size:13.5px;color:var(--ink-2);margin-top:4px}
+.in{width:100%;border:1px solid var(--frame);border-radius:6px;padding:8px 10px;background:#fff;font-size:15px}
+.in:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(31,95,191,.16)}
+.in.bad{border-color:var(--bad);background:#FFF8F7}
+select.in{padding:7px 8px}
+.err{display:flex;gap:6px;align-items:flex-start;color:var(--bad);font-size:14px;font-weight:600;margin:6px 0 0}
+.err::before{content:"!";flex:0 0 18px;height:18px;border-radius:50%;background:var(--bad);color:#fff;font:700 12px/18px var(--f);text-align:center;margin-top:1px}
+.inf{display:block;font-size:13.5px;color:var(--accent-2);background:var(--accent-tint);border:1px solid var(--info-line);border-radius:6px;padding:6px 10px;margin:6px 0 0}
+.chip{display:inline-flex;align-items:center;gap:5px;font:600 13px var(--f);border-radius:12px;padding:1px 9px;white-space:nowrap;border:1px solid transparent}
+.chip.ok{background:var(--good-tint);color:var(--good);border-color:#A9D3B6}
+.chip.bad{background:var(--bad-tint);color:var(--bad);border-color:#E8B4AE}
+.chip.warn{background:var(--warn-tint);color:var(--warn);border-color:#E3C27E}
+.chip.info{background:var(--accent-tint);color:var(--accent-2);border-color:var(--info-line)}
+.chip.mute{background:var(--surface-2);color:var(--ink-2);border-color:var(--line-strong)}
+.chip.new{background:var(--edit);color:#6B4700;border-color:var(--edit-line)}
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.muted{color:var(--ink-2)}
+.toast{position:absolute;right:14px;top:14px;max-width:440px;background:var(--navy);color:#fff;border-radius:8px;padding:10px 16px;font-size:14.5px;
+  box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:30}
+.toast b{color:#9FE0B5}
+
+/* where: categories and implementation types */
+.cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.catb{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--frame);border-radius:8px;background:#fff;padding:9px 12px 9px 16px;cursor:pointer;font-size:14.5px;min-height:58px}
+.catb::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:8px 0 0 8px;background:var(--cc)}
+.catb small{font-size:13px;color:var(--ink-2)}
+.catb[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);background:var(--accent-tint);font-weight:600}
+.catb:disabled{cursor:not-allowed;background:var(--surface-2);color:var(--ink-2)}
+.types{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.typeb{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--frame);border-radius:8px;background:#fff;padding:9px 12px;cursor:pointer;text-align:left;font-size:14.5px}
+.typeb .box{flex:0 0 18px;height:18px;border:1.5px solid var(--frame);border-radius:4px;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;background:#fff}
+.typeb[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-tint)}
+.typeb[aria-pressed="true"] .box{background:var(--accent);border-color:var(--accent)}
+.typeb .tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+.typeb .tx small{font-size:13px;color:var(--ink-2);line-height:1.35}
+.typeb.off{cursor:not-allowed;background:var(--surface-2)}
+.typeb.off .tx b{color:var(--ink-2);font-weight:600}
+.typeb.clash{border-color:var(--bad);background:var(--bad-tint)}
+.typeb.clash .tx small{color:var(--bad)}
+
+/* products: picker and rows */
+.picker{border:1px solid var(--frame);border-radius:8px;background:#fff;overflow:hidden}
+.picker-h{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:9px 11px;background:var(--zone);border-bottom:1px solid var(--line-strong)}
+.picker-h .in{flex:1;min-width:200px}
+.picker-h label.tg{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2);white-space:nowrap;cursor:pointer}
+.plist{list-style:none;margin:0;padding:0;max-height:var(--plh,220px);overflow:auto}
+.plist li+li{border-top:1px solid var(--line)}
+.prow{display:grid;grid-template-columns:1fr 70px 70px 76px;gap:10px;align-items:center;width:100%;text-align:left;border:0;background:#fff;padding:7px 11px;cursor:pointer;font-size:14px}
+.prow:hover{background:var(--accent-tint)}
+.prow:disabled{cursor:default;background:var(--zone-2);color:var(--ink-2)}
+.prow .nm b{display:block;font-weight:600}
+.prow .nm small{display:block;font-size:13px;color:var(--ink-2)}
+.prow .r{text-align:right;font-variant-numeric:tabular-nums;font-size:13.5px}
+.prow .add{font-weight:600;color:var(--accent);text-align:right;font-size:13.5px}
+.prow:disabled .add{color:var(--good)}
+.plist li.none{padding:10px 12px;color:var(--ink-2);font-size:14px}
+.plist-h{display:grid;grid-template-columns:1fr 70px 70px 76px;gap:10px;padding:5px 11px;font-size:12.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);background:var(--zone-2);border-bottom:1px solid var(--line-strong)}
+.plist-h span:nth-child(n+2){text-align:right}
+table.pt{width:100%;border-collapse:collapse;font-size:14.5px;background:#fff;border:1px solid var(--frame);border-radius:8px;overflow:hidden}
+table.pt th{font-size:12.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);text-align:left;padding:7px 10px;background:var(--zone);border-bottom:1px solid var(--line-strong)}
+table.pt td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.pt th.r,table.pt td.r{text-align:right}
+table.pt td.nm b{display:block;font-weight:600}
+table.pt td.nm small{display:block;font-size:13px;color:var(--ink-2)}
+table.pt tfoot td{font-weight:700;background:var(--zone-2);border-top:1px solid var(--frame);border-bottom:0}
+table.pt td.num{font-variant-numeric:tabular-nums}
+.win{width:86px;text-align:right;border:1px solid var(--frame);border-radius:6px;padding:6px 8px;font:15px var(--f);background:#fff;font-variant-numeric:tabular-nums}
+.win:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(31,95,191,.16)}
+.win.bad{border-color:var(--bad);background:var(--bad-tint)}
+.rmx{border:1px solid transparent;background:none;color:var(--ink-2);border-radius:5px;padding:3px 8px;cursor:pointer;font-size:13.5px}
+.rmx:hover{color:var(--bad);border-color:#D9A39C;background:var(--bad-tint)}
+.tot-ok{color:var(--good)}
+.tot-bad{color:var(--bad)}
+.rowerr{font-size:13px;color:var(--bad);font-weight:600;display:block}
+.emptyrows{border:1px dashed var(--frame);border-radius:8px;padding:14px;text-align:center;color:var(--ink-2);font-size:14px;background:#fff}
+
+/* the create block: what is left, and the button that says what it does */
+.todo{list-style:none;margin:0;padding:0;font-size:14px}
+.todo li{display:flex;gap:8px;align-items:flex-start;padding:3px 0}
+.todo li::before{content:"";flex:0 0 16px;height:16px;border-radius:50%;border:1.5px solid var(--frame);margin-top:2px;background:#fff}
+.todo li.done{color:var(--ink-2)}
+.todo li.done::before{content:"✓";border-color:var(--good);background:var(--good);color:#fff;font:700 11px/14px var(--f);text-align:center}
+.todo li.bad{color:var(--bad);font-weight:600}
+.todo li.bad::before{border-color:var(--bad);background:var(--bad-tint)}
+.guard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--edit);border:1px solid var(--edit-line);border-radius:8px;padding:10px 14px;font-size:14.5px}
+.guard b{color:#6B4700}
+.sect{border:1px solid var(--frame);border-radius:10px;background:#fff;margin:0 0 14px}
+.sect-h{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line-strong);background:var(--zone-2);border-radius:10px 10px 0 0}
+.sect-h .num{width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;display:inline-flex;align-items:center;justify-content:center;font:700 13px var(--f);flex:0 0 auto}
+.sect-h .num.ok{background:var(--good)}
+.sect-h h4{margin:0;font-size:16px;color:var(--navy)}
+.sect-h small{color:var(--ink-2);font-size:13.5px}
+.sect-b{padding:14px}
+.later{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink-2);background:var(--zone-2);border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px}
+.later b{color:var(--ink)}
+
+/* the result: the new sleeve's page */
+.made-page{max-width:900px;margin:0 auto;background:#fff;border:1px solid var(--frame);border-radius:12px;padding:20px 24px}
+.made-page h3{margin:0;font-size:26px;color:var(--navy)}
+.made-page .where{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 12px;color:var(--ink-2)}
+.made-page h5{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:18px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--navy)}
+
+/* ===== 1 · inline card ===== */
+.o1{padding:16px 20px}
+.crumbs{display:flex;align-items:center;gap:6px;font-size:14.5px;margin:0 0 12px;flex-wrap:wrap}
+.crumbs .a{color:var(--accent);font-weight:600}
+.crumbs b{color:var(--navy)}
+.o1-head{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+.o1-head h3{margin:0;font-size:22px;color:var(--navy);display:flex;align-items:center;gap:8px}
+.cgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.scard{border:1px solid var(--frame);border-radius:10px;background:#fff;padding:13px 15px;display:flex;flex-direction:column;gap:7px}
+.scard h4{margin:0;font-size:16.5px;color:var(--navy);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.scard ul{margin:0;padding:0;list-style:none;font-size:14px}
+.scard li{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid var(--line)}
+.scard li:last-child{border-bottom:0}
+.scard.fresh{border-color:var(--good);box-shadow:0 0 0 3px var(--good-tint)}
+.newcard{border:2px dashed var(--frame);border-radius:10px;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:150px;cursor:pointer;color:var(--accent);font-weight:600;font-size:16px}
+.newcard small{font-weight:400;color:var(--ink-2);font-size:13.5px}
+.newcard:hover{border-color:var(--accent);background:var(--accent-tint)}
+.editcard{grid-column:1 / -1;border:2px solid var(--edit-line);border-radius:12px;background:#fff;box-shadow:0 0 0 4px var(--edit)}
+.editcard-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--edit-line);background:var(--edit);border-radius:10px 10px 0 0}
+.editcard-h b{color:#6B4700;font-size:15.5px}
+.editcard-b{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:18px;padding:16px}
+.editcard-f{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 16px;border-top:1px solid var(--line-strong);background:var(--zone-2);border-radius:0 0 10px 10px}
+
+/* ===== 2 · drawer ===== */
+.o2{display:flex;flex-direction:column;height:100%}
+.o2-f{display:flex;gap:10px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line-strong)}
+.o2-t{flex:1;overflow:auto}
+table.lt{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
+table.lt th{position:sticky;top:0;background:var(--zone);border-bottom:1px solid var(--frame);text-align:left;padding:9px 10px;font-weight:600;color:var(--navy)}
+table.lt td{padding:9px 10px;border-bottom:1px solid var(--line-strong)}
+table.lt tr.fresh td{background:var(--good-tint)}
+.scrim{position:absolute;inset:0;background:rgba(18,35,63,.28);z-index:9}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(620px,94%);background:var(--bg);border-left:1px solid var(--frame);box-shadow:-10px 0 30px rgba(16,24,40,.2);display:flex;flex-direction:column;z-index:10}
+.drawer-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--frame);background:#fff}
+.drawer-h h4{margin:0;font-size:18px;color:var(--navy)}
+.drawer-b{flex:1;overflow:auto;padding:14px 16px}
+.drawer-f{padding:11px 16px;border-top:1px solid var(--frame);display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#fff}
+
+/* ===== 3 · wizard ===== */
+.o3{display:flex;flex-direction:column;height:100%}
+.steps{display:flex;gap:0;padding:0 18px;background:#fff;border-bottom:1px solid var(--frame);overflow-x:auto}
+.steps button{display:flex;align-items:center;gap:8px;border:0;background:none;padding:12px 16px;font-size:14.5px;color:var(--ink-2);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+.steps button b{width:24px;height:24px;border-radius:50%;background:var(--surface-2);border:1px solid var(--frame);display:inline-flex;align-items:center;justify-content:center;font:700 12.5px var(--f);color:var(--ink-2)}
+.steps button[aria-current="step"]{color:var(--navy);font-weight:600;border-bottom-color:var(--accent)}
+.steps button[aria-current="step"] b{background:var(--accent);border-color:var(--accent);color:#fff}
+.steps button.ok b{background:var(--good);border-color:var(--good);color:#fff}
+.steps button:disabled{cursor:not-allowed;opacity:.55}
+.o3-b{flex:1;overflow:auto;padding:18px 22px}
+.o3-card{max-width:920px;margin:0 auto;background:#fff;border:1px solid var(--frame);border-radius:12px;padding:18px 22px}
+.o3-card h4{margin:0 0 4px;font-size:19px;color:var(--navy)}
+.o3-card p.q{margin:0 0 14px;color:var(--ink-2)}
+.o3-f{display:flex;align-items:center;gap:10px;padding:11px 22px;border-top:1px solid var(--frame);background:#fff}
+
+/* ===== 4 · form + summary ===== */
+.o4{display:grid;grid-template-columns:minmax(0,1fr) 340px;height:100%}
+.o4-form{overflow:auto;padding:16px 20px}
+.o4-side{border-left:1px solid var(--frame);background:#fff;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+.o4-side h4{margin:0;font-size:15px;color:var(--navy)}
+.o4-side .btn{width:100%;white-space:normal;text-align:center}
+.made{list-style:none;margin:0;padding:0;font-size:14px}
+.made li{display:grid;grid-template-columns:18px 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.made li:first-child{border-top:0}
+.made li .ic{font-weight:700}
+.made li.yes .ic{color:var(--good)}
+.made li.no{color:var(--ink-2)}
+.made li.no .ic{color:var(--bad)}
+.made li small{display:block;font-size:13px;color:var(--ink-2)}
+.minibar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line-strong)}
+.minibar i{display:block;height:100%;border-right:2px solid #fff}
+
+/* ===== 5 · from an existing sleeve ===== */
+.o5{display:grid;grid-template-columns:330px minmax(0,1fr);height:100%}
+.o5-l{border-right:1px solid var(--frame);background:#fff;display:flex;flex-direction:column;min-height:0}
+.o5-l .top{padding:12px;border-bottom:1px solid var(--line-strong);background:var(--zone-2);display:grid;gap:8px}
+.o5-l .list{overflow:auto;flex:1;padding:10px;display:flex;flex-direction:column;gap:8px}
+.srcb{display:block;width:100%;text-align:left;border:1px solid var(--frame);border-radius:8px;background:#fff;padding:9px 11px;cursor:pointer;font-size:14px}
+.srcb:hover{border-color:var(--accent)}
+.srcb[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);background:var(--accent-tint)}
+.srcb b{display:block;color:var(--navy);font-size:15px}
+.srcb small{display:block;font-size:13px;color:var(--ink-2)}
+.o5-r{overflow:auto;padding:16px 20px}
+.diffmark{font-size:12.5px;font-weight:600;color:#6B4700;background:var(--edit);border:1px solid var(--edit-line);border-radius:4px;padding:0 5px;margin-left:6px}
+
+/* ===== 6 · templates ===== */
+.tgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tpl{text-align:left;border:1px solid var(--frame);border-radius:10px;background:#fff;padding:13px 15px;cursor:pointer;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.tpl:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(31,95,191,.12)}
+.tpl[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);background:var(--accent-tint)}
+.tpl h4{margin:0;font-size:16px;color:var(--navy)}
+.tpl ul{width:100%;margin:0;padding:0;list-style:none;font-size:13.5px;color:var(--ink-2)}
+.tpl>*{width:100%}
+.tpl li{display:flex;justify-content:space-between;gap:8px}
+.tpl:disabled{cursor:not-allowed;opacity:.6}
+
+/* ===== 7 · sentence ===== */
+.o7{padding:20px 26px;overflow:auto;height:100%}
+.sentence{max-width:980px;margin:0 auto;background:#fff;border:1px solid var(--frame);border-radius:12px;padding:22px 26px;font-size:20px;line-height:2.3;color:var(--ink)}
+.sentence select,.sentence input.blank{font-size:18px;border:0;border-bottom:2px solid var(--accent);background:var(--accent-tint);border-radius:4px 4px 0 0;padding:2px 8px;color:var(--navy);font-weight:600}
+.sentence input.blank{width:300px}
+.sentence input.blank.bad,.sentence select.bad{border-bottom-color:var(--bad);background:var(--bad-tint)}
+.tok{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--frame);border-radius:20px;background:#fff;padding:0 6px 0 12px;font-size:16px;line-height:1.9;vertical-align:middle;margin:2px 0}
+.tok.on{border-color:var(--accent);background:var(--accent-tint);color:var(--navy);font-weight:600}
+.tok.off{background:var(--surface-2);color:var(--ink-2);text-decoration:line-through}
+.tok button{border:0;background:none;cursor:pointer;font-size:16px;color:var(--ink-2);padding:0 4px}
+.tok input{width:66px;border:1px solid var(--frame);border-radius:4px;padding:0 6px;font:16px var(--f);text-align:right}
+.tok input.bad{border-color:var(--bad);background:var(--bad-tint)}
+.sentence .addtok{font-size:16px}
+.saysnow{max-width:980px;margin:14px auto 0;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px}
+
+/* ===== 8 · catalogue first ===== */
+.o8{display:flex;flex-direction:column;height:100%}
+.o8-steps{display:flex;gap:8px;align-items:center;padding:10px 18px;background:#fff;border-bottom:1px solid var(--line-strong);font-size:14.5px}
+.o8-steps .st{display:inline-flex;align-items:center;gap:7px;color:var(--ink-2)}
+.o8-steps .st b{width:22px;height:22px;border-radius:50%;border:1px solid var(--frame);display:inline-flex;align-items:center;justify-content:center;font:700 12px var(--f)}
+.o8-steps .st.on{color:var(--navy);font-weight:600}
+.o8-steps .st.on b{background:var(--accent);color:#fff;border-color:var(--accent)}
+.o8-steps .st.ok b{background:var(--good);color:#fff;border-color:var(--good)}
+.o8-filt{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 18px;background:var(--zone-2);border-bottom:1px solid var(--line-strong)}
+.fchips{display:flex;flex-wrap:wrap;gap:5px}
+.fchips button{border:1px solid var(--frame);background:#fff;border-radius:14px;padding:2px 11px;font-size:13.5px;cursor:pointer;color:var(--ink-2)}
+.fchips button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.o8-t{flex:1;overflow:auto}
+table.ct{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
+table.ct th{position:sticky;top:0;z-index:1;background:var(--zone);border-bottom:1px solid var(--frame);text-align:left;padding:8px 10px;font-weight:600;color:var(--navy);white-space:nowrap}
+table.ct th button{border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:0}
+table.ct td{padding:7px 10px;border-bottom:1px solid var(--line-strong);vertical-align:middle}
+table.ct tr.on td{background:var(--accent-tint)}
+table.ct td.r,table.ct th.r{text-align:right}
+table.ct td small{display:block;color:var(--ink-2);font-size:13px}
+.tray{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 18px;border-top:1px solid var(--frame);background:#fff}
+.tray .pl{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ===== 9 · allocator ===== */
+.alloc{position:relative;height:56px;border:1px solid var(--frame);border-radius:8px;overflow:hidden;background:var(--surface-2);user-select:none;touch-action:none}
+.alloc .seg{position:absolute;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;padding:0 8px 0 13px;color:#fff;font-size:13px;overflow:hidden;white-space:nowrap}
+.alloc .seg b{font-size:15px;font-variant-numeric:tabular-nums}
+.alloc .h{position:absolute;top:0;bottom:0;width:18px;margin-left:-9px;cursor:ew-resize;z-index:2;display:flex;align-items:center;justify-content:center;background:transparent;border:0;padding:0}
+.alloc .h::before{content:"";width:6px;height:34px;border-radius:3px;background:#fff;box-shadow:0 0 0 1.5px var(--navy)}
+.alloc .h:focus-visible::before{box-shadow:0 0 0 3px var(--accent)}
+.legend{display:grid;grid-template-columns:1fr auto auto;gap:6px 12px;align-items:center;font-size:14px;margin-top:10px}
+.legend .k{display:flex;align-items:center;gap:8px;min-width:0}
+
+/* ===== 11 · live summary, blank or from an existing sleeve ===== */
+.startfrom{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;margin:0 0 16px;background:#fff;border:1px solid var(--frame);border-radius:10px}
+.startfrom .lab{font-size:15px;font-weight:600;color:var(--navy)}
+.seg2{display:inline-flex;border:1px solid var(--frame);border-radius:8px;overflow:hidden;background:#fff}
+.seg2 button{border:0;border-right:1px solid var(--frame);background:#fff;color:var(--ink-2);padding:8px 16px;font-size:14.5px;cursor:pointer;white-space:nowrap}
+.seg2 button:last-child{border-right:0}
+.seg2 button[aria-pressed="true"]{background:var(--navy);color:#fff;font-weight:600}
+.startfrom .hint{font-size:13.5px;color:var(--ink-2);flex:1;min-width:220px}
+.srcpick{border:1px solid var(--frame);border-radius:10px;background:#fff;margin:0 0 16px}
+.srcpick-h{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 12px;background:var(--zone);border-bottom:1px solid var(--line-strong);border-radius:10px 10px 0 0}
+.srcpick-h b{color:var(--navy);font-size:15px}
+.srcpick-h .in{flex:1;min-width:200px}
+.srclist{max-height:250px;overflow:auto;padding:10px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.srclist .none{grid-column:1 / -1;color:var(--ink-2);font-size:14px;padding:6px}
+.ask{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px;background:var(--edit);border:1px solid var(--edit-line);border-radius:8px;padding:10px 12px;font-size:14.5px}
+.ask b{color:#6B4700}
+.based{border:1px solid var(--info-line);background:var(--accent-tint);border-radius:8px;padding:9px 11px;font-size:14px;color:var(--accent-2)}
+.based b{color:var(--navy)}
+.diffmark.add{color:var(--good);background:var(--good-tint);border-color:#A9D3B6}
+.lostnote{display:block;font-size:14px;background:var(--warn-tint);border:1px solid #E3C27E;color:var(--warn);border-radius:8px;padding:8px 11px;margin:0 0 12px}
+.banner11{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--accent-tint);border:1px solid var(--info-line);border-left:4px solid var(--accent);border-radius:8px;padding:12px 16px;margin:0 0 22px;font-size:15px}
+.banner11 a{color:var(--accent-2);font-weight:600}
+
+/* 11's Add a product dialog */
+.addrow{display:flex;gap:10px;align-items:center;margin-top:10px}
+.adddlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1000px,96%);height:min(620px,94%);display:flex;flex-direction:column;background:#fff;border:1px solid var(--frame);border-radius:12px;box-shadow:0 20px 50px rgba(16,24,40,.32);z-index:20}
+.adddlg-h{display:flex;align-items:center;gap:10px;padding:14px 18px 10px}
+.adddlg-h h4{margin:0;font-size:19px;color:var(--navy)}
+.adddlg-f1{padding:0 18px 12px;display:grid;gap:10px;border-bottom:1px solid var(--frame)}
+.adddlg-f1 .srow{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.adddlg-f1 .srow .in{flex:1;min-width:220px}
+.adddlg-f1 label.f{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2)}
+.adddlg-f1 label.f select{border:1px solid var(--frame);border-radius:6px;padding:5px 6px;font-size:14px;background:#fff}
+.adddlg-b{flex:1;overflow:auto;min-height:0}
+table.at{width:100%;border-collapse:collapse;font-size:14px}
+table.at th{position:sticky;top:0;z-index:1;background:var(--zone);border-bottom:1px solid var(--frame);text-align:left;padding:8px 10px;font-weight:600;color:var(--navy);white-space:nowrap;font-size:13.5px}
+table.at th button{border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:0}
+table.at td{padding:7px 10px;border-bottom:1px solid var(--line-strong);vertical-align:middle}
+table.at td small{display:block;color:var(--ink-2);font-size:13px}
+table.at td.r,table.at th.r{text-align:right}
+table.at tbody tr{cursor:pointer}
+table.at tbody tr:hover td{background:var(--zone-2)}
+table.at tbody tr.on td{background:var(--accent-tint)}
+table.at tbody tr.had{cursor:default}
+table.at tbody tr.had td{color:var(--ink-2);background:var(--surface-2)}
+table.at input[type=checkbox]{width:17px;height:17px}
+.adddlg-empty{padding:30px 20px;text-align:center;color:var(--ink-2);font-size:15px}
+.adddlg-ft{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--frame);background:var(--zone-2);border-radius:0 0 12px 12px}
+.adddlg .scrim2{display:none}
+@media (max-width:700px){
+  .adddlg{position:fixed;inset:0;left:0;top:0;transform:none;width:auto;height:auto;border-radius:0;border:0}
+  .adddlg-ft{border-radius:0}
+  .scrim.fixedsheet{position:fixed}
+  table.at .hide-n{display:none}
+}
+
+/* ===== 10 · review modal ===== */
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(780px,94%);max-height:92%;display:flex;flex-direction:column;background:#fff;border:1px solid var(--frame);border-radius:12px;box-shadow:0 20px 50px rgba(16,24,40,.3);z-index:12}
+.modal-h{padding:14px 18px;border-bottom:1px solid var(--frame)}
+.modal-h h4{margin:0;font-size:19px;color:var(--navy)}
+.modal-b{padding:14px 18px;overflow:auto}
+.modal-f{display:flex;gap:10px;align-items:center;padding:12px 18px;border-top:1px solid var(--frame);background:var(--zone-2);border-radius:0 0 12px 12px}
+table.rv{width:100%;border-collapse:collapse;font-size:14.5px}
+table.rv th{text-align:left;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);padding:6px 8px;border-bottom:1px solid var(--frame)}
+table.rv td{padding:8px;border-bottom:1px solid var(--line-strong);vertical-align:top}
+.o10{display:grid;grid-template-columns:minmax(0,1fr);height:100%;overflow:auto;padding:16px 20px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Proposal · Repository · Sleeves · New sleeve</p>
+    <h1>Ten ways to create a sleeve</h1>
+    <p class="sub">The New sleeve form as it is today, what makes it hard, and ten redesigns built on your live library: 4 implementation types, 7 categories, 101 sleeves and the 73 products in the catalogue, read from the repository without changing it. Option 11 combines 4 and 5. Every mock-up works end to end: choose where the sleeve goes, name it, add products, set weights and create it. Creating is simulated in the page and resets when you start again. Press <b>Choose</b> on the one you want.</p>
+  </header>
+
+  <div class="bar">
+    <span class="ctl">Jump to</span>
+    <nav class="jump" aria-label="Jump to an option" id="jump"></nav>
+  </div>
+
+  <section id="today">
+    <h2 class="sec">What's hard today</h2>
+    <p class="lead">The New sleeve form in the D156 console, opened from the category tiles and from the table, at 1600px and 1280px. Nothing was saved while taking these.</p>
+    <div class="shots">
+      <figure class="shotbox" style="margin:0">
+        <img src="new-sleeve-card/today-cards-1600.png" alt="Today's New sleeve form opened from the category tiles: name and category, implementation type checkboxes, note, an edition section with a full-width Add a rule bar, then an empty products table and a full-width Add product bar">
+        <span class="mk" style="left:34%;top:18.4%">1</span>
+        <span class="mk" style="left:89%;top:35%">1</span>
+        <span class="mk" style="left:44%;top:55.3%">2</span>
+        <span class="mk" style="left:50%;top:62.8%">2</span>
+        <span class="mk" style="left:50%;top:82.2%">3</span>
+        <span class="mk" style="left:91.9%;top:24.4%">4</span>
+        <span class="mk" style="left:16%;top:86.8%">5</span>
+        <span class="mk" style="left:21%;top:41.5%">6</span>
+        <figcaption class="shotcap">From the tiles, 1600px: the form opened in Investment Grade Fixed Income, a category nobody chose.</figcaption>
+      </figure>
+      <figure class="shotbox" style="margin:0">
+        <img src="new-sleeve-card/today-name-taken-picker-1280.png" alt="Typing the name Passive in Public Equity: the implementation type is greyed but still ticked, and the bar says Passive already has a fallback edition, give this one rules and a label. The product picker shows names with tiny grey facts.">
+        <span class="mk" style="left:28%;top:19.2%">7</span>
+        <span class="mk" style="left:12%;top:37.4%">7</span>
+        <span class="mk" style="left:60%;top:84%">8</span>
+        <figcaption class="shotcap">Typing a name that exists, 1280px: the new sleeve silently becomes an edition of Passive.</figcaption>
+      </figure>
+      <figure class="shotbox" style="margin:0">
+        <img src="new-sleeve-card/today-bad-weight-1280.png" alt="A weight typed as 1,5 is outlined red, the total reads 0.00 with a cross, and the reason is only in the bar at the top">
+        <span class="mk" style="left:87%;top:71%">9</span>
+        <span class="mk" style="left:89%;top:76.4%">9</span>
+        <figcaption class="shotcap">A weight typed as "1,5": the field goes red and the total reads 0.00, but the reason is only in the bar at the top.</figcaption>
+      </figure>
+      <figure class="shotbox" style="margin:0">
+        <img src="new-sleeve-card/today-table-drawer-1280.png" alt="The same form in the table's side drawer: Create sleeve is disabled and the footer only says No changes yet">
+        <span class="mk" style="left:52%;top:90%">4</span>
+        <span class="mk" style="left:91.5%;top:90%">4</span>
+        <figcaption class="shotcap">From the table, 1280px: the same long form in a drawer; Create is disabled and nothing says what is missing.</figcaption>
+      </figure>
+    </div>
+    <ul class="finds">
+      <li><b class="n">1</b><span><b>Where it goes is decided for you.</b> Opened from the tiles, the form starts in the first category with room, and the breadcrumb then claims you chose it. The category is a dropdown in the corner, after the name.</span></li>
+      <li><b class="n">2</b><span><b>Editions come before products.</b> An advanced choice nobody makes on a first sleeve (none of the 101 live sleeves has an edition) takes a label field, a paragraph of help and a full-width "+ Add a rule" bar, all above what the sleeve holds.</span></li>
+      <li><b class="n">3</b><span><b>Products come last and start empty.</b> The table says "no products yet" above a full-width "+ Add product" bar; cost and minimum show only as small grey text inside the picker, and not at all once a product is chosen.</span></li>
+      <li><b class="n">4</b><span><b>Create is disabled without saying why.</b> "No changes yet", then one problem at a time in the bar. Nothing lists what is still missing, and the button never says what it will create.</span></li>
+      <li><b class="n">5</b><span><b>What will be created is in the smallest text on screen.</b> "will be created under PMG Multi-Asset Portfolio" is an 11px grey line at the foot of the form.</span></li>
+      <li><b class="n">6</b><span><b>Unavailable implementation types only explain themselves in a tooltip.</b> A type that already has a sleeve of that name, or whose fixed category is full, is a greyed checkbox; the reason is a title attribute that keyboard and touch users never see.</span></li>
+      <li><b class="n">7</b><span><b>A name that already exists turns the new sleeve into an edition.</b> Typing "Passive" in Public Equity leaves the type ticked but greyed, and the only message is "Passive already has a fallback edition; give this one rules and a label" - which reads as an instruction to do something you never meant to.</span></li>
+      <li><b class="n">8</b><span><b>The picker is a long unfiltered list.</b> All 73 products, with facts and cost in 13px grey; nothing narrows it to what this category's sleeves already use.</span></li>
+      <li><b class="n">9</b><span><b>A bad weight is reported far from the field.</b> "1,5" outlines the box red and the total reads 0.00; the explanation ("not a plain number") is only in the bar at the top of the page.</span></li>
+    </ul>
+    <div class="keep">
+      <h3>What every option keeps</h3>
+      <ul>
+        <li>Choose the category, and one or more implementation types (one sleeve created per type)</li>
+        <li>Types that cannot take the sleeve shown with the reason in visible text: a full fixed category, or a sleeve of that name already there</li>
+        <li>A name of up to 80 characters; the same name under other types explained (they are offered as one sleeve)</li>
+        <li>Products from the catalogue, with asset class, vehicle, style, liquidity, cost and minimum</li>
+        <li>Weights as plain numbers above zero, totalling exactly 100%</li>
+        <li>An optional note shown to PWAs in the picker</li>
+        <li>Editions: added after creating, from the sleeve's page ("+ Add an edition")</li>
+        <li>Problems in plain words next to the field they belong to</li>
+        <li>A primary button that says what it will create ("Create in 2 implementation types")</li>
+        <li>Cancel asks before throwing entries away; afterwards you land on the new sleeve</li>
+      </ul>
+    </div>
+  </section>
+
+  <h2 class="sec">The options</h2>
+  <div class="banner11"><b>New: 11 · Live summary, start blank or from an existing sleeve.</b><span>Options 4 and 5 together, with a Blank / An existing sleeve switch.</span><a href="#opt-combo">Go to option 11 ›</a></div>
+  <p class="lead">Each is live on your data. The products offered first are the ones this category's sleeves already use; one switch shows the whole catalogue. Fixed categories (Hybrid Fixed Income and Asset Allocation Strategies) already hold their one sleeve under every implementation type, so every option shows them as unavailable with that reason.</p>
+  <main id="options"></main>
+</div>
+<div class="picked-bar" id="pickedBar" role="status" aria-live="polite"></div>
+
+<script>
+var D = {"variants":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"categories":["Investment Grade Fixed Income","Hybrid Fixed Income","Other Fixed Income","Public Equity","Hedge Funds","Private Equity & Other Private Assets","Asset Allocation Strategies"],"fixed":["Asset Allocation Strategies","Hybrid Fixed Income"],"vocab":{"currency":["USD","GBP","CHF","EUR"],"riskLevel":["LowVol","Conservative","ConsMod","Moderate","ModAgg","Agg","Higher Risk","All Equity"],"allocationType":["Full","Core","ex-Alts","ex-HFs","NA"]},"sleeves":[{"id":100,"v":3,"c":6,"name":"Tactical Tilt Overlay Portfolio","label":"","rows":[{"pid":"tactical-tilt-fund-ucits","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","Irish Onshore"],"fallback":true,"note":""},{"id":95,"v":3,"c":4,"name":"HFM & ART","label":"","rows":[{"pid":"gs-absolute-return-ucits","w":60.0},{"pid":"calderwood-global-macro-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":96,"v":3,"c":4,"name":"HFO & ART","label":"","rows":[{"pid":"calderwood-global-macro-ucits","w":55.0},{"pid":"gs-absolute-return-ucits","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":97,"v":3,"c":4,"name":"GMMAP & ART","label":"","rows":[{"pid":"calderwood-global-macro-ucits","w":60.0},{"pid":"gs-absolute-return-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":98,"v":3,"c":4,"name":"Aptitude & ART","label":"","rows":[{"pid":"gs-absolute-return-ucits","w":55.0},{"pid":"calderwood-global-macro-ucits","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":99,"v":3,"c":4,"name":"HFO Only","label":"","rows":[{"pid":"gs-absolute-return-ucits","w":60.0},{"pid":"calderwood-global-macro-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":85,"v":3,"c":1,"name":"SVP","label":"","rows":[{"pid":"strategic-volatility-premium","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":80,"v":3,"c":0,"name":"SMA Only","label":"","rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":81,"v":3,"c":0,"name":"SMA & ETFs","label":"","rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-global-aggregate-ucits","w":30.0},{"pid":"gs-access-euro-government-ucits","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":82,"v":3,"c":0,"name":"ETFs Only","label":"","rows":[{"pid":"gs-access-global-aggregate-ucits","w":60.0},{"pid":"gs-access-euro-government-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":83,"v":3,"c":0,"name":"SMA Sov. Agency","label":"","rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-euro-government-ucits","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":84,"v":3,"c":0,"name":"SMA: Gilts Only","label":"","rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":86,"v":3,"c":2,"name":"Mutual Funds","label":"","rows":[{"pid":"gs-global-high-yield-ucits","w":60.0},{"pid":"gs-emerging-markets-debt-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":87,"v":3,"c":2,"name":"Funds Irish","label":"","rows":[{"pid":"gs-global-high-yield-ucits","w":60.0},{"pid":"gs-emerging-markets-debt-ucits","w":40.0}],"under":["Irish Onshore"],"fallback":true,"note":""},{"id":88,"v":3,"c":2,"name":"GPP","label":"","rows":[{"pid":"gs-global-high-yield-ucits","w":55.0},{"pid":"gs-emerging-markets-debt-ucits","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":101,"v":3,"c":5,"name":"Private Equity Managers","label":"","rows":[{"pid":"gs-private-markets-icav-feeder","w":40.0},{"pid":"gs-private-credit-icav-feeder","w":30.0},{"pid":"gs-vintage-fund-ix","w":30.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":102,"v":3,"c":5,"name":"Alternative Portfolio Services","label":"","rows":[{"pid":"gs-private-credit-icav-feeder","w":40.0},{"pid":"gs-private-markets-icav-feeder","w":35.0},{"pid":"gs-real-assets-program","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":89,"v":3,"c":3,"name":"Passive","label":"","rows":[{"pid":"gs-access-world-equity-ucits","w":60.0},{"pid":"gs-access-em-equity-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":90,"v":3,"c":3,"name":"Active Passive","label":"","rows":[{"pid":"gs-access-world-equity-ucits","w":55.0},{"pid":"gs-europe-core-equity-ucits","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":92,"v":3,"c":3,"name":"Concentrated Active Passive","label":"","rows":[{"pid":"gs-europe-core-equity-ucits","w":50.0},{"pid":"gs-access-world-equity-ucits","w":50.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":93,"v":3,"c":3,"name":"Concentrated Active Passive (Low TE)","label":"","rows":[{"pid":"gs-access-world-equity-ucits","w":65.0},{"pid":"gs-europe-core-equity-ucits","w":35.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":94,"v":3,"c":3,"name":"Global Concentrated","label":"","rows":[{"pid":"gs-europe-core-equity-ucits","w":60.0},{"pid":"gs-emerging-markets-equity-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":51,"v":1,"c":6,"name":"Tactical Tilt Overlay Portfolio","label":"","rows":[{"pid":"esg-tactical-tilt-fund","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","Irish Onshore"],"fallback":true,"note":""},{"id":46,"v":1,"c":4,"name":"HFM & ART","label":"","rows":[{"pid":"gs-hedgeworks-esg-multi-strategy","w":60.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":47,"v":1,"c":4,"name":"HFO & ART","label":"","rows":[{"pid":"ashfield-select-equity-l-s","w":35.0},{"pid":"northbrook-relative-value","w":25.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":48,"v":1,"c":4,"name":"GMMAP & ART","label":"","rows":[{"pid":"calderwood-global-macro","w":55.0},{"pid":"gs-absolute-return-tracker","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":49,"v":1,"c":4,"name":"Aptitude & ART","label":"","rows":[{"pid":"northbrook-relative-value","w":50.0},{"pid":"gs-absolute-return-tracker","w":50.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":50,"v":1,"c":4,"name":"HFO Only","label":"","rows":[{"pid":"ashfield-select-equity-l-s","w":40.0},{"pid":"northbrook-relative-value","w":35.0},{"pid":"gs-managed-futures-strategy","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":31,"v":1,"c":1,"name":"SVP","label":"","rows":[{"pid":"strategic-volatility-premium","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":23,"v":1,"c":0,"name":"SMA Only","label":"","rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":24,"v":1,"c":0,"name":"SMA & ETFs","label":"","rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-esg-aggregate-etf","w":50.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":25,"v":1,"c":0,"name":"ETFs Only","label":"","rows":[{"pid":"gs-access-esg-aggregate-etf","w":55.0},{"pid":"gs-access-ig-corporate-etf","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":26,"v":1,"c":0,"name":"SMA ESG","label":"","rows":[{"pid":"gsam-intermediate-credit-sma","w":55.0},{"pid":"gs-esg-us-corporate-bond-fund","w":45.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":27,"v":1,"c":0,"name":"SMA & ETFs ESG","label":"","rows":[{"pid":"gsam-intermediate-credit-sma","w":40.0},{"pid":"gs-access-esg-aggregate-etf","w":35.0},{"pid":"gs-esg-us-corporate-bond-fund","w":25.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":28,"v":1,"c":0,"name":"Funds Only ESG","label":"","rows":[{"pid":"gs-esg-us-corporate-bond-fund","w":45.0},{"pid":"gs-green-bond-fund","w":30.0},{"pid":"ashfield-social-impact-bond","w":25.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":29,"v":1,"c":0,"name":"SMA Sov. Agency","label":"","rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-treasury-0-1-etf","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":30,"v":1,"c":0,"name":"SMA: Gilts Only","label":"","rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":32,"v":1,"c":2,"name":"Mutual Funds","label":"","rows":[{"pid":"gs-esg-high-yield-fund","w":55.0},{"pid":"gs-esg-emerging-markets-debt","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":33,"v":1,"c":2,"name":"ESG High Yield","label":"","rows":[{"pid":"gs-esg-high-yield-fund","w":65.0},{"pid":"gs-esg-emerging-markets-debt","w":35.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":34,"v":1,"c":2,"name":"GPP","label":"","rows":[{"pid":"gs-strategic-income-fund","w":50.0},{"pid":"gs-access-high-yield-etf","w":30.0},{"pid":"gs-access-em-usd-bond-etf","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":52,"v":1,"c":5,"name":"Private Equity Managers","label":"","rows":[{"pid":"gs-sustainable-investing-group-fund","w":30.0},{"pid":"gs-private-markets-buyout","w":25.0},{"pid":"gs-vintage-fund-ix","w":20.0},{"pid":"gs-sustainable-real-estate","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":53,"v":1,"c":5,"name":"Alternative Portfolio Services","label":"","rows":[{"pid":"gs-sustainable-real-estate","w":35.0},{"pid":"gs-real-assets-program","w":30.0},{"pid":"gs-sustainable-investing-group-fund","w":20.0},{"pid":"calderwood-energy-transition","w":15.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":35,"v":1,"c":3,"name":"Passive","label":"","rows":[{"pid":"gs-access-esg-us-equity-etf","w":60.0},{"pid":"gs-access-em-equity-etf","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":36,"v":1,"c":3,"name":"Active Passive","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":40.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"northbrook-intl-equity","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":37,"v":1,"c":3,"name":"Global Active","label":"","rows":[{"pid":"gs-us-equity-insights-fund","w":45.0},{"pid":"northbrook-intl-equity","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore"],"fallback":true,"note":""},{"id":38,"v":1,"c":3,"name":"Concentrated Active Passive","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-intl-equity-etf","w":30.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":39,"v":1,"c":3,"name":"Concentrated Active Passive (Low TE)","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-concentrated-growth-sma","w":25.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":40,"v":1,"c":3,"name":"Global Concentrated","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"northbrook-focused-intl","w":35.0},{"pid":"gs-emerging-markets-equity","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":41,"v":1,"c":3,"name":"Active Passive Funds ESG","label":"","rows":[{"pid":"gs-access-esg-us-equity-etf","w":45.0},{"pid":"gs-esg-international-equity","w":35.0},{"pid":"gs-esg-emerging-markets-equity","w":20.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":42,"v":1,"c":3,"name":"GEP + ESG Screened ETFs","label":"","rows":[{"pid":"gs-esg-international-equity","w":40.0},{"pid":"gs-access-esg-us-equity-etf","w":40.0},{"pid":"gs-access-em-equity-etf","w":20.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":43,"v":1,"c":3,"name":"GEP + ESG SRI ETFs","label":"","rows":[{"pid":"northbrook-paris-aligned-equity","w":40.0},{"pid":"gs-access-esg-us-equity-etf","w":40.0},{"pid":"gs-climate-solutions-fund","w":20.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":44,"v":1,"c":3,"name":"ESG Screened ETFs","label":"","rows":[{"pid":"gs-access-esg-us-equity-etf","w":60.0},{"pid":"gs-access-intl-equity-etf","w":40.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":45,"v":1,"c":3,"name":"ESG SRI ETFs","label":"","rows":[{"pid":"gs-access-esg-us-equity-etf","w":55.0},{"pid":"gs-access-em-equity-etf","w":45.0}],"under":["PMG ESG"],"fallback":true,"note":""},{"id":20,"v":0,"c":6,"name":"Tactical Tilt Overlay Portfolio","label":"","rows":[{"pid":"tactical-tilt-fund","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","Irish Onshore"],"fallback":true,"note":""},{"id":15,"v":0,"c":4,"name":"HFM & ART","label":"","rows":[{"pid":"gs-hedgeworks-multi-strategy","w":60.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":16,"v":0,"c":4,"name":"HFO & ART","label":"","rows":[{"pid":"ashfield-select-equity-l-s","w":35.0},{"pid":"northbrook-relative-value","w":25.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":17,"v":0,"c":4,"name":"GMMAP & ART","label":"","rows":[{"pid":"calderwood-global-macro","w":55.0},{"pid":"gs-absolute-return-tracker","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":18,"v":0,"c":4,"name":"Aptitude & ART","label":"","rows":[{"pid":"northbrook-relative-value","w":50.0},{"pid":"gs-absolute-return-tracker","w":50.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":19,"v":0,"c":4,"name":"HFO Only","label":"","rows":[{"pid":"ashfield-select-equity-l-s","w":40.0},{"pid":"northbrook-relative-value","w":35.0},{"pid":"gs-managed-futures-strategy","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":6,"v":0,"c":1,"name":"SVP","label":"","rows":[{"pid":"strategic-volatility-premium","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":1,"v":0,"c":0,"name":"SMA Only","label":"","rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":2,"v":0,"c":0,"name":"SMA & ETFs","label":"","rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-ig-corporate-etf","w":30.0},{"pid":"gs-access-treasury-0-1-etf","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":3,"v":0,"c":0,"name":"ETFs Only","label":"","rows":[{"pid":"gs-access-ig-corporate-etf","w":60.0},{"pid":"gs-access-treasury-0-1-etf","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":4,"v":0,"c":0,"name":"SMA Sov. Agency","label":"","rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-treasury-0-1-etf","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":5,"v":0,"c":0,"name":"SMA: Gilts Only","label":"","rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":7,"v":0,"c":2,"name":"Mutual Funds","label":"","rows":[{"pid":"gs-high-yield-fund","w":45.0},{"pid":"gs-emerging-markets-debt","w":35.0},{"pid":"gs-strategic-income-fund","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":8,"v":0,"c":2,"name":"GPP","label":"","rows":[{"pid":"gs-strategic-income-fund","w":50.0},{"pid":"gs-access-high-yield-etf","w":30.0},{"pid":"gs-access-em-usd-bond-etf","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":21,"v":0,"c":5,"name":"Private Equity Managers","label":"","rows":[{"pid":"gs-private-markets-buyout","w":60.0},{"pid":"gs-vintage-fund-ix","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":22,"v":0,"c":5,"name":"Alternative Portfolio Services","label":"","rows":[{"pid":"gs-real-assets-program","w":25.0},{"pid":"gs-real-estate-partners","w":20.0},{"pid":"gs-private-credit-partners","w":20.0},{"pid":"ashfield-direct-lending","w":15.0},{"pid":"ashfield-co-investment","w":10.0},{"pid":"gs-venture-access-fund","w":10.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":9,"v":0,"c":3,"name":"Passive","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-access-intl-equity-etf","w":30.0},{"pid":"gs-access-em-equity-etf","w":15.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":10,"v":0,"c":3,"name":"Active Passive","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":40.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"northbrook-intl-equity","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":11,"v":0,"c":3,"name":"Global Active","label":"","rows":[{"pid":"gs-us-equity-insights-fund","w":45.0},{"pid":"northbrook-intl-equity","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore"],"fallback":true,"note":""},{"id":12,"v":0,"c":3,"name":"Concentrated Active Passive","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-intl-equity-etf","w":30.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":13,"v":0,"c":3,"name":"Concentrated Active Passive (Low TE)","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-concentrated-growth-sma","w":25.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":14,"v":0,"c":3,"name":"Global Concentrated","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"northbrook-focused-intl","w":35.0},{"pid":"gs-emerging-markets-equity","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":77,"v":2,"c":6,"name":"Tactical Tilt Overlay Portfolio Onshore","label":"","rows":[{"pid":"tactical-tilt-fund","w":100.0}],"under":["US Onshore"],"fallback":true,"note":""},{"id":72,"v":2,"c":4,"name":"HFM & ART","label":"","rows":[{"pid":"gs-hedgeworks-multi-strategy","w":60.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":73,"v":2,"c":4,"name":"HFO & ART","label":"","rows":[{"pid":"ashfield-select-equity-l-s","w":35.0},{"pid":"northbrook-relative-value","w":25.0},{"pid":"gs-absolute-return-tracker","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":74,"v":2,"c":4,"name":"GMMAP & ART","label":"","rows":[{"pid":"calderwood-global-macro","w":55.0},{"pid":"gs-absolute-return-tracker","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":75,"v":2,"c":4,"name":"Aptitude & ART","label":"","rows":[{"pid":"northbrook-relative-value","w":50.0},{"pid":"gs-absolute-return-tracker","w":50.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":76,"v":2,"c":4,"name":"HFO Only","label":"","rows":[{"pid":"ashfield-select-equity-l-s","w":40.0},{"pid":"northbrook-relative-value","w":35.0},{"pid":"gs-managed-futures-strategy","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":59,"v":2,"c":1,"name":"SVP","label":"","rows":[{"pid":"strategic-volatility-premium","w":100.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":54,"v":2,"c":0,"name":"SMA Only","label":"","rows":[{"pid":"gsam-core-municipal-sma","w":45.0},{"pid":"gsam-intermediate-credit-sma","w":35.0},{"pid":"gsam-short-duration-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":"SMA Only will be managed by GSAM"},{"id":55,"v":2,"c":0,"name":"SMA & ETFs","label":"","rows":[{"pid":"gsam-intermediate-credit-sma","w":50.0},{"pid":"gs-access-ig-corporate-etf","w":30.0},{"pid":"gs-access-treasury-0-1-etf","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":56,"v":2,"c":0,"name":"ETFs Only","label":"","rows":[{"pid":"gs-access-ig-corporate-etf","w":60.0},{"pid":"gs-access-treasury-0-1-etf","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":57,"v":2,"c":0,"name":"SMA Sov. Agency","label":"","rows":[{"pid":"gsam-short-duration-sma","w":55.0},{"pid":"gs-access-treasury-0-1-etf","w":45.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":58,"v":2,"c":0,"name":"SMA: Gilts Only","label":"","rows":[{"pid":"gsam-short-duration-sma","w":60.0},{"pid":"gs-sterling-credit-portfolio-ucits","w":40.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":60,"v":2,"c":2,"name":"Mutual Funds","label":"","rows":[{"pid":"gs-high-yield-fund","w":45.0},{"pid":"gs-emerging-markets-debt","w":35.0},{"pid":"gs-strategic-income-fund","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":61,"v":2,"c":2,"name":"Funds US Onshore","label":"","rows":[{"pid":"gs-high-yield-fund","w":50.0},{"pid":"gs-emerging-markets-debt","w":30.0},{"pid":"calderwood-local-em-debt","w":20.0}],"under":["US Onshore"],"fallback":true,"note":""},{"id":62,"v":2,"c":2,"name":"GPP","label":"","rows":[{"pid":"gs-strategic-income-fund","w":50.0},{"pid":"gs-access-high-yield-etf","w":30.0},{"pid":"gs-access-em-usd-bond-etf","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":78,"v":2,"c":5,"name":"Private Equity Managers","label":"","rows":[{"pid":"gs-private-markets-buyout","w":30.0},{"pid":"gs-vintage-fund-ix","w":25.0},{"pid":"gs-growth-equity-partners","w":20.0},{"pid":"gs-private-credit-partners","w":15.0},{"pid":"gs-real-estate-partners","w":10.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":79,"v":2,"c":5,"name":"Alternative Portfolio Services","label":"","rows":[{"pid":"gs-real-assets-program","w":25.0},{"pid":"gs-real-estate-partners","w":20.0},{"pid":"gs-private-credit-partners","w":20.0},{"pid":"ashfield-direct-lending","w":15.0},{"pid":"ashfield-co-investment","w":10.0},{"pid":"gs-venture-access-fund","w":10.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":63,"v":2,"c":3,"name":"Passive","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-access-intl-equity-etf","w":30.0},{"pid":"gs-access-em-equity-etf","w":15.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":64,"v":2,"c":3,"name":"Active Passive","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":40.0},{"pid":"gs-us-equity-insights-fund","w":35.0},{"pid":"northbrook-intl-equity","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":65,"v":2,"c":3,"name":"Global Active","label":"","rows":[{"pid":"gs-us-equity-insights-fund","w":45.0},{"pid":"northbrook-intl-equity","w":35.0},{"pid":"gs-emerging-markets-equity","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore"],"fallback":true,"note":""},{"id":66,"v":2,"c":3,"name":"Concentrated Active Passive","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-intl-equity-etf","w":30.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":67,"v":2,"c":3,"name":"Concentrated Active Passive (Low TE)","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":55.0},{"pid":"gs-concentrated-growth-sma","w":25.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":68,"v":2,"c":3,"name":"Global Concentrated","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"northbrook-focused-intl","w":35.0},{"pid":"gs-emerging-markets-equity","w":25.0}],"under":["PMG Multi-Asset Portfolio","PMG ESG","US Onshore","Irish Onshore"],"fallback":true,"note":""},{"id":69,"v":2,"c":3,"name":"US Onshore ETFs","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":60.0},{"pid":"gs-access-intl-equity-etf","w":25.0},{"pid":"gs-access-em-equity-etf","w":15.0}],"under":["US Onshore"],"fallback":true,"note":""},{"id":70,"v":2,"c":3,"name":"US Onshore Concentrated Active Passive","label":"","rows":[{"pid":"gs-concentrated-growth-sma","w":40.0},{"pid":"gs-us-focused-value-sma","w":30.0},{"pid":"gs-access-us-large-cap-etf","w":30.0}],"under":["US Onshore"],"fallback":true,"note":""},{"id":71,"v":2,"c":3,"name":"US Onshore Concentrated Active Passive (Low TE)","label":"","rows":[{"pid":"gs-access-us-large-cap-etf","w":60.0},{"pid":"gs-concentrated-growth-sma","w":20.0},{"pid":"gs-us-focused-value-sma","w":20.0}],"under":["US Onshore"],"fallback":true,"note":""}],"products":{"gsam-core-municipal-sma":{"n":"GSAM Core Municipal SMA","ac":"Municipals","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.25,"mi":5000000.0,"cur":"USD","fg":"Core Active","tk":"—"},"gsam-intermediate-credit-sma":{"n":"GSAM Intermediate Credit SMA","ac":"IG Corporate","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.28,"mi":5000000.0,"cur":"USD","fg":"Core Active","tk":"—"},"gsam-short-duration-sma":{"n":"GSAM Short Duration SMA","ac":"Short Duration","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.22,"mi":5000000.0,"cur":"USD","fg":"Core Active","tk":"—"},"gs-us-corporate-bond-fund":{"n":"GS US Corporate Bond Fund","ac":"IG Corporate","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.42,"mi":1000.0,"cur":"USD","fg":"Core Active","tk":"GSUCX"},"ashfield-global-credit-fund":{"n":"Ashfield Global Credit Fund","ac":"IG Corporate","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.55,"mi":1000.0,"cur":"Local","fg":"Core Active","tk":"AGCIX"},"gs-short-duration-income":{"n":"GS Short Duration Income","ac":"Short Duration","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.38,"mi":1000.0,"cur":"USD","fg":"Core Active","tk":"GSSDX"},"gs-access-ig-corporate-etf":{"n":"GS Access IG Corporate ETF","ac":"IG Corporate","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.14,"mi":null,"cur":"USD","fg":"Passive","tk":"GIGB"},"gs-access-treasury-0-1-etf":{"n":"GS Access Treasury 0-1 ETF","ac":"Government","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.12,"mi":null,"cur":"USD","fg":"Passive","tk":"GBIL"},"gs-core-fixed-income-fund":{"n":"GS Core Fixed Income Fund","ac":"Aggregate","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.46,"mi":1000.0,"cur":"USD","fg":"Core Active","tk":"GCFIX"},"gs-high-yield-fund":{"n":"GS High Yield Fund","ac":"High Yield","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.72,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"GSHAX"},"gs-emerging-markets-debt":{"n":"GS Emerging Markets Debt","ac":"EM Debt","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.85,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"GSDAX"},"gs-strategic-income-fund":{"n":"GS Strategic Income Fund","ac":"Multi-Sector","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.79,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"GSZAX"},"calderwood-local-em-debt":{"n":"Calderwood Local EM Debt","ac":"EM Debt","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.91,"mi":1000.0,"cur":"Local","fg":"Specialist Active","tk":"CLEDX"},"gs-access-high-yield-etf":{"n":"GS Access High Yield ETF","ac":"High Yield","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.34,"mi":null,"cur":"USD","fg":"Passive","tk":"GHYB"},"gs-access-em-usd-bond-etf":{"n":"GS Access EM USD Bond ETF","ac":"EM Debt","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.39,"mi":null,"cur":"USD","fg":"Passive","tk":"GEMD"},"gs-access-us-large-cap-etf":{"n":"GS Access US Large Cap ETF","ac":"US Large Cap","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.09,"mi":null,"cur":"USD","fg":"Passive","tk":"GSLC"},"gs-us-equity-insights-fund":{"n":"GS US Equity Insights Fund","ac":"US All Cap","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.71,"mi":1000.0,"cur":"USD","fg":"Core Active","tk":"GCSAX"},"northbrook-intl-equity":{"n":"Northbrook Intl Equity","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.68,"mi":1000.0,"cur":"Local","fg":"Core Active","tk":"NBIEX"},"gs-emerging-markets-equity":{"n":"GS Emerging Markets Equity","ac":"Emerging Markets","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":1.12,"mi":1000.0,"cur":"Local","fg":"Specialist Active","tk":"GEMAX"},"gs-access-intl-equity-etf":{"n":"GS Access Intl Equity ETF","ac":"Intl Developed","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.25,"mi":null,"cur":"Local","fg":"Passive","tk":"GSIE"},"gs-access-em-equity-etf":{"n":"GS Access EM Equity ETF","ac":"Emerging Markets","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.37,"mi":null,"cur":"Local","fg":"Passive","tk":"GEM"},"gs-concentrated-growth-sma":{"n":"GS Concentrated Growth SMA","ac":"US Large Cap","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.55,"mi":5000000.0,"cur":"USD","fg":"Core Active","tk":"—"},"gs-us-focused-value-sma":{"n":"GS US Focused Value SMA","ac":"US Large Cap","ve":"SMA","st":"Active","so":"Internal","li":"Daily","co":0.55,"mi":5000000.0,"cur":"USD","fg":"Core Active","tk":"—"},"northbrook-focused-intl":{"n":"Northbrook Focused Intl","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.94,"mi":1000.0,"cur":"Local","fg":"Core Active","tk":"NBFIX"},"gs-hedgeworks-multi-strategy":{"n":"GS HedgeWorks Multi-Strategy","ac":"Multi-Strategy","ve":"SMA","st":"Active","so":"Internal","li":"Quarterly","co":1.35,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"calderwood-global-macro":{"n":"Calderwood Global Macro","ac":"Global Macro","ve":"SMA","st":"Active","so":"External","li":"Quarterly","co":1.48,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"ashfield-select-equity-l-s":{"n":"Ashfield Select Equity L/S","ac":"Equity Long/Short","ve":"SMA","st":"Active","so":"External","li":"Quarterly","co":1.62,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"northbrook-relative-value":{"n":"Northbrook Relative Value","ac":"Relative Value","ve":"SMA","st":"Active","so":"External","li":"Monthly","co":1.55,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-absolute-return-tracker":{"n":"GS Absolute Return Tracker","ac":"Multi-Strategy","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.96,"mi":1000.0,"cur":"USD","fg":"Alternatives","tk":"GARTX"},"gs-managed-futures-strategy":{"n":"GS Managed Futures Strategy","ac":"Managed Futures","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":1.08,"mi":1000.0,"cur":"USD","fg":"Alternatives","tk":"GMFAX"},"gs-vintage-fund-ix":{"n":"GS Vintage Fund IX","ac":"Secondaries","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.25,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-private-markets-buyout":{"n":"GS Private Markets Buyout","ac":"Buyout","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.45,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-growth-equity-partners":{"n":"GS Growth Equity Partners","ac":"Growth","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.5,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"ashfield-co-investment":{"n":"Ashfield Co-Investment","ac":"Co-Investment","ve":"SMA","st":"Active","so":"External","li":"Drawdown","co":1.1,"mi":5000000.0,"cur":"EUR","fg":"Alternatives","tk":"—"},"gs-venture-access-fund":{"n":"GS Venture Access Fund","ac":"Venture","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.72,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-real-estate-partners":{"n":"GS Real Estate Partners","ac":"Core Real Estate","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.3,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-private-credit-partners":{"n":"GS Private Credit Partners","ac":"Private Credit","ve":"SMA","st":"Active","so":"Internal","li":"Quarterly","co":1.4,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"ashfield-direct-lending":{"n":"Ashfield Direct Lending","ac":"Direct Lending","ve":"SMA","st":"Active","so":"External","li":"Quarterly","co":1.35,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-real-assets-program":{"n":"GS Real Assets Program","ac":"Real Assets","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.22,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"calderwood-energy-transition":{"n":"Calderwood Energy Transition","ac":"Energy","ve":"SMA","st":"Active","so":"External","li":"Drawdown","co":1.38,"mi":5000000.0,"cur":"EUR","fg":"Alternatives","tk":"—"},"tactical-tilt-fund":{"n":"Tactical Tilt Fund","ac":"Tactical Tilts","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.85,"mi":1000.0,"cur":"USD","fg":"Asset Allocation","tk":"TTF"},"strategic-volatility-premium":{"n":"Strategic Volatility Premium","ac":"Volatility Premium","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.65,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"SVP"},"gs-esg-us-corporate-bond-fund":{"n":"GS ESG US Corporate Bond Fund","ac":"IG Corporate","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.44,"mi":1000.0,"cur":"USD","fg":"Core Active","tk":"GSECX"},"gs-access-esg-aggregate-etf":{"n":"GS Access ESG Aggregate ETF","ac":"Aggregate","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.16,"mi":null,"cur":"USD","fg":"Passive","tk":"GSEA"},"gs-green-bond-fund":{"n":"GS Green Bond Fund","ac":"Green Bonds","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.48,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"GSGBX"},"ashfield-social-impact-bond":{"n":"Ashfield Social Impact Bond","ac":"Social Bonds","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.62,"mi":1000.0,"cur":"Local","fg":"Specialist Active","tk":"ASIBX"},"gs-esg-high-yield-fund":{"n":"GS ESG High Yield Fund","ac":"High Yield","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.76,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"GSEHX"},"gs-esg-emerging-markets-debt":{"n":"GS ESG Emerging Markets Debt","ac":"EM Debt","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.89,"mi":1000.0,"cur":"USD","fg":"Specialist Active","tk":"GSEDX"},"gs-access-esg-us-equity-etf":{"n":"GS Access ESG US Equity ETF","ac":"US Large Cap","ve":"ETF","st":"Passive","so":"Internal","li":"Daily","co":0.14,"mi":null,"cur":"USD","fg":"Passive","tk":"GSEU"},"gs-esg-international-equity":{"n":"GS ESG International Equity","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.72,"mi":1000.0,"cur":"Local","fg":"Core Active","tk":"GSIEX"},"gs-esg-emerging-markets-equity":{"n":"GS ESG Emerging Markets Equity","ac":"Emerging Markets","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":1.05,"mi":1000.0,"cur":"Local","fg":"Specialist Active","tk":"GSEEX"},"gs-climate-solutions-fund":{"n":"GS Climate Solutions Fund","ac":"Global Thematic","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.88,"mi":1000.0,"cur":"Local","fg":"Specialist Active","tk":"GCSLX"},"northbrook-paris-aligned-equity":{"n":"Northbrook Paris-Aligned Equity","ac":"Intl Developed","ve":"Mutual Fund","st":"Active","so":"External","li":"Daily","co":0.79,"mi":1000.0,"cur":"Local","fg":"Core Active","tk":"NPAEX"},"gs-hedgeworks-esg-multi-strategy":{"n":"GS HedgeWorks ESG Multi-Strategy","ac":"Multi-Strategy","ve":"SMA","st":"Active","so":"Internal","li":"Quarterly","co":1.38,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-sustainable-investing-group-fund":{"n":"GS Sustainable Investing Group Fund","ac":"Impact","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.55,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"gs-sustainable-real-estate":{"n":"GS Sustainable Real Estate","ac":"Core Real Estate","ve":"SMA","st":"Active","so":"Internal","li":"Drawdown","co":1.32,"mi":5000000.0,"cur":"USD","fg":"Alternatives","tk":"—"},"esg-tactical-tilt-fund":{"n":"ESG Tactical Tilt Fund","ac":"Tactical Tilts","ve":"Mutual Fund","st":"Active","so":"Internal","li":"Daily","co":0.88,"mi":1000.0,"cur":"USD","fg":"Asset Allocation","tk":"ETTF"},"gs-global-credit-portfolio-ucits":{"n":"GS Global Credit Portfolio (UCITS)","ac":"IG Corporate","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.52,"mi":10000.0,"cur":"EUR","fg":"Core Active","tk":"—"},"gs-sterling-credit-portfolio-ucits":{"n":"GS Sterling Credit Portfolio (UCITS)","ac":"IG Corporate","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.54,"mi":10000.0,"cur":"GBP","fg":"Core Active","tk":"—"},"gs-global-short-duration-ucits":{"n":"GS Global Short Duration (UCITS)","ac":"Short Duration","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.4,"mi":10000.0,"cur":"EUR","fg":"Core Active","tk":"—"},"gs-access-global-aggregate-ucits":{"n":"GS Access Global Aggregate (UCITS)","ac":"Aggregate","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.18,"mi":10000.0,"cur":"EUR","fg":"Passive","tk":"—"},"gs-access-euro-government-ucits":{"n":"GS Access Euro Government (UCITS)","ac":"Government","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.15,"mi":10000.0,"cur":"EUR","fg":"Passive","tk":"—"},"gs-global-high-yield-ucits":{"n":"GS Global High Yield (UCITS)","ac":"High Yield","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.81,"mi":10000.0,"cur":"EUR","fg":"Specialist Active","tk":"—"},"gs-emerging-markets-debt-ucits":{"n":"GS Emerging Markets Debt (UCITS)","ac":"EM Debt","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.94,"mi":10000.0,"cur":"EUR","fg":"Specialist Active","tk":"—"},"gs-access-world-equity-ucits":{"n":"GS Access World Equity (UCITS)","ac":"Global Developed","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.2,"mi":10000.0,"cur":"EUR","fg":"Passive","tk":"—"},"gs-europe-core-equity-ucits":{"n":"GS Europe Core Equity (UCITS)","ac":"Europe","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.78,"mi":10000.0,"cur":"EUR","fg":"Core Active","tk":"—"},"gs-emerging-markets-equity-ucits":{"n":"GS Emerging Markets Equity (UCITS)","ac":"Emerging Markets","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":1.08,"mi":10000.0,"cur":"EUR","fg":"Specialist Active","tk":"—"},"gs-access-em-equity-ucits":{"n":"GS Access EM Equity (UCITS)","ac":"Emerging Markets","ve":"UCITS","st":"Passive","so":"Internal","li":"Daily","co":0.32,"mi":10000.0,"cur":"EUR","fg":"Passive","tk":"—"},"gs-absolute-return-ucits":{"n":"GS Absolute Return (UCITS)","ac":"Multi-Strategy","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":1.12,"mi":10000.0,"cur":"EUR","fg":"Alternatives","tk":"—"},"calderwood-global-macro-ucits":{"n":"Calderwood Global Macro (UCITS)","ac":"Global Macro","ve":"UCITS","st":"Active","so":"External","li":"Daily","co":1.24,"mi":10000.0,"cur":"EUR","fg":"Alternatives","tk":"—"},"gs-private-markets-icav-feeder":{"n":"GS Private Markets ICAV Feeder","ac":"Buyout","ve":"ICAV","st":"Active","so":"Internal","li":"Drawdown","co":1.58,"mi":5000000.0,"cur":"EUR","fg":"Alternatives","tk":"—"},"gs-private-credit-icav-feeder":{"n":"GS Private Credit ICAV Feeder","ac":"Private Credit","ve":"ICAV","st":"Active","so":"Internal","li":"Quarterly","co":1.48,"mi":5000000.0,"cur":"EUR","fg":"Alternatives","tk":"—"},"tactical-tilt-fund-ucits":{"n":"Tactical Tilt Fund (UCITS)","ac":"Tactical Tilts","ve":"UCITS","st":"Active","so":"Internal","li":"Daily","co":0.92,"mi":10000.0,"cur":"EUR","fg":"Asset Allocation","tk":"—"}},"catalogue":{"modified":"2026-09-27T16:53:51","products":73}};
+</script>
+<script>
+(function () {
+'use strict';
+/* ------------------------------------------------------------ data */
+var V = D.variants, C = D.categories;
+var COLOUR = {'Investment Grade Fixed Income': '#EB6834', 'Hybrid Fixed Income': '#5E7690', 'Other Fixed Income': '#1BAF7A',
+  'Public Equity': '#EDA100', 'Hedge Funds': '#E87BA4', 'Private Equity & Other Private Assets': '#4A3AA7', 'Asset Allocation Strategies': '#2A78D6'};
+var SEG = ['#16243A', '#1F5FBF', '#5E8FD6', '#2E7D6B', '#B3741C', '#7A4DA8', '#5E7690', '#A33A3A'];
+var PE = C.indexOf('Public Equity');
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+function prod(pid) { return D.products[pid]; }
+function pct(n, dp) { return isFinite(n) ? Number(n).toFixed(dp == null ? 2 : dp) : '–'; }
+function money(n) { if (n == null || !isFinite(n) || n <= 0) return 'None'; return n >= 1e6 ? '$' + (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + 'm' : n >= 1e3 ? '$' + (n / 1e3).toFixed(0) + 'k' : '$' + n; }
+function cost(p) { return p && p.co != null ? pct(p.co) + '%' : 'not priced'; }
+function facts(p) { return [p.ac, p.ve, p.st, p.li].filter(Boolean).join(' · '); }
+function sw(ci) { return '<span class="sw" style="background:' + COLOUR[C[ci]] + '"></span>'; }
+function isFixed(ci) { return D.fixed.indexOf(C[ci]) >= 0; }
+function sleevesIn(v, ci) { return D.sleeves.filter(function (s) { return s.v === v && s.c === ci; }); }
+function sameName(a, b) { return a.trim().toLowerCase() === b.trim().toLowerCase(); }
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+var SV_NUMBER = /^\s*(\d+(\.\d*)?|\.\d+)\s*%?\s*$/;
+function weightOf(text) { var t = String(text == null ? '' : text); return SV_NUMBER.test(t) ? parseFloat(t) : NaN; }
+/* the products this category's sleeves already hold, under any type */
+var USED = {};
+D.sleeves.forEach(function (s) { (USED[s.c] = USED[s.c] || {}); s.rows.forEach(function (r) { USED[s.c][r.pid] = (USED[s.c][r.pid] || 0) + 1; }); });
+function usedIn(ci) { return Object.keys(USED[ci] || {}); }
+
+/* where a type stands for a category and a name */
+function availability(ci, v, name) {
+  if (ci < 0) return {ok: true};
+  var here = sleevesIn(v, ci);
+  if (isFixed(ci) && here.length) return {ok: false, kind: 'full', reason: C[ci] + ' holds one sleeve per type, and ' + V[v] + ' already has ' + here[0].name + '.'};
+  var nm = (name || '').trim();
+  if (nm) {
+    var clash = here.filter(function (s) { return sameName(s.name, nm); })[0];
+    if (clash) return {ok: false, kind: 'taken', reason: V[v] + ' already has a sleeve called ' + clash.name + ' here. To give some portfolios a different mix, open ' + clash.name + ' and add an edition.'};
+  }
+  return {ok: true};
+}
+function catFull(ci) { return V.every(function (v, vi) { return !availability(ci, vi, '').ok; }); }
+function catReason(ci) { return catFull(ci) ? 'Full: holds its one sleeve under every implementation type' : (isFixed(ci) ? 'Fixed: one sleeve per type' : sleevesIn(0, ci).length + ' sleeves under PMG Multi-Asset'); }
+/* the same name under types not chosen: they become one sleeve offered more widely */
+function sameNameElsewhere(s) {
+  if (s.cat < 0 || !s.name.trim()) return [];
+  return V.map(function (v, vi) { return vi; }).filter(function (vi) {
+    return s.vars.indexOf(vi) < 0 && sleevesIn(vi, s.cat).some(function (x) { return sameName(x.name, s.name); });
+  });
+}
+
+/* ------------------------------------------------------------ the draft */
+function fresh(o) {
+  var s = {cat: PE, vars: [0], name: '', note: '', rows: [], q: '', all: false, tried: false, guard: false, done: null, toast: '',
+           step: 1, open: false, drawer: true, modal: false, src: null, tpl: null, sel: [], stage: 'pick', vf: '', sort: 'cost', made: []};
+  if (o === 'wizard') { s.cat = -1; s.vars = []; }
+  if (o === 'inline') s.open = false;
+  if (o === 'catalogue') { s.all = false; }
+  if (o === 'combo') {
+    s.mode = 'blank'; s.srcq = ''; s.ask = null; s.lost = ''; s.kept = ''; s.allV = false;
+    s.dlg = false; s.dq = ''; s.dscope = 'cat'; s.dve = ''; s.dst = ''; s.dso = ''; s.dsort = 'cost'; s.ddir = 1; s.dsel = []; s.dret = null;
+    try { if (window.localStorage.getItem('newSleeveStartFrom') === 'existing') s.mode = 'existing'; } catch (e) { /* private window */ }
+  }
+  return s;
+}
+var ST = {};
+function S(o) { return ST[o] || (ST[o] = fresh(o)); }
+function total(rows) { return rows.reduce(function (a, r) { return a + (isFinite(r.w) ? r.w : 0); }, 0); }
+function wcost(rows) {
+  var unpriced = 0, c = rows.reduce(function (a, r) { var p = prod(r.pid); if (!p || p.co == null) { unpriced++; return a; } return a + (isFinite(r.w) ? r.w / 100 * p.co : 0); }, 0);
+  return {c: c, unpriced: unpriced};
+}
+function costText(rows) { var w = wcost(rows); return pct(w.c) + '%' + (w.unpriced ? ' · ' + plural(w.unpriced, 'product') + ' not priced' : ''); }
+function dirty(s) { return !!(s.name.trim() || s.note.trim() || s.rows.length); }
+function okVars(s) { return s.vars.filter(function (v) { return availability(s.cat, v, s.name).ok; }); }
+
+/* what still stands between the draft and Create, by field */
+function problems(s) {
+  var out = [];
+  if (s.cat < 0) out.push({f: 'cat', m: 'Choose a category.'});
+  else if (catFull(s.cat)) out.push({f: 'cat', m: C[s.cat] + ' is full under every implementation type. Choose another category.'});
+  if (!s.vars.length) out.push({f: 'vars', m: 'Choose at least one implementation type.'});
+  s.vars.forEach(function (v) { var a = availability(s.cat, v, s.name); if (!a.ok) out.push({f: 'vars', m: a.reason + ' Untick ' + V[v] + ' or change the name.'}); });
+  if (!s.name.trim()) out.push({f: 'name', m: 'Give the sleeve a name.'});
+  if (!s.rows.length) out.push({f: 'rows', m: 'Add at least one product from the catalogue.'});
+  var bad = s.rows.filter(function (r) { return String(r.t).trim() !== '' && !isFinite(r.w); })[0];
+  if (bad) out.push({f: 'rows', m: '"' + String(bad.t).trim() + '" is not a plain number. Write a weight like 12.5.'});
+  else if (s.rows.some(function (r) { return !(r.w > 0); })) out.push({f: 'rows', m: 'Every product needs a weight above zero.'});
+  else if (s.rows.length && Math.abs(total(s.rows) - 100) > 0.005) out.push({f: 'rows', m: 'Weights add up to ' + pct(total(s.rows)) + '%. They must make exactly 100%.'});
+  return out;
+}
+function probs(s, f) { return problems(s).filter(function (p) { return p.f === f; }); }
+function fieldErr(s, f, always) {
+  var show = always || s.tried || (f === 'rows' ? s.rows.length : f === 'name' ? s.name.trim() : f === 'vars' ? true : false);
+  if (!show) return '';
+  var ps = probs(s, f);
+  if (f === 'vars') ps = ps.filter(function (p) { return s.tried || p.m.indexOf('Untick') >= 0; });
+  return ps.map(function (p) { return '<p class="err" role="alert">' + esc(p.m) + '</p>'; }).join('');
+}
+function createLabel(s) {
+  var n = s.vars.length;
+  return n > 1 ? 'Create in ' + n + ' implementation types' : n === 1 ? 'Create sleeve in ' + V[s.vars[0]] : 'Create sleeve';
+}
+function createBtn(s, cls) {
+  var ok = !problems(s).length;
+  return '<button type="button" class="btn pri ' + (cls || '') + '" data-a="create"' + (ok ? '' : ' aria-disabled="true"') + '>' + esc(createLabel(s)) + '</button>';
+}
+/* the checklist that says what is left, in order */
+function todoHtml(s) {
+  var ps = problems(s);
+  var items = [
+    ['cat', 'Where: ' + (s.cat >= 0 ? C[s.cat] : 'choose a category')],
+    ['vars', 'For: ' + (s.vars.length ? s.vars.map(function (v) { return V[v]; }).join(', ') : 'choose implementation types')],
+    ['name', 'Name: ' + (s.name.trim() ? s.name.trim() : 'not given yet')],
+    ['rows', 'Products: ' + (s.rows.length ? plural(s.rows.length, 'product') + ' · total ' + pct(total(s.rows)) + '%' : 'none yet')]
+  ];
+  return '<ul class="todo">' + items.map(function (it) {
+    var bad = ps.filter(function (p) { return p.f === it[0]; });
+    var cls = bad.length ? ((s.tried || it[0] === 'vars' && bad[0].m.indexOf('Untick') >= 0 || it[0] === 'rows' && s.rows.length) ? 'bad' : '') : 'done';
+    return '<li class="' + cls + '">' + esc(bad.length && cls === 'bad' ? bad[0].m : it[1]) + '</li>';
+  }).join('') + '</ul>';
+}
+
+/* ------------------------------------------------------------ shared pieces */
+function catPicker(s, compact) {
+  return '<div class="cats" role="group" aria-label="Category">' + C.map(function (c, ci) {
+    var full = catFull(ci);
+    return '<button type="button" class="catb" style="--cc:' + COLOUR[c] + '" data-a="cat" data-x="' + ci + '" aria-pressed="' + (s.cat === ci) + '"' + (full ? ' disabled' : '') + '>'
+      + '<span>' + esc(c) + '</span><small>' + esc(catReason(ci)) + '</small></button>';
+  }).join('') + '</div>';
+}
+function typePicker(s) {
+  return '<div class="types" role="group" aria-label="Implementation types">' + V.map(function (v, vi) {
+    var a = availability(s.cat, vi, s.name), on = s.vars.indexOf(vi) >= 0;
+    var cls = !a.ok && on ? ' clash' : !a.ok ? ' off' : '';
+    var under = s.cat >= 0 ? sleevesIn(vi, s.cat).length : 0;
+    var line = !a.ok ? a.reason : s.cat < 0 ? 'Choose a category first' : under + ' ' + (under === 1 ? 'sleeve' : 'sleeves') + ' in ' + C[s.cat] + ' today';
+    return '<button type="button" class="typeb' + cls + '" data-a="var" data-x="' + vi + '" aria-pressed="' + on + '"' + (!a.ok && !on ? ' aria-disabled="true"' : '') + '>'
+      + '<span class="box" aria-hidden="true">' + (on ? '✓' : '') + '</span><span class="tx"><b>' + esc(v) + '</b><small>' + esc(line) + '</small></span></button>';
+  }).join('') + '</div>';
+}
+function nameField(s, id) {
+  var others = sameNameElsewhere(s);
+  return '<label class="fld"><span class="lab">Sleeve name <small>what PWAs pick in the implementation step</small></span>'
+    + '<input class="in' + (probs(s, 'name').length && s.tried ? ' bad' : '') + '" data-a="name" data-k="' + (id || 'name') + '" maxlength="80" value="' + esc(s.name) + '" placeholder="For example: Passive Core">'
+    + fieldErr(s, 'name')
+    + (others.length ? '<span class="inf">' + esc(V.filter(function (v, vi) { return others.indexOf(vi) >= 0; }).join(', ')) + ' already ' + (others.length === 1 ? 'has' : 'have') + ' a sleeve called ' + esc(s.name.trim()) + ' in ' + esc(C[s.cat]) + '. PWAs will see these as one sleeve, offered under every type that has it; each keeps its own products.</span>' : '')
+    + '</label>';
+}
+function noteField(s, id) {
+  return '<label class="fld"><span class="lab">Note to PWAs <small>optional · shown beside the sleeve in the picker</small></span>'
+    + '<input class="in" data-a="note" data-k="' + (id || 'note') + '" maxlength="240" value="' + esc(s.note) + '" placeholder="For example: SMA Only will be managed by GSAM"></label>';
+}
+function editionsLater() {
+  return '<div class="later"><span aria-hidden="true">ⓘ</span><span><b>Editions come after.</b> Every portfolio gets this one version. To give some portfolios (GBP, for example) a different mix, create the sleeve, then use "+ Add an edition" on its page.</span></div>';
+}
+function catalogue(s, o, opts) {
+  opts = opts || {};
+  var q = s.q.trim().toLowerCase();
+  var pool = s.all || s.cat < 0 ? Object.keys(D.products) : usedIn(s.cat);
+  var taken = s.rows.map(function (r) { return r.pid; });
+  var hits = pool.filter(function (pid) {
+    var p = prod(pid); return p && (!q || (p.n + ' ' + p.ac + ' ' + p.ve + ' ' + p.st + ' ' + (p.fg || '')).toLowerCase().indexOf(q) >= 0);
+  }).sort(function (a, b) { return (prod(a).co == null) - (prod(b).co == null) || (prod(a).co || 0) - (prod(b).co || 0); });
+  var lim = opts.limit || 40;
+  return '<div class="picker" style="--plh:' + (opts.h || 220) + 'px"><div class="picker-h"><input class="in" data-a="q" data-k="q-' + o + '" placeholder="Search the catalogue…" value="' + esc(s.q) + '" aria-label="Search the product catalogue">'
+    + (s.cat >= 0 ? '<label class="tg"><input type="checkbox" data-a="all"' + (s.all ? ' checked' : '') + '> Whole catalogue (' + Object.keys(D.products).length + ')</label>' : '')
+    + '<span class="muted" style="font-size:13.5px">' + (s.all || s.cat < 0 ? 'All products' : 'Used in ' + esc(C[s.cat]) + ' sleeves') + ' · ' + hits.length + '</span></div>'
+    + '<div class="plist-h" aria-hidden="true"><span>Product</span><span>Cost</span><span>Minimum</span><span></span></div>'
+    + '<ul class="plist">' + (hits.slice(0, lim).map(function (pid) {
+      var p = prod(pid), in_ = taken.indexOf(pid) >= 0;
+      return '<li><button type="button" class="prow" data-a="add" data-x="' + esc(pid) + '"' + (in_ ? ' disabled' : '') + '><span class="nm"><b>' + esc(p.n) + '</b><small>' + esc(facts(p)) + '</small></span>'
+        + '<span class="r">' + esc(cost(p)) + '</span><span class="r">' + esc(money(p.mi)) + '</span><span class="add">' + (in_ ? '✓ Added' : '+ Add') + '</span></button></li>';
+    }).join('') || '<li class="none">Nothing matches. ' + (s.all ? 'Try another word.' : 'Tick "Whole catalogue" to search every product.') + '</li>') + '</ul></div>';
+}
+function rowsTable(s, opts) {
+  opts = opts || {};
+  if (!s.rows.length) return '<div class="emptyrows">No products yet. ' + (opts.hint || 'Add them from the catalogue.') + '</div>' + fieldErr(s, 'rows');
+  var t = total(s.rows), ok = Math.abs(t - 100) <= 0.005;
+  var body = s.rows.map(function (r, i) {
+    var p = prod(r.pid);
+    var bad = String(r.t).trim() !== '' && !isFinite(r.w);
+    return '<tr><td class="nm"><b>' + esc(p.n) + (opts.mark ? opts.mark(r) : '') + '</b><small>' + esc(facts(p)) + '</small></td>'
+      + (opts.compact ? '' : '<td class="r num">' + esc(cost(p)) + '</td><td class="r num">' + esc(money(p.mi)) + '</td>')
+      + '<td class="r"><input class="win' + (bad || (s.tried && !(r.w > 0)) ? ' bad' : '') + '" data-a="w" data-x="' + i + '" data-k="w' + i + '" inputmode="decimal" aria-label="Weight of ' + esc(p.n) + ', percent" value="' + esc(r.t) + '">'
+      + (bad ? '<span class="rowerr">Not a plain number</span>' : '') + '</td>'
+      + '<td class="r"><button type="button" class="rmx" data-a="rm" data-x="' + i + '" aria-label="Remove ' + esc(p.n) + '">Remove</button></td></tr>';
+  }).join('');
+  return '<table class="pt"><thead><tr><th>Product</th>' + (opts.compact ? '' : '<th class="r">Cost</th><th class="r">Minimum</th>') + '<th class="r">Weight %</th><th></th></tr></thead><tbody>' + body + '</tbody>'
+    + '<tfoot><tr><td>Total <span class="muted" style="font-weight:400">· weighted cost ' + esc(costText(s.rows)) + '</span>'
+    + (s.rows.length > 1 ? ' <button type="button" class="lnk" data-a="even">Spread evenly</button>' : '') + '</td>'
+    + (opts.compact ? '' : '<td></td><td></td>')
+    + '<td class="r ' + (ok ? 'tot-ok' : 'tot-bad') + '" style="font-size:15.5px">' + pct(t) + '% ' + (ok ? '✓' : '✗') + '</td><td></td></tr></tfoot></table>'
+    + fieldErr(s, 'rows');
+}
+function guardHtml(s) {
+  return s.guard ? '<div class="guard" role="alertdialog" aria-label="Discard this new sleeve?"><b>Discard this new sleeve?</b><span>What you have entered will be lost.</span><span class="spacer"></span>'
+    + '<button type="button" class="btn" data-a="keep" data-k="guardkeep">Keep editing</button><button type="button" class="btn danger" data-a="discard">Discard</button></div>' : '';
+}
+function cancelBtn() { return '<button type="button" class="btn" data-a="cancel">Cancel</button>'; }
+function toastHtml(s) { return s.toast ? '<div class="toast" role="status">' + s.toast + '</div>' : ''; }
+function doneHtml(s, back) {
+  var d = s.done;
+  return '<div class="scroll" style="padding:18px 22px"><div class="made-page"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:0"><h3>' + esc(d.name) + '</h3>'
+    + '<div class="where">' + sw(d.cat) + '<span>' + esc(C[d.cat]) + '</span><span>·</span>' + d.vars.map(function (v) { return '<span class="chip info">' + esc(V[v]) + '</span>'; }).join(' ') + '</div>'
+    + '<span class="chip ok">✓ Ready · offered to PWAs</span> <span class="chip new">Created just now · revision 1</span></div>'
+    + '<button type="button" class="btn pri" data-a="mock" data-x="Edit sleeve opens the edit bar on this page.">Edit sleeve</button></div>'
+    + (d.note ? '<p style="margin:12px 0 0">' + esc(d.note) + '</p>' : '')
+    + (d.basedOn ? '<p class="based" style="margin:12px 0 0">Started from <b>' + esc(d.basedOn) + '</b>. It is a separate sleeve now: changes to ' + esc(d.basedOn) + ' will not change it.</p>' : '')
+    + '<h5>What it holds</h5><table class="pt"><thead><tr><th>Product</th><th class="r">Cost</th><th class="r">Minimum</th><th class="r">Weight</th></tr></thead><tbody>'
+    + d.rows.map(function (r) { var p = prod(r.pid); return '<tr><td class="nm"><b>' + esc(p.n) + '</b><small>' + esc(facts(p)) + '</small></td><td class="r num">' + esc(cost(p)) + '</td><td class="r num">' + esc(money(p.mi)) + '</td><td class="r num"><b>' + pct(r.w) + '%</b></td></tr>'; }).join('')
+    + '</tbody><tfoot><tr><td>Total · weighted cost ' + esc(costText(d.rows)) + '</td><td></td><td></td><td class="r tot-ok">100.00% ✓</td></tr></tfoot></table>'
+    + '<h5>Who gets it</h5><p style="margin:0 0 8px">One version for every portfolio under ' + esc(d.vars.map(function (v) { return V[v]; }).join(' and ')) + '.</p>'
+    + '<button type="button" class="btn sm" data-a="mock" data-x="Adding an edition opens a copy of this sleeve with its own rules.">+ Add an edition for particular portfolios</button>'
+    + '<div style="display:flex;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--line-strong)"><button type="button" class="btn" data-a="again">Create another sleeve</button>'
+    + '<button type="button" class="btn ghost" data-a="again">' + esc(back || ('Back to ' + C[d.cat])) + '</button></div></div></div>' + (back ? '' : toastHtml(s));
+}
+function frame(o, body, ctx, mode) {
+  return '<div class="con"><div class="con-h"><span class="t">Repository</span><span class="tabs"><span class="on">Sleeves</span><span>Catalogue</span><span>Archive</span><span>Activity</span><span>Proposals</span><span>Uncalled Capital Allocation</span><span>Overlay Funding</span></span><span class="x" aria-hidden="true">×</span></div>'
+    + '<div class="con-bar"><span class="vsw" aria-hidden="true"><span class="' + (mode === 'table' ? '' : 'on') + '"><svg viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg>Cards</span><span class="' + (mode === 'table' ? 'on' : '') + '"><svg viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="2.4" rx="1"/><rect x="1" y="6.8" width="14" height="2.4" rx="1"/><rect x="1" y="11.6" width="14" height="2.4" rx="1"/></svg>Table</span></span>'
+    + '<span class="ctx">' + (ctx || '') + '</span><span class="fakesearch" aria-hidden="true">⌕ Search names and products…</span>'
+    + '<button type="button" class="btn pri" data-a="again">+ New sleeve</button></div>'
+    + '<div class="con-b" data-stage="' + o + '">' + body + '</div>'
+    + '<div class="con-f">101 sleeves in the library · 107 versions on record · catalogue of ' + Object.keys(D.products).length + ' products</div></div>';
+}
+
+/* ------------------------------------------------------------ the options */
+var CAPS = [
+  ['where', 'Category and implementation types, with unavailable ones explained'],
+  ['name', 'Name: a taken name and the same name under other types'],
+  ['products', 'Products from the catalogue, with cost, minimum and vehicle'],
+  ['weights', 'Weights: plain numbers, exactly 100%'],
+  ['note', 'Optional note to PWAs'],
+  ['editions', 'Editions'],
+  ['valid', 'Problems in plain words, next to the field'],
+  ['create', 'A Create button that says what it creates'],
+  ['cancel', 'Cancel with an unsaved guard'],
+  ['after', 'Where you land after creating']
+];
+var OPTS = [];
+
+/* ---- 1 · inline card ---- */
+OPTS.push({id: 'inline', name: 'A new card in the category grid',
+  text: 'Creation happens where the sleeve will live. In a category, the first card in the grid is a dashed "+ New sleeve in Public Equity". It opens in place into a wide card, so the sleeves already there stay visible underneath as a reference: name and types on the left, products and weights on the right. The category is the one you are in, said in the card\'s header, with a link to change it.',
+  pros: ['No new screen: you create beside the sleeves it sits with', 'The category is never a hidden default', 'Existing sleeves stay in view to compare against'],
+  cons: ['Only from inside a category (Cards view)', 'A wide card in a grid is busier than a page'],
+  caps: {where: 'From the category you are in (Change link); type buttons say why one is unavailable', name: 'Left of the card; notes under the field', products: 'Catalogue list on the right, filtered to this category, with cost and minimum', weights: 'Weight column with a live total and "Spread evenly"', note: 'Left of the card', editions: '"Editions come after" note on the card', valid: 'Under each field, and the checklist in the card footer', create: 'Card footer: "Create sleeve in PMG Multi-Asset Portfolio"', cancel: 'Card footer Cancel, with the Discard question', after: 'The new card appears first in the grid, highlighted, and its page opens'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var cards = sleevesIn(s.vars[0] != null ? s.vars[0] : 0, s.cat).map(function (x) {
+      return '<div class="scard"><h4>' + esc(x.name) + (x.label ? ' <span class="chip info">' + esc(x.label) + '</span>' : '') + '</h4><ul>'
+        + x.rows.map(function (r) { var p = prod(r.pid); return '<li><span>' + esc(p ? p.n : r.pid) + '</span><b>' + pct(r.w) + '%</b></li>'; }).join('') + '</ul></div>';
+    }).join('');
+    var head = '<div class="crumbs"><span class="a">All categories · ' + esc(V[s.vars[0] != null ? s.vars[0] : 0]) + '</span><span>›</span><b>' + esc(C[s.cat]) + '</b>' + (s.open ? '<span>›</span><b>New sleeve</b>' : '') + '</div>'
+      + '<div class="o1-head"><h3>' + sw(s.cat) + esc(C[s.cat]) + '</h3><span class="muted">' + plural(sleevesIn(0, s.cat).length, 'sleeve') + ' under PMG Multi-Asset Portfolio</span></div>';
+    var edit;
+    if (!s.open) {
+      edit = '<button type="button" class="newcard" data-a="openinline" data-k="newcard">+ New sleeve in ' + esc(C[s.cat]) + '<small>Opens here, beside the sleeves already in this category</small></button>';
+    } else {
+      edit = '<div class="editcard"><div class="editcard-h"><b>New sleeve in ' + esc(C[s.cat]) + '</b><span class="muted">·</span><span class="muted">' + (s.chcat ? '' : '<button type="button" class="lnk" data-a="chcat">Change category</button>') + '</span><span class="spacer"></span><span style="font-size:14px;color:#6B4700">' + (dirty(s) ? 'Not created yet' : 'Start with a name') + '</span></div>'
+        + (s.chcat ? '<div style="padding:12px 16px;border-bottom:1px solid var(--line-strong)">' + catPicker(s) + '</div>' : '')
+        + '<div class="editcard-b"><div>' + nameField(s, 'n1') + '<div class="fld"><span class="lab">Implementation types <small>one sleeve is created under each</small></span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>' + noteField(s, 'note1') + editionsLater() + '</div>'
+        + '<div><div class="fld"><span class="lab">What it holds</span>' + rowsTable(s, {compact: true}) + '</div><div class="fld"><span class="lab">Add from the catalogue</span>' + catalogue(s, o, {h: 190}) + '</div></div></div>'
+        + '<div class="editcard-f">' + guardHtml(s) + (s.guard ? '' : todoHtml(s).replace('<ul class="todo">', '<ul class="todo" style="display:flex;gap:4px 16px;flex-wrap:wrap">') + '<span class="spacer"></span>' + cancelBtn() + createBtn(s)) + '</div></div>';
+    }
+    return '<div class="scroll"><div class="o1">' + head + '<div class="cgrid">' + edit + cards + '</div></div></div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+
+/* ---- 2 · drawer ---- */
+OPTS.push({id: 'drawer', name: 'A focused side drawer with numbered sections',
+  text: 'The table stays in view, dimmed, and New sleeve slides in a drawer built in the order you decide things: 1 Where it goes, 2 Its name, 3 What it holds, 4 A note. Each section ticks green when it is complete. The footer is pinned and always says what is left and what Create will make.',
+  pros: ['The order of the sections is the order of the decisions', 'The pinned footer answers "why can\'t I create?" at a glance', 'Works from the Table without losing your place'],
+  cons: ['A drawer is narrower than a page for the catalogue', 'Four sections to scroll on a laptop'],
+  caps: {where: 'Section 1: category buttons and type buttons, each with its reason in words', name: 'Section 2, with the taken-name and same-name notes', products: 'Section 3: catalogue list with cost and minimum, then the chosen products', weights: 'Section 3 table: live total, Spread evenly', note: 'Section 4', editions: '"Editions come after" note in section 4', valid: 'Under each field; the footer lists what is left', create: 'Pinned footer: "Create in 2 implementation types"', cancel: 'Footer Cancel and the drawer\'s Close, both with the Discard question', after: 'The drawer shows the new sleeve; its row appears highlighted in the table'},
+  render: function (o, s) {
+    var rows = D.sleeves.filter(function (x) { return x.v === 0 && x.c === s.cat; });
+    var made = s.made.filter(function (m) { return m.cat === s.cat && m.vars.indexOf(0) >= 0; });
+    var table = '<div class="o2"><div class="o2-f"><select class="in" style="width:auto" aria-label="Implementation type" disabled><option>PMG Multi-Asset Portfolio</option></select><select class="in" style="width:auto" aria-label="Category" disabled><option>' + esc(C[s.cat]) + '</option></select><span class="muted">' + plural(rows.length + made.length, 'sleeve') + '</span></div>'
+      + '<div class="o2-t"><table class="lt"><thead><tr><th>Sleeve</th><th>Category</th><th>Implementation type</th><th>Products</th></tr></thead><tbody>'
+      + made.map(function (m) { return '<tr class="fresh"><td><b>' + esc(m.name) + '</b> <span class="chip new">New</span></td><td>' + sw(m.cat) + ' ' + esc(C[m.cat]) + '</td><td>PMG Multi-Asset Portfolio</td><td>' + m.rows.length + '</td></tr>'; }).join('')
+      + rows.map(function (x) { return '<tr><td><b>' + esc(x.name) + '</b></td><td>' + sw(x.c) + ' ' + esc(C[x.c]) + '</td><td>' + esc(V[x.v]) + '</td><td>' + x.rows.length + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+    if (!s.drawer) return table + toastHtml(s);
+    var ps = problems(s);
+    var okf = function (f) { return !ps.some(function (p) { return p.f === f; }); };
+    var sec = function (n, title, small, done, body) {
+      return '<div class="sect"><div class="sect-h"><span class="num' + (done ? ' ok' : '') + '">' + (done ? '✓' : n) + '</span><h4>' + title + '</h4><small>' + small + '</small></div><div class="sect-b">' + body + '</div></div>';
+    };
+    var body = s.done ? '<div style="margin:-14px -16px">' + doneHtml(s, 'Back to the table') + '</div>' :
+      sec(1, 'Where it goes', 'category and implementation types', okf('cat') && okf('vars'), '<div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div><div class="fld" style="margin:0"><span class="lab">Implementation types <small>one sleeve is created under each</small></span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>')
+      + sec(2, 'Its name', 'what PWAs pick', okf('name'), nameField(s, 'n2'))
+      + sec(3, 'What it holds', 'products and weights', okf('rows'), rowsTable(s) + '<div style="height:10px"></div>' + catalogue(s, o, {h: 180}))
+      + sec(4, 'A note', 'optional', true, noteField(s, 'note2') + editionsLater());
+    var foot = s.done ? '' : (s.guard ? guardHtml(s) : '<div style="flex-basis:100%;font-size:14px' + (ps.length && s.tried ? ';color:var(--bad)' : '') + '">' + (ps.length ? '<b>' + plural(ps.length, 'thing') + ' left:</b> ' + esc(ps[0].m) : '<b class="tot-ok">Ready to create.</b>') + '</div><span class="spacer"></span>' + cancelBtn() + createBtn(s));
+    return table + '<div class="scrim" data-a="cancel"></div><div class="drawer" role="dialog" aria-label="New sleeve"><div class="drawer-h"><h4>' + (s.done ? esc(s.done.name) : 'New sleeve') + '</h4><span class="spacer"></span><button type="button" class="btn sm" data-a="' + (s.done ? 'closedone' : 'cancel') + '">Close</button></div>'
+      + '<div class="drawer-b">' + body + '</div>' + (foot ? '<div class="drawer-f">' + foot + '</div>' : '') + '</div>' + toastHtml(s);
+  }, ctx: function (s) { return 'Showing PMG Multi-Asset Portfolio · ' + esc(C[s.cat]); }, mode: 'table'
+});
+
+/* ---- 3 · wizard ---- */
+var WSTEPS = ['Where it goes', 'What it holds', 'Weights', 'Name and review'];
+function wizCan(s, n) {
+  var ps = problems(s), has = function (f) { return ps.some(function (p) { return p.f === f; }); };
+  if (n === 1) return !has('cat') && !has('vars');
+  if (n === 2) return s.rows.length > 0;
+  if (n === 3) return !has('rows');
+  return !ps.length;
+}
+OPTS.push({id: 'wizard', name: 'Four steps: where, what, weights, review',
+  text: 'A short guided path that asks one question at a time: where does it go, what does it hold, how much of each, and what is it called. The last step shows exactly what will be created before you create it. Next stays disabled with the reason beside it, so you are never left guessing.',
+  pros: ['One decision per screen: the clearest for occasional users', 'Nothing is pre-chosen for you', 'The review step catches mistakes before they reach the library'],
+  cons: ['Slower for a quick sleeve', 'Going back to change the category resets types that no longer fit'],
+  caps: {where: 'Step 1: category buttons, then type buttons with reasons', name: 'Step 4, with the taken-name and same-name notes', products: 'Step 2: catalogue list with cost and minimum', weights: 'Step 3: weights with live total and Spread evenly', note: 'Step 4', editions: 'Step 4: "Editions come after"', valid: 'Beside Next on every step, and under the field', create: 'Step 4: "Create in 2 implementation types"', cancel: 'Cancel on every step, with the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var st = s.step;
+    var steps = '<div class="steps" role="list">' + WSTEPS.map(function (n, i) {
+      var k = i + 1, reach = k === 1 || wizCan(s, k - 1) && (k < 3 || wizCan(s, 2)) && (k < 4 || wizCan(s, 3));
+      return '<button type="button" role="listitem" data-a="step" data-x="' + k + '"' + (st === k ? ' aria-current="step"' : '') + ' class="' + (k < st && wizCan(s, k) ? 'ok' : '') + '"' + (reach ? '' : ' disabled') + '><b>' + (k < st && wizCan(s, k) ? '✓' : k) + '</b>' + n + '</button>';
+    }).join('') + '</div>';
+    var card;
+    if (st === 1) card = '<h4>Where does it go?</h4><p class="q">Choose the category it implements, then the implementation types that offer it. One sleeve is created under each type.</p>'
+      + '<div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div><div class="fld" style="margin:0"><span class="lab">Implementation types</span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>';
+    else if (st === 2) card = '<h4>What does it hold?</h4><p class="q">Add the products from the catalogue. Those already used in ' + esc(C[s.cat]) + ' sleeves come first. You set the weights next.</p>'
+      + '<div class="grid2"><div>' + catalogue(s, o, {h: 330}) + '</div><div><span class="lab" style="display:block;font-weight:600;margin:0 0 6px">Chosen · ' + s.rows.length + '</span>'
+      + (s.rows.length ? '<ul class="todo">' + s.rows.map(function (r, i) { var p = prod(r.pid); return '<li class="done" style="justify-content:space-between"><span style="flex:1">' + esc(p.n) + '<br><small class="muted">' + esc(p.ve) + ' · ' + esc(cost(p)) + ' · min ' + esc(money(p.mi)) + '</small></span><button type="button" class="rmx" data-a="rm" data-x="' + i + '">Remove</button></li>'; }).join('') + '</ul>' : '<div class="emptyrows">Nothing chosen yet.</div>') + '</div></div>';
+    else if (st === 3) card = '<h4>How much of each?</h4><p class="q">Plain numbers, adding up to exactly 100%. "Spread evenly" gives every product the same share.</p>' + rowsTable(s);
+    else card = '<h4>Name it and check what will be created</h4><p class="q">The name is what PWAs pick in the implementation step.</p>' + nameField(s, 'n3') + noteField(s, 'note3')
+      + '<div class="sect" style="margin:6px 0 12px"><div class="sect-h"><h4>What will be created</h4></div><div class="sect-b">' + reviewTable(s) + '</div></div>' + editionsLater();
+    var ps = problems(s);
+    var block = st < 4 && !wizCan(s, st) ? (st === 1 ? (ps.filter(function (p) { return p.f === 'cat' || p.f === 'vars'; })[0] || {}).m : st === 2 ? 'Add at least one product.' : (ps.filter(function (p) { return p.f === 'rows'; })[0] || {}).m) : (st === 4 && ps.length ? ps[0].m : '');
+    var foot = s.guard ? guardHtml(s) : cancelBtn() + '<span class="spacer"></span>' + (block ? '<span class="tot-bad" style="font-weight:600;font-size:14px">' + esc(block) + '</span>' : '')
+      + (st > 1 ? '<button type="button" class="btn" data-a="step" data-x="' + (st - 1) + '">‹ Back</button>' : '')
+      + (st < 4 ? '<button type="button" class="btn pri" data-a="step" data-x="' + (st + 1) + '"' + (wizCan(s, st) ? '' : ' disabled') + '>Next: ' + WSTEPS[st] + ' ›</button>' : createBtn(s));
+    return '<div class="o3">' + steps + '<div class="o3-b"><div class="o3-card">' + card + '</div></div><div class="o3-f">' + foot + '</div></div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+function reviewTable(s) {
+  return '<table class="rv"><thead><tr><th>Implementation type</th><th>Result</th></tr></thead><tbody>' + V.map(function (v, vi) {
+    var on = s.vars.indexOf(vi) >= 0, a = availability(s.cat, vi, s.name);
+    var res = !on ? (a.ok ? '<span class="muted">Not chosen</span>' : '<span class="muted">Not available: ' + esc(a.reason) + '</span>')
+      : a.ok ? '<span class="tot-ok"><b>✓ New sleeve</b></span> ' + esc(s.name.trim() || '(no name yet)') + ' in ' + esc(C[s.cat]) + ', ' + plural(s.rows.length, 'product')
+      : '<span class="tot-bad"><b>✗ Cannot create:</b> ' + esc(a.reason) + '</span>';
+    return '<tr><td><b>' + esc(v) + '</b></td><td>' + res + '</td></tr>';
+  }).join('') + '</tbody></table>';
+}
+
+/* ---- 4 · form + summary ---- */
+OPTS.push({id: 'summary', name: 'One form with a live summary beside it',
+  text: 'Everything on one page in the order you decide it, with a summary panel pinned to the right that is the answer to "what am I about to create?": one line per implementation type saying whether a sleeve will be made there or why not, the composition as a bar, weighted cost, and the checklist of what is left - with the Create button underneath it.',
+  pros: ['Fast for experienced users: everything on one page', 'The summary makes the outcome visible before you commit', 'Create sits with the facts it acts on'],
+  cons: ['More on screen at once than a step-by-step path', 'The summary panel needs a wide window'],
+  caps: {where: 'Top of the form: category and type buttons with reasons; the summary repeats each type\'s outcome', name: 'Second, with the taken-name and same-name notes', products: 'Catalogue list under the products table, with cost and minimum', weights: 'Products table: live total, Spread evenly; the summary bar shows the mix', note: 'Last field', editions: '"Editions come after" note under the note', valid: 'Under each field; the summary checklist', create: 'Under the summary: "Create in 2 implementation types"', cancel: 'Under the summary, with the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var form = '<div class="o4-form"><div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div>'
+      + '<div class="fld"><span class="lab">Implementation types <small>one sleeve is created under each</small></span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>'
+      + nameField(s, 'n4')
+      + '<div class="fld"><span class="lab">What it holds</span>' + rowsTable(s) + '</div><div class="fld">' + catalogue(s, o, {h: 200}) + '</div>'
+      + noteField(s, 'note4') + editionsLater() + '</div>';
+    var bar = s.rows.length ? '<div class="minibar" aria-hidden="true">' + s.rows.map(function (r, i) { return '<i style="width:' + Math.max(0, Math.min(100, r.w || 0)) + '%;background:' + SEG[i % SEG.length] + '"></i>'; }).join('') + '</div>' : '';
+    var side = '<div class="o4-side"><div><h4>What will be created</h4><ul class="made">' + V.map(function (v, vi) {
+      var on = s.vars.indexOf(vi) >= 0, a = availability(s.cat, vi, s.name);
+      if (!on) return '<li class="no"><span class="ic">–</span><span>' + esc(v) + '<small>' + esc(a.ok ? 'Not chosen' : a.reason) + '</small></span></li>';
+      return a.ok ? '<li class="yes"><span class="ic">✓</span><span><b>' + esc(v) + '</b><small>' + esc(s.name.trim() || 'New sleeve') + ' in ' + esc(s.cat >= 0 ? C[s.cat] : '…') + '</small></span></li>'
+        : '<li class="no"><span class="ic">✗</span><span><b class="tot-bad">' + esc(v) + '</b><small class="tot-bad">' + esc(a.reason) + '</small></span></li>';
+    }).join('') + '</ul></div>'
+      + '<div><h4>Mix</h4>' + (bar || '<p class="muted" style="margin:4px 0 0;font-size:14px">No products yet.</p>') + (s.rows.length ? '<p style="margin:6px 0 0;font-size:14px">' + plural(s.rows.length, 'product') + ' · total <b class="' + (Math.abs(total(s.rows) - 100) <= 0.005 ? 'tot-ok' : 'tot-bad') + '">' + pct(total(s.rows)) + '%</b><br>Weighted cost ' + esc(costText(s.rows)) + '</p>' : '') + '</div>'
+      + '<div><h4>Still to do</h4>' + todoHtml(s) + '</div>'
+      + (s.guard ? guardHtml(s) : '<div style="display:grid;gap:8px">' + createBtn(s, 'lg') + cancelBtn() + '</div>') + '</div>';
+    return '<div class="o4">' + form + side + '</div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+
+/* ---- 5 · from an existing sleeve ---- */
+OPTS.push({id: 'copy', name: 'Start from an existing sleeve',
+  text: 'Most new sleeves are a variation on one that exists. The left lists the sleeves in the chosen category, under every implementation type, with what they hold; pick one and the form on the right starts as a copy of its products and weights, with every change from the original marked. Or start blank. The name must be new where you create it.',
+  pros: ['Fastest way to a sensible sleeve', 'Differences from the original are visible', 'Teaches what good sleeves in this category look like'],
+  cons: ['Copying can carry over a mix that does not suit the new types', 'Two panes to read at once'],
+  caps: {where: 'Category above the list; type buttons on the right with reasons', name: 'Right, required to differ where it clashes; same-name note', products: 'Copied rows, plus the catalogue list for more, with cost and minimum', weights: 'Copied weights, editable; changes are marked', note: 'Right, copied from the original and editable', editions: '"Editions come after"; editions are never copied', valid: 'Under each field and the checklist', create: 'Bottom right: "Create in 2 implementation types"', cancel: 'Bottom right, with the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var list = D.sleeves.filter(function (x) { return x.c === s.cat && !x.label; }).sort(function (a, b) { return a.v - b.v || (a.name < b.name ? -1 : 1); });
+    var seen = {}, uniq = [];
+    list.forEach(function (x) { var k = x.name + '|' + x.rows.map(function (r) { return r.pid + r.w; }).join(); if (!seen[k]) { seen[k] = x; x._under = [x.v]; uniq.push(x); } else seen[k]._under.push(x.v); });
+    var left = '<div class="o5-l"><div class="top"><label class="fld" style="margin:0"><span class="lab">Category</span><select class="in" data-a="catsel" aria-label="Category">' + C.map(function (c, ci) { return '<option value="' + ci + '"' + (s.cat === ci ? ' selected' : '') + (catFull(ci) ? ' disabled' : '') + '>' + esc(c) + (catFull(ci) ? ' (full)' : '') + '</option>'; }).join('') + '</select></label>'
+      + '<button type="button" class="btn" data-a="blank" aria-pressed="' + (s.src === 'blank') + '">Start blank</button></div><div class="list">'
+      + uniq.map(function (x) {
+        return '<button type="button" class="srcb" data-a="src" data-x="' + x.id + '" aria-pressed="' + (s.src === x.id) + '"><b>' + esc(x.name) + '</b><small>' + esc(x._under.map(function (v) { return V[v]; }).join(', ')) + '</small>'
+          + '<small style="margin-top:4px;color:var(--ink)">' + esc(x.rows.map(function (r) { var p = prod(r.pid); return (p ? p.n : r.pid) + ' ' + pct(r.w, 0) + '%'; }).join(' · ')) + '</small></button>';
+      }).join('') + '</div></div>';
+    var src = typeof s.src === 'number' ? D.sleeves.filter(function (x) { return x.id === s.src; })[0] : null;
+    var right;
+    if (s.src == null) right = '<div class="o5-r"><div class="emptyrows" style="padding:40px 20px;font-size:15px">Pick a sleeve on the left to start from a copy of it, or press <b>Start blank</b>.</div></div>';
+    else {
+      var diff = src ? function (r) { var o_ = src.rows.filter(function (x) { return x.pid === r.pid; })[0]; return !o_ ? 'added' : Math.abs(o_.w - r.w) > 1e-9 ? 'was ' + pct(o_.w) + '%' : ''; } : null;
+      var removed = src ? src.rows.filter(function (r) { return !s.rows.some(function (x) { return x.pid === r.pid; }); }) : [];
+      right = '<div class="o5-r">' + (src ? '<p class="inf" style="margin:0 0 12px">Starting from <b>' + esc(src.name) + '</b> (' + esc(V[src.v]) + '). Its products and weights are copied; changes are marked. Editions are not copied.</p>' : '')
+        + nameField(s, 'n5') + '<div class="fld"><span class="lab">Implementation types <small>one sleeve is created under each</small></span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>'
+        + '<div class="fld"><span class="lab">What it holds</span>' + rowsTable(s).replace(/(<td class="nm"><b>)([^<]*)(<\/b>)/g, function (m, a, nm, c) {
+          if (!diff) return m;
+          var r = s.rows.filter(function (x) { return esc(prod(x.pid).n) === nm; })[0]; var d = r ? diff(r) : '';
+          return a + nm + c + (d ? '<span class="diffmark">' + esc(d) + '</span>' : '');
+        }) + (removed.length ? '<p class="muted" style="font-size:13.5px;margin:6px 0 0">Removed from the original: ' + esc(removed.map(function (r) { return prod(r.pid).n; }).join(', ')) + '</p>' : '') + '</div>'
+        + '<div class="fld">' + catalogue(s, o, {h: 170}) + '</div>' + noteField(s, 'note5') + editionsLater()
+        + '<div style="display:flex;gap:10px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-strong)">' + (s.guard ? guardHtml(s) : '<div style="flex:1">' + todoHtml(s) + '</div>' + cancelBtn() + createBtn(s)) + '</div></div>';
+    }
+    return '<div class="o5">' + left + right + '</div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+
+/* ---- 6 · quick starts ---- */
+function templates(ci) {
+  var used = usedIn(ci).map(prod).filter(Boolean);
+  var byVe = function (test) { return usedIn(ci).filter(function (pid) { return test(prod(pid)); }).sort(function (a, b) { return (prod(a).co || 9) - (prod(b).co || 9); }).slice(0, 3); };
+  var even = function (pids) { var n = pids.length; if (!n) return []; var base = Math.floor(10000 / n) / 100; return pids.map(function (pid, i) { return {pid: pid, w: i === n - 1 ? Math.round((100 - base * (n - 1)) * 100) / 100 : base}; }); };
+  var list = [
+    {k: 'sma', name: 'SMAs only', why: 'Separately managed accounts; minimums of $5m', pids: byVe(function (p) { return p.ve === 'SMA'; })},
+    {k: 'etf', name: 'ETFs only', why: 'Lowest cost, no minimum', pids: byVe(function (p) { return p.ve === 'ETF'; })},
+    {k: 'mf', name: 'Mutual funds only', why: 'Daily dealing, $1k minimums', pids: byVe(function (p) { return p.ve === 'Mutual Fund'; })},
+    {k: 'ucits', name: 'UCITS only', why: 'For the Irish Onshore type', pids: byVe(function (p) { return p.ve === 'UCITS' || p.ve === 'ICAV'; })},
+    {k: 'mix', name: 'Active and passive', why: 'A passive core with active satellites', pids: [].concat(byVe(function (p) { return p.st === 'Passive'; }).slice(0, 1), byVe(function (p) { return p.st === 'Active'; }).slice(0, 2))}
+  ];
+  list.forEach(function (t) { t.rows = even(t.pids); });
+  return list;
+}
+OPTS.push({id: 'templates', name: 'Quick starts by vehicle',
+  text: 'Choose the category, then a quick start built from the products this category\'s sleeves already use: SMAs only, ETFs only, mutual funds only, UCITS only, or active and passive together, each spread evenly. Pick one and adjust, or start blank. Quick starts with nothing to offer in a category say so.',
+  pros: ['A sensible first draft in one click', 'Makes the vehicle decision explicit up front', 'Quick starts come from the live catalogue, not a fixed list'],
+  cons: ['An even spread is rarely the final mix', 'Another set of choices before the form'],
+  caps: {where: 'Category buttons above the quick starts; type buttons in the form with reasons', name: 'In the form, with the taken-name and same-name notes', products: 'From the quick start, plus the catalogue list for more, with cost and minimum', weights: 'Spread evenly to begin with; edit with a live total', note: 'In the form', editions: '"Editions come after"', valid: 'Under each field and the checklist', create: '"Create in 2 implementation types"', cancel: 'With the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var tpls = templates(s.cat);
+    var gallery = '<div class="tgrid">' + tpls.map(function (t) {
+      var can = t.rows.length > 0;
+      return '<button type="button" class="tpl" data-a="tpl" data-x="' + t.k + '" aria-pressed="' + (s.tpl === t.k) + '"' + (can ? '' : ' disabled') + '><h4>' + esc(t.name) + '</h4><span class="muted">' + esc(t.why) + '</span>'
+        + (can ? '<ul>' + t.rows.map(function (r) { var p = prod(r.pid); return '<li><span>' + esc(p.n) + '</span><span>' + pct(r.w) + '%</span></li>'; }).join('') + '</ul><span style="font-size:13.5px">Weighted cost ' + esc(costText(t.rows)) + '</span>'
+          : '<span class="muted" style="font-size:13.5px">None of ' + esc(C[s.cat]) + '\'s sleeves use these.</span>') + '</button>';
+    }).join('') + '<button type="button" class="tpl" data-a="tpl" data-x="blank" aria-pressed="' + (s.tpl === 'blank') + '"><h4>Blank</h4><span class="muted">Choose every product yourself</span></button></div>';
+    var form = s.tpl == null ? '' : '<div class="sect" style="margin-top:16px"><div class="sect-h"><h4>' + esc(s.tpl === 'blank' ? 'A blank sleeve' : 'Adjust the quick start') + '</h4><small>in ' + esc(C[s.cat]) + '</small></div><div class="sect-b"><div class="grid2"><div>' + nameField(s, 'n6')
+      + '<div class="fld"><span class="lab">Implementation types</span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>' + noteField(s, 'note6') + editionsLater() + '</div>'
+      + '<div><div class="fld"><span class="lab">What it holds</span>' + rowsTable(s, {compact: true}) + '</div>' + catalogue(s, o, {h: 170}) + '</div></div>'
+      + '<div style="display:flex;gap:10px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-strong)">' + (s.guard ? guardHtml(s) : '<div style="flex:1">' + todoHtml(s).replace('<ul class="todo">', '<ul class="todo" style="display:flex;gap:4px 16px;flex-wrap:wrap">') + '</div>' + cancelBtn() + createBtn(s)) + '</div></div></div>';
+    return '<div class="scroll" style="padding:16px 20px"><div class="fld"><span class="lab">1 · Category</span>' + catPicker(s) + '</div><div class="fld"><span class="lab">2 · Start from</span>' + gallery + '</div>' + form + '</div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+
+/* ---- 7 · sentence ---- */
+OPTS.push({id: 'sentence', name: 'Say it as a sentence',
+  text: 'The sleeve is described in one plain sentence you fill in: "Create a Public Equity sleeve called ___, offered under PMG Multi-Asset Portfolio and US Onshore, holding GS Access US Large Cap ETF at 60% and … at 40%." Below it the same sentence is read back as what will happen, with anything missing or wrong said in words.',
+  pros: ['Reads like the decision it records', 'Very little chrome: ideal for a quick sleeve', 'The outcome is spelt out before you create'],
+  cons: ['Long product lists make a long sentence', 'Less room for product facts'],
+  caps: {where: 'The category dropdown and type tokens in the sentence; struck-through tokens say why they cannot be used', name: 'The name blank, with the taken-name and same-name notes below', products: '"+ add a product" opens the catalogue list with cost and minimum', weights: 'Inline weight boxes with the running total said in words', note: '"with the note…" blank', editions: '"Editions come after" below', valid: 'The read-back says what is missing, in words', create: '"Create in 2 implementation types" below the read-back', cancel: 'Beside Create, with the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var cat = '<select data-a="catsel" aria-label="Category"' + (s.tried && s.cat < 0 ? ' class="bad"' : '') + '>' + C.map(function (c, ci) { return '<option value="' + ci + '"' + (s.cat === ci ? ' selected' : '') + (catFull(ci) ? ' disabled' : '') + '>' + esc(c) + (catFull(ci) ? ' (full)' : '') + '</option>'; }).join('') + '</select>';
+    var types = V.map(function (v, vi) {
+      var on = s.vars.indexOf(vi) >= 0, a = availability(s.cat, vi, s.name);
+      return '<span class="tok ' + (on ? 'on' : !a.ok ? 'off' : '') + '" title="' + esc(a.ok ? '' : a.reason) + '">' + esc(v) + '<button type="button" data-a="var" data-x="' + vi + '" aria-pressed="' + on + '" aria-label="' + (on ? 'Remove ' : 'Add ') + esc(v) + '"' + (!a.ok && !on ? ' disabled' : '') + '>' + (on ? '×' : '+') + '</button></span>';
+    }).join(' ');
+    var prods = s.rows.map(function (r, i) {
+      var p = prod(r.pid), bad = String(r.t).trim() !== '' && !isFinite(r.w);
+      return '<span class="tok on">' + esc(p.n) + ' at <input data-a="w" data-x="' + i + '" data-k="w' + i + '" inputmode="decimal" aria-label="Weight of ' + esc(p.n) + '" value="' + esc(r.t) + '"' + (bad ? ' class="bad"' : '') + '>%<button type="button" data-a="rm" data-x="' + i + '" aria-label="Remove ' + esc(p.n) + '">×</button></span>';
+    }).join(' and ');
+    var sent = '<div class="sentence">Create a ' + cat + ' sleeve called <input class="blank' + (s.tried && !s.name.trim() ? ' bad' : '') + '" data-a="name" data-k="n7" maxlength="80" value="' + esc(s.name) + '" placeholder="its name" aria-label="Sleeve name">, '
+      + 'offered under ' + types + ', holding ' + (prods || '<i class="muted">no products yet</i>') + ' <button type="button" class="btn sm addtok" data-a="togglecat">' + (s.pick ? 'Close the catalogue' : '+ add a product') + '</button>'
+      + ', with the note <input class="blank" style="width:360px" data-a="note" data-k="note7" maxlength="240" value="' + esc(s.note) + '" placeholder="(optional)" aria-label="Note to PWAs">.</div>';
+    var ps = problems(s);
+    var read = '<div class="sect" style="margin:0"><div class="sect-h"><h4>What will happen</h4></div><div class="sect-b" style="font-size:15px">'
+      + (okVars(s).length && s.name.trim() ? '<p style="margin:0 0 8px">A sleeve called <b>' + esc(s.name.trim()) + '</b> will be created in <b>' + esc(C[s.cat]) + '</b> under <b>' + esc(okVars(s).map(function (v) { return V[v]; }).join(' and ')) + '</b>'
+        + (s.rows.length ? ', holding ' + plural(s.rows.length, 'product') + ' at a total of <b class="' + (Math.abs(total(s.rows) - 100) <= 0.005 ? 'tot-ok' : 'tot-bad') + '">' + pct(total(s.rows)) + '%</b> and a weighted cost of ' + esc(costText(s.rows)) : '') + '.</p>' : '')
+      + (ps.length ? '<ul class="todo">' + ps.map(function (p) { return '<li class="bad">' + esc(p.m) + '</li>'; }).join('') + '</ul>' : '<p class="tot-ok" style="margin:0"><b>Ready to create.</b></p>')
+      + V.map(function (v, vi) { var a = availability(s.cat, vi, s.name); return s.vars.indexOf(vi) < 0 && !a.ok ? '<p class="muted" style="margin:6px 0 0;font-size:14px"><b>' + esc(v) + '</b> is struck out: ' + esc(a.reason) + '</p>' : ''; }).join('')
+      + (sameNameElsewhere(s).length ? nameField(s, 'n7b').replace(/^[\s\S]*?(<span class="inf">[\s\S]*?<\/span>)[\s\S]*$/, '$1') : '') + '</div></div>';
+    var side = '<div style="display:grid;gap:10px;align-content:start">' + (s.guard ? guardHtml(s) : createBtn(s, 'lg') + cancelBtn()) + editionsLater() + '</div>';
+    return '<div class="o7">' + sent + (s.pick ? '<div style="max-width:980px;margin:12px auto 0">' + catalogue(s, o, {h: 200}) + '</div>' : '') + '<div class="saysnow">' + read + side + '</div></div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+
+/* ---- 8 · catalogue first ---- */
+OPTS.push({id: 'catalogue', name: 'Catalogue first: pick, weigh, name',
+  text: 'Start from the products. The catalogue is a full table you can filter by vehicle and style, sort by cost or minimum, and search; tick what the sleeve should hold. A tray at the bottom collects your picks. Then set the weights, then say where it goes and what it is called. Built for people who think "these three funds" before they think "which category".',
+  pros: ['Product facts get a full table: cost, minimum, liquidity side by side', 'Sorting by cost makes the cheapest mix obvious', 'Matches the Catalogue tab next door'],
+  cons: ['Category comes last, so the filter "used in this category" needs it first', 'Three stages for a small sleeve'],
+  caps: {where: 'Stage 3: category and type buttons with reasons', name: 'Stage 3, with the taken-name and same-name notes', products: 'Stage 1: filterable, sortable catalogue table with cost, minimum, vehicle, liquidity', weights: 'Stage 2: weights with live total and Spread evenly', note: 'Stage 3', editions: 'Stage 3: "Editions come after"', valid: 'Beside Next and under each field', create: 'Stage 3: "Create in 2 implementation types"', cancel: 'Every stage, with the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var st = s.stage;
+    var steps = '<div class="o8-steps">' + [['pick', 'Pick products'], ['weigh', 'Set weights'], ['name', 'Where and name']].map(function (x, i) {
+      var order = ['pick', 'weigh', 'name'], done = order.indexOf(st) > i;
+      return '<span class="st ' + (st === x[0] ? 'on' : done ? 'ok' : '') + '"><b>' + (done ? '✓' : i + 1) + '</b>' + x[1] + '</span>' + (i < 2 ? '<span class="muted">›</span>' : '');
+    }).join('') + '</div>';
+    var body, foot;
+    if (st === 'pick') {
+      var q = s.q.trim().toLowerCase();
+      var hits = Object.keys(D.products).filter(function (pid) {
+        var p = prod(pid); return (!s.vf || p.ve === s.vf) && (!q || (p.n + ' ' + p.ac + ' ' + p.st).toLowerCase().indexOf(q) >= 0);
+      });
+      var key = s.sort;
+      hits.sort(function (a, b) {
+        var A = prod(a), B = prod(b);
+        if (key === 'name') return A.n < B.n ? -1 : 1;
+        if (key === 'min') return (A.mi || 0) - (B.mi || 0);
+        return (A.co == null) - (B.co == null) || (A.co || 0) - (B.co || 0);
+      });
+      var vehs = ['', 'SMA', 'ETF', 'Mutual Fund', 'UCITS', 'ICAV'];
+      body = '<div class="o8-filt"><input class="in" style="width:280px" data-a="q" data-k="q8" placeholder="Search name, asset class, style…" value="' + esc(s.q) + '" aria-label="Search the catalogue"><span class="ctl">Vehicle</span><div class="fchips">'
+        + vehs.map(function (v) { return '<button type="button" data-a="vf" data-x="' + esc(v) + '" aria-pressed="' + (s.vf === v) + '">' + (v || 'All') + '</button>'; }).join('') + '</div><span class="muted">' + hits.length + ' of ' + Object.keys(D.products).length + '</span></div>'
+        + '<div class="o8-t"><table class="ct"><thead><tr><th style="width:36px"></th><th><button type="button" data-a="sort" data-x="name">Product' + (key === 'name' ? ' ▲' : '') + '</button></th><th>Vehicle</th><th>Style</th><th>Liquidity</th><th class="r"><button type="button" data-a="sort" data-x="cost">Cost' + (key === 'cost' ? ' ▲' : '') + '</button></th><th class="r"><button type="button" data-a="sort" data-x="min">Minimum' + (key === 'min' ? ' ▲' : '') + '</button></th></tr></thead><tbody>'
+        + hits.map(function (pid) {
+          var p = prod(pid), on = s.rows.some(function (r) { return r.pid === pid; });
+          return '<tr class="' + (on ? 'on' : '') + '"><td><input type="checkbox" data-a="tick" data-x="' + esc(pid) + '"' + (on ? ' checked' : '') + ' aria-label="Choose ' + esc(p.n) + '"></td><td><b>' + esc(p.n) + '</b><small>' + esc(p.ac) + '</small></td><td>' + esc(p.ve) + '</td><td>' + esc(p.st) + '</td><td>' + esc(p.li) + '</td><td class="r">' + esc(cost(p)) + '</td><td class="r">' + esc(money(p.mi)) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      foot = '<div class="tray"><b>' + plural(s.rows.length, 'product') + ' chosen</b><div class="pl">' + s.rows.map(function (r) { return '<span class="chip info">' + esc(prod(r.pid).n) + '</span>'; }).join('') + '</div><span class="spacer"></span>'
+        + (s.guard ? guardHtml(s) : cancelBtn() + '<button type="button" class="btn pri" data-a="stage" data-x="weigh"' + (s.rows.length ? '' : ' disabled') + '>' + (s.rows.length ? 'Next: set weights ›' : 'Tick at least one product') + '</button>') + '</div>';
+    } else if (st === 'weigh') {
+      var wp = probs(s, 'rows');
+      body = '<div class="scroll" style="padding:16px 20px"><div class="o3-card" style="max-width:860px"><h4>How much of each?</h4><p class="q">Plain numbers, adding up to exactly 100%.</p>' + rowsTable(s) + '</div></div>';
+      foot = '<div class="tray">' + (s.guard ? guardHtml(s) : '<button type="button" class="btn" data-a="stage" data-x="pick">‹ Back to the catalogue</button><span class="spacer"></span>' + (wp.length ? '<span class="tot-bad" style="font-weight:600">' + esc(wp[0].m) + '</span>' : '') + cancelBtn()
+        + '<button type="button" class="btn pri" data-a="stage" data-x="name"' + (wp.length ? ' disabled' : '') + '>Next: where and name ›</button>') + '</div>';
+    } else {
+      body = '<div class="scroll" style="padding:16px 20px"><div class="o3-card"><h4>Where does it go, and what is it called?</h4><p class="q">' + plural(s.rows.length, 'product') + ' at 100% · weighted cost ' + esc(costText(s.rows)) + '</p>'
+        + '<div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div><div class="fld"><span class="lab">Implementation types</span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>' + nameField(s, 'n8') + noteField(s, 'note8') + editionsLater() + '</div></div>';
+      var ps = problems(s);
+      foot = '<div class="tray">' + (s.guard ? guardHtml(s) : '<button type="button" class="btn" data-a="stage" data-x="weigh">‹ Back to weights</button><span class="spacer"></span>' + (ps.length && s.tried ? '<span class="tot-bad" style="font-weight:600">' + esc(ps[0].m) + '</span>' : '') + cancelBtn() + createBtn(s)) + '</div>';
+    }
+    return '<div class="o8">' + steps + body + foot + '</div>' + toastHtml(s);
+  }, ctx: function () { return 'Catalogue · ' + Object.keys(D.products).length + ' products'; }, mode: 'table'
+});
+
+/* ---- 9 · weights allocator ---- */
+OPTS.push({id: 'allocator', name: 'A split bar that always makes 100%',
+  text: 'The weights are the part people get wrong, so this option makes a wrong total impossible. Products sit on one bar that always fills 100%; drag a handle (or focus it and use the arrow keys) to move weight between neighbours, or type a weight and its neighbour absorbs the difference. Adding a product takes its share from the others evenly. The rest of the form is a single short page.',
+  pros: ['The total can never be wrong', 'The mix is seen, not computed', 'Keyboard: arrows move a handle by 0.5%'],
+  cons: ['Dragging to an exact figure is fiddly (typing still works)', 'A bar gets crowded past six products'],
+  caps: {where: 'Category and type buttons with reasons, at the top', name: 'Below the category, with the taken-name and same-name notes', products: 'Catalogue list with cost and minimum; each pick joins the bar', weights: 'The split bar and number boxes, always 100%', note: 'Bottom of the form', editions: '"Editions come after"', valid: 'Under each field and the checklist (weights cannot be wrong)', create: '"Create in 2 implementation types"', cancel: 'With the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var left = 0, segs = '', hands = '';
+    s.rows.forEach(function (r, i) {
+      var w = isFinite(r.w) ? r.w : 0, p = prod(r.pid);
+      segs += '<div class="seg" style="left:' + left + '%;width:' + w + '%;background:' + SEG[i % SEG.length] + '" title="' + esc(p.n) + '"><b>' + pct(w, 1) + '%</b><span>' + esc(p.n) + '</span></div>';
+      left += w;
+      if (i < s.rows.length - 1) hands += '<button type="button" class="h" style="left:' + left + '%" data-h="' + i + '" aria-label="Move weight between ' + esc(p.n) + ' and ' + esc(prod(s.rows[i + 1].pid).n) + '" aria-valuetext="' + pct(w, 1) + '%"></button>';
+    });
+    var alloc = s.rows.length ? '<div class="alloc" data-alloc="1">' + segs + hands + '</div>'
+      + '<div class="legend">' + s.rows.map(function (r, i) {
+        var p = prod(r.pid);
+        return '<span class="k"><span class="sw" style="background:' + SEG[i % SEG.length] + '"></span><span><b>' + esc(p.n) + '</b> <small class="muted">' + esc(p.ve) + ' · ' + esc(cost(p)) + ' · min ' + esc(money(p.mi)) + '</small></span></span>'
+          + '<input class="win" data-a="w9" data-x="' + i + '" data-k="w9' + i + '" inputmode="decimal" aria-label="Weight of ' + esc(p.n) + ', percent" value="' + esc(r.t) + '">'
+          + '<button type="button" class="rmx" data-a="rm9" data-x="' + i + '">Remove</button>';
+      }).join('') + '</div><p class="muted" style="font-size:13.5px;margin:8px 0 0">Total always 100% · weighted cost ' + esc(costText(s.rows)) + ' · changing a weight moves its neighbour</p>'
+      : '<div class="emptyrows">Add products from the catalogue below; the bar fills as you add them.</div>';
+    return '<div class="scroll" style="padding:16px 20px"><div class="grid2"><div><div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div>'
+      + '<div class="fld"><span class="lab">Implementation types</span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>' + nameField(s, 'n9') + noteField(s, 'note9') + editionsLater() + '</div>'
+      + '<div><div class="fld"><span class="lab">What it holds</span>' + alloc + fieldErr(s, 'rows') + '</div><div class="fld">' + catalogue(s, o, {h: 230}) + '</div>'
+      + '<div style="margin-top:6px;padding-top:12px;border-top:1px solid var(--line-strong)">' + (s.guard ? guardHtml(s) : todoHtml(s).replace('<ul class="todo">', '<ul class="todo" style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px">') + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">' + cancelBtn() + createBtn(s) + '</div>') + '</div></div></div></div>' + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+function rebalanceAdd(s, pid) {
+  var n = s.rows.length + 1, share = Math.round(100 / n * 100) / 100;
+  var scale = (100 - share) / 100;
+  s.rows.forEach(function (r) { r.w = Math.round(r.w * scale * 100) / 100; });
+  s.rows.push({pid: pid, w: share});
+  var diff = Math.round((100 - total(s.rows)) * 100) / 100; s.rows[s.rows.length - 1].w = Math.round((s.rows[s.rows.length - 1].w + diff) * 100) / 100;
+  s.rows.forEach(function (r) { r.t = pct(r.w); });
+}
+function moveHandle(s, i, nextLeft) {
+  var a = s.rows[i], b = s.rows[i + 1]; if (!a || !b) return;
+  var before = 0; for (var k = 0; k < i; k++) before += s.rows[k].w;
+  var pair = a.w + b.w;
+  var wa = Math.max(0.5, Math.min(pair - 0.5, Math.round((nextLeft - before) * 2) / 2));
+  a.w = Math.round(wa * 100) / 100; b.w = Math.round((pair - wa) * 100) / 100; a.t = pct(a.w); b.t = pct(b.w);
+}
+
+/* ---- 10 · review modal ---- */
+OPTS.push({id: 'review', name: 'Compact form, then a review before it is created',
+  text: 'A short form in two columns - where and name on the left, products on the right - and instead of Create, "Review…". The review lists, one implementation type per row, exactly what will happen there: a new sleeve with its name and products, already holds a sleeve of that name, or full because the category is fixed. Only then "Create in 2 implementation types".',
+  pros: ['Nothing reaches the library unreviewed', 'Unavailable types are explained in the one place everyone reads', 'The form itself stays short'],
+  cons: ['An extra click for every sleeve', 'The review repeats what the form showed'],
+  caps: {where: 'Left: category and type buttons with reasons; the review repeats each type\'s outcome', name: 'Left, with the taken-name and same-name notes', products: 'Right: catalogue list with cost and minimum', weights: 'Right: weights with live total and Spread evenly', note: 'Left', editions: '"Editions come after", in the form and the review', valid: 'Under each field; Review lists anything left', create: 'In the review: "Create in 2 implementation types"', cancel: 'Under the form and in the review, with the Discard question', after: 'The new sleeve\'s page'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var ps = problems(s);
+    var form = '<div class="o10"><div class="grid2"><div><div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div><div class="fld"><span class="lab">Implementation types</span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>' + nameField(s, 'n10') + noteField(s, 'note10') + '</div>'
+      + '<div><div class="fld"><span class="lab">What it holds</span>' + rowsTable(s, {compact: true}) + '</div>' + catalogue(s, o, {h: 200}) + '</div></div>'
+      + '<div style="display:flex;gap:10px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--frame)">' + (s.guard && !s.modal ? guardHtml(s) : '<span class="muted" style="flex:1;font-size:14px">' + (ps.length ? plural(ps.length, 'thing') + ' to finish before you can review: ' + esc(ps[0].m) : 'Ready to review.') + '</span>' + cancelBtn()
+        + '<button type="button" class="btn pri" data-a="openreview"' + (ps.length ? ' aria-disabled="true"' : '') + '>Review…</button>') + '</div></div>';
+    var modal = !s.modal ? '' : '<div class="scrim" data-a="closereview"></div><div class="modal" role="dialog" aria-modal="true" aria-label="Review the new sleeve"><div class="modal-h"><h4>Create ' + esc(s.name.trim()) + ' in ' + esc(C[s.cat]) + '?</h4></div>'
+      + '<div class="modal-b">' + reviewTable(s)
+      + '<h5 style="font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin:14px 0 6px">Every one of them will hold</h5><table class="pt"><tbody>' + s.rows.map(function (r) { var p = prod(r.pid); return '<tr><td class="nm"><b>' + esc(p.n) + '</b><small>' + esc(facts(p)) + '</small></td><td class="r num">' + esc(cost(p)) + '</td><td class="r num">' + esc(money(p.mi)) + '</td><td class="r num"><b>' + pct(r.w) + '%</b></td></tr>'; }).join('') + '</tbody><tfoot><tr><td>Total · weighted cost ' + esc(costText(s.rows)) + '</td><td></td><td></td><td class="r tot-ok">100.00% ✓</td></tr></tfoot></table>'
+      + (s.note.trim() ? '<p style="margin:10px 0 0"><b>Note to PWAs:</b> ' + esc(s.note) + '</p>' : '')
+      + '<div style="margin-top:12px">' + editionsLater() + '</div></div>'
+      + '<div class="modal-f">' + (s.guard ? guardHtml(s) : '<button type="button" class="btn" data-a="closereview" data-k="backedit">‹ Back to editing</button><span class="spacer"></span>' + createBtn(s)) + '</div></div>';
+    return form + modal + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+
+/* ---- 11 · live summary, blank or from an existing sleeve ---- */
+function srcOf(s) { return typeof s.src === 'number' ? D.sleeves.filter(function (x) { return x.id === s.src; })[0] : null; }
+/* the sleeves a new one can start from: this category, under the types chosen
+   (or every type), identical copies under several types listed once */
+function sourcesFor(s) {
+  var q = (s.srcq || '').trim().toLowerCase(), seen = {}, out = [];
+  D.sleeves.filter(function (x) {
+    return x.c === s.cat && (s.allV || !s.vars.length || s.vars.indexOf(x.v) >= 0);
+  }).sort(function (a, b) { return a.v - b.v || (a.name < b.name ? -1 : 1); }).forEach(function (x) {
+    var k = x.name + '|' + (x.label || '') + '|' + x.rows.map(function (r) { return r.pid + ':' + r.w; }).join();
+    if (seen[k]) { seen[k].types.push(x.v); return; }
+    seen[k] = {s: x, types: [x.v]}; out.push(seen[k]);
+  });
+  return out.filter(function (e) {
+    return !q || e.s.name.toLowerCase().indexOf(q) >= 0 || e.s.rows.some(function (r) { var p = prod(r.pid); return p && p.n.toLowerCase().indexOf(q) >= 0; });
+  });
+}
+function sameAsSource(s) {
+  var src = srcOf(s); if (!src) return false;
+  return src.rows.length === s.rows.length && src.rows.every(function (r, i) { return s.rows[i] && s.rows[i].pid === r.pid && Math.abs((s.rows[i].w || 0) - r.w) < 1e-9; });
+}
+function useSource(s, id) {
+  var src = D.sleeves.filter(function (x) { return x.id === id; })[0];
+  s.src = id; s.ask = null; s.lost = ''; s.kept = '';
+  s.rows = src.rows.map(function (r) { return {pid: r.pid, w: r.w, t: pct(r.w)}; });
+  s.focus = 'n11';
+}
+OPTS.push({id: 'combo', name: 'Live summary, start blank or from an existing sleeve (4 + 5)',
+  text: 'Option 4\'s single form and pinned live summary, with a switch at the top: "Start from: Blank | An existing sleeve". From an existing sleeve, a searchable list shows the sleeves in the chosen category and implementation types with what each holds; picking one copies its products and weights into the same form, and every change from it is marked ("was 60.00%", "added", and what was removed). The name always starts empty, so a copy never collides with its source. Switching to Blank keeps the products you have and simply stops comparing them, because throwing work away should only ever happen when you ask; picking a sleeve when you already have products asks before replacing them. The switch remembers your last choice. Products are added with "+ Add product" in What it holds, which opens an Add a product dialog: search, or browse with filters for this category\'s products or the whole catalogue, vehicle, style and source; tick one or several and press "Add 3 products". Ticks rather than an Add on every row, so several products are one trip and nothing changes in the sleeve until you press Add.',
+  pros: ['One form for both ways of starting', 'Differences from the source are visible while you edit', 'The summary always says what will be created, and what it was based on'],
+  cons: ['The source list adds height to the form', 'Two ways in to explain to new users', 'Adding a product is one click further away than an always-open list'],
+  caps: {where: 'Top of the form: category and type buttons with reasons; the summary repeats each type\'s outcome; changing category drops a source from another category, with a note', name: 'Starts empty even when copying; taken-name note explains the edition route; same-name note', products: 'Copied from the source, and "+ Add product" in What it holds: a dialog to search or browse the catalogue (this category\'s products or all, vehicle, style, source), with asset class, vehicle, style, cost, minimum, currency and liquidity; already-added products shown as Added', weights: 'Products table with "was" and "added" marks, live total, Spread evenly; the summary bar', note: 'Last field', editions: '"Editions come after"; a source\'s editions are never copied', valid: 'Under each field; the summary checklist', create: 'Under the summary: "Create in 2 implementation types"', cancel: 'Under the summary, with the Discard question', after: 'The new sleeve\'s page, saying what it started from and that it is independent'},
+  render: function (o, s) {
+    if (s.done) return doneHtml(s);
+    var src = srcOf(s);
+    var toggle = '<div class="startfrom"><span class="lab">Start from</span><span class="seg2" role="group" aria-label="Start from">'
+      + '<button type="button" data-a="mode11" data-x="blank" data-k="m11blank" aria-pressed="' + (s.mode === 'blank') + '">Blank</button>'
+      + '<button type="button" data-a="mode11" data-x="existing" data-k="m11existing" aria-pressed="' + (s.mode === 'existing') + '">An existing sleeve</button></span>'
+      + '<span class="hint">' + (s.mode === 'blank' ? 'Choose every product yourself.' : 'Copy the products and weights of a sleeve already in the library, then change what you need.') + '</span></div>';
+    var picker = '';
+    if (s.mode === 'existing') {
+      var list = sourcesFor(s);
+      picker = '<div class="srcpick"><div class="srcpick-h"><b>Start from which sleeve?</b><input class="in" data-a="srcq" data-k="srcq11" placeholder="Search names and products…" value="' + esc(s.srcq) + '" aria-label="Search sleeves to start from">'
+        + '<label class="tg" style="display:inline-flex;gap:6px;align-items:center;font-size:13.5px;color:var(--ink-2)"><input type="checkbox" data-a="allv11"' + (s.allV ? ' checked' : '') + '> Every implementation type</label>'
+        + '<span class="muted" style="font-size:13.5px">' + plural(list.length, 'sleeve') + ' in ' + esc(C[s.cat]) + (s.allV || !s.vars.length ? '' : ' under ' + esc(s.vars.map(function (v) { return V[v]; }).join(', '))) + '</span></div>'
+        + (s.ask != null ? (function () { var a = D.sleeves.filter(function (x) { return x.id === s.ask; })[0];
+            return '<div class="ask" role="alertdialog" aria-label="Replace your products?"><b>Replace your ' + plural(s.rows.length, 'product') + ' with ' + esc(a.name) + '\'s ' + a.rows.length + '?</b><span>Your weights will be replaced too.</span><span class="spacer"></span>'
+              + '<button type="button" class="btn" data-a="keepmine11" data-k="keepmine11">Keep mine</button><button type="button" class="btn pri" data-a="replace11">Replace</button></div>'; })() : '')
+        + '<div class="srclist">' + (list.map(function (e) {
+          var x = e.s;
+          return '<button type="button" class="srcb" data-a="src11" data-x="' + x.id + '" aria-pressed="' + !!(src && src.name === x.name && (src.label || '') === (x.label || '') && sameRows(src, x)) + '"><b>' + esc(x.name) + (x.label ? ' <span class="chip info">' + esc(x.label) + '</span>' : '') + '</b><small>' + esc(e.types.map(function (v) { return V[v]; }).join(', ')) + '</small>'
+            + '<small style="margin-top:4px;color:var(--ink)">' + esc(x.rows.map(function (r) { var p = prod(r.pid); return (p ? p.n : r.pid) + ' ' + pct(r.w, 0) + '%'; }).join(' · ')) + '</small></button>';
+        }).join('') || '<p class="none">No sleeve in ' + esc(C[s.cat]) + ' matches. ' + (s.allV ? 'Try another word.' : 'Tick "Every implementation type" to look wider.') + '</p>') + '</div></div>';
+    }
+    var mark = src ? function (r) {
+      var o_ = src.rows.filter(function (x) { return x.pid === r.pid; })[0];
+      if (!o_) return '<span class="diffmark add">added</span>';
+      return isFinite(r.w) && Math.abs(o_.w - r.w) < 1e-9 ? '' : '<span class="diffmark">was ' + pct(o_.w) + '%</span>';
+    } : null;
+    var removed = src ? src.rows.filter(function (r) { return !s.rows.some(function (x) { return x.pid === r.pid; }); }) : [];
+    var form = '<div class="o4-form">' + toggle
+      + '<div class="fld"><span class="lab">Category</span>' + catPicker(s) + '</div>'
+      + '<div class="fld"><span class="lab">Implementation types <small>one sleeve is created under each</small></span>' + typePicker(s) + fieldErr(s, 'vars') + '</div>'
+      + picker
+      + nameField(s, 'n11')
+      + '<div class="fld"><span class="lab">What it holds' + (src ? ' <small>marked against ' + esc(src.name) + ' (' + esc(V[src.v]) + ')</small>' : '') + '</span>'
+      + (s.kept ? '<span class="inf" style="margin:0 0 8px" role="status">' + esc(s.kept) + '</span>' : '')
+      + (s.lost ? '<span class="lostnote" role="status">' + esc(s.lost) + '</span>' : '')
+      + rowsTable(s, {mark: mark, hint: (s.mode === 'existing' ? 'Pick a sleeve above to copy its products, or ' : '') + '<button type="button" class="btn pri sm" data-a="dlgopen" data-k="addprod11e">+ Add product</button>'})
+      + (s.rows.length ? '<div class="addrow"><button type="button" class="btn" data-a="dlgopen" data-k="addprod11">+ Add product</button><span class="muted" style="font-size:13.5px">Search or browse the catalogue of ' + Object.keys(D.products).length + ' products</span></div>' : '')
+      + (removed.length ? '<p class="muted" style="font-size:14px;margin:6px 0 0">Removed from ' + esc(src.name) + ': ' + esc(removed.map(function (r) { return prod(r.pid).n + ' (' + pct(r.w) + '%)'; }).join(', ')) + '</p>' : '') + '</div>'
+      + noteField(s, 'note11') + editionsLater() + '</div>';
+    var bar = s.rows.length ? '<div class="minibar" aria-hidden="true">' + s.rows.map(function (r, i) { return '<i style="width:' + Math.max(0, Math.min(100, r.w || 0)) + '%;background:' + SEG[i % SEG.length] + '"></i>'; }).join('') + '</div>' : '';
+    var changes = src ? (s.rows.filter(function (r) { return mark(r); }).length + removed.length) : 0;
+    var side = '<div class="o4-side"><div><h4>What will be created</h4><ul class="made">' + V.map(function (v, vi) {
+      var on = s.vars.indexOf(vi) >= 0, a = availability(s.cat, vi, s.name);
+      if (!on) return '<li class="no"><span class="ic">–</span><span>' + esc(v) + '<small>' + esc(a.ok ? 'Not chosen' : a.reason) + '</small></span></li>';
+      return a.ok ? '<li class="yes"><span class="ic">✓</span><span><b>' + esc(v) + '</b><small>' + esc(s.name.trim() || 'New sleeve') + ' in ' + esc(C[s.cat]) + '</small></span></li>'
+        : '<li class="no"><span class="ic">✗</span><span><b class="tot-bad">' + esc(v) + '</b><small class="tot-bad">' + esc(a.reason) + '</small></span></li>';
+    }).join('') + '</ul></div>'
+      + (src ? '<div class="based">Based on <b>' + esc(src.name) + '</b> (' + esc(V[src.v]) + ') · ' + (changes ? plural(changes, 'change') : 'no changes yet') + '.<br>Once created it is a separate sleeve: later changes to ' + esc(src.name) + ' will not change it.</div>' : '')
+      + '<div><h4>Mix</h4>' + (bar || '<p class="muted" style="margin:4px 0 0;font-size:14px">No products yet.</p>') + (s.rows.length ? '<p style="margin:6px 0 0;font-size:14px">' + plural(s.rows.length, 'product') + ' · total <b class="' + (Math.abs(total(s.rows) - 100) <= 0.005 ? 'tot-ok' : 'tot-bad') + '">' + pct(total(s.rows)) + '%</b><br>Weighted cost ' + esc(costText(s.rows)) + '</p>' : '') + '</div>'
+      + '<div><h4>Still to do</h4>' + todoHtml(s) + '</div>'
+      + (s.guard ? guardHtml(s) : '<div style="display:grid;gap:8px">' + createBtn(s, 'lg') + cancelBtn() + '</div>') + '</div>';
+    return '<div class="o4">' + form + side + '</div>' + (s.dlg ? addDialog(s) : '') + toastHtml(s);
+  }, ctx: function () { return ''; }, mode: 'cards'
+});
+/* The Add a product dialog (11): search or browse, tick one or several, and
+   add them in one go. Ticks rather than a per-row Add, so several products
+   are one trip, and nothing changes in the sleeve until "Add" is pressed. */
+function dlgHits(s) {
+  var q = (s.dq || '').trim().toLowerCase();
+  var pool = s.dscope === 'all' || s.cat < 0 ? Object.keys(D.products) : usedIn(s.cat);
+  var hits = pool.filter(function (pid) {
+    var p = prod(pid);
+    return p && (!s.dve || p.ve === s.dve) && (!s.dst || p.st === s.dst) && (!s.dso || p.so === s.dso)
+      && (!q || (p.n + ' ' + p.ac + ' ' + p.ve + ' ' + pid).toLowerCase().indexOf(q) >= 0);
+  });
+  var k = s.dsort || 'cost', dir = s.ddir || 1;
+  hits.sort(function (a, b) {
+    var A = prod(a), B = prod(b), r;
+    if (k === 'name') r = A.n < B.n ? -1 : A.n > B.n ? 1 : 0;
+    else if (k === 'ac') r = A.ac < B.ac ? -1 : A.ac > B.ac ? 1 : 0;
+    else if (k === 'min') { if (A.mi == null || B.mi == null) return (A.mi == null) - (B.mi == null); r = A.mi - B.mi; }
+    else { if (A.co == null || B.co == null) return (A.co == null) - (B.co == null); r = A.co - B.co; }
+    return r * dir || (A.n < B.n ? -1 : 1);
+  });
+  return {hits: hits, pool: pool.length};
+}
+function addDialog(s) {
+  var r = dlgHits(s), had = s.rows.map(function (x) { return x.pid; });
+  var opts = function (field) {
+    var vals = []; Object.keys(D.products).forEach(function (pid) { var v = prod(pid)[field]; if (v && vals.indexOf(v) < 0) vals.push(v); });
+    return vals.sort();
+  };
+  var sel = function (a, label, field, cur) {
+    return '<label class="f">' + label + ' <select data-a="' + a + '" data-k="' + a + '"><option value="">Any</option>'
+      + opts(field).map(function (v) { return '<option' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select></label>';
+  };
+  var th = function (k, label, cls) {
+    var on = (s.dsort || 'cost') === k;
+    return '<th' + (cls ? ' class="' + cls + '"' : '') + ' aria-sort="' + (on ? ((s.ddir || 1) > 0 ? 'ascending' : 'descending') : 'none') + '"><button type="button" data-a="dsort" data-x="' + k + '">' + label + (on ? ((s.ddir || 1) > 0 ? ' ▲' : ' ▼') : '') + '</button></th>';
+  };
+  var rows = r.hits.map(function (pid) {
+    var p = prod(pid), isHad = had.indexOf(pid) >= 0, on = s.dsel.indexOf(pid) >= 0;
+    return '<tr class="' + (isHad ? 'had' : on ? 'on' : '') + '"' + (isHad ? '' : ' data-a="dtickrow" data-x="' + esc(pid) + '"') + '>'
+      + '<td>' + (isHad ? '<span class="tot-ok" style="font-weight:600;font-size:13px">Added</span>' : '<input type="checkbox" data-a="dtick" data-x="' + esc(pid) + '"' + (on ? ' checked' : '') + ' aria-label="Choose ' + esc(p.n) + '">') + '</td>'
+      + '<td><b>' + esc(p.n) + '</b><small>' + esc(p.ac) + '</small></td><td>' + esc(p.ve) + '</td><td>' + esc(p.st) + '</td><td class="hide-n">' + esc(p.so) + '</td>'
+      + '<td class="hide-n">' + esc(p.li) + '</td><td class="hide-n">' + esc(p.cur || '') + '</td><td class="r">' + esc(cost(p)) + '</td><td class="r">' + esc(money(p.mi)) + '</td></tr>';
+  }).join('');
+  var n = s.dsel.length;
+  var scope = s.cat >= 0 ? '<span class="seg2" role="group" aria-label="Which products"><button type="button" data-a="dscope" data-x="cat" aria-pressed="' + (s.dscope !== 'all') + '">Only products ' + esc(C[s.cat]) + ' uses</button><button type="button" data-a="dscope" data-x="all" aria-pressed="' + (s.dscope === 'all') + '">Whole catalogue</button></span>' : '';
+  return '<div class="scrim fixedsheet" data-a="dlgclose"></div><div class="adddlg" role="dialog" aria-modal="true" aria-labelledby="dlgt11">'
+    + '<div class="adddlg-h"><h4 id="dlgt11">Add a product</h4><span class="muted">to ' + esc(s.name.trim() || 'the new sleeve') + '</span><span class="spacer"></span><button type="button" class="btn sm" data-a="dlgclose">Close</button></div>'
+    + '<div class="adddlg-f1"><div class="srow"><input class="in" data-a="dq" data-k="dq11" placeholder="Search by name, asset class, vehicle or product id…" value="' + esc(s.dq) + '" aria-label="Search the catalogue">' + scope + '</div>'
+    + '<div class="srow">' + sel('dve', 'Vehicle', 've', s.dve) + sel('dst', 'Style', 'st', s.dst) + sel('dso', 'Source', 'so', s.dso)
+    + '<span class="spacer"></span><span class="muted" style="font-size:14px" role="status">' + r.hits.length + ' of ' + (s.dscope === 'all' || s.cat < 0 ? Object.keys(D.products).length + ' products' : r.pool + ' products ' + esc(C[s.cat]) + ' uses') + '</span></div></div>'
+    + '<div class="adddlg-b">' + (r.hits.length ? '<table class="at"><thead><tr><th style="width:44px"><span class="sr-only" style="position:absolute;left:-9999px">Choose</span></th>' + th('name', 'Product') + '<th>Vehicle</th><th>Style</th><th class="hide-n">Source</th><th class="hide-n">Liquidity</th><th class="hide-n">Currency</th>' + th('cost', 'Cost', 'r') + th('min', 'Minimum', 'r') + '</tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="adddlg-empty">No product matches' + (s.dq.trim() ? ' "' + esc(s.dq.trim()) + '"' : ' these filters') + '.<br><span style="display:inline-flex;gap:8px;margin-top:10px">' + (s.dq.trim() || s.dve || s.dst || s.dso ? '<button type="button" class="btn sm" data-a="dclear">Clear the search and filters</button>' : '') + (s.dscope !== 'all' && s.cat >= 0 ? '<button type="button" class="btn sm" data-a="dscope" data-x="all">Look in the whole catalogue</button>' : '') + '</span></div>') + '</div>'
+    + '<div class="adddlg-ft"><span style="font-size:14.5px">' + (n ? '<b>' + plural(n, 'product') + ' chosen</b>' : '<span class="muted">Tick the products to add, or click a row.</span>') + '</span><span class="spacer"></span>'
+    + '<button type="button" class="btn" data-a="dlgclose">Cancel</button><button type="button" class="btn pri" data-a="dadd"' + (n ? '' : ' disabled') + '>' + (n ? 'Add ' + plural(n, 'product') : 'Add products') + '</button></div></div>';
+}
+function sameRows(a, b) { return a.rows.length === b.rows.length && a.rows.every(function (r, i) { return b.rows[i].pid === r.pid && b.rows[i].w === r.w; }); }
+
+/* ------------------------------------------------------------ the page */
+var picked = null;
+try { picked = window.localStorage.getItem('newSleeveOption'); } catch (e) { picked = null; }
+function optOf(o) { return OPTS.filter(function (x) { return x.id === o; })[0]; }
+function stageHtml(o) { var opt = optOf(o), s = S(o); return frame(o, opt.render(o, s), opt.ctx(s), opt.mode); }
+function renderOpt(o) {
+  var host = document.querySelector('[data-stage="' + o + '"]'); if (!host) return;
+  var a = document.activeElement, key = a && a.dataset && a.dataset.k, sel = null;
+  if (key && host.contains(a)) { try { sel = [a.selectionStart, a.selectionEnd]; } catch (e) { sel = null; } } else key = null;
+  var SCR = '.scroll,.o4-form,.o4-side,.o5-r,.o5-l .list,.drawer-b,.o3-b,.o8-t,.o2-t,.o10,.plist,.modal-b,.o7,.srclist,.adddlg-b';
+  var scrolls = Array.prototype.map.call(host.querySelectorAll(SCR), function (el) { return el.scrollTop; });
+  var opt = optOf(o), s = S(o);
+  host.innerHTML = opt.render(o, s);
+  var sec = host.closest('.option'); var ctx = sec && sec.querySelector('.con-bar .ctx'); if (ctx) ctx.innerHTML = opt.ctx(s);
+  var again = host.querySelectorAll(SCR);
+  if (again.length === scrolls.length) Array.prototype.forEach.call(again, function (el, i) { el.scrollTop = scrolls[i]; });
+  var want = s.focus || key; s.focus = null;
+  if (s.focusTick) { var tk = host.querySelector('[data-a="dtick"][data-x="' + s.focusTick + '"]'); s.focusTick = null; if (tk) { tk.focus(); want = null; } }
+  if (want) {
+    var el = host.querySelector('[data-k="' + want + '"]');
+    if (el) { el.focus(); if (sel && key === want && el.setSelectionRange && sel[0] != null) { try { el.setSelectionRange(sel[0], sel[1]); } catch (e) { /* not text */ } } }
+  }
+}
+function renderAll() {
+  document.getElementById('options').innerHTML = OPTS.map(function (opt, i) {
+    var n = i + 1, isPicked = picked === opt.id;
+    return '<section class="option' + (isPicked ? ' picked' : '') + '" id="opt-' + opt.id + '" data-opt="' + opt.id + '" aria-labelledby="h-' + opt.id + '">'
+      + '<div class="opt-h"><div class="opt-n" aria-hidden="true">' + n + '</div><h3 id="h-' + opt.id + '">' + n + ' · ' + esc(opt.name) + '</h3><p>' + esc(opt.text) + '</p>'
+      + '<button type="button" class="pick" data-pick="' + opt.id + '" aria-pressed="' + isPicked + '">' + (isPicked ? 'Chosen' : 'Choose') + '</button></div>'
+      + '<p class="stagehint">Swipe sideways to see the whole screen.</p><div class="stagewrap">' + stageHtml(opt.id) + '</div>'
+      + '<div class="after"><div class="pc"><h4>Why it helps</h4><ul class="pros">' + opt.pros.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>'
+      + '<h4 style="margin-top:10px">Trade-offs</h4><ul class="cons">' + opt.cons.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></div>'
+      + '<div class="pc"><h4>Where everything lives</h4><table class="caps">' + CAPS.map(function (c) { return '<tr><td>' + esc(c[1]) + '</td><td>' + esc(opt.caps[c[0]]) + '</td></tr>'; }).join('') + '</table></div></div></section>';
+  }).join('');
+  renderChrome();
+}
+function renderChrome() {
+  document.getElementById('jump').innerHTML = '<a href="#today">Today</a>' + OPTS.map(function (opt, i) {
+    return '<a href="#opt-' + opt.id + '" title="' + esc(opt.name) + '"' + (picked === opt.id ? ' class="picked"' : '') + '>' + (i + 1) + '</a>';
+  }).join('');
+  OPTS.forEach(function (opt) {
+    var sec = document.getElementById('opt-' + opt.id); if (!sec) return;
+    sec.classList.toggle('picked', picked === opt.id);
+    var b = sec.querySelector('[data-pick]'); b.setAttribute('aria-pressed', String(picked === opt.id)); b.textContent = picked === opt.id ? 'Chosen' : 'Choose';
+  });
+  var bar = document.getElementById('pickedBar');
+  var i = -1; OPTS.forEach(function (opt, k) { if (opt.id === picked) i = k; });
+  bar.classList.toggle('on', i >= 0);
+  bar.innerHTML = i >= 0 ? 'You chose <b>' + (i + 1) + ' · ' + esc(OPTS[i].name) + '</b>. Tell Claude: <code id="say">Go with new sleeve option ' + (i + 1) + ' (' + esc(OPTS[i].name) + ')</code>'
+    + '<button type="button" data-copy>Copy</button><button type="button" data-clear>Clear</button>' : '';
+}
+
+/* ------------------------------------------------------------ actions */
+/* a source belongs to one category: moving the new sleeve elsewhere stops the
+   comparison, keeps whatever products are in the form, and says so */
+function comboCategory(s, ci) {
+  var src = srcOf(s);
+  s.ask = null;
+  if (src && src.c !== ci) {
+    s.lost = src.name + ' is a ' + C[src.c] + ' sleeve, and this one is now in ' + C[ci] + '. Your ' + plural(s.rows.length, 'product') + ' stay in the form but are no longer compared with it.';
+    s.src = null; s.kept = '';
+  }
+}
+function addRow(s, pid) { if (!s.rows.some(function (r) { return r.pid === pid; })) s.rows.push({pid: pid, w: NaN, t: ''}); }
+function create(o, s) {
+  s.tried = true;
+  if (problems(s).length) {
+    var first = problems(s)[0];
+    s.toast = '<b style="color:#FFB4A8">Not created yet.</b> ' + esc(first.m);
+    return;
+  }
+  var vars = okVars(s);
+  s.done = {name: s.name.trim(), cat: s.cat, vars: vars, rows: s.rows.map(function (r) { return {pid: r.pid, w: r.w}; }), note: s.note.trim(),
+            basedOn: o === 'combo' && srcOf(s) ? srcOf(s).name : ''};
+  s.made.unshift(s.done);
+  s.modal = false; s.guard = false;
+  s.toast = '<b>Created ' + esc(s.done.name) + '</b> under ' + esc(vars.map(function (v) { return V[v]; }).join(' and ')) + ' · revision 1. You are on its page. (Mock-up: nothing was written.)';
+}
+function reset(o) { var made = S(o).made; ST[o] = fresh(o); ST[o].made = made; if (o === 'inline') ST[o].open = true; if (o === 'drawer') ST[o].drawer = true; }
+function act(o, a, x, el) {
+  var s = S(o);
+  if (a !== 'w' && a !== 'w9' && a !== 'name' && a !== 'note' && a !== 'q') s.toast = '';
+  switch (a) {
+    case 'cat': if (o === 'combo') comboCategory(s, +x); s.cat = +x; s.vars = s.vars.filter(function (v) { return availability(s.cat, v, '').ok; }); if (!s.vars.length && o !== 'wizard') { var f = V.map(function (v, i) { return i; }).filter(function (v) { return availability(s.cat, v, '').ok; })[0]; if (f != null) s.vars = [f]; } break;
+    case 'catsel': s.cat = +el.value; s.vars = s.vars.filter(function (v) { return availability(s.cat, v, '').ok; }); if (o === 'copy') { s.src = null; s.rows = []; } break;
+    case 'chcat': s.chcat = true; break;
+    case 'var':
+      var vi = +x, at = s.vars.indexOf(vi);
+      if (at >= 0) s.vars.splice(at, 1);
+      else if (availability(s.cat, vi, s.name).ok) s.vars.push(vi);
+      else { s.toast = esc(availability(s.cat, vi, s.name).reason); }
+      s.vars.sort(); break;
+    case 'name': s.name = el.value; break;
+    case 'note': s.note = el.value; break;
+    case 'q': s.q = el.value; break;
+    case 'all': s.all = !!el.checked; break;
+    case 'add':
+      if (o === 'allocator') rebalanceAdd(s, x); else addRow(s, x);
+      if (o !== 'allocator' && o !== 'wizard') s.focus = 'w' + (s.rows.length - 1);
+      break;
+    case 'rm': s.rows.splice(+x, 1); break;
+    case 'w': var r = s.rows[+x]; r.t = el.value; r.w = weightOf(el.value); break;
+    case 'even':
+      var n = s.rows.length, base = Math.floor(10000 / n) / 100;
+      s.rows.forEach(function (r2, i) { r2.w = i === n - 1 ? Math.round((100 - base * (n - 1)) * 100) / 100 : base; r2.t = pct(r2.w); }); break;
+    case 'create': create(o, s); break;
+    case 'cancel': if (o === 'combo' && s.dlg) { s.dlg = false; break; } if (o === 'combo' && s.ask != null) { s.ask = null; break; } if (s.done) { reset(o); break; } if (dirty(s)) { s.guard = true; s.focus = 'guardkeep'; } else { if (o === 'inline') s.open = false; else if (o === 'drawer') s.drawer = false; else reset(o); s.toast = 'Cancelled. Nothing was created.'; } break;
+    case 'keep': s.guard = false; break;
+    case 'discard': var keepMade = s.made; ST[o] = fresh(o); ST[o].made = keepMade; if (o === 'drawer') ST[o].drawer = false; ST[o].toast = 'Discarded. Nothing was created.'; break;
+    case 'again': reset(o); if (o === 'inline') S(o).focus = 'n1'; break;
+    case 'closedone': s.drawer = false; s.done = null; break;
+    case 'mock': s.toast = esc(x) + ' <span style="opacity:.75">(Not part of this mock-up.)</span>'; break;
+    case 'openinline': s.open = true; s.focus = 'n1'; break;
+    case 'step': s.step = +x; break;
+    case 'src': var src = D.sleeves.filter(function (y) { return y.id === +x; })[0]; s.src = src.id; s.rows = src.rows.map(function (r3) { return {pid: r3.pid, w: r3.w, t: pct(r3.w)}; }); s.note = src.note || ''; if (!s.name.trim()) s.name = src.name + ' (copy)'; s.focus = 'n5'; break;
+    case 'blank': s.src = 'blank'; s.rows = []; s.focus = 'n5'; break;
+    case 'tpl':
+      s.tpl = x;
+      if (x === 'blank') s.rows = [];
+      else { var t = templates(s.cat).filter(function (z) { return z.k === x; })[0]; s.rows = t.rows.map(function (r4) { return {pid: r4.pid, w: r4.w, t: pct(r4.w)}; }); }
+      s.focus = 'n6'; break;
+    case 'togglecat': s.pick = !s.pick; break;
+    case 'vf': s.vf = x; break;
+    case 'sort': s.sort = x; break;
+    case 'tick': if (el.checked) addRow(s, x); else s.rows = s.rows.filter(function (r5) { return r5.pid !== x; }); break;
+    case 'stage': s.stage = x; break;
+    case 'w9':
+      var i9 = +x, row = s.rows[i9], v9 = weightOf(el.value); row.t = el.value;
+      if (isFinite(v9)) {
+        var nb = s.rows[i9 + 1] || s.rows[i9 - 1];
+        if (nb) { var pair = row.w + nb.w, nv = Math.max(0.5, Math.min(pair - 0.5, v9)); row.w = Math.round(nv * 100) / 100; nb.w = Math.round((pair - row.w) * 100) / 100; nb.t = pct(nb.w); }
+        else { row.w = 100; }
+      }
+      break;
+    case 'rm9':
+      var gone = s.rows.splice(+x, 1)[0];
+      if (s.rows.length) { var rest = total(s.rows); s.rows.forEach(function (r6) { r6.w = Math.round(r6.w / rest * 10000) / 100; }); var d9 = Math.round((100 - total(s.rows)) * 100) / 100; s.rows[0].w = Math.round((s.rows[0].w + d9) * 100) / 100; s.rows.forEach(function (r7) { r7.t = pct(r7.w); }); }
+      break;
+    case 'mode11':
+      if (x === s.mode) break;
+      if (x === 'blank' && srcOf(s)) {
+        s.kept = s.rows.length ? 'Kept your ' + plural(s.rows.length, 'product') + '. They are no longer compared with ' + srcOf(s).name + '.' : '';
+        s.src = null;
+      }
+      s.ask = null; s.mode = x; s.lost = '';
+      try { window.localStorage.setItem('newSleeveStartFrom', x); } catch (e) { /* private window */ }
+      s.focus = 'm11' + x; break;
+    case 'srcq': s.srcq = el.value; break;
+    case 'allv11': s.allV = !!el.checked; break;
+    case 'src11':
+      var id11 = +x;
+      if (s.rows.length && !sameAsSource(s)) { s.ask = id11; s.focus = 'keepmine11'; }
+      else useSource(s, id11);
+      break;
+    case 'replace11': useSource(s, s.ask); break;
+    case 'dlgopen': s.dlg = true; s.dq = ''; s.dsel = []; s.dret = el && el.dataset.k || null; s.focus = 'dq11'; break;
+    case 'dlgclose': s.dlg = false; s.dsel = []; s.focus = s.dret || (s.rows.length ? 'addprod11' : 'addprod11e'); break;
+    case 'dq': s.dq = el.value; break;
+    case 'dscope': s.dscope = x; s.focus = null; break;
+    case 'dve': s.dve = x; break;
+    case 'dst': s.dst = x; break;
+    case 'dso': s.dso = x; break;
+    case 'dclear': s.dq = ''; s.dve = ''; s.dst = ''; s.dso = ''; s.focus = 'dq11'; break;
+    case 'dsort': if (s.dsort === x) s.ddir = -(s.ddir || 1); else { s.dsort = x; s.ddir = 1; } break;
+    case 'dtick': case 'dtickrow':
+      var at11 = s.dsel.indexOf(x);
+      if (at11 >= 0) s.dsel.splice(at11, 1); else s.dsel.push(x);
+      if (a === 'dtick') s.focusTick = x;
+      break;
+    case 'dadd':
+      var first11 = s.rows.length;
+      s.dsel.forEach(function (pid) { addRow(s, pid); });
+      var nAdded = s.rows.length - first11;
+      s.dlg = false; s.dsel = [];
+      s.focus = nAdded ? 'w' + first11 : 'addprod11';
+      s.toast = nAdded ? 'Added ' + plural(nAdded, 'product') + '. Give ' + (nAdded === 1 ? 'it a weight' : 'each a weight') + '.' : '';
+      break;
+    case 'keepmine11': s.ask = null; break;
+    case 'openreview': if (problems(s).length) { s.tried = true; s.toast = '<b style="color:#FFB4A8">Not ready to review.</b> ' + esc(problems(s)[0].m); } else { s.modal = true; s.focus = 'backedit'; } break;
+    case 'closereview': s.modal = false; break;
+    default: return;
+  }
+  renderOpt(o);
+}
+
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('button,[data-a]');
+  if (!b) return;
+  if (b.dataset.pick) {
+    picked = picked === b.dataset.pick ? null : b.dataset.pick;
+    try { if (picked) window.localStorage.setItem('newSleeveOption', picked); else window.localStorage.removeItem('newSleeveOption'); } catch (err) { /* private window */ }
+    renderChrome(); return;
+  }
+  if (b.hasAttribute('data-clear')) { picked = null; try { window.localStorage.removeItem('newSleeveOption'); } catch (err) { /* ignore */ } renderChrome(); return; }
+  if (b.hasAttribute('data-copy')) {
+    var text = (document.getElementById('say') || {}).textContent || '';
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { b.textContent = 'Copied'; }, function () {});
+    return;
+  }
+  var a = b.dataset.a; if (!a) return;
+  var sec = b.closest('[data-opt]'); if (!sec) return;
+  if (b.tagName === 'INPUT' && (b.type === 'checkbox')) { act(sec.dataset.opt, a, b.dataset.x, b); return; }
+  if (b.tagName === 'INPUT' || b.tagName === 'SELECT') return;
+  e.preventDefault();
+  act(sec.dataset.opt, a, b.dataset.x, b);
+});
+document.addEventListener('input', function (e) {
+  var el = e.target; var a = el.dataset && el.dataset.a; if (!a || el.tagName === 'SELECT' || el.type === 'checkbox') return;
+  var sec = el.closest('[data-opt]'); if (!sec) return;
+  act(sec.dataset.opt, a, el.dataset.x, el);
+});
+document.addEventListener('change', function (e) {
+  var el = e.target; if (el.tagName !== 'SELECT') return;
+  var a = el.dataset.a; var sec = el.closest('[data-opt]'); if (!a || !sec) return;
+  act(sec.dataset.opt, a, el.value, el);
+});
+document.addEventListener('keydown', function (e) {
+  var el = e.target;
+  if (el.classList && el.classList.contains('h') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    var sec0 = el.closest('[data-opt]'), s0 = S(sec0.dataset.opt), i0 = +el.dataset.h;
+    var left0 = 0; for (var k = 0; k <= i0; k++) left0 += s0.rows[k].w;
+    moveHandle(s0, i0, left0 + (e.key === 'ArrowRight' ? 0.5 : -0.5));
+    e.preventDefault(); s0.focusH = i0; renderOpt(sec0.dataset.opt);
+    var h = document.querySelector('[data-stage="' + sec0.dataset.opt + '"] .h[data-h="' + i0 + '"]'); if (h) h.focus();
+    return;
+  }
+  if (e.key === 'Tab' && el.closest && el.closest('.adddlg')) {
+    var dlg = el.closest('.adddlg');
+    var f = Array.prototype.filter.call(dlg.querySelectorAll('button:not([disabled]),input,select'), function (x) { return x.offsetParent !== null; });
+    if (f.length) {
+      var i = f.indexOf(el);
+      if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    var sec = el.closest && el.closest('[data-opt]'); if (!sec) return;
+    var s = S(sec.dataset.opt);
+    if (s.dlg) { act(sec.dataset.opt, 'dlgclose', null, null); }
+    else if (s.ask != null) { s.ask = null; renderOpt(sec.dataset.opt); }
+    else if (s.guard) { s.guard = false; renderOpt(sec.dataset.opt); }
+    else if (s.modal) { s.modal = false; renderOpt(sec.dataset.opt); }
+  }
+});
+/* dragging a handle on the split bar */
+var drag = null;
+document.addEventListener('pointerdown', function (e) {
+  var h = e.target.closest && e.target.closest('.alloc .h'); if (!h) return;
+  var sec = h.closest('[data-opt]'); drag = {o: sec.dataset.opt, i: +h.dataset.h, bar: h.closest('.alloc')};
+  h.setPointerCapture && h.setPointerCapture(e.pointerId); e.preventDefault();
+});
+document.addEventListener('pointermove', function (e) {
+  if (!drag) return;
+  var r = drag.bar.getBoundingClientRect(); var at = (e.clientX - r.left) / r.width * 100;
+  moveHandle(S(drag.o), drag.i, at); renderOpt(drag.o);
+  drag.bar = document.querySelector('[data-stage="' + drag.o + '"] .alloc');
+});
+document.addEventListener('pointerup', function () { drag = null; });
+
+renderAll();
+})();
+</script>
+</body>
+</html>

@@ -581,7 +581,9 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         raise ValidationError('variant', 'Choose an implementation type.')
     if category not in categories():
         raise ValidationError('category', '{!r} is not a category a sleeve can implement.'.format(category))
-    name = (name or '').strip()
+    # one space between words, none around them (D157): "Active  Passive"
+    # is the name "Active Passive", not a second sleeve that reads the same
+    name = normaliseName(name)
     if not name:
         raise ValidationError('name', 'Give the sleeve a name.')
     if len(name) > NAME_MAX:
@@ -601,6 +603,17 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
     siblings = [r for r in conn.execute(
         "SELECT * FROM sleeves WHERE variant = ? AND category = ? AND name = ? AND deletedAt = ''",
         (variant, category, name)).fetchall() if r['id'] != sleeveId]
+    # A name that differs from one the type already has here only in capitals
+    # or spacing is that name (D157): refused, naming the spelling in use,
+    # rather than becoming a second sleeve PWAs could not tell apart.
+    for other in conn.execute(
+            "SELECT DISTINCT name FROM sleeves WHERE variant = ? AND category = ? AND deletedAt = '' "
+            "AND id != ?", (variant, category, sleeveId if sleeveId is not None else -1)).fetchall():
+        if other['name'] != name and _nameKey(other['name']) == _nameKey(name):
+            raise ValidationError(
+                'name', 'A sleeve named {} already exists in {} under {}; names that differ only in '
+                'capitals or spacing are the same name. Use {} to add an edition to it, or choose '
+                'another name.'.format(other['name'], category, variant, other['name']))
     for sib in siblings:
         if sib['label'] == label:
             if label:
@@ -659,8 +672,28 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         raise ValidationError('products', 'A sleeve needs at least one product.')
     if abs(total - 1.0) > WEIGHT_TOLERANCE:
         raise ValidationError(
-            'weights', 'Weights sum to {:.2f}%; a sleeve must sum to 100%.'.format(total * 100.0))
+            'weights', 'Weights sum to {}%; a sleeve must sum to exactly 100%.'.format(_pctText(total * 100.0)))
     return name, note, cleaned, label, rules
+
+
+def normaliseName(name) -> str:
+    """A sleeve name as stored: trimmed, inner runs of spaces collapsed (D157)."""
+    return ' '.join(str(name or '').split())
+
+
+def _nameKey(name) -> str:
+    """What makes two names the same name: spacing and capitals aside (D157)."""
+    return normaliseName(name).lower()
+
+
+def _pctText(pct) -> str:
+    """A total as the desk needs to read it to see why it is refused: two
+    places, or as many as it takes to differ from 100 (99.999, not 100.00)."""
+    for places in (2, 3, 4):
+        text = '{:.{}f}'.format(pct, places)
+        if abs(float(text) - pct) < 1e-9 or text not in ('100.00', '100.000', '100.0000'):
+            return text
+    return '{:.6f}'.format(pct).rstrip('0')
 
 
 # --------------------------------------------------------------- reading ---
