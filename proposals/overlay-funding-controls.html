@@ -1,0 +1,1464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay Funding Controls</title>
+<style>
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+@font-face{font-family:"GS Sans Condensed";src:url("../proposalTool/static/fonts/gs-sans-condensed-variable.woff2") format("woff2");font-weight:100 900}
+:root{
+  --bg:#FBFCFE;--surface:#FFFFFF;--surface-2:#F0F2F5;--ink:#1C2733;--ink-2:#5B6B7C;--ink-3:#8494A4;
+  --line:#EEF1F4;--line-strong:#D4DAE2;--accent:#1F5FBF;--navy:#16243A;--rail:#12233f;
+  --good:#176A33;--good-tint:#E7F4EC;--bad:#B42318;--bad-tint:#FDE8E8;--warn:#B45309;--warn-tint:#FEF3C7;
+  --f:'GS Sans','Roboto',system-ui,-apple-system,sans-serif;
+  --fn:'GS Sans Condensed','GS Sans','Roboto',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 24px 80px}
+@media (max-width:700px){.wrap{padding:24px 16px 60px}}
+.eyebrow{font:600 12px var(--fn);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 8px}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1;margin:0 0 10px;color:var(--navy);font-weight:600}
+h2{font-size:23px;color:var(--navy);margin:44px 0 10px;font-weight:600;border-top:2px solid var(--navy);padding-top:16px}
+h3{font-size:17px;margin:22px 0 6px;color:var(--navy)}
+p,li{max-width:84ch}
+.sub{font-size:16.5px;color:var(--ink-2);margin:0}
+code{font:13px var(--fn);background:var(--surface-2);padding:1px 5px;border-radius:3px}
+table.plain{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+table.plain th,table.plain td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line-strong);vertical-align:top}
+table.plain th{font:600 12px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.note{background:#EEF3FC;border-left:3px solid var(--accent);padding:10px 14px;border-radius:4px;font-size:14px;margin:12px 0}
+
+/* ---------- the console mock ---------- */
+.console{margin:18px 0 0;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface);box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.chead{background:var(--rail);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.chead b{font-weight:600}.chead span{color:#B6C2D2;font-size:13px}
+.tabs{display:flex;gap:2px;background:#1D2F4B;padding:0 12px;overflow-x:auto}
+.tabs button{font:600 13px var(--f);color:#B6C2D2;background:none;border:0;padding:10px 14px;cursor:default;white-space:nowrap;border-bottom:3px solid transparent}
+.tabs button.on{color:#fff;border-bottom-color:#F3C46B}
+.tabs button.new::after{content:"new";margin-left:6px;font:700 9.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;background:#F3C46B;color:#12233f;border-radius:8px;padding:1px 6px}
+.cbody{display:grid;grid-template-columns:minmax(0,1fr) 340px}
+@media (max-width:980px){.cbody{grid-template-columns:1fr}}
+.cmain{padding:18px 20px;min-width:0}
+.cside{border-left:1px solid var(--line-strong);background:#F7F9FB;padding:16px 16px 20px;min-width:0}
+@media (max-width:980px){.cside{border-left:0;border-top:1px solid var(--line-strong)}}
+.lede{font-size:13.5px;color:var(--ink-2);margin:0 0 14px}
+.scope{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 14px;font-size:13.5px}
+.scope label{font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+select,input[type=number],input[type=text]{font:14px var(--f);color:var(--ink);border:1px solid var(--line-strong);border-radius:5px;padding:5px 8px;background:#fff}
+input[type=number]{width:92px;text-align:right;font-family:var(--fn)}
+select:focus,input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.pill{display:inline-block;font:700 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;border-radius:9px;padding:2px 8px}
+.pill.house{background:#E3EBFA;color:#1E4FA3}.pill.over{background:var(--warn-tint);color:var(--warn)}
+.card{border:1px solid var(--line-strong);border-radius:8px;margin:0 0 16px;overflow:hidden}
+.card-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--line-strong)}
+.card-h h4{margin:0;font-size:15.5px}
+.card-h .spacer{flex:1}
+.card-b{padding:12px 14px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px;font-size:14px}
+.row .lbl{font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);min-width:96px}
+.src{width:100%;border-collapse:collapse;font-size:14px;margin:4px 0 6px}
+.src th{font:600 11px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line-strong)}
+.src td{padding:4px 6px;border-bottom:1px solid var(--line)}
+.src td.n{text-align:right;font-family:var(--fn);font-variant-numeric:tabular-nums}
+.src select{max-width:260px}
+.x{border:0;background:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 6px;border-radius:3px}
+.x:hover{background:var(--bad-tint)}
+.btn{font:600 13px var(--f);border:1px solid var(--line-strong);background:#fff;color:var(--ink);border-radius:5px;padding:6px 12px;cursor:pointer}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.sum{font:600 13px var(--fn);padding:3px 9px;border-radius:10px}
+.sum.ok{background:var(--good-tint);color:var(--good)}.sum.bad{background:var(--bad-tint);color:var(--bad)}
+.problems{margin:6px 0 0;padding:0;list-style:none;font-size:13px}
+.problems li{color:var(--bad);margin:2px 0}.problems li.warn{color:var(--warn)}
+.foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.foot input[type=text]{flex:1;min-width:220px}
+.hist{margin:8px 0 0;padding:0;list-style:none;font-size:12.5px;color:var(--ink-2)}
+.hist li{padding:5px 0;border-top:1px dashed var(--line-strong);display:flex;gap:8px;justify-content:space-between}
+.hist li button{font:600 11px var(--fn);letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line-strong);background:#fff;border-radius:4px;padding:1px 7px;cursor:pointer;color:var(--accent)}
+.order{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
+.order button{font:600 12.5px var(--f);border:0;background:#fff;color:var(--ink-2);padding:5px 10px;cursor:pointer}
+.order button[aria-pressed=true]{background:var(--navy);color:#fff}
+.formula{font:13px var(--fn);color:var(--ink-2);background:#fff;border:1px dashed var(--line-strong);border-radius:5px;padding:6px 9px;margin:4px 0 0}
+
+/* worked example */
+.cside h4{margin:0 0 4px;font-size:15px}
+.cside .lede{margin-bottom:10px}
+.ex{width:100%;border-collapse:collapse;font-size:13px}
+.ex th,.ex td{padding:3px 6px;border-bottom:1px solid var(--line)}
+.ex th{font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right}
+.ex th:first-child,.ex td:first-child{text-align:left}
+.ex td{text-align:right;font-family:var(--fn);font-variant-numeric:tabular-nums}
+.ex td:first-child{font-family:var(--f)}
+.ex tr.new td{color:var(--accent);font-weight:700}
+.ex tr.tot td{border-top:1px solid var(--ink);font-weight:700}
+.d.up{color:var(--good)}.d.dn{color:var(--bad)}
+.head{margin:14px 0 4px;font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.ex tr.low td{background:var(--warn-tint)}.ex tr.neg td{background:var(--bad-tint)}
+
+/* ---------- the ten options ---------- */
+.bar-top{position:sticky;top:0;z-index:20;background:rgba(251,252,254,.95);backdrop-filter:blur(6px);border-bottom:1px solid var(--line-strong);
+  margin:0 -24px 22px;padding:10px 24px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+@media (max-width:700px){.bar-top{margin:0 -16px 20px;padding:10px 16px}}
+.bar-top .ctl{font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.spacer{flex:1}
+.jump{display:flex;flex-wrap:wrap;gap:6px}
+.jump a{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line-strong);
+  border-radius:15px;font:600 13px var(--fn);color:var(--ink-2);text-decoration:none;background:var(--surface)}
+.jump a:hover{border-color:var(--accent);color:var(--accent)}
+.jump a.picked{background:var(--accent);border-color:var(--accent);color:#fff}
+.option{margin:0 0 46px;scroll-margin-top:70px}
+.opt-h{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:start;margin:0 0 12px}
+.opt-n{grid-row:span 2;width:40px;height:40px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font:600 17px var(--fn)}
+.opt-h h3{margin:0;font-size:21px;color:var(--navy);font-weight:600}
+.opt-h p{margin:0;grid-column:2;color:var(--ink-2);font-size:14.5px;max-width:80ch}
+.pick{grid-row:1 / span 2;grid-column:3;align-self:center;font:600 13px var(--fn);letter-spacing:.06em;text-transform:uppercase;
+  border:1.5px solid var(--accent);color:var(--accent);background:var(--surface);border-radius:6px;padding:8px 14px;cursor:pointer;white-space:nowrap}
+.pick:hover{background:#EEF3FC}
+.pick[aria-pressed="true"]{background:var(--accent);color:#fff}
+.option.picked .stage{box-shadow:0 0 0 3px var(--accent)}
+.stage{background:#F5F7FA;border:1px solid var(--line-strong);border-radius:10px;padding:16px;overflow-x:auto}
+.traits{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0 0;padding:0;list-style:none;font-size:13px;color:var(--ink-2)}
+.traits li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--good);margin-right:7px;vertical-align:2px}
+.traits li.con::before{background:var(--warn)}
+@media (max-width:700px){.opt-h{grid-template-columns:auto 1fr}.pick{grid-column:1 / -1;grid-row:auto;justify-self:start;margin-top:6px}}
+.picked-bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--navy);color:#fff;padding:12px 20px;display:flex;gap:12px 18px;
+  align-items:center;justify-content:center;flex-wrap:wrap;font-size:14.5px;transform:translateY(110%);transition:transform .25s ease}
+.picked-bar.on{transform:none}
+.picked-bar b{color:#F3C46B}
+.picked-bar code{font:13px var(--fn);background:rgba(255,255,255,.12);padding:3px 8px;border-radius:4px}
+.picked-bar button,.bar-top button.reset{font:600 12.5px var(--fn);letter-spacing:.05em;border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:5px;padding:5px 10px;cursor:pointer}
+.bar-top button.reset{border-color:var(--line-strong);color:var(--ink-2);background:#fff}
+
+/* the console frame every option sits in */
+.stage .console{margin:0;min-width:760px}
+.cpad{padding:16px 18px;background:#fff}
+.stage .tabs button{cursor:default}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;vertical-align:0;flex:0 0 auto}
+.in{width:84px}
+.in.sz{width:78px}
+.in.cell{width:64px;padding:4px 6px}
+.wv{display:inline-flex;align-items:center;gap:3px}.wv span{font-family:var(--fn);color:var(--ink-3)}
+.lnk{border:0;background:none;color:var(--accent);font:600 13px var(--f);cursor:pointer;padding:3px 4px}
+.lnk:hover{text-decoration:underline}
+.two{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;margin-top:14px;align-items:start}
+@media (max-width:980px){.two{grid-template-columns:1fr}}
+.okl{margin:0;font-size:13.5px;color:var(--good);background:var(--good-tint);border-radius:5px;padding:7px 10px}
+.problems li{background:var(--bad-tint);border-radius:4px;padding:5px 9px;margin:0 0 4px}
+.problems li.warn{background:var(--warn-tint)}
+.flash{font-size:13px;font-weight:600;color:var(--good)}.flash.no{color:var(--bad)}
+.hh{margin:14px 0 2px;font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.hist .hw{color:var(--ink);font-size:12.5px}.hist .hn{font-style:italic}
+.hist .now{font:700 10px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--good);white-space:nowrap}
+.nth{display:inline-block;font:700 10px var(--fn);letter-spacing:.1em;text-transform:uppercase;background:var(--navy);color:#fff;border-radius:8px;padding:1px 7px;margin-right:7px;vertical-align:2px}
+.hint{font-size:12.5px;color:var(--ink-3);margin:6px 0 0}
+
+/* the preview */
+table.pv{border-collapse:collapse;width:100%;font-size:13px;background:#fff;border:1px solid var(--line-strong);border-radius:6px}
+table.pv caption{text-align:left;font:600 11px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding:0 0 5px}
+table.pv th,table.pv td{padding:4px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+table.pv th{font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+table.pv th:first-child,table.pv td:first-child{text-align:left}
+table.pv td{font-family:var(--fn);font-variant-numeric:tabular-nums}
+table.pv td:first-child{font-family:var(--f)}
+table.pv tr.moved td{font-weight:700}
+table.pv tr.ov td{background:#EEF3FC;color:#16407F;font-weight:700}
+table.pv td.d{color:var(--ink-3)}
+table.pv small{display:block;font-weight:400;color:var(--ink-3);font-size:11px}
+
+/* 1 grid */
+table.mx{border-collapse:collapse;width:100%;font-size:14px}
+table.mx th,table.mx td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.mx thead th{font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;border-bottom:1px solid var(--ink)}
+table.mx thead th.c{text-align:center;white-space:normal;line-height:1.25;max-width:84px}
+table.mx thead th.c .sw{display:block;margin:0 auto 4px;width:22px;height:5px}
+table.mx tbody th{text-align:left;font-weight:600;white-space:nowrap}
+table.mx tbody th small{display:block;font-weight:400;color:var(--ink-3);font-size:12px;margin-left:34px}
+table.mx td.c{text-align:center}
+table.mx td.c.on{background:#FFF6EE}
+
+/* 2 sentence */
+.sn{font-size:17px;line-height:2.4;margin:0 0 6px;max-width:none}
+.sn select{font-size:15px}
+.sn .and{color:var(--ink-3)}
+.ordw{display:inline-block;font:700 12px var(--fn);letter-spacing:.1em;text-transform:uppercase;background:var(--navy);color:#fff;border-radius:10px;padding:2px 9px;vertical-align:2px}
+.result{background:#EEF3FC;border-left:3px solid var(--accent);border-radius:4px;padding:10px 14px;font-size:15px;margin:10px 0 0}
+
+/* 3 waterfall and 9 sankey */
+.re{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 10px;border:1px solid var(--line-strong);border-radius:6px;margin:0 0 8px;font-size:14px;background:#FAFBFC}
+.re b{min-width:190px}
+.re .from{color:var(--ink-3);font-size:13px}
+.chart{background:#fff;border:1px solid var(--line-strong);border-radius:6px;padding:10px;margin-top:10px;overflow-x:auto}
+.chart svg{display:block;max-width:100%;height:auto;font-family:var(--fn)}
+.chart .ax{stroke:var(--ink);stroke-width:1}
+.chart .lk{stroke:var(--ink-3);stroke-dasharray:3 3}
+.chart text.v{font-size:11.5px;font-weight:700;fill:var(--ink)}
+.chart text.l{font-size:11px;fill:var(--ink-2)}
+.chart text.n{font-size:12.5px;fill:var(--ink);font-family:var(--f)}
+.chart text.n tspan{font-family:var(--fn);font-weight:700}
+
+/* 4 splitter */
+.scard{border:1px solid var(--line-strong);border-radius:8px;margin:0 0 12px;background:#fff}
+.scard-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.scard-h b{font-size:15px}
+.scard-b{padding:12px 14px}
+.sbar{display:flex;height:30px;border-radius:5px;overflow:hidden;background:var(--surface-2)}
+.sbar span{display:flex;align-items:center;justify-content:center;color:#fff;font:600 12px var(--fn);white-space:nowrap;overflow:hidden;min-width:0;transition:flex-basis .15s}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-strong);background:#fff;border-radius:14px;padding:3px 10px;font:13px var(--f);color:var(--ink-2);cursor:pointer}
+.chip[aria-pressed=true]{border-color:var(--ink);color:var(--ink);background:#F4F6F9;font-weight:600}
+.slr{display:grid;grid-template-columns:250px minmax(0,1fr) 70px;gap:10px;align-items:center;font-size:14px;margin:4px 0}
+.slr input[type=range]{width:100%}
+.slr .ro{font:700 14px var(--fn);text-align:right}
+.slr .rest{color:var(--ink-3);font-size:13px}
+
+/* 5 types */
+table.tt{border-collapse:collapse;width:100%;font-size:14px}
+table.tt th,table.tt td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+table.tt thead th{font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--ink)}
+table.tt td.rw{font-family:var(--fn);font-size:13.5px}
+table.tt tr.sel>td,table.tt tr.sel>th{background:#F4F7FC}
+table.tt tr.edrow td{background:#F4F7FC;padding:12px 14px 16px}
+.edgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:900px){.edgrid{grid-template-columns:1fr}}
+.mini{border:1px solid var(--line-strong);border-radius:6px;background:#fff;padding:10px 12px}
+.mini h5{margin:0 0 8px;font-size:14px}
+.ck{font:700 12px var(--fn);border-radius:9px;padding:2px 8px}.ck.ok{background:var(--good-tint);color:var(--good)}.ck.bad{background:var(--bad-tint);color:var(--bad)}
+.inh{color:var(--ink-3);font-style:italic}
+
+/* 6 wizard */
+.steps{display:flex;gap:0;margin:0 0 16px;counter-reset:s}
+.steps button{flex:1;border:0;border-bottom:3px solid var(--line-strong);background:none;padding:8px 6px;font:600 13px var(--f);color:var(--ink-3);cursor:pointer;text-align:left}
+.steps button b{display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--line-strong);color:#fff;align-items:center;justify-content:center;font:700 11px var(--fn);margin-right:6px}
+.steps button.done{color:var(--ink-2);border-bottom-color:#9DB6DD}.steps button.done b{background:#9DB6DD}
+.steps button.on{color:var(--navy);border-bottom-color:var(--accent)}.steps button.on b{background:var(--accent)}
+.pickcards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:760px){.pickcards{grid-template-columns:1fr}}
+.pickcard{text-align:left;border:1.5px solid var(--line-strong);border-radius:8px;background:#fff;padding:12px 14px;cursor:pointer;font:14px var(--f);color:var(--ink)}
+.pickcard[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px #CFE0F8}
+.pickcard b{display:block;font-size:15.5px;margin-bottom:4px}
+.pickcard span{color:var(--ink-2);font-size:13px}
+.big{font:600 28px var(--fn);width:130px;text-align:right}
+.wnav{display:flex;justify-content:space-between;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.diff{border-collapse:collapse;width:100%;font-size:13.5px}
+.diff th,.diff td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+.diff th{font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.diff td.ch{color:var(--accent);font-weight:700}
+
+/* 7 before/after */
+table.ba{border-collapse:collapse;width:100%;font-size:14px}
+table.ba th,table.ba td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+table.ba th:first-child,table.ba td:first-child{text-align:left}
+table.ba thead th{font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);vertical-align:bottom}
+table.ba thead tr:last-child th{border-bottom:1px solid var(--ink)}
+table.ba thead th.grp{text-align:center;color:var(--navy);border-bottom:1px solid var(--line-strong)}
+table.ba td{font-family:var(--fn);font-variant-numeric:tabular-nums}
+table.ba td:first-child{font-family:var(--f)}
+table.ba .g1{background:#FAFBFD}
+table.ba td.tk{color:var(--bad)}
+table.ba td.af{font-weight:700}
+table.ba tr.ov td{background:#EEF3FC;color:#16407F;font-weight:700}
+table.ba tr.ov td small{display:block;font-weight:400;color:var(--ink-2);font-size:12px}
+table.ba tfoot td{border-top:1px solid var(--ink);border-bottom:0;font-weight:700}
+
+/* 8 drawer */
+.dwrap{position:relative;min-height:700px;overflow:hidden}
+.grp-h{margin:4px 0 8px;font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.rc{display:flex;align-items:center;gap:12px;border:1px solid var(--line-strong);border-left:5px solid var(--cc);border-radius:7px;background:#fff;padding:10px 14px;margin:0 0 8px}
+.rc>div{flex:1;min-width:0}
+.rc b{display:block;font-size:15px}
+.rc span{font:13.5px var(--fn);color:var(--ink-2)}
+.ovrow{display:flex;align-items:center;gap:10px;padding:7px 2px;border-top:1px dashed var(--line-strong);font-size:14px}
+.ovrow .spacer{flex:1}
+.ovset{margin:6px 0 10px 14px}
+.scrim{position:absolute;inset:0;background:rgba(18,35,63,.28)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:430px;max-width:92%;background:#fff;box-shadow:-10px 0 30px rgba(16,24,40,.18);padding:16px 18px;overflow:auto}
+.drawer h4{margin:0 0 2px;font-size:17px}
+.drawer .lede{margin:0 0 12px}
+
+/* 8 · ordered rules */
+.pipe .pgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-top:6px}
+@media (max-width:1000px){.pipe .pgrid{grid-template-columns:1fr}}
+.pipe .lede{margin:0 0 10px;color:var(--ink-2);font-size:14px}
+ol.pl{list-style:none;margin:0;padding:0;counter-reset:none}
+li.pc{display:flex;align-items:center;gap:10px;border:1px solid var(--line-strong);border-left:5px solid var(--cc);border-radius:7px;background:#fff;padding:9px 10px 9px 8px;margin:0 0 6px;position:relative}
+li.pc + li.pc{margin-top:16px}
+li.pc + li.pc::before{content:"then ↓";position:absolute;top:-16px;left:34px;font:600 10.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+li.pc.bad{border-color:var(--bad);border-left-color:var(--bad);background:#FFF8F7}
+li.pc.dragging{opacity:.45}
+li.pc.drop-above{box-shadow:0 -3px 0 var(--accent)}
+li.pc.drop-below{box-shadow:0 3px 0 var(--accent)}
+.grip{cursor:grab;color:var(--ink-3);font-size:18px;line-height:1;padding:2px 2px;user-select:none}
+.ordn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:22px;border-radius:11px;background:var(--navy);color:#fff;font:700 11.5px var(--fn);letter-spacing:.04em}
+.ordn.sm{min-width:28px;height:17px;font-size:10px;margin-right:6px;vertical-align:1px}
+.pcb{flex:1;min-width:0}
+.pcb b{display:block;font-size:15px}
+.pcb .into{font-weight:400;color:var(--ink-3);font-size:13px}
+.pcb .pw{display:block;font:13px var(--fn);color:var(--ink-2)}
+.pcb .pa{display:block;font-size:12.5px;color:var(--ink-3)}
+.pcb .pa b{display:inline;font-size:12.5px;color:var(--ink)}
+.pcb .pa em{color:var(--bad);font-style:normal;font-weight:600}
+.mv{display:inline-flex;flex-direction:column;gap:2px}
+.mb{width:26px;height:20px;border:1px solid var(--line-strong);background:#fff;border-radius:4px;cursor:pointer;font-size:12px;line-height:1;color:var(--ink-2);padding:0}
+.mb:disabled{opacity:.35;cursor:default}
+.mb:focus-visible,.grip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.padd{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin:12px 0 4px}
+.flash.pend{color:var(--warn,#B45309)}
+.ptr{min-width:0}
+ol.trace{list-style:none;margin:0 0 12px;padding:0}
+ol.trace li{border-left:3px solid var(--cc,var(--line-strong));padding:6px 10px 8px;margin:0 0 8px;background:#fff;border-radius:0 6px 6px 0;font-size:13.5px}
+ol.trace li.t0{border-left-color:var(--ink-3);color:var(--ink-2);font-size:12.5px}
+ol.trace li.tbad{border-left-color:var(--bad);background:#FFF8F7}
+ol.trace .tw{color:var(--ink-2);font-size:12.5px}
+ol.trace .tf{font:12px var(--fn);color:var(--ink-3);margin:3px 0 0}
+table.tt2{border-collapse:collapse;margin-top:4px;font:13px var(--fn)}
+table.tt2 td{padding:1px 8px 1px 0;white-space:nowrap}
+table.tt2 td:first-child{min-width:170px}table.tt2 td:nth-child(2),table.tt2 td:nth-child(4){min-width:58px;text-align:right}
+table.tt2 td.d{font-weight:700;padding-left:6px}
+table.tt2 tr.ovr td{color:#16407F;font-weight:600}
+table.tt2 tr.neg td,table.pv tr.neg td{color:var(--bad);font-weight:700}
+table.pv.fin tr.ov td{background:#EEF3FC;color:#16407F;font-weight:700}
+.pipe .drawer .row{display:flex;align-items:center;gap:8px;margin:0 0 8px;flex-wrap:wrap}
+.pipe .drawer .row .lbl{width:74px;font:600 11px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.pipe .drawer .row input[type=text]{flex:1;min-width:0}
+.pipe .drawer .hint{font-size:12px;color:var(--ink-3)}
+.pipe .drawer{width:470px}
+
+/* 10 sheet */
+.sg{display:grid;grid-template-columns:minmax(0,1fr) 330px;min-height:420px}
+.sg-side table.pv th:nth-child(4),.sg-side table.pv td:nth-child(4){display:none}
+table.sheet{width:100%}
+table.sheet tbody th{white-space:normal;width:130px;line-height:1.25}
+table.sheet td.slots{padding:2px 4px;white-space:normal}
+table.sheet .slot{margin:1px 2px 1px 0}
+table.sheet .slot{display:inline-flex;align-items:center;border-right:1px solid var(--line-strong);margin-right:2px}
+table.sheet .slot select{max-width:118px}
+table.sheet .slot input{width:66px;text-align:right}
+.sg-main{padding:16px 18px}
+.sg-side{background:var(--surface-2);border-left:1px solid var(--line);padding:16px}
+.sg-side h4{margin:0 0 8px;font:600 11.5px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+table.sheet{border-collapse:collapse;font-size:13.5px}
+table.sheet th,table.sheet td{border:1px solid var(--line-strong);padding:0;height:32px}
+table.sheet thead th{background:var(--surface-2);font:600 10.5px var(--fn);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);padding:0 8px;text-align:left}
+table.sheet tbody th{padding:0 10px;text-align:left;white-space:nowrap;background:#FAFBFC}
+table.sheet select,table.sheet input{border:0;border-radius:0;height:31px;background:transparent;font-size:13.5px}
+table.sheet input{width:74px}
+table.sheet select{max-width:170px}
+table.sheet td.s{padding:0 8px;white-space:nowrap;width:1%}
+.sg-main .scope .spacer{display:none}
+.fbar{display:flex;height:22px;border-radius:4px;overflow:hidden;background:var(--surface-2);margin:4px 0 10px;max-width:640px}
+.fbar span{display:flex;align-items:center;justify-content:center;color:#fff;font:600 11px var(--fn);white-space:nowrap;overflow:hidden}
+.fl{font:600 11px var(--fn);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:12px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="eyebrow">Proposal · Repository console · Plan and ten mock-ups</p>
+<h1>Controlling how the tactical tilt and the volatility premium are funded</h1>
+<p class="sub">Today both overlays are wired into the code: the Tactical Tilt Fund takes 8% of the portfolio from Investment Grade Fixed Income, and the Strategic Volatility Premium then takes 7.5% of what Investment Grade Fixed Income has left. This page proposes a repository tab, <b>Overlay Funding</b>, where each overlay's size and its sources (any categories, in any proportions) are set, noted and kept in history, the same way the Uncalled Capital Allocation split is.</p>
+
+<h2>1 · How it works today</h2>
+<table class="plain">
+<tr><th>Overlay</th><th>Size</th><th>Funded from</th><th>How it is taken</th><th>Where</th></tr>
+<tr><td>Tactical Tilt Fund (category <i>Asset Allocation Strategies</i>)</td><td>8.0% of the portfolio, fixed (<code>TACTICAL_TILT_PCT</code>)</td><td>Investment Grade Fixed Income only (<code>TACTICAL_TILT_FUNDED_FROM</code>)</td><td>Subtracted from the category weight; its assets scale pro rata. Offered only when IGFI ≥ 8% (<code>canFundTacticalTilt</code>), so All Equity cannot take it. Appended as the last category.</td><td><code>rules.py:126-205</code></td></tr>
+<tr><td>Strategic Volatility Premium (category <i>Hybrid Fixed Income</i>)</td><td>7.5% OF the funding category as implemented (<code>VOL_PREMIUM_SHARE = 0.075</code>)</td><td>Investment Grade Fixed Income only (<code>VOL_PREMIUM_FUNDED_FROM</code>)</td><td>Computed <b>after</b> the tilt: 7.5% × (IGFI − 8) = 7.5% × 26 = 1.95% for USD Moderate Full. Pro rata across IGFI's assets. Inserted straight after IGFI. USD and GBP books only (<code>VOL_PREMIUM_CURRENCIES</code>).</td><td><code>rules.py:280-351</code></td></tr>
+</table>
+<p>The order is fixed in <code>implementedCategories</code> (<code>rules.py:404-413</code>): tilt, then premium. Both are silent no-ops when they cannot apply. The page mirrors both in JavaScript (<code>implementation.js:298-360</code>, <code>tiltCategories</code> / <code>volPremiumCategories</code>), reading the constants from the schema payload (<code>rules.py:750-756</code>), and <code>buildImplementationRows</code> calls the Python side (<code>workbook.py:186-191</code>). The private-markets initial allocation is applied after both (D136). Any change must keep the Python and JavaScript sides in lockstep, which is the main argument for serving the policy from the server rather than re-implementing it twice.</p>
+
+<h2>2 · Ten ways to lay out the tab</h2>
+<p>Each option is live and starts from today&rsquo;s rules: the tilt takes 8% of the portfolio from Investment Grade Fixed Income, then the premium takes 7.5% of what IGFI has left, so every preview opens at <b>IGFI 24.05%</b> and <b>Hybrid Fixed Income 1.95%</b> for USD Moderate Full. Change sizes, sources, weights and the order and each one updates its checks and its effect; nothing is saved anywhere. Press <b>Choose</b> on the one you want.</p>
+<p class="note"><b>You chose 8 · Rule cards with an editor drawer.</b> It is reworked below as an <b>ordered list of rules</b> that resolve top to bottom &mdash; <a href="#opt-drawer">jump to it</a>. Try: drag <i>Strategic Volatility Premium</i> above <i>Tactical Tilt Fund</i> (IGFI goes from 24.05% to 23.45%, the premium from 1.95% to 2.55%), then <i>+ Add example</i> for a third rule (Gold, part-funded from IGFI) and move it above or below the premium to see the premium's size change.</p>
+<div class="bar-top"><span class="ctl">Jump to</span><nav class="jump" id="jump" aria-label="Jump to a style"></nav><span class="spacer"></span><button type="button" class="reset" data-resetall>Reset every option</button></div>
+<main id="options"></main>
+
+<h2>3 · The plan</h2>
+<h3>Data model</h3>
+<p>Reuse D148's store rather than invent one: <code>fundingSplit.py</code> already keeps policies in <code>sleeves.db</code> (<code>policies</code> and <code>policyHistory</code>, a <code>kind</code> column, a house scope <code>*</code> with per-implementation-type overrides, weights to 4dp summing to exactly 100, a note and user per save, history and revert). One new kind, <code>overlay</code>, holding an <b>ordered list of rules</b> per scope &mdash; any number of them, resolved strictly top to bottom, each reading the allocation as the rules above it left it. Each rule holds:</p>
+<table class="plain">
+<tr><th>Field</th><th>Meaning</th><th>Today's value (seeded)</th></tr>
+<tr><td><code>ordinal</code></td><td>The rule's position in its scope's list, 1, 2, 3&hellip; Resolution runs in this order; reordering in the tab rewrites the ordinals in one save, and the history records it (<i>Order changed: Strategic Volatility Premium moved above Tactical Tilt Fund</i>).</td><td>1 Tactical Tilt Fund · 2 Strategic Volatility Premium</td></tr>
+<tr><td><code>name</code>, <code>into</code></td><td>The overlay's name and the row it creates in the implemented allocation (not a strategic category; unique in the list).</td><td>Tactical Tilt Fund → Asset Allocation Strategies · Strategic Volatility Premium → Hybrid Fixed Income</td></tr>
+<tr><td><code>size</code></td><td>Percent, up to 4dp</td><td>TTF 8.0 · SVP 7.5</td></tr>
+<tr><td><code>basis</code></td><td><code>portfolio</code>: size is a percent of the portfolio, taken from the sources in their weights. <code>source</code>: each source gives size% of what it holds <b>at that step</b> (after the rules above), scaled by its weight.</td><td>TTF <code>portfolio</code> · SVP <code>source</code></td></tr>
+<tr><td><code>sources</code></td><td>[(category, weight%)], weights summing to exactly 100, up to 4 sources. Category level (asset-class level is an open question below).</td><td>[(Investment Grade Fixed Income, 100)] for both</td></tr>
+<tr><td>scope</td><td><code>*</code> or an implementation type, each with its own whole list (a type either inherits the house list or overrides it entire, order included); optionally later a currency (SVP is already USD/GBP only) or a risk level.</td><td><code>*</code></td></tr>
+</table>
+<p>The currency restriction on SVP stays a code rule, not a policy field: it is a product constraint, not a funding choice.</p>
+
+<h3>Validation (server, and mirrored live in the tab)</h3>
+<ul>
+<li>Size &gt; 0; for <code>portfolio</code> basis at most 25%, for <code>source</code> basis at most 50% (guards against a typo, adjustable).</li>
+<li>Weights 0–100 at 4dp, summing to exactly 100; no duplicate source; a source cannot be the overlay's own category.</li>
+<li>Every source must be a category held by <b>every</b> portfolio in scope that can take the overlay (the same eligibility rule as D148). A rule naming Hedge Funds is refused for a type whose ex-Alts portfolios would take it.</li>
+<li><b>No overdraw:</b> the server runs the whole list over every portfolio in scope, top to bottom, and refuses it if any source would go below zero; it warns (not refuses) below 2%. The worst case is named in the refusal (<i>USD Conservative ex-Alts: Other Fixed Income would be −0.4%</i>).</li>
+<li>Where a portfolio cannot fund a rule that is valid for the type (say a source is held too thinly), the toggle is disabled for that portfolio with the reason, as All Equity is today.</li>
+</ul>
+
+<h3>Where it is read</h3>
+<ul>
+<li><code>rules.py</code>: <code>tiltedCategories</code> and <code>volPremiumCategories</code> become one generic <code>applyOverlay(categories, rule)</code>; <code>implementedCategories</code> folds it over the scope's list in ordinal order, each call receiving the previous one's result. A rule whose overlay is not selected for the proposal is skipped and the next one reads what the last applied rule left. The constants stay as the seed and the fallback when the store is unreachable.</li>
+<li><code>schemaPayload</code> serves the resolved policies (as <code>_servedFunding</code> does for D148), so the page's JavaScript mirror reads the same numbers; the mirror gains the same generic function, and the Python/JS parity test covers multi-source rules.</li>
+<li><code>workbook.buildImplementationRows</code>, the deck and the register need no change beyond receiving the resolved policy, because they already consume <code>implementedCategories</code>.</li>
+<li>The screen's notes (<i>Tactical tilt added, funded from …</i>, <code>core.js:845</code>; the premium's note, <code>implementation.js:681</code>) and the deck's footnotes read the sources in words: <i>funded 5% from IGFI and 3% from Public Equity</i>.</li>
+</ul>
+
+<h3>Register and audit</h3>
+<p>Each proposal records the overlay rules it was built under (a new <code>overlayFunding</code> column, register schema 5; <i>TTF 8% portfolio: IGFI 100 · SVP 7.5% source: IGFI 100 · order TTF→SVP</i>), so a later rule change never silently alters an issued proposal's explanation. The history on the tab is the audit trail; revert re-saves an earlier version with a note.</p>
+
+<h3>Migration</h3>
+<p>Sleeves schema 5 → 6 seeds the house rules to reproduce today exactly. A test builds every baked portfolio with every overlay combination under the seeded policy and under the old constants, and requires identical weights to 1e-9, before and after, in Python and in the JavaScript mirror.</p>
+
+<h3>Tests</h3>
+<ul>
+<li>Seed parity (above); the two orders; multi-source <code>portfolio</code> and <code>source</code> bases summing to 100 after the move.</li>
+<li>Refusals: sum ≠ 100, source not held by every portfolio, overdraw with the worst case named, 4dp.</li>
+<li>Override precedence (type over house), remove override, history and revert, as <code>test_funding_split.py</code> does.</li>
+<li>Routes: <code>GET/PUT /scenario/repository/overlays</code>, <code>POST …/overlays/remove</code>, <code>GET …/overlays/history</code>, <code>POST …/overlays/revert</code> (five, 42 in all).</li>
+<li>The page guard: no <i>book</i> in the tab's strings (D150).</li>
+</ul>
+
+<h3>Phases</h3>
+<ol>
+<li><b>Store and engine.</b> The <code>overlay</code> kind as an ordered list (<code>ordinal</code> per rule), seeding migration, generic <code>applyOverlay</code> folded over the list in Python and JS, schema payload, parity tests. No visible change.</li>
+<li><b>The tab.</b> Overlay Funding as option 8: rule cards in resolution order, drag or ↑ ↓ to reorder, add and remove rules, the editor drawer (name, row, size, basis, sources), the step-by-step resolution trace, validation with the worst case per step, note, save, history, revert.</li>
+<li><b>Overrides and records.</b> Per-implementation-type overrides, the register column, notes and footnotes in words.</li>
+<li><b>Optional.</b> Currency or risk-level scopes; asset-class-level sources.</li>
+</ol>
+
+<h3>Open questions</h3>
+<ol>
+<li><b>Category or asset class?</b> Sources at category level keep the rule valid across portfolios whose assets differ; asset-class level (e.g. only US Dollar Debt) is finer but more often unfundable. Recommend category level first.</li>
+<li><b>Basis per overlay, or fixed?</b> Keep today's pairing (TTF as a percent of the portfolio, SVP as a percent of its source) as the default, but let both switch?</li>
+<li><b>Where does the premium go?</b> Today it sits straight after IGFI. With several sources, after the largest source, or a fixed place?</li>
+<li><s><b>Order.</b> Is <i>premium, then tilt</i> ever wanted, or should the order stay fixed and only be shown?</s> <b>Answered:</b> the order is editable &mdash; the rules are an ordered list, dragged into place, resolved top to bottom (option 8).</li>
+<li><b>Unselected rules.</b> When a proposal does not select an overlay (no tilt), the plan skips its rule and the rules below read the allocation as it stands. Confirm that rather than, say, refusing a later rule that was sized on an earlier one.</li>
+<li><b>Scope.</b> Are per-type overrides enough, or do you need currency or risk-level rules too?</li>
+<li><b>Existing proposals.</b> A saved scenario rebuilt after a rule change will move; should reopening an issued proposal keep the rule it was issued under?</li>
+</ol>
+</div>
+
+<div class="picked-bar" id="pickedBar" role="status" aria-live="polite"></div>
+<script>
+(function () {
+  'use strict';
+  var IG = 'Investment Grade Fixed Income';
+  var CATS = [IG, 'Other Fixed Income', 'Public Equity', 'Hedge Funds', 'Private Equity', 'Other Private Assets'];
+  var SHORT = {'Investment Grade Fixed Income': 'IGFI', 'Other Fixed Income': 'Other FI', 'Public Equity': 'Public Equity',
+               'Hedge Funds': 'Hedge Funds', 'Private Equity': 'Private Equity', 'Other Private Assets': 'Other Private'};
+  /* the category key (core.js PALETTE_SLOT); Hybrid Fixed Income has no slot, so a neutral slate */
+  var COLOR = {'Investment Grade Fixed Income': '#EB6834', 'Other Fixed Income': '#1BAF7A', 'Public Equity': '#EDA100',
+               'Hedge Funds': '#E87BA4', 'Private Equity': '#4A3AA7', 'Other Private Assets': '#E34948',
+               'Asset Allocation Strategies': '#2A78D6', 'Hybrid Fixed Income': '#5E7690'};
+  var SAMPLE = {'Investment Grade Fixed Income': 34, 'Other Fixed Income': 9, 'Public Equity': 38, 'Hedge Funds': 10, 'Private Equity': 5, 'Other Private Assets': 4};
+  var MANDATE = 50e6;
+  /* the portfolios a house rule must fund (All Equity has no IGFI and cannot take either overlay) */
+  var SCOPE = {
+    'USD Conservative Full': {'Investment Grade Fixed Income': 50, 'Other Fixed Income': 10, 'Public Equity': 24, 'Hedge Funds': 9, 'Private Equity': 4, 'Other Private Assets': 3},
+    'USD Moderate Full': SAMPLE,
+    'USD Growth Full': {'Investment Grade Fixed Income': 18, 'Other Fixed Income': 7, 'Public Equity': 52, 'Hedge Funds': 11, 'Private Equity': 7, 'Other Private Assets': 5},
+    'USD Conservative ex-Alts': {'Investment Grade Fixed Income': 58, 'Other Fixed Income': 11, 'Public Equity': 31},
+    'USD Moderate ex-Alts': {'Investment Grade Fixed Income': 42, 'Other Fixed Income': 11.1, 'Public Equity': 46.9},
+    'USD Growth ex-Alts': {'Investment Grade Fixed Income': 22, 'Other Fixed Income': 8, 'Public Equity': 70}
+  };
+  var TYPES = ['*', 'PMG Multi-Asset Portfolio', 'PMG ESG', 'US Onshore', 'Irish Onshore'];
+  var NAMES = {ttf: {name: 'Tactical Tilt Fund', tag: 'Tilt', into: 'Asset Allocation Strategies'},
+               svp: {name: 'Strategic Volatility Premium', tag: 'Premium', into: 'Hybrid Fixed Income'}};
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+  function num(v) { var x = parseFloat(v); return isFinite(x) ? x : 0; }
+  function r4(v) { return Math.round(v * 1e4) / 1e4; }
+  function wtxt(v) { return String(r4(v)); }
+  function pc(v) { return (v < -1e-12 ? '−' : '') + Math.abs(v).toFixed(2) + '%'; }
+  function pd(v) { return (v > 1e-12 ? '+' : v < -1e-12 ? '−' : '') + Math.abs(v).toFixed(2) + '%'; }
+  function money(v) { return '$' + Math.round(Math.abs(v) * MANDATE / 100).toLocaleString('en-US'); }
+  function sw(cat) { return '<i class="sw" style="background:' + COLOR[cat] + '"></i>'; }
+  function sc(scope) { return scope ? ' data-scope="' + esc(scope) + '"' : ''; }
+  function scopeLabel(s) { return s === '*' ? 'House rule (every implementation type)' : s; }
+  function stamp() {
+    var d = new Date(), m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return d.getDate() + ' ' + m[d.getMonth()] + ' ' + d.getFullYear() + ', ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+
+  /* ---- state ---- */
+  function seedRules() {
+    return {ttf: {size: 8, basis: 'portfolio', sources: [[IG, 100]]},
+            svp: {size: 7.5, basis: 'source', sources: [[IG, 100]]}};
+  }
+  function snap(st) { return {rules: clone(st.rules), order: st.order}; }
+  function newState() {
+    var st = {scope: '*', order: 'ttf', rules: {'*': seedRules()}, note: '', flash: '', step: 0, wk: 'ttf',
+              drawer: null, dsnap: null, editRow: null};
+    st.saved = snap(st);
+    st.hist = [{when: '30 Sep 2026, 09:12', who: 'fbarker', what: 'Seeded from the code',
+                note: 'Today’s behaviour: the tilt takes 8% of the portfolio from IGFI; the premium then takes 7.5% of what IGFI has left.',
+                snap: snap(st)}];
+    return st;
+  }
+  function rulesFor(st, scope) { scope = scope || st.scope; return st.rules[scope] || st.rules['*']; }
+  function own(st, scope) { scope = scope || st.scope; if (!st.rules[scope]) st.rules[scope] = clone(st.rules['*']); return st.rules[scope]; }
+  function ord(st) { return st.order === 'ttf' ? ['ttf', 'svp'] : ['svp', 'ttf']; }
+  function sumOf(rule) { return rule.sources.reduce(function (a, s) { return a + num(s[1]); }, 0); }
+  function rebalance(rule) {
+    var L = rule.sources.length - 1; if (L < 0) return;
+    var rest = 100; for (var j = 0; j < L; j++) rest -= num(rule.sources[j][1]);
+    rule.sources[L][1] = Math.max(0, r4(rest));
+  }
+
+  /* ---- the engine: one overlay, then the pair in order ---- */
+  function apply(cats, rule) {
+    var takes = {}, amount = 0;
+    rule.sources.forEach(function (s) {
+      var cat = s[0], w = num(s[1]) / 100, held = cats[cat] || 0;
+      var t = rule.basis === 'portfolio' ? rule.size * w : held * rule.size / 100 * w;
+      takes[cat] = (takes[cat] || 0) + t; amount += t;
+    });
+    return {takes: takes, amount: amount};
+  }
+  function run(rs, order, cats) {
+    var c = {}; Object.keys(cats).forEach(function (k) { c[k] = cats[k]; });
+    var out = {before: cats, takes: {ttf: {}, svp: {}}, amt: {ttf: 0, svp: 0}};
+    order.forEach(function (k) {
+      var r = apply(c, rs[k]); out.takes[k] = r.takes; out.amt[k] = r.amount;
+      Object.keys(r.takes).forEach(function (cat) { c[cat] = (c[cat] || 0) - r.takes[cat]; });
+    });
+    out.after = c;
+    return out;
+  }
+  function problems(rs, order) {
+    var out = [], n = Object.keys(SCOPE).length;
+    ['ttf', 'svp'].forEach(function (k) {
+      var r = rs[k], nm = NAMES[k].name, s = sumOf(r), seen = {}, missing = {};
+      if (!(r.size > 0)) out.push(['bad', nm + ': the size must be above zero.']);
+      if (!r.sources.length) out.push(['bad', nm + ': name at least one source.']);
+      else if (Math.abs(s - 100) > 1e-6) out.push(['bad', nm + ': the sources’ weights sum to ' + wtxt(s) + '%, not 100%.']);
+      r.sources.forEach(function (x) { if (seen[x[0]]) out.push(['bad', nm + ': ' + x[0] + ' is named twice.']); seen[x[0]] = 1; });
+      Object.keys(SCOPE).forEach(function (p) {
+        r.sources.forEach(function (x) { if (!(SCOPE[p][x[0]] > 0)) (missing[x[0]] = missing[x[0]] || []).push(p); });
+      });
+      Object.keys(missing).forEach(function (c) {
+        out.push(['bad', nm + ': ' + c + ' is not held by ' + missing[c].length + ' of the ' + n + ' portfolios it must fund (e.g. ' + missing[c][0] + ').']);
+      });
+    });
+    var worst = null, touched = {};
+    rs.ttf.sources.concat(rs.svp.sources).forEach(function (x) { touched[x[0]] = 1; });
+    Object.keys(SCOPE).forEach(function (p) {
+      var r = run(rs, order, SCOPE[p]);
+      Object.keys(touched).forEach(function (c) {
+        if (!(SCOPE[p][c] > 0)) return;
+        var v = r.after[c]; if (!worst || v < worst.v) worst = {p: p, c: c, v: v};
+      });
+    });
+    if (worst && worst.v < -1e-9) out.push(['bad', 'Overdrawn: in ' + worst.p + ', ' + worst.c + ' would be ' + pc(worst.v) + '.']);
+    else if (worst && worst.v < 2) out.push(['warn', 'Thin: in ' + worst.p + ', ' + worst.c + ' would be left at ' + pc(worst.v) + '.']);
+    return {list: out, worst: worst};
+  }
+  function ruleWords(rule) {
+    return wtxt(rule.size) + '% of ' + (rule.basis === 'portfolio' ? 'the portfolio' : 'its source' + (rule.sources.length > 1 ? 's' : ''))
+      + ' · ' + (rule.sources.length ? rule.sources.map(function (s) { return SHORT[s[0]] + ' ' + wtxt(s[1]) + '%'; }).join(' + ') : 'no source');
+  }
+
+  /* ---- shared pieces ---- */
+  function checksHtml(st, scope) {
+    var p = problems(rulesFor(st, scope), ord(st));
+    if (!p.list.length) {
+      return '<p class="okl">✓ All ' + Object.keys(SCOPE).length + ' portfolios the rule must fund can fund both overlays. Thinnest source afterwards: '
+        + SHORT[p.worst.c] + ' ' + pc(p.worst.v) + ' in ' + p.worst.p + '.</p>';
+    }
+    return '<ul class="problems">' + p.list.map(function (x) { return '<li class="' + x[0] + '">' + esc(x[1]) + '</li>'; }).join('') + '</ul>';
+  }
+  function previewHtml(st, scope) {
+    var r = run(rulesFor(st, scope), ord(st), SAMPLE);
+    var h = '<table class="pv"><caption>USD Moderate Full · $50,000,000</caption><thead><tr><th>Category</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>';
+    CATS.forEach(function (c) {
+      var b = SAMPLE[c], a = r.after[c], d = a - b, moved = Math.abs(d) > 1e-9;
+      h += '<tr' + (moved ? ' class="moved"' : '') + '><td>' + sw(c) + SHORT[c] + '</td><td>' + pc(b) + '</td><td' + (c === IG ? ' data-check-ig' : '') + '>'
+        + pc(a) + '</td><td class="d">' + (moved ? pd(d) : '–') + '</td></tr>';
+    });
+    ord(st).forEach(function (k) {
+      h += '<tr class="ov"><td>' + sw(NAMES[k].into) + NAMES[k].into + '</td><td>–</td><td' + (k === 'svp' ? ' data-check-svp' : '') + '>' + pc(r.amt[k])
+        + '</td><td class="d">' + money(r.amt[k]) + '</td></tr>';
+    });
+    return h + '</tbody></table>';
+  }
+  function wordsHtml(st) {
+    var o = ord(st), r = run(rulesFor(st), o, SAMPLE), touched = CATS.filter(function (c) { return Math.abs(r.after[c] - SAMPLE[c]) > 1e-9; });
+    return 'For USD Moderate Full on a $50,000,000 mandate that means '
+      + o.map(function (k) { return '<b>' + pc(r.amt[k]) + '</b> (' + money(r.amt[k]) + ') into ' + NAMES[k].into; }).join(' and ')
+      + (touched.length ? ', leaving ' + touched.map(function (c) { return c + ' at <b>' + pc(r.after[c]) + '</b>'; }).join(', ') : '') + '.';
+  }
+  function sumBadge(rule) {
+    var s = sumOf(rule), ok = Math.abs(s - 100) < 1e-6;
+    return '<span class="sum ' + (ok ? 'ok' : 'bad') + '">Σ ' + wtxt(s) + '%</span>';
+  }
+  function statusPill(st, scope) {
+    if (scope === '*') return '<span class="pill house">House rule</span>';
+    return st.rules[scope] ? '<span class="pill over">Override</span>' : '<span class="pill">Inherits the house rule</span>';
+  }
+  function sizeIn(k, rule, scope, cls) {
+    return '<input type="number" class="in sz' + (cls ? ' ' + cls : '') + '" step="0.0001" min="0" data-f="size" data-k="' + k + '"' + sc(scope)
+      + ' value="' + wtxt(rule.size) + '" aria-label="' + NAMES[k].name + ' size, percent">';
+  }
+  function basisSel(k, rule, scope, labels) {
+    labels = labels || ['% of the portfolio', '% of each source it draws on'];
+    return '<select data-f="basis" data-k="' + k + '"' + sc(scope) + ' aria-label="Basis">'
+      + [['portfolio', labels[0]], ['source', labels[1]]].map(function (o) {
+        return '<option value="' + o[0] + '"' + (rule.basis === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') + '</select>';
+  }
+  function srcSel(k, i, cat, scope, blank, f) {
+    var h = '<select data-f="' + (f || 'src') + '" data-k="' + k + '" data-i="' + i + '"' + sc(scope) + ' aria-label="Source category">';
+    if (blank) h += '<option value="">—</option>';
+    CATS.forEach(function (c) { h += '<option value="' + esc(c) + '"' + (c === cat ? ' selected' : '') + '>' + (f === 'slot' ? SHORT[c] : c) + '</option>'; });
+    return h + '</select>';
+  }
+  function wIn(k, i, w, scope, bare) {
+    var inp = '<input type="number" class="in" step="0.0001" min="0" max="100" data-f="w" data-k="' + k + '" data-i="' + i + '"' + sc(scope)
+      + ' value="' + (w == null ? '' : wtxt(w)) + '" aria-label="Weight, percent"' + (w == null ? ' disabled' : '') + '>';
+    return bare ? inp : '<span class="wv">' + inp + '<span>%</span></span>';
+  }
+  function rmBtn(k, i, scope) { return '<button type="button" class="x" data-act="rm" data-k="' + k + '" data-i="' + i + '"' + sc(scope) + ' aria-label="Remove source">×</button>'; }
+  function addBtn(k, scope, label) { return '<button type="button" class="lnk" data-act="add" data-k="' + k + '"' + sc(scope) + '>' + (label || '+ Add a source') + '</button>'; }
+  function live(name, attrs, tag) { tag = tag || 'div'; return '<' + tag + ' data-live="' + name + '"' + (attrs || '') + '></' + tag + '>'; }
+  function scopeSel(st) {
+    return '<select data-f="scope" aria-label="Rule for">' + TYPES.map(function (t) {
+      return '<option value="' + esc(t) + '"' + (st.scope === t ? ' selected' : '') + '>' + scopeLabel(t) + '</option>';
+    }).join('') + '</select>';
+  }
+  function orderSeg(st) {
+    return '<span class="order" role="group" aria-label="Which overlay is taken first">' + [['ttf', 'Tilt, then premium'], ['svp', 'Premium, then tilt']].map(function (o) {
+      return '<button type="button" data-act="order" data-v="' + o[0] + '" aria-pressed="' + (st.order === o[0]) + '">' + o[1] + '</button>';
+    }).join('') + '</span>';
+  }
+  function head(st, noOrder) {
+    return '<div class="scope"><label>Rule for</label>' + scopeSel(st) + live('status', '', 'span') + '<span class="spacer"></span>'
+      + (noOrder ? '' : '<label>Order</label>' + orderSeg(st)) + '</div>';
+  }
+  function saveRow(st, extra) {
+    return '<div class="foot"><input type="text" data-f="note" placeholder="Why the change? It is kept with the history" value="' + esc(st.note) + '">'
+      + '<button type="button" class="btn pri" data-act="save">Save</button>'
+      + (st.scope !== '*' && st.rules[st.scope] ? '<button type="button" class="btn" data-act="reset">Remove override</button>' : '')
+      + (extra || '')
+      + (st.flash ? '<span class="flash' + (st.flash.indexOf('Not') === 0 ? ' no' : '') + '">' + esc(st.flash) + '</span>' : '') + '</div>';
+  }
+  function histHtml(st, limit) {
+    return '<p class="hh">History</p><ul class="hist">' + st.hist.slice(0, limit || 4).map(function (e, i) {
+      return '<li><div><b>' + esc(e.when) + '</b> · ' + esc(e.who) + '<div class="hw">' + esc(e.what) + '</div><div class="hn">' + esc(e.note) + '</div></div>'
+        + (i ? '<button type="button" data-act="revert" data-h="' + i + '">Revert</button>' : '<span class="now">current</span>') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function sourcesList(k, rule, scope) {
+    var h = '<table class="src"><thead><tr><th>Funded from</th><th style="text-align:right">Weight</th><th></th></tr></thead><tbody>';
+    rule.sources.forEach(function (s, i) {
+      h += '<tr><td>' + sw(s[0]) + srcSel(k, i, s[0], scope) + '</td><td class="n">' + wIn(k, i, s[1], scope) + '</td><td>' + (rule.sources.length > 1 ? rmBtn(k, i, scope) : '') + '</td></tr>';
+    });
+    return h + '</tbody></table>' + addBtn(k, scope) + ' ' + live('sum', ' data-k="' + k + '"' + sc(scope), 'span');
+  }
+  function rowEditor(st, k, j) {
+    var r = rulesFor(st)[k];
+    return '<div class="re"><b><span class="nth">' + (j ? '2nd' : '1st') + '</span>' + NAMES[k].name + '</b>' + sizeIn(k, r) + basisSel(k, r, null, ['% of the portfolio', '% of each source'])
+      + '<span class="from">from</span>' + r.sources.map(function (s, i) {
+        return srcSel(k, i, s[0]) + wIn(k, i, s[1]) + (r.sources.length > 1 ? rmBtn(k, i) : '');
+      }).join('') + addBtn(k, null, '+ source') + live('sum', ' data-k="' + k + '"', 'span') + '</div>';
+  }
+  function tabs() {
+    return '<div class="tabs" aria-hidden="true">' + ['Sleeves', 'Catalogue', 'Archive', 'Activity', 'Proposals', 'Uncalled Capital Allocation', 'Overlay Funding'].map(function (t, i, a) {
+      return '<button type="button" tabindex="-1"' + (i === a.length - 1 ? ' class="on new"' : '') + '>' + t + '</button>';
+    }).join('') + '</div>';
+  }
+  function shell(inner, pad) {
+    return '<div class="console"><div class="chead"><b>Repository</b><span>Admin console · fbarker</span></div>' + tabs()
+      + (pad === false ? inner : '<div class="cpad">' + inner + '</div>') + '</div>';
+  }
+  function sideBlock(st) { return live('chk') + saveRow(st) + histHtml(st); }
+
+  /* ---- charts ---- */
+  function waterfall(st) {
+    var o = ord(st), r = run(rulesFor(st), o, SAMPLE), bars = [];
+    var touched = CATS.filter(function (c) { return o.some(function (k) { return (r.takes[k][c] || 0) > 1e-12; }); });
+    touched.forEach(function (c, gi) {
+      var lvl = SAMPLE[c];
+      if (gi) bars.push(null);
+      bars.push({lab: [SHORT[c], 'before'], lo: 0, hi: lvl, col: COLOR[c]});
+      o.forEach(function (k) {
+        var t = r.takes[k][c] || 0;
+        if (t > 1e-12) { bars.push({lab: ['− ' + NAMES[k].tag, ''], lo: lvl - t, hi: lvl, col: COLOR[NAMES[k].into], neg: 1, link: 1}); lvl -= t; }
+      });
+      bars.push({lab: [SHORT[c], 'after'], lo: Math.min(0, lvl), hi: Math.max(0, lvl), val: lvl, col: COLOR[c], chk: c === IG ? 'ig' : '', link: 1});
+    });
+    bars.push(null);
+    o.forEach(function (k) { bars.push({lab: [NAMES[k].tag, 'added'], lo: 0, hi: r.amt[k], col: COLOR[NAMES[k].into], chk: k === 'svp' ? 'svp' : ''}); });
+    var real = bars.filter(Boolean);
+    var max = Math.max.apply(null, real.map(function (b) { return b.hi; })), min = Math.min(0, Math.min.apply(null, real.map(function (b) { return b.lo; })));
+    var bw = 50, gap = 16, sep = 30, W = 16, xs = [];
+    bars.forEach(function (b) { if (!b) { W += sep; xs.push(null); return; } xs.push(W); W += bw + gap; });
+    W += 6;
+    var top = 24, ph = 190, H = top + ph + 42;
+    function y(v) { return top + ph * (max - v) / ((max - min) || 1); }
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" role="img" aria-label="Waterfall of each funding source through the two overlays">';
+    s += '<line class="ax" x1="8" x2="' + (W - 4) + '" y1="' + y(0) + '" y2="' + y(0) + '"/>';
+    var prev = null;
+    bars.forEach(function (b, i) {
+      if (!b) { prev = null; return; }
+      var x = xs[i], y1 = y(b.hi), y2 = y(b.lo);
+      if (prev && b.link) {
+        var ly = b.neg ? y(b.hi) : y(prev.neg ? prev.lo : prev.hi);
+        s += '<line class="lk" x1="' + (prev.x + bw) + '" x2="' + x + '" y1="' + ly + '" y2="' + ly + '"/>';
+      }
+      s += '<rect x="' + x + '" y="' + y1 + '" width="' + bw + '" height="' + Math.max(1, y2 - y1) + '" rx="2" fill="' + b.col + '"'
+        + (b.neg ? ' fill-opacity=".4" stroke="' + b.col + '" stroke-dasharray="3 2"' : '') + '/>';
+      var val = b.val != null ? b.val : (b.neg ? -(b.hi - b.lo) : b.hi - b.lo);
+      s += '<text class="v"' + (b.chk ? ' data-check-' + b.chk : '') + ' x="' + (x + bw / 2) + '" y="' + (y1 - 6) + '" text-anchor="middle">' + pc(val) + '</text>';
+      s += '<text class="l" x="' + (x + bw / 2) + '" y="' + (top + ph + 16) + '" text-anchor="middle">' + esc(b.lab[0]) + '</text>'
+        + '<text class="l" x="' + (x + bw / 2) + '" y="' + (top + ph + 30) + '" text-anchor="middle">' + esc(b.lab[1]) + '</text>';
+      prev = {x: x, hi: b.hi, lo: b.lo, neg: b.neg};
+    });
+    return s + '</svg>';
+  }
+  function sankey(st) {
+    var o = ord(st), r = run(rulesFor(st), o, SAMPLE), k3 = 3.2, g = 8, nw = 14, lx = 200, rx = 590, W = 830;
+    var L = CATS.map(function (c) { return {c: c, h: SAMPLE[c] * k3}; });
+    var R = CATS.map(function (c) { return {c: c, h: Math.max(0, r.after[c]) * k3, v: r.after[c]}; })
+      .concat(o.map(function (k) { return {c: NAMES[k].into, k: k, h: r.amt[k] * k3, v: r.amt[k]}; }));
+    function tot(a) { return a.reduce(function (s, n) { return s + n.h; }, 0) + g * (a.length - 1); }
+    var lt = tot(L), rt = tot(R), H = Math.max(lt, rt) + 24, y = 12 + (H - 24 - lt) / 2, byR = {};
+    L.forEach(function (n) { n.y = y; y += n.h + g; });
+    y = 12 + (H - 24 - rt) / 2;
+    R.forEach(function (n) { n.y = y; n.fill = y; y += n.h + g; byR[n.k || n.c] = n; });
+    function band(y1, y2, h, col, op) {
+      var x1 = lx + nw, x2 = rx, xm = (x1 + x2) / 2;
+      return '<path d="M' + x1 + ' ' + y1 + 'C' + xm + ' ' + y1 + ' ' + xm + ' ' + y2 + ' ' + x2 + ' ' + y2 + 'L' + x2 + ' ' + (y2 + h)
+        + 'C' + xm + ' ' + (y2 + h) + ' ' + xm + ' ' + (y1 + h) + ' ' + x1 + ' ' + (y1 + h) + 'Z" fill="' + col + '" fill-opacity="' + op + '"/>';
+    }
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" role="img" aria-label="Flows from each category before, to the same category after and to the overlays">';
+    L.forEach(function (n) {
+      var cy = n.y, kept = Math.max(0, r.after[n.c]) * k3, t = byR[n.c];
+      if (kept > 0) { s += band(cy, t.fill, kept, COLOR[n.c], 0.18); t.fill += kept; cy += kept; }
+      o.forEach(function (k) {
+        var tk = (r.takes[k][n.c] || 0) * k3;
+        if (tk > 0) { var on = byR[k]; s += band(cy, on.fill, tk, COLOR[NAMES[k].into], 0.6); on.fill += tk; cy += tk; }
+      });
+    });
+    L.forEach(function (n) {
+      s += '<rect x="' + lx + '" y="' + n.y + '" width="' + nw + '" height="' + Math.max(1, n.h) + '" fill="' + COLOR[n.c] + '"/>';
+      s += '<text class="n" x="' + (lx - 8) + '" y="' + (n.y + n.h / 2 + 4) + '" text-anchor="end">' + esc(SHORT[n.c]) + ' <tspan>' + pc(SAMPLE[n.c]) + '</tspan></text>';
+    });
+    R.forEach(function (n) {
+      s += '<rect x="' + rx + '" y="' + n.y + '" width="' + nw + '" height="' + Math.max(1, n.h) + '" fill="' + COLOR[n.c] + '"/>';
+      var chk = n.k === 'svp' ? ' data-check-svp' : (n.c === IG && !n.k ? ' data-check-ig' : '');
+      s += '<text class="n"' + chk + ' x="' + (rx + nw + 8) + '" y="' + (n.y + n.h / 2 + 4) + '">' + esc(n.k ? n.c : SHORT[n.c]) + ' <tspan>' + pc(n.v) + '</tspan></text>';
+    });
+    s += '<text class="l" x="' + (lx + nw / 2) + '" y="' + (H - 1) + '" text-anchor="middle">before</text><text class="l" x="' + (rx + nw / 2) + '" y="' + (H - 1) + '" text-anchor="middle">after</text>';
+    return s + '</svg>';
+  }
+  function barHtml(rule) {
+    var total = Math.max(100, sumOf(rule));
+    return '<div class="sbar" role="img" aria-label="Split across sources">' + rule.sources.map(function (s) {
+      var w = num(s[1]) / total * 100;
+      return '<span style="flex:0 0 ' + w + '%;background:' + COLOR[s[0]] + '" title="' + esc(s[0]) + '">' + (w >= 12 ? esc(SHORT[s[0]]) + ' ' + wtxt(s[1]) + '%' : '') + '</span>';
+    }).join('') + '</div>';
+  }
+  function formula(st, k) {
+    var rs = rulesFor(st), o = ord(st), before = o.slice(0, o.indexOf(k)), pre = run(rs, before, SAMPLE).after, r = rs[k], amt = apply(pre, r).amount;
+    if (r.basis === 'portfolio') {
+      return wtxt(r.size) + '% of the portfolio = <b>' + pc(amt) + '</b> (' + money(amt) + '), taken '
+        + r.sources.map(function (s) { return wtxt(s[1]) + '% from ' + SHORT[s[0]]; }).join(', ') + '.';
+    }
+    return r.sources.map(function (s) {
+      return wtxt(r.size) + '% × ' + SHORT[s[0]] + ' ' + pc(pre[s[0]] || 0) + (r.sources.length > 1 ? ' × ' + wtxt(s[1]) + '%' : '');
+    }).join(' + ') + (before.length ? ' (after the ' + NAMES[before[0]].tag.toLowerCase() + ')' : '') + ' = <b>' + pc(amt) + '</b> (' + money(amt) + ').';
+  }
+
+  var LIVE = {
+    pv: function (st, el) { return previewHtml(st, el.dataset.scope); },
+    chk: function (st, el) { return checksHtml(st, el.dataset.scope); },
+    sum: function (st, el) { return sumBadge(rulesFor(st, el.dataset.scope)[el.dataset.k]); },
+    rule: function (st, el) { return esc(ruleWords(rulesFor(st, el.dataset.scope)[el.dataset.k])); },
+    status: function (st, el) { return statusPill(st, el.dataset.scope || st.scope); },
+    words: function (st) { return wordsHtml(st); },
+    wf: function (st) { return waterfall(st); },
+    sk: function (st) { return sankey(st); },
+    bar: function (st, el) { return barHtml(rulesFor(st, el.dataset.scope)[el.dataset.k]); },
+    ro: function (st, el) { var s = rulesFor(st)[el.dataset.k].sources[+el.dataset.i]; return s ? wtxt(s[1]) + '%' : ''; },
+    take: function (st, el) { var r = run(rulesFor(st), ord(st), SAMPLE), t = r.takes[el.dataset.k][el.dataset.cat] || 0; return t > 1e-12 ? '−' + pc(t) : '–'; },
+    after: function (st, el) { return pc(run(rulesFor(st), ord(st), SAMPLE).after[el.dataset.cat]); },
+    amt: function (st, el) { var a = run(rulesFor(st), ord(st), SAMPLE).amt[el.dataset.k]; return pc(a) + '<small>' + money(a) + '</small>'; },
+    formula: function (st, el) { return formula(st, el.dataset.k); },
+    rowchk: function (st, el) {
+      var n = problems(rulesFor(st, el.dataset.scope), ord(st)).list.filter(function (x) { return x[0] === 'bad'; }).length;
+      return n ? '<span class="ck bad">' + n + ' to fix</span>' : '<span class="ck ok">✓ fundable</span>';
+    }
+  };
+
+  /* ---- the ten ---- */
+  var STYLES = [
+    {id: 'grid', name: 'One grid',
+     text: 'Both overlays as rows of a single grid, one column per category. Type a weight under any category to fund from it, clear it to stop; each row must sum to 100. Size, basis and order sit in the same row.',
+     pros: ['Every rule on one screen', 'Adding a source is typing a number'], cons: ['Wide: one column per category'],
+     render: function (st) {
+       var rs = rulesFor(st);
+       var h = head(st) + '<table class="mx"><thead><tr><th>Overlay</th><th>Size</th><th>Basis</th>'
+         + CATS.map(function (c) { return '<th class="c">' + sw(c) + SHORT[c] + '</th>'; }).join('') + '<th>Sum</th></tr></thead><tbody>';
+       ord(st).forEach(function (k, j) {
+         var r = rs[k];
+         h += '<tr><th scope="row"><span class="nth">' + (j ? '2nd' : '1st') + '</span>' + NAMES[k].name + '<small>into ' + NAMES[k].into + '</small></th>'
+           + '<td>' + sizeIn(k, r) + '</td><td>' + basisSel(k, r, null, ['of portfolio', 'of each source']) + '</td>';
+         CATS.forEach(function (c) {
+           var s = r.sources.filter(function (x) { return x[0] === c; })[0];
+           h += '<td class="c' + (s ? ' on' : '') + '"><input type="number" class="in cell" step="0.0001" min="0" max="100" data-f="cell" data-k="' + k + '" data-cat="' + esc(c)
+             + '" value="' + (s ? wtxt(s[1]) : '') + '" placeholder="–" aria-label="' + NAMES[k].name + ' weight from ' + esc(c) + '"></td>';
+         });
+         h += '<td>' + live('sum', ' data-k="' + k + '"', 'span') + '</td></tr>';
+       });
+       h += '</tbody></table><p class="hint">Weights are the share of each overlay taken from that category. The 1st row is applied before the 2nd; switch with Order.</p>';
+       return shell(h + '<div class="two"><div>' + sideBlock(st) + '</div>' + live('pv') + '</div>');
+     }},
+    {id: 'sentence', name: 'Say it as a sentence',
+     text: 'Each rule is written out as the sentence it means, with the numbers and categories as blanks to fill in. The order is the order of the sentences; the effect on a sample portfolio is spelt out beneath.',
+     pros: ['Reads exactly as the rule is meant', 'The basis cannot be misread'], cons: ['Harder to scan many overrides at once'],
+     render: function (st) {
+       var rs = rulesFor(st), h = head(st, true);
+       ord(st).forEach(function (k, j) {
+         var r = rs[k];
+         h += '<p class="sn"><span class="ordw">' + (j ? 'Then' : 'First') + '</span> the <b>' + NAMES[k].name + '</b> takes ' + sizeIn(k, r) + ' % of '
+           + basisSel(k, r, null, ['the portfolio', 'each source it draws on']) + ', funded '
+           + r.sources.map(function (s, i) { return wIn(k, i, s[1]) + ' from ' + srcSel(k, i, s[0]) + (r.sources.length > 1 ? rmBtn(k, i) : ''); }).join(' <span class="and">and</span> ')
+           + '. ' + addBtn(k, null, '+ and another source') + ' ' + live('sum', ' data-k="' + k + '"', 'span') + '</p>';
+       });
+       h += '<button type="button" class="btn" data-act="swap">⇅ Swap the order</button>';
+       h += live('words', ' class="result"');
+       return shell(h + '<div class="two"><div>' + sideBlock(st) + '</div>' + live('pv') + '</div>');
+     }},
+    {id: 'waterfall', name: 'Waterfall of the effect',
+     text: 'A compact line per overlay above a waterfall that walks each funding category down through the two overlays, in order, to what it is left with, then shows what each overlay adds. The chart redraws as the rule changes.',
+     pros: ['Shows what each overlay takes, in order', 'Makes the tilt-then-premium dependency visible'], cons: ['The chart is one sample portfolio'],
+     render: function (st) {
+       var h = head(st) + ord(st).map(function (k, j) { return rowEditor(st, k, j); }).join('') + live('wf', ' class="chart"');
+       return shell(h + '<div class="two"><div>' + sideBlock(st) + '</div>' + live('pv') + '</div>');
+     }},
+    {id: 'split', name: 'Source splitter',
+     text: 'Each overlay is a card with a bar split across its sources in the category colours. Pick sources with the chips, drag the sliders, and the last source always takes the rest, so the weights add up to 100 by construction.',
+     pros: ['Weights always add up to 100', 'Colours match the category key'], cons: ['Sliders move in half-points; exact thirds need the grid or the sheet'],
+     render: function (st) {
+       var rs = rulesFor(st), h = head(st);
+       ord(st).forEach(function (k, j) {
+         var r = rs[k], L = r.sources.length - 1;
+         h += '<div class="scard"><div class="scard-h"><span class="nth">' + (j ? '2nd' : '1st') + '</span><b>' + NAMES[k].name + '</b>' + sizeIn(k, r) + basisSel(k, r)
+           + '<span class="spacer"></span>' + live('sum', ' data-k="' + k + '"', 'span') + '</div><div class="scard-b">' + live('bar', ' data-k="' + k + '"')
+           + '<div class="chips" role="group" aria-label="Draw on">' + CATS.map(function (c) {
+             var on = r.sources.some(function (x) { return x[0] === c; });
+             return '<button type="button" class="chip" data-act="chip" data-k="' + k + '" data-cat="' + esc(c) + '" aria-pressed="' + on + '">' + sw(c) + SHORT[c] + '</button>';
+           }).join('') + '</div>';
+         if (!L) h += '<p class="hint" style="margin:0">All of it from ' + r.sources[0][0] + '. Pick another chip to split it.</p>';
+         r.sources.forEach(function (s, i) {
+           h += '<div class="slr"><span>' + sw(s[0]) + s[0] + '</span>'
+             + (i < L ? '<input type="range" min="0" max="100" step="0.5" data-f="slider" data-k="' + k + '" data-i="' + i + '" value="' + num(s[1]) + '" aria-label="Weight from ' + esc(s[0]) + '">'
+                      : (L ? '<span class="rest">takes the rest</span>' : '<span></span>'))
+             + live('ro', ' class="ro" data-k="' + k + '" data-i="' + i + '"', 'span') + '</div>';
+         });
+         h += '</div></div>';
+       });
+       return shell(h + '<div class="two"><div>' + sideBlock(st) + '</div>' + live('pv') + '</div>');
+     }},
+    {id: 'types', name: 'Table by implementation type',
+     text: 'One row per implementation type, with the house rule on top: each shows its tilt and premium rules in words, whether it overrides the house, and whether every portfolio can fund it. Edit opens the row in place.',
+     pros: ['Overrides visible at a glance', 'Fundability checked per type'], cons: ['Editing happens in a row that opens'],
+     render: function (st) {
+       var h = '<div class="scope"><label>Order, every type</label>' + orderSeg(st) + '</div><table class="tt"><thead><tr><th>Implementation type</th><th>' + NAMES.ttf.name
+         + '</th><th>' + NAMES.svp.name + '</th><th>Status</th><th>Checks</th><th></th></tr></thead><tbody>';
+       TYPES.forEach(function (t) {
+         var open = st.editRow === t;
+         h += '<tr' + (open ? ' class="sel"' : '') + '><th scope="row">' + (t === '*' ? '<b>House rule</b>' : t) + '</th>'
+           + live('rule', ' class="rw' + (t !== '*' && !st.rules[t] ? ' inh' : '') + '" data-k="ttf"' + sc(t), 'td')
+           + live('rule', ' class="rw' + (t !== '*' && !st.rules[t] ? ' inh' : '') + '" data-k="svp"' + sc(t), 'td')
+           + live('status', sc(t), 'td') + live('rowchk', sc(t), 'td')
+           + '<td style="white-space:nowrap"><button type="button" class="btn" data-act="edit"' + sc(t) + '>' + (open ? 'Done' : 'Edit') + '</button>'
+           + (t !== '*' && st.rules[t] ? ' <button type="button" class="lnk" data-act="reset"' + sc(t) + '>Reset</button>' : '') + '</td></tr>';
+         if (open) {
+           var rs = rulesFor(st, t);
+           h += '<tr class="edrow"><td colspan="6">' + (t !== '*' && !st.rules[t] ? '<p class="hint" style="margin:0 0 8px">Inherits the house rule. Changing anything here makes it an override for ' + esc(t) + '.</p>' : '')
+             + '<div class="edgrid">' + ['ttf', 'svp'].map(function (k) {
+               return '<div class="mini"><h5>' + NAMES[k].name + '</h5><div class="row"><span class="lbl">Size</span>' + sizeIn(k, rs[k], t) + basisSel(k, rs[k], t) + '</div>' + sourcesList(k, rs[k], t) + '</div>';
+             }).join('') + '</div>' + live('chk', sc(t)) + saveRow(st) + '</td></tr>';
+         }
+       });
+       h += '</tbody></table>';
+       var p = st.editRow || '*';
+       return shell(h + '<div class="two"><div>' + histHtml(st) + '</div><div><p class="hh">Preview · ' + esc(scopeLabel(p)) + '</p>' + live('pv', sc(p)) + '</div></div>');
+     }},
+    {id: 'wizard', name: 'Step by step',
+     text: 'A five-step guided change: pick the overlay, set its size and basis (with the arithmetic shown), choose its sources, decide the order, then review the change against what is saved before saving with a note.',
+     pros: ['Guides a change made a few times a year', 'Review before saving'], cons: ['Slow for a quick tweak'],
+     render: function (st) {
+       var steps = ['Overlay', 'Size & basis', 'Sources', 'Order', 'Review & save'], k = st.wk, rs = rulesFor(st), r = rs[k], h = head(st, true);
+       h += '<nav class="steps" aria-label="Steps">' + steps.map(function (s, i) {
+         return '<button type="button" data-act="step" data-v="' + i + '" class="' + (i === st.step ? 'on' : i < st.step ? 'done' : '') + '"><b>' + (i + 1) + '</b>' + s + '</button>';
+       }).join('') + '</nav>';
+       var body = '';
+       if (st.step === 0) {
+         body = '<p class="lede">Which overlay are you changing?</p><div class="pickcards">' + ['ttf', 'svp'].map(function (x) {
+           return '<button type="button" class="pickcard" data-act="wk" data-k="' + x + '" aria-pressed="' + (x === k) + '"><b>' + sw(NAMES[x].into) + NAMES[x].name + '</b><span data-live="rule" data-k="' + x + '"></span></button>';
+         }).join('') + '</div>';
+       } else if (st.step === 1) {
+         body = '<p class="lede">How big is the ' + NAMES[k].name + ', and what is the percentage of?</p><div class="row"><span class="lbl">Size</span>' + sizeIn(k, r, null, 'big') + '<span style="font:600 22px var(--fn)">%</span></div>'
+           + '<div class="pickcards">' + [['portfolio', 'Of the portfolio', 'A fixed slice of the whole portfolio, taken from the sources in their weights.'],
+                                          ['source', 'Of each source', 'A share of what each source holds at that point, so it shrinks as the source does.']].map(function (o) {
+             return '<button type="button" class="pickcard" data-act="basis" data-k="' + k + '" data-v="' + o[0] + '" aria-pressed="' + (r.basis === o[0]) + '"><b>' + o[1] + '</b><span>' + o[2] + '</span></button>';
+           }).join('') + '</div>' + live('formula', ' class="formula" data-k="' + k + '"');
+       } else if (st.step === 2) {
+         body = '<p class="lede">Where does the ' + NAMES[k].name + ' take its money from? Weights must sum to 100.</p>' + sourcesList(k, r) + live('bar', ' data-k="' + k + '" style="margin-top:10px"');
+       } else if (st.step === 3) {
+         body = '<p class="lede">Which is taken first? It matters when both draw on the same category and one is sized on what the other leaves.</p><div class="pickcards">'
+           + [['ttf', 'Tilt, then premium'], ['svp', 'Premium, then tilt']].map(function (o) {
+             var rr = run(rs, o[0] === 'ttf' ? ['ttf', 'svp'] : ['svp', 'ttf'], SAMPLE);
+             return '<button type="button" class="pickcard" data-act="order" data-v="' + o[0] + '" aria-pressed="' + (st.order === o[0]) + '"><b>' + o[1] + '</b><span>Tilt ' + pc(rr.amt.ttf)
+               + ' · premium ' + pc(rr.amt.svp) + ' · IGFI left ' + pc(rr.after[IG]) + '</span></button>';
+           }).join('') + '</div>';
+       } else {
+         var sv = st.saved.rules[st.scope] || st.saved.rules['*'];
+         body = '<table class="diff"><thead><tr><th></th><th>Saved</th><th>Now</th></tr></thead><tbody>' + ['ttf', 'svp'].map(function (x) {
+           var a = ruleWords(sv[x]), b = ruleWords(rs[x]);
+           return '<tr><th>' + NAMES[x].name + '</th><td>' + esc(a) + '</td><td' + (a !== b ? ' class="ch"' : '') + '>' + esc(b) + '</td></tr>';
+         }).join('') + '<tr><th>Order</th><td>' + (st.saved.order === 'ttf' ? 'Tilt, then premium' : 'Premium, then tilt') + '</td><td' + (st.saved.order !== st.order ? ' class="ch"' : '') + '>'
+           + (st.order === 'ttf' ? 'Tilt, then premium' : 'Premium, then tilt') + '</td></tr></tbody></table>' + live('chk') + saveRow(st) + histHtml(st, 3);
+       }
+       h += body + '<div class="wnav"><button type="button" class="btn" data-act="step" data-v="' + Math.max(0, st.step - 1) + '"' + (st.step ? '' : ' disabled') + '>Back</button>'
+         + (st.step < 4 ? '<button type="button" class="btn pri" data-act="step" data-v="' + (st.step + 1) + '">Next</button>' : '') + '</div>';
+       return shell('<div class="two" style="margin:0"><div>' + h + '</div>' + live('pv') + '</div>');
+     }},
+    {id: 'table', name: 'Edit in the allocation table',
+     text: 'The sample portfolio’s allocation is the editor: beside each category, the share of each overlay it funds and what that takes, and the result in the last column. The overlays’ own rows carry their size and basis.',
+     pros: ['You edit where you see the result', 'Every take is shown per category'], cons: ['Tied to one sample portfolio’s rows'],
+     render: function (st) {
+       var rs = rulesFor(st), h = head(st);
+       h += '<table class="ba"><thead><tr><th rowspan="2">Category</th><th rowspan="2">Before</th><th colspan="2" class="grp">' + NAMES.ttf.name + '</th><th colspan="2" class="grp">'
+         + NAMES.svp.name + '</th><th rowspan="2">After</th></tr><tr><th>Share of its funding</th><th>Takes</th><th>Share of its funding</th><th>Takes</th></tr></thead><tbody>';
+       function share(k, c) {
+         var s = rs[k].sources.filter(function (x) { return x[0] === c; })[0];
+         return '<input type="number" class="in cell" step="0.0001" min="0" max="100" data-f="cell" data-k="' + k + '" data-cat="' + esc(c) + '" value="' + (s ? wtxt(s[1]) : '')
+           + '" placeholder="–" aria-label="Share of ' + NAMES[k].name + ' from ' + esc(c) + '">';
+       }
+       CATS.forEach(function (c) {
+         h += '<tr><td>' + sw(c) + c + '</td><td>' + pc(SAMPLE[c]) + '</td><td class="g1">' + share('ttf', c) + '</td>' + live('take', ' class="tk g1" data-k="ttf" data-cat="' + esc(c) + '"', 'td')
+           + '<td>' + share('svp', c) + '</td>' + live('take', ' class="tk" data-k="svp" data-cat="' + esc(c) + '"', 'td')
+           + live('after', ' class="af" data-cat="' + esc(c) + '"' + (c === IG ? ' data-check-ig' : ''), 'td') + '</tr>';
+       });
+       ['ttf', 'svp'].forEach(function (k) {
+         var ctl = sizeIn(k, rs[k]) + ' ' + basisSel(k, rs[k], null, ['of portfolio', 'of source']);
+         h += '<tr class="ov"><td>' + sw(NAMES[k].into) + NAMES[k].into + '<small>' + NAMES[k].name + ' · taken ' + (ord(st).indexOf(k) ? 'second' : 'first') + '</small></td><td>–</td>'
+           + (k === 'ttf' ? '<td colspan="2" class="g1">' + ctl + '</td><td colspan="2"></td>' : '<td colspan="2" class="g1"></td><td colspan="2">' + ctl + '</td>')
+           + live('amt', ' class="af" data-k="' + k + '"' + (k === 'svp' ? ' data-check-svp' : ''), 'td') + '</tr>';
+       });
+       h += '</tbody><tfoot><tr><td>Shares sum</td><td></td><td colspan="2" class="g1">' + live('sum', ' data-k="ttf"', 'span') + '</td><td colspan="2">' + live('sum', ' data-k="svp"', 'span')
+         + '</td><td>100.00%</td></tr></tfoot></table><p class="hint">Leave a share blank to take nothing from that category.</p>';
+       return shell(h + '<div class="two"><div>' + live('chk') + saveRow(st) + '</div><div>' + histHtml(st, 3) + '</div></div>');
+     }},
+    {id: 'drawer', name: 'Rule cards with an editor drawer',
+     text: '<b>Your choice, reworked as an ordered list.</b> The cards are rules that resolve strictly top to bottom: the 1st reads the strategic allocation, each later one reads the allocation the rules above it left. Drag a card by its handle (or use ↑ ↓) to change the order and watch the resolution on the right re-run. Add as many rules as you need; Edit opens the drawer; Save records the order with the rules.',
+     pros: ['Order is explicit and visible', 'Any number of rules', 'The trace shows exactly what each step took'], cons: ['Order now matters for every rule added'],
+     render: function () { return prender(); }},
+    {id: 'sankey', name: 'Flow from sources to overlays',
+     text: 'Every category before on the left, flowing to itself after and to the two overlays on the right, widths to scale. What each overlay draws, and from where, is the picture; the editor is a line per overlay above it.',
+     pros: ['Shows where every point comes from', 'Multi-source rules read at once'], cons: ['Small flows get thin'],
+     render: function (st) {
+       var h = head(st) + ord(st).map(function (k, j) { return rowEditor(st, k, j); }).join('') + live('sk', ' class="chart"');
+       return shell(h + '<div class="two"><div>' + sideBlock(st) + '</div>' + live('pv') + '</div>');
+     }},
+    {id: 'sheet', name: 'Like Uncalled Capital Allocation',
+     text: 'The same layout as the Uncalled Capital Allocation tab: a scope picker, a sheet with a row per overlay and four source slots, the split as a coloured bar, the checks and a sentence, and the history down the right.',
+     pros: ['Matches the tab already in use', 'History beside the editor'], cons: ['Four source slots at most'],
+     render: function (st) {
+       var rs = rulesFor(st);
+       var h = '<h3 style="margin:0 0 4px">Overlay Funding</h3><p class="lede">How the tactical tilt and the volatility premium are funded when they are selected, for every implementation type or one.</p>' + head(st);
+       h += '<table class="sheet"><thead><tr><th>Overlay</th><th>Size %</th><th>Basis</th><th>Sources and weights (up to four)</th><th>Σ</th></tr></thead><tbody>';
+       ord(st).forEach(function (k) {
+         var r = rs[k];
+         h += '<tr><th scope="row">' + NAMES[k].name + '</th><td>' + sizeIn(k, r) + '</td><td>' + basisSel(k, r, null, ['Portfolio', 'Source']) + '</td>';
+         h += '<td class="slots">';
+         for (var i = 0; i < Math.min(4, r.sources.length + 1); i++) {
+           var s = r.sources[i];
+           h += '<span class="slot">' + srcSel(k, i, s ? s[0] : '', null, true, 'slot') + (s ? wIn(k, i, s[1], null, true) : '') + '</span>';
+         }
+         h += '</td>';
+         h += '<td class="s">' + live('sum', ' data-k="' + k + '"', 'span') + '</td></tr>';
+       });
+       h += '</tbody></table>';
+       ord(st).forEach(function (k) { h += '<p class="fl">' + NAMES[k].name + '</p>' + live('bar', ' data-k="' + k + '" class="fbarw"'); });
+       h += live('chk') + live('words', ' class="result"') + saveRow(st);
+       var side = '<h4>History</h4>' + histHtml(st, 5).replace('<p class="hh">History</p>', '') + '<h4 style="margin-top:16px">On a sample</h4>' + live('pv');
+       return shell('<div class="sg"><div class="sg-main">' + h + '</div><aside class="sg-side">' + side + '</aside></div>', false);
+     }}
+  ];
+
+  /* ---- 8 · an ordered list of overlay rules, resolved top to bottom ----
+     Self-contained: its own state, engine, events (data-pa / data-pf, which
+     the shared handlers ignore) and drag and drop. */
+  var PCOL = ['#2A78D6', '#5E7690', '#B8962E', '#7A5C99', '#2E8C8C', '#9C6B4E'];
+  var EXAMPLE = {name: 'Gold Overlay', into: 'Gold', size: 2, basis: 'portfolio',
+                 sources: [[IG, 50], ['Public Equity', 50]], color: '#B8962E'};
+  var pid = 0;
+  function prule(o) { var r = clone(o); r.id = 'r' + (++pid); return r; }
+  function pseed() {
+    return [prule({name: 'Tactical Tilt Fund', into: 'Asset Allocation Strategies', size: 8, basis: 'portfolio', sources: [[IG, 100]], color: '#2A78D6'}),
+            prule({name: 'Strategic Volatility Premium', into: 'Hybrid Fixed Income', size: 7.5, basis: 'source', sources: [[IG, 100]], color: '#5E7690'})];
+  }
+  function pnew() {
+    var p = {lists: {'*': pseed()}, scope: '*', note: '', flash: '', edit: null, esnap: null, drag: null};
+    p.saved = {'*': clone(p.lists['*'])};
+    p.hist = [{when: '30 Sep 2026, 09:12', who: 'fbarker', scope: '*', what: 'Seeded from the code: 1st Tactical Tilt Fund, 2nd Strategic Volatility Premium',
+               note: 'Today’s behaviour: the tilt takes 8% of the portfolio from IGFI; the premium then takes 7.5% of what IGFI has left.', list: clone(p.lists['*'])}];
+    return p;
+  }
+  var PIPE = pnew();
+  function plist(scope) { scope = scope || PIPE.scope; return PIPE.lists[scope] || PIPE.lists['*']; }
+  function pown(scope) { scope = scope || PIPE.scope; if (!PIPE.lists[scope]) PIPE.lists[scope] = clone(PIPE.lists['*']); return PIPE.lists[scope]; }
+  function nth(i) { var n = i + 1, s = ['th', 'st', 'nd', 'rd']; var v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+  function pcolor(r) { return r.color || COLOR[r.into] || '#5E7690'; }
+  function pwords(r) {
+    return wtxt(r.size) + '% of ' + (r.basis === 'portfolio' ? 'the portfolio' : 'what ' + (r.sources.length > 1 ? 'its sources hold' : 'its source holds') + ' at this step')
+      + ', from ' + (r.sources.length ? r.sources.map(function (s) { return SHORT[s[0]] + (r.sources.length > 1 ? ' ' + wtxt(s[1]) + '%' : ''); }).join(' + ') : 'no source');
+  }
+  /* the engine: each rule reads the allocation as the rules above it left it */
+  function presolve(list, cats) {
+    var c = {}; Object.keys(cats).forEach(function (k) { c[k] = cats[k]; });
+    var steps = list.map(function (r) {
+      var before = clone(c), takes = {}, amount = 0;
+      r.sources.forEach(function (s) {
+        var w = num(s[1]) / 100, held = c[s[0]] || 0;
+        var t = r.basis === 'portfolio' ? r.size * w : held * r.size / 100 * w;
+        takes[s[0]] = (takes[s[0]] || 0) + t; amount += t;
+      });
+      Object.keys(takes).forEach(function (k) { c[k] = (c[k] || 0) - takes[k]; });
+      c[r.into] = (c[r.into] || 0) + amount;
+      var over = Object.keys(takes).filter(function (k) { return c[k] < -1e-9; });
+      return {rule: r, before: before, takes: takes, amount: amount, after: clone(c), over: over};
+    });
+    return {steps: steps, after: c};
+  }
+  /* problems per rule (index) and overall; the worst case over every portfolio in scope */
+  function pcheck(list) {
+    var per = list.map(function () { return []; }), intos = {};
+    list.forEach(function (r, i) {
+      var s = sumOf(r), seen = {};
+      if (!String(r.name).trim()) per[i].push('Give the rule a name.');
+      if (!String(r.into).trim()) per[i].push('Name the row it goes into.');
+      else if (CATS.indexOf(r.into) >= 0) per[i].push('It cannot go into ' + r.into + ', a strategic category.');
+      else if (intos[r.into] != null) per[i].push('Rule ' + (intos[r.into] + 1) + ' already goes into ' + r.into + '.');
+      intos[r.into] = i;
+      if (!(r.size > 0)) per[i].push('The size must be above zero.');
+      if (!r.sources.length) per[i].push('Name at least one source.');
+      else if (Math.abs(s - 100) > 1e-6) per[i].push('The weights sum to ' + wtxt(s) + '%, not 100%.');
+      r.sources.forEach(function (x) { if (seen[x[0]]) per[i].push(x[0] + ' is named twice.'); seen[x[0]] = 1; });
+    });
+    var worst = list.map(function () { return null; });
+    Object.keys(SCOPE).forEach(function (p) {
+      presolve(list, SCOPE[p]).steps.forEach(function (st, i) {
+        Object.keys(st.takes).forEach(function (c) {
+          var v = st.after[c], held = SCOPE[p][c] > 0;
+          var cand = {p: p, c: c, v: v, held: held};
+          if (!worst[i] || v < worst[i].v) worst[i] = cand;
+        });
+      });
+    });
+    worst.forEach(function (w, i) {
+      if (!w) return;
+      if (w.v < -1e-9) per[i].push((w.held ? 'Overdrawn' : 'Not held') + ': in ' + w.p + ', ' + w.c + ' would be left at ' + pc(w.v) + '.');
+    });
+    var bad = per.reduce(function (a, x) { return a + x.length; }, 0);
+    return {per: per, worst: worst, bad: bad};
+  }
+  function pchanges(before, after) {
+    var out = [], bIds = before.map(function (r) { return r.id; }), aIds = after.map(function (r) { return r.id; });
+    var byId = {}; before.concat(after).forEach(function (r) { byId[r.id] = r; });
+    after.forEach(function (r) { if (bIds.indexOf(r.id) < 0) out.push('Added ' + r.name + ' (' + nth(aIds.indexOf(r.id)) + ')'); });
+    before.forEach(function (r) { if (aIds.indexOf(r.id) < 0) out.push('Removed ' + r.name); });
+    var common = aIds.filter(function (id) { return bIds.indexOf(id) >= 0; });
+    var oldOrder = bIds.filter(function (id) { return common.indexOf(id) >= 0; });
+    if (common.join() !== oldOrder.join()) {
+      /* name the first pair whose order flipped */
+      outer: for (var i = 0; i < common.length; i++) for (var j = i + 1; j < common.length; j++) {
+        if (oldOrder.indexOf(common[i]) > oldOrder.indexOf(common[j])) {
+          out.push('Order changed: ' + byId[common[i]].name + ' moved above ' + byId[common[j]].name); break outer;
+        }
+      }
+    }
+    after.forEach(function (r) {
+      var b = before.filter(function (x) { return x.id === r.id; })[0];
+      if (b && JSON.stringify([b.name, b.into, b.size, b.basis, b.sources]) !== JSON.stringify([r.name, r.into, r.size, r.basis, r.sources])) out.push('Edited ' + r.name);
+    });
+    return out;
+  }
+  function pdirty() { return pchanges(PIPE.saved[PIPE.scope] || PIPE.saved['*'], plist()).length > 0; }
+
+  function pcards(list, chk, res) {
+    var h = '<ol class="pl" aria-label="Overlay rules, resolved top to bottom">';
+    list.forEach(function (r, i) {
+      var st = res.steps[i], bad = chk.per[i].length;
+      h += '<li class="pc' + (bad ? ' bad' : '') + '" draggable="true" data-pi="' + i + '" style="--cc:' + pcolor(r) + '">'
+        + '<span class="grip" aria-hidden="true" title="Drag to reorder">⠿</span>'
+        + '<span class="ordn">' + nth(i) + '</span>'
+        + '<div class="pcb"><b>' + esc(r.name || '(unnamed rule)') + ' <span class="into">→ ' + esc(r.into || '?') + '</span></b>'
+        + '<span class="pw">' + esc(pwords(r)) + '</span>'
+        + '<span class="pa">' + (bad ? '<em>' + esc(chk.per[i][0]) + (bad > 1 ? ' (+' + (bad - 1) + ' more)' : '') + '</em>'
+            : 'On the sample: <b>' + pc(st.amount) + '</b> (' + money(st.amount) + ')' + (i ? ', reading what rules 1' + (i > 1 ? '–' + i : '') + ' left' : ', read from the strategic allocation')) + '</span></div>'
+        + '<span class="mv"><button type="button" class="mb" data-pa="up" data-pi="' + i + '"' + (i ? '' : ' disabled') + ' aria-label="Move ' + esc(r.name) + ' up">↑</button>'
+        + '<button type="button" class="mb" data-pa="down" data-pi="' + i + '"' + (i < list.length - 1 ? '' : ' disabled') + ' aria-label="Move ' + esc(r.name) + ' down">↓</button></span>'
+        + '<button type="button" class="btn" data-pa="edit" data-pi="' + i + '">Edit</button>'
+        + '<button type="button" class="x" data-pa="del" data-pi="' + i + '" aria-label="Remove ' + esc(r.name) + '">×</button></li>';
+    });
+    h += '</ol>';
+    var hasEx = list.some(function (r) { return r.into === EXAMPLE.into; });
+    h += '<div class="padd"><button type="button" class="btn" data-pa="add">+ Add rule</button>'
+      + (hasEx ? '' : '<button type="button" class="lnk" data-pa="example">+ Add example: Gold Overlay, 2% of the portfolio from IGFI 50% / Public Equity 50%</button>') + '</div>';
+    return h;
+  }
+  function ptrace(list, chk, res) {
+    var h = '<p class="grp-h">Resolution on the sample · USD Moderate Full · $50,000,000</p><ol class="trace">';
+    h += '<li class="t0"><b>Start</b> · the strategic allocation: ' + CATS.map(function (c) { return SHORT[c] + ' ' + pc(SAMPLE[c]); }).join(' · ') + '</li>';
+    res.steps.forEach(function (st, i) {
+      var r = st.rule;
+      h += '<li class="' + (st.over.length || chk.per[i].length ? 'tbad' : '') + '" style="--cc:' + pcolor(r) + '"><b>' + nth(i) + ' · ' + esc(r.name) + '</b> <span class="tw">' + esc(pwords(r)) + '</span>';
+      if (r.basis === 'source' && r.sources.length) {
+        h += '<div class="tf">' + r.sources.map(function (s) {
+          return wtxt(r.size) + '% × ' + SHORT[s[0]] + ' ' + pc(st.before[s[0]] || 0) + (r.sources.length > 1 ? ' × ' + wtxt(s[1]) + '%' : '') + ' = ' + pc(st.takes[s[0]] || 0);
+        }).join('<br>') + '</div>';
+      }
+      h += '<table class="tt2"><tbody>';
+      Object.keys(st.takes).forEach(function (c) {
+        h += '<tr' + (st.after[c] < -1e-9 ? ' class="neg"' : '') + '><td>' + sw(c) + SHORT[c] + '</td><td>' + pc(st.before[c] || 0) + '</td><td>→</td><td>' + pc(st.after[c]) + '</td><td class="d">' + pd(-st.takes[c]) + '</td></tr>';
+      });
+      h += '<tr class="ovr"><td><i class="sw" style="background:' + pcolor(r) + '"></i>' + esc(r.into) + '</td><td>' + pc(st.before[r.into] || 0) + '</td><td>→</td><td>' + pc(st.after[r.into]) + '</td><td class="d">' + pd(st.amount) + '</td></tr>';
+      h += '</tbody></table></li>';
+    });
+    h += '</ol>';
+    /* the final allocation */
+    var fin = res.after;
+    h += '<table class="pv fin"><caption>Final allocation</caption><thead><tr><th>Category</th><th>Strategic</th><th>Implemented</th><th>Change</th></tr></thead><tbody>';
+    CATS.forEach(function (c) {
+      var b = SAMPLE[c], a = fin[c], d = a - b, moved = Math.abs(d) > 1e-9;
+      h += '<tr class="' + (moved ? 'moved' : '') + (a < -1e-9 ? ' neg' : '') + '"><td>' + sw(c) + SHORT[c] + '</td><td>' + pc(b) + '</td><td' + (c === IG ? ' data-pcheck-ig' : '') + '>' + pc(a) + '</td><td class="d">' + (moved ? pd(d) : '–') + '</td></tr>';
+    });
+    list.forEach(function (r, i) {
+      h += '<tr class="ov"><td><i class="sw" style="background:' + pcolor(r) + '"></i><span class="ordn sm">' + nth(i) + '</span>' + esc(r.into) + '</td><td>–</td><td data-pcheck-into="' + esc(r.into) + '">' + pc(fin[r.into] || 0) + '</td><td class="d">' + money(fin[r.into] || 0) + '</td></tr>';
+    });
+    var tot = Object.keys(fin).reduce(function (a, k) { return a + fin[k]; }, 0);
+    return h + '</tbody><tfoot><tr><td>Total</td><td>100.00%</td><td>' + pc(tot) + '</td><td></td></tr></tfoot></table>';
+  }
+  function pfoot(chk) {
+    var dirty = pdirty();
+    return '<div class="foot"><input type="text" data-pf="note" placeholder="Why the change? It is kept with the history" value="' + esc(PIPE.note) + '">'
+      + '<button type="button" class="btn pri" data-pa="save"' + (chk.bad ? ' aria-disabled="true"' : '') + '>Save</button>'
+      + (PIPE.scope !== '*' && PIPE.lists[PIPE.scope] ? '<button type="button" class="btn" data-pa="unover">Remove override</button>' : '')
+      + (PIPE.flash ? '<span class="flash' + (PIPE.flash.indexOf('Not') === 0 ? ' no' : '') + '">' + esc(PIPE.flash) + '</span>'
+         : dirty ? '<span class="flash pend">Unsaved changes' + (chk.bad ? ' · fix the red rules first' : '') + '</span>' : '') + '</div>';
+  }
+  function phist() {
+    return '<p class="hh">History</p><ul class="hist">' + PIPE.hist.slice(0, 5).map(function (e, i) {
+      return '<li><div><b>' + esc(e.when) + '</b> · ' + esc(e.who) + ' · ' + esc(e.scope === '*' ? 'House' : e.scope) + '<div class="hw">' + esc(e.what) + '</div><div class="hn">' + esc(e.note) + '</div></div>'
+        + (i ? '<button type="button" data-pa="revert" data-h="' + i + '">Revert</button>' : '<span class="now">current</span>') + '</li>';
+    }).join('') + '</ul>';
+  }
+  function pdrawer(list, chk, res) {
+    var i = PIPE.edit, r = list[i]; if (!r) return '';
+    var h = '<div class="scrim" data-pa="cancel"></div><aside class="drawer" aria-label="Edit rule"><h4>' + esc(r.name || 'New rule') + '</h4>'
+      + '<p class="lede">Resolves <b>' + nth(i) + '</b> · ' + (i ? 'reads the allocation left by ' + list.slice(0, i).map(function (x) { return esc(x.name); }).join(', then ') : 'reads the strategic allocation as it stands') + '</p>'
+      + '<div class="row"><span class="lbl">Name</span><input type="text" data-pf="name" value="' + esc(r.name) + '" aria-label="Rule name"></div>'
+      + '<div class="row"><span class="lbl">Goes into</span><input type="text" data-pf="into" value="' + esc(r.into) + '" aria-label="Row it goes into"></div>'
+      + '<div class="row"><span class="lbl">Size</span><input type="number" class="in sz" step="0.0001" min="0" data-pf="size" value="' + wtxt(r.size) + '" aria-label="Size, percent">'
+      + '<select data-pf="basis" aria-label="Basis"><option value="portfolio"' + (r.basis === 'portfolio' ? ' selected' : '') + '>% of the portfolio</option>'
+      + '<option value="source"' + (r.basis === 'source' ? ' selected' : '') + '>% of each source, as it stands at this step</option></select></div>'
+      + '<table class="src"><thead><tr><th>Funded from</th><th style="text-align:right">Weight</th><th></th></tr></thead><tbody>';
+    r.sources.forEach(function (s, j) {
+      h += '<tr><td>' + sw(s[0]) + '<select data-pf="src" data-j="' + j + '" aria-label="Source category">' + CATS.map(function (c) {
+        return '<option value="' + esc(c) + '"' + (c === s[0] ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select></td>'
+        + '<td class="n"><span class="wv"><input type="number" class="in" step="0.0001" min="0" max="100" data-pf="w" data-j="' + j + '" value="' + wtxt(s[1]) + '" aria-label="Weight, percent"><span>%</span></span></td>'
+        + '<td>' + (r.sources.length > 1 ? '<button type="button" class="x" data-pa="rmsrc" data-j="' + j + '" aria-label="Remove source">×</button>' : '') + '</td></tr>';
+    });
+    h += '</tbody></table><button type="button" class="lnk" data-pa="addsrc">+ Add a source</button> <span data-plive="sum"></span>'
+      + '<div data-plive="dchk" style="margin-top:10px"></div>'
+      + '<div class="foot"><button type="button" class="btn pri" data-pa="done">Done</button><button type="button" class="btn" data-pa="cancel">Cancel</button>'
+      + '<span class="hint">Done keeps the change in the list; Save there records it.</span></div></aside>';
+    return h;
+  }
+  function pdchk(list, chk) {
+    var i = PIPE.edit; if (list[i] == null) return '';
+    var w = chk.worst[i];
+    return chk.per[i].length ? '<ul class="problems">' + chk.per[i].map(function (x) { return '<li class="bad">' + esc(x) + '</li>'; }).join('') + '</ul>'
+      : '<p class="okl">✓ Every portfolio in scope can fund it at this step' + (w ? '. Thinnest source afterwards: ' + SHORT[w.c] + ' ' + pc(w.v) + ' in ' + w.p : '') + '.</p>';
+  }
+  function psum(list) {
+    var r = list[PIPE.edit]; if (!r) return '';
+    var s = sumOf(r), ok = Math.abs(s - 100) < 1e-6;
+    return '<span class="sum ' + (ok ? 'ok' : 'bad') + '">Σ ' + wtxt(s) + '%</span>';
+  }
+  function pscope() {
+    var own = PIPE.scope === '*' ? '<span class="pill house">House list</span>'
+      : PIPE.lists[PIPE.scope] ? '<span class="pill over">Override</span>' : '<span class="pill">Inherits the house list · editing makes an override</span>';
+    return '<div class="scope"><label>Rules for</label><select data-pf="scope" aria-label="Rules for">' + TYPES.map(function (t) {
+      return '<option value="' + esc(t) + '"' + (PIPE.scope === t ? ' selected' : '') + '>' + scopeLabel(t) + '</option>'; }).join('') + '</select>' + own + '</div>';
+  }
+  function prender() {
+    var list = plist(), chk = pcheck(list), res = presolve(list, SAMPLE);
+    var h = '<div class="dwrap pipe"><h3 style="margin:0 0 4px">Overlay Funding</h3>'
+      + '<p class="lede">Rules resolve <b>top to bottom</b>. Each one reads the allocation as the rules above it left it. Drag a card by its handle, or use ↑ ↓, to change the order; add as many rules as you need.</p>'
+      + pscope()
+      + '<div class="pgrid"><div><div data-plive="list">' + pcards(list, chk, res) + '</div><div data-plive="foot">' + pfoot(chk) + '</div>' + phist() + '</div>'
+      + '<div class="ptr" data-plive="trace">' + ptrace(list, chk, res) + '</div></div>'
+      + (PIPE.edit != null ? pdrawer(list, chk, res) : '') + '</div>';
+    return shell(h);
+  }
+  /* refresh everything but the drawer's inputs, so typing keeps focus */
+  function plive() {
+    var sec = document.getElementById('opt-drawer'); if (!sec) return;
+    var list = plist(), chk = pcheck(list), res = presolve(list, SAMPLE);
+    var put = function (n, html) { var el = sec.querySelector('[data-plive="' + n + '"]'); if (el) el.innerHTML = html; };
+    put('list', pcards(list, chk, res)); put('trace', ptrace(list, chk, res)); put('foot', pfoot(chk));
+    put('sum', psum(list)); put('dchk', pdchk(list, chk));
+  }
+  function prerender(focusSel) {
+    var sec = document.getElementById('opt-drawer');
+    sec.querySelector('.stage').innerHTML = prender();
+    PIPE.flash = '';
+    plive();
+    if (focusSel) { var f = sec.querySelector(focusSel); if (f && !f.disabled) f.focus(); }
+  }
+  function pmove(from, to) {
+    var list = pown(); if (to < 0 || to >= list.length || from === to) return;
+    var r = list.splice(from, 1)[0]; list.splice(to, 0, r);
+  }
+  function psave() {
+    var list = plist(), chk = pcheck(list);
+    if (chk.bad) { PIPE.flash = 'Not saved: ' + chk.bad + ' problem' + (chk.bad > 1 ? 's' : '') + ' in the red rules.'; return; }
+    var ch = pchanges(PIPE.saved[PIPE.scope] || PIPE.saved['*'], list);
+    if (!ch.length) { PIPE.flash = 'Nothing to save.'; return; }
+    PIPE.hist.unshift({when: stamp(), who: 'fbarker', scope: PIPE.scope, what: ch.join(' · ') + ' — now ' + list.map(function (r, i) { return nth(i) + ' ' + r.name; }).join(', '),
+                       note: PIPE.note || '(no note)', list: clone(list)});
+    PIPE.saved[PIPE.scope] = clone(list); PIPE.note = ''; PIPE.flash = 'Saved.';
+  }
+  function pset(el) {
+    var d = el.dataset, f = d.pf, v = el.value;
+    if (f === 'note') { PIPE.note = v; return; }
+    if (f === 'scope') { PIPE.scope = v; PIPE.edit = null; return; }
+    var r = pown()[PIPE.edit]; if (!r) return;
+    if (f === 'name') r.name = v;
+    else if (f === 'into') r.into = v;
+    else if (f === 'size') r.size = num(v);
+    else if (f === 'basis') r.basis = v;
+    else if (f === 'w') { if (r.sources[+d.j]) r.sources[+d.j][1] = num(v); }
+    else if (f === 'src') { if (r.sources[+d.j]) r.sources[+d.j][0] = v; }
+  }
+  document.addEventListener('input', function (e) {
+    var el = e.target; if (!el.dataset || !el.dataset.pf || el.tagName === 'SELECT') return;
+    pset(el); if (el.dataset.pf !== 'note') plive();
+  });
+  document.addEventListener('change', function (e) {
+    var el = e.target; if (!el.dataset || !el.dataset.pf || el.tagName !== 'SELECT') return;
+    pset(el); prerender('[data-pf="' + el.dataset.pf + '"]' + (el.dataset.j != null ? '[data-j="' + el.dataset.j + '"]' : ''));
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-pa]'); if (!b) return;
+    var d = b.dataset, i = +d.pi, list, focus = null;
+    switch (d.pa) {
+      case 'up': pmove(i, i - 1); focus = '[data-pa="up"][data-pi="' + (i - 1) + '"]'; break;
+      case 'down': pmove(i, i + 1); focus = '[data-pa="down"][data-pi="' + (i + 1) + '"]'; break;
+      case 'edit': PIPE.esnap = clone(plist()); PIPE.esnapScope = PIPE.lists[PIPE.scope] ? PIPE.scope : null; PIPE.edit = i; focus = '[data-pf="size"]'; break;
+      case 'del':
+        list = pown();
+        if (list.length === 1) { PIPE.flash = 'Not removed: keep at least one rule, or remove the overlays from the type.'; break; }
+        list.splice(i, 1); break;
+      case 'add':
+        list = pown(); PIPE.esnap = clone(list); PIPE.esnapScope = PIPE.scope;
+        list.push(prule({name: 'New overlay', into: 'New overlay ' + (list.length + 1), size: 1, basis: 'portfolio', sources: [[IG, 100]], color: PCOL[list.length % PCOL.length]}));
+        PIPE.edit = list.length - 1; focus = '[data-pf="name"]'; break;
+      case 'example': pown().push(prule(EXAMPLE)); break;
+      case 'addsrc':
+        var r = pown()[PIPE.edit], free = CATS.filter(function (c) { return !r.sources.some(function (x) { return x[0] === c; }); });
+        if (free.length) r.sources.push([free[0], 0]); focus = '[data-pf="w"][data-j="' + (r.sources.length - 1) + '"]'; break;
+      case 'rmsrc': pown()[PIPE.edit].sources.splice(+d.j, 1); break;
+      case 'done': PIPE.edit = null; PIPE.esnap = null; break;
+      case 'cancel':
+        if (PIPE.esnap) PIPE.lists[PIPE.scope] = PIPE.esnap;
+        if (PIPE.scope !== '*' && !PIPE.esnapScope) delete PIPE.lists[PIPE.scope];
+        PIPE.edit = null; PIPE.esnap = null; break;
+      case 'save': psave(); break;
+      case 'unover': delete PIPE.lists[PIPE.scope]; break;
+      case 'revert':
+        var h = PIPE.hist[+d.h];
+        PIPE.lists[h.scope] = clone(h.list); PIPE.saved[h.scope] = clone(h.list); PIPE.scope = h.scope;
+        PIPE.hist.unshift({when: stamp(), who: 'fbarker', scope: h.scope, what: 'Reverted to the version of ' + h.when + ' — ' + h.list.map(function (r, k) { return nth(k) + ' ' + r.name; }).join(', '), note: '', list: clone(h.list)});
+        break;
+      default: return;
+    }
+    prerender(focus);
+  });
+  /* drag and drop: the card under the pointer takes the dragged one above or below it */
+  function pli(e) { var li = e.target.closest && e.target.closest('#opt-drawer li.pc'); return li; }
+  document.addEventListener('dragstart', function (e) {
+    var li = pli(e); if (!li) return;
+    PIPE.drag = +li.dataset.pi; li.classList.add('dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', li.dataset.pi); } catch (err) { /* old browsers */ }
+  });
+  document.addEventListener('dragover', function (e) {
+    var li = pli(e); if (!li || PIPE.drag == null) return;
+    e.preventDefault();
+    var r = li.getBoundingClientRect(), below = e.clientY > r.top + r.height / 2;
+    document.querySelectorAll('#opt-drawer li.pc').forEach(function (x) { x.classList.remove('drop-above', 'drop-below'); });
+    li.classList.add(below ? 'drop-below' : 'drop-above');
+  });
+  document.addEventListener('drop', function (e) {
+    var li = pli(e); if (!li || PIPE.drag == null) return;
+    e.preventDefault();
+    var to = +li.dataset.pi, r = li.getBoundingClientRect(), below = e.clientY > r.top + r.height / 2;
+    var from = PIPE.drag, target = to + (below ? 1 : 0);
+    if (from < target) target -= 1;
+    PIPE.drag = null; pmove(from, target); prerender();
+  });
+  document.addEventListener('dragend', function () {
+    PIPE.drag = null;
+    document.querySelectorAll('#opt-drawer li.pc').forEach(function (x) { x.classList.remove('dragging', 'drop-above', 'drop-below'); });
+  });
+  /* for the page's own checks */
+  window.__pipe = {state: function () { return PIPE; }, move: function (a, b) { pmove(a, b); prerender(); }, example: function () { pown().push(prule(EXAMPLE)); prerender(); },
+                   resolve: function () { return presolve(plist(), SAMPLE); }};
+
+  /* ---- plumbing ---- */
+  var STATES = {}, BY = {};
+  STYLES.forEach(function (s) { STATES[s.id] = newState(); BY[s.id] = s; });
+  function refreshLive(sec) {
+    var st = STATES[sec.dataset.id];
+    sec.querySelectorAll('[data-live]').forEach(function (el) { var fn = LIVE[el.dataset.live]; if (fn) el.innerHTML = fn(st, el); });
+  }
+  function renderStage(id) {
+    var sec = document.getElementById('opt-' + id), st = STATES[id];
+    sec.querySelector('.stage').innerHTML = BY[id].render(st);
+    st.flash = '';
+    refreshLive(sec);
+  }
+  function save(st) {
+    var bad = problems(rulesFor(st), ord(st)).list.filter(function (x) { return x[0] === 'bad'; });
+    if (bad.length) { st.flash = 'Not saved: ' + bad.length + ' problem' + (bad.length > 1 ? 's' : '') + ' to fix first.'; return false; }
+    st.hist.unshift({when: stamp(), who: 'fbarker', note: st.note || '(no note)', snap: snap(st),
+                     what: scopeLabel(st.scope) + ': ' + ord(st).map(function (k) { return NAMES[k].tag + ' ' + ruleWords(rulesFor(st)[k]); }).join(' · then ')});
+    st.note = ''; st.saved = snap(st); st.flash = 'Saved.';
+    return true;
+  }
+  function setField(st, el) {
+    var d = el.dataset, f = d.f, k = d.k, i = +d.i, v = el.value;
+    if (f === 'note') { st.note = v; return; }
+    if (f === 'scope') { st.scope = v; return; }
+    var r = own(st, d.scope || st.scope)[k];
+    if (f === 'size') r.size = num(v);
+    else if (f === 'basis') r.basis = v;
+    else if (f === 'w') { if (r.sources[i]) r.sources[i][1] = num(v); }
+    else if (f === 'src') { if (r.sources[i]) r.sources[i][0] = v; }
+    else if (f === 'cell') {
+      var c = d.cat, at = -1, w = num(v);
+      r.sources.forEach(function (x, j) { if (x[0] === c) at = j; });
+      if (v === '' || w <= 0) { if (at >= 0) r.sources.splice(at, 1); }
+      else if (at < 0) r.sources.push([c, w]); else r.sources[at][1] = w;
+    } else if (f === 'slider') { if (r.sources[i]) r.sources[i][1] = num(v); rebalance(r); }
+    else if (f === 'slot') {
+      if (v === '') { if (i < r.sources.length) r.sources.splice(i, 1); }
+      else if (i < r.sources.length) r.sources[i][0] = v; else r.sources.push([v, 0]);
+    }
+  }
+  document.addEventListener('input', function (e) {
+    var el = e.target; if (!el.dataset || !el.dataset.f || el.tagName === 'SELECT') return;
+    var sec = el.closest('.option'); if (!sec) return;
+    setField(STATES[sec.dataset.id], el); refreshLive(sec);
+  });
+  document.addEventListener('change', function (e) {
+    var el = e.target; if (!el.dataset || !el.dataset.f || el.tagName !== 'SELECT') return;
+    var sec = el.closest('.option'); if (!sec) return;
+    setField(STATES[sec.dataset.id], el); renderStage(sec.dataset.id);
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]'); if (!b) return;
+    var sec = b.closest('.option'); if (!sec) return;
+    var id = sec.dataset.id, st = STATES[id], d = b.dataset, scope = d.scope || st.scope, r;
+    switch (d.act) {
+      case 'add':
+        r = own(st, scope)[d.k];
+        var free = CATS.filter(function (c) { return !r.sources.some(function (x) { return x[0] === c; }); });
+        if (free.length) r.sources.push([free[0], 0]);
+        break;
+      case 'rm': r = own(st, scope)[d.k]; r.sources.splice(+d.i, 1); if (id === 'split') rebalance(r); break;
+      case 'chip':
+        r = own(st, scope)[d.k];
+        var at = -1; r.sources.forEach(function (x, j) { if (x[0] === d.cat) at = j; });
+        if (at >= 0) { if (r.sources.length > 1) r.sources.splice(at, 1); } else r.sources.push([d.cat, 0]);
+        rebalance(r);
+        break;
+      case 'order': st.order = d.v; break;
+      case 'swap': st.order = st.order === 'ttf' ? 'svp' : 'ttf'; break;
+      case 'save': if (save(st) && st.drawer) { st.drawer = null; st.dsnap = null; } break;
+      case 'revert':
+        var h = st.hist[+d.h]; st.rules = clone(h.snap.rules); st.order = h.snap.order;
+        st.hist.unshift({when: stamp(), who: 'fbarker', what: 'Reverted to the version of ' + h.when, note: '', snap: snap(st)});
+        st.saved = snap(st);
+        break;
+      case 'reset': delete st.rules[scope]; break;
+      case 'step': st.step = +d.v; break;
+      case 'wk': st.wk = d.k; break;
+      case 'basis': own(st, scope)[d.k].basis = d.v; break;
+      case 'edit': st.editRow = st.editRow === d.scope ? null : d.scope; st.scope = d.scope; break;
+      case 'drawer': st.drawer = d.k; st.scope = d.scope; st.dsnap = clone(st.rules); break;
+      case 'close': if (st.dsnap) st.rules = st.dsnap; st.drawer = null; st.dsnap = null; break;
+      default: return;
+    }
+    renderStage(id);
+  });
+
+  /* ---- choosing ---- */
+  var KEY = 'overlayFundingStyle', picked = null;
+  try { picked = window.localStorage.getItem(KEY); } catch (err) { picked = null; }
+  if (!picked) picked = 'drawer';                    /* the user chose 8 */
+  function renderPicks() {
+    STYLES.forEach(function (s, i) {
+      var sec = document.getElementById('opt-' + s.id), on = picked === s.id, btn = sec.querySelector('.pick');
+      sec.classList.toggle('picked', on); btn.setAttribute('aria-pressed', String(on)); btn.textContent = on ? 'Chosen' : 'Choose';
+    });
+    document.getElementById('jump').innerHTML = STYLES.map(function (s, i) {
+      return '<a href="#opt-' + s.id + '" title="' + esc(s.name) + '"' + (picked === s.id ? ' class="picked"' : '') + '>' + (i + 1) + '</a>';
+    }).join('');
+    var bar = document.getElementById('pickedBar'), n = -1;
+    STYLES.forEach(function (s, i) { if (s.id === picked) n = i; });
+    bar.classList.toggle('on', n >= 0);
+    bar.innerHTML = n >= 0 ? 'You chose <b>' + (n + 1) + ' · ' + esc(STYLES[n].name) + '</b>. Tell Claude: <code id="say">Go with overlay funding style ' + (n + 1) + ' (' + esc(STYLES[n].name) + ')</code>'
+      + '<button type="button" data-copy>Copy</button><button type="button" data-clear>Clear</button>' : '';
+  }
+  document.getElementById('options').innerHTML = STYLES.map(function (s, i) {
+    return '<section class="option" id="opt-' + s.id + '" data-id="' + s.id + '" aria-labelledby="h-' + s.id + '"><div class="opt-h"><div class="opt-n" aria-hidden="true">' + (i + 1) + '</div>'
+      + '<h3 id="h-' + s.id + '">' + (i + 1) + ' · ' + esc(s.name) + '</h3><p>' + s.text + '</p><button type="button" class="pick" data-pick="' + s.id + '" aria-pressed="false">Choose</button></div>'
+      + '<div class="stage"></div><ul class="traits">' + s.pros.map(function (p) { return '<li>' + p + '</li>'; }).join('')
+      + s.cons.map(function (c) { return '<li class="con">' + c + '</li>'; }).join('') + '</ul></section>';
+  }).join('');
+  STYLES.forEach(function (s) { renderStage(s.id); });
+  renderPicks();
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.pick) {
+      picked = picked === b.dataset.pick ? null : b.dataset.pick;
+      try { if (picked) window.localStorage.setItem(KEY, picked); else window.localStorage.removeItem(KEY); } catch (err) { /* private window */ }
+      renderPicks(); return;
+    }
+    if (b.hasAttribute('data-clear')) {
+      picked = null; try { window.localStorage.removeItem(KEY); } catch (err) { /* ignore */ }
+      renderPicks(); return;
+    }
+    if (b.hasAttribute('data-copy')) {
+      var t = (document.getElementById('say') || {}).textContent || '';
+      if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, function () {});
+      return;
+    }
+    if (b.hasAttribute('data-resetall')) {
+      PIPE = pnew();
+      STYLES.forEach(function (s) { STATES[s.id] = newState(); renderStage(s.id); });
+    }
+  });
+})();
+
+</script>
+</body>
+</html>

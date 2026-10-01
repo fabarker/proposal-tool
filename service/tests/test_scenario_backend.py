@@ -26,7 +26,7 @@ from cyrus_pmg.pmgService.scenario.fixturesAdapter import FixturesScenarioPort
 from cyrus_pmg.pmgService.scenario.payloads import roundWeightsLargestRemainder
 from cyrus_pmg.pmgService.scenario.types import BasisInput, MandateInput, PortfolioKey, ValidationError
 from cyrus_pmg.pmgService.scenario.workbook import (
-    FEE_COLUMNS, IMPL_COLUMNS, buildImplementationRows, implColumns,
+    COST_COLUMN, FEE_COLUMNS, IMPL_COLUMNS, buildImplementationRows, implColumns,
     roundSharesOneDp)
 
 
@@ -996,51 +996,10 @@ def test_the_premium_reaches_the_implementation_model_and_the_sheet():
     assert rules.VOL_PREMIUM_CATEGORY not in [g['category'] for g in without['groups']]
 
 
-def test_js_vol_premium_mirror_agrees_with_python():
-    """The screen applies the overlay in JavaScript and the workbook in
-    Python. Across the whole availability set, both toggles and a currency
-    that may not hold it, the two must land on the same categories."""
-    node = shutil.which('node')
-    if not node:
-        pytest.skip('node not available')
-    jsPath = os.path.join(os.path.dirname(__file__), '..', '..',
-                          'generator', 'js', 'implementation.js')
-    with open(jsPath, encoding='utf-8') as fh:
-        source = fh.read()
-    fn = source[source.index('function volPremiumShare('):
-                source.index('/* The categories AS IMPLEMENTED')]
-
-    cases, expected = [], []
-    for allocation, riskLevel in (('Core', 'Moderate'), ('Full', 'ModAgg'),
-                                  ('ex-HFs', 'Conservative'), (None, 'All Equity')):
-        result = PORT.resolve_portfolio(
-            BASIS, PortfolioKey('USD', riskLevel, allocation,
-                                None if allocation is None else False))
-        for tilt in (False, True):
-            tilted = rules.tiltedCategories(result['categories'], tilt)
-            for on in (False, True):
-                cases.append([[{'name': c['name'], 'weightPct': c['weightPct'],
-                                'assets': c['assets']} for c in tilted], on])
-                expected.append(rules.volPremiumCategories(tilted, on, 'USD'))
-
-    stub = ('var App = { opt: function (path, fallback) { return ({'
-            "'rules.volPremiumShare': " + json.dumps(rules.VOL_PREMIUM_SHARE) + ','
-            "'rules.volPremiumFundedFrom': " + json.dumps(rules.VOL_PREMIUM_FUNDED_FROM) + ','
-            "'rules.volPremiumCategory': " + json.dumps(rules.VOL_PREMIUM_CATEGORY) + '})'
-            '[path]; } };\n')
-    script = stub + fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \
-        + 'process.stdout.write(JSON.stringify(cases.map(function (c) {\n' \
-        + '  return volPremiumCategories(c[0], c[1]); })));\n'
-    out = subprocess.run([node, '-e', script], capture_output=True, text=True, check=True)
-    jsResults = json.loads(out.stdout)
-
-    assert len(jsResults) == len(expected) >= 16
-    for js, py in zip(jsResults, expected):
-        assert [c['name'] for c in js] == [c['name'] for c in py]
-        for a, b in zip(js, py):
-            assert a['weightPct'] == pytest.approx(b['weightPct'], abs=1e-12)
-            assert [x['weightPct'] for x in a['assets']] == pytest.approx(
-                [x['weightPct'] for x in b['assets']], abs=1e-12)
+# The page's mirror of the overlays is now one resolver for every rule, in
+# core.js; tests/test_overlay_rules.py holds it to rules.resolveOverlays over
+# the whole rule set, bit for bit (D155). The premium's own mirror test, which
+# read implementation.js's volPremiumCategories, went with that function.
 
 
 # ---- the strategic universe: the database is the authority (D54) ----
@@ -1149,7 +1108,7 @@ def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
                           text=True, env=environment)
     assert done.returncode == 0, done.stderr[-600:]
     routes, asked = done.stdout.split()
-    assert int(routes) == 37, 'the whole block registered without the extract'
+    assert int(routes) == 42, 'the whole block registered without the extract'
     assert asked == 'raised', 'and the data is still required when it is wanted'
 
 
@@ -1330,13 +1289,36 @@ def test_excluding_fees_takes_the_columns_off_the_sheet():
     piece: nothing else about the sheet's shape depends on the toggle."""
     assert list(FEE_COLUMNS) == ['Mgmt fee', 'Wtd fee (bp)']
     assert implColumns(True) == IMPL_COLUMNS
-    assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS]
-    assert len(implColumns(False)) == len(IMPL_COLUMNS) - 2
+    # the workbook keeps the product cost and weights it alone; the deck
+    # carries no cost column at all (D152)
+    assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS] + [COST_COLUMN]
+    assert implColumns(False, deck=True) == [c for c in IMPL_COLUMNS
+                                             if c not in FEE_COLUMNS and c != 'Product Cost']
+    assert implColumns(True, deck=True) == IMPL_COLUMNS
     # the columns that survive keep their order and their neighbours: the
-    # notional beside the products, the product cost last (D134)
+    # notional beside the products, the product cost then its weighting last
     assert implColumns(False)[:4] == ['Categories & Asset Classes', 'Products',
                                       'Notional', 'Allocation (%)']
-    assert implColumns(False)[-1] == 'Product Cost'
+    assert implColumns(False)[-2:] == ['Product Cost', COST_COLUMN]
+
+
+def _unpricedModel():
+    return _implementationFor(PortfolioKey('USD', 'Moderate', 'Full', False), feeSchedule=None)
+
+
+def test_an_unpriced_workbook_weights_the_product_cost_alone():
+    """D152: each row's Wtd cost (bp) is its allocation times its product
+    cost, and the total their sum."""
+    from cyrus_pmg.pmgService.scenario import sheetDoc
+    from cyrus_pmg.pmgService.scenario.workbook import _WIDTHS
+    model = _unpricedModel()
+    columns = implColumns(False)
+    doc, header, total = sheetDoc.buildImplementationDoc(model, columns, _WIDTHS,
+                                                         includeFees=False)
+    at = columns.index(COST_COLUMN) + 1
+    items = [i for g in model['groups'] for i in g['items']]
+    assert doc.rows[total].cells[at].value == pytest.approx(
+        sum(i['printedPct'] * float(i['productCost']) for i in items))
 
 
 def test_an_excluded_workbook_carries_no_fee_column_and_no_fee_header(tmp_path):
@@ -1363,9 +1345,10 @@ def test_the_same_scenario_priced_and_unpriced_agrees_on_everything_else(tmp_pat
         'includeFees': True, 'feeSchedule': 'RDR', 'feeLevel': 'PMG Target'}))
     plain = _assetRows(_exported(tmp_path, {'includeFees': False}))
     assert len(priced) == len(plain)
-    keep = [IMPL_COLUMNS.index(c) for c in implColumns(False)]
+    shared = [c for c in implColumns(False) if c in IMPL_COLUMNS]
+    keep = [IMPL_COLUMNS.index(c) for c in shared]
     for withFees, without in zip(priced, plain):
-        assert [withFees[i] for i in keep] == list(without)
+        assert [withFees[i] for i in keep] == list(without)[:len(shared)]
 
 
 def test_a_new_scenario_starts_with_fees_excluded(tmp_path, monkeypatch):

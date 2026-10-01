@@ -143,65 +143,28 @@ TACTICAL_TILT_CATEGORY = 'Asset Allocation Strategies'
 
 
 def canFundTacticalTilt(categories) -> bool:
-    """Whether these payload categories can fund the tilt.
+    """Whether these payload categories can fund the tilt AS SEEDED.
 
     All Equity portfolios hold no investment grade fixed income at all, so
     there is nothing to fund it from and the toggle is offered disabled rather
-    than producing a book that does not add to 100 (D50).
+    than producing a book that does not add to 100 (D50). The test is the
+    overlay engine's own (``overlayTakes``) on the baseline rule; the rule in
+    force for a type is the repository's (D155).
     """
-    for category in categories or []:
-        if category.get('name') == TACTICAL_TILT_FUNDED_FROM:
-            return float(category.get('weightPct') or 0.0) >= TACTICAL_TILT_PCT
-    return False
+    return overlayTakes(baselineOverlays()[0], categories) is not None
 
 
 def tiltedCategories(categories, tacticalTilt) -> list:
-    """The payload's categories as *implemented* (D50).
+    """The payload's categories with the tilt AS SEEDED applied alone (D50):
+    the funding category loses TACTICAL_TILT_PCT, its assets pro rata, and
+    the tilt category is appended carrying it. Weight is moved, never created.
 
-    With the tilt off, the strategic categories unchanged. With it on, the
-    funding category loses TACTICAL_TILT_PCT and the tilt category is appended
-    carrying it. Weight is moved, never created: the list still sums to 100.
-
-    The reduction is spread across the funding category's own assets in
-    proportion, which is what "pro rata" means here - and the product weights
-    in the implementation table need no separate treatment, because each is
-    the category weight times a fixed share of it.
-
-    Returns copies; the caller's payload (a cached or baked slice) is never
-    mutated. An unfundable tilt is silently no-op rather than an error: the
-    UI disables the toggle, and this is the same rule applied where the
-    workbook is written.
-
-    THE JAVASCRIPT MIRROR of this lives in implementation.js as
-    tiltCategories(). The two must agree exactly or the screen and the
-    workbook drift.
+    Kept for the baseline's sake - the tests that pin today's figures read it.
+    Every model goes through ``implementedCategories``, which applies the
+    rules in force for the type, in their order (D155). Returns copies.
     """
-    result = []
-    for category in categories or []:
-        copy = dict(category)
-        copy['assets'] = [dict(a) for a in category.get('assets') or []]
-        result.append(copy)
-    if not tacticalTilt or not canFundTacticalTilt(result):
-        return result
-
-    for category in result:
-        if category['name'] != TACTICAL_TILT_FUNDED_FROM:
-            continue
-        before = float(category['weightPct'])
-        after = before - TACTICAL_TILT_PCT
-        category['weightPct'] = after
-        share = (after / before) if before else 0.0
-        for asset in category['assets']:
-            asset['weightPct'] = float(asset['weightPct']) * share
-        break
-
-    result.append({
-        'name': TACTICAL_TILT_CATEGORY,
-        'weightPct': TACTICAL_TILT_PCT,
-        'assets': [{'reportingName': TACTICAL_TILT_CATEGORY,
-                    'weightPct': TACTICAL_TILT_PCT}],
-    })
-    return result
+    return resolveOverlays(categories, baselineOverlays()[:1],
+                           {'tacticalTilt': tacticalTilt})['categories']
 
 
 def allocationsForVariant(variant) -> list:
@@ -300,54 +263,294 @@ VOL_PREMIUM_CATEGORY = 'Hybrid Fixed Income'
 VOL_PREMIUM_CURRENCIES = ['USD', 'GBP']
 
 
-def canHoldVolPremium(currency) -> bool:
-    """Whether a book in *currency* may hold the volatility premium at all."""
-    return currency in VOL_PREMIUM_CURRENCIES
+def canHoldVolPremium(currency, variant=None) -> bool:
+    """Whether a book in *currency* may hold the volatility premium at all:
+    what the premium's rule in force for *variant* says (D155) - the
+    currencies it names, any when it names none, and never when no rule
+    answers to the premium's switch. Seeded, USD and GBP."""
+    rule = next((r for r in overlayRulesFor(variant) if r.get('toggle') == 'volPremium'), None)
+    if rule is None:
+        return False
+    return not rule.get('currencies') or currency in rule['currencies']
 
 
 def volPremiumCategories(categories, volPremium, currency) -> list:
-    """The implemented categories with the volatility premium applied (D53).
+    """The categories with the volatility premium AS SEEDED applied alone
+    (D53): VOL_PREMIUM_SHARE of the funding category as it stands, taken pro
+    rata from its products and placed straight after it. A wrong currency, an
+    absent funding category or one with no weight are silent no-ops.
 
-    Takes categories that have ALREADY been through tiltedCategories, since
-    the share is of the funding category as implemented. Weight is moved, not
-    created: the funding category loses exactly what the new one gains, and
-    its products scale pro rata, so the list still sums to 100.
-
-    A wrong currency, an absent funding category or one with no weight are all
-    silent no-ops rather than errors - the UI disables the toggle, and this is
-    the same rule applied where the workbook is written.
-
-    THE JAVASCRIPT MIRROR of this lives in implementation.js as
-    volPremiumCategories(). The two must agree exactly or the screen and the
-    workbook drift.
+    Kept for the baseline's sake, like ``tiltedCategories``; models go
+    through ``implementedCategories`` (D155). Returns copies.
     """
-    result = []
+    return resolveOverlays(categories, baselineOverlays()[1:2],
+                           {'volPremium': volPremium}, currency)['categories']
+
+
+# ------------------------------------------------ the overlay rules (D155) ---
+# The two overlays above were hard-coded until D155. They are now an ORDERED
+# LIST OF RULES the repository holds (overlayRules.py): a house list for every
+# implementation type and, optionally, a type's own. Each rule moves weight
+# out of one or more strategic categories into a category of its own, and the
+# list is resolved top to bottom - each rule reading the allocation as the
+# rules above it left it. That ordering is what made the premium "7.5% of
+# IGFI after the tilt"; it is now a property of the list, not of the code.
+#
+# A rule:
+#   id          stable key ('ttf', 'svp' for the two seeded rules)
+#   name        what the desk calls it ('Tactical Tilts')
+#   into        the category it creates ('Asset Allocation Strategies')
+#   row         the asset-class row inside it (today the category's own name)
+#   place       where the category sits: 'end', or after a named category
+#   size        a percentage, to four places
+#   basis       'portfolio' - size% of the whole portfolio, split across the
+#               sources by their weights - or 'sources' - size% of what each
+#               source holds at this step, times its weight
+#   sources     [{category, weightPct}], weights adding up to exactly 100
+#   toggle      'tacticalTilt' | 'volPremium' | None. A toggled rule applies
+#               only when the proposal selects it; any other rule applies to
+#               every portfolio of the type
+#   currencies  the base currencies it may be held in; empty means any
+#
+# A rule is FUNDABLE for an allocation when every source is held (above zero)
+# and none would go below zero. An unfundable rule is skipped - the toggle is
+# offered disabled, as the tilt always was for an all-equity portfolio - and
+# the rules below it resolve as normal. The repository refuses to save a list
+# under which a portfolio HOLDS every source of a rule yet cannot fund it
+# (overlayRules.save), so at proposal time "unfundable" only ever means
+# "does not hold a source".
+#
+# THE JAVASCRIPT MIRROR is resolveOverlays() in core.js, between the markers
+# "overlay resolver (D155)" and "end of the overlay resolver"; the two must
+# agree exactly or the screen and the workbook drift (tests/test_overlay_rules).
+# The arithmetic is written so the seeded rules reproduce the code they
+# replaced to the last bit: a portfolio-basis take is size x weight, and a
+# source-basis take is held x (size / 100) x weight - with one source the
+# weight is 1.0, which no product changes.
+OVERLAY_END = 'end'
+OVERLAY_BASES = ('portfolio', 'sources')
+OVERLAY_TOGGLES = ('tacticalTilt', 'volPremium')
+#: how far below a take a source may fall and still be judged to fund it:
+#: category weights are sums of floats, and GBP Low Vol Full's Public Equity
+#: is 15.999999999999998 - a 16% rule from it must not be refused for the
+#: last bit. A take within it is clamped to what the source holds, so the
+#: source ends at exactly zero and the list still sums to 100.
+OVERLAY_TOLERANCE = 1e-9
+
+
+def baselineOverlays() -> list:
+    """The two rules as the code applied them before D155, in their order:
+    what the repository's house list is seeded with, so an upgrade changes
+    no figure."""
+    return [
+        {'id': 'ttf', 'name': 'Tactical Tilts', 'into': TACTICAL_TILT_CATEGORY,
+         'row': TACTICAL_TILT_CATEGORY, 'place': OVERLAY_END,
+         'size': TACTICAL_TILT_PCT, 'basis': 'portfolio',
+         'sources': [{'category': TACTICAL_TILT_FUNDED_FROM, 'weightPct': 100.0}],
+         'toggle': 'tacticalTilt', 'currencies': []},
+        {'id': 'svp', 'name': 'Strategic Volatility Premium', 'into': VOL_PREMIUM_CATEGORY,
+         'row': VOL_PREMIUM_CATEGORY, 'place': VOL_PREMIUM_FUNDED_FROM,
+         'size': round(VOL_PREMIUM_SHARE * 100, 4), 'basis': 'sources',
+         'sources': [{'category': VOL_PREMIUM_FUNDED_FROM, 'weightPct': 100.0}],
+         'toggle': 'volPremium', 'currencies': list(VOL_PREMIUM_CURRENCIES)},
+    ]
+
+
+def _copyCategories(categories) -> list:
+    out = []
     for category in categories or []:
         copy = dict(category)
         copy['assets'] = [dict(a) for a in category.get('assets') or []]
-        result.append(copy)
-    if not volPremium or not canHoldVolPremium(currency):
-        return result
+        out.append(copy)
+    return out
 
-    for index, category in enumerate(result):
-        if category['name'] != VOL_PREMIUM_FUNDED_FROM:
+
+def _weightOf(category) -> float:
+    try:
+        return float(category.get('weightPct') or 0.0)
+    except (TypeError, ValueError):
+        return float('nan')
+
+
+def _take(rule, source, before) -> float:
+    """What *rule* asks of one *source* holding *before*: size x weight of
+    the portfolio, or before x (size / 100) x weight of the source."""
+    size = float(rule['size'])
+    weight = float(source['weightPct']) / 100.0
+    if rule['basis'] == 'portfolio':
+        return size * weight
+    return before * (size / 100.0) * weight
+
+
+def _rawTakes(rule, categories):
+    """``[(category, before, take)]`` for every source, or None when a source
+    is not held at this step - absent, at zero, or not a number. No
+    sufficiency test - ``overlayTakes`` applies its own."""
+    byName = {c.get('name'): c for c in categories or []}
+    out = []
+    for source in rule.get('sources') or []:
+        held = byName.get(source['category'])
+        if held is None:
+            return None
+        before = _weightOf(held)
+        if not before > 0:                       # NaN as well as zero
+            return None
+        out.append((source['category'], before, _take(rule, source, before)))
+    return out or None
+
+
+def overlayTakes(rule, categories):
+    """``[(category, take)]`` - what *rule* takes from each source of
+    *categories* as they stand - or None when it cannot be funded: a source
+    not held, or one that would go below zero by more than the tolerance. A
+    take within the tolerance is clamped to what the source holds."""
+    raw = _rawTakes(rule, categories)
+    if raw is None or any(before < take - OVERLAY_TOLERANCE for _, before, take in raw):
+        return None
+    return [(name, min(take, before)) for name, before, take in raw]
+
+
+def overlayShortfall(rule, categories, strategic=None) -> list:
+    """``[(category, after)]`` for every source *rule* would take below zero
+    - what the repository refuses - where the portfolio HOLDS every source:
+    in *strategic*, its strategic allocation, when given, else in
+    *categories*. Judged on *strategic*, a source an earlier rule drained to
+    exactly zero still counts as held, so a rule that would then ask for
+    more of it is a shortfall, not a quiet skip. Empty when the rule is
+    fundable or not offered (a source the portfolio does not hold)."""
+    heldIn = {c.get('name'): _weightOf(c) for c in (categories if strategic is None else strategic) or []}
+    sources = rule.get('sources') or []
+    if not sources or any(not heldIn.get(s['category'], 0.0) > 0 for s in sources):
+        return []
+    byName = {c.get('name'): c for c in categories or []}
+    out = []
+    for source in sources:
+        held = byName.get(source['category'])
+        before = _weightOf(held) if held is not None else 0.0
+        if not before == before:                 # NaN: nothing to judge
             continue
-        before = float(category['weightPct'])
-        if before <= 0:
-            break
-        take = before * VOL_PREMIUM_SHARE
-        after = before - take
-        category['weightPct'] = after
-        share = after / before
-        for asset in category['assets']:
-            asset['weightPct'] = float(asset['weightPct']) * share
-        result.insert(index + 1, {
-            'name': VOL_PREMIUM_CATEGORY,
-            'weightPct': take,
-            'assets': [{'reportingName': VOL_PREMIUM_CATEGORY, 'weightPct': take}],
-        })
-        break
-    return result
+        take = _take(rule, source, before)
+        if before < take - OVERLAY_TOLERANCE:
+            out.append((source['category'], before - take))
+    return out
+
+
+def _skipReason(rule, selections, currency):
+    toggle = rule.get('toggle')
+    if toggle and not (selections or {}).get(toggle):
+        return 'off'
+    currencies = rule.get('currencies') or []
+    if currencies and currency not in currencies:
+        return 'currency'
+    return None
+
+
+def resolveOverlays(categories, ruleList, selections=None, currency=None) -> dict:
+    """Apply *ruleList* to *categories*, top to bottom (D155).
+
+    *selections* says which toggled rules the proposal has on
+    (``{'tacticalTilt': bool, 'volPremium': bool}``); *currency* is the base
+    currency, for a rule that names the currencies it may be held in.
+    Returns ``{'categories': [...], 'steps': [...]}``: the implemented
+    categories (copies - the caller's payload is never mutated) and, per
+    rule, what happened - ``status`` 'applied', 'off', 'currency' or
+    'unfundable', the ``amount`` it placed and, for each source, its weight
+    ``before``, the ``take`` and the weight ``after``.
+
+    A source's reduction is spread across its own assets in proportion, which
+    is what "pro rata" means here: every product weight downstream is the
+    category weight times a fixed share of it.
+    """
+    result = _copyCategories(categories)
+    steps = []
+    for rule in ruleList or []:
+        step = {'id': rule.get('id'), 'name': rule.get('name'), 'into': rule.get('into'),
+                'status': None, 'amount': 0.0, 'takes': []}
+        steps.append(step)
+        reason = _skipReason(rule, selections, currency)
+        if reason:
+            step['status'] = reason
+            continue
+        takes = overlayTakes(rule, result)
+        if takes is None:
+            step['status'] = 'unfundable'
+            continue
+        byName = {c['name']: c for c in result}
+        amount = 0.0
+        for name, take in takes:
+            category = byName[name]
+            before = float(category['weightPct'])
+            after = before - take
+            category['weightPct'] = after
+            share = (after / before) if before else 0.0
+            for asset in category['assets']:
+                asset['weightPct'] = float(asset['weightPct']) * share
+            amount += take
+            step['takes'].append({'category': name, 'before': before, 'take': take,
+                                  'after': after})
+        entry = {'name': rule['into'], 'weightPct': amount,
+                 'assets': [{'reportingName': rule.get('row') or rule['into'],
+                             'weightPct': amount}]}
+        place = rule.get('place') or OVERLAY_END
+        index = None
+        if place != OVERLAY_END:
+            index = next((i for i, c in enumerate(result) if c['name'] == place), None)
+        if index is None:
+            result.append(entry)
+        else:
+            result.insert(index + 1, entry)
+        step['status'] = 'applied'
+        step['amount'] = amount
+    return {'categories': result, 'steps': steps}
+
+
+def _pct(value) -> str:
+    return '{:g}'.format(round(float(value), 4))
+
+
+def overlayWords(rule) -> str:
+    """A rule in words, as the arithmetic reads: '8% of the portfolio from
+    Investment Grade Fixed Income'; '7.5% of Investment Grade Fixed Income as
+    it stands'; with several sources, '2% of the portfolio, split Investment
+    Grade Fixed Income 50% and Public Equity 50%', or '10% of each source as
+    it stands, times its weight: ...'. The page writes the same words."""
+    sources = rule.get('sources') or []
+    size = _pct(rule['size'])
+    if len(sources) <= 1:
+        named = sources[0]['category'] if sources else 'no source'
+        if rule.get('basis') == 'portfolio':
+            return '{}% of the portfolio from {}'.format(size, named)
+        return '{}% of {} as it stands'.format(size, named)
+    split = ' and '.join('{} {}%'.format(s['category'], _pct(s['weightPct'])) for s in sources)
+    if rule.get('basis') == 'portfolio':
+        return '{}% of the portfolio, split {}'.format(size, split)
+    return '{}% of each source as it stands, times its weight: {}'.format(size, split)
+
+
+def overlaySourceCategories() -> list:
+    """The categories an overlay may be funded from: the universe's, in its
+    order, less the ones an overlay itself introduces - Asset Allocation
+    Strategies is in the universe (the tilt fund's holding names it) but no
+    strategic portfolio holds it."""
+    return [c for c in categoriesInUniverseOrder() if c not in AUTO_SLEEVE_CATEGORIES]
+
+
+def overlayRulesFor(variant=None) -> list:
+    """The rules in force for *variant*: its own list, or the house list."""
+    from . import overlayRules
+    return overlayRules.current(variant)['rules']
+
+
+def autoSleeveCategories() -> list:
+    """Every category that carries its sleeve automatically: the two the
+    seeded overlays introduce and every category a rule in the repository
+    goes into (D155) - an overlay's category is never a choice in the rail."""
+    from . import overlayRules
+    out = list(AUTO_SLEEVE_CATEGORIES)
+    for name in overlayRules.allIntos():
+        if name not in out:
+            out.append(name)
+    return out
 
 
 # ------------------------------------------ private markets, initially (D136) ---
@@ -402,15 +605,18 @@ def initialLines(lines, funding=None):
 
 
 def implementedCategories(categories, tacticalTilt, volPremium=False,
-                          currency=None) -> list:
-    """The strategic categories as implemented: both overlays, in order.
+                          currency=None, variant=None, overlays=None) -> list:
+    """The strategic categories as implemented: the overlay rules in force
+    for *variant*, in their order (D155) - or *overlays*, a list given.
 
-    The tilt first, because the volatility premium's share is of what the
-    tilt leaves behind. Every caller that builds an implementation model goes
-    through here, so the two can never be applied in the other order.
+    The order is the list's: with the seeded house list the tilt comes first,
+    because the premium's share is of what the tilt leaves behind. Every
+    caller that builds an implementation model goes through here.
     """
-    return volPremiumCategories(
-        tiltedCategories(categories, tacticalTilt), volPremium, currency)
+    ruleList = overlayRulesFor(variant) if overlays is None else overlays
+    return resolveOverlays(categories, ruleList,
+                           {'tacticalTilt': tacticalTilt, 'volPremium': volPremium},
+                           currency)['categories']
 
 
 def categoriesInUniverseOrder() -> list:
@@ -700,6 +906,16 @@ def _servedFunding(variant) -> dict:
             'inherited': entry['inherited']}
 
 
+def _servedOverlays(variant) -> dict:
+    """The overlay rules as the schema serves them: the list in force for
+    *variant*, which scope and revision it is, and whether it is the house
+    list standing in for a type with none of its own."""
+    from . import overlayRules
+    entry = overlayRules.current(variant)
+    return {'scope': entry['scope'], 'revision': entry['revision'],
+            'inherited': entry['inherited'], 'rules': entry['rules']}
+
+
 def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
                   dataInfo: dict, variant=None, topAccountSize=None,
                   availableKeyStrs=None) -> dict:
@@ -745,19 +961,16 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'mandateFloor': MANDATE_FLOOR,
             'privateAssetsMinimum': PRIVATE_ASSETS_MINIMUM,
             'maxPortfolios': MAX_PORTFOLIOS,
-            'autoSleeveCategories': AUTO_SLEEVE_CATEGORIES,
+            # the seeded overlays' two and every category a rule goes into (D155)
+            'autoSleeveCategories': autoSleeveCategories(),
             'sleeveGroups': SLEEVE_GROUPS,
-            'tacticalTiltPct': TACTICAL_TILT_PCT,
-            'tacticalTiltFundedFrom': TACTICAL_TILT_FUNDED_FROM,
-            'tacticalTiltCategory': TACTICAL_TILT_CATEGORY,
-            'volPremiumShare': VOL_PREMIUM_SHARE,
-            'volPremiumFundedFrom': VOL_PREMIUM_FUNDED_FROM,
-            'volPremiumCategory': VOL_PREMIUM_CATEGORY,
-            'volPremiumCurrencies': VOL_PREMIUM_CURRENCIES,
             # the initial allocation of a private-markets book (D136), by the
             # split in force for this type (D148): the page's mirror reads it
             # here, so the screen and the files park the money alike
             'privateFunding': _servedFunding(variant),
+            # the overlay rules in force for this type, in the order they
+            # resolve (D155): the page's mirror applies them as the model does
+            'overlays': _servedOverlays(variant),
         },
         'fees': fees.feePayload(topAccountSize, mandateSize),
         'capabilities': capabilities,

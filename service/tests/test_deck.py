@@ -868,8 +868,8 @@ def test_the_deck_is_stamped_like_a_workbook_and_a_draft_is_not():
 
 
 def test_the_fee_columns_leave_the_deck_with_the_fees():
-    """includeFees=False: the two fee columns are absent from the slide as
-    they are absent from the sheet, because implColumns drives both."""
+    """includeFees=False: no cost column of any kind on the slide - the
+    product cost goes too, though the workbook keeps it (D152)."""
     prs = Presentation(io.BytesIO(_deck(includeFees=False)))
     for slide in prs.slides:
         for shape in slide.shapes:
@@ -880,7 +880,8 @@ def test_the_fee_columns_leave_the_deck_with_the_fees():
             if 'Products' in header:
                 assert 'Mgmt fee' not in header
                 assert 'Wtd fee (bp)' not in header
-                assert 'Product Cost' in header, 'product cost stays (D52)'
+                assert 'Product Cost' not in header, 'no cost on an unpriced slide (D152)'
+                assert 'Wtd cost (bp)' not in header
                 return
     pytest.fail('no implementation table found')
 

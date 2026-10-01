@@ -49,7 +49,7 @@ from openpyxl.drawing.text import (CharacterProperties, Font as DrawingFont,
                                    Paragraph, ParagraphProperties)
 from openpyxl.formatting.rule import CellIsRule
 
-from . import fees, fundingSplit, rules
+from . import fees, fundingSplit, overlayRules, rules
 from . import portfolio_weights as pw
 from .payloads import roundWeightsLargestRemainder
 from .rules import sleeveCategory
@@ -102,13 +102,17 @@ IMPL_COLUMNS = [
 # header saying which schedule priced them: the columns go, and so do the fee
 # rows above the header.
 FEE_COLUMNS = ('Mgmt fee', 'Wtd fee (bp)')
+# An unpriced proposal's workbook still carries the product cost, and weights
+# it on its own in place of the all-in weighted fee (D152). The deck of an
+# unpriced proposal carries no cost column at all.
+COST_COLUMN = 'Wtd cost (bp)'
 # Ticker and Minimum Investment are not here: both left the SHEET on request
 # (D78) while staying on the screen, in the catalogue and in the register.
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
     'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Source': 10, 'Liquidity': 11,
     'Product Cost': 12, 'Mgmt fee': 10,
-    'Wtd fee (bp)': 12, 'Notional': 14,
+    'Wtd fee (bp)': 12, 'Notional': 14, COST_COLUMN: 13,
 }
 
 #: The sheet a private-markets book's initial allocation is written on, after
@@ -117,12 +121,19 @@ _WIDTHS = {
 INITIAL_SHEET = 'Initial Allocation'
 
 
-def implColumns(includeFees: bool = True) -> list:
+def implColumns(includeFees: bool = True, deck: bool = False) -> list:
     """The sheet's columns, in order, for a priced or an unpriced proposal:
     the long-term target's, whatever the book holds - a private-markets
-    book's initial allocation has a sheet of its own (D141)."""
-    return (list(IMPL_COLUMNS) if includeFees
-            else [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS])
+    book's initial allocation has a sheet of its own (D141).
+
+    Unpriced, the workbook keeps the product cost and weights it alone
+    (``COST_COLUMN``), and the deck drops every cost column (D152)."""
+    if includeFees:
+        return list(IMPL_COLUMNS)
+    kept = [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS]
+    if deck:
+        return [name for name in kept if name != 'Product Cost']
+    return kept + [COST_COLUMN]
 
 
 def buildImplementationRows(baseResult: dict, sleevesMap: dict,
@@ -132,7 +143,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                             topAccountSize: float = None,
                             volPremium: bool = False,
                             currency: str = None,
-                            customFees: dict = None) -> dict:
+                            customFees: dict = None,
+                            overlayEntry: dict = None) -> dict:
     """The implementation model's numbers, derived per spec 8.4.
 
     Returns {'groups': [...], 'total': {...}, 'complete': bool, 'priced': bool,
@@ -170,14 +182,20 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     else:
         effectiveRate = None
 
-    # The implemented book, not the strategic one: with the tilt on, the
-    # funding category is reduced and the tilt category appended (D50); with
-    # the volatility premium on, the same category gives up a share of what is
-    # left and Hybrid Fixed Income follows it (D53). The currency goes in
-    # because the premium is forbidden outside USD and GBP, and the rule
-    # belongs where the model is built, not only where the toggle is drawn.
-    categories = rules.implementedCategories(baseResult['categories'],
-                                             tacticalTilt, volPremium, currency)
+    # The implemented book, not the strategic one: the overlay rules in force
+    # for this type, top to bottom (D155) - with the seeded list, the tilt
+    # takes 8% of the portfolio from IGFI and appends its category (D50), then
+    # the premium takes 7.5% of what IGFI has left and follows it (D53). The
+    # currency goes in because a rule may name the currencies it is held in
+    # (the premium: USD and GBP), and the rule belongs where the model is
+    # built, not only where the toggle is drawn. The list is read once, so the
+    # figures and the record of which list made them agree.
+    if overlayEntry is None:
+        overlayEntry = overlayRules.current(variant)
+    resolved = rules.resolveOverlays(baseResult['categories'], overlayEntry['rules'],
+                                     {'tacticalTilt': tacticalTilt, 'volPremium': volPremium},
+                                     currency)
+    categories = resolved['categories']
 
     # Categories that share one sleeve share one LINE. Private Equity and
     # Other Private Assets are a single choice in the rail (D60) and a single
@@ -380,7 +398,13 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             'custom': custom, 'customRates': customRates,
             'unpricedGroups': unpricedGroups,
             # the initial allocation of a private-markets book, or None (D136)
-            'initial': initialModel}
+            'initial': initialModel,
+            # which overlay rules made it, and what each did: what the
+            # register records (D155)
+            'overlays': {'scope': overlayEntry['scope'], 'revision': overlayEntry['revision'],
+                         'rules': [dict(rule, status=step['status'], amount=step['amount'])
+                                   for rule, step in zip(overlayEntry['rules'],
+                                                         resolved['steps'])]}}
 
 
 SHEET_PASSWORD = 'PA55WORD'

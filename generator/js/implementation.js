@@ -286,83 +286,27 @@ var LOCK_SVG = '<svg class="pill-lock" viewBox="0 0 12 12" role="img"'
 function feeText(pct) { return pct === null ? '—' : App.num(pct, 2, '%'); }
 function bpText(bp) { return bp === null ? '—' : App.num(bp, 1, 'bp'); }
 
-/* ---- the tactical tilt (D50) --------------------------------------------
-   Tactical allocation is an implementation concept, so it is not in any
-   strategic payload: the toggle introduces it here, funded out of the
-   category the schema names, and the weight is moved rather than created.
+/* ---- the overlays (D50, D53, D155) --------------------------------------
+   Tactical allocation and the volatility premium are implementation
+   concepts, so neither is in any strategic payload: overlay rules introduce
+   them, moving weight rather than creating it. Since D155 the rules are data
+   - an ordered list the repository holds, served in the schema for the
+   implementation type - and the engine is App.resolveOverlays() in core.js,
+   the mirror of rules.resolveOverlays(). Everything downstream (products,
+   fees, notionals, doughnuts) is derived from the resolved category weights,
+   so nothing else needs to know.
 
-   THE PYTHON MIRROR is rules.tiltedCategories(); the two must agree exactly
-   or the screen and the workbook drift - the same discipline roundWeights
-   follows. Everything downstream (products, fees, notionals, doughnuts) is
-   derived from these category weights, so nothing else needs to know. */
-function tiltPct() { return App.opt('rules.tacticalTiltPct', 8); }
-function tiltFundedFrom() { return App.opt('rules.tacticalTiltFundedFrom', ''); }
-function tiltCategory() { return App.opt('rules.tacticalTiltCategory', ''); }
-
-function canFundTilt(categories) {
-  var from = tiltFundedFrom();
-  for (var i = 0; i < categories.length; i++) {
-    if (categories[i].name === from) return categories[i].weightPct >= tiltPct();
-  }
-  return false;
+   The switches a proposal carries, keyed the way a rule names the one it
+   answers to. App.volPremium() has already applied the currency gate. */
+function overlaySelections() {
+  return { tacticalTilt: App.tacticalTilt(), volPremium: App.volPremium() };
 }
 
-function tiltCategories(categories, on) {
-  var out = categories.map(function (c) {
-    return { name: c.name, weightPct: c.weightPct, assets: (c.assets || []).slice() };
-  });
-  if (!on || !canFundTilt(out)) return out;
-  var pct = tiltPct(), from = tiltFundedFrom();
-  out.forEach(function (c) {
-    if (c.name !== from) return;
-    var before = c.weightPct, after = before - pct;
-    c.weightPct = after;
-    var share = before ? after / before : 0;
-    c.assets = c.assets.map(function (a) {
-      return { reportingName: a.reportingName, weightPct: a.weightPct * share };
-    });
-  });
-  out.push({ name: tiltCategory(), weightPct: pct,
-             assets: [{ reportingName: tiltCategory(), weightPct: pct }] });
-  return out;
-}
-
-/* ---- the strategic volatility premium (D53) ------------------------------
-   The second overlay, and the mirror of rules.volPremiumCategories(). It
-   takes ALREADY-TILTED categories, because the share is of the funding
-   category as implemented: what the tilt left behind. The new category is
-   inserted directly after the one that funded it, which is where the sheet
-   reads it - under Investment Grade Fixed Income, before Other Fixed Income.
-
-   The currency gate is not here. App.volPremium() has already applied it, on
-   the same list of currencies the schema serves to both sides. */
-function volPremiumShare() { return App.opt('rules.volPremiumShare', 0.075); }
-function volPremiumFundedFrom() { return App.opt('rules.volPremiumFundedFrom', ''); }
-function volPremiumCategory() { return App.opt('rules.volPremiumCategory', ''); }
-
-function volPremiumCategories(categories, on) {
-  var out = categories.map(function (c) {
-    return { name: c.name, weightPct: c.weightPct, assets: (c.assets || []).slice() };
-  });
-  if (!on) return out;
-  var share = volPremiumShare(), from = volPremiumFundedFrom();
-  for (var i = 0; i < out.length; i++) {
-    if (out[i].name !== from) continue;
-    var before = out[i].weightPct;
-    if (before <= 0) break;
-    var take = before * share, after = before - take;
-    out[i].weightPct = after;
-    var scale = after / before;
-    out[i].assets = out[i].assets.map(function (a) {
-      return { reportingName: a.reportingName, weightPct: a.weightPct * scale };
-    });
-    out.splice(i + 1, 0, {
-      name: volPremiumCategory(), weightPct: take,
-      assets: [{ reportingName: volPremiumCategory(), weightPct: take }]
-    });
-    break;
-  }
-  return out;
+/* The allocation as it stands when rule *index* comes to be resolved: the
+   rules above it applied, as the proposal has them switched. */
+function categoriesAtStep(strategic, index) {
+  return App.resolveOverlays(strategic, App.overlayList().slice(0, index),
+                             overlaySelections(), App.basis().currency).categories;
 }
 
 /* ---- private markets, initially (D136) -----------------------------------
@@ -396,14 +340,15 @@ function initialLines(lines) {
 var initialShown = false;
 
 /* The categories AS IMPLEMENTED - what every row, fee and chart below is
-   built from. Step 1 keeps showing the strategic allocation untouched.
-   Tilt first, then the premium, the order rules.implementedCategories()
-   fixes: the premium's share is of what the tilt leaves. */
+   built from. Step 1 keeps showing the strategic allocation untouched. The
+   overlay rules in force, top to bottom, as rules.implementedCategories()
+   applies them (D155): with the seeded list the tilt first, then the
+   premium, whose share is of what the tilt leaves. */
 function baseCategories() {
   var base = App.base();
   if (!base || base.status !== 'ready') return [];
-  return volPremiumCategories(
-    tiltCategories(base.data.categories, App.tacticalTilt()), App.volPremium());
+  return App.resolveOverlays(base.data.categories, App.overlayList(),
+                             overlaySelections(), App.basis().currency).categories;
 }
 
 /* The strategic categories, for the funding test the toggle is gated on. */
@@ -632,68 +577,82 @@ function totals(groups) {
    is built, not after (D49). What remains here is the answer, shown because
    every sleeve below is scoped by it and a PWA arriving at step 2 needs to
    see which book they are implementing. */
-/* ---- the tactical tilt toggle (D50) -------------------------------------
-   Offered disabled, with the reason, where the strategic portfolio cannot
-   fund it - every All Equity book holds no investment grade fixed income at
-   all. Silently doing nothing, or quietly funding it from somewhere else,
-   would both be worse than saying so. */
-function tacticalTiltField() {
-  var strategic = strategicCategories();
-  if (!strategic.length) return '';
-  var fundable = canFundTilt(strategic);
-  var on = App.tacticalTilt() && fundable;
-  var pct = tiltPct();
-  return '<div class="tilt-field' + (on ? ' done' : '') + '">'
-    + '<div class="chk"><input type="checkbox" id="impltilt" data-tilt="1"'
-    + (on ? ' checked' : '')
-    + (fundable && App.canEdit() ? '' : ' disabled')
-    + ' aria-describedby="tiltnote">'
-    + '<label for="impltilt">Tactical Tilts</label></div>'
-    + '<p class="chk-note" id="tiltnote">' + (fundable
-        ? App.esc(pct.toFixed(0)) + '% funded pro rata from '
-          + App.esc(tiltFundedFrom()) + '.'
-        : 'Needs ' + App.esc(pct.toFixed(0)) + '% of '
-          + App.esc(tiltFundedFrom()) + ' to fund; this portfolio holds none.')
-    + '</p></div>';
+/* ---- the overlays' fields (D50, D53, D155) -------------------------------
+   One field per rule in force, in the order the rules resolve. A rule a
+   switch on the proposal answers to - the tilt, the premium - is a checkbox;
+   any other rule applies to every portfolio of the type, and its field says
+   so without a control. Each is offered disabled, with the reason, where it
+   cannot apply: a currency the rule may not be held in, or a portfolio that
+   does not hold its sources at its step - every All Equity book holds no
+   investment grade fixed income at all. Silently doing nothing, or quietly
+   funding it from somewhere else, would both be worse than saying so. The
+   funding test reads the allocation AS IT STANDS at the rule's step, with the
+   rules above it applied as the proposal has them switched. */
+var OVERLAY_SWITCH = {
+  tacticalTilt: { id: 'impltilt', attr: 'data-tilt', note: 'tiltnote' },
+  volPremium: { id: 'implvolprem', attr: 'data-volprem', note: 'volpremnote' }
+};
+
+function overlaySourceNames(rule) {
+  return (rule.sources || []).map(function (s) { return s.category; }).join(' and ');
 }
 
-/* The volatility premium toggle, beneath the tilt and reading the same way.
-   Two reasons it can be offered disabled, and each says which: a currency
-   that may not hold the product at all, and a portfolio with nothing to fund
-   it from. The currencies come from the schema - the page never names one. */
-function volPremiumField() {
-  var strategic = strategicCategories();
-  if (!strategic.length) return '';
-  var from = volPremiumFundedFrom();
-  var allowed = App.canHoldVolPremium();
-  var fundable = strategic.some(function (c) {
-    return c.name === from && c.weightPct > 0;
-  });
-  var on = App.volPremium() && fundable;
-  var currencies = App.opt('rules.volPremiumCurrencies', []);
+function overlayField(rule, index, strategic) {
+  var list = App.overlayList();
+  var at = categoriesAtStep(strategic, index);
+  var fundable = !!App.overlayTakes(rule, at);
+  var currencies = rule.currencies || [];
+  var allowed = !currencies.length || currencies.indexOf(App.basis().currency) >= 0;
+  var sw = rule.toggle ? OVERLAY_SWITCH[rule.toggle] : null;
+  var selected = !sw || (rule.toggle === 'tacticalTilt' ? App.tacticalTilt() : App.volPremium());
+  var on = allowed && fundable && selected;
+  /* the rules above this one that applied - what "as it stands" follows */
+  var above = App.resolveOverlays(strategic, list.slice(0, index), overlaySelections(),
+                                  App.basis().currency).steps
+    .filter(function (step) { return step.status === 'applied'; })
+    .map(function (step) { return step.name; });
   var note;
   if (!allowed) {
     note = 'Available in ' + App.esc(currencies.join(' and '))
       + ' only; this portfolio is in ' + App.esc(App.basis().currency) + '.';
   } else if (!fundable) {
-    note = 'Funded from ' + App.esc(from) + '; this portfolio holds none.';
+    /* held means held in the strategic portfolio: a source a rule above
+       emptied is still this portfolio's, there is just none of it left */
+    var held = (rule.sources || []).every(function (s) {
+      return strategic.some(function (c) { return c.name === s.category && c.weightPct > 0; });
+    });
+    note = App.overlayShortfall(rule, at, strategic).length
+      ? 'Needs more of ' + App.esc(overlaySourceNames(rule)) + ' than this portfolio holds'
+        + (above.length ? ' after ' + App.esc(above.join(' and ')) : '') + '.'
+      : held && above.length
+        ? 'Funded from ' + App.esc(overlaySourceNames(rule)) + '; nothing of it is left after '
+          + App.esc(above.join(' and ')) + '.'
+        : 'Funded from ' + App.esc(overlaySourceNames(rule)) + '; this portfolio holds none.';
   } else {
-    note = App.esc((volPremiumShare() * 100).toFixed(1))
-      + '% of ' + App.esc(from) + ' after tilts';
+    note = App.esc(App.overlayWords(rule))
+      + (above.length && rule.basis === 'sources' ? ' after ' + App.esc(above.join(' and ')) : '')
+      + (sw ? '' : ' · applied to every portfolio of this type') + '.';
   }
-  return '<div class="tilt-field' + (on ? ' done' : '') + '">'
-    + '<div class="chk"><input type="checkbox" id="implvolprem" data-volprem="1"'
+  var id = sw ? sw.id : 'implovl-' + rule.id;
+  var noteId = sw ? sw.note : 'implovlnote-' + rule.id;
+  return '<div class="tilt-field' + (on ? ' done' : '') + (sw ? '' : ' always') + '">'
+    + '<div class="chk"><input type="checkbox" id="' + App.esc(id) + '"'
+    + (sw ? ' ' + sw.attr + '="1"' : '')
     + (on ? ' checked' : '')
-    + (allowed && fundable && App.canEdit() ? '' : ' disabled')
-    + ' aria-describedby="volpremnote">'
-    + '<label for="implvolprem">Strategic Volatility Premium</label></div>'
-    + '<p class="chk-note" id="volpremnote">' + note + '</p></div>';
+    + (sw && allowed && fundable && App.canEdit() ? '' : ' disabled')
+    + ' aria-describedby="' + App.esc(noteId) + '">'
+    + '<label for="' + App.esc(id) + '">' + App.esc(rule.name) + '</label></div>'
+    + '<p class="chk-note" id="' + App.esc(noteId) + '">' + note + '</p></div>';
 }
 
-/* The two overlays together, below the sleeve pickers and above pricing: they
+/* The overlays together, below the sleeve pickers and above pricing: they
    adjust the model the sleeves have built, so they are read after it. */
 function overlayFields() {
-  var fields = tacticalTiltField() + volPremiumField();
+  var strategic = strategicCategories();
+  if (!strategic.length) return '';
+  var fields = App.overlayList().map(function (rule, i) {
+    return overlayField(rule, i, strategic);
+  }).join('');
   return fields ? '<div class="overlay-group">' + fields + '</div>' : '';
 }
 

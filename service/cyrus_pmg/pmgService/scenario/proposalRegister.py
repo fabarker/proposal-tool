@@ -51,7 +51,8 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 4          # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148)
+SCHEMA_VERSION = 5          # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+                            # 5: the overlay rules (D155)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     deckSha        TEXT,
     deckBytes      INTEGER,
     fundingSplit   TEXT,
+    overlays       TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -117,7 +119,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
-                 'deckName, deckBytes, deckSha, fundingSplit')
+                 'deckName, deckBytes, deckSha, fundingSplit, overlays')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -164,6 +166,11 @@ def _connect() -> sqlite3.Connection:
         # and for anything delivered before - the split was then D136's thirds
         if 'fundingSplit' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN fundingSplit TEXT')
+        # and, from D155, which overlay rules made the implemented book and
+        # what each did; NULL for anything delivered before - then the tilt
+        # and the premium were the code's, as the two flags record
+        if 'overlays' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN overlays TEXT')
         conn.execute("INSERT OR IGNORE INTO meta VALUES ('schemaVersion', ?)",
                      (str(SCHEMA_VERSION),))
         conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
@@ -313,8 +320,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'createdBy, primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                 'baseKey, tacticalTilt, volPremium, includeFees, feeSchedule, '
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
-                'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
+                'overlays) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -333,7 +340,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                  sqlite3.Binary(deck), deckName, deckSha, len(deck),
                  # the split that parked the commitment, for a book with one (D148)
                  (json.dumps((model.get('initial') or {}).get('split'))
-                  if (model.get('initial') or {}).get('split') else None)))
+                  if (model.get('initial') or {}).get('split') else None),
+                 # the overlay rules in force and what each did (D155)
+                 json.dumps(model['overlays']) if model.get('overlays') else None))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName) '
                 'VALUES (?,?,?,?,?)',
@@ -352,6 +361,8 @@ def _rowToEntry(row) -> dict:
         entry[flag] = bool(entry[flag])
     if 'fundingSplit' in entry:
         entry['fundingSplit'] = json.loads(entry['fundingSplit']) if entry['fundingSplit'] else None
+    if 'overlays' in entry:
+        entry['overlays'] = json.loads(entry['overlays']) if entry['overlays'] else None
     return entry
 
 
@@ -364,6 +375,20 @@ def fundingSplitText(split) -> str:
         split.get('revision'), 'house' if split.get('scope') == '*' else split.get('scope'),
         ' · '.join('{} {:g}%'.format(d['category'], d['weightPct'])
                    for d in split.get('destinations') or []))
+
+
+def overlaysText(overlays) -> str:
+    """A recorded overlay list in one line: ``r1 (house) 1 Tactical Tilts
+    applied 8% · 2 Strategic Volatility Premium off``. Blank for none."""
+    if not overlays:
+        return ''
+    return 'r{} ({}) {}'.format(
+        overlays.get('revision'), 'house' if overlays.get('scope') == '*' else overlays.get('scope'),
+        ' · '.join('{} {} {}{}'.format(i, r.get('name'), r.get('status') or '',
+                                         ' {:.4g}%'.format(r['amount'])
+                                         if r.get('status') == 'applied' and r.get('amount') is not None
+                                         else '')
+                   for i, r in enumerate(overlays.get('rules') or [], start=1)))
 
 
 def _sleevesFor(conn, proposalId) -> list:
@@ -643,7 +668,7 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'PrimaryPwa', 'TopAccountSize', 'MandateSize', 'Currency', 'Hedging', 'Variant',
                   'BasePortfolio', 'TacticalTilt', 'VolPremium', 'IncludeFees',
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
-                  'WorkbookBytes', 'WorkbookSha', 'FundingSplit']
+                  'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays']
 
 
 def exportRows(**filters) -> list:
@@ -661,7 +686,8 @@ def exportRows(**filters) -> list:
                         int(e['includeFees']), e['feeSchedule'] or '', e['feeLevel'] or '',
                         e.get('customFees') or '', pins,
                         e['workbookName'], e['workbookBytes'], e['workbookSha'],
-                        fundingSplitText(e.get('fundingSplit'))))
+                        fundingSplitText(e.get('fundingSplit')),
+                        overlaysText(e.get('overlays'))))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

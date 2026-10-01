@@ -17,7 +17,8 @@ app. Five tables:
 and, since schema revision 4, the repository's other settings (D148):
 
     policies        kind, scope, body - one setting in force per scope; the
-                    private-markets funding split (fundingSplit.py)
+                    private-markets funding split (fundingSplit.py) and,
+                    from revision 6, the overlay rules (overlayRules.py, D155)
     policyHistory   one append-only row per revision of a setting
 
 Editions (D89). A row is an EDITION of a sleeve name. A name a PWA picks may
@@ -111,13 +112,20 @@ WEIGHT_TOLERANCE = 1e-6
 
 #: schema revision written to meta. 1 was the original two-table store; 2
 #: added the soft delete and the history table (D65); 3 added the edition
-#: label and the rules table (D89); 4 the policies and their history (D148).
-SCHEMA_VERSION = 4
+#: label and the rules table (D89); 4 the policies and their history (D148);
+#: 5 the version stamps and the superseded versions in the archive (D152);
+#: 6 the overlay rules (D155) - a policy kind, no new table: the house list is
+#: seeded with the two overlays as the code applied them on the first open.
+SCHEMA_VERSION = 6
 
 #: what a history row's action can say. baseline is the one nobody performed:
 #: it is the state a sleeve was in when history started being kept.
 ACTIONS = ['baseline', 'created', 'updated', 'reverted', 'deleted', 'restored',
            'imported', 'seeded']
+#: the actions that make a new VERSION of a sleeve - what it holds, its name
+#: or its edition changed - as against the ones that move it in or out of
+#: the library (D152)
+_VERSION_ACTIONS = ('baseline', 'created', 'updated', 'reverted', 'imported', 'seeded')
 
 _SLEEVES_TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
@@ -132,7 +140,9 @@ CREATE TABLE IF NOT EXISTS {name} (
     updatedBy TEXT NOT NULL DEFAULT '',
     updatedAt TEXT NOT NULL,
     deletedBy TEXT NOT NULL DEFAULT '',
-    deletedAt TEXT NOT NULL DEFAULT ''
+    deletedAt TEXT NOT NULL DEFAULT '',
+    firstCreatedAt TEXT NOT NULL DEFAULT '',
+    supersededBy   INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -236,28 +246,35 @@ def variantExists(variant) -> bool:
 
 
 def fixedCategories() -> list:
-    """The categories an implementation toggle attaches a sleeve to
-    automatically. Each holds exactly one sleeve per type, and the rules that
-    attach it depend on that. Read from rules lazily - rules imports the
-    sleeve facade, so a module-level import here would be circular."""
-    from .rules import AUTO_SLEEVE_CATEGORIES
-    return list(AUTO_SLEEVE_CATEGORIES)
+    """The categories an overlay attaches a sleeve to automatically - the two
+    seeded overlays' and every category a rule in the repository goes into
+    (D155). Each holds exactly one sleeve per type, and the rules that attach
+    it depend on that. Read from rules lazily - rules imports the sleeve
+    facade, so a module-level import here would be circular."""
+    from .rules import autoSleeveCategories
+    return autoSleeveCategories()
 
 
 def categories() -> list:
     """Every category a sleeve is built for, in the implementation table's own
-    order: the universe's categories, with the volatility premium's category
-    after Investment Grade Fixed Income and the tilt's last - where the table
-    puts them (rules.applyTacticalTilt / applyVolPremium) - and grouped
-    categories collapsed to the one name they share a sleeve under (D60)."""
-    from .rules import (TACTICAL_TILT_CATEGORY, VOL_PREMIUM_CATEGORY,
-                        VOL_PREMIUM_FUNDED_FROM, categoriesInUniverseOrder,
-                        sleeveCategory)
-    out = []
-    for name in categoriesInUniverseOrder():
-        out.append(name)
-        if name == VOL_PREMIUM_FUNDED_FROM and VOL_PREMIUM_CATEGORY not in out:
-            out.append(VOL_PREMIUM_CATEGORY)
+    order: the universe's categories, with each overlay rule's category where
+    the rule places it - with the seeded rules, the volatility premium's after
+    Investment Grade Fixed Income and the tilt's last (D155) - and grouped
+    categories collapsed to the one name they share a sleeve under (D60). The
+    two seeded overlays' categories stay even when no rule goes into them:
+    their sleeves are in the library either way."""
+    from .overlayRules import allRules
+    from .rules import (OVERLAY_END, TACTICAL_TILT_CATEGORY, VOL_PREMIUM_CATEGORY,
+                        categoriesInUniverseOrder, sleeveCategory)
+    out = list(categoriesInUniverseOrder())
+    for rule in allRules():
+        if rule['into'] in out:
+            continue
+        place = rule.get('place') or OVERLAY_END
+        if place != OVERLAY_END and place in out:
+            out.insert(out.index(place) + 1, rule['into'])
+        else:
+            out.append(rule['into'])
     for extra in (VOL_PREMIUM_CATEGORY, TACTICAL_TILT_CATEGORY):
         if extra not in out:
             out.append(extra)
@@ -288,6 +305,10 @@ def _connect() -> sqlite3.Connection:
         _migrate(conn)
         conn.executescript(_SCHEMA)
         _seedOnce(conn)
+        # the overlay rules' house list, once (schema 6, D155); read from
+        # overlayRules lazily - it imports rules, which imports this module
+        from .overlayRules import seed as _seedOverlays
+        _seedOverlays(conn)
     conn.execute('PRAGMA foreign_keys = ON')
     return conn
 
@@ -404,6 +425,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('schemaVersion', ?)",
                          (str(SCHEMA_VERSION),))
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('migratedAt', ?)", (_now(),))
+
+    # 4 -> 5 (D152): every sleeve carries the moment its CURRENT version was
+    # created (createdAt, now re-stamped on every save) beside the moment the
+    # sleeve itself first was (firstCreatedAt), and a version a save replaced
+    # is kept in the archive pointing at the sleeve that replaced it
+    # (supersededBy). Backfilled from the history: a live sleeve's version
+    # was created by its latest revision that changed what it holds, and a
+    # sleeve with no such revision keeps the stamp it has.
+    if 'supersededBy' not in columns:
+        with conn:
+            conn.execute("ALTER TABLE sleeves ADD COLUMN firstCreatedAt TEXT NOT NULL DEFAULT ''")
+            conn.execute('ALTER TABLE sleeves ADD COLUMN supersededBy INTEGER NOT NULL DEFAULT 0')
+            conn.execute('UPDATE sleeves SET firstCreatedAt = createdAt')
+            if _tableExists(conn, 'sleeveHistory'):
+                conn.execute(
+                    "UPDATE sleeves SET createdAt = COALESCE((SELECT h.at FROM sleeveHistory h "
+                    "WHERE h.sleeveId = sleeves.id AND h.action IN ({}) "
+                    "ORDER BY h.revision DESC LIMIT 1), createdAt)".format(
+                        ','.join("'{}'".format(a) for a in _VERSION_ACTIONS)))
 
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.
@@ -589,7 +629,7 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         if others:
             raise ValidationError(
                 'category', '{} holds exactly one sleeve under each implementation type - '
-                'it is attached automatically by its toggle. Edit the one it has.'.format(category))
+                'it is attached automatically by its overlay. Edit the one it has.'.format(category))
 
     cleaned, seen, total = [], set(), 0.0
     for entry in productRows or []:
@@ -735,7 +775,11 @@ def _entry(conn, row, productRows, revisions=None):
         'applies': len(sleeveRules.applicability(rules)) if rules else None,
         'fixed': row['category'] in fixedCategories(),
         'products': hydrated, 'problems': problems, 'offeredUnder': offeredUnder,
+        # createdAt is when THIS version was created: a save re-stamps it and
+        # the version it replaced goes to the archive with its own (D152)
         'createdBy': row['createdBy'], 'createdAt': row['createdAt'],
+        'firstCreatedAt': _column(row, 'firstCreatedAt') or row['createdAt'],
+        'supersededBy': _column(row, 'supersededBy') or None,
         'updatedBy': row['updatedBy'], 'updatedAt': row['updatedAt'],
         # the one place the stored word becomes the shown one: a caller DELETES
         # a sleeve, and what happens to it is that it is ARCHIVED (D66)
@@ -743,6 +787,12 @@ def _entry(conn, row, productRows, revisions=None):
         'archivedBy': row['deletedBy'], 'archivedAt': row['deletedAt'],
         'revisions': revisions if revisions is not None else _revisionCount(conn, row['id']),
     }
+
+
+def _column(row, name):
+    """A column an older file may not have yet, read as None rather than
+    failing the read."""
+    return row[name] if name in row.keys() else None
 
 
 def listSleeves(category: str, variant: str, key=None) -> list:
@@ -1206,8 +1256,10 @@ def createSleeves(variants, category, name, productRows, note='', user='', label
             for variant, cleanName, cleanNote, cleaned, cleanLabel, cleanRules in checked:
                 cur = conn.execute(
                     'INSERT INTO sleeves (variant, category, name, label, note, createdBy, '
-                    'createdAt, updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (variant, category, cleanName, cleanLabel, cleanNote, user, stamp, user, stamp))
+                    'createdAt, updatedBy, updatedAt, firstCreatedAt) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (variant, category, cleanName, cleanLabel, cleanNote, user, stamp, user,
+                     stamp, stamp))
                 _writeProducts(conn, cur.lastrowid, cleaned)
                 _writeRules(conn, cur.lastrowid, cleanRules)
                 _recordHistory(conn, cur.lastrowid, 'created', variant, category,
@@ -1273,17 +1325,61 @@ def updateSleeve(sleeveId, name, productRows, note='', user='', action='updated'
             conn, row['variant'], row['category'], name, note, productRows, sleeveId=sleeveId,
             label=label, rules=rules)
         stamp = _now()
+        before = [(r['productId'], r['weight']) for r in _productRows(conn, sleeveId)]
+        beforeRules = _ruleRows(conn, sleeveId)
+        changed = (name != row['name'] or label != row['label'] or note != row['note']
+                   or sleeveRules.pack(rules) != sleeveRules.pack(beforeRules)
+                   or len(before) != len(cleaned)
+                   or any(a[0] != b[0] or not _weightsMatch(a[1], b[1])
+                          for a, b in zip(before, cleaned)))
+        kept = None
         with conn:
-            conn.execute('UPDATE sleeves SET name = ?, label = ?, note = ?, updatedBy = ?, '
-                         'updatedAt = ? WHERE id = ?', (name, label, note, user, stamp, sleeveId))
+            if changed:
+                kept = _archiveVersion(conn, row, before, beforeRules, user, stamp)
+                conn.execute('UPDATE sleeves SET name = ?, label = ?, note = ?, updatedBy = ?, '
+                             'updatedAt = ?, createdBy = ?, createdAt = ?, '
+                             "firstCreatedAt = CASE firstCreatedAt WHEN '' THEN ? "
+                             'ELSE firstCreatedAt END WHERE id = ?',
+                             (name, label, note, user, stamp, user, stamp, row['createdAt'],
+                              sleeveId))
+            else:
+                conn.execute('UPDATE sleeves SET updatedBy = ?, updatedAt = ? WHERE id = ?',
+                             (user, stamp, sleeveId))
             _writeProducts(conn, sleeveId, cleaned)
             _writeRules(conn, sleeveId, rules)
             _recordHistory(conn, sleeveId, action, row['variant'], row['category'],
                            name, note, cleaned, user, stamp, label=label, rules=rules)
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
-        return _entry(conn, row, _productRows(conn, row['id']))
+        out = _entry(conn, row, _productRows(conn, row['id']))
+        # the version the save replaced, as the archive lists it, so the
+        # console can show it there without reloading the library (D152)
+        if kept is not None:
+            keptRow = conn.execute('SELECT * FROM sleeves WHERE id = ?', (kept,)).fetchone()
+            out['archivedVersion'] = _entry(conn, keptRow, _productRows(conn, kept), 0)
+        return out
     finally:
         conn.close()
+
+
+def _archiveVersion(conn, row, cleaned, rules, user, stamp):
+    """Keep the version a save is about to replace, in the archive (D152).
+
+    A row of its own, archived at *stamp* by whoever saved, carrying the
+    version's own created stamp and pointing at the sleeve that replaced it.
+    It has no history of its own - the sleeve's history already holds the
+    revision - and it is restored like any archived sleeve, which the live
+    edition of its name will refuse until that is renamed or archived.
+    Inside the caller's transaction."""
+    cur = conn.execute(
+        'INSERT INTO sleeves (variant, category, name, label, note, createdBy, createdAt, '
+        'updatedBy, updatedAt, deletedBy, deletedAt, firstCreatedAt, supersededBy) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (row['variant'], row['category'], row['name'], row['label'], row['note'],
+         row['createdBy'], row['createdAt'], row['updatedBy'], row['updatedAt'],
+         user, stamp, _column(row, 'firstCreatedAt') or row['createdAt'], row['id']))
+    _writeProducts(conn, cur.lastrowid, cleaned)
+    _writeRules(conn, cur.lastrowid, rules)
+    return cur.lastrowid
 
 
 def deleteSleeve(sleeveId, user='') -> dict:
@@ -1304,7 +1400,7 @@ def deleteSleeve(sleeveId, user='') -> dict:
             raise ValidationError('id', 'That sleeve is already out of the library.')
         if row['category'] in fixedCategories():
             raise ValidationError(
-                'category', '{} is attached automatically by its toggle and always holds one '
+                'category', '{} is attached automatically by its overlay and always holds one '
                 'sleeve. Edit it rather than deleting it.'.format(row['category']))
         cleaned = [(r['productId'], r['weight']) for r in _productRows(conn, sleeveId)]
         stamp = _now()
@@ -1344,8 +1440,8 @@ def restoreSleeve(sleeveId, user='') -> dict:
             sleeveId=sleeveId, label=row['label'], rules=_ruleRows(conn, sleeveId))
         stamp = _now()
         with conn:
-            conn.execute("UPDATE sleeves SET deletedBy = '', deletedAt = '', updatedBy = ?, "
-                         'updatedAt = ? WHERE id = ?', (user, stamp, sleeveId))
+            conn.execute("UPDATE sleeves SET deletedBy = '', deletedAt = '', supersededBy = 0, "
+                         'updatedBy = ?, updatedAt = ? WHERE id = ?', (user, stamp, sleeveId))
             _recordHistory(conn, sleeveId, 'restored', row['variant'], row['category'],
                            name, note, cleaned, user, stamp, label=label, rules=rules)
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
@@ -1397,8 +1493,8 @@ def restoreSleeves(ids, user='') -> list:
         stamp = _now()
         with conn:
             for row, name, note, cleaned, label, rules in checked:
-                conn.execute("UPDATE sleeves SET deletedBy = '', deletedAt = '', updatedBy = ?, "
-                             'updatedAt = ? WHERE id = ?', (user, stamp, row['id']))
+                conn.execute("UPDATE sleeves SET deletedBy = '', deletedAt = '', supersededBy = 0, "
+                             'updatedBy = ?, updatedAt = ? WHERE id = ?', (user, stamp, row['id']))
                 _recordHistory(conn, row['id'], 'restored', row['variant'], row['category'],
                                name, note, cleaned, user, stamp, label=label, rules=rules)
         out = []

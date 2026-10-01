@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Initial Allocation Slide Styles</title>
+<style>
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+@font-face{font-family:"GS Sans Condensed";src:url("../proposalTool/static/fonts/gs-sans-condensed-variable.woff2") format("woff2");font-weight:100 900}
+:root{--bg:#FBFCFE;--surface:#fff;--ink:#1C2733;--ink-2:#5B6B7C;--ink-3:#8494A4;--line-strong:#D4DAE2;--accent:#1F5FBF;
+  --navy:#0F243E;--navy-2:#16243A;--band:#D3DDEA;--silver:#C0C0C0;--up:#1F5FBF;--dn:#B45309;
+  --f:'GS Sans','Roboto',system-ui,sans-serif;--fn:'GS Sans Condensed','GS Sans',system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.5}
+.wrap{max-width:1240px;margin:0 auto;padding:36px 28px 140px}
+.mast{border-bottom:2px solid var(--navy-2);padding-bottom:20px;margin-bottom:22px}
+.eyebrow{font:600 12px var(--fn);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 8px}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.1;margin:0 0 10px;color:var(--navy-2);font-weight:600}
+.sub{color:var(--ink-2);max-width:78ch;margin:0}
+.bar{position:sticky;top:0;z-index:20;background:rgba(251,252,254,.95);border-bottom:1px solid var(--line-strong);
+  margin:0 -28px 26px;padding:10px 28px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden;background:#fff}
+.seg button{font:600 12.5px var(--fn);border:0;background:transparent;color:var(--ink-2);padding:6px 11px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--navy-2);color:#fff}
+.ctl{font:600 11.5px var(--fn);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.spacer{flex:1}
+.jump{display:flex;flex-wrap:wrap;gap:6px}
+.jump a{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border:1px solid var(--line-strong);border-radius:15px;font:600 13px var(--fn);color:var(--ink-2);text-decoration:none;background:#fff}
+.jump a.picked{background:var(--accent);border-color:var(--accent);color:#fff}
+.option{margin:0 0 48px;scroll-margin-top:70px}
+.opt-h{display:grid;grid-template-columns:auto 1fr auto;gap:4px 14px;align-items:start;margin:0 0 12px}
+.opt-n{grid-row:span 2;width:40px;height:40px;border-radius:50%;background:var(--navy-2);color:#fff;display:flex;align-items:center;justify-content:center;font:600 17px var(--fn)}
+.opt-h h2{margin:0;font-size:21px;color:var(--navy-2);font-weight:600}
+.opt-h p{margin:0;grid-column:2;color:var(--ink-2);font-size:14.5px;max-width:80ch}
+.pick{grid-row:1/span 2;grid-column:3;align-self:center;font:600 13px var(--fn);letter-spacing:.06em;text-transform:uppercase;border:1.5px solid var(--accent);color:var(--accent);background:#fff;border-radius:6px;padding:8px 14px;cursor:pointer}
+.pick[aria-pressed="true"]{background:var(--accent);color:#fff}
+.stage{background:#E9ECF1;border:1px solid var(--line-strong);border-radius:10px;padding:18px;overflow-x:auto}
+.option.picked .stage{box-shadow:0 0 0 3px var(--accent)}
+.slide{width:1120px;aspect-ratio:16/9;background:#fff;margin:0 auto;padding:26px 34px 18px;box-shadow:0 2px 10px rgba(16,24,40,.12);display:flex;flex-direction:column}
+.slide h3{margin:0;font:700 22px var(--f);color:var(--navy)}
+.slide .sh{margin:3px 0 12px;font-size:12px;color:var(--ink-2)}
+.slide .body{flex:1;display:flex;align-items:flex-start;justify-content:center}
+.slide .foot{font-size:9.5px;color:var(--ink-3);border-top:1px solid #E3E7ED;padding-top:5px}
+table.t{border-collapse:collapse;font-size:10.5px;line-height:1.25;color:#000}
+.t th,.t td{padding:2.5px 8px;white-space:nowrap}
+.t td{text-align:right;font-variant-numeric:tabular-nums}
+.t td.l{text-align:left}
+.t tr.meas th{font:700 11px var(--f);color:var(--navy);border-bottom:1px solid var(--navy);text-align:center;padding-top:0}
+.t tr.head th{background:var(--navy);color:#fff;font-weight:700;text-align:right}
+.t tr.head th.l{text-align:left}
+.t tr.cat td{background:var(--band);font-weight:700}
+.t tr.total td{font-weight:700;border-top:1px solid #000;border-bottom:1px solid #000}
+.t .rule{border-left:1px solid var(--silver)}
+.traits{display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0 0;padding:0;list-style:none;font-size:13px;color:var(--ink-2)}
+.traits li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#176A33;margin-right:7px;vertical-align:2px}
+.traits li.con::before{background:#B45309}
+.picked-bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--navy-2);color:#fff;padding:12px 20px;display:flex;gap:12px 18px;align-items:center;flex-wrap:wrap;transform:translateY(110%);transition:transform .2s}
+.picked-bar.on{transform:none}
+.picked-bar b{color:#F3C46B}
+.picked-bar code{font:13px var(--fn);background:rgba(255,255,255,.12);padding:3px 8px;border-radius:4px}
+.picked-bar button{font:600 12.5px var(--fn);border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:5px;padding:5px 10px;cursor:pointer}
+
+/* 1 bold */ .s-bold .ch{font-weight:700}
+/* 2 arrows */ .s-arrow .ar{font-size:8px;margin-right:4px;vertical-align:1px}.s-arrow .up{color:var(--up)}.s-arrow .dn{color:var(--dn)}.s-arrow .ch{font-weight:700}
+/* 3 delta */ .s-delta td.dl{color:var(--ink-2);font-size:9.5px}.s-delta td.dl.up{color:var(--up);font-weight:700}.s-delta td.dl.dn{color:var(--dn);font-weight:700}
+/* 4 accent */ .s-accent .ch{color:var(--accent);font-weight:700}
+/* 5 bar */ .s-bar td.chc{box-shadow:inset 3px 0 0 var(--accent);font-weight:700}
+/* 6 pill */ .s-pill .pl{display:inline-block;font:700 8.5px var(--fn);padding:0 5px;border-radius:7px;margin-right:5px;vertical-align:1px}.s-pill .pl.up{background:#E3EBFA;color:#1E4FA3}.s-pill .pl.dn{background:#FDEBD8;color:#9A4A0B}
+/* 7 quiet */ .s-quiet td.same{color:#9AA5B1}.s-quiet tr.cat td.same{color:#6B7785}.s-quiet .ch{font-weight:700}
+/* 8 underline */ .s-under .ch{font-weight:700;text-decoration:underline dotted var(--accent) 1.5px;text-underline-offset:2px}
+/* 9 row marker */ .s-mark tr.moved td:first-child{box-shadow:inset 3px 0 0 var(--accent)}.s-mark tr.moved td:first-child::after{content:" \25CF";color:var(--accent);font-size:8px;vertical-align:1px}.s-mark .ch{font-weight:700}
+/* 10 outline */ .s-box .ch{font-weight:700;outline:1px solid var(--accent);outline-offset:1px;border-radius:2px;padding:0 2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="mast">
+<p class="eyebrow">Proposal · PowerPoint deck</p>
+<h1>Ten ways to show the initial allocation on its slide</h1>
+<p class="sub">The <i>Implemented Portfolio: Initial Allocation</i> slide with the green shading removed, and ten ways to mark where the initial allocation differs from the long-term target instead. Every option uses the live scenario (USD Moderate Full, $50m, the 9% private-markets commitment held ⅓ in Investment Grade Fixed Income and ⅔ in Public Equity). Switch fees on and off to see both tables. Press <b>Choose</b> on the one you want.</p>
+</header>
+<div class="bar">
+<span class="ctl">Fees</span>
+<div class="seg" role="group" aria-label="Fees"><button type="button" data-fees="1" aria-pressed="true">Included</button><button type="button" data-fees="0" aria-pressed="false">Excluded</button></div>
+<span class="spacer"></span><nav class="jump" id="jump" aria-label="Jump to a style"></nav>
+</div>
+<main id="options"></main>
+</div>
+<div class="picked-bar" id="pickedBar" role="status" aria-live="polite"></div>
+<script>
+(function () {
+'use strict';
+var D = {"groups": [{"cat": "Investment Grade Fixed Income", "lt": [24.05, 12025000.0, 17.20785], "in": [27.05, 13525000.0, 19.354350000000004], "items": [{"a": "Municipals", "p": "GSAM Core Municipal SMA", "lt": [10.82, 5410000.0, 7.693020000000001], "in": [12.17, 6085000.0, 8.65287]}, {"a": "IG Corporate", "p": "GSAM Intermediate Credit SMA", "lt": [8.42, 4210000.0, 6.23922], "in": [9.47, 4735000.0, 7.017270000000002]}, {"a": "Short Duration", "p": "GSAM Short Duration SMA", "lt": [4.81, 2405000.0, 3.27561], "in": [5.41, 2705000.0, 3.68421]}]}, {"cat": "Hybrid Fixed Income", "lt": [1.95, 975000.0, 2.1664499999999998], "in": [1.95, 975000.0, 2.1664499999999998], "items": [{"a": "Volatility Premium", "p": "Strategic Volatility Premium", "lt": [1.95, 975000.0, 2.1664499999999998], "in": [1.95, 975000.0, 2.1664499999999998]}]}, {"cat": "Other Fixed Income", "lt": [9.0, 4500000.0, 11.1645], "in": [9.0, 4500000.0, 11.1645], "items": [{"a": "High Yield", "p": "GS High Yield Fund", "lt": [4.05, 2025000.0, 4.78305], "in": [4.05, 2025000.0, 4.78305]}, {"a": "EM Debt", "p": "GS Emerging Markets Debt", "lt": [3.15, 1575000.0, 4.12965], "in": [3.15, 1575000.0, 4.12965]}, {"a": "Multi-Sector", "p": "GS Strategic Income Fund", "lt": [1.8, 900000.0, 2.2518000000000002], "in": [1.8, 900000.0, 2.2518000000000002]}]}, {"cat": "Public Equity", "lt": [38.0, 19000000.0, 24.358], "in": [44.0, 22000000.0, 28.204], "items": [{"a": "US Large Cap", "p": "GS Access US Large Cap ETF", "lt": [20.9, 10450000.0, 11.5159], "in": [24.2, 12100000.0, 13.334200000000001]}, {"a": "Intl Developed", "p": "GS Access Intl Equity ETF", "lt": [11.4, 5700000.0, 8.105400000000001], "in": [13.2, 6600000.0, 9.385200000000001]}, {"a": "Emerging Markets", "p": "GS Access EM Equity ETF", "lt": [5.7, 2850000.0, 4.7367], "in": [6.6, 3300000.0, 5.4845999999999995]}]}, {"cat": "Hedge Funds", "lt": [10.0, 5000000.0, 16.55], "in": [10.0, 5000000.0, 16.55], "items": [{"a": "Multi-Strategy", "p": "GS HedgeWorks Multi-Strategy", "lt": [6.0, 3000000.0, 10.866000000000001], "in": [6.0, 3000000.0, 10.866000000000001]}, {"a": "Multi-Strategy", "p": "GS Absolute Return Tracker", "lt": [4.0, 2000000.0, 5.684], "in": [4.0, 2000000.0, 5.684]}]}, {"cat": "Private Equity & Other Private Assets", "lt": [9.0, 4500000.0, 16.479000000000003], "in": [0, 0, 0], "items": [{"a": "Buyout", "p": "GS Private Markets Buyout", "lt": [5.4, 2700000.0, 10.319400000000002], "in": [0.0, 0.0, 0]}, {"a": "Secondaries", "p": "GS Vintage Fund IX", "lt": [3.6, 1800000.0, 6.1596], "in": [0.0, 0.0, 0]}]}, {"cat": "Asset Allocation Strategies", "lt": [8.0, 4000000.0, 10.488], "in": [8.0, 4000000.0, 10.488], "items": [{"a": "Tactical Tilts", "p": "Tactical Tilt Fund", "lt": [8.0, 4000000.0, 10.488], "in": [8.0, 4000000.0, 10.488]}]}], "total": {"lt": [100.0, 50000000.0, 98.4138], "in": [99.99999999999999, 50000000.0, 87.9273]}, "commit": {"weightPct": 9.0, "notional": 4500000.0, "held": [{"category": "Investment Grade Fixed Income", "share": 0.333333, "weightPct": 3.0, "notional": 1500000.0}, {"category": "Public Equity", "share": 0.666667, "weightPct": 6.0, "notional": 3000000.0}]}};
+var fees = true, picked = null;
+try { picked = window.localStorage.getItem('iniSlideStyle'); } catch (e) { picked = null; }
+var MEAS = [['Allocation (%)', 0], ['Notional', 1], ['Weighted fee (bp)', 2]];
+function measures() { return fees ? MEAS : MEAS.slice(0, 2); }
+function fmt(v, k) {
+  if (v == null) return '';
+  if (k === 0) return v.toFixed(2) + '%';
+  if (k === 1) return '$' + Math.round(v).toLocaleString('en-US');
+  return v.toFixed(1);
+}
+function fmtD(d, k) {
+  var s = d > 0 ? '+' : '−', a = Math.abs(d);
+  if (k === 0) return s + a.toFixed(2);
+  if (k === 1) return s + '$' + Math.round(a).toLocaleString('en-US');
+  return s + a.toFixed(1);
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function diff(a, b, k) { return Math.abs(a - b) > (k === 1 ? 0.5 : 1e-6); }
+
+/* each style: how a changed initial figure is dressed, and whether it adds a delta column */
+function plain(v, lt, k, moved) { return {html: fmt(v, k), cls: moved ? '' : ''}; }
+var STYLES = [
+ {id:'bold', name:'Bold changes', cls:'s-bold', text:'The quietest change: an initial figure that differs from the long-term one is set in bold; everything else is regular. No colour at all.',
+  pros:['Prints and projects cleanly','Nothing new to explain'], cons:['Bold category rows already carry weight, so changes there read less']},
+ {id:'arrow', name:'Direction arrows', cls:'s-arrow', text:'A small ▲ or ▼ before each changed initial figure, blue for higher and amber for lower than the long-term target, and the figure in bold.',
+  pros:['Shows which way, not just that it moved','Reads at a glance on a projector'], cons:['Two colours to learn']},
+ {id:'delta', name:'Change column', cls:'s-delta', delta:true, text:'Each measure gains a third column, Change, giving Initial − Long-term in points, dollars or bp. Unchanged rows show a dash.',
+  pros:['The difference is stated, not implied','Answers “by how much?” directly'], cons:['A wider table, set a little smaller']},
+ {id:'accent', name:'Accent figures', cls:'s-accent', text:'Changed initial figures in the house accent blue and bold; unchanged ones in black.',
+  pros:['One colour, used for one meaning','Clear even at a distance'], cons:['Colour alone, so a mono print loses it (the bold keeps it)']},
+ {id:'bar', name:'Edge marker', cls:'s-bar', text:'A thin blue bar down the left edge of each changed initial cell, the figure in bold. The cell itself stays white.',
+  pros:['Marks the cell without tinting it','Echoes the page’s accent rule'], cons:['A small device on a dense slide']},
+ {id:'pill', name:'Change pills', cls:'s-pill', text:'A small rounded pill beside each changed initial figure with the difference in it, pale blue when higher and pale amber when lower.',
+  pros:['Direction and size in one glance','No extra column'], cons:['The busiest option']},
+ {id:'quiet', name:'Unchanged fade back', cls:'s-quiet', text:'Figures that are the same in both columns are set in grey; only what moves stays in full black bold, so the eye goes straight to the differences.',
+  pros:['The changes stand out the most','No added marks'], cons:['Unchanged rows are fainter on paper']},
+ {id:'under', name:'Dotted underline', cls:'s-under', text:'Changed initial figures bold with a dotted blue underline, like a marked-up statement.',
+  pros:['Subtle but unmistakable','Keeps the table’s colours'], cons:['Underlines can read as links']},
+ {id:'mark', name:'Row marker', cls:'s-mark', text:'A blue bar and dot on the category/product name of any row whose initial figures differ, and those figures bold. The reader finds the rows first, then the numbers.',
+  pros:['Scans down the names column','Whole rows, not cells'], cons:['Less precise about which measure moved']},
+ {id:'box', name:'Outlined figures', cls:'s-box', text:'Each changed initial figure boxed in a hairline blue outline and set in bold.',
+  pros:['Precise to the cell','No fill, so the slide stays white'], cons:['Many boxes when a whole category moves']}
+];
+
+function cellsFor(style, inV, ltV, rowMoved) {
+  var h = '';
+  measures().forEach(function (m, idx) {
+    var k = m[1], a = inV[k], b = ltV[k], moved = diff(a, b, k), d = a - b;
+    var rule = idx ? ' rule' : '';
+    var inner = fmt(a, k), cls = 'n' + rule;
+    if (moved) {
+      var dir = d > 0 ? 'up' : 'dn';
+      if (style.id === 'arrow') inner = '<span class="ar ' + dir + '">' + (d > 0 ? '▲' : '▼') + '</span><span class="ch">' + inner + '</span>';
+      else if (style.id === 'pill') inner = '<span class="pl ' + dir + '">' + fmtD(d, k) + '</span>' + inner;
+      else if (style.id === 'bar') cls += ' chc';
+      else inner = '<span class="ch">' + inner + '</span>';
+    } else if (style.id === 'quiet') cls += ' same';
+    h += '<td class="' + cls + '">' + inner + '</td>';
+    h += '<td class="n' + (!moved && style.id === 'quiet' ? ' same' : '') + '">' + fmt(b, k) + '</td>';
+    if (style.delta) h += '<td class="dl' + (moved ? (d > 0 ? ' up' : ' dn') : '') + '">' + (moved ? fmtD(d, k) : '–') + '</td>';
+  });
+  return h;
+}
+function anyMoved(inV, ltV) { return measures().some(function (m) { return diff(inV[m[1]], ltV[m[1]], m[1]); }); }
+
+function slide(style) {
+  var span = style.delta ? 3 : 2;
+  var h = '<table class="t"><thead><tr class="meas"><th></th><th></th>';
+  measures().forEach(function (m, i) { h += '<th colspan="' + span + '"' + (i ? ' class="rule"' : '') + '>' + m[0] + '</th>'; });
+  h += '</tr><tr class="head"><th class="l">Categories &amp; Asset Classes</th><th class="l">Products</th>';
+  measures().forEach(function (m, i) { h += '<th' + (i ? ' class="rule"' : '') + '>Initial</th><th>Long-term</th>' + (style.delta ? '<th>Change</th>' : ''); });
+  h += '</tr></thead><tbody>';
+  D.groups.forEach(function (g) {
+    h += '<tr class="cat' + (anyMoved(g['in'], g.lt) ? ' moved' : '') + '"><td class="l">' + esc(g.cat) + '</td><td class="l"></td>' + cellsFor(style, g['in'], g.lt) + '</tr>';
+    g.items.forEach(function (it) {
+      h += '<tr' + (anyMoved(it['in'], it.lt) ? ' class="moved"' : '') + '><td class="l">&nbsp;&nbsp;' + esc(it.a) + '</td><td class="l">' + esc(it.p) + '</td>' + cellsFor(style, it['in'], it.lt) + '</tr>';
+    });
+  });
+  h += '<tr class="total"><td class="l">Total</td><td class="l"></td>' + cellsFor(style, D.total['in'], D.total.lt) + '</tr></tbody></table>';
+  var c = D.commit, held = c.held.map(function (x) { return (x.share > 0.5 ? 'two-thirds' : 'one-third') + ' in ' + x.category; }).join(' and ');
+  return '<div class="slide ' + style.cls + '"><h3>Implemented Portfolio: Initial Allocation</h3>'
+    + '<p class="sh">Until capital is called, the ' + c.weightPct.toFixed(2) + '% ($' + Math.round(c.notional).toLocaleString('en-US') + ') committed to private markets is held ' + held + '</p>'
+    + '<div class="body">' + h + '</div><div class="foot">Long-term is the target once the private-markets commitment is fully called; initial is what the portfolio holds on day one. Each allocation column closes on exactly 100.00%.</div></div>';
+}
+
+function render() {
+  var main = document.getElementById('options');
+  main.innerHTML = STYLES.map(function (s, i) {
+    var n = i + 1, on = picked === s.id;
+    return '<section class="option' + (on ? ' picked' : '') + '" id="opt-' + s.id + '"><div class="opt-h"><div class="opt-n" aria-hidden="true">' + n + '</div><h2>' + n + ' · ' + esc(s.name) + '</h2><p>' + s.text + '</p>'
+      + '<button type="button" class="pick" data-pick="' + s.id + '" aria-pressed="' + on + '">' + (on ? 'Chosen' : 'Choose') + '</button></div>'
+      + '<div class="stage">' + slide(s) + '</div><ul class="traits">' + s.pros.map(function (p) { return '<li>' + p + '</li>'; }).join('') + s.cons.map(function (p) { return '<li class="con">' + p + '</li>'; }).join('') + '</ul></section>';
+  }).join('');
+  document.getElementById('jump').innerHTML = STYLES.map(function (s, i) { return '<a href="#opt-' + s.id + '" title="' + esc(s.name) + '"' + (picked === s.id ? ' class="picked"' : '') + '>' + (i + 1) + '</a>'; }).join('');
+  var bar = document.getElementById('pickedBar'), k = -1;
+  STYLES.forEach(function (s, i) { if (s.id === picked) k = i; });
+  bar.classList.toggle('on', k >= 0);
+  bar.innerHTML = k >= 0 ? 'You chose <b>' + (k + 1) + ' · ' + esc(STYLES[k].name) + '</b>. Tell Claude: <code id="say">Go with initial allocation slide style ' + (k + 1) + ' (' + esc(STYLES[k].name) + ')</code><button type="button" data-copy>Copy</button><button type="button" data-clear>Clear</button>' : '';
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.fees) { fees = b.dataset.fees === '1'; document.querySelectorAll('[data-fees]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); render(); return; }
+  if (b.dataset.pick) { picked = picked === b.dataset.pick ? null : b.dataset.pick; try { if (picked) localStorage.setItem('iniSlideStyle', picked); else localStorage.removeItem('iniSlideStyle'); } catch (err) {} render(); return; }
+  if (b.hasAttribute('data-clear')) { picked = null; try { localStorage.removeItem('iniSlideStyle'); } catch (err) {} render(); return; }
+  if (b.hasAttribute('data-copy')) { var t = (document.getElementById('say') || {}).textContent || ''; if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { b.textContent = 'Copied'; }, function () {}); }
+});
+render();
+})();
+</script>
+</body>
+</html>

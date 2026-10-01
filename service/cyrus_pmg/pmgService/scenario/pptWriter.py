@@ -1329,10 +1329,11 @@ def _initialSlide(model: dict, includeFees: bool, proposalId: str = None):
     heading, its subheading and its notes."""
     initial = model['initial']
     committed = initial['commitment']
-    doc, headerRow, _ = sheetDoc.buildInitialAllocationDoc(model, includeFees, proposalId)
+    doc, headerRow, _ = sheetDoc.buildInitialAllocationDoc(model, includeFees, proposalId,
+                                                            deck=True)
     # the measures' row sits above the header and repeats with it
     view = _tableSlice(doc, headerRow - 1)
-    count = 2 + 2 * len(sheetDoc.initialMeasures(includeFees))
+    count = 2 + 3 * len(sheetDoc.initialMeasures(includeFees, deck=True))
     plans = planTable(view, _dropped(FULL_BOX), [1.0] * count,
                       header=(headerRow - 1, headerRow), natural=True, hold=(0, 1))
     openRows(plans)
@@ -1379,7 +1380,7 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     # the long-term target's table; a private-markets book's initial
     # allocation follows it on a slide of its own (D141)
     initial = model.get('initial')
-    columns = implColumns(includeFees)
+    columns = implColumns(includeFees, deck=True)
     implDoc, headerRow, _ = sheetDoc.buildImplementationDoc(
         model, columns, _WIDTHS,
         variant=variant, feeSchedule=feeSchedule, feeLevel=feeLevel,
@@ -1440,10 +1441,11 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     implNotes = ['Weights are rounded to 2dp by largest remainder across the whole table, '
                  'so the column closes on exactly 100.00%; notionals derive from the '
                  'printed weight on the {} mandate.'.format(money),
-                 'Management fees resolve from the schedule and level named above.'
-                 + (' This is the long-term target; the initial allocation, held while '
-                    'private-markets capital is called, is on the next slide.'
-                    if initial else '')]
+                 (('Management fees resolve from the schedule and level named above.'
+                   if includeFees else '')
+                  + (' This is the long-term target; the initial allocation, held while '
+                     'private-markets capital is called, is on the next slide.'
+                     if initial else '')).strip()]
     # nothing on a second line, every row one height, a little space under
     # the rule (D137); the category and product columns exactly as wide as
     # their longest names and the rest of the slide's width shared equally
@@ -1591,7 +1593,7 @@ def deckFromImplementation(basis, mandate, portfolios, implementation) -> bytes:
     implementation = implementation or {}
     return writeDeck(basis, mandate, list(portfolios),
                      implementation.get('sleeves', {}),
-                     rules.AUTO_SLEEVE_CATEGORIES,
+                     rules.autoSleeveCategories(),
                      implementation.get('variant'),
                      bool(implementation.get('tacticalTilt')),
                      implementation.get('feeSchedule'),

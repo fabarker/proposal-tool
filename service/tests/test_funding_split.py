@@ -57,7 +57,7 @@ def test_the_house_split_is_seeded_with_d136s_thirds(store):
     # opening again seeds nothing more
     fundingSplit.describe()
     assert len(fundingSplit.history('*')) == 1
-    assert sleeveRepo.describe()['schemaVersion'] == 4
+    assert sleeveRepo.describe()['schemaVersion'] == sleeveRepo.SCHEMA_VERSION
 
 
 def test_only_a_category_every_private_markets_book_holds_may_take_a_share(store):

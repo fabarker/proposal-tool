@@ -162,7 +162,7 @@ class FixturesScenarioPort:
         implementation = implementation or {}
         return writeWorkbook(basis, mandate, list(portfolios),
                              implementation.get('sleeves', {}),
-                             rules.AUTO_SLEEVE_CATEGORIES,
+                             rules.autoSleeveCategories(),
                              implementation.get('variant'),
                              bool(implementation.get('tacticalTilt')),
                              implementation.get('feeSchedule'),

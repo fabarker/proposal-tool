@@ -37,11 +37,11 @@ var state = {
   variant: null,                    /* implementation type; gates step 2 (D29) */
   /* On by default: the tilt is house practice wherever it can be funded.
      A portfolio that cannot fund it renders the toggle off and disabled,
-     and tiltCategories no-ops, so this one default covers both (D50). */
+     and resolveOverlays skips it, so this one default covers both (D50). */
   tacticalTilt: true,
   /* The strategic volatility premium (D53): held by default wherever the
      currency allows it, like the tilt, and forbidden outside the currencies
-     the schema names - App.volPremium() applies that gate on read. */
+     its rule names (D155) - App.volPremium() applies that gate on read. */
   volPremium: true,
   /* The base portfolio tier rolls up on the implementation step: those
      settings are answered by then, and the rail is long. Auto on every step
@@ -200,6 +200,137 @@ function buildKey(allocationType, excludeRealAssets, riskLevel) {
 function canEdit() { return state.service !== 'down' && opt('capabilities.canEdit', true); }
 function canExport() { return state.service !== 'down' && opt('capabilities.canExport', true); }
 function autoSleeveCategories() { return opt('rules.autoSleeveCategories', []); }
+
+/* ---- overlay resolver (D155) ---------------------------------------------
+   The overlay rules - the tilt, the premium and any the desk adds in the
+   repository's Overlay Funding tab - resolved top to bottom, each reading the
+   allocation as the rules above it left it. A rule takes size% of the
+   portfolio split across its sources by their weights ('portfolio'), or
+   size% of what each source holds at its step times its weight ('sources');
+   a source's assets shrink pro rata; the rule's own category is placed after
+   the category it names, or at the end. A rule is skipped when its switch is
+   off, the currency is not one it names, or a source is not held or would go
+   below zero.
+
+   THE PYTHON MIRROR is rules.resolveOverlays(); the two must agree exactly or
+   the screen and the workbook drift, and tests/test_overlay_rules.py runs
+   this block, between these two markers, against it. Pure: it reads nothing
+   but its arguments, so the repository console judges a draft with it too. */
+var OVERLAY_TOLERANCE = 1e-9;      /* rules.OVERLAY_TOLERANCE */
+function overlayWeightOf(c) { return +(c.weightPct || 0); }
+function overlayTake(rule, source, before) {
+  var size = +rule.size, weight = +source.weightPct / 100;
+  return rule.basis === 'portfolio' ? size * weight : before * (size / 100) * weight;
+}
+function overlayRawTakes(rule, categories) {
+  var byName = {};
+  (categories || []).forEach(function (c) { byName[c.name] = c; });
+  var out = [], sources = rule.sources || [];
+  for (var i = 0; i < sources.length; i++) {
+    var held = byName[sources[i].category];
+    if (!held) return null;
+    var before = overlayWeightOf(held);
+    if (!(before > 0)) return null;               /* NaN as well as zero */
+    out.push({ category: sources[i].category, before: before, take: overlayTake(rule, sources[i], before) });
+  }
+  return out.length ? out : null;
+}
+function overlayTakes(rule, categories) {
+  var raw = overlayRawTakes(rule, categories);
+  if (!raw || raw.some(function (t) { return t.before < t.take - OVERLAY_TOLERANCE; })) return null;
+  return raw.map(function (t) { return { category: t.category, take: Math.min(t.take, t.before) }; });
+}
+/* what the repository refuses: every source held - in *strategic*, the
+   portfolio's strategic allocation, when given - and one would go below zero */
+function overlayShortfall(rule, categories, strategic) {
+  var heldIn = {};
+  (strategic || categories || []).forEach(function (c) { heldIn[c.name] = overlayWeightOf(c); });
+  var sources = rule.sources || [];
+  if (!sources.length || sources.some(function (s) { return !(heldIn[s.category] > 0); })) return [];
+  var byName = {};
+  (categories || []).forEach(function (c) { byName[c.name] = c; });
+  var out = [];
+  sources.forEach(function (s) {
+    var held = byName[s.category];
+    var before = held ? overlayWeightOf(held) : 0;
+    if (before !== before) return;
+    var take = overlayTake(rule, s, before);
+    if (before < take - OVERLAY_TOLERANCE) out.push({ category: s.category, after: before - take });
+  });
+  return out;
+}
+function overlaySkip(rule, selections, currency) {
+  if (rule.toggle && !(selections || {})[rule.toggle]) return 'off';
+  var currencies = rule.currencies || [];
+  if (currencies.length && currencies.indexOf(currency) < 0) return 'currency';
+  return null;
+}
+function overlayCopy(o) {
+  var copy = {};
+  Object.keys(o).forEach(function (k) { copy[k] = o[k]; });
+  return copy;
+}
+function resolveOverlays(categories, rules, selections, currency) {
+  var result = (categories || []).map(function (c) {
+    var copy = overlayCopy(c);
+    copy.assets = (c.assets || []).map(overlayCopy);
+    return copy;
+  });
+  var steps = [];
+  (rules || []).forEach(function (rule) {
+    var step = { id: rule.id, name: rule.name, into: rule.into, status: null,
+                 amount: 0, takes: [] };
+    steps.push(step);
+    var reason = overlaySkip(rule, selections, currency);
+    if (reason) { step.status = reason; return; }
+    var takes = overlayTakes(rule, result);
+    if (!takes) { step.status = 'unfundable'; return; }
+    var byName = {};
+    result.forEach(function (c) { byName[c.name] = c; });
+    var amount = 0;
+    takes.forEach(function (t) {
+      var category = byName[t.category];
+      var before = +category.weightPct, after = before - t.take;
+      category.weightPct = after;
+      var share = before ? after / before : 0;
+      category.assets.forEach(function (a) { a.weightPct = +a.weightPct * share; });
+      amount += t.take;
+      step.takes.push({ category: t.category, before: before, take: t.take, after: after });
+    });
+    var entry = { name: rule.into, weightPct: amount,
+                  assets: [{ reportingName: rule.row || rule.into, weightPct: amount }] };
+    var place = rule.place || 'end', index = -1;
+    if (place !== 'end') {
+      for (var i = 0; i < result.length; i++) { if (result[i].name === place) { index = i; break; } }
+    }
+    if (index < 0) result.push(entry); else result.splice(index + 1, 0, entry);
+    step.status = 'applied';
+    step.amount = amount;
+  });
+  return { categories: result, steps: steps };
+}
+/* rules._pct: '{:g}'.format(round(value, 4)) */
+function overlayPct(value) { return String(+(+value).toFixed(4)); }
+/* the rule in words, as rules.overlayWords() writes it */
+function overlayWords(rule) {
+  var sources = rule.sources || [], size = overlayPct(rule.size);
+  if (sources.length <= 1) {
+    var named = sources.length ? sources[0].category : 'no source';
+    return rule.basis === 'portfolio' ? size + '% of the portfolio from ' + named
+      : size + '% of ' + named + ' as it stands';
+  }
+  var split = sources.map(function (s) { return s.category + ' ' + overlayPct(s.weightPct) + '%'; }).join(' and ');
+  return rule.basis === 'portfolio' ? size + '% of the portfolio, split ' + split
+    : size + '% of each source as it stands, times its weight: ' + split;
+}
+/* ---- end of the overlay resolver ---- */
+
+/* The rules in force for the implementation type the schema was fetched for,
+   in the order they resolve; and the one a proposal switch answers to. */
+function overlayList() { var o = opt('rules.overlays', null); return (o && o.rules) || []; }
+function overlayRule(toggle) {
+  return overlayList().filter(function (r) { return r.toggle === toggle; })[0] || null;
+}
 
 /* The display name for a risk level. The value stays what the schema sent -
    it is the fourth field of the portfolio key and keys the bake - so the UI
@@ -841,9 +972,11 @@ function setTacticalTilt(on) {
       body: JSON.stringify({ tacticalTilt: on })
     })).catch(function (err) { showAlert('error', err.message || String(err)); });
   }
+  var tiltRule = overlayRule('tacticalTilt');
   announce('polite', on
-    ? 'Tactical tilt added, funded from ' + opt('rules.tacticalTiltFundedFrom', '') + '.'
-    : 'Tactical tilt removed.');
+    ? (tiltRule ? tiltRule.name : 'Tactical tilt') + ' added: '
+      + (tiltRule ? overlayWords(tiltRule) : '') + '.'
+    : (tiltRule ? tiltRule.name : 'Tactical tilt') + ' removed.');
   refresh();
 }
 
@@ -891,10 +1024,18 @@ function pushFee(patch) {
    extra gate: the product is forbidden outside the currencies the schema
    lists, so a book in any other currency cannot turn it on. The rule is
    applied server-side too; this is the half that keeps it off the screen. */
-function volPremiumCurrencies() { return opt('rules.volPremiumCurrencies', []); }
+function volPremiumCurrencies() {
+  var rule = overlayRule('volPremium');
+  return rule ? (rule.currencies || []) : [];
+}
 
+/* the premium's rule names the currencies it may be held in (D155); a rule
+   that names none may be held in any, and no rule means no premium */
 function canHoldVolPremium() {
-  return volPremiumCurrencies().indexOf(state.basis.currency) >= 0;
+  var rule = overlayRule('volPremium');
+  if (!rule) return false;
+  var currencies = rule.currencies || [];
+  return !currencies.length || currencies.indexOf(state.basis.currency) >= 0;
 }
 
 function setVolPremium(on) {
@@ -910,10 +1051,11 @@ function setVolPremium(on) {
       body: JSON.stringify({ volPremium: on })
     })).catch(function (err) { showAlert('error', err.message || String(err)); });
   }
+  var premiumRule = overlayRule('volPremium');
+  var premiumName = premiumRule ? premiumRule.name : 'Strategic Volatility Premium';
   announce('polite', on
-    ? 'Strategic Volatility Premium added, funded pro rata from '
-      + opt('rules.volPremiumFundedFrom', '') + '.'
-    : 'Strategic Volatility Premium removed.');
+    ? premiumName + ' added: ' + (premiumRule ? overlayWords(premiumRule) : '') + '.'
+    : premiumName + ' removed.');
   refresh();
 }
 
@@ -2546,6 +2688,10 @@ function slotFor(name) {
   return PALETTE_SLOT[name];
 }
 function catColor(name) { return 'var(--cat-' + slotFor(name) + ')'; }
+/* a category's colour when it has a slot of its own, else null - for the
+   console, which draws overlay categories that have none and must not have
+   the fallback warn about them (D155) */
+function knownCatColor(name) { return PALETTE_SLOT[name] ? catColor(name) : null; }
 
 function renderCharts() {
   var section = document.querySelector('.sec.viz');
@@ -4062,6 +4208,15 @@ return {
   canExport: canExport,
   autoSleeveCategories: autoSleeveCategories,
   riskLabel: riskLabel,
+  /* the overlay rules (D155): the engine, and the list in force */
+  resolveOverlays: resolveOverlays,
+  overlayTakes: overlayTakes,
+  overlayShortfall: overlayShortfall,
+  overlayWords: overlayWords,
+  overlayPct: overlayPct,
+  overlayList: overlayList,
+  overlayRule: overlayRule,
+  categoryColour: knownCatColor,
 
   /* keys, names, availability */
   keyStr: keyStr,

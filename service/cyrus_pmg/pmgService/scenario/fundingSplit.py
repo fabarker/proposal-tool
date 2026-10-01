@@ -151,6 +151,8 @@ def normalise(destinations) -> list:
                 'destinations', '{} is held by only {} of the {} private-markets portfolios; the other {} '
                 'would have nowhere to put its share.'.format(name, e['heldBy'], e['of'],
                                                                 e['of'] - e['heldBy']))
+        if isinstance(entry.get('weightPct'), bool):
+            raise ValidationError('destinations', 'Give {} a weight in percent.'.format(name))
         try:
             weight = float(entry.get('weightPct'))
         except (TypeError, ValueError):
@@ -171,6 +173,8 @@ def normalise(destinations) -> list:
 
 
 def _scope(scope) -> str:
+    if scope is not None and not isinstance(scope, str):
+        raise ValidationError('scope', 'Name the scope: the house split or an implementation type.')
     scope = (scope or '').strip()
     if scope == HOUSE:
         return HOUSE
@@ -180,6 +184,8 @@ def _scope(scope) -> str:
 
 
 def _note(note) -> str:
+    if note is not None and not isinstance(note, str):
+        raise ValidationError('note', 'Say why, in words: every change to the split carries a note.')
     note = (note or '').strip()
     if not note:
         raise ValidationError('note', 'Say why: every change to the split carries a note.')

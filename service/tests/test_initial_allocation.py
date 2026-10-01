@@ -175,10 +175,32 @@ def test_an_unpriced_book_has_no_initial_fee():
     model = _model('USD', 'USD|Moderate|Full|0', schedule=None)
     assert model['initial']['total']['wtdFeeBp'] is None
     assert all(i['initialWtdFeeBp'] is None for g in model['groups'] for i in g['items'])
-    assert [key for _, key in sheetDoc.initialMeasures(False)] == ['pct', 'notional']
-    doc, header, _ = sheetDoc.buildInitialAllocationDoc(model, includeFees=False)
+    # the slide compares allocation and notional alone; the workbook weights
+    # the product cost in the fee's place (D152)
+    assert [key for _, key in sheetDoc.initialMeasures(False, deck=True)] == ['pct', 'notional']
+    assert [key for _, key in sheetDoc.initialMeasures(False)] == ['pct', 'notional', 'cost']
+    doc, header, _ = sheetDoc.buildInitialAllocationDoc(model, includeFees=False, deck=True)
     assert [doc.rows[header].cells[c].value for c in sorted(doc.rows[header].cells)] == \
-        ['Categories & Asset Classes', 'Products', 'Initial', 'Long-term', 'Initial', 'Long-term']
+        ['Categories & Asset Classes', 'Products', 'Long-term', 'Initial', 'Change',
+         'Long-term', 'Initial', 'Change']
+    doc, header, total = sheetDoc.buildInitialAllocationDoc(model, includeFees=False)
+    assert doc.rows[header - 1].cells[7].value == 'Weighted cost (bp)'
+    cost = lambda field: sum(i[field] * float(i['productCost'])
+                             for g in model['groups'] for i in g['items'])
+    assert doc.rows[total].cells[7].value == pytest.approx(cost('printedPct'))
+    assert doc.rows[total].cells[8].value == pytest.approx(cost('initialPct'))
+
+
+def test_the_slide_drops_the_green_the_workbook_keeps():
+    """D152: the deck's initial allocation carries no green; the sheet does."""
+    model = _model('USD', 'USD|Moderate|Full|0')
+    greens = {sheetDoc.INITIAL_HEAD, sheetDoc.INITIAL_BAND, sheetDoc.INITIAL_TINT}
+    def fills(doc):
+        return {c.fill for r in doc.rows.values() for c in r.cells.values() if c.fill}
+    deck, _, _ = sheetDoc.buildInitialAllocationDoc(model, deck=True)
+    sheet, _, _ = sheetDoc.buildInitialAllocationDoc(model)
+    assert not fills(deck) & greens
+    assert fills(sheet) & greens
 
 
 # ------------------------------------------------------------- the files ---
@@ -225,8 +247,8 @@ def test_the_workbook_gives_the_initial_allocation_a_sheet_of_its_own():
                    for r in range(1, 14))
     sheet = book['Initial Allocation']
     header, names = _sheetTable(sheet)
-    # initial first in each pair (D142)
-    assert names == ['Categories & Asset Classes', 'Products'] + ['Initial', 'Long-term'] * 3
+    # long-term first in each pair (D154; D142 put initial first)
+    assert names == ['Categories & Asset Classes', 'Products'] + ['Long-term', 'Initial'] * 3
     measures = [sheet.cell(row=header - 1, column=c).value for c in (3, 5, 7)]
     assert measures == ['Allocation (%)', 'Notional', 'Weighted fee (bp)']
     merged = {str(m) for m in sheet.merged_cells.ranges}
@@ -244,10 +266,10 @@ def test_the_workbook_gives_the_initial_allocation_a_sheet_of_its_own():
                  if sheet.cell(row=r, column=1).value == 'Total')
     assert [sheet.cell(row=total, column=c).value for c in (3, 4)] == [pytest.approx(1.0)] * 2
     assert [sheet.cell(row=total, column=c).value for c in (5, 6)] == [5e7, 5e7]
-    assert sheet.cell(row=total, column=7).value < sheet.cell(row=total, column=8).value
+    assert sheet.cell(row=total, column=8).value < sheet.cell(row=total, column=7).value
     private = next(r for r in range(header, total) if sheet.cell(row=r, column=1).value == PRIVATE)
-    assert sheet.cell(row=private, column=3).value == 0.0
-    assert sheet.cell(row=private, column=5).value == 0
+    assert sheet.cell(row=private, column=4).value == 0.0
+    assert sheet.cell(row=private, column=6).value == 0
     # the measures' names in the header's size, and a light silver rule
     # between the measures from their names down to the total (D142, D147)
     assert {sheet.cell(row=header - 1, column=c).font.sz for c in (3, 5, 7)} == {12}
@@ -306,24 +328,25 @@ def test_the_deck_gives_the_initial_allocation_a_slide_of_its_own():
     (tp,) = entry['tables']
     assert len(tp.header) == 2, 'the measures repeat with the header'
     measures = tp.doc.rows[tp.header[0]].cells
-    assert [measures[c].value for c in (3, 5, 7)] == ['Allocation (%)', 'Notional',
+    # on the slide each measure carries a Change column, and no green (D152)
+    assert [measures[c].value for c in (3, 6, 9)] == ['Allocation (%)', 'Notional',
                                                       'Weighted fee (bp)']
     heads = tp.doc.rows[tp.header[1]].cells
     assert [heads[c].value for c in sorted(heads)] == \
-        ['Categories & Asset Classes', 'Products'] + ['Initial', 'Long-term'] * 3
+        ['Categories & Asset Classes', 'Products'] + ['Long-term', 'Initial', 'Change'] * 3
     assert tp.natural and tp.font == pptWriter.BASE_PT
     assert pptWriter._measure(tp, tp.font)[1], 'every figure fits'
     # the measures' names set as large as the header (D142), and the light
     # silver rule between the measures drawn from both sides, from the
     # names' row down - the names' merged cells carrying it from their
     # origins (D147)
-    assert {measures[c].font['size'] for c in (3, 5, 7)} == {12}
+    assert {measures[c].font['size'] for c in (3, 6, 9)} == {12}
     edges = pptWriter.sharedEdges(tp)
     for r in tp.rows:
-        for last in (4, 6):
+        for last in (5, 8):
             assert edges[(r, last)].get('right') == sheetDoc.MEASURE_RULE, (r, last)
             assert edges[(r, last + 1)].get('left') == sheetDoc.MEASURE_RULE, (r, last)
-    for origin in (3, 5):
+    for origin in (3, 6):
         assert edges[(tp.header[0], origin)].get('right') == sheetDoc.MEASURE_RULE
     assert len(set(tp.heights)) == 1
     assert sum(tp.widths()) == pytest.approx(tp.box[2])

@@ -104,6 +104,7 @@ var ARC_COLUMNS = [
   { key: 'category', label: 'Category' },
   { key: 'variant', label: 'Implementation type' },
   { key: 'held', label: 'Held', num: true },
+  { key: 'createdAt', label: 'Created' },
   { key: 'archivedAt', label: 'Archived' },
   { key: 'revisions', label: 'Versions', num: true }
 ];
@@ -224,6 +225,14 @@ function shortDate(iso) {
   var d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+/* A version's created stamp (D152): the date and the time, since two
+   versions of one sleeve are often saved the same day. */
+function shortDateTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return shortDate(iso) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 function esc(s) { return App.esc(s == null ? '' : String(s)); }
 
@@ -622,6 +631,7 @@ function hashFor(view) {
   if (view === 'activity') return actHash();
   if (view === 'proposals') return regHash();
   if (view === 'uncalled') return '#uncalled';
+  if (view === 'overlays') return '#overlays';
   return '#repository';
 }
 function syncHash() {
@@ -632,7 +642,7 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = ['catalogue', 'archive', 'activity', 'proposals', 'uncalled'].indexOf(view) !== -1 ? view : 'sleeves';
+  repo.view = ['catalogue', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(view) !== -1 ? view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -652,6 +662,7 @@ function switchView(view) {
     if (reg.detail && !(reg.record && reg.record.proposalId === reg.detail)) loadProposal(reg.detail);
   }
   if (view === 'uncalled' && !fund.loaded) loadFunding();
+  if (view === 'overlays' && !ovl.loaded) loadOverlays();
 }
 
 async function api(method, path, body) {
@@ -682,6 +693,7 @@ async function loadRepository() {
       if (reg.detail) loadProposal(reg.detail);
     }
     if (repo.view === 'uncalled') loadFunding();
+    if (repo.view === 'overlays') loadOverlays();
   } catch (err) { repo.error = err.message; }
   repo.busy = false;
   render();
@@ -722,10 +734,14 @@ function loadDraft(sleeveId, create, edition) {
 
 function closeRepository(force) {
   if (repo.dirty && !force) { repo.leaving = { close: true }; repo.view = 'sleeves'; render(); return; }
+  /* an unsaved overlay list asks first too (D155) */
+  if (!force && ovlDirty()) {
+    ovl.leaving = { close: true }; repo.view = 'overlays'; render(); ovlFocus('[data-ovl="leavekeep"]'); return;
+  }
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (/^#(repository|catalogue|archive|activity|proposals|uncalled)/.test(window.location.hash)) {
+  if (/^#(repository|catalogue|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -843,6 +859,13 @@ async function saveDraft() {
         if (s.category === last.category && s.name === last.name) s.offeredUnder = last.offeredUnder;
       });
       catRowCache = null;                   /* the catalogue's joins read the same list */
+      /* a save that changed a sleeve archived the version it replaced (D152) */
+      madeAll.forEach(function (saved) {
+        if (!saved.archivedVersion) return;
+        repo.data.archived = [saved.archivedVersion].concat(archivedSleeves());
+        if (repo.data.store) repo.data.store.archived = (repo.data.store.archived || 0) + 1;
+        delete saved.archivedVersion;
+      });
       if (repo.data.store) {
         /* every sleeve written appended one revision (D65) */
         repo.data.store.revisions = (repo.data.store.revisions || 0) + madeAll.length;
@@ -1211,8 +1234,11 @@ function editorHtml() {
   var problems = draftProblems();
   var prov = '';
   if (entry) {
-    prov = 'Created ' + esc(shortDate(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
-      + ' · last saved ' + esc(shortDate(entry.updatedAt)) + (entry.updatedBy ? ' by ' + esc(entry.updatedBy) : '');
+    /* this version's stamp; saving a change archives it and starts another (D152) */
+    prov = 'This version created ' + esc(shortDateTime(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
+      + (entry.firstCreatedAt && entry.firstCreatedAt !== entry.createdAt
+          ? ' · sleeve first created ' + esc(shortDate(entry.firstCreatedAt)) : '')
+      + ' · saving a change puts this version in the Archive';
     var elsewhere = (entry.offeredUnder || []).filter(function (v) { return v !== entry.variant; });
     if (elsewhere.length) prov += ' · the same name is offered under ' + esc(elsewhere.join(', '));
   } else if (d.create) {
@@ -1582,7 +1608,7 @@ function sleeveRowHtml(s, grouped) {
   });
   var sub = s.products.length + ' product' + (s.products.length === 1 ? '' : 's')
     + (vehicles.length ? ' \u00b7 ' + vehicles.join(', ') : '')
-    + ' \u00b7 saved ' + shortDate(s.updatedAt) + (s.updatedBy ? ' by ' + s.updatedBy : '');
+    + ' \u00b7 created ' + shortDateTime(s.createdAt) + (s.createdBy ? ' by ' + s.createdBy : '');
   var head = grouped
     ? (s.fallback ? 'Fallback <small>applies wherever no other edition does</small>'
                   : esc(s.label) + ' <small>' + s.applies + ' portfolio' + (s.applies === 1 ? '' : 's') + '</small>')
@@ -1764,9 +1790,12 @@ function arcBodyHtml() {
       + '<td>' + esc(s.category) + '</td>'
       + '<td>' + esc(s.variant) + '</td>'
       + '<td class="num">' + r.held + '</td>'
+      + '<td>' + esc(shortDateTime(s.createdAt)) + '</td>'
       + '<td>' + esc(shortDate(s.archivedAt)) + (s.archivedBy ? ' <span class="mut">· ' + esc(s.archivedBy) + '</span>' : '') + '</td>'
       + '<td class="num">' + s.revisions + '</td>'
-      + '<td class="arc-status">' + (r.liveElsewhere.length
+      + '<td class="arc-status">' + (s.supersededBy
+          ? '<span class="arc-badge gone" title="Replaced when a newer version was saved">earlier version</span>'
+          : r.liveElsewhere.length
           ? '<span class="arc-badge live" title="A sleeve of this name is in the library under ' + esc(r.liveElsewhere.join(', ')) + '">live under ' + esc(r.liveElsewhere.join(', ')) + '</span>'
           : '<span class="arc-badge gone">archived</span>') + '</td>'
       + '</tr>';
@@ -1789,8 +1818,9 @@ function arcDetailHtml() {
   return '<div class="arc-detail" id="arcDetail">'
     + '<div class="arc-dh"><div><h3>' + esc(entry.name) + '</h3>'
     + '<p>' + esc(entry.category) + ' · ' + esc(entry.variant) + '</p>'
-    + '<p class="repo-prov">Archived ' + esc(shortDate(entry.archivedAt)) + (entry.archivedBy ? ' by ' + esc(entry.archivedBy) : '')
-    + ' · created ' + esc(shortDate(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
+    + '<p class="repo-prov">' + (entry.supersededBy ? 'Replaced by a newer version ' : 'Archived ')
+    + esc(shortDateTime(entry.archivedAt)) + (entry.archivedBy ? ' by ' + esc(entry.archivedBy) : '')
+    + ' · this version created ' + esc(shortDateTime(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
     + (entry.note ? ' · “' + esc(entry.note) + '”' : '') + '</p></div>'
     + '<div class="arc-dact">'
     + (why ? '<span class="repo-problems">' + esc(why) + '</span>' : '')
@@ -2912,7 +2942,8 @@ function render() {
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals', onUncalled = repo.view === 'uncalled';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled;
+  var onOverlays = repo.view === 'overlays';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays;
 
   /* One tab strip in the header, and it navigates (A1). The implementation
      type used to sit beside it, identical in shape and selected state but
@@ -2924,7 +2955,8 @@ function render() {
                ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
                ['activity', 'Activity', onActivity, 0],
                ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0],
-               ['uncalled', 'Uncalled Capital Allocation', onUncalled, 0]];
+               ['uncalled', 'Uncalled Capital Allocation', onUncalled, 0],
+               ['overlays', 'Overlay Funding', onOverlays, 0]];
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Repository</h2>'
     + '<div class="repo-seg" role="tablist" aria-label="View">'
     + VIEWS.map(function (v) {
@@ -2956,6 +2988,8 @@ function render() {
     body = registerViewHtml();
   } else if (onUncalled) {
     body = uncalledViewHtml();
+  } else if (onOverlays) {
+    body = overlaysViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -2977,6 +3011,8 @@ function render() {
     footer = regFooterHtml();
   } else if (onUncalled) {
     footer = uncalledFooterHtml();
+  } else if (onOverlays) {
+    footer = overlaysFooterHtml();
   } else if (onCatalogue && d) {
     footer = catKeysHtml()
       + '<div class="repo-f cat-f">' + catTrayHtml()
@@ -3009,9 +3045,10 @@ function render() {
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
     + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '')
-    + (onUncalled ? ' uncalled' : '') + (onSleeves ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
+    + (onUncalled ? ' uncalled' : '') + (onOverlays ? ' uncalled overlays' : '') + (onSleeves ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
+  if (onOverlays) ovlAfterRender();
   keepDraft();                  /* the local copy follows the draft (F1) */
   putBack(); catEdge();
 
@@ -3113,7 +3150,8 @@ function catEdge() {
    "Repository" link, because the admin knows which of them they came for. */
 var LANDING_VIEWS = [
   ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['archive', 'Archive'],
-  ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation']
+  ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation'],
+  ['overlays', 'Overlay Funding']
 ];
 
 function renderLandingAdmin(show) {
@@ -3164,6 +3202,7 @@ function renderEntryLinks() {
       openRepository(null, 'proposals');
     }
     if (show && window.location.hash.indexOf('#uncalled') === 0) openRepository(null, 'uncalled');
+    if (show && window.location.hash.indexOf('#overlays') === 0) openRepository(null, 'overlays');
   }
 }
 
@@ -3482,6 +3521,949 @@ document.addEventListener('input', function (e) {
   }
 });
 
+/* ---- the Overlay Funding view (D155) -------------------------------------
+   The overlays - the tilt, the premium and any the desk adds - as an ORDERED
+   list of rules, resolved top to bottom: each rule reads the allocation as
+   the rules above it left it. A card per rule says where it sits, what it
+   takes and where it goes; drag a card by its handle, or use its arrows, to
+   change the order. Edit opens a drawer on the rule, modal to the keyboard.
+   The panel on the right resolves the list, step by step, on a real
+   portfolio of the type under the switches chosen there, with the same engine
+   the Implementation screen uses (App.resolveOverlays, the mirror of
+   rules.resolveOverlays). A rule some portfolio of the type holds the sources
+   of but could not fund - under any setting of the proposal's switches - is
+   drawn red, says which portfolio, and blocks Save; the server makes the same
+   check and its word is final. Every change carries a note and adds a
+   revision; a save names the list it was made against, and one made against
+   a list someone has since changed is refused (409) and offers a reload. */
+var OVL_PLACES = 4;
+var OVL_COLOURS = ['#5E7690', '#B8962E', '#7A5C99', '#2E8C8C', '#9C6B4E', '#6B7F3A'];
+var OVL_SWITCH_NAMES = { tacticalTilt: 'Tactical Tilts', volPremium: 'Strategic Volatility Premium' };
+var OVL_TOGGLE_WORDS = { tacticalTilt: 'the proposal’s Tactical Tilts switch',
+                         volPremium: 'the proposal’s Strategic Volatility Premium switch' };
+/* a number as the desk types it: digits, one point, an optional % */
+var OVL_NUMBER = /^\s*(\d+(\.\d*)?|\.\d+)\s*%?\s*$/;
+
+var ovl = {
+  loaded: false, busy: false, saving: false, error: null,
+  stale: false,                /* the last save was refused as stale (409) */
+  data: null,                  /* describe(): lists, categories, portfolios, samples */
+  scope: '*',                  /* '*' for the house list, or a type */
+  draft: null,                 /* [rule] while the desk is editing; sizes and weights as typed */
+  base: null,                  /* { scope, revision } of the list the draft was made against */
+  note: '',
+  history: null,               /* { scope, entries } */
+  historyBusy: false,
+  edit: null,                  /* the index of the rule open in the drawer */
+  editSnap: null,              /* the draft as it was when the drawer opened, for Cancel */
+  editFresh: false,            /* the open rule was just added: Cancel removes it */
+  drag: null,                  /* the index of the card being dragged */
+  sample: null,                /* the keyStr of the portfolio the trace resolves */
+  traceSel: null,              /* the switches the trace resolves under; null = every switch on */
+  leaving: null,               /* { scope } | { close } while an unsaved draft blocks a move */
+  undo: null,                  /* { rule, index } after a card is removed */
+  flash: ''                    /* what the last successful write said */
+};
+
+async function loadOverlays() {
+  ovl.busy = true; ovl.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/overlays');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the overlay rules (' + r.status + ')'));
+    ovl.data = r.body; ovl.loaded = true;
+    if (ovl.scope !== '*' && ovl.data.variants.indexOf(ovl.scope) === -1) ovl.scope = '*';
+  } catch (err) { ovl.error = err.message; }
+  ovl.busy = false;
+  render();
+  loadOverlayHistory();
+}
+
+async function loadOverlayHistory() {
+  var scope = ovl.scope;
+  ovl.historyBusy = true;
+  try {
+    var r = await api('GET', '/scenario/repository/overlays/history?scope=' + encodeURIComponent(scope));
+    if (r && r.ok && scope === ovl.scope) ovl.history = { scope: scope, entries: r.body.history || [] };
+  } catch (err) { /* the history is a side panel; the rules themselves still show */ }
+  ovl.historyBusy = false;
+  if (repo.open && repo.view === 'overlays') render();
+}
+
+/* ---- what is in force, and the draft ---- */
+function ovlInForce() {
+  var d = ovl.data; if (!d) return null;
+  if (ovl.scope === '*') return { entry: d.house, inherited: false };
+  var own = (d.overrides || {})[ovl.scope];
+  return own ? { entry: own, inherited: false } : { entry: d.house, inherited: true };
+}
+function ovlClone(x) { return JSON.parse(JSON.stringify(x)); }
+/* a rule as the draft holds it: the size and the weights as the text typed */
+function ovlDraftRule(rule) {
+  var r = ovlClone(rule);
+  r.size = String(rule.size);
+  r.sources = (rule.sources || []).map(function (s) { return { category: s.category, weightPct: String(s.weightPct) }; });
+  r.currencies = (rule.currencies || []).slice();
+  return r;
+}
+function ovlList() {
+  if (ovl.draft) return ovl.draft;
+  var now = ovlInForce();
+  return now ? now.entry.rules.map(ovlDraftRule) : [];
+}
+function ovlStartDraft() {
+  if (ovl.draft) return;
+  var now = ovlInForce();
+  ovl.draft = ovlList().map(ovlClone);
+  ovl.base = now ? { scope: now.entry.scope, revision: now.entry.revision } : null;
+  ovl.flash = '';
+}
+function ovlDropDraft() {
+  ovl.draft = null; ovl.base = null; ovl.note = ''; ovl.error = null; ovl.stale = false;
+  ovl.edit = null; ovl.editSnap = null; ovl.undo = null; ovl.leaving = null;
+}
+/* the text of a size or a weight as a number, or NaN unless it is a clean
+   one - '1,5' and '5abc' are not numbers here */
+function ovlNum(text) {
+  if (typeof text === 'number') return isFinite(text) ? text : NaN;
+  return OVL_NUMBER.test(String(text)) ? parseFloat(String(text).replace(/[%\s]/g, '')) : NaN;
+}
+/* the rules as the engine and the server read them: numbers, not text */
+function ovlNumeric(rule) {
+  var r = ovlClone(rule);
+  r.size = ovlNum(rule.size);
+  r.sources = (rule.sources || []).map(function (s) { return { category: s.category, weightPct: ovlNum(s.weightPct) }; });
+  r.name = (rule.name || '').trim(); r.into = (rule.into || '').trim();
+  r.row = (rule.row || '').trim() || r.into;
+  /* a rule with no place of its own sits after its first source */
+  r.place = rule.place || (r.sources[0] && r.sources[0].category) || 'end';
+  return r;
+}
+function ovlPayload(list) { return list.map(ovlNumeric); }
+function ovlDirty() {
+  if (!ovl.draft) return false;
+  var now = ovlInForce();
+  if (!now || now.inherited) return true;           /* a type's own list is a change */
+  return JSON.stringify(ovlPayload(ovl.draft)) !== JSON.stringify(ovlPayload(now.entry.rules.map(ovlDraftRule)));
+}
+
+/* ---- whom a list applies to, and the sample ---- */
+function ovlVariants() {
+  var d = ovl.data; if (!d) return [];
+  if (ovl.scope !== '*') return [ovl.scope];
+  var inheriting = d.variants.filter(function (v) { return !(d.overrides || {})[v]; });
+  return inheriting.length ? inheriting : d.variants.slice();
+}
+/* the portfolios the types in scope offer, as the picker judges it */
+function ovlPortfolios() {
+  var d = ovl.data; if (!d) return [];
+  var offered = {};
+  ovlVariants().forEach(function (v) { (d.offered[v] || []).forEach(function (k) { offered[k] = 1; }); });
+  return d.portfolios.filter(function (p) { return offered[p.keyStr]; });
+}
+function ovlSample() {
+  var d = ovl.data; if (!d) return null;
+  var scope = ovl.scope === '*' ? d.variants[0] : ovl.scope;
+  var inScope = ovlPortfolios();
+  var want = ovl.sample || d.samples[scope];
+  return inScope.filter(function (p) { return p.keyStr === want; })[0]
+    || inScope.filter(function (p) { return p.keyStr === d.samples[scope]; })[0] || inScope[0] || null;
+}
+function ovlCategoriesOf(portfolio) {
+  var d = ovl.data;
+  return d.tableCategories.filter(function (c) { return portfolio.weights[c] != null; }).map(function (c) {
+    return { name: c, weightPct: portfolio.weights[c], assets: [] };
+  });
+}
+/* every setting of the proposal's switches, as overlayRules._selections */
+function ovlSelections() {
+  var out = [{}];
+  ((ovl.data && ovl.data.toggles) || []).forEach(function (t) {
+    var next = [];
+    out.forEach(function (s) {
+      [true, false].forEach(function (on) { var c = ovlClone(s); c[t] = on; next.push(c); });
+    });
+    out = next;
+  });
+  return out;
+}
+function ovlTraceSel() {
+  if (ovl.traceSel) return ovl.traceSel;
+  var all = {}; ((ovl.data && ovl.data.toggles) || []).forEach(function (t) { all[t] = true; });
+  return all;
+}
+function ovlResolve(list) {
+  var sample = ovlSample();
+  return sample ? App.resolveOverlays(ovlCategoriesOf(sample), ovlPayload(list), ovlTraceSel(), sample.currency) : null;
+}
+
+/* ---- the checks the server makes, in its words ---- */
+function ovlNth(n) {
+  var v = n % 100, suffix = (v >= 10 && v <= 20) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] || 'th';
+  return n + suffix;
+}
+function ovlNumberProblem(text, what) {
+  var v = ovlNum(text);
+  if (String(text).trim() === '') return 'Give ' + what + '.';
+  if (isNaN(v)) return what.charAt(0).toUpperCase() + what.slice(1) + ' must be a number, such as 7.5 - not “' + String(text).trim() + '”.';
+  return null;
+}
+function ovlRuleProblems(list) {
+  var d = ovl.data, strategic = d ? d.categories : [], groups = d ? d.groups : [];
+  var taken = {};
+  strategic.concat(groups).forEach(function (c) { taken[c.toLowerCase()] = 1; });
+  var names = {}, intos = {}, toggles = {}, above = [];
+  return list.map(function (rule, i) {
+    var out = [], name = (rule.name || '').trim(), into = (rule.into || '').trim();
+    if (!name) out.push('Give the rule a name.');
+    else if (names[name.toLowerCase()]) out.push('Two rules are called ' + name + '.');
+    names[name.toLowerCase()] = 1;
+    if (!into) out.push('Name the category it goes into.');
+    else if (taken[into.toLowerCase()]) out.push('It cannot go into ' + into + ', a strategic category: an overlay goes into a category of its own.');
+    else if (into.toLowerCase() === 'end') out.push('It cannot go into a category called “end”.');
+    else if (intos[into.toLowerCase()] != null) out.push('Rule ' + (intos[into.toLowerCase()] + 1) + ' already goes into ' + into + '.');
+    if (into) intos[into.toLowerCase()] = i;
+    var scale = Math.pow(10, OVL_PLACES);
+    var bad = ovlNumberProblem(rule.size, 'the size');
+    var size = ovlNum(rule.size);
+    if (bad) out.push(bad);
+    else if (!(size > 0)) out.push('The size must be above zero.');
+    else if (size > 100) out.push('The size is over 100%.');
+    else if (Math.abs(size * scale - Math.round(size * scale)) > 1e-6) out.push('The size has more than ' + OVL_PLACES + ' decimal places.');
+    var sources = rule.sources || [], seen = {}, units = 0, broken = false;
+    if (!sources.length) out.push('Name at least one category it is funded from.');
+    if (sources.length > ((d && d.maxSources) || 4)) out.push('At most ' + ((d && d.maxSources) || 4) + ' sources.');
+    sources.forEach(function (s) {
+      if (seen[s.category]) out.push(s.category + ' is named twice.');
+      seen[s.category] = 1;
+      var wrong = ovlNumberProblem(s.weightPct, 'the weight on ' + s.category);
+      var w = ovlNum(s.weightPct);
+      if (wrong) { out.push(wrong); broken = true; return; }
+      if (!(w > 0)) { out.push('Give ' + s.category + ' a weight above zero.'); broken = true; return; }
+      if (w > 100) out.push('The weight on ' + s.category + ' is over 100%.');
+      if (Math.abs(w * scale - Math.round(w * scale)) > 1e-6) out.push('The weight on ' + s.category + ' has more than ' + OVL_PLACES + ' decimal places.');
+      units += Math.round(w * scale);
+    });
+    if (sources.length && !broken && units !== 100 * scale) {
+      out.push('The weights add up to ' + (units / scale).toFixed(OVL_PLACES) + '%; they must add up to exactly 100%.');
+    }
+    var place = rule.place || (sources[0] && sources[0].category) || 'end';
+    if (place !== 'end' && strategic.indexOf(place) < 0 && above.indexOf(place) < 0) {
+      out.push('It sits after ' + place + ', which is not above it: a rule sits at the end, after a strategic category, or after the category of a rule above it.');
+    }
+    if (rule.toggle) {
+      if (toggles[rule.toggle]) out.push('Two rules answer to the same switch on the proposal.');
+      toggles[rule.toggle] = 1;
+    }
+    if (into) above.push(into);
+    return out;
+  });
+}
+/* per rule, the worst portfolio in scope that holds its sources but could
+   not fund it at its step under some setting of the switches - what the
+   server refuses (overlayRules.shortfalls) */
+function ovlShortfalls(list) {
+  var worst = list.map(function () { return null; });
+  var numeric = ovlPayload(list);
+  if (numeric.some(function (r) { return !(r.size > 0) || !r.sources.length || r.sources.some(function (s) { return !(s.weightPct > 0); }); })) return worst;
+  var tol = (ovl.data && ovl.data.tolerance) || 1e-9, selections = ovlSelections();
+  ovlPortfolios().forEach(function (p) {
+    var strategic = ovlCategoriesOf(p);
+    selections.forEach(function (sel) {
+      var result = strategic;
+      numeric.forEach(function (rule, i) {
+        if (rule.toggle && !sel[rule.toggle]) return;
+        if (rule.currencies && rule.currencies.length && rule.currencies.indexOf(p.currency) < 0) return;
+        App.overlayShortfall(rule, result, strategic).forEach(function (s) {
+          if (!worst[i] || s.after < worst[i].after - tol) {
+            worst[i] = { portfolio: p.label, keyStr: p.keyStr, category: s.category, after: s.after, selection: ovlClone(sel) };
+          }
+        });
+        result = App.resolveOverlays(result, [rule], sel, p.currency).categories;
+      });
+    });
+  });
+  return worst;
+}
+function ovlSwitchWords(sel, list) {
+  var used = list.filter(function (r) { return r.toggle; }).map(function (r) { return r.toggle; });
+  var parts = ((ovl.data && ovl.data.toggles) || []).filter(function (t) { return used.indexOf(t) >= 0; })
+    .map(function (t) { return OVL_SWITCH_NAMES[t] + ' ' + (sel[t] ? 'on' : 'off'); });
+  return parts.length ? 'with ' + parts.join(' and ') : '';
+}
+/* is *after* the list in force with only the order changed? */
+function ovlOrderOnly(before, after) {
+  if (!before || before.length !== after.length) return false;
+  var old = {};
+  before.forEach(function (r) { old[r.id] = JSON.stringify(ovlNumeric(r)); });
+  var same = after.every(function (r) { return r.id && old[r.id] === JSON.stringify(ovlNumeric(r)); });
+  return same && before.map(function (r) { return r.id; }).join() !== after.map(function (r) { return r.id; }).join();
+}
+function ovlChecks(list) {
+  var per = ovlRuleProblems(list), worst = ovlShortfalls(list), now = ovlInForce();
+  var inForce = now ? now.entry.rules : null;
+  worst.forEach(function (w, i) {
+    if (!w) return;
+    var rule = list[i], lead = '';
+    if (ovlOrderOnly(inForce, list)) {
+      var was = inForce.map(function (r) { return r.id; }).indexOf(rule.id);
+      var below = inForce.slice(was + 1).map(function (r) { return r.id; });
+      var moved = list.slice(0, i).filter(function (r) { return below.indexOf(r.id) >= 0; });
+      if (moved.length) {
+        lead = 'Moving ' + moved.map(function (r) { return r.name; }).join(' and ') + ' above ' + rule.name
+          + ' leaves ' + rule.name + ' unable to fund itself: ';
+      }
+    }
+    var when = ovlSwitchWords(w.selection, list);
+    per[i].push(lead + (lead ? 'it' : 'It') + ' would take ' + w.category + ' to ' + w.after.toFixed(2) + '% in ' + w.portfolio
+      + (when ? ' ' + when : '') + '. Every portfolio it applies to that holds '
+      + rule.sources.map(function (s) { return s.category; }).join(' and ') + ' must be able to fund it.');
+  });
+  return { per: per, bad: per.some(function (p) { return p.length; }), worst: worst };
+}
+/* a rule whose category has no sleeve under a type it applies to cannot be
+   exported - saved, with a warning */
+function ovlWarnings(list) {
+  var d = ovl.data; if (!d) return [];
+  var out = [];
+  list.forEach(function (rule) {
+    var into = (rule.into || '').trim(); if (!into) return;
+    var missing = ovlVariants().filter(function (v) { return (d.sleeved[v] || []).indexOf(into) < 0; });
+    if (missing.length) {
+      out.push('No sleeve in ' + into + ' yet for ' + missing.join(', ') + ': a proposal holding '
+        + (rule.name || 'this rule') + ' cannot be exported until one is created in the Sleeves view.');
+    }
+  });
+  return out;
+}
+/* what changed from the list in force, as the history will say it */
+function ovlFieldChanges(was, now) {
+  var a = ovlNumeric(was), b = ovlNumeric(now), out = [];
+  var srcText = function (r) { return r.sources.map(function (s) { return s.category + ' ' + App.overlayPct(s.weightPct) + '%'; }).join(' and '); };
+  if (a.name !== b.name) out.push('renamed from ' + a.name);
+  if (a.into !== b.into) out.push('goes into ' + b.into + ' (was ' + a.into + ')');
+  if (a.row !== b.row) out.push('row ' + b.row + ' (was ' + a.row + ')');
+  if (a.place !== b.place) out.push('sits after ' + b.place + ' (was ' + a.place + ')');
+  if (a.size !== b.size) out.push('size ' + App.overlayPct(a.size) + '% → ' + App.overlayPct(b.size) + '%');
+  if (a.basis !== b.basis) out.push('of ' + (b.basis === 'portfolio' ? 'the portfolio' : 'its sources') + ' (was of ' + (a.basis === 'portfolio' ? 'the portfolio' : 'its sources') + ')');
+  if (srcText(a) !== srcText(b)) out.push('funded from ' + srcText(b) + ' (was ' + srcText(a) + ')');
+  if ((a.currencies || []).join() !== (b.currencies || []).join()) out.push('held in ' + ((b.currencies || []).join(' · ') || 'any currency'));
+  return out;
+}
+function ovlChange(before, after) {
+  var old = {}, now = {}, parts = [];
+  before.forEach(function (r) { old[r.id] = r; });
+  after.forEach(function (r) { if (r.id) now[r.id] = r; });
+  after.forEach(function (r, i) { if (!r.id || !old[r.id]) parts.push('Added ' + (r.name || 'a rule') + ' (' + ovlNth(i + 1) + ')'); });
+  before.forEach(function (r) { if (!now[r.id]) parts.push('Removed ' + r.name); });
+  after.forEach(function (r) {
+    if (r.id && old[r.id] && JSON.stringify(ovlNumeric(r)) !== JSON.stringify(ovlNumeric(old[r.id]))) {
+      parts.push(r.name + ': ' + (ovlFieldChanges(old[r.id], r).join(', ') || 'changed'));
+    }
+  });
+  var common = after.filter(function (r) { return r.id && old[r.id]; }).map(function (r) { return r.id; });
+  var previously = before.filter(function (r) { return now[r.id]; }).map(function (r) { return r.id; });
+  for (var i = 0; i < common.length; i++) {
+    if (common[i] !== previously[i]) { parts.push('Order changed: ' + now[common[i]].name + ' moved above ' + now[previously[i]].name); break; }
+  }
+  return parts.join('; ');
+}
+
+/* ---- drawing ---- */
+function ovlColour(into, i) {
+  return App.categoryColour(into) || OVL_COLOURS[i % OVL_COLOURS.length];
+}
+function ovlCatSw(name) {
+  var c = App.categoryColour(name);
+  return '<i class="ovl-sw" style="background:' + (c || '#9AA7B5') + '"></i>';
+}
+function ovlPc(v) { return (isFinite(v) ? v : 0).toFixed(2) + '%'; }
+function ovlWords(rule) {
+  var n = ovlNumeric(rule);
+  if (!(n.size > 0) || !n.sources.length || n.sources.some(function (s) { return !(s.weightPct > 0); })) return 'Not yet complete';
+  return App.overlayWords(n);
+}
+function ovlScopeHtml(now) {
+  var d = ovl.data;
+  var scopes = '<option value="*"' + (ovl.scope === '*' ? ' selected' : '') + '>House list · every implementation type</option>'
+    + d.variants.map(function (v) {
+        var own = (d.overrides || {})[v];
+        return '<option value="' + esc(v) + '"' + (ovl.scope === v ? ' selected' : '') + '>'
+          + esc(v) + (own ? ' · its own list' : ' · uses the house list') + '</option>';
+      }).join('');
+  var said = ovl.scope === '*'
+    ? 'Applies to every implementation type that has no list of its own.'
+    : now.inherited && !ovl.draft ? esc(ovl.scope) + ' has no list of its own: it uses the house list.'
+    : now.inherited ? 'Saving gives ' + esc(ovl.scope) + ' a list of its own.'
+    : 'Applies to ' + esc(ovl.scope) + ' only. Remove it to put the type back on the house list.';
+  return '<div class="ucap-scope"><label for="ovlScope">Rules for</label><select id="ovlScope">' + scopes + '</select>'
+    + '<span class="ucap-said">' + said + '</span></div>';
+}
+function ovlLeavingHtml() {
+  if (!ovl.leaving) return '';
+  var to = ovl.leaving.close ? 'close the repository' : 'switch to ' + (ovl.leaving.scope === '*' ? 'the house list' : ovl.leaving.scope);
+  return '<div class="repo-notice ovl-leaving" role="alertdialog" aria-live="assertive" aria-label="Unsaved changes">'
+    + '<span>You have unsaved changes to the ' + (ovl.scope === '*' ? 'house list' : esc(ovl.scope) + ' list') + '.</span>'
+    + '<button type="button" class="btn" data-ovl="leavekeep">Keep editing</button>'
+    + '<button type="button" class="btn btn-danger" data-ovl="leavego">Discard them and ' + esc(to) + '</button></div>';
+}
+function ovlCardsHtml(list, chk, res, readOnly) {
+  var sample = ovlSample();
+  var h = '<ol class="ovl-list" id="ovlList" aria-label="Overlay rules, resolved top to bottom">';
+  list.forEach(function (rule, i) {
+    var step = res ? res.steps[i] : null, problems = chk.per[i];
+    var tags = (rule.toggle ? '<span class="ovl-tag">Switch on the proposal</span>' : '<span class="ovl-tag always">Every portfolio</span>')
+      + (rule.currencies && rule.currencies.length ? '<span class="ovl-tag">' + esc(rule.currencies.join(' · ')) + ' only</span>' : '');
+    var effect;
+    if (problems.length) {
+      effect = '<em>' + esc(problems[0]) + (problems.length > 1 ? ' (+' + (problems.length - 1) + ' more)' : '') + '</em>'
+        + (chk.worst[i] ? ' <button type="button" class="cat-link ovl-show" data-ovl="showcase" data-i="' + i + '">Show it on ' + esc(chk.worst[i].portfolio) + '</button>' : '');
+    } else if (!step || !sample) {
+      effect = '';
+    } else if (step.status === 'applied') {
+      effect = 'On ' + esc(sample.label) + ': <b>' + ovlPc(step.amount) + '</b>'
+        + (i ? ', from what the rules above left' : ', from the strategic allocation');
+    } else if (step.status === 'off') {
+      effect = 'Switched off in the panel on the right: not applied to ' + esc(sample.label);
+    } else if (step.status === 'currency') {
+      effect = 'Not held in ' + esc(sample.currency) + ', so not applied to ' + esc(sample.label);
+    } else {
+      effect = esc(sample.label) + ' does not hold ' + esc(rule.sources.map(function (s) { return s.category; }).join(' and ')) + ' at this step: not applied';
+    }
+    var label = esc(rule.name || 'rule ' + (i + 1));
+    h += '<li class="ovl-card' + (problems.length ? ' bad' : '') + '" data-ovlcard="' + i + '"'
+      + (readOnly ? '' : ' draggable="true"') + ' style="--cc:' + ovlColour(rule.into, i) + '">'
+      + (readOnly ? '' : '<span class="ovl-grip" aria-hidden="true" title="Drag to change the order">⠿</span>')
+      + '<span class="ovl-ord">' + ovlNth(i + 1) + '</span>'
+      + '<div class="ovl-cb"><b>' + esc(rule.name || '(unnamed rule)') + ' <span class="ovl-into">→ ' + esc(rule.into || '?') + '</span></b>'
+      + '<span class="ovl-w">' + esc(ovlWords(rule)) + '</span>'
+      + '<span class="ovl-tags">' + tags + '</span>'
+      + '<span class="ovl-fx">' + effect + '</span></div>'
+      + (readOnly ? '' : '<span class="ovl-mv"><button type="button" class="ovl-mb" data-ovl="up" data-i="' + i + '"' + (i ? '' : ' disabled') + ' aria-label="Move ' + label + ' up, to ' + ovlNth(i) + '">↑</button>'
+        + '<button type="button" class="ovl-mb" data-ovl="down" data-i="' + i + '"' + (i < list.length - 1 ? '' : ' disabled') + ' aria-label="Move ' + label + ' down, to ' + ovlNth(i + 2) + '">↓</button></span>'
+        + '<button type="button" class="btn ovl-edit" data-ovl="edit" data-i="' + i + '" aria-label="Edit ' + label + '">Edit</button>'
+        + '<button type="button" class="ovl-x" data-ovl="remove" data-i="' + i + '" aria-label="Remove ' + label + '">×</button>')
+      + '</li>';
+  });
+  if (!list.length) h += '<li class="ovl-empty">No overlay rules: every portfolio of ' + (ovl.scope === '*' ? 'these types' : esc(ovl.scope)) + ' is implemented as its strategic allocation stands.</li>';
+  return h + '</ol>';
+}
+function ovlTraceHtml(list, chk, res) {
+  var sample = ovlSample(); if (!sample) return '';
+  var inScope = ovlPortfolios(), sel = ovlTraceSel(), numeric = ovlPayload(list);
+  var start = ovlCategoriesOf(sample);
+  var used = list.filter(function (r) { return r.toggle; }).map(function (r) { return r.toggle; });
+  var h = '<div class="ovl-sample"><label for="ovlSample">Resolved on</label><select id="ovlSample">'
+    + inScope.map(function (p) {
+        return '<option value="' + esc(p.keyStr) + '"' + (p.keyStr === sample.keyStr ? ' selected' : '') + '>' + esc(p.label) + '</option>';
+      }).join('') + '</select></div>'
+    + '<div class="ovl-switches" role="group" aria-label="The proposal’s switches">'
+    + ((ovl.data && ovl.data.toggles) || []).filter(function (t) { return used.indexOf(t) >= 0; }).map(function (t) {
+        return '<label><input type="checkbox" data-ovltrace="' + t + '"' + (sel[t] ? ' checked' : '') + '> ' + esc(OVL_SWITCH_NAMES[t]) + '</label>';
+      }).join('')
+    + '<span class="ovl-note">' + esc(sample.currency) + ' base currency</span></div>'
+    + '<ol class="ovl-trace" id="ovlTrace"><li class="t0"><b>Start</b> · the strategic allocation: '
+    + start.map(function (c) { return esc(c.name) + ' ' + ovlPc(c.weightPct); }).join(' · ') + '</li>';
+  res.steps.forEach(function (step, i) {
+    var rule = list[i], bad = chk.per[i].length;
+    h += '<li class="' + (bad ? 'tbad' : '') + (step.status !== 'applied' ? ' tskip' : '') + '" style="--cc:' + ovlColour(rule.into, i) + '"><b>' + ovlNth(i + 1) + ' · ' + esc(rule.name || '(unnamed rule)') + '</b> <span class="tw">' + esc(ovlWords(rule)) + '</span>';
+    if (step.status !== 'applied') {
+      var note = step.status === 'off' ? 'Switched off.' : step.status === 'currency' ? 'Not held in ' + esc(sample.currency) + '.' : '';
+      var shortfall = [];
+      if (step.status === 'unfundable') {
+        var at = App.resolveOverlays(start, numeric.slice(0, i), sel, sample.currency).categories;
+        shortfall = App.overlayShortfall(numeric[i], at, start);
+        var byName = {}; at.forEach(function (c) { byName[c.name] = c.weightPct; });
+        note = shortfall.length ? 'Cannot be funded here: it would leave'
+          : 'Not applied: this portfolio holds none of ' + esc(rule.sources.map(function (s) { return s.category; }).join(' and ')) + ' at this step.';
+        if (shortfall.length) {
+          h += '<div class="tf neg">' + note + '</div><table class="ovl-tt"><tbody>' + shortfall.map(function (s) {
+            return '<tr class="neg"><td>' + ovlCatSw(s.category) + esc(s.category) + '</td><td>' + ovlPc(byName[s.category] || 0) + '</td><td>→</td><td>' + ovlPc(s.after) + '</td><td></td></tr>';
+          }).join('') + '</tbody></table></li>';
+          return;
+        }
+      }
+      h += '<div class="tf">' + note + '</div></li>';
+      return;
+    }
+    h += '<table class="ovl-tt"><tbody>';
+    step.takes.forEach(function (t) {
+      h += '<tr><td>' + ovlCatSw(t.category) + esc(t.category) + '</td><td>' + ovlPc(t.before) + '</td><td>→</td><td>' + ovlPc(t.after) + '</td><td class="d">−' + t.take.toFixed(2) + '</td></tr>';
+    });
+    h += '<tr class="ovr"><td><i class="ovl-sw" style="background:' + ovlColour(rule.into, i) + '"></i>' + esc(rule.into) + '</td><td></td><td></td><td>' + ovlPc(step.amount) + '</td><td class="d">+' + step.amount.toFixed(2) + '</td></tr>';
+    h += '</tbody></table></li>';
+  });
+  h += '</ol>';
+  var total = 0;
+  h += '<table class="ovl-fin"><caption>Implemented allocation</caption><thead><tr><th scope="col">Category</th><th scope="col">Strategic</th><th scope="col">Implemented</th></tr></thead><tbody>';
+  res.categories.forEach(function (c) {
+    var index = list.map(function (r) { return (r.into || '').trim(); }).indexOf(c.name);
+    var strategicW = sample.weights[c.name];
+    total += c.weightPct;
+    h += '<tr class="' + (index >= 0 ? 'ov' : '') + (Math.abs((strategicW || 0) - c.weightPct) > 1e-9 ? ' moved' : '') + '"><td>'
+      + (index >= 0 ? '<i class="ovl-sw" style="background:' + ovlColour(c.name, index) + '"></i><span class="ovl-ord sm">' + ovlNth(index + 1) + '</span>' : ovlCatSw(c.name))
+      + esc(c.name) + '</td><td>' + (strategicW != null ? ovlPc(strategicW) : '–') + '</td><td>' + ovlPc(c.weightPct) + '</td></tr>';
+  });
+  h += '</tbody><tfoot><tr><td>Total</td><td>100.00%</td><td>' + ovlPc(total) + '</td></tr></tfoot></table>';
+  return h;
+}
+function ovlHistoryHtml(now) {
+  var hist = ovl.history && ovl.history.scope === ovl.scope ? ovl.history.entries : null;
+  if (hist == null) return '<p class="repo-loading">' + (ovl.historyBusy ? 'Loading…' : '') + '</p>';
+  if (!hist.length) return '<p class="fund-none">No revisions yet: ' + esc(ovl.scope) + ' has always used the house list.</p>';
+  return '<ol class="fund-hist">' + hist.map(function (h, i) {
+    var restorable = i > 0 && h.rules;
+    return '<li><div class="fund-hist-h"><b>r' + h.revision + '</b> <span class="act">' + esc(h.action) + '</span>'
+      + (i === 0 && !now.inherited ? ' <span class="now">in force</span>' : '')
+      + (restorable ? '<button type="button" class="cat-link" data-ovl="restore" data-rev="' + h.revision + '"'
+          + (ovl.saving || ovl.draft ? ' disabled' : '') + ' aria-label="Restore revision ' + h.revision + '">Restore r' + h.revision + '</button>' : '')
+      + '</div><div class="fund-hist-w">' + esc(h.change || '') + '</div>'
+      + (h.rules ? '<div class="ovl-hist-o">' + h.rules.map(function (r, j) { return esc(ovlNth(j + 1) + ' ' + r.name); }).join(' · ') + '</div>' : '')
+      + (h.note ? '<div class="fund-hist-n">' + esc(h.note) + '</div>' : '')
+      + '<div class="fund-hist-by">' + esc(h.actor || '') + ' · ' + esc(shortDateTime(h.at)) + '</div></li>';
+  }).join('') + '</ol>';
+}
+function ovlDrawerHtml(list, chk) {
+  var i = ovl.edit, rule = list[i]; if (!rule) return '';
+  var d = ovl.data;
+  /* only what is above it: a rule placed after a rule below it would land
+     at the end of the table */
+  var above = list.slice(0, i).map(function (r) { return (r.into || '').trim(); }).filter(Boolean);
+  var place = rule.place || (rule.sources[0] && rule.sources[0].category) || 'end';
+  var placeOptions = [['end', 'At the end of the table']].concat(d.categories.map(function (c) { return [c, 'After ' + c]; }))
+    .concat(above.map(function (c) { return [c, 'After ' + c + ' (a rule above)']; }));
+  if (!placeOptions.some(function (o) { return o[0] === place; })) placeOptions.push([place, 'After ' + place + ' (not above this rule)']);
+  var sizeBad = !!ovlNumberProblem(rule.size, 'the size');
+  var h = '<div class="ovl-scrim" data-ovl="cancel"></div>'
+    + '<aside class="ovl-drawer" id="ovlDrawer" role="dialog" aria-modal="true" aria-labelledby="ovlDrawerTitle">'
+    + '<h4 id="ovlDrawerTitle">' + esc(rule.name || 'New rule') + '</h4>'
+    + '<p class="ovl-lede">Resolves <b>' + ovlNth(i + 1) + '</b> · ' + (i ? 'reads the allocation as ' + list.slice(0, i).map(function (x) { return esc(x.name); }).join(', then ') + ' left it' : 'reads the strategic allocation as it stands') + '.</p>'
+    + '<div class="ovl-row"><label for="ovlName">Name</label><input id="ovlName" type="text" autocomplete="off" maxlength="' + d.nameMax + '" data-ovlf="name" value="' + esc(rule.name) + '"></div>'
+    + '<div class="ovl-row"><label for="ovlInto">Goes into</label><input id="ovlInto" type="text" autocomplete="off" maxlength="' + d.nameMax + '" data-ovlf="into" value="' + esc(rule.into) + '" placeholder="A category of its own"></div>'
+    + '<div class="ovl-row"><label for="ovlRowName">Row</label><input id="ovlRowName" type="text" autocomplete="off" maxlength="' + d.nameMax + '" data-ovlf="row" value="' + esc(rule.row || '') + '" placeholder="' + esc(rule.into || 'The asset-class row') + '"></div>'
+    + '<div class="ovl-row"><label for="ovlPlace">Sits</label><select id="ovlPlace" data-ovlf="place">'
+    + placeOptions.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === place ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></div>'
+    + '<div class="ovl-row"><label for="ovlSize">Size</label><span class="fund-w"><input id="ovlSize" inputmode="decimal" autocomplete="off" data-ovlf="size" value="' + esc(rule.size) + '"'
+    + (sizeBad ? ' aria-invalid="true"' : '') + '><span>%</span></span>'
+    + '<select id="ovlBasis" data-ovlf="basis" aria-label="Of what">'
+    + '<option value="portfolio"' + (rule.basis === 'portfolio' ? ' selected' : '') + '>of the portfolio, split by weight</option>'
+    + '<option value="sources"' + (rule.basis === 'sources' ? ' selected' : '') + '>of each source as it stands</option></select></div>'
+    + '<table class="fund-ed ovl-src"><colgroup><col><col class="w"><col class="x"></colgroup>'
+    + '<thead><tr><th scope="col">Funded from</th><th scope="col" class="num">Weight</th><th><span class="sr-only">Remove</span></th></tr></thead><tbody>';
+  rule.sources.forEach(function (s, j) {
+    var wBad = !!ovlNumberProblem(s.weightPct, 'the weight');
+    h += '<tr><td><select id="ovlSrc' + j + '" data-ovlf="src" data-j="' + j + '" aria-label="Source ' + (j + 1) + '">'
+      + d.categories.map(function (c) { return '<option value="' + esc(c) + '"' + (c === s.category ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('')
+      + '</select></td><td class="num"><span class="fund-w"><input id="ovlW' + j + '" inputmode="decimal" autocomplete="off" data-ovlf="w" data-j="' + j + '" value="' + esc(s.weightPct) + '"'
+      + (wBad ? ' aria-invalid="true"' : '') + ' aria-label="Weight on ' + esc(s.category) + ', percent"><span>%</span></span></td>'
+      + '<td>' + (rule.sources.length > 1 ? '<button type="button" class="ovl-x" data-ovl="rmsrc" data-j="' + j + '" aria-label="Remove ' + esc(s.category) + '">×</button>' : '') + '</td></tr>';
+  });
+  h += '</tbody><tfoot><tr><th scope="row">Total</th><td class="num" id="ovlSum">' + ovlSumText(rule) + '</td><td></td></tr></tfoot></table>'
+    + (rule.sources.length < d.maxSources ? '<button type="button" class="btn ovl-addsrc" data-ovl="addsrc">+ Add a source</button>' : '')
+    + '<fieldset class="ovl-ccy"><legend>Held in</legend>'
+    + d.currencies.map(function (c) {
+        return '<label><input type="checkbox" data-ovlf="ccy" value="' + esc(c) + '"' + (rule.currencies.indexOf(c) >= 0 ? ' checked' : '') + '> ' + esc(c) + '</label>';
+      }).join('') + '<span class="ovl-hint" id="ovlCcyHint">' + (rule.currencies.length ? '' : 'None ticked: any base currency.') + '</span></fieldset>'
+    + '<p class="ovl-hint">' + (rule.toggle ? 'Applies when ' + OVL_TOGGLE_WORDS[rule.toggle] + ' is on.' : 'Applies to every portfolio of the type that can fund it.') + '</p>'
+    + '<div id="ovlDrawerCheck" aria-live="polite">' + ovlDrawerCheckHtml(list, chk) + '</div>'
+    + '<div class="ovl-dfoot"><button type="button" class="btn btn-primary" data-ovl="done">Done</button>'
+    + '<button type="button" class="btn" data-ovl="cancel">Cancel</button>'
+    + '<span class="ovl-hint">Done keeps the change in the list; Save records it.</span></div></aside>';
+  return h;
+}
+function ovlSumText(rule) {
+  var scale = Math.pow(10, OVL_PLACES), units = 0;
+  rule.sources.forEach(function (s) { var w = ovlNum(s.weightPct); if (w > 0) units += Math.round(w * scale); });
+  return (units / scale).toFixed(OVL_PLACES) + '%';
+}
+function ovlDrawerCheckHtml(list, chk) {
+  var i = ovl.edit; if (list[i] == null) return '';
+  return chk.per[i].length
+    ? '<ul class="fund-msgs">' + chk.per[i].map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>'
+    : '<p class="ovl-ok">Every portfolio it applies to can fund it at this step, whatever the switches.</p>';
+}
+function ovlActionsHtml(list, readOnly, now) {
+  var editing = !!ovl.draft, max = ovl.data.maxRules;
+  return '<div class="fund-acts" id="ovlActs">'
+    + (readOnly ? '' : list.length < max ? '<button type="button" class="btn" id="ovlAdd" data-ovl="add">+ Add rule</button>'
+        : '<button type="button" class="btn" disabled>' + max + ' rules at most</button>')
+    + (ovl.scope !== '*' && now.inherited && !editing ? '<button type="button" class="btn" data-ovl="own">Give ' + esc(ovl.scope) + ' its own list</button>' : '')
+    + (ovl.scope !== '*' && !now.inherited && !editing ? '<button type="button" class="btn btn-danger" data-ovl="drop">Put ' + esc(ovl.scope) + ' back on the house list</button>' : '')
+    + (ovl.undo ? '<span class="ovl-undo" role="status">Removed ' + esc(ovl.undo.rule.name || 'a rule') + ' <button type="button" class="cat-link" id="ovlUndo" data-ovl="undo">Undo</button></span>' : '')
+    + '</div>';
+}
+
+function overlaysViewHtml() {
+  if (!ovl.data) {
+    return '<div class="ucap-b"><p class="repo-loading">' + (ovl.error ? esc(ovl.error) : 'Loading the overlay rules…') + '</p></div>';
+  }
+  var now = ovlInForce(), list = ovlList(), editing = !!ovl.draft;
+  var readOnly = now.inherited && !editing;
+  var chk = ovlChecks(list), res = ovlResolve(list), warn = ovlWarnings(list);
+  var modal = ovl.edit != null ? ' inert' : '';
+  return ovlLeavingHtml() + '<div class="ucap-b ovl-b">'
+    + '<section class="ucap-main" aria-labelledby="ovlTitle"' + modal + '>'
+    + '<h3 id="ovlTitle">Overlay funding</h3>'
+    + '<p class="ucap-lede">Overlays move weight out of strategic categories into a category of their own as a portfolio is implemented. '
+    + 'The rules resolve <b>top to bottom</b>: each reads the allocation as the rules above it left it, so the order matters. '
+    + 'Drag a card by its handle, or use its arrows, to change the order. The Implementation screen, the workbook and the deck all follow these rules; '
+    + 'a change applies to scenarios in progress at once, and the register records which rules each delivered proposal was built with.</p>'
+    + ovlScopeHtml(now)
+    + ovlCardsHtml(list, chk, res, readOnly)
+    + ovlActionsHtml(list, readOnly, now)
+    + '<ul class="ovl-warn" id="ovlWarn">' + warn.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>'
+    + '</section>'
+    + '<aside class="ucap-side ovl-side" aria-label="The rules resolved, and their history"' + modal + '>'
+    + '<h4>Resolved, step by step</h4><div id="ovlTraceBox">' + (res ? ovlTraceHtml(list, chk, res) : '') + '</div>'
+    + '<h4 class="ovl-hh">History · ' + (ovl.scope === '*' ? 'house list' : esc(ovl.scope)) + '</h4>' + ovlHistoryHtml(now)
+    + '</aside>'
+    + (ovl.edit != null ? ovlDrawerHtml(list, chk) : '')
+    + '</div>';
+}
+
+function ovlStatusText(dirty, chk, now, list) {
+  if (ovl.error) return '';
+  if (!dirty) return ovl.flash || '';
+  var change = ovlChange(now.entry.rules, list);
+  var what = now.inherited ? 'Own list for ' + ovl.scope + (change ? ': ' + change : '') : change;
+  return (chk.bad ? 'Fix the red rules first · ' : ovl.edit != null ? 'Close the rule first · ' : '')
+    + 'Unsaved' + (what ? ': ' + what : '');
+}
+function overlaysFooterHtml() {
+  var list = ovlList(), dirty = ovlDirty(), chk = ovlChecks(list), now = ovlInForce();
+  var ok = dirty && !chk.bad && ovl.note.trim() && !ovl.saving && ovl.edit == null && !ovl.stale;
+  var status = now ? ovlStatusText(dirty, chk, now, list) : '';
+  return '<div class="repo-f ovl-f"' + (ovl.edit != null ? ' inert' : '') + '>'
+    + '<label class="fund-note" for="ovlNote">Note</label>'
+    + '<input id="ovlNote" class="fund-note-in" type="text" autocomplete="off" value="' + esc(ovl.note) + '"'
+    + ' placeholder="Why the rules are changing (required)">'
+    + '<span class="spacer"></span>'
+    + '<span class="ovl-pend' + (chk.bad && dirty ? ' bad' : '') + '" id="ovlPending" role="status">' + esc(status) + '</span>'
+    + (ovl.error ? '<span class="md-err" role="alert">' + esc(ovl.error) + '</span>' : '')
+    + (ovl.stale ? '<button type="button" class="btn" data-ovl="reload">Reload the rules</button>' : '')
+    + (ovl.draft ? '<button type="button" class="btn" data-ovl="discard">Discard</button>' : '')
+    + '<button type="button" class="btn btn-primary" id="ovlSave" data-ovl="save"' + (ok ? '' : ' disabled') + '>'
+    + (ovl.saving ? 'Saving…' : 'Save rules') + '</button></div>';
+}
+
+/* the header and footer sit outside the view; while the drawer is open they
+   are inert too, so the keyboard stays in the drawer */
+function ovlAfterRender() {
+  var dialog = document.querySelector('#repoDialog .dialog.repo'); if (!dialog) return;
+  var modal = repo.view === 'overlays' && ovl.edit != null;
+  ['.repo-h', '.repo-f'].forEach(function (sel) {
+    var el = dialog.querySelector(':scope > ' + sel);
+    if (el) { if (modal) el.setAttribute('inert', ''); else el.removeAttribute('inert'); }
+  });
+}
+
+/* the parts that follow typing in the drawer, redrawn without its boxes so
+   the caret stays where it was */
+function ovlUpdate() {
+  var list = ovlList(), chk = ovlChecks(list), now = ovlInForce();
+  var res = ovlResolve(list);
+  var put = function (id, html, outer) { var el = document.getElementById(id); if (el) { if (outer) el.outerHTML = html; else el.innerHTML = html; } };
+  put('ovlList', ovlCardsHtml(list, chk, res, now.inherited && !ovl.draft), true);
+  put('ovlTraceBox', res ? ovlTraceHtml(list, chk, res) : '');
+  put('ovlDrawerCheck', ovlDrawerCheckHtml(list, chk));
+  put('ovlWarn', ovlWarnings(list).map(function (m) { return '<li>' + esc(m) + '</li>'; }).join(''));
+  var rule = list[ovl.edit];
+  if (rule) {
+    put('ovlSum', ovlSumText(rule));
+    put('ovlCcyHint', rule.currencies.length ? '' : 'None ticked: any base currency.');
+    var title = document.getElementById('ovlDrawerTitle'); if (title) title.textContent = rule.name || 'New rule';
+    var size = document.getElementById('ovlSize');
+    if (size) { if (ovlNumberProblem(rule.size, 'the size')) size.setAttribute('aria-invalid', 'true'); else size.removeAttribute('aria-invalid'); }
+    rule.sources.forEach(function (s, j) {
+      var w = document.getElementById('ovlW' + j);
+      if (w) { if (ovlNumberProblem(s.weightPct, 'the weight')) w.setAttribute('aria-invalid', 'true'); else w.removeAttribute('aria-invalid'); }
+    });
+  }
+  var foot = document.querySelector('.dialog.repo > .repo-f');
+  if (foot) {
+    var focused = document.activeElement && document.activeElement.id;
+    foot.outerHTML = overlaysFooterHtml();
+    ovlAfterRender();
+    if (focused === 'ovlNote') { var n = document.getElementById('ovlNote'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }
+  }
+}
+
+async function ovlPost(method, path, body) {
+  ovl.saving = true; ovl.error = null; ovl.stale = false; ovl.flash = ''; render();
+  try {
+    var r = await api(method, path, body);
+    if (!r) return false;
+    if (!r.ok) {
+      ovl.error = r.body.error || ('Could not save (' + r.status + ')');
+      ovl.stale = r.status === 409;
+      return false;
+    }
+    ovl.data = r.body.overlays || ovl.data;
+    ovlDropDraft();
+    ovl.flash = 'Saved' + (r.body.warnings && r.body.warnings.length ? ' · ' + r.body.warnings.length + ' warning' + (r.body.warnings.length > 1 ? 's' : '') : '');
+    /* the implementation screen reads the rules from the schema */
+    if (App.refetchSchema) {
+      try {
+        var again = App.refetchSchema();
+        if (again && again.catch) again.catch(function () { /* the page refetches on its own next */ });
+      } catch (e) { /* likewise */ }
+    }
+    return true;
+  } catch (err) { ovl.error = err.message; return false; }
+  finally {
+    ovl.saving = false; render(); loadOverlayHistory();
+  }
+}
+function ovlBaseNow() {
+  if (ovl.base) return ovl.base;
+  var now = ovlInForce();
+  return now ? { scope: now.entry.scope, revision: now.entry.revision } : null;
+}
+
+/* a new rule that every portfolio in scope can fund: from the category the
+   portfolios that hold it hold the most of at worst, at the largest of a
+   few small sizes the checks pass */
+function ovlNewRule(list) {
+  var d = ovl.data, n = list.length + 1, names = {}, intos = {};
+  list.forEach(function (r) { names[(r.name || '').toLowerCase()] = 1; intos[(r.into || '').toLowerCase()] = 1; });
+  while (names[('New overlay ' + n).toLowerCase()] || intos[('New Overlay ' + n).toLowerCase()]) n += 1;
+  var best = d.categories[0], bestMin = -1;
+  d.categories.forEach(function (c) {
+    var min = Infinity;
+    ovlPortfolios().forEach(function (p) { var w = p.weights[c] || 0; if (w > 0 && w < min) min = w; });
+    if (min !== Infinity && min > bestMin) { bestMin = min; best = c; }
+  });
+  var rule = { id: '', name: 'New overlay ' + n, into: 'New Overlay ' + n, row: '', place: '', size: '1', basis: 'portfolio',
+               sources: [{ category: best, weightPct: '100' }], toggle: null, currencies: [] };
+  var sizes = ['1', '0.5', '0.25', '0.1'];
+  for (var i = 0; i < sizes.length; i++) {
+    rule.size = sizes[i];
+    if (!ovlChecks(list.concat([rule])).per[list.length].length) break;
+  }
+  return rule;
+}
+function ovlMove(from, to) {
+  ovlStartDraft();
+  var len = ovl.draft.length;
+  if (from == null || isNaN(from) || from < 0 || from >= len || to < 0 || to >= len || from === to) return false;
+  var rule = ovl.draft.splice(from, 1)[0];
+  ovl.draft.splice(to, 0, rule);
+  ovl.undo = null; ovl.flash = '';
+  return true;
+}
+function ovlFocus(selector) {
+  var all = document.querySelectorAll(selector);
+  for (var k = 0; k < all.length; k++) { if (!all[k].disabled) { all[k].focus(); return true; } }
+  return false;
+}
+function ovlFocusRule(i) {
+  return ovlFocus('[data-ovl="edit"][data-i="' + i + '"]') || ovlFocus('#ovlAdd');
+}
+function ovlCloseDrawer(keep) {
+  var i = ovl.edit, fresh = ovl.editFresh;
+  if (!keep && ovl.editSnap) ovl.draft = ovl.editSnap;
+  ovl.edit = null; ovl.editSnap = null; ovl.editFresh = false;
+  if (!ovlDirty() && !(ovlInForce() || {}).inherited) ovl.draft = null;   /* nothing changed */
+  render();
+  if (!keep && fresh) ovlFocus('#ovlAdd'); else ovlFocusRule(i);
+}
+function ovlTrySwitch(scope) {
+  if (ovlDirty()) { ovl.leaving = { scope: scope }; render(); ovlFocus('[data-ovl="leavekeep"]'); return; }
+  ovlDropDraft();
+  ovl.scope = scope; ovl.history = null; ovl.sample = null; ovl.traceSel = null; ovl.flash = '';
+  render(); loadOverlayHistory();
+}
+
+function ovlClick(el) {
+  var act = el.dataset.ovl; if (act === undefined) return false;
+  var i = el.dataset.i != null ? parseInt(el.dataset.i, 10) : null;
+  var j = el.dataset.j != null ? parseInt(el.dataset.j, 10) : null;
+  if (act === 'up' || act === 'down') {
+    var to = act === 'up' ? i - 1 : i + 1;
+    if (ovlMove(i, to)) {
+      render();
+      ovlFocus('[data-ovl="' + act + '"][data-i="' + to + '"]')
+        || ovlFocus('[data-ovl="' + (act === 'up' ? 'down' : 'up') + '"][data-i="' + to + '"]');
+      App.announce('polite', (ovl.draft[to].name || 'The rule') + ' is now ' + ovlNth(to + 1) + '.');
+    }
+    return true;
+  }
+  if (act === 'add') {
+    ovlStartDraft();
+    ovl.editSnap = ovlClone(ovl.draft);
+    ovl.draft.push(ovlNewRule(ovl.draft));
+    ovl.edit = ovl.draft.length - 1; ovl.editFresh = true; ovl.undo = null;
+    render(); var f = document.getElementById('ovlName'); if (f) { f.focus(); f.select(); }
+    return true;
+  }
+  if (act === 'edit') {
+    ovlStartDraft();
+    if (i == null || i < 0 || i >= ovl.draft.length) return true;
+    ovl.editSnap = ovlClone(ovl.draft); ovl.edit = i; ovl.editFresh = false; ovl.undo = null;
+    render(); var g = document.getElementById('ovlName'); if (g) g.focus();
+    return true;
+  }
+  if (act === 'remove') {
+    ovlStartDraft();
+    if (i == null || i < 0 || i >= ovl.draft.length) return true;
+    var gone = ovl.draft.splice(i, 1)[0];
+    ovl.undo = { rule: gone, index: i }; ovl.flash = '';
+    render();
+    App.announce('polite', 'Removed ' + (gone.name || 'a rule') + '. Undo is beside Add rule.');
+    ovlFocus('#ovlUndo');
+    return true;
+  }
+  if (act === 'undo') {
+    if (ovl.undo && ovl.draft) {
+      ovl.draft.splice(Math.min(ovl.undo.index, ovl.draft.length), 0, ovl.undo.rule);
+      var back = ovl.undo.index; ovl.undo = null;
+      if (!ovlDirty() && !(ovlInForce() || {}).inherited) ovl.draft = null;
+      render(); ovlFocusRule(back);
+    }
+    return true;
+  }
+  if (act === 'done') { ovlCloseDrawer(true); return true; }
+  if (act === 'cancel') { ovlCloseDrawer(false); return true; }
+  if (act === 'addsrc') {
+    var rule = ovl.draft[ovl.edit];
+    var free = ovl.data.categories.filter(function (c) { return !rule.sources.some(function (s) { return s.category === c; }); })[0];
+    if (free) rule.sources.push({ category: free, weightPct: '' });
+    render(); var w = document.getElementById('ovlW' + (rule.sources.length - 1)); if (w) w.focus();
+    return true;
+  }
+  if (act === 'rmsrc') {
+    ovl.draft[ovl.edit].sources.splice(j, 1); render();
+    ovlFocus('#ovlW' + Math.max(0, j - 1));
+    return true;
+  }
+  if (act === 'showcase') {
+    var list = ovlList(), worst = ovlChecks(list).worst[i];
+    if (worst) { ovl.sample = worst.keyStr; ovl.traceSel = worst.selection; render(); ovlFocus('#ovlSample'); }
+    return true;
+  }
+  if (act === 'own') { ovlStartDraft(); render(); return true; }
+  if (act === 'discard') { ovlDropDraft(); ovl.flash = ''; render(); return true; }
+  if (act === 'reload') { ovlDropDraft(); ovl.flash = ''; loadOverlays(); return true; }
+  if (act === 'leavekeep') { ovl.leaving = null; render(); ovlFocus('#ovlNote'); return true; }
+  if (act === 'leavego') {
+    var leaving = ovl.leaving;
+    ovlDropDraft();
+    if (leaving && leaving.close) { closeRepository(true); return true; }
+    ovlTrySwitch(leaving ? leaving.scope : ovl.scope);
+    return true;
+  }
+  if (act === 'save') {
+    ovlPost('PUT', '/scenario/repository/overlays', { scope: ovl.scope, note: ovl.note, rules: ovlPayload(ovl.draft), base: ovlBaseNow() });
+    return true;
+  }
+  if (act === 'drop') {
+    if (!ovl.note.trim()) { ovl.error = 'Write a note first: putting a type back on the house list is a change like any other.'; ovl.flash = ''; render(); return true; }
+    ovlPost('POST', '/scenario/repository/overlays/remove', { scope: ovl.scope, note: ovl.note, base: ovlBaseNow() });
+    return true;
+  }
+  if (act === 'restore') {
+    if (ovl.saving || ovl.draft) return true;
+    if (!ovl.note.trim()) { ovl.error = 'Write a note first: restoring r' + el.dataset.rev + ' is a new revision, and it says why.'; ovl.flash = ''; render(); ovlFocus('#ovlNote'); return true; }
+    ovlPost('POST', '/scenario/repository/overlays/revert', { scope: ovl.scope, revision: parseInt(el.dataset.rev, 10), note: ovl.note, base: ovlBaseNow() });
+    return true;
+  }
+  return false;
+}
+
+document.addEventListener('change', function (e) {
+  if (!repo.open || repo.view !== 'overlays') return;
+  var el = e.target;
+  if (el.id === 'ovlScope') {
+    var want = el.value;
+    el.value = ovl.scope;                         /* until the move is allowed */
+    ovlTrySwitch(want);
+    return;
+  }
+  if (el.id === 'ovlSample') { ovl.sample = el.value; ovlUpdate(); return; }
+  if (el.dataset && el.dataset.ovltrace) {
+    var sel = ovlClone(ovlTraceSel()); sel[el.dataset.ovltrace] = el.checked; ovl.traceSel = sel; ovlUpdate(); return;
+  }
+  var f = el.dataset && el.dataset.ovlf;
+  if (!f || ovl.edit == null || !ovl.draft) return;
+  var rule = ovl.draft[ovl.edit];
+  if (f === 'basis') { rule.basis = el.value; ovlUpdate(); return; }
+  if (f === 'place') { rule.place = el.value; ovlUpdate(); return; }
+  if (f === 'src') { rule.sources[parseInt(el.dataset.j, 10)].category = el.value; render(); ovlFocus('#ovlSrc' + el.dataset.j); return; }
+  if (f === 'ccy') {
+    var c = el.value, at = rule.currencies.indexOf(c);
+    if (el.checked && at < 0) rule.currencies.push(c);
+    if (!el.checked && at >= 0) rule.currencies.splice(at, 1);
+    ovlUpdate(); return;
+  }
+});
+
+document.addEventListener('input', function (e) {
+  if (!repo.open || repo.view !== 'overlays') return;
+  var el = e.target;
+  if (el.id === 'ovlNote') { ovl.note = el.value; ovl.error = null; ovl.stale = false; ovl.flash = ''; ovlUpdate(); return; }
+  var f = el.dataset && el.dataset.ovlf;
+  if (!f || ovl.edit == null || !ovl.draft) return;
+  var rule = ovl.draft[ovl.edit];
+  if (f === 'name') rule.name = el.value;
+  else if (f === 'into') {
+    var was = (rule.into || '').trim();
+    rule.into = el.value;
+    /* a rule placed after this one's category follows the rename */
+    ovl.draft.forEach(function (r) { if (r !== rule && was && r.place === was) r.place = el.value.trim(); });
+  }
+  else if (f === 'row') rule.row = el.value;
+  else if (f === 'size') rule.size = el.value.trim();
+  else if (f === 'w') rule.sources[parseInt(el.dataset.j, 10)].weightPct = el.value.trim();
+  else return;
+  ovlUpdate();
+});
+
+/* drag a card by its handle: the card under the pointer shows where it would
+   land, above or below, and the drop moves it there */
+function ovlDropMark(card, after) {
+  document.querySelectorAll('.ovl-card.drop-above, .ovl-card.drop-below').forEach(function (c) {
+    c.classList.remove('drop-above'); c.classList.remove('drop-below');
+  });
+  if (card) card.classList.add(after ? 'drop-below' : 'drop-above');
+}
+document.addEventListener('dragstart', function (e) {
+  if (!repo.open || repo.view !== 'overlays' || ovl.edit != null) return;
+  var card = e.target.closest && e.target.closest('.ovl-card[draggable="true"]');
+  if (!card) return;
+  ovl.drag = parseInt(card.dataset.ovlcard, 10);
+  card.classList.add('dragging');
+  if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(ovl.drag)); } catch (err) { /* old engines */ } }
+});
+document.addEventListener('dragover', function (e) {
+  if (ovl.drag == null || !repo.open || repo.view !== 'overlays') return;
+  var card = e.target.closest && e.target.closest('.ovl-card');
+  if (!card) return;
+  e.preventDefault();
+  var box = card.getBoundingClientRect();
+  ovlDropMark(card, e.clientY > box.top + box.height / 2);
+});
+document.addEventListener('drop', function (e) {
+  if (ovl.drag == null || !repo.open || repo.view !== 'overlays') return;
+  var card = e.target.closest && e.target.closest('.ovl-card');
+  if (!card) return;
+  e.preventDefault();
+  var box = card.getBoundingClientRect();
+  var over = parseInt(card.dataset.ovlcard, 10);
+  var after = e.clientY > box.top + box.height / 2;
+  var from = ovl.drag, to = over + (after ? 1 : 0);
+  if (from < to) to -= 1;
+  ovl.drag = null;
+  if (ovlMove(from, to)) {
+    render(); ovlFocusRule(to);
+    App.announce('polite', (ovl.draft[to].name || 'The rule') + ' is now ' + ovlNth(to + 1) + '.');
+  } else { ovlDropMark(null); }
+});
+document.addEventListener('dragend', function () {
+  if (ovl.drag == null) return;
+  ovl.drag = null; ovlDropMark(null);
+  document.querySelectorAll('.ovl-card.dragging').forEach(function (c) { c.classList.remove('dragging'); });
+});
+
 /* ---- events ------------------------------------------------------------- */
 document.addEventListener('click', function (e) {
   var t = e.target.closest ? e.target.closest('#repolink, #catlink') : null;
@@ -3512,7 +4494,8 @@ document.addEventListener('click', function (e) {
     + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
     + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose],'
     + '[data-regview],[data-regfilters],[data-reguid],'
-    + '[data-fundadd],[data-fundrm],[data-fundsave],[data-funddiscard],[data-fundown],[data-funddrop],[data-fundrestore]') : null;
+    + '[data-fundadd],[data-fundrm],[data-fundsave],[data-funddiscard],[data-fundown],[data-funddrop],[data-fundrestore],'
+    + '[data-ovl]') : null;
   if (!el) {
     /* a click anywhere else closes an open picker, chip menu or context menu */
     if (repo.picker && !e.target.closest('.repo-menu, #repoSearch')) closePicker();
@@ -3526,6 +4509,7 @@ document.addEventListener('click', function (e) {
   if (ds.repoclose !== undefined || ds.reposcrim !== undefined) { closeRepository(false); return; }
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
   if (fundClick(ds)) return;
+  if (ovlClick(el)) return;
   if (ds.repovariant !== undefined) { goTo({ variant: ds.repovariant }); return; }
   if (ds.repocat !== undefined) { goTo({ category: ds.repocat }); return; }
   if (ds.reposleeve !== undefined) { selectSleeve(parseInt(ds.reposleeve, 10)); return; }
@@ -3563,7 +4547,7 @@ document.addEventListener('click', function (e) {
   /* the archive (D66) */
   if (ds.arcsort !== undefined) {
     if (arc.sort.key === ds.arcsort) arc.sort.dir = arc.sort.dir === 'asc' ? 'desc' : 'asc';
-    else arc.sort = { key: ds.arcsort, dir: ds.arcsort === 'archivedAt' || ds.arcsort === 'revisions' ? 'desc' : 'asc' };
+    else arc.sort = { key: ds.arcsort, dir: ds.arcsort === 'archivedAt' || ds.arcsort === 'createdAt' || ds.arcsort === 'revisions' ? 'desc' : 'asc' };
     updateArchive(); return;
   }
   if (ds.arcrow !== undefined) {
@@ -3815,6 +4799,14 @@ document.addEventListener('input', function (e) {
    first, the card's presence is real and the key is left to it. */
 document.addEventListener('keydown', function (e) {
   if (!repo.open) return;
+  /* the overlay drawer, then the unsaved-changes notice, take Escape
+     before the console does (D155) */
+  if (repo.view === 'overlays' && e.key === 'Escape' && ovl.edit != null) {
+    e.preventDefault(); e.stopPropagation(); ovlCloseDrawer(false); return;
+  }
+  if (repo.view === 'overlays' && e.key === 'Escape' && ovl.leaving) {
+    e.preventDefault(); e.stopPropagation(); ovl.leaving = null; render(); ovlFocus('#ovlNote'); return;
+  }
   if (repo.picker && e.target.id === 'repoSearch') {
     var hits = pickerMatches();
     if (e.key === 'ArrowDown') { e.preventDefault(); repo.picker.index = Math.min(repo.picker.index + 1, Math.min(hits.length, 40) - 1); updatePickerList(); return; }

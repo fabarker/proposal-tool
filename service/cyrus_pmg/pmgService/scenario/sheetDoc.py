@@ -969,6 +969,16 @@ def buildImplementationDoc(model: dict, columns, widths,
         if includeFees:
             bpCell(doc.cell(rowIndex, at['Wtd fee (bp)']), value)
 
+    COST = 'Wtd cost (bp)'
+
+    def costAt(rowIndex, value):
+        """Unpriced, the workbook weights the product cost alone (D152)."""
+        if COST in at:
+            bpCell(doc.cell(rowIndex, at[COST]), value)
+
+    def itemCost(item):
+        return item['printedPct'] * float(item['productCost'])
+
     for group in model['groups']:
         # The category alone: the Products cell of a band row is left empty
         # on request (D78) - the band names the category the products beneath
@@ -986,6 +996,7 @@ def buildImplementationDoc(model: dict, columns, widths,
         if group['items']:
             bpAt(row, sum(i['wtdFeeBp'] for i in group['items'])
                  if model['priced'] else None)
+            costAt(row, sum(itemCost(i) for i in group['items']))
             notional = doc.cell(row, at['Notional'])
             notional.value = sum(i['notional'] for i in group['items'])
             notional.fmt = '$#,##0'
@@ -1008,10 +1019,12 @@ def buildImplementationDoc(model: dict, columns, widths,
                 # the block reads as one object (D78).
                 cell.fill = WHITE
             weightCell(doc.cell(row, at['Allocation (%)']), item['printedPct'])
-            feeCell(doc.cell(row, at['Product Cost']), float(item['productCost']))
+            if 'Product Cost' in at:
+                feeCell(doc.cell(row, at['Product Cost']), float(item['productCost']))
             if includeFees:
                 feeCell(doc.cell(row, at['Mgmt fee']), item['managementFee'])
             bpAt(row, item['wtdFeeBp'])
+            costAt(row, itemCost(item))
             notional = doc.cell(row, at['Notional'])
             notional.value = item['notional']
             notional.fmt = '$#,##0'
@@ -1036,10 +1049,12 @@ def buildImplementationDoc(model: dict, columns, widths,
     if includeFees and model.get('marginal') and model.get('effectiveRate') is not None:
         feeCell(doc.cell(row, at['Mgmt fee']), model['effectiveRate'])
     bpAt(row, model['total']['wtdFeeBp'])
+    costAt(row, sum(itemCost(i) for g in model['groups'] for i in g['items']))
     notional = doc.cell(row, at['Notional'])
     notional.value = model['total']['notional']
     notional.fmt = '$#,##0'
     totalRow = row
+
 
     # one justification throughout, on request: every column left-aligned,
     # its figures included (D143)
@@ -1064,20 +1079,29 @@ def buildImplementationDoc(model: dict, columns, widths,
 #: of columns, Long-term then Initial, with the key the model holds it by
 INITIAL_MEASURES = [('Allocation (%)', 'pct'), ('Notional', 'notional'),
                     ('Weighted fee (bp)', 'fee')]
+#: unpriced, the workbook weights the product cost alone in the fee's place
+#: (D152); the deck shows neither
+COST_MEASURE = ('Weighted cost (bp)', 'cost')
 #: the rule that parts one measure's pair from the next (D142)
 MEASURE_RULE = ('thin', 'C0C0C0')
 #: the sheet's column widths, in Excel characters: the floors
 #: ``excelColumnWidth`` widens from
-INITIAL_WIDTHS = {'names': 34, 'products': 32, 'pct': 12, 'notional': 15, 'fee': 12}
+INITIAL_WIDTHS = {'names': 34, 'products': 32, 'pct': 12, 'notional': 15, 'fee': 12,
+                  'cost': 13}
 
 
-def initialMeasures(includeFees: bool = True):
+def initialMeasures(includeFees: bool = True, deck: bool = False):
     """The measures the Initial Allocation table compares: allocation and
-    notional always, the weighted fee only in a proposal that shows fees."""
-    return [m for m in INITIAL_MEASURES if includeFees or m[1] != 'fee']
+    notional always; priced, the weighted fee; unpriced, the weighted product
+    cost in the workbook and nothing more in the deck (D152)."""
+    if includeFees:
+        return list(INITIAL_MEASURES)
+    kept = [m for m in INITIAL_MEASURES if m[1] != 'fee']
+    return kept if deck else kept + [COST_MEASURE]
 
 
-def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=None):
+def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=None,
+                              deck: bool = False):
     """A private-markets book's initial allocation against its long-term
     target, as its own table (D141; D136 put the initial figures beside the
     long-term ones in one table): per category and product, each measure -
@@ -1092,15 +1116,23 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
     initial allocation (``model['initial']``)."""
     initial = model['initial']
     committed = initial['commitment']
-    measures = initialMeasures(includeFees)
+    measures = initialMeasures(includeFees, deck)
+    # the slide drops the green the workbook and the screen keep (D152)
+    band, tint, head = ((BAND, WHITE, HEADER_NAVY) if deck
+                        else (INITIAL_BAND, INITIAL_TINT, INITIAL_HEAD))
     doc = SheetDoc('Initial Allocation')
     headFont = {'name': SANS, 'size': 12, 'bold': True, 'color': WHITE}
     bodyFont = {'name': SANS, 'size': 12}
     boldFont = {'name': SANS, 'size': 12, 'bold': True}
-    initialBold = {'name': SANS, 'size': 12, 'bold': True, 'color': INITIAL_HEAD}
+    initialBold = ({'name': SANS, 'size': 12, 'bold': True} if deck
+                   else {'name': SANS, 'size': 12, 'bold': True, 'color': INITIAL_HEAD})
     breachFont = {'name': SANS, 'size': 11, 'bold': True, 'color': BREACH_INK}
-    formats = {'pct': '0.00%', 'notional': '$#,##0', 'fee': '0.0'}
-    count = 2 + 2 * len(measures)
+    formats = {'pct': '0.00%', 'notional': '$#,##0', 'fee': '0.0', 'cost': '0.0'}
+    # the slide gives each measure a third column, the change from long-term
+    # to initial, in place of the green (D152, style 3 of
+    # proposals/initial-allocation-slide-styles.html)
+    span = 3 if deck else 2
+    count = 2 + span * len(measures)
 
     preamble = []
     if proposalId:
@@ -1124,25 +1156,47 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
     # size (D142; it was 10)
     doc.row(row).height = 18
     for k, (label, _) in enumerate(measures):
-        first = 3 + 2 * k
-        for column in (first, first + 1):
+        first = 3 + span * k
+        for column in range(first, first + span):
             cell = doc.cell(row, column)
             cell.font = {'name': SANS, 'size': 12, 'bold': True, 'color': NAVY}
             cell.align = {'horizontal': 'center', 'vertical': 'center'}
             cell.border = {'bottom': ('thin', NAVY)}
         doc.cell(row, first).value = label
-        doc.merges.append((row, first, row, first + 1))
+        doc.merges.append((row, first, row, first + span - 1))
     headerRow = row + 1
     row = headerRow
-    heads = ['Categories & Asset Classes', 'Products'] + ['Initial', 'Long-term'] * len(measures)
+    heads = ['Categories & Asset Classes', 'Products'] + (
+        ['Long-term', 'Initial'] + (['Change'] if deck else [])) * len(measures)
     for column, name in enumerate(heads, start=1):
         cell = doc.cell(row, column)
         cell.value = name
         cell.font = headFont
-        cell.fill = INITIAL_HEAD if name == 'Initial' else HEADER_NAVY
+        cell.fill = head if name == 'Initial' else HEADER_NAVY
         cell.align = {'horizontal': 'left' if column <= 2 else 'right', 'vertical': 'center'}
     doc.row(row).height = 20
     doc.freeze = 'A' + str(headerRow + 1)
+
+    band_ = band
+    upInk, downInk = '1F5FBF', 'B45309'
+
+    def delta(cell, key, now, target, band):
+        """Initial less long-term, signed, in the measure's unit: points,
+        dollars or bp; a dash where they agree."""
+        cell.fill = BAND if band else WHITE
+        cell.align = {'horizontal': 'right'}
+        small = 0.5 if key == 'notional' else 1e-6
+        if now is None or target is None or abs(now - target) <= small:
+            cell.value = '–'
+            cell.font = {'name': SANS, 'size': 12, 'color': '5B6B7C'}
+            return
+        d = now - target
+        sign = '+' if d > 0 else '−'
+        magnitude = ('${:,.0f}'.format(abs(d)) if key == 'notional'
+                     else '{:.2f}'.format(abs(d)) if key == 'pct' else '{:.1f}'.format(abs(d)))
+        cell.value = sign + magnitude
+        cell.font = {'name': SANS, 'size': 12, 'bold': True,
+                     'color': upInk if d > 0 else downInk}
 
     def figures(rowIndex, longTerm, first, band=False, total=False, breaches=(False, False)):
         """One row's pairs: the initial figure first, on the teal - bold
@@ -1150,19 +1204,22 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
         the row's own ground (D142); a notional below its product's minimum
         flagged in either. *breaches* is (long-term, initial)."""
         for k, (_, key) in enumerate(measures):
-            column = 3 + 2 * k
-            for offset, value, flagged in ((1, longTerm[key], breaches[0]),
-                                           (0, first[key], breaches[1])):
+            column = 3 + span * k
+            if deck:
+                delta(doc.cell(rowIndex, column + 2), key, first[key], longTerm[key], band)
+            # long-term first, then initial (D154; D142 put initial first)
+            for offset, value, flagged in ((0, longTerm[key], breaches[0]),
+                                           (1, first[key], breaches[1])):
                 cell = doc.cell(rowIndex, column + offset)
                 if value is not None:
                     cell.value = value / 100.0 if key == 'pct' else value
                     cell.fmt = formats[key]
                 cell.align = {'horizontal': 'right'}
-                if offset == 1:
+                if offset == 0:
                     cell.fill = BAND if band else WHITE
                     cell.font = boldFont if band or total else bodyFont
                 else:
-                    cell.fill = INITIAL_BAND if band else INITIAL_TINT
+                    cell.fill = band_ if band else tint
                     moved = (value is not None and longTerm[key] is not None
                              and abs(value - longTerm[key]) > 1e-9)
                     cell.font = initialBold if band or total or moved else bodyFont
@@ -1174,6 +1231,12 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
         values = [i.get(field) for i in items]
         return None if not items or any(v is None for v in values) else sum(values)
 
+    def costs(items, field):
+        """The product cost weighted by *field*'s allocation, in bp."""
+        return sum(i.get(field, 0.0) * float(i['productCost']) for i in items)
+
+    allItems = [i for g in model['groups'] for i in g['items']]
+
     for group in model['groups']:
         row += 1
         doc.sections.add(row)
@@ -1184,11 +1247,12 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
         items = group['items']
         figures(row, {'pct': summed(items, 'printedPct') if items else group['weightPct'],
                       'notional': sum(i['notional'] for i in items),
-                      'fee': summed(items, 'wtdFeeBp')},
+                      'fee': summed(items, 'wtdFeeBp'), 'cost': costs(items, 'printedPct')},
                 {'pct': summed(items, 'initialPct') if items
                  else group.get('initialWeightPct', 0.0),
                  'notional': sum(i.get('initialNotional', 0.0) for i in items),
-                 'fee': summed(items, 'initialWtdFeeBp')}, band=True)
+                 'fee': summed(items, 'initialWtdFeeBp'),
+                 'cost': costs(items, 'initialPct')}, band=True)
         for item in items:
             row += 1
             doc.cell(row, 1).value = '  ' + item['assetClass']
@@ -1197,17 +1261,18 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
                 doc.cell(row, column).font = bodyFont
                 doc.cell(row, column).fill = WHITE
             figures(row, {'pct': item['printedPct'], 'notional': item['notional'],
-                          'fee': item.get('wtdFeeBp')},
+                          'fee': item.get('wtdFeeBp'), 'cost': costs([item], 'printedPct')},
                     {'pct': item['initialPct'], 'notional': item['initialNotional'],
-                     'fee': item.get('initialWtdFeeBp')},
+                     'fee': item.get('initialWtdFeeBp'), 'cost': costs([item], 'initialPct')},
                     breaches=(bool(item.get('belowMinimum')),
                               bool(item.get('initialBelowMinimum'))))
     row += 1
     doc.cell(row, 1).value = 'Total'
     figures(row, {'pct': model['total']['weightPct'], 'notional': model['total']['notional'],
-                  'fee': model['total'].get('wtdFeeBp')},
+                  'fee': model['total'].get('wtdFeeBp'), 'cost': costs(allItems, 'printedPct')},
             {'pct': initial['total']['weightPct'], 'notional': initial['total']['notional'],
-             'fee': initial['total'].get('wtdFeeBp')}, total=True)
+             'fee': initial['total'].get('wtdFeeBp'), 'cost': costs(allItems, 'initialPct')},
+            total=True)
     for column in range(1, count + 1):
         cell = doc.cell(row, column)
         cell.border = {'top': BLACK_THIN, 'bottom': BLACK_THIN}
@@ -1223,17 +1288,18 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
     # cell's edges from there
     for rowIndex in range(headerRow - 1, totalRow + 1):
         for k in range(len(measures) - 1):
-            last, following = 4 + 2 * k, 5 + 2 * k
+            last = 2 + span * (k + 1)
+            following = last + 1
             columns = [(last, 'right'), (following, 'left')]
             if rowIndex == headerRow - 1:
-                columns.append((last - 1, 'right'))           # the merged name's origin
+                columns.append((last - span + 1, 'right'))           # the merged name's origin
             for column, edge in columns:
                 cell = doc.cell(rowIndex, column)
                 cell.border = dict(cell.border or {}, **{edge: MEASURE_RULE})
 
     doc = houseFaces(doc)
     floors = [INITIAL_WIDTHS['names'], INITIAL_WIDTHS['products']] + [
-        INITIAL_WIDTHS[key] for _, key in measures for _ in (0, 1)]
+        INITIAL_WIDTHS[key] for _, key in measures for _ in range(span)]
     for column, floor in enumerate(floors, start=1):
         doc.widths[columnLetter(column)] = excelColumnWidth(doc, column, floor,
                                                             fromRow=headerRow)

@@ -238,7 +238,8 @@ def test_create_update_delete_round_trip_with_provenance():
         upd = sleeveRepo.updateSleeve(made['id'], 'Round Trip 2',
                                       [{'productId': ANOTHER, 'weight': 1.0}], user='bob')
         assert upd['name'] == 'Round Trip 2' and upd['updatedBy'] == 'bob'
-        assert upd['createdBy'] == 'alice'
+        # the version is bob's; the sleeve was alice's first (D152)
+        assert upd['createdBy'] == 'bob' and upd['firstCreatedAt'] == made['createdAt']
         assert len(upd['products']) == 1
         assert sleeveRepo.getSleeve(made['id'])['name'] == 'Round Trip 2'
     finally:
@@ -434,6 +435,12 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/funding/remove', ('POST',)),
         ('/scenario/repository/funding/history', ('GET',)),
         ('/scenario/repository/funding/revert', ('POST',)),
+        # the overlay rules (D155)
+        ('/scenario/repository/overlays', ('GET',)),
+        ('/scenario/repository/overlays', ('PUT',)),
+        ('/scenario/repository/overlays/remove', ('POST',)),
+        ('/scenario/repository/overlays/history', ('GET',)),
+        ('/scenario/repository/overlays/revert', ('POST',)),
     }
     for key, names in found.items():
         assert 'requireAdmin' in names, key

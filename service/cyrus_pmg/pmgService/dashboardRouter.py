@@ -28,9 +28,9 @@ from fastapi.responses import JSONResponse
 
 from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
-from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, products,
-                                           proposalRegister, scenarioStore, sleeveRepo,
-                                           sleeveRules)
+from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, overlayRules,
+                                           products, proposalRegister, scenarioStore,
+                                           sleeveRepo, sleeveRules)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
     exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
@@ -625,6 +625,85 @@ def revertFundingSplit(payload: dict = Body(...), caller=Depends(requireAdmin)):
         return _validationError(exc)
 
 
+# ---- the overlay rules (D155) ----------------------------------------------
+# The ordered list of overlays - the tilt, the premium and any the desk adds -
+# that move weight between categories as a portfolio is implemented, resolved
+# top to bottom: a house list for every implementation type and, optionally, a
+# type's own. Admin only, like every repository write; every change carries a
+# note and adds a revision (overlayRules.py). A write may name the list it was
+# made against ({base: {scope, revision}}); when that is no longer the list in
+# force it is refused with 409, and the console reloads.
+
+def _overlayError(exc: ValidationError):
+    if isinstance(exc, overlayRules.StaleError):
+        return JSONResponse(status_code=409, content={'error': exc.message, 'field': exc.field})
+    return _validationError(exc)
+
+
+@router.get('/scenario/repository/overlays')
+def getOverlayRules(caller=Depends(requireAdmin)):
+    """The house list, every type's own list, and what the console needs to
+    judge a draft as the server will: the strategic categories, every
+    portfolio's category weights, the portfolios each type offers and a
+    sample, which categories each type has a sleeve in, and the warnings in
+    force."""
+    return overlayRules.describe()
+
+
+@router.put('/scenario/repository/overlays')
+def saveOverlayRules(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a list in force: {scope: '*' or a type, rules: [...], note, base?}.
+    The rules resolve in the order given. Refused (422) when a portfolio the
+    list applies to holds a rule's sources but could not fund it; 409 when
+    *base* is no longer the list in force."""
+    try:
+        saved = overlayRules.save(payload.get('scope'), payload.get('rules'),
+                                  payload.get('note'), user=caller.kerberos,
+                                  base=payload.get('base'))
+        return {'list': saved['entry'], 'warnings': saved['warnings'],
+                'overlays': overlayRules.describe()}
+    except ValidationError as exc:
+        return _overlayError(exc)
+
+
+@router.post('/scenario/repository/overlays/remove')
+def removeOverlayOverride(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a type back on the house list: {scope, note, base?}."""
+    try:
+        overlayRules.removeOverride(payload.get('scope'), payload.get('note'),
+                                    user=caller.kerberos, base=payload.get('base'))
+        return {'overlays': overlayRules.describe()}
+    except ValidationError as exc:
+        return _overlayError(exc)
+
+
+@router.get('/scenario/repository/overlays/history')
+def getOverlayHistory(scope: str = '*', caller=Depends(requireAdmin)):
+    """Every revision of one scope's list, newest first, with what changed."""
+    try:
+        return {'scope': scope, 'history': overlayRules.history(scope)}
+    except ValidationError as exc:
+        return _overlayError(exc)
+
+
+@router.post('/scenario/repository/overlays/revert')
+def revertOverlayRules(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {scope, revision, note, base?}.
+    It is a new revision, re-checked against today's portfolios."""
+    number = payload.get('revision')
+    if isinstance(number, str) and number.strip().isdigit():
+        number = int(number)
+    if isinstance(number, bool) or not isinstance(number, int):
+        return _validationError(ValidationError('revision', 'Choose a revision to restore.'))
+    try:
+        saved = overlayRules.revert(payload.get('scope'), number, payload.get('note'),
+                                    user=caller.kerberos, base=payload.get('base'))
+        return {'list': saved['entry'], 'warnings': saved['warnings'],
+                'overlays': overlayRules.describe()}
+    except ValidationError as exc:
+        return _overlayError(exc)
+
+
 # ---- account opening requests (D76) --------------------------------------
 # The landing card's third button opens a form that fills itself from a
 # Proposal UID (D75) and records a request against that proposal. Static
@@ -751,7 +830,8 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             customFees = payload['customFees'] or {}
             validateCustomFees(customFees, mandate or MandateInput.fromDict(current['mandate']))
         if 'sleeves' in payload:
-            from cyrus_pmg.pmgService.scenario.rules import AUTO_SLEEVE_CATEGORIES
+            from cyrus_pmg.pmgService.scenario.rules import autoSleeveCategories
+            automatic = autoSleeveCategories()
             against = variant or current.get('variant')
             if not against:
                 raise ValidationError(
@@ -762,7 +842,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             baseKey = _baseKeyFrom(current.get('base'))
             sleeves = {}
             for category, name in (payload['sleeves'] or {}).items():
-                if category in AUTO_SLEEVE_CATEGORIES:
+                if category in automatic:
                     raise ValidationError(
                         'sleeves',
                         '{} carries its sleeve automatically.'.format(category))
@@ -872,15 +952,20 @@ def _assembleExport(scenarioId: str, port):
     results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k))
                for k in keys]
 
-    from cyrus_pmg.pmgService.scenario.rules import (
-        AUTO_SLEEVE_CATEGORIES, sleeveCategory)
+    from cyrus_pmg.pmgService.scenario.rules import AUTO_SLEEVE_CATEGORIES, sleeveCategory
+    # The overlay rules in force for this type, read ONCE: the categories
+    # they attach automatically and the model below come from the same list,
+    # so a save landing mid-export cannot split them (D155).
+    overlayEntry = overlayRules.current(variant)
+    automatic = list(AUTO_SLEEVE_CATEGORIES) + [
+        r['into'] for r in overlayEntry['rules'] if r['into'] not in AUTO_SLEEVE_CATEGORIES]
     from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
     sleeves = state['sleeves'] or {}
     # one choice per sleeve category: grouped categories share theirs (D60)
     missing, unresolved = [], []
     baseKey = _baseKeyFrom(state['base'])
     for c in results[0]['categories']:
-        if c['name'] in AUTO_SLEEVE_CATEGORIES:
+        if c['name'] in automatic:
             continue
         under = sleeveCategory(c['name'])
         if not sleeves.get(under):
@@ -915,10 +1000,21 @@ def _assembleExport(scenarioId: str, port):
     # An unpriced proposal is built unpriced whatever schedule the
     # scenario happens to remember (D52) - the writer does the same.
     model = buildImplementationRows(
-        results[0], sleeves, AUTO_SLEEVE_CATEGORIES, mandate.mandateSize, variant,
+        results[0], sleeves, automatic, mandate.mandateSize, variant,
         implementation['tacticalTilt'], feeSchedule if includeFees else None, feeLevel,
         mandate.topAccountSize, implementation['volPremium'], basis.currency,
-        customFees=implementation['customFees'])
+        customFees=implementation['customFees'], overlayEntry=overlayEntry)
+    # An overlay's category carries its sleeve automatically; a rule whose
+    # category has no sleeve yet for this type would put weight in the book
+    # with no product, and a table that cannot be priced or rounded closed is
+    # not delivered (D155)
+    bare = [g['category'] for g in model['groups']
+            if g.get('auto') and not g.get('sleeve') and g['weightPct'] > 0]
+    if bare:
+        raise ValidationError(
+            'sleeves',
+            'No sleeve in {} yet for {}: create one in the repository\'s Sleeves view before '
+            'exporting.'.format(' or '.join(bare), variant))
     # Under the custom level a row without a rate leaves its products
     # unpriced, and an unpriced product cannot go on a priced sheet (D96).
     if model.get('unpricedGroups'):
