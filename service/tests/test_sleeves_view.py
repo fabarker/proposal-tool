@@ -332,7 +332,8 @@ process.stdout.write(JSON.stringify({
     assert got['picks'] == ['copy', 'copy', 'ask', 'same', 'ask']
     # weighted cost of the products the catalogue prices, the rest said
     assert round(got['cost']['cost'], 6) == 0.26 and got['cost']['unpriced'] == 0
-    assert got['costText'] == ['0.26%', '0.05% · 1 product unpriced', '—']
+    # no figure while a weight is missing: half the weights would read as the sleeve's (D158 review)
+    assert got['costText'] == ['0.26%', '— · 1 product unpriced', '—']
     assert got['spread'][:3] == [[33.33, 33.33, 33.34], [100], []] and round(got['spread'][3], 6) == 100
     # the dialog: the category's own products by default, cheapest first, a blank last
     assert got['pool'] == ['a', 'b', 'c']
@@ -361,7 +362,7 @@ def test_the_new_sleeve_form_is_wired_as_the_mock_says():
     cancel = _body(source, 'ncCancel')
     assert 'goTo(' in cancel, 'Cancel with changes asks first'
     save = _body(source, 'saveDraft')
-    assert "payload.category = d.create ? d.category" in save and 'label: d.label.trim()' in save
+    assert "payload.category = d.create ? d.category" in save and ': d.label.trim(),' in save
     problems = _body(source, 'draftProblems')
     assert 'ncProblems(d)' in problems
     # the dialog adds through the pure helper, and the old picker never opens on a new sleeve
@@ -457,9 +458,277 @@ def test_the_new_sleeve_forms_state_never_outlives_the_form():
     assert 'ncReset();' in _body(source, 'loadDraft')
     assert 'ncReset();' in _body(source, 'closeRepository')
     keys = source[source.index("if (repo.view === 'sleeves' && nc.dlg"):]
-    assert keys.startswith("if (repo.view === 'sleeves' && nc.dlg && ncOpen())")
+    # the dialog serves the New sleeve and the New edition forms (D158)
+    assert keys.startswith("if (repo.view === 'sleeves' && nc.dlg && ncFormOpen())")
+    assert 'repo.draft.create || repo.draft.edition' in _body(source, 'ncFormOpen')
     assert "nc.ask != null && ncOpen()" in source and "ncOpen() && e.target && e.target.id === 'ncSrcQ'" in source
     # a save in flight cannot be discarded or closed under it
     assert 'if (repo.saving) return;' in _body(source, 'ncCancel')
     # the name sent is the name as stored
     assert 'name: svNormName(d.name)' in _body(source, 'saveDraft')
+
+
+# ---------------------------------------------------------------- D158 ---
+
+def _universeAndRules():
+    from cyrus_pmg.pmgService.scenario import sleeveRules, universe
+    return sleeveRules, universe.keyStrs(), sleeveRules.vocabulary()
+
+
+RULE_SETS = [
+    [{'currency': ['GBP']}],
+    [{'currency': ['GBP', 'EUR'], 'riskLevel': ['Moderate', 'ModAgg']}],
+    [{'currency': ['USD'], 'allocationType': ['Full']}, {'riskLevel': ['LowVol'], 'allocationType': ['Full']}],
+    [{'allocationType': ['NA']}],
+    [{'riskLevel': ['All Equity']}, {'currency': ['CHF'], 'riskLevel': ['Conservative']}],
+    [{'currency': ['GBP'], 'allocationType': ['Full']}, {'currency': ['USD'], 'allocationType': ['Core']}],
+]
+
+ROUND_TRIP_JS = """
+const vocab = %s, combos = %s, sets = %s;
+const out = sets.map(r => {
+  const g = edGridOf(r, vocab);
+  if (!g.ok) return { ok: false, why: g.why };
+  const back = edRulesOf(g, vocab);
+  const a = edApplies(r, combos), b = edApplies(back, combos);
+  return { ok: true, same: JSON.stringify(a) === JSON.stringify(b), back: back,
+           again: JSON.stringify(edGridOf(back, vocab)) === JSON.stringify(g) };
+});
+const every = {}; vocab.currency.forEach(c => vocab.riskLevel.forEach(r => every[c + '|' + r] = 1));
+const col = {}; vocab.riskLevel.forEach(r => col['EUR|' + r] = 1);
+process.stdout.write(JSON.stringify({ out: out,
+  everyone: edRulesOf({ alloc: null, cells: every }, vocab),
+  eurFull: edRulesOf({ alloc: ['Full'], cells: col }, vocab),
+  none: edRulesOf({ alloc: null, cells: {} }, vocab),
+  empty: edGridOf([{ currency: [], riskLevel: [], allocationType: [] }], vocab) }));
+"""
+
+WORDS_JS = """
+const labels = { riskLevel: { ConsMod: 'Conservative-Moderate', LowVol: 'Low Vol' }, allocationType: { NA: 'All equity' } };
+const keys = ['USD|LowVol|Full|0', 'USD|LowVol|Core|0', 'GBP|LowVol|Full|0', 'GBP|Moderate|Full|1', 'GBP|All Equity|NA|NA', 'EUR|Moderate|Core|0'];
+const sibs = [{ label: 'Low risk', rules: [{ riskLevel: ['LowVol'] }] }];
+const vocab = { currency: ['USD', 'GBP', 'EUR'], riskLevel: ['LowVol', 'Moderate', 'All Equity'], allocationType: ['Full', 'Core', 'NA'] };
+const t = edLabelTaken('  low   RISK ', sibs);
+process.stdout.write(JSON.stringify({
+  words: edRulesWords([{ currency: ['GBP', 'EUR'], riskLevel: ['ConsMod'] }, { allocationType: ['NA'] }], labels),
+  blank: edRulesWords([{ currency: [] }], labels),
+  names: keys.map(k => edPortfolioName(k, labels)),
+  cov: edCoverage(keys, [{ currency: ['GBP'] }], sibs),
+  cells: edCells(keys, [{ currency: ['GBP'] }], sibs, vocab, ['Full']),
+  taken: [t && t.label, edLabelTaken('GBP', sibs), edLabelTaken('  ', sibs)],
+  create: [edCreateLabel(' GBP  ex-Alts ', 43), edCreateLabel('', 3), edCreateLabel('X', 1)],
+  value: [edValueLabel('allocationType', 'NA', labels), edValueLabel('riskLevel', 'Agg', labels)]
+}));
+"""
+
+
+def test_the_new_edition_forms_reading_of_rules_is_the_servers():
+    """D158: the form counts the portfolios a rule set names exactly as the
+    server's sleeveRules.applicability does, over the real universe."""
+    sleeveRules, keys, vocab = _universeAndRules()
+    got = _node(_helpers(_source()) + '\nconst keys = %s, sets = %s;\n'
+                'process.stdout.write(JSON.stringify(sets.map(r => edApplies(r, keys))));\n'
+                % (json.dumps(keys), json.dumps(RULE_SETS)))
+    for rules, applies in zip(RULE_SETS, got):
+        assert applies == sleeveRules.applicability(sleeveRules.normalise(rules)), rules
+
+
+def test_the_grid_draws_rules_exactly_or_says_it_cannot():
+    """D158: rules -> grid -> rules names the same portfolios over every
+    combination of the vocabulary (not only the portfolios that exist);
+    rules with different allocations in different rules are refused by the
+    grid rather than changed; what the grid writes the server accepts."""
+    sleeveRules, keys, vocab = _universeAndRules()
+    combos = ['%s|%s|%s|0' % (c, r, a) for c in vocab['currency'] for r in vocab['riskLevel']
+              for a in vocab['allocationType']]
+    got = _node(_helpers(_source()) + ROUND_TRIP_JS % (json.dumps(vocab), json.dumps(combos), json.dumps(RULE_SETS)))
+    for rules, r in zip(RULE_SETS, got['out']):
+        if rules is RULE_SETS[-1]:
+            assert not r['ok'] and 'different allocations' in r['why']
+            continue
+        assert r['ok'] and r['same'] and r['again'], (rules, r)
+        sleeveRules.normalise(r['back'])          # the server takes what the grid writes
+    assert got['out'][0]['back'] == [{'currency': ['GBP']}]
+    # every cell under every allocation still names something, so the count
+    # (every portfolio) is what refuses it, not an empty rule
+    assert got['everyone'] == [{'allocationType': vocab['allocationType']}]
+    assert got['eurFull'] == [{'currency': ['EUR'], 'allocationType': ['Full']}]
+    assert got['none'] == []
+    assert got['empty'] == {'ok': True, 'alloc': None, 'cells': {}}
+
+
+def test_the_new_edition_forms_words_counts_and_clashes():
+    """D158: values in words, portfolio names, who keeps what, a clash, the
+    label rule (one label per name, whatever its spacing or capitals) and
+    the Create button's words."""
+    got = _node(_helpers(_source()) + WORDS_JS)
+    assert got['words'] == ('GBP or EUR portfolios at Conservative-Moderate risk, any allocation; '
+                            'or Portfolios in any currency at any risk level, All equity')
+    assert got['blank'] == ''
+    assert got['names'] == ['USD Low Vol Full', 'USD Low Vol Core', 'GBP Low Vol Full', 'GBP Moderate Full ex-RAs',
+                            'GBP All Equity', 'EUR Moderate Core']
+    cov = got['cov']
+    assert cov['mine'] == ['GBP|LowVol|Full|0', 'GBP|Moderate|Full|1', 'GBP|All Equity|NA|NA']
+    assert cov['clash'] == [{'label': 'Low risk', 'keys': ['GBP|LowVol|Full|0']}]
+    assert (cov['others'], cov['fallback'], cov['universe']) == (2, 1, 6)
+    gl = got['cells']['GBP|LowVol']
+    assert (gl['n'], gl['mine'], gl['claimed'], gl['clash']) == (1, 1, ['Low risk'], 1)
+    assert got['cells']['GBP|All Equity']['n'] == 0          # no all-equity portfolio under Full
+    assert got['taken'] == ['Low risk', None, None]
+    assert got['create'] == ['Create the GBP ex-Alts edition for 43 portfolios', 'Create edition',
+                             'Create the X edition for 1 portfolio']
+    assert got['value'] == ['All equity', 'Agg']
+
+
+def test_the_new_edition_form_is_wired_as_the_mock_says():
+    """D158: an edition draft renders its own form with its own Create and
+    Cancel; it starts as a copy of the fallback with one rule to tick in; it
+    sends only the rules that name something and its label as one name; the
+    Rules | Grid switch is remembered inside try/catch; the dialog is modal
+    for either form; Escape and Cancel go back to the sleeve through the
+    guard; rules read back in words."""
+    src = _source()
+    page = _body(src, 'svPageHtml')
+    assert 'if (d.edition) return neFormHtml(inDrawer);' in page
+    assert page.index('neFormHtml') < page.index('svEditing(')
+    nd = _body(src, 'newDraft')
+    assert 'draft.rules = [neBlankRule()]' in nd and 's.fallback' in nd and 'draft.sourceId' in nd
+    save = _body(src, 'saveDraft')
+    assert 'svNormName(d.label)' in save and 'filter(function (r) { return !ruleIsEmpty(r); })' in save
+    mode = _body(src, 'neMode')
+    assert 'try {' in mode and 'NE_MODE_KEY' in mode
+    assert 'try { window.localStorage.setItem(NE_MODE_KEY' in _body(src, 'neSetMode')
+    assert 'ncFormOpen()' in _body(src, 'svAfterRender')
+    assert 'neCancel()' in _body(src, 'svUp')
+    cancel = _body(src, 'neCancel')
+    assert 'goTo(back)' in cancel and 'repo.dirty' in cancel and 'if (repo.saving) return;' in cancel
+    assert 'describeRules' not in _body(src, 'svWhoHtml')
+    # values in words in the existing edition editor too
+    assert 'edValueLabel(f, v, neLabels())' in _body(src, 'rulesHtml')
+
+
+
+FUZZ_JS = """
+const keys = %s, vocab = %s, sets = %s, combos = %s, sibs = %s;
+process.stdout.write(JSON.stringify(sets.map(r => {
+  const g = edGridOf(r, vocab);
+  const back = g.ok ? edRulesOf(g, vocab) : null;
+  const reset = edResetGrid(r, vocab);
+  const cov = edCoverage(keys, r, sibs);
+  return { a: edApplies(r, keys), ok: g.ok, back: back,
+           same: back ? JSON.stringify(edApplies(back, combos)) === JSON.stringify(edApplies(r, combos)) : null,
+           cover: Object.keys(edCoverCells(r, vocab)).sort(), reset: reset ? Object.keys(reset.cells).sort() : null,
+           clash: cov.clash, dup: edDupRule(r, vocab) };
+})));
+"""
+
+
+def test_a_fuzz_of_rule_sets_agrees_with_the_server():
+    """D158 review: random rule sets - counts equal the server's
+    applicability, a drawable set round-trips through the grid exactly and
+    the server takes what the grid writes, "start the grid from the cells
+    they cover" reaches every cell the rules reach (a rule naming only an
+    allocation reaches them all), and a clash with a sibling is exactly
+    sleeveRules.overlap."""
+    import random
+    sleeveRules, keys, vocab = _universeAndRules()
+    rnd = random.Random(158)
+
+    def rule():
+        out = {}
+        for f in sleeveRules.FIELDS:
+            out[f] = [] if rnd.random() < 0.45 else rnd.sample(vocab[f], rnd.randint(1, len(vocab[f])))
+        return out
+    sets = [[rule() for _ in range(rnd.randint(1, 3))] for _ in range(300)]
+    sibs = [{'label': 'GBP', 'rules': [{'currency': ['GBP']}]}, {'label': 'Low', 'rules': [{'riskLevel': ['LowVol', 'Conservative']}]}]
+    combos = ['%s|%s|%s|0' % (c, r, a) for c in vocab['currency'] for r in vocab['riskLevel'] for a in vocab['allocationType']]
+    got = _node(_helpers(_source()) + FUZZ_JS % tuple(json.dumps(x) for x in (keys, vocab, sets, combos, sibs)))
+    checked = 0
+    for rules, o in zip(sets, got):
+        live = [{f: v for f, v in r.items() if v} for r in rules if any(r.values())]
+        if o['dup'] != -1:
+            continue                                   # the client refuses it, as the server does
+        norm = sleeveRules.normalise(live)
+        assert o['a'] == sleeveRules.applicability(norm), rules
+        if o['ok']:
+            assert o['same'], rules
+            sleeveRules.normalise(o['back'])
+        cover = sorted({'%s|%s' % (k.split('|')[0], k.split('|')[1]) for k in combos
+                        if any((not r.get('currency') or k.split('|')[0] in r['currency'])
+                               and (not r.get('riskLevel') or k.split('|')[1] in r['riskLevel']) for r in live)})
+        assert o['cover'] == cover and (o['reset'] or []) == cover, rules
+        for c in o['clash']:
+            sib = [s_ for s_ in sibs if s_['label'] == c['label']][0]
+            assert c['keys'] == sleeveRules.overlap(norm, sib['rules']), (rules, c['label'])
+        assert {c['label'] for c in o['clash']} == {s_['label'] for s_ in sibs if sleeveRules.overlap(norm, s_['rules'])}
+        checked += 1
+    assert checked > 200
+
+
+REVIEW_JS = r"""
+const vocab = { currency: ['USD', 'GBP'], riskLevel: ['LowVol', 'Moderate'], allocationType: ['Full', 'Core', 'NA'] };
+const keys = ['USD|LowVol|Full|0', 'USD|Moderate|Full|0', 'GBP|LowVol|Full|0', 'GBP|Moderate|Core|0'];
+process.stdout.write(JSON.stringify({
+  allocOnly: edResetGrid([{ allocationType: ['Full'] }], vocab),
+  nothing: edResetGrid([{ currency: [] }], vocab),
+  noneVsAll: edGridOf([{ currency: ['USD'] }, { currency: ['GBP'], allocationType: ['Full', 'Core', 'NA'] }], vocab).ok,
+  dup: [edDupRule([{ currency: ['GBP'] }, { currency: ['GBP'], allocationType: ['Full', 'Core', 'NA'] }], vocab),
+        edDupRule([{ currency: ['GBP'] }, {}, { currency: ['USD'] }], vocab)],
+  keeps: edCoverage(keys, [{ currency: ['GBP'], riskLevel: ['Moderate'] }], [{ label: 'Low', rules: [{ riskLevel: ['LowVol'] }] }]).keeps,
+  keepsWords: [edKeepsWords(1, [{ label: 'Low', n: 2 }], true), edKeepsWords(3, [], true), edKeepsWords(0, [{ label: 'A', n: 1 }, { label: 'B', n: 2 }], false)],
+  groups: edGroups(['GBP|LowVol|Full|0', 'USD|LowVol|Full|0', 'GBP|Moderate|Core|0']).map(g => [g.currency, g.keys.length]),
+  reserved: [edLabelReserved(' Fallback '), edLabelReserved('GBP')],
+  sig: edProductsSig({ products: [{ productId: 'b', weight: 0.4 }, { productId: 'a', weight: 0.6 }] })
+     === edProductsSig({ products: [{ productId: 'a', weight: 0.6 }, { productId: 'b', weight: 0.4 }] }),
+  byName: svByName([{ id: 1, name: 'B', label: 'GBP' }, { id: 2, name: 'A', label: '' }, { id: 3, name: 'b', label: '' }, { id: 4, name: 'B', label: 'EUR' }]).map(g => g.map(s => s.id)),
+  library: svSort([{ id: 9, name: 'P', label: 'GBP', category: 'E', variant: 'T' }, { id: 3, name: 'P', label: '', category: 'E', variant: 'T' },
+                   { id: 5, name: 'P', label: 'EUR', category: 'E', variant: 'T' }], null, { categories: ['E'], variants: ['T'] }).map(s => s.id)
+}));
+"""
+
+
+def test_the_new_edition_forms_review_fixes_in_its_pure_helpers():
+    """D158 review: starting the grid from rules that name only an allocation
+    reaches every cell (never a blank grid); none and every allocation are
+    the same choice; a repeated rule is caught; who keeps what is counted
+    and said; long lists group by currency; "fallback" is not a label; a
+    fallback's products read the same whatever their order; editions sit
+    beside their fallback in the cards and the table's library order."""
+    got = _node(_helpers(_source()) + REVIEW_JS)
+    assert got['allocOnly'] == {'alloc': None, 'cells': {'USD|LowVol': 1, 'USD|Moderate': 1, 'GBP|LowVol': 1, 'GBP|Moderate': 1}}
+    assert got['nothing'] is None
+    assert got['noneVsAll'] is True
+    assert got['dup'] == [1, -1]
+    assert got['keeps'] == [{'label': 'Low', 'n': 2}]
+    assert got['keepsWords'] == ['the fallback (1) or the Low edition (2)', 'the fallback (3)', 'the A edition (1) or the B edition (2)']
+    assert got['groups'] == [['GBP', 2], ['USD', 1]]
+    assert got['reserved'] == [True, False]
+    assert got['sig'] is True
+    assert got['byName'] == [[3, 4, 1], [2]]
+    assert got['library'] == [3, 5, 9]
+
+
+def test_the_new_edition_forms_review_wiring():
+    """D158 review: a kept draft whose sleeve was archived never throws; the
+    note is the edition's own; the drawer's Close cancels through the form;
+    a server refusal on the rules goes to the rules; the grid is one Tab stop;
+    an empty extra rule never blocks Create; the narrow bar carries Cancel."""
+    src = _source()
+    kept = _body(src, 'svOpenKept')
+    assert 'if (m && !target)' in kept and 'target.id' in kept and 'of.id' not in kept
+    nd = _body(src, 'newDraft')
+    assert "draft.note = '';" in nd and 'fbSig' in nd
+    assert 'else if (neOpen()) neCancel();' in src
+    save = _body(src, 'saveDraft')
+    assert "rules: d.edition ?" in save and '[data-necreate]' in save
+    grid = _body(src, 'neGridHtml')
+    assert 'tabindex="\' + neTab(' in grid and 'aria-disabled' in grid and ' disabled' not in grid.replace('aria-disabled', '')
+    probs = _body(src, 'neProblems')
+    assert 'edDupRule' in probs and 'Rule \' + (empties' not in probs
+    assert 'data-necancel' in _body(src, 'neBarHtml') and 'data-nccancel' in _body(src, 'ncBarHtml')
+    assert 'nc-create' in _body(src, 'neBarHtml') and 'nc-create' in _body(src, 'ncBarHtml')
+    # a kept draft whose sleeve was archived is still offered, with words, not dropped
+    assert 'return null;     /* what it belonged to is gone */' not in _body(src, 'svReadKeptOffer')
+    assert 'svKeptGoneText' in _body(src, 'svKeptOfferHtml')
+    revive = _body(src, 'ncRevive')
+    assert 'neBlankRule()' in revive and 'edProductsSig' in revive

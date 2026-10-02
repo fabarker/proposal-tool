@@ -73,6 +73,22 @@ def vocabulary() -> dict:
     }
 
 
+def portfolioKeys() -> list:
+    """Every strategic portfolio as its key string, in the universe's order:
+    what an edition's rules are judged against (D158). The console reads the
+    rules the way matches() does against these, so it can count, list and map
+    the portfolios as the desk ticks - the save still decides."""
+    return universe.keyStrs()
+
+
+def valueLabels() -> dict:
+    """The words a rule's values are shown in (D158): risk levels by the
+    house's names, and the all-equity "allocation" as what it is. Cosmetic -
+    a rule still names the value."""
+    from .rules import RISK_LEVEL_LABELS
+    return {'riskLevel': dict(RISK_LEVEL_LABELS), 'allocationType': {NA: 'All equity'}}
+
+
 def fieldsOf(key: PortfolioKey) -> dict:
     """The three fields a rule is judged against, for one portfolio."""
     return {'currency': key.currency, 'riskLevel': key.riskLevel,

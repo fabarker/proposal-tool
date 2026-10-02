@@ -1351,6 +1351,7 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
     padding:10px 22px;background:var(--surface);border-top:1px solid var(--sv-frame);box-shadow:0 -4px 12px rgba(16,24,40,.10)}
   .sv-drawer .nc-mbar{margin:14px -18px -16px;padding:10px 18px}
   .nc-mbar-s{flex:1 1 160px;font-size:14px;font-weight:600}
+  .nc-side .nc-go{display:none}
   .nc-mbar-s.open{color:#7A4A00}
   .nc-mbar-s.ok{color:#155F2E}
 }
@@ -1370,6 +1371,99 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 @media (max-width:900px){
   .repo-b{grid-template-columns:180px 220px minmax(0,1fr)}
   .cat-b{grid-template-columns:180px minmax(0,1fr)}
+}
+/* below 900px the body's gutter is 14px, so the sticky Create bar reaches
+   its edges by that much, not by the wide gutter's 22px (D158) */
+@media (max-width:900px){
+  .sv-body .nc-mbar{margin:14px -14px -12px;padding:10px 14px}
+  .sv-body .sv-drawer .nc-mbar,.sv-drawer .nc-mbar{margin:14px -18px -16px;padding:10px 18px}
+}
+/* ---- the New edition form (D158): the D157 form and summary, with who gets
+   it chosen as rules read back in words or painted on a currency x risk grid */
+.ne-intro{margin:0 0 14px;font-size:14px;color:#173E80;background:#EAF1FC;border:1px solid #91B1E3;border-radius:8px;padding:10px 12px;line-height:1.45}
+.ne-mode{margin:0 0 12px;padding:0;border:0;background:none}
+.ne-rules{display:grid;gap:0}
+.ne-rule{background:var(--surface);border-color:var(--sv-frame)}
+.ne-rule .repo-rule-h{font-size:12.5px}
+.ne-rule .repo-rule-f{grid-template-columns:92px minmax(0,1fr)}
+.ne-rule .repo-rule-f .lbl{font-size:13.5px;color:#16243A;font-weight:600}
+.ne-rule .repo-chip{font-size:13px;padding:3px 8px}
+.ne-rw{margin:2px 0 0;font-size:13.5px;color:#173E80;line-height:1.4}
+.ne-or{margin:6px 0;font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sv-ink2);text-align:center}
+.ne-rules .repo-add{margin-top:10px;justify-self:start;font-family:var(--f-body);text-transform:none;letter-spacing:0;font-size:13.5px}
+.ne-count{margin:12px 0 0;font-size:14.5px;line-height:1.5}
+.ne-count .sv-hint{font-size:13.5px}
+.ne-which{list-style:none;margin:8px 0 0;padding:10px 12px;border:1px solid var(--sv-rule);border-radius:8px;background:var(--sv-zone2);
+  font-size:13.5px;line-height:1.5;max-height:220px;overflow:auto}
+.ne-which li+li{margin-top:6px}
+.ne-clash{margin:10px 0 0;font-size:13.5px;color:#7A1A12;background:#FDECEA;border:1px solid #E5A29B;border-radius:6px;padding:8px 10px;line-height:1.45;
+  max-height:160px;overflow:auto}
+.ne-allocs{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0 0 10px}
+.ne-allocs .nc-lab{margin:0}
+.ne-achips{display:inline-flex;flex-wrap:wrap;gap:6px}
+.ne-achip{appearance:none;font:inherit;font-size:13.5px;border:1px solid var(--sv-frame);border-radius:16px;background:var(--surface);color:var(--sv-ink2);
+  padding:4px 11px;cursor:pointer}
+.ne-achip.on{background:#16243A;border-color:#16243A;color:#fff;font-weight:600}
+.ne-gridwrap{overflow-x:auto;border:1px solid var(--sv-frame);border-radius:8px}
+.ne-grid{border-collapse:separate;border-spacing:0;width:100%;min-width:480px;background:var(--surface);table-layout:fixed}
+.ne-grid th,.ne-grid td{padding:0;border-bottom:1px solid var(--sv-rule);border-right:1px solid var(--sv-rule)}
+.ne-grid tr:last-child th,.ne-grid tr:last-child td{border-bottom:0}
+.ne-grid th:last-child,.ne-grid td:last-child{border-right:0}
+.ne-grid thead th{background:var(--sv-zone);border-bottom:1px solid var(--sv-frame)}
+.ne-grid tbody th{background:var(--sv-zone);text-align:left;width:1%;white-space:nowrap}
+.ne-corner{width:170px}
+.ne-hd{appearance:none;width:100%;border:0;background:none;font:inherit;font-size:13.5px;font-weight:600;color:#16243A;padding:8px 10px;cursor:pointer;text-align:inherit}
+.ne-hd:hover{box-shadow:inset 0 0 0 2px #1F5FBF}
+.ne-hd[aria-pressed="true"]{background:#D6E2F5}
+.ne-hd[aria-pressed="mixed"]{box-shadow:inset 3px 0 0 #1F5FBF}
+thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
+.ne-hd[aria-pressed="mixed"]:hover{box-shadow:inset 3px 0 0 #1F5FBF,inset 0 0 0 2px #1F5FBF}
+.ne-cell{appearance:none;width:100%;min-height:46px;border:0;background:var(--surface);font:inherit;color:var(--ink);padding:5px 8px;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;text-align:center}
+.ne-cell b{font-size:14.5px;font-weight:600}
+.ne-cell small{font-size:11.5px;line-height:1.2;color:var(--sv-ink2);overflow-wrap:anywhere}
+.ne-cell.empty{cursor:default;color:var(--sv-ink2);background:var(--sv-zone2)}
+.ne-cell.claimed{background:repeating-linear-gradient(135deg,#E7ECF3 0 6px,#F7F9FB 6px 12px)}
+/* painted wins over empty: a painted cell with no portfolio under the
+   allocations chosen still reads as painted (D158 review) */
+.ne-cell.on{background:#1F5FBF;color:#fff;cursor:pointer}
+.ne-cell.on small{color:#E6EEFB}
+.ne-cell.clash{background:#B42318;color:#fff}
+.ne-cell.clash small{color:#FFE3E0}
+/* hover adds a ring and never replaces what the cell says (D158 review) */
+.ne-cell:hover:not([aria-disabled="true"]){box-shadow:inset 0 0 0 2px #1F5FBF}
+.ne-cell.on:hover,.ne-cell.clash:hover{box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 4px #16243A}
+.ne-cell:focus-visible,.ne-hd:focus-visible,.ne-achip:focus-visible{outline:2px solid #1F5FBF;outline-offset:-3px}
+.ne-cell.on:focus-visible,.ne-cell.clash:focus-visible{outline-color:#fff}
+.ne-legend{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:8px 0 0;font-size:13px;color:var(--sv-ink2)}
+.ne-legend .k{display:inline-block;width:14px;height:14px;border:1px solid var(--sv-frame);border-radius:3px;margin-right:5px;vertical-align:-2px;background:var(--surface)}
+.ne-legend .k.on{background:#1F5FBF;border-color:#1F5FBF}
+.ne-legend .k.claimed{background:repeating-linear-gradient(135deg,#C9D3E0 0 3px,#F7F9FB 3px 6px)}
+.ne-legend .k.clash{background:#B42318;border-color:#B42318}
+.ne-rwall{margin:10px 0 0;font-size:13.5px;color:#173E80;line-height:1.45}
+.ne-nogrid{font-size:14px;color:#6B4500;background:var(--sv-edit);border:1px solid var(--sv-edit-line);border-radius:8px;padding:10px 12px;line-height:1.45}
+.ne-nogrid p{margin:0 0 8px}
+.ne-nogrid p:last-child{margin:0}
+.ne-nogrid .btn{font-family:var(--f-body);text-transform:none;letter-spacing:0;font-size:13.5px}
+.ne-undo{margin:0 0 10px;font-size:13.5px;color:#173E80;background:#EAF1FC;border:1px solid #91B1E3;border-radius:6px;padding:7px 10px}
+.ne-where{margin:0 0 10px}
+#neWhoErr:focus{outline:none}
+#neWhoErr:focus-visible .nc-err{outline:2px solid #1F5FBF;outline-offset:2px}
+.sv-tile-e{font-size:13px;color:var(--sv-ink2);font-weight:400}
+.sv-kept.is-gone{background:#FFF1D6;border-color:#D9AD55}
+.ne-cbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--sv-zone);border:1px solid var(--sv-rule)}
+.ne-cbar i{display:block;height:100%}
+.ne-cbar i.mine,.ne-key i.mine{background:#1F5FBF}
+.ne-cbar i.clash,.ne-key i.clash{background:#B42318}
+.ne-cbar i.others,.ne-key i.others{background:repeating-linear-gradient(135deg,#9AA8B8 0 3px,#D5DCE5 3px 6px)}
+.ne-cbar i.fb,.ne-key i.fb{background:#C9D3E0}
+.ne-key{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;font-size:12.5px;color:var(--sv-ink2)}
+.ne-key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+@media (max-width:640px){
+  .ne-corner{min-width:110px}
+  .ne-cell{min-height:40px;padding:4px}
+  .ne-cell small{display:none}
+  .ne-rule .repo-rule-f{grid-template-columns:1fr}
 }
 """
 

@@ -589,7 +589,13 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
     if len(name) > NAME_MAX:
         raise ValidationError('name', 'Keep the name to {} characters.'.format(NAME_MAX))
     note = (note or '').strip()
-    label = (label or '').strip()
+    # an edition label is spelled like a name (D158): one space between words,
+    # and one label per name whatever its capitals - "gbp" beside "GBP" is the
+    # same edition twice; "G BP" is a different label
+    label = normaliseName(label)
+    if label.lower() in RESERVED_LABELS:
+        raise ValidationError('label', '"{}" is what the console calls the edition without rules; '
+                                       'give this edition another label.'.format(label))
     if len(label) > NAME_MAX:
         raise ValidationError('label', 'Keep the edition label to {} characters.'.format(NAME_MAX))
     rules = sleeveRules.normalise(rules)
@@ -615,11 +621,11 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
                 'capitals or spacing are the same name. Use {} to add an edition to it, or choose '
                 'another name.'.format(other['name'], category, variant, other['name']))
     for sib in siblings:
-        if sib['label'] == label:
+        if _nameKey(sib['label']) == _nameKey(label):
             if label:
                 raise ValidationError(
                     'label', '{} already has a {} edition in {} under {}.'.format(
-                        name, label, category, variant))
+                        name, sib['label'], category, variant))
             # a second fallback is, from where the desk stands, the name
             # clash it always was: the same words, on the same field
             raise ValidationError(
@@ -674,6 +680,10 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         raise ValidationError(
             'weights', 'Weights sum to {}%; a sleeve must sum to exactly 100%.'.format(_pctText(total * 100.0)))
     return name, note, cleaned, label, rules
+
+
+#: labels the console uses for the edition without rules (D158)
+RESERVED_LABELS = ('fallback', 'the fallback')
 
 
 def normaliseName(name) -> str:

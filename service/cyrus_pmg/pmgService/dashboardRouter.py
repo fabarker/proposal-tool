@@ -283,6 +283,10 @@ def getRepository(caller=Depends(requireAdmin)):
             # strategic universe as loaded (D89)
             'ruleVocabulary': sleeveRules.vocabulary(),
             'ruleFields': list(sleeveRules.FIELDS),
+            # every strategic portfolio and the words for a rule's values, so
+            # the New edition form can count, list and map them (D158)
+            'strategicPortfolios': sleeveRules.portfolioKeys(),
+            'ruleLabels': sleeveRules.valueLabels(),
             'sleeves': sleeveRepo.listAll(),
             'archived': sleeveRepo.listArchived(),
             'orphans': sleeveRepo.orphanProducts(),

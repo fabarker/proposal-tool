@@ -7742,18 +7742,28 @@ function newDraft(create, edition) {
 
      An EDITION draft (D89) is the third kind: another edition of a name the
      library already has, in the same book and category. It starts as a copy
-     of the edition it was taken from - the desk edits rather than retypes -
-     with the name locked and the label and rules its own to fill in. */
+     of the name's fallback - the version the other portfolios keep - with the
+     name locked, the label, note and rules its own to fill in (D158). */
   var draft = { id: null, name: '', note: '', label: '', rules: [], products: [] };
   if (edition) {
     var from = sleeveById(edition.ofId);
     draft.edition = { ofId: edition.ofId, variant: from ? from.variant : repo.variant,
                       category: from ? from.category : repo.category };
     draft.name = from ? from.name : edition.name;
-    draft.note = from ? (from.note || '') : '';
-    draft.products = from ? from.products.map(function (row) {
+    /* the note is the edition's own, shown on its form - never copied unseen */
+    draft.note = '';
+    /* a copy of the fallback - the version every other portfolio keeps - and
+       marked against it, whichever edition it was started from (D158) */
+    var fb = from ? siblingsOf(draft).concat([from]).filter(function (s) { return s.fallback; })[0] : null;
+    var src = fb || from;
+    draft.sourceId = src ? src.id : null;
+    /* what the fallback held when this started, so a kept draft can tell if it changed */
+    draft.edition.fbSig = edProductsSig(src);
+    draft.products = src ? src.products.map(function (row) {
       return { productId: row.productId, weightPct: Math.round(row.weight * 10000) / 100 };
     }) : [];
+    /* the rules builder shows one rule to tick in */
+    draft.rules = [neBlankRule()];
     return draft;
   }
   if (create) {
@@ -7847,6 +7857,7 @@ function draftProblems() {
   var d = repo.draft, out = [];
   /* a new sleeve is judged by its own form, field by field (D157) */
   if (d.create) return ncProblems(d).map(function (p) { return p.m; });
+  if (d.edition) return neProblems(d).map(function (p) { return p.m; });
   if (!d.name.trim()) out.push('Give the sleeve a name.');
   if (d.create && !(d.variants || []).length) out.push('Choose at least one implementation type.');
   if (d.create && !d.category) out.push('Choose a category.');
@@ -8101,6 +8112,7 @@ function loadDraft(sleeveId, create, edition) {
   sv.editing = false;                          /* a sleeve opens to be read (D156) */
   ncReset();                                   /* the New sleeve form's own state goes with any draft (D157) */
   if (sv.createdFrom && sv.createdFrom.ids.indexOf(repo.sleeveId) === -1) sv.createdFrom = null;
+  if (sv.createdEdition && sv.createdEdition.id !== repo.sleeveId) sv.createdEdition = null;
   /* an existing edition already knows how many portfolios it names */
   repo.preview = entry && entry.rules && entry.rules.length ? { applies: entry.applies } : null;
   repo.previewStamp += 1;
@@ -8207,7 +8219,7 @@ function resolveLeaving(discard) {
   /* where the held move meant to put focus goes with it; keeping the edit
      puts focus back on the editing controls (D156) */
   sv.focus = discard ? sv.pending
-    : (sv.editFocus ? sv.editFocus + '||' : '') + '[data-reposave]||#repoName||#repoNote';
+    : (sv.editFocus ? sv.editFocus + '||' : '') + '[data-reposave]||[data-necreate]||[data-nccreate]||#repoName||#repoLabel||#repoNote';
   sv.pending = null;
   if (!discard || !leaving) { render(); return; }
   /* discarding means discarding: the copy kept against a reload goes with the
@@ -8224,7 +8236,10 @@ async function saveDraft() {
   var d = repo.draft;
   var payload = {
     name: svNormName(d.name), note: d.note.trim(),
-    label: d.label.trim(), rules: cleanRules(d.rules),
+    /* an edition sends its label as one name, and only the rules that name
+       something - an empty rule is the builder's, not the edition's (D158) */
+    label: d.edition ? svNormName(d.label) : d.label.trim(),
+    rules: d.edition ? cleanRules(d.rules).filter(function (r) { return !ruleIsEmpty(r); }) : cleanRules(d.rules),
     products: d.products.map(function (r) {
       return { productId: r.productId, weight: Math.round(r.weightPct * 10000) / 1000000 };
     })
@@ -8249,9 +8264,11 @@ async function saveDraft() {
       if (r.status === 409) repo.stale = r.body.error || 'Someone else saved this sleeve since you opened it.';
       else if (r.body.field) repo.fieldError = { field: r.body.field, message: r.body.error };
       else repo.error = r.body.error || ('Could not save (' + r.status + ')');
-      var fieldIds = { name: 'repoName', label: 'repoLabel', note: 'repoNote', category: 'ncCats', variants: 'ncTypes', products: 'ncRows', weights: 'ncRows' };
-      sv.focus = (repo.fieldError && fieldIds[repo.fieldError.field] ? '#' + fieldIds[repo.fieldError.field] + '||' : '')
-        + (repo.stale ? '[data-svreload]||' : '') + '[data-svstate]||[data-svcancel]||[data-nccreate]';
+      var fieldAt = { name: '#repoName', label: '#repoLabel', note: '#repoNote', category: '#ncCats', variants: '#ncTypes', products: '#ncRows', weights: '#ncRows',
+                      /* the New edition form's rules: the grid, or the first chip (D158 review) */
+                      rules: d.edition ? (neMode() === 'grid' ? '.ne-cell.clash||[data-negcell][tabindex="0"]||#neWhoErr' : '[data-reporule]||#neWhoErr') : '#repoLabel' };
+      sv.focus = (repo.fieldError && fieldAt[repo.fieldError.field] ? fieldAt[repo.fieldError.field] + '||' : '')
+        + (repo.stale ? '[data-svreload]||' : '') + '[data-svstate]||[data-svcancel]||[data-nccreate]||[data-necreate]';
     } else {
       var madeAll = r.body.sleeves || [r.body.sleeve];
       var list = repo.data.sleeves;
@@ -8284,6 +8301,12 @@ async function saveDraft() {
       repo.category = here.category; repo.variant = here.variant;
       var trailOpen = repo.historyOpen && repo.history && repo.history.sleeveId === here.id;
       loadDraft(here.id);
+      /* a new edition says so on its page, for this visit (D158) */
+      if (d.edition) {
+        var covAt = neHasKeys() ? neCov(d) : null;
+        sv.createdEdition = { id: last.id, label: last.label, name: last.name, applies: last.applies,
+                              keeps: covAt ? edKeepsWords(covAt.fallback, covAt.keeps.filter(function (k) { return k.n; }), !!neFallbackOf(last)) : '' };
+      }
       if (d.create) sv.createdFrom = { ids: madeAll.map(function (m) { return m.id; }), made: last.name,
                                        under: madeAll.map(function (m) { return m.variant; }),
                                        name: from ? from.name : (d.sourceName || null), variant: from ? from.variant : null };
@@ -8304,7 +8327,9 @@ async function saveDraft() {
       sv.focus = sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle';   /* back on the page, read (D156) */
       /* the outcome, not just the redraw (G2): the revision it became is the
          part an admin checks, and it is the part a screen reader could not see */
-      App.announce('polite', d.create
+      App.announce('polite', d.edition
+        ? 'Created the ' + last.label + ' edition of ' + last.name + ' for ' + svPlural(last.applies || 0, 'portfolio') + '. You are on its page.'
+        : d.create
         ? 'Created ' + last.name + ' under ' + svJoinAnd(madeAll.map(function (m) { return m.variant; }))
           + (from ? ', from a copy of ' + from.name : '') + '. You are on its page.'
         : madeAll.length > 1
@@ -8493,9 +8518,14 @@ function appliesHtml() {
   if (p.error) return '<p class="repo-applies bad">' + esc(p.error) + '</p>';
   var line = 'Applies to ' + p.applies + (p.universe ? ' of ' + p.universe : '') + ' strategic portfolio'
     + (p.applies === 1 ? '' : 's') + '.';
+  /* a long clash reads by currency, every name a click away (D158 review) */
   var clash = (p.overlaps || []).map(function (o) {
+    var groups = edGroups(o.keys);
     return 'Overlaps the ' + esc(o.label) + ' edition on ' + o.count + ' portfolio' + (o.count === 1 ? '' : 's')
-      + ': ' + esc(o.keys.slice(0, 4).join(', ')) + (o.keys.length > 4 ? ', …' : '') + '.';
+      + ': ' + esc(groups.map(function (g) { return g.currency + ' ' + g.keys.length; }).join(', ')) + '. '
+      + (repo.appliesAll ? esc(o.keys.map(function (k) { return edPortfolioName(k, neLabels()); }).join(', ')) + '. ' : '')
+      + '<button type="button" class="nc-link" data-repoappliesall aria-expanded="' + !!repo.appliesAll + '">'
+      + (repo.appliesAll ? 'Hide which' : 'Show which') + '</button>';
   });
   return '<p class="repo-applies' + (clash.length ? ' bad' : ' ok') + '">' + esc(line)
     + (clash.length ? ' ' + clash.join(' ') + ' Narrow one of them; exactly one edition may apply to a portfolio.' : '')
@@ -8503,7 +8533,9 @@ function appliesHtml() {
 }
 function updateApplies() {
   var el = document.getElementById('repoApplies');
-  if (el) el.innerHTML = appliesHtml(); else render();
+  /* the New edition form has no such line: its own redraw takes the server's
+     answer, and a full render would drop focus from the cell just ticked (D158) */
+  if (el) el.innerHTML = appliesHtml(); else if (!neOpen()) render();
   updateTotals();
 }
 function rulesHtml() {
@@ -8515,7 +8547,7 @@ function rulesHtml() {
         var on = (rule[f] || []).indexOf(v) !== -1;
         return '<label class="repo-chip' + (on ? ' on' : '') + '"><input type="checkbox" data-reporule="' + i
           + '" data-repofld="' + esc(f) + '" data-repoval="' + esc(v) + '"' + (on ? ' checked' : '') + '> '
-          + esc(v) + '</label>';
+          + esc(edValueLabel(f, v, neLabels())) + '</label>';
       }).join('');
       return '<div class="repo-rule-f"><span class="lbl">' + esc(RULE_LABELS[f]) + '</span><span class="chips">' + chips + '</span></div>';
     }).join('');
@@ -9118,7 +9150,11 @@ function svSort(rows, sort, order) {
     var an = svSortValue(a, 'name'), bn = svSortValue(b, 'name');
     return (at(order.categories, a.category) - at(order.categories, b.category))
       || (at(order.variants, a.variant) - at(order.variants, b.variant))
-      || (an < bn ? -1 : an > bn ? 1 : 0) || ((a.id || 0) - (b.id || 0));
+      || (an < bn ? -1 : an > bn ? 1 : 0)
+      /* a name's fallback first, then its editions by label (D158 review) */
+      || ((a.label ? 1 : 0) - (b.label ? 1 : 0))
+      || (String(a.label || '').toLowerCase() < String(b.label || '').toLowerCase() ? -1 : String(a.label || '').toLowerCase() > String(b.label || '').toLowerCase() ? 1 : 0)
+      || ((a.id || 0) - (b.id || 0));
   };
   return (rows || []).slice().sort(function (a, b) {
     if (!key) return library(a, b);
@@ -9131,6 +9167,21 @@ function svSort(rows, sort, order) {
       if (x > y) return dir;
     }
     return library(a, b);
+  });
+}
+/* a category's sleeves as the desk thinks of them: by name in the library's
+   order, each name's fallback first and its editions beside it (D158 review) */
+function svByName(list) {
+  var names = [], by = {};
+  (list || []).forEach(function (s) {
+    var k = String(s.name || '').trim().toLowerCase();
+    if (!by[k]) { by[k] = []; names.push(k); }
+    by[k].push(s);
+  });
+  return names.map(function (k) {
+    return by[k].slice().sort(function (a, b) {
+      return ((a.label ? 1 : 0) - (b.label ? 1 : 0)) || (String(a.label || '') < String(b.label || '') ? -1 : String(a.label || '') > String(b.label || '') ? 1 : 0);
+    });
   });
 }
 function svTick(sel, id, on, max) {
@@ -9336,7 +9387,11 @@ function svRowsCost(rows, products) {
     if (typeof k === 'number' && isFinite(k)) { if (isFinite(r.weightPct) && r.weightPct > 0) { any = true; c += r.weightPct / 100 * k; } }
     else unpriced += 1;
   });
-  return { cost: any ? c : null, unpriced: unpriced };
+  /* and none while a weight is missing or the weights do not make 100: a
+     figure from half the weights reads as the sleeve's (D158 review) */
+  var complete = (rows || []).length && (rows || []).every(function (r) { return isFinite(r.weightPct) && r.weightPct > 0; })
+    && svWeightsOk((rows || []).reduce(function (t, r) { return t + r.weightPct; }, 0));
+  return { cost: any && complete ? c : null, unpriced: unpriced };
 }
 function svRowsCostText(rows, products) {
   var w = svRowsCost(rows, products);
@@ -9395,6 +9450,235 @@ function svAddRows(rows, ids) {
   var out = (rows || []).slice();
   (ids || []).forEach(function (id) { if (!have[id]) { have[id] = 1; out.push({ productId: id, weightPct: NaN, weightText: '' }); } });
   return out;
+}
+
+/* ---- the New edition form's pure helpers (D158) ---------------------------
+   An edition's rules say which strategic portfolios get it: a list of rules,
+   any of which may match (or); within a rule every field it names must match
+   (and); within a field any of the values ticked (or). These read the rules
+   the way the server does (sleeveRules.matches) against the universe's
+   portfolio keys, "USD|Moderate|Full|0" or "USD|All Equity|NA|NA", so the
+   form can count, list and map portfolios as the desk ticks. The server
+   still decides at save. */
+var ED_FIELDS = ['currency', 'riskLevel', 'allocationType'];
+function edFields(key) {
+  var p = String(key).split('|');
+  return { key: String(key), currency: p[0], riskLevel: p[1], allocationType: !p[2] || p[2] === 'NA' ? 'NA' : p[2], exRA: p[3] === '1' };
+}
+/* a rule that names nothing matches nothing here: the server refuses it, and
+   counting it as "every portfolio" would only mislead while it is half made */
+function edRuleLive(r) { return ED_FIELDS.some(function (f) { return ((r && r[f]) || []).length; }); }
+function edMatch(rules, f) {
+  return (rules || []).some(function (r) {
+    if (!edRuleLive(r)) return false;
+    return ED_FIELDS.every(function (k) { var v = r[k] || []; return !v.length || v.indexOf(f[k]) !== -1; });
+  });
+}
+function edApplies(rules, keys) {
+  return (keys || []).filter(function (k) { return edMatch(rules, edFields(k)); });
+}
+/* the words for a value: risk levels by the house's names, the all-equity
+   "allocation" as what it is */
+function edValueLabel(field, v, labels) {
+  if (field === 'allocationType' && v === 'NA') return 'All equity';
+  var m = labels && labels[field];
+  return (m && m[v]) || v;
+}
+function edPortfolioName(key, labels) {
+  var f = edFields(key);
+  return f.currency + ' ' + edValueLabel('riskLevel', f.riskLevel, labels)
+    + (f.allocationType === 'NA' ? '' : ' ' + f.allocationType) + (f.exRA ? ' ex-RAs' : '');
+}
+function edOrList(values) {
+  if (values.length < 2) return values.join('');
+  return values.slice(0, -1).join(', ') + ' or ' + values[values.length - 1];
+}
+/* one rule in words: "GBP portfolios at Moderate risk, Full allocations" */
+function edRuleWords(r, labels) {
+  var lab = function (f) { return (r[f] || []).map(function (v) { return edValueLabel(f, v, labels); }); };
+  var cur = lab('currency'), risk = lab('riskLevel'), alloc = lab('allocationType');
+  return (cur.length ? edOrList(cur) + ' portfolios' : 'Portfolios in any currency')
+    + (risk.length ? ' at ' + edOrList(risk) + ' risk' : ' at any risk level')
+    + (alloc.length ? ', ' + edOrList(alloc) + (alloc.length === 1 && alloc[0] === 'All equity' ? '' : ' allocation' + (alloc.length === 1 ? '' : 's')) : ', any allocation');
+}
+function edRulesWords(rules, labels) {
+  var live = (rules || []).filter(edRuleLive);
+  if (!live.length) return '';
+  return live.map(function (r) { return edRuleWords(r, labels); }).join('; or ');
+}
+/* a rule's values in the vocabulary's order; a field ticking every value is
+   the same as one ticking none (any value), so both read as [] */
+function edField(r, f, vocab) {
+  var all = vocab[f] || [];
+  var on = all.filter(function (v) { return ((r && r[f]) || []).indexOf(v) !== -1; });
+  return on.length === all.length ? [] : on;
+}
+/* The grid: currency across, risk level down, one allocation choice for every
+   cell. Rules can be drawn on it exactly when every rule names the same
+   allocations (none and all of them being the same): then the rules are the
+   union of their currency x risk cells, crossed with that one allocation
+   choice. Anything else - a rule for Full and another for Core over different
+   cells - cannot be drawn without changing what it means, and the grid says
+   so instead. */
+function edSameList(a, b) { a = a || []; b = b || []; return a.length === b.length && a.every(function (v, i) { return v === b[i]; }); }
+function edCoverCells(rules, vocab) {
+  /* the currency x risk cells live rules reach, whatever their allocations: a
+     rule naming neither currency nor risk level reaches every cell */
+  var cells = {};
+  var live = (rules || []).filter(edRuleLive);
+  (vocab.currency || []).forEach(function (c) {
+    (vocab.riskLevel || []).forEach(function (r) {
+      if (live.some(function (x) {
+        return (!(x.currency || []).length || x.currency.indexOf(c) !== -1) && (!(x.riskLevel || []).length || x.riskLevel.indexOf(r) !== -1);
+      })) cells[c + '|' + r] = 1;
+    });
+  });
+  return cells;
+}
+function edGridOf(rules, vocab) {
+  var live = (rules || []).filter(edRuleLive);
+  if (!live.length) return { ok: true, alloc: null, cells: {} };
+  var alloc = edField(live[0], 'allocationType', vocab);
+  for (var i = 1; i < live.length; i++) {
+    if (!edSameList(edField(live[i], 'allocationType', vocab), alloc)) {
+      return { ok: false, why: 'Rule ' + (i + 1) + ' is for different allocations from rule 1, and the grid shows one allocation choice for all its cells.' };
+    }
+  }
+  return { ok: true, alloc: alloc.length ? alloc : null, cells: edCoverCells(live, vocab) };
+}
+/* rules the grid cannot draw, made drawable: the cells they reach, under
+   every allocation; null when they reach nothing (nothing to start from) */
+function edResetGrid(rules, vocab) {
+  var cells = edCoverCells(rules, vocab);
+  return Object.keys(cells).length ? { alloc: null, cells: cells } : null;
+}
+/* a few rules that say exactly what the grid shows: grouped by the currencies
+   that share a set of risk levels, or by the risk levels that share a set of
+   currencies, whichever gives fewer (not always the fewest possible); a field
+   allowing every value is left out, as the server leaves it */
+function edRulesOf(grid, vocab) {
+  var curs = vocab.currency || [], risks = vocab.riskLevel || [], allocs = vocab.allocationType || [];
+  var on = function (c, r) { return !!grid.cells[c + '|' + r]; };
+  var alloc = grid.alloc && grid.alloc.length && grid.alloc.length < allocs.length
+    ? allocs.filter(function (v) { return grid.alloc.indexOf(v) !== -1; }) : null;
+  var build = function (outer, inner, outerField, innerField, cell) {
+    var groups = [];
+    outer.forEach(function (o) {
+      var set = inner.filter(function (i) { return cell(o, i); });
+      if (!set.length) return;
+      var sig = set.join('|');
+      var g = groups.filter(function (x) { return x.sig === sig; })[0];
+      if (g) g.outer.push(o); else groups.push({ sig: sig, outer: [o], inner: set });
+    });
+    return groups.map(function (g) {
+      var r = {};
+      if (g.outer.length < outer.length) r[outerField] = g.outer.slice();
+      if (g.inner.length < inner.length) r[innerField] = g.inner.slice();
+      return r;
+    });
+  };
+  var byCur = build(curs, risks, 'currency', 'riskLevel', function (c, r) { return on(c, r); });
+  var byRisk = build(risks, curs, 'riskLevel', 'currency', function (r, c) { return on(c, r); });
+  var rules = byRisk.length < byCur.length ? byRisk : byCur;
+  return rules.map(function (r) {
+    var out = {};
+    if (r.currency) out.currency = r.currency;
+    if (r.riskLevel) out.riskLevel = r.riskLevel;
+    /* every cell and every allocation names every portfolio: said with the
+       allocations ticked, so the rule is not empty and the count says why it
+       cannot stand */
+    if (alloc) out.allocationType = alloc.slice();
+    else if (!out.currency && !out.riskLevel) out.allocationType = allocs.slice();
+    return out;
+  });
+}
+/* the first live rule that says what an earlier one says, or -1 */
+function edDupRule(rules, vocab) {
+  var seen = {};
+  var list = rules || [];
+  for (var i = 0; i < list.length; i++) {
+    if (!edRuleLive(list[i])) continue;
+    var sig = JSON.stringify(ED_FIELDS.map(function (f) { return edField(list[i], f, vocab); }));
+    if (seen[sig] !== undefined) return i;
+    seen[sig] = i;
+  }
+  return -1;
+}
+/* each cell of the grid under its allocation choice: how many portfolios it
+   holds, how many this edition takes, and which other editions claim them */
+function edCells(keys, rules, sibs, vocab, alloc) {
+  var out = {};
+  (vocab.currency || []).forEach(function (c) {
+    (vocab.riskLevel || []).forEach(function (r) { out[c + '|' + r] = { n: 0, mine: 0, claimed: [], clash: 0 }; });
+  });
+  (keys || []).forEach(function (k) {
+    var f = edFields(k);
+    if (alloc && alloc.length && alloc.indexOf(f.allocationType) === -1) return;
+    var cell = out[f.currency + '|' + f.riskLevel]; if (!cell) return;
+    cell.n += 1;
+    var mine = edMatch(rules, f);
+    if (mine) cell.mine += 1;
+    (sibs || []).forEach(function (s) {
+      if (!edMatch(s.rules, f)) return;
+      if (cell.claimed.indexOf(s.label) === -1) cell.claimed.push(s.label);
+      if (mine) cell.clash += 1;
+    });
+  });
+  return out;
+}
+/* who ends up with what: the portfolios this edition takes, the ones it would
+   take from another edition (a clash), what each other edition keeps and
+   what is left to the fallback */
+function edCoverage(keys, rules, sibs) {
+  var mine = [], clash = {}, others = 0, fallback = 0, keeps = {};
+  (sibs || []).forEach(function (s) { keeps[s.label] = 0; });
+  (keys || []).forEach(function (k) {
+    var f = edFields(k), m = edMatch(rules, f);
+    var claimers = (sibs || []).filter(function (s) { return edMatch(s.rules, f); });
+    if (m) mine.push(k);
+    if (m && claimers.length) claimers.forEach(function (s) { (clash[s.label] = clash[s.label] || []).push(k); });
+    else if (!m && claimers.length) { others += 1; keeps[claimers[0].label] += 1; }
+    else if (!m) fallback += 1;
+  });
+  return { mine: mine, clash: Object.keys(clash).map(function (l) { return { label: l, keys: clash[l] }; }),
+           others: others, fallback: fallback, universe: (keys || []).length,
+           keeps: (sibs || []).map(function (s) { return { label: s.label, n: keeps[s.label] }; }) };
+}
+/* "the fallback (129) or the GBP edition (43)": who keeps what they get today */
+function edKeepsWords(fallbackN, keeps, hasFallback) {
+  var parts = (hasFallback ? ['the fallback (' + fallbackN + ')'] : []).concat((keeps || []).map(function (k) {
+    return 'the ' + k.label + ' edition (' + k.n + ')';
+  }));
+  return edOrList(parts);
+}
+/* a long list of portfolios, by currency: "GBP 43 · EUR 6" */
+function edGroups(keys) {
+  var by = {}, order = [];
+  (keys || []).forEach(function (k) {
+    var c = edFields(k).currency;
+    if (!by[c]) { by[c] = []; order.push(c); }
+    by[c].push(k);
+  });
+  return order.map(function (c) { return { currency: c, keys: by[c] }; });
+}
+/* a label is the edition's name among the sleeve's editions: one per name,
+   whatever its spacing or capitals; "fallback" is what the console calls the
+   edition without rules */
+var ED_RESERVED = ['fallback', 'the fallback'];
+function edLabelTaken(label, sibs) {
+  var l = svNormName(label).toLowerCase(); if (!l) return null;
+  return (sibs || []).filter(function (s) { return svNormName(s.label || '').toLowerCase() === l; })[0] || null;
+}
+function edLabelReserved(label) { return ED_RESERVED.indexOf(svNormName(label).toLowerCase()) !== -1; }
+function edCreateLabel(label, n) {
+  var l = svNormName(label);
+  return l ? 'Create the ' + l + ' edition for ' + svPlural(n, 'portfolio') : 'Create edition';
+}
+/* the fallback's products as one string, to know whether it changed under a
+   kept draft */
+function edProductsSig(s) {
+  return s ? JSON.stringify((s.products || []).map(function (r) { return [r.productId, Math.round(Number(r.weight) * 1e6)]; })
+    .sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; })) : '';
 }
 /* sleeve-view-helpers-end */
 
@@ -9482,7 +9766,7 @@ function svBarHtml() {
   var waiting = cards && sv.level === 2;
   /* nothing to search while a new sleeve is being made: the box steps aside,
      keeping its place so the bar keeps its shape (D157 review) */
-  var creating = ncOpen() && (cards ? sv.level === 2 : sv.drawer);
+  var creating = ncFormOpen() && (cards ? sv.level === 2 : sv.drawer);
   return '<div class="sv-bar' + (creating ? ' is-creating' : '') + '">'
     + '<div class="sv-mode" role="group" aria-label="View">'
     + '<button type="button" data-svmode="cards" aria-pressed="' + cards + '">' + SV_ICON_CARDS + 'Cards</button>'
@@ -9500,12 +9784,32 @@ function svBarHtml() {
 }
 /* an unsaved draft kept from an earlier visit (F1), offered where it can be
    seen rather than only on the page of the sleeve it belongs to (D156 QA 13) */
+function svKeptWhat(k) {
+  var label = svNormName(k.draft.label || '');
+  return k.key.indexOf('sleeve:') === 0 ? (k.draft.name || 'a sleeve')
+    : k.key.indexOf('edition:') === 0 ? (label ? 'the new ' + label + ' edition of ' : 'a new edition of ') + (k.draft.name || 'a sleeve')
+    : (k.draft.name ? 'the new sleeve ' + k.draft.name : 'a new sleeve');
+}
+/* the sleeve a kept draft belongs to, if it is still in the library */
+function svKeptTarget(k) {
+  var m = /^(sleeve|edition):(\d+)$/.exec(k.key);
+  return m ? sleeveById(parseInt(m[2], 10)) : true;
+}
+function svKeptGoneText(k) {
+  var name = k.draft.name || 'The sleeve';
+  return k.key.indexOf('edition:') === 0
+    ? name + ' was archived after you started ' + svKeptWhat(k) + ', so the edition cannot be added to it. Restore ' + name + ' from the Archive to use these changes, or discard them.'
+    : name + ' was archived after you made these changes, so they cannot be opened. Restore it from the Archive to use them, or discard them.';
+}
 function svKeptOfferHtml() {
   var k = sv.keptOffer;
   if (!k || (repo.draft && draftKeyFor(repo.draft) === k.key)) return '';
-  var what = k.key.indexOf('sleeve:') === 0 ? (k.draft.name || 'a sleeve')
-    : k.key.indexOf('edition:') === 0 ? 'a new edition of ' + (k.draft.name || 'a sleeve')
-    : (k.draft.name ? 'the new sleeve ' + k.draft.name : 'a new sleeve');
+  if (!svKeptTarget(k)) {
+    return '<div class="sv-kept is-gone" role="status"><span>' + esc(svKeptGoneText(k)) + '</span>'
+      + '<button type="button" class="btn" data-repoview="archive">Open the Archive</button>'
+      + '<button type="button" class="btn" data-svkeptdrop>Discard</button></div>';
+  }
+  var what = svKeptWhat(k);
   return '<div class="sv-kept" role="status"><span>You have unsaved changes to <b>' + esc(what) + '</b>, kept from '
     + esc(clockTime(k.at)) + '.</span><button type="button" class="btn btn-primary" data-svkeptopen>Open them</button>'
     + '<button type="button" class="btn" data-svkeptdrop>Discard</button></div>';
@@ -9523,9 +9827,11 @@ function svTilesHtml() {
     var list = sleevesIn(repo.variant, c), names = [];
     list.forEach(function (s) { if (names.indexOf(s.name) === -1) names.push(s.name); });
     var withheld = list.filter(function (s) { return !svStatus(s).ok; }).length;
+    var editions = list.length - names.length;
     return '<button type="button" class="sv-tile" data-svtile="' + esc(c) + '" style="--cc:' + svColour(c) + '">'
       + '<span class="sv-tile-h">' + esc(c) + '</span>'
-      + '<span class="sv-tile-n"><b>' + list.length + '</b> ' + (list.length === 1 ? 'sleeve' : 'sleeves') + '</span>'
+      + '<span class="sv-tile-n"><b>' + names.length + '</b> ' + (names.length === 1 ? 'sleeve' : 'sleeves')
+      + (editions ? ' <span class="sv-tile-e">+ ' + svPlural(editions, 'edition') + '</span>' : '') + '</span>'
       + '<span class="sv-tile-names">' + (names.length
           ? esc(names.slice(0, 4).join(' \u00b7 ')) + (names.length > 4 ? ' \u00b7 +' + (names.length - 4) + ' more' : '')
           : 'No sleeve yet') + '</span>'
@@ -9579,9 +9885,10 @@ function svCardsBodyHtml() {
     var list = sleevesIn(repo.variant, repo.category);
     return svCrumbsHtml()
       + '<div class="sv-cathead"><h3 class="sv-h3" id="svCatTitle" tabindex="-1">' + svSw(repo.category) + esc(repo.category) + '</h3>'
-      + '<span class="sv-hint">' + svPlural(list.length, 'sleeve') + ' under ' + esc(repo.variant) + '</span>'
+      + '<span class="sv-hint">' + svPlural(svByName(list).length, 'sleeve') + (list.length > svByName(list).length ? ' and ' + svPlural(list.length - svByName(list).length, 'edition') : '')
+      + ' under ' + esc(repo.variant) + '</span>'
       + svFixedChip(repo.category) + '<span class="spacer"></span>' + svTypesHtml() + '</div>'
-      + (list.length ? '<div class="sv-cards">' + list.map(function (s) { return svCardHtml(s); }).join('') + '</div>'
+      + (list.length ? '<div class="sv-cards">' + svByName(list).map(function (g) { return g.map(function (s) { return svCardHtml(s); }).join(''); }).join('') + '</div>'
                      : '<p class="sv-none">No sleeve in ' + esc(repo.category) + ' under ' + esc(repo.variant) + ' yet. Use + New sleeve to make one.</p>');
   }
   return svCrumbsHtml() + svPageHtml(false);
@@ -9612,13 +9919,21 @@ function svProductsHtml(entry) {
 }
 function svWhoHtml(entry) {
   var sibs = svSiblings(entry), text;
+  /* who keeps what, counted against every strategic portfolio (D158 review) */
+  var others = sibs.filter(function (x) { return x.label && (x.rules || []).length; })
+    .map(function (x) { return { label: x.label, rules: x.rules }; });
+  var hasFb = entry.fallback || sibs.some(function (x) { return x.fallback; });
   if (entry.label) {
+    var cov = neHasKeys() ? edCoverage(neKeys(), entry.rules, others) : null;
     text = 'The <b>' + esc(entry.label) + '</b> edition applies to <b>' + (entry.applies == null ? 'some strategic portfolios'
         : svPlural(entry.applies, 'strategic portfolio')) + '</b>'
-      + (entry.rules && entry.rules.length ? ': ' + esc(describeRules(entry.rules)) : '')
-      + '. Every other portfolio gets the fallback edition of ' + esc(entry.name) + '.';
+      + (entry.rules && entry.rules.length ? ': ' + esc(edRulesWords(entry.rules, neLabels())) : '')
+      + '. Every other portfolio gets ' + (cov ? esc(edKeepsWords(cov.fallback, cov.keeps.filter(function (k) { return k.n; }), hasFb))
+        : 'the fallback edition of ' + esc(entry.name)) + '.';
   } else if (sibs.length) {
-    text = 'This is the <b>fallback</b>: it applies wherever no other edition of ' + esc(entry.name) + ' does. Other editions: '
+    var left = neHasKeys() ? edCoverage(neKeys(), [], others).fallback : null;
+    text = 'This is the <b>fallback</b>: it applies wherever no other edition of ' + esc(entry.name) + ' does'
+      + (left === null ? '' : ', which is <b>' + svPlural(left, 'strategic portfolio') + '</b> today') + '. Other editions: '
       + sibs.map(function (x) {
           return '<b>' + esc(x.label || 'fallback') + '</b>' + (x.applies != null ? ' (' + svPlural(x.applies, 'portfolio') + ')' : '');
         }).join(', ') + '.';
@@ -9672,6 +9987,11 @@ function svReadHtml(entry, inDrawer) {
     + '<p class="sv-chips">' + svStatusChip(entry) + svEditionChip(entry) + svFixedChip(entry.category) + '</p></div>'
     + '<button type="button" class="btn btn-primary sv-edit-btn" data-svedit' + (repo.saving ? ' disabled' : '') + '>Edit sleeve</button></div>'
     + keptNoticeHtml() + serverProblems
+    + (sv.createdEdition && sv.createdEdition.id === entry.id
+        ? '<div class="nc-done" role="status"><b>\u2713 Created the ' + esc(sv.createdEdition.label) + ' edition of ' + esc(sv.createdEdition.name)
+          + ' for ' + svPlural(sv.createdEdition.applies || 0, 'strategic portfolio') + '.</b> PWAs who pick ' + esc(sv.createdEdition.name)
+          + ' for one of them now get these products' + (sv.createdEdition.keeps ? '; every other portfolio keeps what it had: ' + esc(sv.createdEdition.keeps) + '.' : '.')
+          + ' <span class="sv-hint">This note shows until you leave this edition.</span></div>' : '')
     + (sv.createdFrom && sv.createdFrom.ids.indexOf(entry.id) !== -1
         ? '<div class="nc-done" role="status"><b>\u2713 Created ' + esc(sv.createdFrom.made) + ' under ' + esc(svJoinAnd(sv.createdFrom.under)) + '.</b>'
           + (sv.createdFrom.name ? ' Started from ' + esc(sv.createdFrom.name) + (sv.createdFrom.variant ? ' (' + esc(sv.createdFrom.variant) + ')' : '')
@@ -9728,6 +10048,8 @@ function svPageHtml(inDrawer) {
         + '<p class="sv-where">' + (d.category ? svWhere((d.variants || []).join(', ') || repo.variant, d.category) : 'Choose where it goes, then what it holds') + '</p></div></div>')
       + svCreateHtml();
   }
+  /* the New edition form carries its own Create and Cancel too (D158) */
+  if (d.edition) return neFormHtml(inDrawer);
   if (svEditing(d, sv.editing, repo.dirty)) {
     var title = d.edition ? 'New edition of ' + d.name : 'Editing this sleeve';
     return (inDrawer ? '' : '<div class="sv-editbar" role="region" aria-label="Editing"><b class="sv-editbar-t">' + esc(title) + '</b>'
@@ -9768,6 +10090,7 @@ function ncStartDefault() {
 function ncReset() {
   nc.srcq = ''; nc.allV = false; nc.ask = null; nc.lost = ''; nc.keptNote = ''; nc.addedNote = false;
   nc.tried = false; nc.dlg = null; nc.touched = false;
+  nc.which = false; nc.alloc = null; nc.gridAt = null; nc.undo = null; nc.clashAll = false;   /* the New edition form's (D158) */
 }
 function ncOpen() { return !!(repo.draft && repo.draft.create); }
 function ncProducts() {
@@ -9793,11 +10116,21 @@ function ncRevive(d) {
   (d.products || []).forEach(function (r) {
     if (typeof r.weightPct !== 'number') r.weightPct = (r.weightPct === '' || r.weightPct == null) ? NaN : svWeight(r.weightPct);
   });
-  if (d.create && d.sourceId != null && !ncSource(d)) {
-    nc.lost = (d.sourceName || 'The sleeve this started from') + ' is no longer in the library, so your products are no longer compared with it.';
+  if ((d.create || d.edition) && d.sourceId != null && !ncSource(d)) {
+    nc.lost = d.edition ? 'The fallback this edition was copied from is no longer in the library, so your products are no longer compared with it.'
+      : (d.sourceName || 'The sleeve this started from') + ' is no longer in the library, so your products are no longer compared with it.';
     d.sourceId = null; d.sourceIds = null;
   } else if (d.create && ncSource(d)) {
     d.sourceId = ncSource(d).id;
+  }
+  if (d.edition) {
+    /* a draft kept before D158 had no rule to tick in */
+    if (!(d.rules || []).length) d.rules = [neBlankRule()];
+    var fbNow = ncSource(d);
+    if (fbNow && d.edition.fbSig && edProductsSig(fbNow) !== d.edition.fbSig) {
+      nc.lost = 'The fallback of ' + d.name + ' has changed since you started this edition, so the markers now compare your products with what it holds today.';
+      d.edition.fbSig = edProductsSig(fbNow);
+    }
   }
   return d;
 }
@@ -9816,6 +10149,12 @@ function ncProblems(d) {
     if (!a.ok) out.push({ f: 'vars', clash: true, m: a.reason + ' Untick ' + v + (a.kind === 'taken' ? ' or change the name.' : '.') });
   });
   if (!svNormName(d.name)) out.push({ f: 'name', m: 'Give the sleeve a name.' });
+  return out.concat(ncRowsProblems(d));
+}
+/* what the products table must say before Create: shared by the New sleeve
+   and New edition forms (D158) */
+function ncRowsProblems(d) {
+  var out = [];
   if (!d.products.length) out.push({ f: 'rows', m: 'Add at least one product from the catalogue.' });
   var products = ncProducts();
   var gone = d.products.filter(function (r) { return !products[r.productId]; })[0];
@@ -9837,8 +10176,9 @@ function ncProblems(d) {
   return out;
 }
 /* a field's problems, shown once it has something in it or Create was pressed */
+function ncFormProblems(d) { return d && d.edition ? neProblems(d) : ncProblems(d); }
 function ncShown(d, f) {
-  return ncProblems(d).filter(function (p) {
+  return ncFormProblems(d).filter(function (p) {
     if (p.f !== f) return false;
     if (nc.tried) return true;
     if (p.loud) return true;
@@ -9853,7 +10193,7 @@ function ncLeft(d) {
   return n ? svPlural(n, 'thing') + ' still to do' : 'Ready to create';
 }
 function ncErrs(d, f) {
-  var fe = repo.fieldError && ({ cat: ['category'], vars: ['variants', 'variant'], name: ['name'], rows: ['products', 'weights'] })[f];
+  var fe = repo.fieldError && ({ cat: ['category'], vars: ['variants', 'variant'], name: ['name'], rows: ['products', 'weights'], label: ['label'], who: ['rules'] })[f];
   var server = fe && fe.indexOf(repo.fieldError.field) !== -1 ? '<p class="nc-err" role="alert">' + esc(repo.fieldError.message) + '</p>' : '';
   return ncShown(d, f).map(function (p) { return '<p class="nc-err" role="alert">' + esc(p.m) + '</p>'; }).join('') + server;
 }
@@ -9988,7 +10328,8 @@ function ncFootHtml(d) {
 }
 function ncRemovedHtml(d) {
   var src = ncSource(d), gone = svSourceRemoved(src, d.products);
-  return gone.length ? 'Removed from ' + esc(src.name) + ': ' + esc(gone.map(function (r) {
+  var from = d.edition && src ? (src.label ? 'the ' + src.label + ' edition' : 'the fallback') : (src ? src.name : '');
+  return gone.length ? 'Removed from ' + esc(from) + ': ' + esc(gone.map(function (r) {
     return (r.product ? r.product.name : r.productId) + ' (' + money2(r.weight * 100) + '%)';
   }).join(', ')) : '';
 }
@@ -10005,7 +10346,8 @@ function ncHoldsHtml(d) {
   var add = '<button type="button" class="btn btn-primary nc-addbtn" data-ncadd>+ Add product</button>';
   if (!d.products.length) {
     return notes + '<div class="nc-empty" id="ncRows" tabindex="-1">No products yet. '
-      + (d.startFrom === 'existing' ? 'Pick a sleeve above to copy its products, or ' : '') + add + '</div>' + ncErrs(d, 'rows');
+      + (d.startFrom === 'existing' ? 'Pick a sleeve above to copy its products, or ' : '') + add + '</div>'
+      + '<p class="nc-removed" id="ncRemoved">' + ncRemovedHtml(d) + '</p>' + ncErrs(d, 'rows');
   }
   return notes + '<div class="sv-ptwrap nc-ptwrap" id="ncRows" tabindex="-1"><table class="sv-pt nc-pt"><thead><tr><th scope="col">Product</th>'
     + '<th scope="col" class="num">Cost</th><th scope="col" class="num">Minimum</th><th scope="col" class="num">Weight %</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>'
@@ -10073,7 +10415,8 @@ function ncGoHtml(d, probs) {
 function ncBarHtml(d) {
   var probs = ncProblems(d);
   return '<span class="nc-mbar-s ' + (probs.length ? 'open' : 'ok') + '">' + esc(ncLeft(d)) + '</span>'
-    + '<button type="button" class="btn btn-primary" data-nccreate' + (probs.length ? ' aria-disabled="true"' : '') + (repo.saving ? ' disabled' : '') + '>'
+    + '<button type="button" class="btn" data-nccancel' + (repo.saving ? ' disabled' : '') + '>Cancel</button>'
+    + '<button type="button" class="btn btn-primary nc-create" data-nccreate' + (probs.length ? ' aria-disabled="true"' : '') + (repo.saving ? ' disabled' : '') + '>'
     + esc(ncCreateLabel(d)) + '</button>';
 }
 function svCreateHtml() {
@@ -10260,7 +10603,7 @@ function ncCancel() {
    the whole catalogue; tick one or several and add them in one go */
 function ncOpenDialog(from) {
   var d = repo.draft; if (!d) return;
-  var used = d.category ? ncCatalogued(svCategoryProducts(repo.data.sleeves, d.category)) : [];
+  var used = ncCat(d) ? ncCatalogued(svCategoryProducts(repo.data.sleeves, ncCat(d))) : [];
   nc.dlg = { q: '', scope: used.length ? 'cat' : 'all', vehicle: '', style: '', source: '', sort: 'cost', dir: 'asc', sel: [],
              ret: from || '[data-ncadd]', nudge: false };
   sv.focus = '#ncDlgQ';
@@ -10273,14 +10616,14 @@ function ncCloseDialog() {
   render();
 }
 function ncCatalogued(ids) { var p = ncProducts(); return (ids || []).filter(function (id) { return !!p[id]; }); }
-function ncDlgPool(d) { return nc.dlg.scope === 'cat' && d.category ? ncCatalogued(svCategoryProducts(repo.data.sleeves, d.category)) : null; }
+function ncDlgPool(d) { return nc.dlg.scope === 'cat' && ncCat(d) ? ncCatalogued(svCategoryProducts(repo.data.sleeves, ncCat(d))) : null; }
 function ncDlgHits(d) {
   var g = nc.dlg;
   return svAddHits(repo.data.products, { query: g.q, pool: ncDlgPool(d), vehicle: g.vehicle, style: g.style, source: g.source, sort: g.sort, dir: g.dir });
 }
 function ncDlgCountText(d, n) {
   var pool = ncDlgPool(d);
-  return pool ? n + ' of ' + svPlural(pool.length, 'product') + ' ' + d.category + ' uses'
+  return pool ? n + ' of ' + svPlural(pool.length, 'product') + ' ' + ncCat(d) + ' uses'
               : n + ' of ' + svPlural((repo.data.products || []).length, 'product');
 }
 function ncDlgRowsHtml(d) {
@@ -10288,13 +10631,13 @@ function ncDlgRowsHtml(d) {
   d.products.forEach(function (r) { had[r.productId] = 1; });
   var pool = ncDlgPool(d);
   if (pool && !pool.length) {
-    return '<div class="nc-dlg-empty"><p>No sleeve in ' + esc(d.category) + ' holds a product yet, so there is nothing to show from it.</p><p>'
+    return '<div class="nc-dlg-empty"><p>No sleeve in ' + esc(ncCat(d)) + ' holds a product yet, so there is nothing to show from it.</p><p>'
       + '<button type="button" class="btn" data-ncdscope="all">Look in the whole catalogue</button></p></div>';
   }
   if (!hits.length) {
     var filtered = g.q.trim() || g.vehicle || g.style || g.source;
     return '<div class="nc-dlg-empty"><p>No product matches' + (g.q.trim() ? ' “' + esc(g.q.trim()) + '”' : ' these filters')
-      + (ncDlgPool(d) ? ' among the products ' + esc(d.category) + ' uses' : '') + '.</p><p>'
+      + (ncDlgPool(d) ? ' among the products ' + esc(ncCat(d)) + ' uses' : '') + '.</p><p>'
       + (filtered ? '<button type="button" class="btn" data-ncdclear>Clear the search and filters</button>' : '')
       + (ncDlgPool(d) ? '<button type="button" class="btn" data-ncdscope="all">Look in the whole catalogue</button>' : '') + '</p></div>';
   }
@@ -10328,7 +10671,7 @@ function ncDlgFootHtml() {
     + '<button type="button" class="btn btn-primary" data-ncdadd' + (n ? '' : ' disabled') + '>' + (n ? 'Add ' + svPlural(n, 'product') : 'Add products') + '</button>';
 }
 function ncDialogHtml() {
-  var d = repo.draft; if (!nc.dlg || !d || !d.create) return '';
+  var d = repo.draft; if (!nc.dlg || !d || !(d.create || d.edition)) return '';
   var g = nc.dlg, products = repo.data.products || [];
   var values = function (field) {
     var out = []; products.forEach(function (p) { var v = p[field]; if (v && out.indexOf(v) === -1) out.push(v); });
@@ -10339,13 +10682,13 @@ function ncDialogHtml() {
       + values(field).map(function (v) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('')
       + '</select></label>';
   };
-  var scope = d.category ? '<span class="nc-seg" role="group" aria-label="Which products">'
-    + '<button type="button" data-ncdscope="cat" aria-pressed="' + (g.scope === 'cat') + '">Only products ' + esc(d.category) + ' uses</button>'
+  var scope = ncCat(d) ? '<span class="nc-seg" role="group" aria-label="Which products">'
+    + '<button type="button" data-ncdscope="cat" aria-pressed="' + (g.scope === 'cat') + '">Only products ' + esc(ncCat(d)) + ' uses</button>'
     + '<button type="button" data-ncdscope="all" aria-pressed="' + (g.scope !== 'cat') + '">Whole catalogue</button></span>' : '';
   var hits = ncDlgHits(d).length;
   return '<div class="nc-dlg-scrim" data-ncdlgscrim></div>'
     + '<div class="nc-dlg" role="dialog" aria-modal="true" aria-labelledby="ncDlgT">'
-    + '<div class="nc-dlg-h"><h3 id="ncDlgT">Add a product</h3><span class="sv-hint">to ' + esc(d.name.trim() || 'the new sleeve') + '</span>'
+    + '<div class="nc-dlg-h"><h3 id="ncDlgT">Add a product</h3><span class="sv-hint">to ' + esc(d.edition ? 'the ' + (svNormName(d.label) || 'new') + ' edition of ' + d.name : (d.name.trim() || 'the new sleeve')) + '</span>'
     + '<span class="spacer"></span><button type="button" class="btn" data-ncdlgclose>Close</button></div>'
     + '<div class="nc-dlg-f"><div class="nc-dlg-r"><label class="repo-find sv-find nc-find"><span aria-hidden="true">⌕</span>'
     + '<input type="search" id="ncDlgQ" autocomplete="off" placeholder="Search by name, asset class, vehicle or product id…" aria-label="Search the catalogue" value="' + esc(g.q) + '"></label>'
@@ -10377,6 +10720,497 @@ function ncDlgAdd() {
   sv.focus = '[data-repoweight="' + first + '"]';
   render();
   App.announce('polite', nc.keptNote);
+}
+
+/* ---- the New edition form (D158) ------------------------------------------
+   Options 4 and 1 of proposals/new-edition-screen.html, with a switch: one
+   form with the live summary pinned beside it (the D157 pattern), where who
+   gets the edition is chosen either as rules - read back in words - or by
+   painting a grid of currency against risk level under one allocation
+   choice. Both edit the same rules, the server's: a list of rules, any of
+   which may match; within a rule every field it names must; within a field
+   any value ticked. The grid draws rules exactly when every rule names the
+   same allocations; otherwise it says so and leaves them alone.
+
+   It is repo.draft as for every sleeve (edition: { ofId, variant, category,
+   fbSig }, with the name locked and a copy of the fallback's products), so
+   the unsaved-changes guard, the kept draft and the save are the console's
+   own. What only the form needs - the grid's allocation choice while nothing
+   is painted, "show which", the grid's keyboard stop, an undo - lives on nc
+   beside the New sleeve form's, so one reset clears both. */
+var NE_MODE_KEY = 'pmg.repository.editionMode';
+function neMode() {
+  try { return window.localStorage.getItem(NE_MODE_KEY) === 'grid' ? 'grid' : 'rules'; } catch (e) { return 'rules'; }
+}
+function neOpen() { return !!(repo.draft && repo.draft.edition); }
+/* the forms that use the Add a product dialog, the products table and the
+   pinned summary: a new sleeve, or a new edition */
+function ncFormOpen() { return !!(repo.draft && (repo.draft.create || repo.draft.edition)); }
+function ncCat(d) { return d && d.create ? d.category : draftCategory(d); }
+function neKeys() { return (repo.data && repo.data.strategicPortfolios) || []; }
+/* without the portfolio list (an older service) the form still works: the
+   server's preview counts, and the grid steps aside (D158 review) */
+function neHasKeys() { return neKeys().length > 0; }
+function neLabels() { return (repo.data && repo.data.ruleLabels) || {}; }
+function neVocab() { return (repo.data && repo.data.ruleVocabulary) || {}; }
+/* the other editions of the name: what this one must not claim */
+function neSibs(d) {
+  return siblingsOf(d).filter(function (s) { return !s.fallback && (s.rules || []).length; })
+    .map(function (s) { return { id: s.id, label: s.label, rules: s.rules }; });
+}
+function neFallbackOf(s) {
+  return (repo.data.sleeves || []).filter(function (x) {
+    return x.variant === s.variant && x.category === s.category && svSameName(x.name, s.name) && x.fallback && x.id !== s.id;
+  })[0] || null;
+}
+function neFallback(d) { return siblingsOf(d).filter(function (s) { return s.fallback; })[0] || null; }
+function neLive(d) { return (d.rules || []).filter(edRuleLive); }
+function neCov(d) { return edCoverage(neKeys(), neLive(d), neSibs(d)); }
+/* how many portfolios get it: counted here, or by the server without the list */
+function neCount(d) {
+  if (neHasKeys()) return neCov(d).mine.length;
+  var pv = repo.preview;
+  return pv && typeof pv.applies === 'number' && neLive(d).length ? pv.applies : 0;
+}
+function neGrid(d) {
+  var g = edGridOf(d.rules, neVocab());
+  if (g.ok && !neLive(d).length) g.alloc = nc.alloc || null;
+  return g;
+}
+/* who keeps what today, in words: "the fallback (129) or the GBP edition (43)" */
+function neKeepsWords(d, cov) {
+  return edKeepsWords(cov.fallback, cov.keeps, !!neFallback(d));
+}
+/* what stands between the form and Create, by field */
+function neProblems(d) {
+  var out = [], sibs = neSibs(d), live = neLive(d), vocab = neVocab();
+  var label = svNormName(d.label);
+  if (!label) out.push({ f: 'label', m: 'Give the edition a label, such as GBP or GBP ex-Alts.' });
+  else if (edLabelReserved(label)) out.push({ f: 'label', loud: true, m: '“' + label + '” is what the console calls the edition without rules. Choose another label.' });
+  else {
+    var taken = edLabelTaken(label, siblingsOf(d));
+    if (taken) out.push({ f: 'label', loud: true, m: d.name + ' already has an edition labelled ' + taken.label + '. Choose another label.' });
+  }
+  /* an empty rule is the builder's, not the edition's: it is left out, so it
+     never blocks Create; a rule saying what another says does */
+  if (!live.length) out.push({ f: 'who', m: 'Choose who gets it: tick values in a rule, or cells on the grid.' });
+  var dup = edDupRule(d.rules, vocab);
+  if (dup !== -1) out.push({ f: 'who', loud: true, m: 'Rule ' + (dup + 1) + ' says exactly what an earlier rule says. Remove one of them.' });
+  if (live.length && neHasKeys()) {
+    var cov = neCov(d), fb = neFallback(d);
+    if (!cov.mine.length) out.push({ f: 'who', loud: true, m: 'These choices match no strategic portfolio. Widen them.' });
+    cov.clash.forEach(function (c) {
+      out.push({ f: 'who', loud: true, clash: true, m: 'It would take ' + svPlural(c.keys.length, 'portfolio') + ' the ' + c.label
+        + ' edition already has. Each portfolio gets exactly one edition: narrow this one, or the ' + c.label + ' edition.' });
+    });
+    /* the fallback must still be some portfolio's: an edition that, with the
+       others, takes every portfolio would leave it serving no one */
+    if (fb && cov.mine.length && !cov.clash.length && !cov.fallback) {
+      var others = cov.keeps.filter(function (k) { return k.n; });
+      out.push({ f: 'who', loud: true, m: others.length
+        ? 'With ' + edOrList(others.map(function (k) { return 'the ' + k.label + ' edition (' + k.n + ')'; })) + ', this leaves no portfolio to the fallback. Leave out the portfolios that should keep it.'
+        : 'It covers every strategic portfolio, so the fallback would never apply. Leave out the portfolios that should keep the fallback.' });
+    }
+  }
+  /* the server's own count stands behind the page's - and is the only count
+     when the portfolio list did not load */
+  var pv = repo.preview;
+  if (live.length && pv && pv.overlaps && pv.overlaps.length && !(neHasKeys() && neCov(d).clash.length)) {
+    pv.overlaps.forEach(function (o) {
+      out.push({ f: 'who', loud: true, clash: true, m: 'It would take ' + svPlural(o.count, 'portfolio') + ' the ' + o.label + ' edition already has. Narrow one of them.' });
+    });
+  }
+  if (live.length && pv && pv.error) out.push({ f: 'who', loud: true, m: pv.error });
+  return out.concat(ncRowsProblems(d));
+}
+function neCreateText(d) { return repo.saving ? 'Creating…' : edCreateLabel(d.label, neCount(d)); }
+function neLabelHtml(d) {
+  return '<div class="repo-fld"><label for="repoLabel">Edition label <small>what the desk calls it · PWAs never see it</small></label>'
+    + '<input type="text" id="repoLabel" maxlength="80" placeholder="For example: GBP, GBP ex-Alts, EUR lower risk" value="' + esc(d.label) + '"'
+    + (repo.fieldError && repo.fieldError.field === 'label' ? ' aria-invalid="true"' : '') + '>'
+    + '<div id="neLabelErr">' + ncErrs(d, 'label') + '</div></div>'
+    + '<div class="repo-fld"><label for="repoNote">Note to PWAs <small>optional · shown beside ' + esc(d.name)
+    + ' in the picker for the portfolios that get this edition</small></label>'
+    + '<input type="text" id="repoNote" maxlength="240" placeholder="For example: GBP share classes throughout" value="' + esc(d.note) + '"></div>';
+}
+function neModeHtml() {
+  var grid = neMode() === 'grid';
+  return '<div class="nc-start ne-mode"><span class="nc-start-l" id="neModeL">Choose with</span>'
+    + '<span class="nc-seg" role="group" aria-labelledby="neModeL">'
+    + '<button type="button" data-nemode="rules" aria-pressed="' + !grid + '">Rules</button>'
+    + '<button type="button" data-nemode="grid" aria-pressed="' + grid + '">Grid</button></span>'
+    + '<span class="nc-start-h">' + (grid
+        ? 'Click cells, or a whole row or column, to give those portfolios this edition. The allocation choice applies to every cell. Arrow keys move around the grid.'
+        : 'Any rule may match. Within a rule every field you tick must match; within a field, any value ticked.') + '</span></div>';
+}
+function neRuleText(d, i) {
+  var r = (d.rules || [])[i], labels = neLabels();
+  if (edRuleLive(r)) return edRuleWords(r, labels);
+  return (d.rules || []).length > 1 ? 'Nothing ticked yet: this rule is left out until you tick something in it.'
+    : 'Nothing ticked yet: an empty field means any value.';
+}
+function neRulesHtml(d) {
+  var vocab = neVocab(), labels = neLabels();
+  var rows = (d.rules || []).map(function (rule, i) {
+    var fields = RULE_FIELDS.map(function (f) {
+      var chips = (vocab[f] || []).map(function (v) {
+        var on = (rule[f] || []).indexOf(v) !== -1;
+        return '<label class="repo-chip' + (on ? ' on' : '') + '"><input type="checkbox" data-reporule="' + i
+          + '" data-repofld="' + esc(f) + '" data-repoval="' + esc(v) + '"' + (on ? ' checked' : '') + '> '
+          + esc(edValueLabel(f, v, labels)) + '</label>';
+      }).join('');
+      return '<div class="repo-rule-f"><span class="lbl">' + esc(RULE_LABELS[f]) + '</span><span class="chips">' + chips + '</span></div>';
+    }).join('');
+    return (i ? '<p class="ne-or">or</p>' : '') + '<div class="repo-rule ne-rule"><div class="repo-rule-h"><span>Rule ' + (i + 1) + '</span>'
+      + ((d.rules || []).length > 1 ? '<button type="button" class="repo-rm" data-reporulerm="' + i + '" aria-label="Remove rule ' + (i + 1) + '">×</button>' : '')
+      + '</div>' + fields + '<p class="ne-rw" id="neRw' + i + '">' + esc(neRuleText(d, i)) + '</p></div>';
+  }).join('');
+  return '<div class="repo-rules ne-rules">' + rows
+    + '<button type="button" class="btn repo-add" data-reporuleadd>+ Or another rule</button></div>';
+}
+/* the grid's one keyboard stop moves with the arrows (a roving tabindex):
+   cells, and the row and column headers that paint a whole line */
+function neTab(r, c) { return (nc.gridAt || '0|0') === r + '|' + c ? '0' : '-1'; }
+function neGridHtml(d) {
+  var vocab = neVocab(), labels = neLabels();
+  if (!neHasKeys()) {
+    return '<div class="ne-nogrid" role="status"><p><b>The grid needs the list of strategic portfolios, which did not load.</b> '
+      + 'Choose with rules: the server still counts them.</p><p><button type="button" class="btn" data-nemode="rules">Choose with rules</button></p></div>';
+  }
+  var g = neGrid(d);
+  if (!g.ok) {
+    var canReset = !!edResetGrid(neLive(d), vocab);
+    return '<div class="ne-nogrid" role="status"><p><b>These rules can’t be drawn on the grid.</b> ' + esc(g.why)
+      + ' They are kept exactly as they are.</p><p class="ne-rwall">' + esc(edRulesWords(d.rules, labels)) + '</p><p>'
+      + '<button type="button" class="btn" data-nemode="rules">Edit them as rules</button> '
+      + (canReset ? '<button type="button" class="btn" data-negridreset>Start the grid from the cells they cover</button>'
+        + ' <span class="sv-hint">This replaces their allocation choices with every allocation, so it can take in more portfolios; you can undo it.</span>' : '')
+      + '</p></div>';
+  }
+  var undo = nc.undo ? '<p class="ne-undo" role="status">The grid now shows the cells the rules covered, under every allocation. '
+    + '<button type="button" class="nc-link" data-negridundo>Undo</button></p>' : '';
+  var allocs = vocab.allocationType || [], picked = g.alloc || allocs;
+  var allocBtns = '<div class="ne-allocs"><span class="nc-lab" id="neAllocL">Allocations</span><span class="ne-achips" role="group" aria-labelledby="neAllocL">'
+    + allocs.map(function (a) {
+        var on = picked.indexOf(a) !== -1;
+        return '<button type="button" class="ne-achip' + (on ? ' on' : '') + '" data-nealloc="' + esc(a) + '" aria-pressed="' + on + '">' + esc(edValueLabel('allocationType', a, labels)) + '</button>';
+      }).join('') + '</span></div>';
+  var cells = edCells(neKeys(), neLive(d), neSibs(d), vocab, g.alloc);
+  var curs = vocab.currency || [], risks = vocab.riskLevel || [];
+  var pressed = function (keys) {
+    var n = keys.filter(function (k) { return g.cells[k]; }).length;
+    return n === keys.length ? 'true' : n ? 'mixed' : 'false';
+  };
+  var head = '<tr><th scope="col" class="ne-corner"><span class="sr-only">Risk level</span></th>' + curs.map(function (c, ci) {
+    var keys = risks.map(function (r) { return c + '|' + r; });
+    return '<th scope="col"><button type="button" class="ne-hd" data-negcol="' + esc(c) + '" data-ner="-1" data-nec="' + ci + '" tabindex="' + neTab(-1, ci) + '"'
+      + ' aria-pressed="' + pressed(keys) + '" aria-label="' + esc(c) + ': give every ' + esc(c) + ' risk level this edition">' + esc(c) + '</button></th>';
+  }).join('') + '</tr>';
+  var body = risks.map(function (r, ri) {
+    var rl = edValueLabel('riskLevel', r, labels);
+    var keys = curs.map(function (c) { return c + '|' + r; });
+    return '<tr><th scope="row"><button type="button" class="ne-hd" data-negrow="' + esc(r) + '" data-ner="' + ri + '" data-nec="-1" tabindex="' + neTab(ri, -1) + '"'
+      + ' aria-pressed="' + pressed(keys) + '" aria-label="' + esc(rl) + ': give every currency at ' + esc(rl) + ' risk this edition">'
+      + esc(rl) + '</button></th>' + curs.map(function (c, ci) {
+        var k = c + '|' + r, cell = cells[k], on = !!g.cells[k];
+        var cls = 'ne-cell' + (cell.n ? '' : ' empty') + (on ? ' on' : '') + (cell.clash ? ' clash' : cell.claimed.length && !on ? ' claimed' : '');
+        var what = cell.n ? svPlural(cell.n, 'portfolio') : 'no portfolios under these allocations';
+        var tag = cell.clash ? 'clashes with ' + cell.claimed.join(', ')
+          : cell.claimed.length ? cell.claimed.join(', ') + ' edition' : on ? 'this edition' : '';
+        return '<td><button type="button" class="' + cls + '" data-negcell="' + esc(k) + '" data-ner="' + ri + '" data-nec="' + ci + '" tabindex="' + neTab(ri, ci) + '"'
+          + ' aria-pressed="' + on + '"' + (cell.n || on ? '' : ' aria-disabled="true"')
+          + ' aria-label="' + esc(c + ' ' + rl + ': ' + what + (tag ? ', ' + tag : '')) + '">'
+          + '<b>' + (cell.n || '–') + '</b>' + (tag ? '<small>' + esc(tag) + '</small>' : '') + '</button></td>';
+      }).join('') + '</tr>';
+  }).join('');
+  var words = edRulesWords(d.rules, labels);
+  return undo + allocBtns + '<div class="ne-gridwrap"><table class="ne-grid"><caption class="sr-only">Strategic portfolios by currency and risk level</caption>'
+    + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>'
+    + '<p class="ne-legend"><span><i class="k on"></i>this edition</span>' + (neSibs(d).length ? '<span><i class="k claimed"></i>another edition</span>'
+    + '<span><i class="k clash"></i>claimed twice</span>' : '') + '<span><i class="k"></i>the fallback</span>'
+    + '<span class="sv-hint">The figure is how many strategic portfolios the cell holds under the allocations chosen.</span></p>'
+    + '<p class="ne-rwall" id="neGridWords">' + (words ? '<b>As rules:</b> ' + esc(words) : 'Nothing painted yet.') + '</p>';
+}
+function neCountHtml(d) {
+  var labels = neLabels();
+  if (!neHasKeys()) {
+    var pv = repo.preview;
+    if (!neLive(d).length) return '<p class="ne-count">No portfolios chosen yet.</p>';
+    if (!pv || pv.busy) return '<p class="ne-count">Counting…</p>';
+    return pv.error ? '' : '<p class="ne-count"><b>' + svPlural(pv.applies || 0, 'portfolio') + '</b> of ' + (pv.universe || '?')
+      + ' strategic portfolios would get this edition <span class="sv-hint">(counted by the server)</span></p>';
+  }
+  var cov = neCov(d);
+  if (!neLive(d).length) {
+    return '<p class="ne-count">No portfolios chosen yet. Every portfolio keeps what it gets today: ' + esc(neKeepsWords(d, cov)) + '.</p>';
+  }
+  var keeps = (neFallback(d) ? [svPlural(cov.fallback, 'portfolio') + ' keep the fallback'] : [])
+    .concat(cov.keeps.filter(function (k) { return k.n; }).map(function (k) { return 'the ' + k.label + ' edition keeps ' + k.n; }));
+  var line = '<p class="ne-count"><b>' + svPlural(cov.mine.length, 'portfolio') + '</b> of ' + cov.universe + ' strategic portfolios would get this edition'
+    + (cov.mine.length ? ' · <button type="button" class="nc-link" data-newhich aria-expanded="' + !!nc.which + '" aria-controls="neWhich">'
+      + (nc.which ? 'Hide which' : 'Show which') + '</button>' : '')
+    + (keeps.length ? '<br><span class="sv-hint">' + esc(keeps.join(' · ')) + '</span>' : '') + '</p>';
+  var clash = cov.clash.map(function (c) {
+    var long = c.keys.length > 8;
+    return '<div class="ne-clash"><b>Claimed twice: ' + svPlural(c.keys.length, 'portfolio') + ' already get the ' + esc(c.label) + ' edition.</b> '
+      + (long ? esc(edGroups(c.keys).map(function (g) { return g.currency + ' ' + g.keys.length; }).join(', ')) + '. ' : '')
+      + (!long || nc.clashAll ? esc(c.keys.map(function (k) { return edPortfolioName(k, labels); }).join(', ')) + '. ' : '')
+      + (long ? '<button type="button" class="nc-link" data-neclashall aria-expanded="' + !!nc.clashAll + '">' + (nc.clashAll ? 'Hide which' : 'Show which') + '</button>' : '')
+      + '</div>';
+  }).join('');
+  return line + clash;
+}
+function neWhichHtml(d) {
+  if (!nc.which || !neLive(d).length || !neHasKeys()) return '';
+  var labels = neLabels();
+  return '<ul class="ne-which">' + edGroups(neCov(d).mine).map(function (g) {
+    return '<li><b>' + esc(g.currency) + ' (' + g.keys.length + ')</b> ' + esc(g.keys.map(function (k) { return edPortfolioName(k, labels); }).join(', ')) + '</li>';
+  }).join('') + '</ul>';
+}
+function neWhoHtml(d) {
+  return (neMode() === 'grid' ? neGridHtml(d) : neRulesHtml(d))
+    + '<div id="neCount" aria-live="off">' + neCountHtml(d) + '</div>'
+    + '<div id="neWhich">' + neWhichHtml(d) + '</div>'
+    + '<div id="neWhoErr" tabindex="-1">' + ncErrs(d, 'who') + '</div>';
+}
+/* the summary: who gets what, what is left, what it holds */
+function neSideHtml(d) {
+  var has = neHasKeys(), cov = has ? neCov(d) : null, fb = neFallback(d), sibs = neSibs(d), live = neLive(d).length;
+  var n = neCount(d), label = svNormName(d.label) || 'new';
+  var bar = '', key = '', rows = '';
+  if (has) {
+    var u = cov.universe || 1;
+    var clashN = cov.clash.reduce(function (a, c) { return a + c.keys.length; }, 0);
+    var seg = function (k, cls) { return k ? '<i class="' + cls + '" style="width:' + (100 * k / u) + '%"></i>' : ''; };
+    bar = '<div class="ne-cbar" aria-hidden="true">' + seg(cov.mine.length - clashN, 'mine') + seg(clashN, 'clash')
+      + seg(cov.others, 'others') + seg(cov.fallback, 'fb') + '</div>';
+    key = '<p class="ne-key"><span><i class="mine"></i>this edition</span>' + (sibs.length ? '<span><i class="others"></i>other editions</span>' : '')
+      + '<span><i class="fb"></i>' + (fb ? 'fallback' : 'no edition') + '</span>' + (clashN ? '<span><i class="clash"></i>claimed twice</span>' : '') + '</p>';
+    rows = '<ul class="nc-made ne-made">'
+      + '<li class="' + (cov.mine.length && !clashN ? 'yes' : clashN ? 'bad' : 'no') + '"><span class="ic" aria-hidden="true">' + (clashN ? '✗' : cov.mine.length ? '✓' : '–') + '</span><span><b>The '
+        + esc(label) + ' edition</b><small>' + (live ? svPlural(cov.mine.length, 'portfolio') + (clashN ? ', ' + clashN + ' claimed twice' : '') : 'no portfolios chosen yet') + '</small></span></li>'
+      + cov.keeps.map(function (k) {
+          return '<li class="no"><span class="ic" aria-hidden="true">·</span><span>The ' + esc(k.label) + ' edition<small>keeps ' + svPlural(k.n, 'portfolio') + '</small></span></li>';
+        }).join('')
+      + '<li class="' + (fb && live && !cov.fallback ? 'bad' : 'no') + '"><span class="ic" aria-hidden="true">·</span><span>' + (fb ? 'The fallback' : 'No edition') + '<small>'
+        + (fb ? 'keeps ' + svPlural(cov.fallback, 'portfolio') : svPlural(cov.fallback, 'portfolio') + ' get nothing from ' + esc(d.name)) + '</small></span></li></ul>';
+  } else {
+    rows = '<p class="nc-mix">' + (live ? svPlural(n, 'portfolio') + ' would get the ' + esc(label) + ' edition (counted by the server).' : 'No portfolios chosen yet.') + '</p>';
+  }
+  var src = ncSource(d), products = ncProducts(), changes = svSourceChanges(src, d.products);
+  var based = src ? '<p class="nc-based">Starts as a copy of ' + (src.label ? 'the ' + esc(src.label) + ' edition' : 'the fallback') + ' · '
+    + (changes ? svPlural(changes, 'change') : 'no changes yet') + '. Once created it is its own: later changes to the fallback will not change it.</p>' : '';
+  var t = ncTotal(d), ok = d.products.length && svWeightsOk(t);
+  var mixBar = d.products.length ? '<div class="nc-bar" aria-hidden="true">' + d.products.map(function (r, i) {
+    return '<i style="width:' + Math.max(0, Math.min(100, isFinite(r.weightPct) ? r.weightPct : 0)) + '%;background:' + NC_SEG[i % NC_SEG.length] + '"></i>';
+  }).join('') + '</div>' : '';
+  var mix = d.products.length
+    ? mixBar + '<p class="nc-mix">' + svPlural(d.products.length, 'product') + ' · total <b class="' + (ok ? 'ok' : 'bad') + '">' + svTotalText(t)
+      + '%</b><br>Weighted product cost ' + esc(svRowsCostText(d.products, products)) + '</p>'
+    : '<p class="nc-mix sv-hint">No products yet.</p>';
+  var probs = neProblems(d);
+  var todo = [
+    ['label', 'Label: ' + (svNormName(d.label) || 'not given yet')],
+    ['who', 'Who gets it: ' + (live ? svPlural(n, 'portfolio') : 'not chosen yet')],
+    ['rows', 'Products: ' + (d.products.length ? svPlural(d.products.length, 'product') + ' · total ' + svTotalText(t) + '%' : 'none yet')]
+  ].map(function (it) {
+    var bad = probs.filter(function (p) { return p.f === it[0]; });
+    var loud = bad.length && (nc.tried || bad[0].loud || (it[0] === 'rows' && d.products.length && (!bad[0].soft || nc.touched)));
+    var text = loud ? bad[0].m : (bad.length && bad[0].soft ? bad[0].m : it[1]);
+    return '<li class="' + (bad.length ? (loud ? 'bad' : 'open') : 'done') + '"><span class="ic" aria-hidden="true">'
+      + (bad.length ? (loud ? '!' : '○') : '✓') + '</span><span>' + esc(text) + '</span></li>';
+  }).join('');
+  var error = repo.error ? '<p class="nc-err" role="alert">' + esc(repo.error) + '</p>' : '';
+  /* what is left first, so it is above the fold; then who keeps what */
+  return '<div class="nc-side-s" id="ncSideS"><h4>Who gets what</h4>' + bar + key
+    + '<h4>Still to do</h4><ul class="nc-todo" id="ncTodo">' + todo + '</ul>' + error
+    + rows + '<h4>Mix</h4>' + mix + based + '</div>'
+    + '<div class="nc-go">' + neGoHtml(d, probs) + '</div>';
+}
+function neGoHtml(d, probs) {
+  return '<button type="button" class="btn btn-primary nc-create" data-necreate' + (probs.length ? ' aria-disabled="true" aria-describedby="ncTodo"' : '')
+    + (repo.saving ? ' disabled' : '') + '>' + esc(neCreateText(d)) + '</button>'
+    + '<button type="button" class="btn" data-necancel' + (repo.saving ? ' disabled' : '') + '>Cancel</button>';
+}
+function neLeftText(n) { return n ? svPlural(n, 'thing') + ' still to do' : 'Ready to create'; }
+function neBarHtml(d) {
+  var n = neProblems(d).length;
+  return '<span class="nc-mbar-s ' + (n ? 'open' : 'ok') + '">' + esc(neLeftText(n)) + '</span>'
+    + '<button type="button" class="btn" data-necancel' + (repo.saving ? ' disabled' : '') + '>Cancel</button>'
+    + '<button type="button" class="btn btn-primary nc-create" data-necreate' + (n ? ' aria-disabled="true"' : '') + (repo.saving ? ' disabled' : '') + '>'
+    + esc(neCreateText(d)) + '</button>';
+}
+function neFormHtml(inDrawer) {
+  var d = repo.draft, fb = neFallback(d);
+  var where = svWhere(d.edition.variant, d.edition.category);
+  var kept = (fb ? ['<b>the fallback</b>'] : []).concat(neSibs(d).map(function (x) { return 'the <b>' + esc(x.label) + '</b> edition'; }));
+  return (inDrawer ? '<p class="sv-where ne-where">' + where + '</p>'
+      : '<div class="sv-head nc-head"><div class="sv-head-t"><h3 id="svTitle" tabindex="-1">New edition of ' + esc(d.name) + '</h3>'
+      + '<p class="sv-where">' + where + '</p></div></div>')
+    + '<p class="ne-intro">You are adding an <b>edition</b>: a version of <b>' + esc(d.name) + '</b> with its own products, for the portfolios you choose below. '
+    + 'PWAs still pick ' + esc(d.name) + '; the portfolios you choose get this edition, and every other portfolio keeps what it gets today'
+    + (kept.length ? ': ' + kept.slice(0, -1).join(', ') + (kept.length > 1 ? ' or ' : '') + kept[kept.length - 1] : '')
+    + '. What those portfolios get does not change.</p>'
+    + keptNoticeHtml()
+    + '<div class="nc"><div class="nc-form">'
+    + svSection('Label and note', '', neLabelHtml(d))
+    + svSection('Who gets it', '', neModeHtml() + '<div id="neWho">' + neWhoHtml(d) + '</div>')
+    + svSection('What it holds', ncSource(d) ? 'a copy of ' + (ncSource(d).label ? 'the ' + ncSource(d).label + ' edition' : 'the fallback') + ', marked against it' : '',
+        '<div id="ncHolds">' + ncHoldsHtml(d) + '</div>')
+    + '</div><aside class="nc-side" id="ncSide" aria-label="Who gets what">' + neSideHtml(d) + '</aside></div>'
+    + '<div class="nc-mbar" id="ncBar">' + neBarHtml(d) + '</div>';
+}
+/* typing and ticking redraw what depends on them, never the field in use */
+function neRefresh() {
+  var d = repo.draft; if (!d || !d.edition || !document.getElementById('ncSide')) return;
+  var probe = document.createElement('div');
+  var set = function (id, html) {
+    var el = document.getElementById(id); if (!el) return;
+    probe.innerHTML = html;
+    if (probe.innerHTML !== el.innerHTML) el.innerHTML = html;
+  };
+  var sideS = document.getElementById('ncSideS'), top = sideS ? sideS.scrollTop : 0;
+  set('ncSideS', (function () { probe.innerHTML = neSideHtml(d); var x = probe.querySelector('#ncSideS'); return x ? x.innerHTML : ''; })());
+  if (sideS) sideS.scrollTop = top;
+  var probs = neProblems(d);
+  document.querySelectorAll('#repoDialog [data-necreate]').forEach(function (b) {
+    b.textContent = neCreateText(d);
+    if (probs.length) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled');
+  });
+  var st = document.querySelector('#ncBar .nc-mbar-s');
+  if (st) { st.textContent = neLeftText(probs.length); st.className = 'nc-mbar-s ' + (probs.length ? 'open' : 'ok'); }
+  set('neLabelErr', ncErrs(d, 'label'));
+  set('neCount', neCountHtml(d));
+  set('neWhich', neWhichHtml(d));
+  set('neWhoErr', ncErrs(d, 'who'));
+  (d.rules || []).forEach(function (r, i) {
+    var el = document.getElementById('neRw' + i), text = neRuleText(d, i);
+    if (el && el.textContent !== text) el.textContent = text;
+  });
+  set('ncFoot', d.products.length ? ncFootHtml(d) : '');
+  set('ncRowsErr', ncErrs(d, 'rows'));
+  set('ncRemoved', ncRemovedHtml(d));
+  if (nc.addedNote) set('ncNotes', ncNotesHtml());
+  var src = ncSource(d);
+  d.products.forEach(function (r, i) {
+    set('ncMark' + i, ncMarkHtml(svSourceMark(src, r)));
+    var e = document.getElementById('ncRowErr' + i), why = svWeightNote(r.weightText);
+    if (e && e.textContent !== why) e.textContent = why;
+  });
+}
+function neBlankRule() { var r = {}; RULE_FIELDS.forEach(function (f) { r[f] = []; }); return r; }
+function neSetMode(to) {
+  to = to === 'grid' ? 'grid' : 'rules';
+  try { window.localStorage.setItem(NE_MODE_KEY, to); } catch (e) { /* private window */ }
+  var d = repo.draft;
+  if (d) {
+    /* an empty rule means nothing, and the grid cannot show one: it goes; the
+       rules builder always shows a rule to tick in */
+    if (to === 'grid') d.rules = (d.rules || []).filter(edRuleLive);
+    else if (!(d.rules || []).length) d.rules = [neBlankRule()];
+    markDirty();
+  }
+  nc.undo = null;
+  sv.focus = '[data-nemode="' + to + '"]';
+  render();
+  App.announce('polite', to === 'grid' ? 'Choosing on the grid.' : 'Choosing with rules.');
+}
+/* the grid drew new cells or a new allocation choice: the rules follow */
+function neSetGrid(g, focusSel) {
+  var d = repo.draft; if (!d) return;
+  var any = Object.keys(g.cells).length;
+  nc.alloc = g.alloc || null;
+  nc.undo = null;
+  d.rules = any ? edRulesOf(g, neVocab()) : [];
+  markDirty(); repo.fieldError = null;
+  sv.focus = focusSel || null;
+  render(); schedulePreview();
+}
+function neToggleCells(keys, on) {
+  var d = repo.draft, g = neGrid(d); if (!g.ok) return null;
+  var cells = {}; Object.keys(g.cells).forEach(function (k) { cells[k] = 1; });
+  keys.forEach(function (k) { if (on) cells[k] = 1; else delete cells[k]; });
+  return { alloc: g.alloc, cells: cells };
+}
+function neCellClick(key) {
+  var d = repo.draft, g = neGrid(d); if (!g.ok) return;
+  var at = '[data-negcell="' + svCssEscape(key) + '"]';
+  if (!g.cells[key]) {
+    var cell = edCells(neKeys(), neLive(d), neSibs(d), neVocab(), g.alloc)[key];
+    if (cell && !cell.n) { App.announce('polite', 'No strategic portfolio is in that cell under the allocations chosen.'); return; }
+  }
+  var next = neToggleCells([key], !g.cells[key]); if (next) neSetGrid(next, at);
+}
+function neLineClick(field, value) {
+  var d = repo.draft, g = neGrid(d), vocab = neVocab(); if (!g.ok) return;
+  var keys = field === 'currency'
+    ? (vocab.riskLevel || []).map(function (r) { return value + '|' + r; })
+    : (vocab.currency || []).map(function (c) { return c + '|' + value; });
+  var allOn = keys.every(function (k) { return g.cells[k]; });
+  var next = neToggleCells(keys, !allOn);
+  if (next) neSetGrid(next, field === 'currency' ? '[data-negcol="' + svCssEscape(value) + '"]' : '[data-negrow="' + svCssEscape(value) + '"]');
+}
+function neAllocClick(a) {
+  var d = repo.draft, g = neGrid(d), allocs = neVocab().allocationType || []; if (!g.ok) return;
+  var picked = (g.alloc || allocs).slice();
+  var at = picked.indexOf(a);
+  if (at !== -1) {
+    if (picked.length === 1) { App.announce('polite', 'Keep at least one allocation.'); return; }
+    picked.splice(at, 1);
+  } else picked.push(a);
+  picked = allocs.filter(function (x) { return picked.indexOf(x) !== -1; });
+  neSetGrid({ alloc: picked.length === allocs.length ? null : picked, cells: g.cells }, '[data-nealloc="' + svCssEscape(a) + '"]');
+}
+/* rules the grid cannot draw become the cells they reach, under every
+   allocation - only when the desk asks, and undoably */
+function neGridReset() {
+  var d = repo.draft; if (!d) return;
+  var g = edResetGrid(neLive(d), neVocab()); if (!g) return;
+  var before = copyRules(d.rules), was = neCount(d);
+  nc.alloc = null;
+  d.rules = edRulesOf(g, neVocab());
+  nc.undo = before;                       /* set before the redraw, so Undo is there to take focus */
+  markDirty(); repo.fieldError = null;
+  sv.focus = '[data-negridundo]';
+  render(); schedulePreview();
+  App.announce('polite', 'The grid now shows the cells the rules covered, under every allocation: ' + svPlural(neCount(repo.draft), 'portfolio')
+    + ' instead of ' + was + '. Undo puts the rules back.');
+}
+function neGridUndo() {
+  var d = repo.draft; if (!d || !nc.undo) return;
+  d.rules = nc.undo; nc.undo = null;
+  markDirty(); repo.fieldError = null;
+  sv.focus = '[data-negridreset]||[data-nemode="rules"]';
+  render(); schedulePreview();
+  App.announce('polite', 'The rules are back as they were.');
+}
+function neCreate() {
+  var d = repo.draft; if (!d || repo.saving) return;
+  var probs = neProblems(d);
+  if (probs.length) {
+    nc.tried = true; nc.touched = true;
+    var p = probs[0];
+    /* a clash goes to the cell that clashes, or to the message */
+    var at = p.f === 'label' ? '#repoLabel'
+      : p.f === 'who' ? (p.clash && neMode() === 'grid' ? '.ne-cell.clash||#neWhoErr' : '#neWhoErr')
+      : '#ncRows';
+    sv.focus = at + '||[data-necreate]';
+    render();
+    App.announce('assertive', 'Not created yet. ' + p.m);
+    return;
+  }
+  saveDraft();
+}
+/* Cancel goes back to the sleeve the edition was started from */
+function neCancel() {
+  if (repo.saving) return;
+  var d = repo.draft, of = d && d.edition ? sleeveById(d.edition.ofId) : null;
+  var back = of ? { to: of.id, variant: of.variant, category: of.category, sv: sv.mode === 'table' ? { drawer: true } : { level: 2 } }
+    : (sv.mode === 'table' ? { sv: { drawer: false } } : { sv: { level: 1 } });
+  sv.focus = of ? (sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle') : '[data-reponew]';
+  if (repo.dirty) { goTo(back); return; }
+  applyTarget(back);
+  App.announce('polite', 'Cancelled. No edition was created.');
 }
 
 /* ---- the table ------------------------------------------------------------ */
@@ -10460,11 +11294,11 @@ function svDrawerHtml() {
   var d = repo.draft, editing = svEditing(d, sv.editing, repo.dirty);
   var title = d.create ? 'New sleeve' : d.edition ? 'New edition of ' + d.name : (editing ? 'Editing ' : '') + svDraftName();
   return '<div class="sv-scrim" data-svclose></div>'
-    + '<aside class="sv-drawer' + (d.create ? ' is-create' : '') + '" role="dialog" aria-labelledby="svDrawerTitle">'
+    + '<aside class="sv-drawer' + (d.create || d.edition ? ' is-create' : '') + '" role="dialog" aria-labelledby="svDrawerTitle">'
     + '<div class="sv-drawer-h"><h3 id="svDrawerTitle" tabindex="-1">' + esc(title) + '</h3>'
     + '<button type="button" class="btn" data-svclose>Close</button></div>'
     + '<div class="sv-drawer-b sv-scroll" id="svDrawerBody">' + svPageHtml(true) + '</div>'
-    + (editing && !d.create ? '<div class="sv-drawer-f">' + svEditControlsHtml() + '</div>' : '')
+    + (editing && !d.create && !d.edition ? '<div class="sv-drawer-f">' + svEditControlsHtml() + '</div>' : '')
     + '</aside>';
 }
 function svTableViewHtml() {
@@ -10564,17 +11398,13 @@ function svCloseDrawer() {
   goTo({ sv: { drawer: false } });
 }
 /* up one level, the way Escape and Cancel read it: a sleeve's page to its
-   category, a category to the tiles; a new edition back to the sleeve it
-   came from */
+   category, a category to the tiles; a new sleeve or a new edition through
+   its own Cancel, back where it came from */
 function svUp() {
   var d = repo.draft;
   if (d && d.create && (sv.mode === 'table' ? sv.drawer : sv.level === 2)) { ncCancel(); return; }
+  if (d && d.edition && (sv.mode === 'table' ? sv.drawer : sv.level === 2)) { neCancel(); return; }
   if (sv.mode === 'table') { if (sv.drawer) svCloseDrawer(); return; }
-  if (sv.level === 2 && d && d.edition && sleeveById(d.edition.ofId)) {
-    var of = sleeveById(d.edition.ofId);
-    sv.focus = '#svTitle';
-    goTo({ to: of.id, variant: of.variant, category: of.category, sv: { level: 2 } }); return;
-  }
   if (sv.level === 2) { sv.focus = '#svCatTitle'; goTo({ sv: { level: 1 } }); return; }
   if (sv.level === 1) {
     sv.focus = '.sv-tile[data-svtile="' + svCssEscape(repo.category) + '"]||.sv-tile';
@@ -10633,15 +11463,14 @@ function svFocusNow(selectors) {
    unsaved changes block a move */
 function svAfterRender() {
   var dialog = document.querySelector('#repoDialog .dialog.repo'); if (!dialog) return;
-  var dlg = repo.view === 'sleeves' && !!nc.dlg && ncOpen();
+  var dlg = repo.view === 'sleeves' && !!nc.dlg && ncFormOpen();
   var modal = repo.view === 'sleeves' && ((sv.mode === 'table' && sv.drawer) || dlg);
   ['.sv-top', '#svBody', '.sv-tarea'].forEach(function (sel) {
     var el = dialog.querySelector(sel);
     if (el) { if (dlg) el.setAttribute('inert', ''); else el.removeAttribute('inert'); }
   });
   /* the pinned summary fits the box it scrolls in, Create always in view */
-  var side = dialog.querySelector('#ncSide'), box = side && side.closest('.sv-scroll');
-  if (side && box) side.style.maxHeight = Math.max(260, box.clientHeight - 30) + 'px';
+  ncFitSide();
   ['.repo-h', '.repo-f'].forEach(function (sel) {
     var el = dialog.querySelector(':scope > ' + sel);
     if (el && repo.view === 'sleeves') { if (modal) el.setAttribute('inert', ''); else el.removeAttribute('inert'); }
@@ -10704,7 +11533,8 @@ function svReadKeptOffer() {
     var held = JSON.parse(window.localStorage.getItem(DRAFT_KEY) || 'null');
     if (!held || !held.key || !held.draft) return null;
     var m = /^(sleeve|edition):(\d+)$/.exec(held.key);
-    if (m && !sleeveById(parseInt(m[2], 10))) return null;     /* what it belonged to is gone */
+    /* what it belonged to may have been archived since: still offered, so the
+       banner can say so and the changes are not lost unseen (D158 review) */
     return held;
   } catch (e) { return null; }
 }
@@ -10718,12 +11548,20 @@ function svOpenKept() {
     sv.focus = '#repoName||#repoLabel||#repoNote';
     render();
   };
+  /* the sleeve it belongs to may have been archived since: say so, keep the
+     offer to discard, never throw (D158 review) */
+  var target = m ? sleeveById(parseInt(m[2], 10)) : null;
+  if (m && !target) {
+    sv.keptOffer = k;
+    sv.focus = '[data-svkeptdrop]';
+    render();
+    App.announce('assertive', svKeptGoneText(k));
+    return;
+  }
   if (m && m[1] === 'sleeve') {
-    var s = sleeveById(parseInt(m[2], 10));
-    goTo({ to: s.id, variant: s.variant, category: s.category, sv: place, then: then });
+    goTo({ to: target.id, variant: target.variant, category: target.category, sv: place, then: then });
   } else if (m) {
-    var of = sleeveById(parseInt(m[2], 10));
-    goTo({ variant: of.variant, category: of.category, fresh: true, edition: { ofId: of.id, name: of.name }, sv: place, then: then });
+    goTo({ variant: target.variant, category: target.category, fresh: true, edition: { ofId: target.id, name: target.name }, sv: place, then: then });
   } else {
     goTo({ variant: k.variant, category: k.category, fresh: true, create: true, sv: place, then: then });
   }
@@ -12119,6 +12957,7 @@ function updateTotals() {
   /* typing is a partial redraw, so the editing controls have to be told (F2) */
   svRefreshControls();
   ncRefresh();
+  neRefresh();
   keepDraft();
   var probs = document.querySelector('.repo-problems');
   if (probs) probs.remove();
@@ -13534,6 +14373,7 @@ document.addEventListener('click', function (e) {
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-ncstart],[data-nccat],[data-ncsrc],[data-nckeepmine],[data-ncreplace],[data-ncadd],[data-ncspread],[data-nccreate],[data-nccancel],'
     + '[data-ncdlgclose],[data-ncdlgscrim],[data-ncusename],[data-ncdscope],[data-ncdclear],[data-ncdsort],[data-ncdrow],[data-ncdadd],'
+    + '[data-nemode],[data-negcell],[data-negcol],[data-negrow],[data-nealloc],[data-negridreset],[data-negridundo],[data-repoappliesall],[data-neclashall],[data-newhich],[data-necreate],[data-necancel],'
     + '[data-repodelete],[data-repocanceldelete],[data-repokeep],[data-repodiscard],'
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
@@ -13583,7 +14423,7 @@ document.addEventListener('click', function (e) {
   }
   if (ds.svclose !== undefined) {
     if (repo.saving) return;                 /* a save in flight lands first */
-    if (ncOpen()) ncCancel(); else svCloseDrawer();
+    if (ncOpen()) ncCancel(); else if (neOpen()) neCancel(); else svCloseDrawer();
     return;
   }
   if (ds.svsort !== undefined) {
@@ -13673,19 +14513,43 @@ document.addEventListener('click', function (e) {
     ncDlgTick(ds.ncdrow, nc.dlg.sel.indexOf(ds.ncdrow) === -1); return;
   }
   if (ds.ncdadd !== undefined) { ncDlgAdd(); return; }
+  /* the New edition form (D158) */
+  if (ds.nemode !== undefined) { neSetMode(ds.nemode); return; }
+  if (ds.ner !== undefined && el.closest('.ne-grid')) nc.gridAt = ds.ner + '|' + ds.nec;
+  if (ds.negcell !== undefined) { neCellClick(ds.negcell); return; }
+  if (ds.negcol !== undefined) { neLineClick('currency', ds.negcol); return; }
+  if (ds.negrow !== undefined) { neLineClick('riskLevel', ds.negrow); return; }
+  if (ds.nealloc !== undefined) { neAllocClick(ds.nealloc); return; }
+  if (ds.negridreset !== undefined) { neGridReset(); return; }
+  if (ds.negridundo !== undefined) { neGridUndo(); return; }
+  if (ds.repoappliesall !== undefined) { repo.appliesAll = !repo.appliesAll; updateApplies(); var aa = document.querySelector('#repoDialog [data-repoappliesall]'); if (aa) aa.focus(); return; }
+  if (ds.neclashall !== undefined) { nc.clashAll = !nc.clashAll; sv.focus = '[data-neclashall]'; render(); return; }
+  if (ds.newhich !== undefined) { nc.which = !nc.which; sv.focus = '[data-newhich]'; render(); return; }
+  if (ds.necreate !== undefined) { neCreate(); return; }
+  if (ds.necancel !== undefined) { neCancel(); return; }
   if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
   /* editions (D89) */
   if (ds.repoedition !== undefined) {
     var ofId = parseInt(ds.repoedition, 10); var of = sleeveById(ofId); repo.menu = null;
-    if (of) goTo({ variant: of.variant, category: of.category, fresh: true, edition: { ofId: ofId, name: of.name } });
+    if (of) goTo({ variant: of.variant, category: of.category, fresh: true, edition: { ofId: ofId, name: of.name },
+                   sv: sv.mode === 'table' ? { drawer: true, compare: false } : { level: 2 } });
     return;
   }
   if (ds.reporuleadd !== undefined) {
     var blank = {}; RULE_FIELDS.forEach(function (f) { blank[f] = []; });
-    repo.draft.rules.push(blank); markDirty(); repo.fieldError = null; render(); return;
+    repo.draft.rules.push(blank); markDirty(); repo.fieldError = null;
+    if (repo.draft.edition) sv.focus = '[data-reporule="' + (repo.draft.rules.length - 1) + '"]';
+    render(); return;
   }
   if (ds.reporulerm !== undefined) {
-    repo.draft.rules.splice(parseInt(ds.reporulerm, 10), 1); markDirty(); repo.fieldError = null;
+    var rmAt = parseInt(ds.reporulerm, 10);
+    repo.draft.rules.splice(rmAt, 1); markDirty(); repo.fieldError = null;
+    /* the New edition form's builder keeps a rule to tick in, and focus near the one removed (D158) */
+    if (repo.draft.edition) {
+      if (!repo.draft.rules.length) repo.draft.rules.push(neBlankRule());
+      sv.focus = '[data-reporule="' + Math.max(0, rmAt - 1) + '"]||[data-reporuleadd]';
+      App.announce('polite', 'Removed rule ' + (rmAt + 1) + '.');
+    }
     render(); schedulePreview(); return;
   }
   /* archiving from the menu asks first, as it does on the page (D156 QA 15) */
@@ -13990,7 +14854,7 @@ document.addEventListener('keydown', function (e) {
      Escape closes it before anything else hears the key */
   /* a save in flight: nothing closes or discards until it lands (D157 review) */
   if (repo.view === 'sleeves' && repo.saving && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return; }
-  if (repo.view === 'sleeves' && nc.dlg && ncOpen()) {
+  if (repo.view === 'sleeves' && nc.dlg && ncFormOpen()) {
     if (e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation();
       var q = document.getElementById('ncDlgQ');
@@ -14120,7 +14984,7 @@ document.addEventListener('keydown', function (e) {
     var feeOn = document.getElementById('feeDialog');
     if (!(feeOn && !feeOn.hidden) && e.target.id !== 'repoFind') {
       if (sv.compare && !sv.drawer) { e.preventDefault(); e.stopPropagation(); sv.compare = false; sv.focus = '[data-svcompare]||.sv-rowbtn'; render(); return; }
-      if (sv.mode === 'table' && sv.drawer) { e.preventDefault(); e.stopPropagation(); if (ncOpen()) ncCancel(); else svCloseDrawer(); return; }
+      if (sv.mode === 'table' && sv.drawer) { e.preventDefault(); e.stopPropagation(); if (ncOpen()) ncCancel(); else if (neOpen()) neCancel(); else svCloseDrawer(); return; }
       if (sv.mode !== 'table' && sv.level > 0 && !repo.query.trim()) { e.preventDefault(); e.stopPropagation(); svUp(); return; }
     }
   }
@@ -14150,9 +15014,34 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Enter' && (e.target.id === 'repoName' || e.target.id === 'repoLabel')) {
     e.preventDefault();
-    if (repo.draft && repo.draft.create) ncCreate(); else saveDraft();
+    if (repo.draft && repo.draft.create) ncCreate(); else if (repo.draft && repo.draft.edition) neCreate(); else saveDraft();
   }
 }, true);
+
+/* The New edition grid is one Tab stop; the arrow keys move inside it, cell
+   to cell and out to the row and column headers (D158). Modified arrows are
+   left alone - they belong to the browser. */
+document.addEventListener('keydown', function (e) {
+  var t = e.target;
+  if (!repo.open || !t || !t.dataset || t.dataset.ner === undefined || !t.closest('.ne-grid')) return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+  var dr = { ArrowUp: -1, ArrowDown: 1 }[e.key] || 0, dc = { ArrowLeft: -1, ArrowRight: 1 }[e.key] || 0;
+  if (!dr && !dc) return;
+  e.preventDefault();
+  var r = parseInt(t.dataset.ner, 10) + dr, c = parseInt(t.dataset.nec, 10) + dc;
+  if (r === -1 && c === -1) { r += dr; c += dc; }            /* the corner holds nothing */
+  var next = document.querySelector('#repoDialog .ne-grid [data-ner="' + r + '"][data-nec="' + c + '"]');
+  if (next) next.focus();
+});
+/* the grid's Tab stop follows focus, without a redraw */
+document.addEventListener('focusin', function (e) {
+  var t = e.target;
+  if (!repo.open || !t || !t.dataset || t.dataset.ner === undefined || !t.closest || !t.closest('.ne-grid')) return;
+  nc.gridAt = t.dataset.ner + '|' + t.dataset.nec;
+  document.querySelectorAll('#repoDialog .ne-grid [data-ner]').forEach(function (el) {
+    el.setAttribute('tabindex', el === t ? '0' : '-1');
+  });
+});
 
 /* The catalogue's edge shadow follows its table's scroll (D99). A scroll does
    not bubble, and every redraw makes a new box to listen on, so it is caught
@@ -14165,23 +15054,41 @@ document.addEventListener('scroll', function (e) {
    band that cannot be seen: the keyboard's arrival brings it back. */
 document.addEventListener('focusout', function (e) {
   var el = e.target;
-  if (repo.open && ncOpen() && el && el.dataset && el.dataset.repoweight !== undefined && !nc.touched) {
+  if (repo.open && ncFormOpen() && el && el.dataset && el.dataset.repoweight !== undefined && !nc.touched) {
     nc.touched = true;
-    window.setTimeout(ncRefresh, 0);
+    window.setTimeout(function () { ncRefresh(); neRefresh(); }, 0);
   }
 });
 document.addEventListener('focusin', function (e) {
   var el = e.target;
-  if (repo.open && el && el.closest && el.closest('#repoDialog .sv-edit')) {
+  if (repo.open && el && el.closest && el.closest('#repoDialog .sv-edit, #repoDialog .nc')) {
+    var dsf = el.dataset || {};
     sv.editFocus = el.id ? '#' + svCssEscape(el.id)
-      : (el.dataset && el.dataset.repoweight !== undefined ? '[data-repoweight="' + el.dataset.repoweight + '"]' : null);
+      : dsf.repoweight !== undefined ? '[data-repoweight="' + dsf.repoweight + '"]'
+      /* the New edition form's chips and grid cells (D158) */
+      : dsf.reporule !== undefined ? '[data-reporule="' + dsf.reporule + '"][data-repofld="' + svCssEscape(dsf.repofld) + '"][data-repoval="' + svCssEscape(dsf.repoval) + '"]'
+      : dsf.negcell !== undefined ? '[data-negcell="' + svCssEscape(dsf.negcell) + '"]'
+      : null;
   }
   if (!repo.open || !el.classList || !el.classList.contains('cat-fold')) return;
   if (el.matches && el.matches(':focus-visible')) catBandIntoView(el.closest('tr'));
 });
-window.addEventListener('resize', function () {
+/* The pinned summary of the New sleeve and New edition forms fits the part
+   of its box that is on screen: before the box scrolls, the summary starts
+   below an introduction and must stop short of the foot by as much, so
+   Create is in view from the first frame (D158). */
+function ncFitSide() {
   var side = document.querySelector('#repoDialog #ncSide'), box = side && side.closest('.sv-scroll');
-  if (side && box) side.style.maxHeight = Math.max(260, box.clientHeight - 30) + 'px';
+  if (!side || !box) return;
+  var top = side.getBoundingClientRect().top - box.getBoundingClientRect().top;
+  var room = box.clientHeight - Math.max(0, top) - 24;
+  side.style.maxHeight = Math.max(260, Math.min(box.clientHeight - 30, room)) + 'px';
+}
+document.addEventListener('scroll', function (e) {
+  if (repo.open && e.target && e.target.classList && e.target.classList.contains('sv-scroll') && document.getElementById('ncSide')) ncFitSide();
+}, true);
+window.addEventListener('resize', function () {
+  ncFitSide();
   if (repo.open && repo.view === 'catalogue') catEdge();
 });
 

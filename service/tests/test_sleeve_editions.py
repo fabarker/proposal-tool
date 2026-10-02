@@ -438,6 +438,10 @@ def test_the_console_payload_and_the_two_new_endpoints(monkeypatch):
     body = dashboardRouter.getRepository(caller=_caller('alice'))
     assert body['ruleVocabulary'] == sleeveRules.vocabulary()
     assert body['ruleFields'] == ['currency', 'riskLevel', 'allocationType']
+    # the New edition form counts, lists and maps portfolios itself (D158)
+    assert body['strategicPortfolios'] == universe.keyStrs() and len(body['strategicPortfolios']) == len(universe.keys())
+    assert body['ruleLabels']['riskLevel']['ConsMod'] == 'Conservative-Moderate'
+    assert body['ruleLabels']['allocationType'] == {'NA': 'All equity'}
     entry = [e for e in body['sleeves'] if e['category'] == C][0]
     assert {'label', 'rules', 'fallback', 'applies'} <= set(entry)
 
@@ -552,3 +556,25 @@ def test_the_export_refuses_a_name_the_base_has_no_edition_of(monkeypatch):
         assert C in body['error']
     finally:
         _archive(made['id'])
+
+
+
+def test_an_edition_label_is_one_label_whatever_its_spacing_or_capitals():
+    """D158 review: the server normalises a label like a name and compares
+    labels case-insensitively, so 'gbp' cannot sit beside 'GBP'; 'G BP' is a
+    different label; 'fallback' is not a label."""
+    fb = _fallbackOf('ETFs Only')
+    first = sleeveRepo.addEdition(fb['id'], '  GBP   Hedged ', [{'currency': ['GBP']}], _products(), user='alice')
+    try:
+        assert first['label'] == 'GBP Hedged'
+        for clash in ('gbp hedged', ' GBP  HEDGED'):
+            with pytest.raises(ValidationError) as err:
+                sleeveRepo.addEdition(fb['id'], clash, [{'currency': ['EUR']}], _products(), user='alice')
+            assert err.value.field == 'label' and 'GBP Hedged' in str(err.value)
+        with pytest.raises(ValidationError) as err:
+            sleeveRepo.addEdition(fb['id'], ' Fallback ', [{'currency': ['CHF']}], _products(), user='alice')
+        assert err.value.field == 'label'
+        other = sleeveRepo.addEdition(fb['id'], 'GBPHedged', [{'currency': ['EUR']}], _products(), user='alice')
+        _archive(other['id'])
+    finally:
+        _archive(first['id'])
