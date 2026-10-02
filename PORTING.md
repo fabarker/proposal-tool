@@ -1,7 +1,7 @@
 # Porting the Proposal Tool into `cyrus_pmg` — the playbook
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
-since the last port (`718d750`, 2026-09-10, D89) up to D157** — the PowerPoint deck, custom fees,
+since the last port (`718d750`, 2026-09-10, D89) up to D158** — the PowerPoint deck, custom fees,
 the register's saved views, a private-markets book's initial allocation and the page work in between. **If Cyrus already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
@@ -104,7 +104,7 @@ checkout.
 ## 0A. Already ported? Bringing Cyrus up to date
 
 Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
-D157 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
+D158 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
 
@@ -131,7 +131,7 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
-1. **Gate on this side.** §5's checks at the commit you are shipping — 545 passed, none skipped, at D157.
+1. **Gate on this side.** §5's checks at the commit you are shipping — 553 passed, none skipped, at D158.
 2. **Install the dependency** in the host's virtualenv and prove it imports:
 
    ```bat
@@ -1306,7 +1306,7 @@ router level — not in the package.
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 545 passed, none skipped, in ~4 min (at D157)
+# 553 passed, none skipped, in ~4 min (at D158)
 ```
 
 | File | Tests (collected) | Covers |
@@ -1852,6 +1852,12 @@ Since the 10 September port (§0A):
   page folder). One small server change after review: `sleeveRepo` collapses inner spaces in names and
   refuses a name that differs from one in the same type and category only in capitals or spacing. No route
   or schema change.
+- **D158** The New edition form: the D157 form and summary, with who gets the edition chosen as Rules
+  or on a Grid of currency × risk level (`generator/js/repository.js`, `generator/repository.py`,
+  re-copied). One read-only server addition: `GET /scenario/repository` also returns
+  `strategicPortfolios` and `ruleLabels` (`sleeveRules.portfolioKeys`, `valueLabels`). After review,
+  `sleeveRepo` normalises edition labels like names, compares them case-insensitively and reserves
+  "fallback". No route or schema change.
 
 ## Appendix B — where the rest is written down
 
@@ -1859,7 +1865,7 @@ Since the 10 September port (§0A):
 |---|---|
 | `PORTING_GUIDE_AUDIT.md` | The evidence behind this guide: what the previous guide got wrong, what changed, what was verified and how. |
 | `service/README.md` | Running the mirror, the wire contract, the adapters, baking. Partly stale (it still describes `sleeves.py` as holding tables). |
-| `service/DEVIATIONS.md` | D1–D157, the adapter-side decisions, the spec gaps G1–G8. |
+| `service/DEVIATIONS.md` | D1–D158, the adapter-side decisions, the spec gaps G1–G8. |
 | `proposals/` | Design studies behind D90–D141, among them the PowerPoint export plan (`powerpoint-export-plan.html`, with its comparison in §10) and the deck's table styles (`deck-table-styles.html`). |
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
