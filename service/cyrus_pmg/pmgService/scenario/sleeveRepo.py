@@ -491,7 +491,7 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.commit()
         return
     rows = list(readSeedRows(path))
-    rulesFile = rulesPath()
+    rulesFile = path if workbookRules(path) else rulesPath()
     ruleRows = list(readRuleRows(rulesFile)) if os.path.exists(rulesFile) else []
     _importInto(conn, rows, replace=False, user='seed', strict=False, action='seeded',
                 ruleRows=ruleRows)
@@ -504,8 +504,15 @@ def _seed(conn: sqlite3.Connection) -> None:
 
 # ------------------------------------------------------------- the seed ---
 
-def _tableRows(path: str):
-    """(header, row iterator) from a CSV or the first sheet of an XLSX."""
+#: the seed workbook's sheets (D159): one file carries the products and the
+#: editions' rules. A workbook without them is read from its first sheet.
+SEED_SHEET = 'Sleeves'
+RULES_SHEET = 'Rules'
+
+
+def _tableRows(path: str, sheetName: str = None):
+    """(header, row iterator) from a CSV, or from an XLSX's *sheetName* sheet
+    when it has one, else its first sheet."""
     if path.lower().endswith('.csv'):
         with open(path, newline='', encoding='utf-8-sig') as fh:
             reader = csv.reader(fh)
@@ -513,7 +520,8 @@ def _tableRows(path: str):
             body = [row for row in reader if row and str(row[0]).strip()]
         return head, body
     from openpyxl import load_workbook
-    sheet = load_workbook(path, read_only=True).active
+    book = load_workbook(path, read_only=True, data_only=True)
+    sheet = book[sheetName] if sheetName and sheetName in book.sheetnames else book.active
     rows = sheet.iter_rows(values_only=True)
     head = [str(h).strip() if h is not None else '' for h in (next(rows, None) or [])]
     body = [row for row in rows if row and row[0] is not None and str(row[0]).strip()]
@@ -527,7 +535,7 @@ def readSeedRows(path: str):
     Both headers are read: the one delivered before editions existed, whose
     rows become fallback editions (edition ''), and the one with the Edition
     column. A reader is told which it has so the two never get confused."""
-    head, body = _tableRows(path)
+    head, body = _tableRows(path, SEED_SHEET)
     if head[:6] == SEED_COLUMNS_EDITIONS:
         width, editions = 6, True
     elif head[:5] == SEED_COLUMNS:
@@ -548,10 +556,18 @@ def readSeedRows(path: str):
         yield tuple(cells)
 
 
+def workbookRules(path: str) -> bool:
+    """Whether *path* is a seed workbook carrying its own Rules sheet (D159)."""
+    if not path.lower().endswith('.xlsx') or not os.path.exists(path):
+        return False
+    from openpyxl import load_workbook
+    return RULES_SHEET in load_workbook(path, read_only=True).sheetnames
+
+
 def readRuleRows(path: str):
     """Rules from a CSV or XLSX with RULE_COLUMNS: one dict per row, the three
     fields as lists (blank means any)."""
-    head, body = _tableRows(path)
+    head, body = _tableRows(path, RULES_SHEET)
     if head[:7] != RULE_COLUMNS:
         raise ValueError('{}: header is {!r}, expected {!r}'.format(path, head, RULE_COLUMNS))
     for row in body:

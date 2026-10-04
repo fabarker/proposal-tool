@@ -189,7 +189,7 @@ def _export(path: str) -> int:
 def _import(path: str, replace: bool) -> int:
     try:
         rows = list(sleeveRepo.readSeedRows(path))
-        rulesFile = _rulesFileFor(path)
+        rulesFile = path if sleeveRepo.workbookRules(path) else _rulesFileFor(path)
         ruleRows = list(sleeveRepo.readRuleRows(rulesFile)) if os.path.exists(rulesFile) else []
     except (ValueError, OSError) as exc:
         print('cannot read {}: {}'.format(path, exc))
