@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>React Refactor Plan</title>
+<style>
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+:root{--bg:#FBFCFE;--surface:#fff;--ink:#1C2733;--ink-2:#4F5E6E;--line:#C9D2DC;--frame:#7F8D9D;--navy:#16243A;--accent:#1F5FBF;--tint:#EAF1FC;--warn:#8A5300;--warn-tint:#FFF1D6;--good:#176A33;--good-tint:#E3F2E8;
+  --f:'GS Sans','Roboto',system-ui,-apple-system,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--f)}
+.wrap{max-width:920px;margin:0 auto;padding-block:40px 80px;padding-inline:24px}
+h1{font-size:clamp(30px,4vw,40px);line-height:1.1;color:var(--navy);margin:0 0 10px;text-wrap:balance}
+h2{font-size:23px;color:var(--navy);margin:44px 0 10px;padding-top:14px;border-top:2px solid var(--navy)}
+h3{font-size:17px;color:var(--navy);margin:22px 0 6px}
+p,li{max-width:72ch}
+.lead{font-size:18px;color:var(--ink-2)}
+.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 8px}
+code{font:14px ui-monospace,Menlo,monospace;background:#EEF1F4;padding:1px 5px;border-radius:3px}
+pre{background:#0F1B2D;color:#E6EDF6;padding:14px 16px;border-radius:8px;overflow-x:auto;font:13.5px/1.5 ui-monospace,Menlo,monospace}
+table{border-collapse:collapse;width:100%;font-size:15px;margin:10px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#EDF1F6;color:var(--navy)}
+.tbl{overflow-x:auto;border:1px solid var(--frame);border-radius:8px}
+.tbl table{margin:0}
+.box{border:1px solid var(--frame);border-left:4px solid var(--accent);background:var(--surface);border-radius:8px;padding:12px 16px;margin:14px 0}
+.box.warn{border-left-color:var(--warn);background:var(--warn-tint)}
+.box.good{border-left-color:var(--good);background:var(--good-tint)}
+.phase{display:grid;grid-template-columns:44px 1fr;gap:4px 14px;margin:16px 0}
+.phase .n{width:36px;height:36px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.phase h3{margin:4px 0 2px}
+.phase p{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p class="eyebrow">Proposal · Front end</p>
+<h1>Moving the Proposal Tool to React</h1>
+<p class="lead">How I would refactor the page and the repository console onto React without stopping feature work, without breaking the Cyrus port, and without losing the behaviour the last 158 decisions encoded.</p>
+
+<h2>Where the front end is today</h2>
+<ul>
+<li><b>About 780 KB of hand-written JavaScript in four files:</b> <code>core.js</code> (196 KB), <code>implementation.js</code> (135 KB), <code>repository.js</code> (440 KB) and <code>picker.js</code> (8 KB). <code>generator/build_styles.py</code> concatenates them into one bundle and writes it, with the CSS from the Python modules, into <code>proposalTool/static</code> and the service mirror.</li>
+<li><b>Rendering is string templates set with <code>innerHTML</code></b> (about 80 call sites), with document-level delegated event handlers keyed on <code>data-*</code> attributes.</li>
+<li><b>State is global mutable objects</b> (<code>state</code>, <code>repo</code>, <code>sv</code>, <code>nc</code> and others). After a change, code calls a re-render, then restores focus and scroll by hand (<code>preserveFocus</code>, <code>svFocusNow</code>, the scroll snapshots).</li>
+<li><b>Much of the careful work is UI plumbing React would own:</b> the unsaved-changes guard (<code>goTo</code>), focus traps, <code>inert</code> backgrounds, row enter/leave animation (<code>animateRowChanges</code>), measured column widths (<code>sizeFixedColumns</code>), the docked column heads.</li>
+<li><b>Pure logic is already separated in places</b> and tested in node from Python (the overlay resolver, the sleeve view helpers, the edition grid mapping). That is the most valuable thing to carry over intact.</li>
+<li><b>The host is fixed.</b> The page is a static folder served by the Cyrus dashboard, the API is the Python router, and porting means copying three places. Any React build must still produce plain static files.</li>
+</ul>
+
+<div class="box warn"><b>The honest question first.</b> The tool works and is well tested. React pays off here through fewer state and focus bugs (most review findings in D155–D158 were exactly that), easier onboarding, and components shared between screens. It does not pay off as a rewrite. The plan below is incremental, and every step leaves a working, shippable tool.</div>
+
+<h2>Decisions</h2>
+<div class="tbl"><table>
+<tr><th>Question</th><th>Choice</th><th>Why</th></tr>
+<tr><td>Language</td><td>TypeScript</td><td>The API payloads (scenario, sleeves, editions, overlays, register) are the contract between Python and the page. Types make that contract checkable.</td></tr>
+<tr><td>Build</td><td>Vite, building to a static folder with fixed file names</td><td>Output drops into <code>proposalTool/static</code> exactly where the bundle goes today, so the Cyrus port is still "copy the folder". No server-side rendering.</td></tr>
+<tr><td>Server data</td><td>TanStack Query</td><td>Caching, refetch after save, and the 409 stale-revision handling (D155, D156) become one pattern instead of hand-written code per tab.</td></tr>
+<tr><td>Local UI state</td><td><code>useReducer</code> per screen; Zustand only for the few things shared across screens (the open scenario, the user)</td><td>Today's global objects map naturally onto reducers. That keeps state changes explicit and testable.</td></tr>
+<tr><td>Forms</td><td>React Hook Form, with the existing validation functions</td><td>The plain-words validation rules (clean numbers, weights to exactly 100 at the server's tolerance, name and label normalisation) are kept as pure functions, not rewritten.</td></tr>
+<tr><td>Accessible primitives</td><td>Radix UI (Dialog, Tabs, ToggleGroup, Popover)</td><td>Focus traps, Escape order, <code>inert</code> and focus return come for free, replacing a large share of hand-written code and of past bugs.</td></tr>
+<tr><td>Tables</td><td>TanStack Table for the sleeves library and catalogue; hand-built for the allocation and risk tables</td><td>Sorting, filtering and row selection come built in. The financial tables have bespoke layout rules (equal columns, docked heads, D151 styling) that are clearer as plain components.</td></tr>
+<tr><td>Styling</td><td>CSS Modules carrying today's tokens</td><td>Keeps the house look, GS Sans and the theme tokens. No visual reset, and no utility framework to learn.</td></tr>
+<tr><td>Tests</td><td>Vitest + Testing Library; Playwright for the flows the headless-Chrome QA passes exercise</td><td>The CDP scripts used in review become a permanent end-to-end suite. The Python suite stays as it is.</td></tr>
+</table></div>
+
+<h2>Shape of the code</h2>
+<pre>web/
+  src/
+    api/            typed client + payload types (one file per router area)
+    domain/         pure logic, ported 1:1 from today's tested helpers
+      overlays.ts   resolveOverlays (D155) - same parity test vs Python
+      sleeves.ts    weights, cost, status, sorting, filters (D156)
+      newSleeve.ts  availability, source diff markers (D157)
+      editions.ts   rules ↔ grid mapping, applicability (D158)
+    ui/             shared components: Dialog, Summary, StatusChip, WeightInput,
+                    AddProductDialog, UnsavedGuard, Breadcrumb, CoverageBar
+    screens/
+      allocation/   picker rail, allocation table, risk, charts
+      implementation/
+      repository/   Sleeves (Cards | Table), NewSleeve, NewEdition,
+                    Catalogue, Archive, Activity, Proposals,
+                    UncalledCapital, OverlayFunding
+    app.tsx         routes (hash-based, matching today's #views)
+  index.html
+build → proposalTool/static/js/proposalTool.js + .css (fixed names)</pre>
+
+<h2>Keeping what already works</h2>
+<ul>
+<li><b>Port the pure helpers first, unchanged in behaviour.</b> The Python tests that run JS in node (overlay parity, the sleeve view helpers, the edition fuzz) are pointed at the compiled <code>domain/</code> module. Those tests passing is the definition of "ported".</li>
+<li><b>Keep the server unchanged.</b> React is a client change only. The routes, the 409s, the funding and overlay stores and the register stay as they are.</li>
+<li><b>Write the decisions down as tests before moving each screen.</b> For example: equal column widths, a total of exactly 100%, the guard on every move away from an edit, Escape order, and that the page never says "book". Many already exist as source-reading tests. These become component tests, so a decision cannot be lost silently.</li>
+</ul>
+
+<h2>Phases</h2>
+<div class="phase"><span class="n">0</span><div><h3>Scaffold beside the old page</h3><p>Vite and TypeScript in <code>web/</code>, a typed API client generated from the router's payloads, the domain modules ported with the existing JS-in-node tests pointed at them, and CI building both bundles. Nothing user-visible changes.</p></div></div>
+<div class="phase"><span class="n">1</span><div><h3>Mount React islands, newest screens first</h3><p>The repository console tabs are the most self-contained and the most recently specified. Overlay Funding, then New sleeve and New edition, then Sleeves (Cards | Table), each rendered by React into its existing container while the rest of the page stays as it is. The old and new code talk through one small bridge for the open scenario and the "open this sleeve" deep links.</p></div></div>
+<div class="phase"><span class="n">2</span><div><h3>The rest of the console</h3><p>Catalogue, Archive, Activity, Proposals and Uncalled Capital Allocation. After this the 440 KB <code>repository.js</code> is gone, and with it most of the hand-written focus and guard code.</p></div></div>
+<div class="phase"><span class="n">3</span><div><h3>The proposal page</h3><p>The rail, allocation and risk tables, charts, then the implementation step. These come last because they carry the most bespoke layout: measured columns, docked heads, row animation. Each gets a visual check against screenshots of today's page before the old code is removed. The Excel and PowerPoint outputs are server-side and are untouched.</p></div></div>
+<div class="phase"><span class="n">4</span><div><h3>Remove the generator's JS path</h3><p><code>build_styles.py</code> keeps writing the HTML shell and the theme CSS, or hands those to Vite too. The Cyrus porting guide changes from "copy the generated bundle" to "copy the built folder", which is the same copy.</p></div></div>
+
+<div class="box good"><b>Effort, roughly.</b> Phase 0: a few days. Phase 1: one to two weeks per console screen. Phases 2 and 3: about the same again for the rest. Feature work can continue throughout, because each new or changed screen is simply written in React from then on.</div>
+
+<h2>Risks and how to handle them</h2>
+<div class="tbl"><table>
+<tr><th>Risk</th><th>Mitigation</th></tr>
+<tr><td>The Cyrus host or the managed browser estate can't take a new runtime or larger bundle</td><td>React and ReactDOM add about 45 KB gzipped against roughly 780 KB of source today. Ship a single static bundle with no CDN dependency. Confirm the supported browser versions before phase 0.</td></tr>
+<tr><td>Subtle behaviour lost in translation (rounding, ordering, Escape order, focus targets)</td><td>Logic ported first with its parity tests, decisions captured as tests per screen, and the Playwright flows re-run on every change.</td></tr>
+<tr><td>Two systems in one page during the migration</td><td>One narrow bridge (open scenario, deep links, the unsaved guard across islands). Retire each old screen as soon as its React version ships.</td></tr>
+<tr><td>Visual drift</td><td>CSS Modules reuse today's tokens, plus screenshot comparisons for the allocation, risk and implementation tables.</td></tr>
+<tr><td>The Python and JS parity checks (overlay resolver, edition rules) diverging</td><td>Keep the node-run parity tests, now pointed at the TypeScript modules, in the Python suite.</td></tr>
+</table></div>
+
+<h2>What I would not do</h2>
+<ul>
+<li>Rewrite everything at once, or pause features to do it.</li>
+<li>Move logic out of Python. Pricing, rules, funding, overlays and the deck stay server-side.</li>
+<li>Add server-side rendering or a Node server. The host serves static files and the Python API.</li>
+<li>Introduce a component library that replaces the house look.</li>
+</ul>
+
+<h2>A first step to prove it</h2>
+<p>Build the Overlay Funding tab in React as an island: it is self-contained, recent and well specified (D155), and has a parity test with Python. If that ships cleanly in the console beside the existing tabs, and the Cyrus port is still a folder copy, the approach is proven at low cost.</p>
+</div>
+</body>
+</html>
