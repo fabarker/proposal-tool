@@ -90,7 +90,7 @@ The 12 new routes:
   The test export in step 11 will stay on the record, so make it under a mandate you'll recognise.
 - **The gate runs on the development machine, not on Cyrus.** Before a bundle is built, the suite
   must pass there (`cd service`, then `PYTHONPATH=. python3 -m pytest tests -q`). It printed
-  **556 passed** on 4 October 2026, in about 5 minutes. Don't port a bundle built from a commit
+  **562 passed** on 13 October 2026, at D160, in about 5 minutes. Don't port a bundle built from a commit
   that fails it.
 - **The bundle must be current.** It is rebuilt after the last change with
   `python3 service/tools/buildPortBundle.py` and committed with the code it carries.
@@ -429,7 +429,7 @@ On 4 October 2026, at the commit that adds it:
 
 - **The change table** comes from `git diff 35dbbbf..HEAD` over the package, the router, the
   page, the host stand-ins, the data and the requirements.
-- **The suite** printed 556 passed. The live development databases were untouched; their hashes
+- **The suite** printed 556 passed on 4 October (562 at D160). The live development databases were untouched; their hashes
   were compared before and after.
 - **The upgrade was proved on real 10 September databases:**
   1. The 10 September code (`git archive 35dbbbf`) built a sleeve library and a register, with a
