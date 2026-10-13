@@ -22,12 +22,17 @@ FORBIDDEN = ('epsilonPhi', 'liveAdapter', 'LiveScenarioPort', 'SAA_ENGINE',
              'SCENARIO_BAKED_FALLBACK', 'from .engine', 'import engine')
 
 
+_NAMES_THE_RETIRED_PATH = {'portCheck.py'}
+
+
 def _sources():
     for root in (PACKAGE, os.path.join(SERVICE, 'tools')):
         for dirpath, dirs, files in os.walk(root):
             dirs[:] = [d for d in dirs if d != '__pycache__']
             for name in files:
-                if name.endswith('.py'):
+                # portCheck.py names the retired live path on purpose: it is the
+                # porting tool that tells a host carrying it to delete it
+                if name.endswith('.py') and name not in _NAMES_THE_RETIRED_PATH:
                     yield os.path.join(dirpath, name)
     yield os.path.join(SERVICE, 'start_dashboard.sh')
     yield os.path.join(SERVICE, 'dashboard.env.defaults')

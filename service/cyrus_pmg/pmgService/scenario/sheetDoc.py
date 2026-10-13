@@ -794,13 +794,29 @@ def buildAssumptionsDoc(assets, results=None, engineParity: bool = False) -> She
     doc.row(2).height = 49
 
     # ---- the body -----------------------------------------------------
-    # the same rows the strategic sheets kept, in the same order
+    # the same rows the strategic sheets kept, in the same order. The bake
+    # hands its estimates over in whatever order it recorded them, which is
+    # not the order the strategic sheets print - and it can interleave
+    # categories, so a naive "insert a header the first time you see a new
+    # category" walk would file the second occurrence of a category under
+    # whichever category's header was written most recently (D68). Re-group
+    # by category up front, follow the canonical order, and every asset
+    # lands under its OWN category header and every category prints in the
+    # same order as ``portfolios`` / ``risk_dashboard`` / ``Implementation``.
+    # (Found and fixed on the Cyrus host; carried here so a port keeps it.)
     if results and not engineParity:
         order, keptAssets = _categoryOrder(results)
-        allowed = {(category, name)
-                   for category in order for name in keptAssets[category]}
-        assets = [entry for entry in (assets or [])
-                  if (entry.get('category'), entry.get('reportingName')) in allowed]
+        byCategory = {}
+        for entry in (assets or []):
+            byCategory.setdefault(entry.get('category'), {})[
+                entry.get('reportingName')] = entry
+        assets = []
+        for category in order:
+            bucket = byCategory.get(category, {})
+            for name in keptAssets[category]:
+                entry = bucket.get(name)
+                if entry is not None:
+                    assets.append(entry)
 
     row = 3
     if not assets:

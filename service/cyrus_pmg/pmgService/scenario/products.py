@@ -32,6 +32,7 @@ import os
 import threading
 
 from .fees import FEE_GROUPS
+from .csvText import unwrapRows
 
 _DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         '..', '..', '..', '..', 'productSource', 'products.csv')
@@ -70,8 +71,10 @@ _loaded = None          # (path, mtime, {id: product}, [ids in file order])
 
 def _readRows(path: str):
     if path.lower().endswith('.csv'):
-        with open(path, newline='', encoding='utf-8') as fh:
-            reader = csv.reader(fh)
+        # utf-8-sig drops a BOM from an Excel export; unwrapRows takes off
+        # a pair of quotes wrapped around a whole row (csvText.py)
+        with open(path, newline='', encoding='utf-8-sig') as fh:
+            reader = csv.reader(unwrapRows(fh))
             head = next(reader, None) or []
             yield [str(h).strip() for h in head]
             for row in reader:

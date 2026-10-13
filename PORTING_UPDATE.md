@@ -12,7 +12,9 @@ section number.
 - **`<ep>`:** the folder step 1 unpacks, `H:\pt-update\proposal-tool`. It has this repository's
   layout, holding everything the update copies.
 
-Every command is for the Cyrus machine.
+Every command is for the Cyrus machine, written for **Command Prompt**. In PowerShell (PyCharm's
+terminal shows `PS` before the prompt), `robocopy`, `copy` and `del` work as written; write
+`$BK = "H:\pt-backup-before-update"` for `set BK=...`, and `$BK` for `%BK%`.
 
 ---
 
@@ -182,6 +184,15 @@ It ends with *The host is behind this checkout* and exits 1.
 the settings were moved to durable storage after the first port, they are the package defaults
 under `H:\cyrus-repo\isg-cyrus-pmg\src\var\`.
 
+**Then look for edits made on the host itself.** An update copies files over the host's, so an edit
+made on Cyrus since the last port would be lost. Copy `porting/edits-check.py` from GitHub into
+`H:\pt-update` the same way as the bundle, and run `python H:\pt-update\edits-check.py`. It
+compares Cyrus's package, router block and page with the commit Cyrus was ported from, and lists
+every line Cyrus added or changed (saved to `H:\pt-update\edits-report.txt`). A file flagged only at
+*original line N* where N is its last line plus one has merely lost its final newline: harmless. At
+the 9 September port it found four real fixes; three are now in the repository (D160), and the
+fourth is the `bake.py` line in step 6.
+
 If the report is not what you expect:
 
 | The report says | What it means |
@@ -230,8 +241,16 @@ del H:\cyrus-repo\isg-cyrus-pmg\src\cyrus_pmg\pmgService\scenario\engine.py
 del H:\cyrus-repo\isg-cyrus-pmg\src\cyrus_pmg\pmgService\scenario\liveAdapter.py
 ```
 
-If step 2 listed `fees.json` or `advisors.xlsx` as host-owned and the host's copy matters (see the
-table in §2), put that copy back from `%BK%\scenario`.
+Then put back what is the host's own:
+
+- **`advisors.xlsx`**: Cyrus holds its own advisor directory (34 KB against the repository's 5 KB
+  stand-in). Copy it back from `%BK%\scenario`.
+- **`fees.json`**: take the new one unless `feeTools --accept` has been run on Cyrus; at the
+  9 September port it had not, and the only difference was the new `custom` block.
+- **`bake.py`, one line**: Cyrus keeps the bake one folder higher than the repository does, in
+  `H:\cyrus-repo\isg-cyrus-pmg\var\baked`. In the new `bake.py`, find `DEFAULT_STORE` and give
+  its path one more `'..',`, so it reads
+  `os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', 'var', 'baked')`.
 
 Then check the deck's modules load. Run this from `H:\cyrus-repo\isg-cyrus-pmg\src`, or with it on
 `PYTHONPATH`:

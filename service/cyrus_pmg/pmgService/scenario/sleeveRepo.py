@@ -82,6 +82,7 @@ import threading
 
 from . import products, sleeveRules, universe
 from .types import ValidationError
+from .csvText import unwrapRows
 
 
 class StaleError(ValidationError):
@@ -514,8 +515,10 @@ def _tableRows(path: str, sheetName: str = None):
     """(header, row iterator) from a CSV, or from an XLSX's *sheetName* sheet
     when it has one, else its first sheet."""
     if path.lower().endswith('.csv'):
+        # utf-8-sig drops a BOM from an Excel export; unwrapRows takes off a
+        # pair of quotes wrapped around a whole row (csvText.py)
         with open(path, newline='', encoding='utf-8-sig') as fh:
-            reader = csv.reader(fh)
+            reader = csv.reader(unwrapRows(fh))
             head = [str(h).strip() for h in (next(reader, None) or [])]
             body = [row for row in reader if row and str(row[0]).strip()]
         return head, body

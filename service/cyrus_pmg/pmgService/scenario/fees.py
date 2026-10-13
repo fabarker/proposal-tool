@@ -78,7 +78,10 @@ class BadRateCard(ValueError):
 def _readDelivery(path: str) -> dict:
     """The delivered rows -> cells, tiers, fee groups. Rejects, never guesses."""
     cells, tiers, groups = {}, {}, []
-    with open(path, newline='', encoding='utf-8') as fh:
+    # utf-8-sig transparently drops a BOM if the delivery was saved from Excel
+    # or similar; without it the first field name is '\ufeffschedule' and the
+    # column check below rejects a card whose header actually reads 'schedule'.
+    with open(path, newline='', encoding='utf-8-sig') as fh:
         reader = csv.DictReader(fh)
         need = {'schedule', 'feeGroup', 'tier', 'tierMin', 'tierMax', 'source', 'point', 'rate'}
         if not need.issubset(set(reader.fieldnames or [])):
