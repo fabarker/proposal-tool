@@ -10,7 +10,7 @@ It checks every part against the hash it was built with, names any part that
 was pasted wrongly, and unpacks a copy of the repository's layout into the
 folder proposal-tool beside this file. Nothing else is read or written.
 
-Built from commit 8a078dc of 2026-10-13: 53 files, 6 parts.
+Built from commit e7ac006 of 2026-10-13: 53 files, 6 parts.
 Python 3.8 or later, standard library only.
 """
 import base64
@@ -22,16 +22,16 @@ import re
 import sys
 import zipfile
 
-SOURCE = '8a078dc'
+SOURCE = 'e7ac006'
 PARTS = [
-    ('part-01.txt', 'e2de8cdd277f3502801fe68fb2f544ba704aaeaf05a0c390c63ebbb289bb1774', 150000),
-    ('part-02.txt', '6a23e28baed50a6bde6f0313781cf782e34d93740e2f78d9f97df132e12b9531', 150000),
-    ('part-03.txt', '06e65b829fe6f13e9a8c8325c85e77324244369ccaf8c74a28229dc180ed1d0e', 150000),
-    ('part-04.txt', '8bbf42006d641ca27b32f633a2189d4db8ac41a0b985a91498b4aa0a0bb66cb6', 150000),
-    ('part-05.txt', '308ca54c18caee78b4054f1baecf5d4135a3ace22f7d4b3f98f6a7829d2d0d4a', 150000),
-    ('part-06.txt', 'f58f2d8754f9d67b26055bf494704218d9cf2d1d670a565232170f7db25e9b33', 132630),
+    ('part-01.txt', 'cdff51673d259aae9dab329db521c0328f2b145361438810ff9958ea727c5e92', 150000),
+    ('part-02.txt', '58223acb53d7a787c5da2500e80046d3ac4f5a910a11b995e90e310064164a20', 150000),
+    ('part-03.txt', '36cca67600936e021f3c1ff42f28515986d6d19144d30ee2d7699b6173086ba0', 150000),
+    ('part-04.txt', 'd2f4e871876fe7c62223047e3244e1842ea65e9de905f5adc430d798c4952840', 150000),
+    ('part-05.txt', 'a5f5a9b3a4b16c1fb5b00d35378e192894b91e16c08c808e5b9bb2200660aca8', 150000),
+    ('part-06.txt', '6baf656e6927d1b9a03efedf69bddb9f4e9acb1816dc6dfe6c0ca3c50f62c0a2', 132651),
 ]
-ZIP_SHA256 = 'cadde3e066d994d932216a23a454b65665efdafc2c58b173cd1e9c88a0079f6f'
+ZIP_SHA256 = '5958dfc905e14edccc6704e1615bfa00f2c93a0268d03335f959f9f51232e4d6'
 FILES = 53
 
 # A paste can add a byte-order mark, CRLF line ends or trailing spaces. None of
