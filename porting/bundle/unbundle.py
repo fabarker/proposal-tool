@@ -10,7 +10,7 @@ It checks every part against the hash it was built with, names any part that
 was pasted wrongly, and unpacks a copy of the repository's layout into the
 folder proposal-tool beside this file. Nothing else is read or written.
 
-Built from commit fb14dd7 of 2026-10-06: 52 files, 6 parts.
+Built from commit 8a078dc of 2026-10-13: 53 files, 6 parts.
 Python 3.8 or later, standard library only.
 """
 import base64
@@ -22,17 +22,17 @@ import re
 import sys
 import zipfile
 
-SOURCE = 'fb14dd7'
+SOURCE = '8a078dc'
 PARTS = [
-    ('part-01.txt', '77d59333246aa6d079cf8a98f8132459871def326107c215a033ee0b38898850', 150000),
-    ('part-02.txt', 'c7ab042b858896d2ca71052a9b11c968d45e5cdef343963b859e86232392ca1d', 150000),
-    ('part-03.txt', 'acdc9c87dd0bfbb91368f792b1af7b45d5f99e8a46d063a2a3d7a3746cb225dd', 150000),
-    ('part-04.txt', 'aeae429e5571ceaeab0b0c5faea6273fc253b13b0c0abe64d702c9cd5210a506', 150000),
-    ('part-05.txt', 'b4d2776f4f8e43d92d10856e968b35d2a3855bf73a7c37b707b689bb3ffabbdf', 150000),
-    ('part-06.txt', '6fb0979054b226782c3362068283322b308d69b0bb3f024cca0e06413653c1c5', 130513),
+    ('part-01.txt', 'e2de8cdd277f3502801fe68fb2f544ba704aaeaf05a0c390c63ebbb289bb1774', 150000),
+    ('part-02.txt', '6a23e28baed50a6bde6f0313781cf782e34d93740e2f78d9f97df132e12b9531', 150000),
+    ('part-03.txt', '06e65b829fe6f13e9a8c8325c85e77324244369ccaf8c74a28229dc180ed1d0e', 150000),
+    ('part-04.txt', '8bbf42006d641ca27b32f633a2189d4db8ac41a0b985a91498b4aa0a0bb66cb6', 150000),
+    ('part-05.txt', '308ca54c18caee78b4054f1baecf5d4135a3ace22f7d4b3f98f6a7829d2d0d4a', 150000),
+    ('part-06.txt', 'f58f2d8754f9d67b26055bf494704218d9cf2d1d670a565232170f7db25e9b33', 132630),
 ]
-ZIP_SHA256 = 'd046591b2dc3b18d82e35b86a8e3aff4f34a0485e5daf023f77cb71ad9a896b5'
-FILES = 52
+ZIP_SHA256 = 'cadde3e066d994d932216a23a454b65665efdafc2c58b173cd1e9c88a0079f6f'
+FILES = 53
 
 # A paste can add a byte-order mark, CRLF line ends or trailing spaces. None of
 # them is base-64, so each part is read as its base-64 characters alone.
