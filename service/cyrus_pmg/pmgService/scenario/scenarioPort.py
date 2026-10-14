@@ -107,7 +107,7 @@ class ScenarioPort(Protocol):
         (D52). ``proposalId`` is the Proposal UID the caller minted before
         asking for the file; the writer puts it in the Implementation sheet's
         first row, in every sheet's print header and in the file's properties
-        (D75).
+        (D75)."""
 
     def build_export_deck(
         self,
@@ -122,7 +122,7 @@ class ScenarioPort(Protocol):
         ``proposalId`` in *implementation* is the UID the export minted: the
         deck and the workbook are one delivery, built from the same dict,
         stamped with the same UID and recorded together (D123). The deck is
-        locked like the workbook - a password to modify and Mark as Final.""""""
+        locked like the workbook - a password to modify and Mark as Final."""
 
     def capabilities(self) -> dict:
         """{"canExport": bool, "canEdit": bool}. One role today; this is the seam."""
