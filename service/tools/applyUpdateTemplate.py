@@ -11,6 +11,9 @@ folder it unpacked (H:\\pt-update), then run it from anywhere:
 'go' is PORTING_UPDATE.md steps 5 to 8 and the database upgrade of step 10,
 done the way the host needs them:
 
+  - reads the settings the service starts with from PyCharm's run
+    configurations, so the databases it backs up and upgrades are the ones
+    the service really uses;
   - backs up the package, the page folder, the router and both databases into
     a backup-<date> folder beside this file, and checks the copies;
   - copies the package over the host's, keeping the host's own advisor
@@ -37,6 +40,7 @@ standard library only.
 import argparse
 import ast
 import datetime
+import glob
 import hashlib
 import json
 import os
@@ -46,6 +50,7 @@ import sqlite3
 import subprocess
 import sys
 import textwrap
+import xml.etree.ElementTree as ET
 
 SOURCE = '@@COMMIT@@'
 BASE = '@@BASE@@'
@@ -309,14 +314,108 @@ def applyRouter(hostPath, plan):
 
 # -------------------------------------------------------------- databases ---
 
-def dbPaths(src):
+#: the settings the update depends on, as the service's environment gives them
+SETTINGS = ('SCENARIO_SLEEVES_DB', 'SCENARIO_REGISTER_DB', 'SCENARIO_BAKED_DIR', 'SCENARIO_ADAPTER')
+PATHS = ('SCENARIO_SLEEVES_DB', 'SCENARIO_REGISTER_DB', 'SCENARIO_BAKED_DIR')
+
+
+def _runConfigFiles(src):
+    """(project folder, file) for every file where PyCharm keeps run
+    configurations, in the folders at and above src."""
+    found, here = [], src
+    for _ in range(3):
+        for path in ([os.path.join(here, '.idea', 'workspace.xml')]
+                     + sorted(glob.glob(os.path.join(here, '.idea', 'runConfigurations', '*.xml')))
+                     + sorted(glob.glob(os.path.join(here, '.run', '*.xml')))):
+            if os.path.isfile(path):
+                found.append((here, path))
+        here = os.path.dirname(here)
+    return found
+
+
+def _envFile(path):
+    out = {}
+    try:
+        with open(path, encoding='utf-8-sig') as fh:
+            for line in fh:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    out[key.strip()] = value.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+def runConfigurations(src):
+    """[{name, file, script, workdir, env}] for every Python run configuration
+    PyCharm keeps for the project - how the service and the frontend are
+    started on the host, and so where their settings come from."""
+    out = []
+    for project, path in _runConfigFiles(src):
+        try:
+            root = ET.parse(path).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        for conf in root.iter('configuration'):
+            if conf.get('type') != 'PythonConfigurationType' or conf.get('default') == 'true':
+                continue
+
+            def option(name):
+                node = conf.find("option[@name='{}']".format(name))
+                return node.get('value', '') if node is not None else ''
+
+            def expand(value):
+                return value.replace('$PROJECT_DIR$', project)
+
+            workdir = os.path.normpath(expand(option('WORKING_DIRECTORY')) or project)
+            env = {}
+            for name in option('ENV_FILES').replace('|', ';').split(';'):
+                if name.strip():
+                    env.update(_envFile(os.path.join(workdir, expand(name.strip()))))
+            envs = conf.find('envs')
+            for node in (envs.findall('env') if envs is not None else []):
+                if node.get('name'):
+                    env[node.get('name')] = expand(node.get('value', ''))
+            out.append({'name': conf.get('name', '?'), 'file': path, 'workdir': workdir,
+                        'script': expand(option('SCRIPT_NAME')) or option('MODULE_NAME'),
+                        'env': env})
+    return out
+
+
+def serviceSettings(src, configurations):
+    """({setting: (value, where it comes from)}, [disagreements]) - this
+    terminal first, then the run configurations, else the package's default."""
+    settings, disagree = {}, []
+    for var in SETTINGS:
+        if os.getenv(var):
+            settings[var] = (os.getenv(var), 'this terminal')
+            continue
+        values = {}
+        for conf in configurations:
+            value = conf['env'].get(var, '')
+            if value:
+                if var in PATHS:
+                    value = os.path.normpath(os.path.join(conf['workdir'], value))
+                values.setdefault(value, []).append(conf['name'])
+        if len(values) == 1:
+            value, names = next(iter(values.items()))
+            settings[var] = (value, 'run configuration ' + ', '.join(repr(n) for n in names))
+        elif len(values) > 1:
+            disagree.append('{}: {}'.format(var, '; '.join('{} in {}'.format(v, ', '.join(n))
+                                                         for v, n in values.items())))
+    return settings, disagree
+
+
+def dbPaths(src, settings):
     var = os.path.join(src, 'var')
-    return [('the sleeve library', 'SCENARIO_SLEEVES_DB',
-             os.path.abspath(os.getenv('SCENARIO_SLEEVES_DB', '') or os.path.join(var, 'sleeves.db')),
-             'sleeves'),
-            ('the register', 'SCENARIO_REGISTER_DB',
-             os.path.abspath(os.getenv('SCENARIO_REGISTER_DB', '') or os.path.join(var, 'proposals.db')),
-             'proposals')]
+    out = []
+    for title, name, default, table in (
+            ('the sleeve library', 'SCENARIO_SLEEVES_DB', 'sleeves.db', 'sleeves'),
+            ('the register', 'SCENARIO_REGISTER_DB', 'proposals.db', 'proposals')):
+        value, where = settings.get(name, (os.path.join(var, default), "the package's default"))
+        out.append((title, name, os.path.abspath(value), table, where))
+    return out
 
 
 def dbState(path, table):
@@ -422,6 +521,24 @@ def survey(src, ep):
     if problems:
         return plan, problems
 
+    configurations = runConfigurations(src)
+    settings, disagree = serviceSettings(src, configurations)
+    plan['settings'] = settings
+    say('')
+    say("== PyCharm's run configurations (how the service and the frontend start)")
+    if not configurations:
+        say('   none found in {}'.format(os.path.join(os.path.dirname(src), '.idea')))
+    for conf in configurations:
+        mine = sorted('{}={}'.format(k, v) for k, v in conf['env'].items() if k.startswith('SCENARIO_'))
+        say("   '{}' runs {}".format(conf['name'], conf['script'] or '?'))
+        say('      {}'.format(', '.join(mine) if mine else 'no SCENARIO_ settings'))
+    for line in disagree:
+        problems.append('the run configurations disagree on ' + line)
+    adapter = settings.get('SCENARIO_ADAPTER')
+    say('   SCENARIO_ADAPTER: {}'.format(
+        '{} (from {})'.format(adapter[0], adapter[1]) if adapter else
+        'not set here - the service then serves sample data; the update does not change this'))
+
     epPackage = os.path.join(ep, *EP_PACKAGE.strip('/').split('/'))
     package = _folderPlan(epPackage, hostPackage, EP_PACKAGE, HOST_OWNED)
     retired = [r for r in RETIRED if os.path.isfile(os.path.join(hostPackage, r))]
@@ -444,8 +561,10 @@ def survey(src, ep):
         problems.append("the new bake.py does not hold the DEFAULT_STORE line this script edits")
     bakeDir = os.path.normpath(os.path.join(hostPackage, '..', '..', '..', '..', 'var', 'baked'))
     say("   bake.py: DEFAULT_STORE given one more '..', for {} ({})".format(
-        bakeDir, 'there' if os.path.isdir(bakeDir) else 'NOT FOUND - fine if the service sets '
-                                                        'SCENARIO_BAKED_DIR'))
+        bakeDir, 'there' if os.path.isdir(bakeDir) else 'not there'))
+    if 'SCENARIO_BAKED_DIR' in settings:
+        say('   (the service reads the bake from {} instead, set in {})'.format(
+            *settings['SCENARIO_BAKED_DIR']))
 
     router = routerPlan(hostRouter, os.path.join(ep, *EP_ROUTER.split('/')))
     plan['router'] = router
@@ -482,18 +601,17 @@ def survey(src, ep):
     say('')
     say('== The databases')
     plan['dbs'] = []
-    for title, var, path, table in dbPaths(src):
+    for title, var, path, table, where in dbPaths(src, settings):
         state = dbState(path, table)
         plan['dbs'].append((title, var, path, table, state))
         if state is None:
-            say('   {}: NOT FOUND at {} - it is not touched'.format(title, path))
+            say('   {}: NOT FOUND at {} ({}) - it is not touched'.format(title, path, where))
         elif 'error' in state:
             problems.append('{} cannot be read: {}'.format(title, state['error']))
             say('   {}: {} - cannot be read: {}'.format(title, path, state['error']))
         else:
-            say('   {}: {} - schema {}, {} {}'.format(title, path, state['version'], state['rows'], table))
-    say('   (from {} when it is set in this terminal, else the package\'s own default)'.format(
-        ' and '.join(d[1] for d in plan['dbs'])))
+            say('   {}: {} ({}) - schema {}, {} {}'.format(title, path, where, state['version'],
+                                                      state['rows'], table))
 
     say('')
     say('== This Python ({})'.format(sys.executable))
