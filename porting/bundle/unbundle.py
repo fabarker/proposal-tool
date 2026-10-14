@@ -10,7 +10,7 @@ It checks every part against the hash it was built with, names any part that
 was pasted wrongly, and unpacks a copy of the repository's layout into the
 folder proposal-tool beside this file. Nothing else is read or written.
 
-Built from commit e7ac006 of 2026-10-13: 53 files, 6 parts.
+Built from commit e948732 of 2026-10-14: 53 files, 6 parts.
 Python 3.8 or later, standard library only.
 """
 import base64
@@ -22,16 +22,16 @@ import re
 import sys
 import zipfile
 
-SOURCE = 'e7ac006'
+SOURCE = 'e948732'
 PARTS = [
     ('part-01.txt', 'cdff51673d259aae9dab329db521c0328f2b145361438810ff9958ea727c5e92', 150000),
     ('part-02.txt', '58223acb53d7a787c5da2500e80046d3ac4f5a910a11b995e90e310064164a20', 150000),
     ('part-03.txt', '36cca67600936e021f3c1ff42f28515986d6d19144d30ee2d7699b6173086ba0', 150000),
     ('part-04.txt', 'd2f4e871876fe7c62223047e3244e1842ea65e9de905f5adc430d798c4952840', 150000),
     ('part-05.txt', 'a5f5a9b3a4b16c1fb5b00d35378e192894b91e16c08c808e5b9bb2200660aca8', 150000),
-    ('part-06.txt', '6baf656e6927d1b9a03efedf69bddb9f4e9acb1816dc6dfe6c0ca3c50f62c0a2', 132651),
+    ('part-06.txt', 'b936102258d60a2f7376e29a63afdccdb56f8c266106a35172288d0003aef0e8', 132649),
 ]
-ZIP_SHA256 = '5958dfc905e14edccc6704e1615bfa00f2c93a0268d03335f959f9f51232e4d6'
+ZIP_SHA256 = '04432441ba59d8df02fa5dd32e1da6308156ff908e2efd2de9ec8e96c75017e7'
 FILES = 53
 
 # A paste can add a byte-order mark, CRLF line ends or trailing spaces. None of

@@ -5,7 +5,7 @@ router, `portCheck.py`, `PORTING_UPDATE.md` and `requirements.txt` - zipped and
 written as text, because the Cyrus machine reaches GitHub only through a
 browser. **`PORTING_UPDATE.md`, step 1, is the procedure.**
 
-Built from commit `e7ac006` of 2026-10-13: 53 files in 6 parts.
+Built from commit `e948732` of 2026-10-14: 53 files in 6 parts.
 Copy each of these into one folder on the Cyrus machine, under exactly this
 name, then run `python unbundle.py` there:
 
