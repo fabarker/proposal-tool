@@ -20,6 +20,7 @@ update starts there. Python 3.8 or later; standard library only.
 
 import ast
 import base64
+import difflib
 import hashlib
 import io
 import json
@@ -63,6 +64,16 @@ def _blockRange(lines):
     while end > export and not lines[end - 1].strip():
         end -= 1
     return start, end
+
+
+def _text(data):
+    """The lines of a text file, line ends aside, or None for anything else."""
+    if data is None:
+        return None
+    try:
+        return data.replace(b'\r\n', b'\n').decode('utf-8').split('\n')
+    except UnicodeDecodeError:
+        return None
 
 
 def _whole(lines):
@@ -114,12 +125,27 @@ def build():
     changed = oldBlock != newBlock
     routes = sum(1 for l in newBlock if re.match(r"@router\.\w+\('/scenario", l))
 
+    # a text file Cyrus has is sent as the lines that changed - the update
+    # checks the file is exactly the base before it applies them, and the
+    # result against the target after - and anything else whole
+    patches, whole = {}, []
+    for key in write:
+        old, new = _text(then.get(key)), _text(now[key])
+        if old is None or new is None:
+            whole.append(key)
+            continue
+        matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
+        patches[key] = [[i1, i2, new[j1:j2]] for tag, i1, i2, j1, j2 in matcher.get_opcodes()
+                        if tag != 'equal']
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for key in write:
+        for key in whole:
             info = zipfile.ZipInfo(key, date_time=FIXED_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             zf.writestr(info, now[key], compresslevel=9)
+        info = zipfile.ZipInfo('patches.json', date_time=FIXED_TIME)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, json.dumps(patches, sort_keys=True).encode('utf-8'), compresslevel=9)
         if changed:
             info = zipfile.ZipInfo('router/block.txt', date_time=FIXED_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
@@ -154,8 +180,9 @@ def build():
                    'routerBlock': changed, 'bytes': len(script)}, fh, indent=2)
         fh.write('\n')
     code = any(k.startswith('package/') for k in write + delete) or changed or fill['ROUTERDROP']
-    print('porting/update.py: {} -> {}: {} to write, {} to delete{}; {:,} bytes{}'.format(
-        base, head, len(write), len(delete), ', the endpoint block' if changed else '',
+    print('porting/update.py: {} -> {}: {} to write ({} as changed lines), {} to delete{}; '
+          '{:,} bytes{}'.format(
+        base, head, len(write), len(patches), len(delete), ', the endpoint block' if changed else '',
         len(script), ' - LARGE for one copy' if len(script) > WARN_BYTES else ''))
     print('on Cyrus: ' + ('stop isgPMGService, run it with go, start isgPMGService, Ctrl+F5'
                           if code else 'run it with go, then Ctrl+F5 (the service can stay up)'))

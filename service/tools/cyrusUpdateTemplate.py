@@ -465,6 +465,37 @@ def _payload(name):
         return zf.read(name)
 
 
+def _patches():
+    global _PATCHES
+    if _PATCHES is None:
+        _PATCHES = json.loads(_payload('patches.json').decode('utf-8'))
+    return _PATCHES
+
+
+_PATCHES = None
+
+
+def _newContent(path, key):
+    """The file as the update writes it: whole from the payload, or this
+    machine's copy - checked to be the base - with the changed lines put in,
+    in the line ends it already had."""
+    ops = _patches().get(key)
+    if ops is None:
+        data = _payload(key)
+    else:
+        old, _ = _bakeNeutral(key, _read(path))
+        crlf = old.count(b'\r\n') * 2 > old.count(b'\n')
+        lines = _norm(old).decode('utf-8').split('\n')
+        for i1, i2, new in sorted(ops, key=lambda op: op[0], reverse=True):
+            lines[i1:i2] = new
+        data = '\n'.join(lines).encode('utf-8')
+        if crlf:
+            data = data.replace(b'\n', b'\r\n')
+    if _hash(data) != TARGET[key]:
+        raise RuntimeError('{} did not come out as built - nothing of it was written'.format(key))
+    return data
+
+
 def go(plan):
     src = plan['src']
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -506,7 +537,7 @@ def go(plan):
             if action == 'delete':
                 os.remove(path)
                 continue
-            data = _payload(key)
+            data = _newContent(path, key)
             if key == 'package/bake.py' and plan['bakeKept']:
                 data = data.replace(BAKE['from'].encode(), BAKE['to'].encode(), 1)
             os.makedirs(os.path.dirname(path), exist_ok=True)
