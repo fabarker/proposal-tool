@@ -458,10 +458,11 @@ _FONTS = 'import cyrus_pmg.pmgService.scenario.houseFonts as h; print(sorted(h.F
 _ROUTES = ("from cyrus_pmg.pmgService.dashboardRouter import router; "
            "print(len([r for r in router.routes if getattr(r, 'path', '').startswith('/scenario')]))")
 _UPGRADE = '''
-from cyrus_pmg.pmgService.scenario import proposalRegister, sleeveRepo
+from cyrus_pmg.pmgService.scenario import accountRequests, proposalRegister, sleeveRepo
 c = sleeveRepo.connection()
 c.close()
 proposalRegister.describe()
+accountRequests.describe()
 print('OK')
 '''
 
@@ -795,9 +796,9 @@ def main(argv=None):
 
 #: every file of the package and the page this update was built against, by
 #: content (line ends aside), and every file it writes, as it writes it
-BASE = json.loads(r'''{"package/__init__.py": "bd7f6f77f7f622066cd7ba16dce29aaf55e8c2b16463e33fc1a77a141cff5fb3", "package/accountRequests.py": "4c6a02163d191e660e525f82fcada03ff32fe0253a4193a07ad1f364ff47f7e1", "package/advisors.py": "9b3b950a5b3d345c6dcddeb17e666a9834cb7543b7147d308331202064835180", "package/advisors.xlsx": "95db123b1ff9a8055a26705af4044c8dd40a84635a1ce2f5af5da19343469fb1", "package/assetEstimates.json": "8eeea1f1c14cf0b1369881df2b745e0820a7cada16645ae36030a6810bb1a5f9", "package/assetEstimates.py": "3f4738bdc9583e3d27761a513b05391554088a277100f5e9a0e991089c8e72a8", "package/bake.py": "392629c8ca7636f1fb45b71d9d60b33742146041d920623224cac53571840bfa", "package/bakedAdapter.py": "9dde28f78d2b4e5e60572155990986c622186fb467aede6d62f354c6066105e7", "package/csvText.py": "e08f8d719a838cc91246e687608b86e07e08b888ea58d323b68ef4de83c7ca3d", "package/feeRates.csv": "22ceeccb67e0f2cde08a10e7d9989e1ee6076dc811a70381676db9c9c952076d", "package/feeTools.py": "80cedb6a219a3ef0c0e1124c0a7bb929754da482f6633eb770cf6e101a9a41f2", "package/fees.json": "370d27a15d69661d89c6041e005f91200ac73f0a12b73a43e709a3c3da28caad", "package/fees.py": "631d4c639fd15f9498a7dfcd609587ad4e109b0df91d8ef0818c5678e6ab260d", "package/fixturesAdapter.py": "561b0eaea5a41d7301b4810de8c5a934c619758c1955f90e89efe035cd32b317", "package/fontMetrics.py": "bd984b1c56f77eec18ad5cb9d2ef9371dd047806cb1f0179814320577c09b744", "package/fonts/GSSans-Bold.ttf": "f30f53070ae396c2a22fbe70f236946a13a6aeeb1ce3c2889e68812ee17d7693", "package/fonts/GSSans-Light.ttf": "6b270df7012edb2ef15c37c5c2be4a486038a45f201cf142ed0949b893e9690e", "package/fonts/GSSans-Regular.ttf": "40ad741ede6a44df7b26e28384f13e23f51548639d58787e9ddf2cc49f2f13e4", "package/fonts/GSSansCondensed-Bold.ttf": "06c8d9e929c4b68a23410fb05d62b88ed140d11d7d0fbd1a204375f706c9fc89", "package/fonts/GSSansCondensed-Regular.ttf": "df158dc273631a04cfeeac7e8d4fa9762b7ee4290572a8a444ce516218ab5c26", "package/fundingSplit.py": "0ff9f93acce07048b09bd364ff44350e41b74c9864dedf7b66352cb94759c448", "package/houseFonts.py": "afe5e3c00a5601cc3088f996932a4a9226ec0def557a889078ab4e2cc1a602be", "package/overlayRules.py": "f2d6fda4286444df3ff05d2cc9f1dd8cbd7fd67363f1b92329861389d7cd5917", "package/payloads.py": "3e62f31e9dc76a7095595013bb4026a155b939c0e8806b220f43869b8bfe39cd", "package/portfolio_weights.py": "4804d1fe11a7ebec8c15bfd9c51c788f2e9bc5688e40ac80d2cb051e785aecb9", "package/pptWriter.py": "775b13025d79bd140469079cf9e988626be2fb1c86c0656b8e0811d794eb745b", "package/products.py": "1af2d6e72cb8e841d6bddf1d6cc63e1f51b16e3d84d9bf1aec0e7dcb153cc8a0", "package/proposalRegister.py": "1dfddcd86d038f07c867713f3298700280f1ade042a871c407e1c4221c6d7d87", "package/registry.py": "8714a3b1041b5c0d87fd94c5e540c62324b288c5e5d3a7d452320a10adae58b5", "package/rules.py": "dc5a25097cb0e82293b8b9740b61d269afb45c23d84e25a79f8a7db5903a4dab", "package/saaKeys.py": "50038eff679f5834812930b0e142a26f039313d116718fe256215e1d52e16863", "package/scenarioPort.py": "529416459004d3a0804663e1cb58913deea8f40e815a68366b02b38b4d3dab38", "package/scenarioStore.py": "7aa7b619bde4950c40c845f064e58675a53edfc29a535e3712774b3e96ea89a1", "package/sheetDoc.py": "d7e824ea2135bee25c3f04bf409c4da31a9f57adb2e4cd7b8a3ba0673925a29a", "package/sleeveRepo.py": "b3c01424cf4b26c22d289f83a438aa7ef073fc05c09edcb4fa41c19182934642", "package/sleeveRules.py": "cf70688d2fe3b30be390b850c663fbd0fa90a0fd284245dc47fe81718554f4d6", "package/sleeveTools.py": "9ba820ef59fcaeb2a7e554bc00c945f39a072940f36e25f2a50f04002999e679", "package/sleeves.py": "3489d09570a664f51fa6d472219d4eedff2c1e918f90c3661bf42bbc77ce371c", "package/types.py": "a3550c15086820986e7e0354e9a5997dbd23bbd2bb8c4d0615e7cc461c41f8ea", "package/universe.py": "7c379bfca46e9837d8849117059a6a502ecf501ba561ef0d9602c88bc25d4611", "package/workbook.py": "6c808a3fb1e3e8bcc0d6873ac72374dff8cc2312abde12475c36974bc90bd60f", "page/proposalTool.html": "ff4e3ee555ab61aef726ab8814d1cadd21e6ed92387e43b332b27681ab8bf061", "page/static/css/proposalTool.css": "ccc57c28a7ad7a8569882d804bf21675f3279c9d3a547d2953ab040ec017be92", "page/static/fonts/goldman-sans-regular.woff2": "b179269bb1ad16de0f55b5ee817786bd8caf97f2acd1c845508daebc5b3b3a4d", "page/static/fonts/gs-sans-condensed-variable.woff2": "908d9f6f0b1a54696e8c5248e552a211a5eec1f0274ba4f03bd4c8e1a8f4c498", "page/static/fonts/gs-sans-variable.woff2": "874e4006d1d1f33326e3eaeb4139111655edf46a9fd94aa6de712b85fafba739", "page/static/fonts/roboto-medium.woff2": "3a0fd062d0e8a03061c589536ac7d11f51635d0ca7c626bd48e315bfb4a104c7", "page/static/fonts/roboto-regular.woff2": "77bfc801d1366174a49f7ec56426950a0b6ad749dadfa23f901a5e786500ef59", "page/static/js/proposalTool.js": "9f41e045b48662be06c74cdf52454c9261a7b06a9f5bdbe09eec5aabe991aea7"}''')
-TARGET = json.loads(r'''{"page/static/css/proposalTool.css": "72d8ab73850dbd4e617a547d60ef082126622248c95659e04c6ca67fee12d6c2", "page/static/js/proposalTool.js": "c5f9cce8c6efda63792d40ea3090c30be55bd80f922d844d1e33ca7dd153eb0c"}''')
-WRITE = json.loads(r'''["page/static/css/proposalTool.css", "page/static/js/proposalTool.js"]''')
+BASE = json.loads(r'''{"package/__init__.py": "bd7f6f77f7f622066cd7ba16dce29aaf55e8c2b16463e33fc1a77a141cff5fb3", "package/accountRequests.py": "4c6a02163d191e660e525f82fcada03ff32fe0253a4193a07ad1f364ff47f7e1", "package/advisors.py": "9b3b950a5b3d345c6dcddeb17e666a9834cb7543b7147d308331202064835180", "package/advisors.xlsx": "95db123b1ff9a8055a26705af4044c8dd40a84635a1ce2f5af5da19343469fb1", "package/assetEstimates.json": "8eeea1f1c14cf0b1369881df2b745e0820a7cada16645ae36030a6810bb1a5f9", "package/assetEstimates.py": "3f4738bdc9583e3d27761a513b05391554088a277100f5e9a0e991089c8e72a8", "package/bake.py": "392629c8ca7636f1fb45b71d9d60b33742146041d920623224cac53571840bfa", "package/bakedAdapter.py": "9dde28f78d2b4e5e60572155990986c622186fb467aede6d62f354c6066105e7", "package/csvText.py": "e08f8d719a838cc91246e687608b86e07e08b888ea58d323b68ef4de83c7ca3d", "package/feeRates.csv": "22ceeccb67e0f2cde08a10e7d9989e1ee6076dc811a70381676db9c9c952076d", "package/feeTools.py": "80cedb6a219a3ef0c0e1124c0a7bb929754da482f6633eb770cf6e101a9a41f2", "package/fees.json": "370d27a15d69661d89c6041e005f91200ac73f0a12b73a43e709a3c3da28caad", "package/fees.py": "631d4c639fd15f9498a7dfcd609587ad4e109b0df91d8ef0818c5678e6ab260d", "package/fixturesAdapter.py": "561b0eaea5a41d7301b4810de8c5a934c619758c1955f90e89efe035cd32b317", "package/fontMetrics.py": "bd984b1c56f77eec18ad5cb9d2ef9371dd047806cb1f0179814320577c09b744", "package/fonts/GSSans-Bold.ttf": "f30f53070ae396c2a22fbe70f236946a13a6aeeb1ce3c2889e68812ee17d7693", "package/fonts/GSSans-Light.ttf": "6b270df7012edb2ef15c37c5c2be4a486038a45f201cf142ed0949b893e9690e", "package/fonts/GSSans-Regular.ttf": "40ad741ede6a44df7b26e28384f13e23f51548639d58787e9ddf2cc49f2f13e4", "package/fonts/GSSansCondensed-Bold.ttf": "06c8d9e929c4b68a23410fb05d62b88ed140d11d7d0fbd1a204375f706c9fc89", "package/fonts/GSSansCondensed-Regular.ttf": "df158dc273631a04cfeeac7e8d4fa9762b7ee4290572a8a444ce516218ab5c26", "package/fundingSplit.py": "0ff9f93acce07048b09bd364ff44350e41b74c9864dedf7b66352cb94759c448", "package/houseFonts.py": "afe5e3c00a5601cc3088f996932a4a9226ec0def557a889078ab4e2cc1a602be", "package/overlayRules.py": "f2d6fda4286444df3ff05d2cc9f1dd8cbd7fd67363f1b92329861389d7cd5917", "package/payloads.py": "3e62f31e9dc76a7095595013bb4026a155b939c0e8806b220f43869b8bfe39cd", "package/portfolio_weights.py": "4804d1fe11a7ebec8c15bfd9c51c788f2e9bc5688e40ac80d2cb051e785aecb9", "package/pptWriter.py": "775b13025d79bd140469079cf9e988626be2fb1c86c0656b8e0811d794eb745b", "package/products.py": "1af2d6e72cb8e841d6bddf1d6cc63e1f51b16e3d84d9bf1aec0e7dcb153cc8a0", "package/proposalRegister.py": "1dfddcd86d038f07c867713f3298700280f1ade042a871c407e1c4221c6d7d87", "package/registry.py": "8714a3b1041b5c0d87fd94c5e540c62324b288c5e5d3a7d452320a10adae58b5", "package/rules.py": "dc5a25097cb0e82293b8b9740b61d269afb45c23d84e25a79f8a7db5903a4dab", "package/saaKeys.py": "50038eff679f5834812930b0e142a26f039313d116718fe256215e1d52e16863", "package/scenarioPort.py": "529416459004d3a0804663e1cb58913deea8f40e815a68366b02b38b4d3dab38", "package/scenarioStore.py": "7aa7b619bde4950c40c845f064e58675a53edfc29a535e3712774b3e96ea89a1", "package/sheetDoc.py": "d7e824ea2135bee25c3f04bf409c4da31a9f57adb2e4cd7b8a3ba0673925a29a", "package/sleeveRepo.py": "b3c01424cf4b26c22d289f83a438aa7ef073fc05c09edcb4fa41c19182934642", "package/sleeveRules.py": "cf70688d2fe3b30be390b850c663fbd0fa90a0fd284245dc47fe81718554f4d6", "package/sleeveTools.py": "9ba820ef59fcaeb2a7e554bc00c945f39a072940f36e25f2a50f04002999e679", "package/sleeves.py": "3489d09570a664f51fa6d472219d4eedff2c1e918f90c3661bf42bbc77ce371c", "package/types.py": "a3550c15086820986e7e0354e9a5997dbd23bbd2bb8c4d0615e7cc461c41f8ea", "package/universe.py": "7c379bfca46e9837d8849117059a6a502ecf501ba561ef0d9602c88bc25d4611", "package/workbook.py": "6c808a3fb1e3e8bcc0d6873ac72374dff8cc2312abde12475c36974bc90bd60f", "page/proposalTool.html": "ff4e3ee555ab61aef726ab8814d1cadd21e6ed92387e43b332b27681ab8bf061", "page/static/css/proposalTool.css": "72d8ab73850dbd4e617a547d60ef082126622248c95659e04c6ca67fee12d6c2", "page/static/fonts/goldman-sans-regular.woff2": "b179269bb1ad16de0f55b5ee817786bd8caf97f2acd1c845508daebc5b3b3a4d", "page/static/fonts/gs-sans-condensed-variable.woff2": "908d9f6f0b1a54696e8c5248e552a211a5eec1f0274ba4f03bd4c8e1a8f4c498", "page/static/fonts/gs-sans-variable.woff2": "874e4006d1d1f33326e3eaeb4139111655edf46a9fd94aa6de712b85fafba739", "page/static/fonts/roboto-medium.woff2": "3a0fd062d0e8a03061c589536ac7d11f51635d0ca7c626bd48e315bfb4a104c7", "page/static/fonts/roboto-regular.woff2": "77bfc801d1366174a49f7ec56426950a0b6ad749dadfa23f901a5e786500ef59", "page/static/js/proposalTool.js": "c5f9cce8c6efda63792d40ea3090c30be55bd80f922d844d1e33ca7dd153eb0c"}''')
+TARGET = json.loads(r'''{"package/accountRequests.py": "bbdf46bc39eae2885c66f790b73b76c246a5a7f3193fe0296543d6ef31e42efb", "page/static/css/proposalTool.css": "c9551bad836da8e03d725a1409e8e2bdcca005f214f9d0879a1bfe0e1a1a1932", "page/static/js/proposalTool.js": "c2fcf3f97981dda26ef2d78650a923ead79ce8d81920d14de0760c2a67b8e9a4"}''')
+WRITE = json.loads(r'''["package/accountRequests.py", "page/static/css/proposalTool.css", "page/static/js/proposalTool.js"]''')
 DELETE = json.loads(r'''[]''')
 HOST_OWNED = json.loads(r'''["advisors.xlsx"]''')
 BAKE = json.loads(r'''{"from": "os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'var', 'baked')", "to": "os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', 'var', 'baked')"}''')
@@ -809,14 +810,75 @@ NEEDS = json.loads(r'''{"APIRouter": ["from", "fastapi", "APIRouter", null], "An
 NOTES = json.loads(r'''[]''')
 ROUTES = int('42')
 PAYLOAD = """
-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
+UEsDBBQAAAAIAAAAIQBrmROCsw4AAJ0pAAAMAAAAcGF0Y2hlcy5qc29upVoJU9vIEv4rE1K1shLF
+HMGEI2TLGJH1W2N4ttkNj6SoQRpjLbJGq5FxXCz//XXPoRtIap2Ksefo6e7p+ebrlh/WYurd0Vu2
+Tj2PL6J0xP5eMJGKdrxa2ydXV9sO2XHI1Vo6YyROeMwFDYlHo4in5C7iS/KOYNecRj5NmSO/eGHA
+olR91mIJ9JMgFWsOWfMWIuX+CmZi43hxMw9SkjCPJ74gPGIkAbEzloC0GyYCn5HS4jA4onMm2mvf
+voFmm7sO2dpCFScwisdpwCMSBmACScxc4c3YnDpEcCUK7IUFI58lgixnoPc9S6AnEGTO/UXIUEtB
+V0IqSEkIIxLiszCAcSu0HiQtEk8KnxMWCrZEfckySGd8kZKUL7xZEN1iP8rCBdtkzImvFEAjfTal
+izAlrYiDxDhIabgeRB6fg7pxGKS2XFy6U/srBj2mPJmjxBS0JhFj4DGqBwSgFjrGb+MA/I8OwQmw
+HuhKxR3z8Xtpjyi54fwOdfXge6J3cLqIfGxT9v9+2UNxCZuCkSCqTbrgPhknet+Y1DQid4zFAj5y
+AetFYokODiK1IA8X8wjUTY1XYAMIn8rOlN6EsLQMEogBaEqWgcBNoqCAwD1fUrGPEaQ1l6Zilxam
+A1A3q2ADsd9BBIZQ5K30YNno83ngBSE7kNuvxYM/YX9RmHIVaBKyaUrYPE5XOtrew2HY3sNoI/DS
+Tuj7JHtN3C8Tcj7qn3ZHl+R399JBedhh4rcwWI4dnsH/i8GAjNwTd+QOe+44Gyta+Sw7kyTkiUmZ
+300bJdUHHq2eH6idN0TfPTtQ+X7EIBLhmIlZEFeMOHZPuheDCbGsbI5GgMkqfkH4PJgGfi+kQjzh
+oQbh+uT05cEZ47l5eQ4EwLHe/+cVWtyNIlBIhtuPKnQrutNpEAYYiz9shDrg5/p8/8QcOPP5pr04
+5907DQI3K3XKcbEbBn8YHoEUgEC1ByxEYLnh93BCpDTAVDwcq4KoGgIIgC9mBmhU6UlQyfXLdNEI
+053L20G+Rm53UO0fK5x9cv5xxc9Z/93KGxm8auqH+4vlcZb1q1PegVuvs4un/DVAnQQnMk145iyF
+ykmCgaGdBWCRsJtFAIgeRGkO89KJiIHwBdd+TdIEkJF6eIAc5dTMlXcs1jelwkyBe4vOTSSmX4/c
+o4v+4Jgckq9r+A8bj9zP/eEBfuoOJu6ITLpHA5dUbnPw7bB76pLJWbXnSFok5x+Pzs5Jf3jsfiH9
+E+J+6Y8nY0KTa4NBzw6iqex+UFftI37uD8fuaAKD66uSVgadTgEZnSK2OUX8cooYlW3ik68C5jjF
+8+6U49Iph+HLcktR6RSD0ClFnKPiyzYCx+7A7U3ITxut8FbaXLKpoihYODLX3AsmPmdCRWqDQWbE
+yejstDmSyNnoGKLw6BJZXODnMdMYl4Xo652dnvYn8qMObnUU4bLd2caj2Bv03eEEzsCgO+mfDce/
+9c/HcBKurCFbWg6x3O9A+sAU65s8DL3e2QUMn1yeu2pYHwy9D/wF8Kz/cDijOGeSAIzih/P+H/in
+H4kFHE+AjD8TGscskX1JcI8wc84iAYfWag4TqzejSZCu1k/AQF/ej+tu5PPlnKm1TqAZ//Z4EvNE
+DlCqnvZP+sfXvUF3PNaqjlhKg1CtzadM4LI0VKMv3fH18EwOu2QCxwy56uldjCdnx5fX5+Cgk7PR
+qZL1edzHQZ/Hgwv1t3em/h79T3kNuC0IJ72zYyXm9b4iyeY2klQT4E3ADYuIhnTXEubSykh1TkJh
+rOShKAwg1R0Nu4NrrRyoVF6ysCKPwpWCU0mkAQg1hyzC7kLA91sg4sIgqr7o0NoHq84HrH3poUcV
+TjsdCCeZ0MCif84UGVUX4RwMIDMKaK2X05kJ0sAAL0KJyCzBXCFh71gEgzxIQ8hEMVAQmPnAUi5Q
+t8LfiyBBgsw5nE3IDpSdwMOZcYT2pQT5kfvfi/7IRZBvWQXQw82q0y9sLQADfs1pVD1Sm/wDUwoI
+iV8LvAe/FihNk8QyebEk5p303cEx7khmzVuwpsRZLMdW1xeEqiuNLeEWLlxCrkKDwq5Cw7FUjVhF
+xMLvErOURte9s8HF6XAsV8pwGAflSIzfClhc+nq0smwwQhv2lii9TaZ1fdr9ci35FwZhcdf2ydbG
+RsXF+2RTtpX9IUfqMP0AYfphN08z0kUSYXTX9l/ANEx2W03oaJeDIxtbwka7vqV5BOVzSiCFgldM
+wLHSvQqU7BejI1e3ilUo0pyHnpoEY6vwUV9Ap9Eo2A+8tGXQAOWZo2cWNcFoay/vwr2yu228jK8Z
+gg9sIdxdV5vf5CHFYgTQMY9HUZt9Z94iZS3rfNT9fKqZ4XUASNCqXGy2ZT8WdQ2m5vTKvUaJuNZ+
+1Z7iMsJLgjhtGdbXRgfStKUY1uH1uPebe9q1bV0G6UDIbHZ2itYkFHPoP2gYqPvITRKetCTC4j00
+45imPzwqaovohl5qW2ahkN6wMJP/ASJ2c2/DyOeL9KoU6N/Ab9cpbGErpquQU1yiDF9w2QKPyI5K
+ZXrGlaTkBqSTC3gzHnissEQjJDYdhpfJXTGs8hIJnL6C7LKWReRtVq+MzaWDh71RVh9LcURZegHI
+m4UXkZ6UDqijLDgNoA3swBEV/9bvgSf823RhqOMOvZd4DScEgKAsvoh2TYFRvnBqgVGaXpZcvJua
+NS7fXi+qWrzdmgWW7r+XBVYvxCf8WhkFQVuFRAyQWvEvX+x1qfKnC2nZMNBtGekKYcQlGzmoEQ7i
+85zTZ52HT9pxWAPkBsvNfYZ2t6obX6EA9a2vyLBfOrUArJniyEyJZWnE2trawMrwZhERzeup9PM6
+4ssWXB2SZcLmWvLSTxdxyBRuiqupuhamCOGKDTTqCHxnCATVsckbErKopfiCnekGac3W+wxNVcaT
+V1WzkiekvT5T9NjUUzPCWiroRqp6GmlSLPdEhYQsX2blV2ikajrW0WXhW9BlO68nFAnHHVvt4wV4
+BR+U2fABDYe2NnwULRs3AJ8FtHSP5nOoSzYRWDD6Ql6733Q5fF2kgKreuifEutmBCedhGxrkg4cP
+e8iB9pAE1Wf9VZn0l5rzfmN3yyHwnl3q62/IEYdcwqP4cAHek1VeWYlpkDiq2k50yQbHwdlJl5ww
+/5YJ5folXRX2mEe6iC3Lww5Rtf9q4Qz9C9omqdqYHmaVIaExtMgLtyAQRmqBSXA7S7OUCrWgIFpt
+k6mFYw4GNCFNwG7MPcwVUtQwZhGW7004QThj/gGJDWx+OgsSHxORlGNVSj33CAOIVW0JVs4xR9EV
+743dHenTjI6+JdZHSKXVvXL4dc0Pb9+pepZQzvy69snKJu/h5Jw3wLnwEzpN24Leo4q/EutPniDv
+/7rY2tjascg+gaOWgNa/Yq4cQUq/YNhqjTE305zBsm2px7qy45NlrMdGbRteqaCe+vZ1LdP3Jo0I
+/H93O+MCdCWBr4zw5BZ9XbNAiA8+AVGf1LZly3xcB8Mz4zbxuRO8v9fGtdTTJ9Euk0G7/OBJ7SaG
+YsDw6Q2SLjyW0u3L6AAGa2MQnavPi9rElSVDlScX8suDchaeZ6BaWIYWKh7NNOeZdJS8Wc8s3UZL
+33eUpQ/gs30kN5FCcUIkUlT4nn5JGgmdp/oJTbmXwNajLLwnZKtRDE4e3A3kUfO2bEmgY2q2WrKR
+/5klde2+0muWFCxkHi5aXtLRDxFFo3Rh1VVKFbszKpU5X8ULXc33yr0/oVIpoavrIjmhNFLtSJEi
+1nZE0sNq70/oUkoU67oITRfNVjVRyWyrVCdRvUQ9yhmplXUF7cf1Urlpw0bR78XYKbPQinMm9Dup
+974Qrg4SMI/NeOizBK3CrUpWDaos7mQ10KhSJq0VVS5+J6MhblS5+9/749bsu1KiTHQrSnweE3ce
+h3zF8JEEKY7894poxEFZKlRq7DhXRFcHSKnzpw51tSbxlD4Io2WNcuJa1Qc5eAnZXgoUg7YG5wzS
+4hNm9X4l+RgwmEkTsMPiPLoVeK3XaD2FLmCNs8D3kRjKIqa+BiIW4NP1AnmM4L+AwJJwD4Omi0he
+5sArujioJWLm2eRBCdDU8BU2ts3C5vL95x9DRtqKCrWrjzYPIYeAnWhZzVdlu1oCqlaobfmA4NHU
+3cA5XWBTTMzABHmLapa8r2ivKria3zyYWlHhNyH6pyR1049CGt2dSCNamfH3NMmFPG9IVpdyyMOj
+jZ55eDzIpWimeJi3dnvXKp3A8otLvVkr08bsgJ51JX0vmfVhpk6hEdayrAPyaB+UtkxN1v7Twbaz
+icG2k9FlNWa/ar+jx8uUCt47kpTLlg5SoK2OoUCYDrRUcGSFb9DnVSmW7EwlChnbgRGOT13hvVMp
+e75q3ZNffiHjNAGS2Lq32/Bh3rLtbJ6kmFt7MtHDgIhWqfnxjUrkZsCa8ZFBhMx8kRZ/lySpGeTR
+MxrdgqoXWC7Bn/dQSGYMo8Y0DJ/M4s9ezK92JDXDvEdK2c9yB7JMeMrkM5MCfdrak17a016SAQB7
+Vz4rEKvoc9le8n5m6J500N5O1UGvWtPC9ue+KrRmXsPu4uhXcCDlunmbWW8bky941z930avVub8A
+wAXKX0hFFE2uDbxNAh9zA2DWhWgPQjjfLR0gdntO43rka406WDaH9/dZ/HU2tmVLJ8/y36pZefxB
+HvFRxLCrRhfoAdpPk4C+UxAJbQjCoJtMQrY+ruP4TzLrsHSiIeH+k2Wc09ns4MJbBVU+SOVM2R43
+GSPnMMPRhxrmmxNaDoQrfbTT9j0NF9n56HzAOO/s6lQKIr3px2EQoV7gM/xdG5NAX3s2V0gEMPaz
+tFGdAbxPMB3GR2PU92WJK6V3mKlAFqzaVe4Brk3oUuShrzBUQcAzNsuQA8/YJAbgxudpJxwUbKkf
+5Gl+fBzAHXZr/CMLOzFNvZnuPuEcgyY7Gh3MTuFdh+qPYOkNeK2EpOXr7tfqpuRD9zN4lYtvb+CJ
+3N7Mo3JbpoTbMmmSkKRICeZqMU/QuQlf3M6MxxOqNwr3J4oBoCRwfHv8P1BLAQIUAxQAAAAIAAAA
+IQBrmROCsw4AAJ0pAAAMAAAAAAAAAAAAAACAAQAAAABwYXRjaGVzLmpzb25QSwUGAAAAAAEAAQA6
+AAAA3Q4AAAAA
 """
 
 if __name__ == '__main__':
