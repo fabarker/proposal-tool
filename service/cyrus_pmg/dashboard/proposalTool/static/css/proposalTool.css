@@ -1635,6 +1635,11 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 /* Smaller type than the step 1 tables carry: this one is 23 columns wide and
    read across, where those are read down. .tbl sets 15px for both. */
 .tbl.impl{min-width:1690px;transition:min-width var(--col-motion);font-size:13px}
+/* The document's cap is for reading down step 1; this table is read across,
+   so while it is showing the document takes the whole screen beside the rail,
+   as it already does with the rail folded. A wide enough screen then shows
+   every column with no horizontal scroll. */
+body.has-rail.step-impl .shell{max-width:none}
 .tbl.impl.no-fees,.tbl.impl.fees-out{min-width:1340px}
 .tbl.impl td.txt{white-space:nowrap}
 /* both identity columns stay pinned while the attribute and money columns scroll */

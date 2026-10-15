@@ -6722,6 +6722,7 @@ function renderView() {
   if (aa) aa.hidden = onLanding || App.step() !== 'aa';
   if (wrap) wrap.hidden = onLanding || App.step() !== 'impl';
   el.hidden = onLanding || App.step() !== 'impl';
+  document.body.classList.toggle('step-impl', !onLanding && App.step() === 'impl');
   if (onLanding || App.step() !== 'impl') return;
 
   var base = App.base();
