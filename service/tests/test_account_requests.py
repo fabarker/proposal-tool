@@ -28,10 +28,10 @@ def _request(kerberos=None):
 
 
 def _payload(uid, **over):
-    base = {'proposalId': uid, 'clientName': 'Herrera Family Trust', 'accountType': 'Trust',
-            'bookingCentre': 'London', 'taxResidency': 'Spain', 'fundingAmount': 50_000_000,
-            'fundingSource': 'Wire', 'fundingDate': '2026-09-30',
-            'kycReference': 'KYC-2026-08812', 'notes': 'Funding in two tranches.'}
+    base = {'proposalId': uid, 'mandateName': 'Herrera Family Trust', 'clientRelationship': 'New',
+            'accountType': 'Trust', 'mifidClass': 'Professional', 'capitalIncomeSplit': 'No',
+            'taxDomicile': 'Spain', 'ukRndClient': 'No', 'gsAffiliate': 'No',
+            'custodyPlatform': 'GSI'}
     base.update(over)
     return base
 
@@ -85,10 +85,12 @@ def test_a_request_is_recorded_against_the_proposal():
     r = made['request']
     assert re.fullmatch(r'ar_[0-9a-f]{12}', r['requestId'])
     assert r['proposalId'] == uid and r['submittedBy'] == 'alice'
-    assert r['clientName'] == 'Herrera Family Trust' and r['accountType'] == 'Trust'
-    assert r['bookingCentre'] == 'London' and r['taxResidency'] == 'Spain'
-    assert r['fundingAmount'] == 50e6 and r['fundingSource'] == 'Wire'
-    assert r['fundingDate'] == '2026-09-30' and r['kycReference'] == 'KYC-2026-08812'
+    assert r['mandateName'] == 'Herrera Family Trust' and r['clientRelationship'] == 'New'
+    assert r['accountType'] == 'Trust' and r['mifidClass'] == 'Professional'
+    assert r['capitalIncomeSplit'] == 'No' and r['taxDomicile'] == 'Spain'
+    assert r['ukRndClient'] == 'No' and r['gsAffiliate'] == 'No'
+    assert r['custodyPlatform'] == 'GSI' and r['custodianName'] == ''
+    assert not set(r) & set(accountRequests.BEFORE), 'nothing of the form it never saw'
     assert re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', r['submittedAt'])
     assert accountRequests.get(r['requestId']) == r
     assert dashboardRouter.getAccountRequest(r['requestId'])['request'] == r
@@ -102,7 +104,7 @@ def test_one_request_per_proposal():
     entry, _, _ = _deliver()
     uid = entry['proposalId']
     first = dashboardRouter.createAccountRequest(_payload(uid), caller=_caller('alice'))['request']
-    again = dashboardRouter.createAccountRequest(_payload(uid, clientName='Someone Else'),
+    again = dashboardRouter.createAccountRequest(_payload(uid, mandateName='Someone Else'),
                                                  caller=_caller('bob'))
     assert again.status_code == 422
     body = _body(again)
@@ -118,11 +120,11 @@ def test_a_request_for_a_uid_the_register_does_not_hold_is_404():
 
 
 @pytest.mark.parametrize('field, value', [
-    ('clientName', ''), ('clientName', 'x' * 201),
-    ('accountType', 'Partnership'), ('bookingCentre', 'Mars'), ('taxResidency', '   '),
-    ('fundingAmount', 0), ('fundingAmount', -5), ('fundingAmount', 'lots'),
-    ('fundingSource', 'Cash'), ('fundingDate', '30/09/2026'), ('fundingDate', ''),
-    ('proposalId', 'sc_0123456789ab'), ('notes', 'x' * 2001),
+    ('mandateName', ''), ('mandateName', 'x' * 201), ('clientRelationship', 'Former'),
+    ('accountType', 'Partnership'), ('accountType', 'Individual'), ('mifidClass', ''),
+    ('mifidClass', 'Elective Professional'), ('capitalIncomeSplit', 'Maybe'),
+    ('taxDomicile', '   '), ('ukRndClient', None), ('gsAffiliate', 'Y'),
+    ('custodyPlatform', 'Elsewhere'), ('proposalId', 'sc_0123456789ab'),
 ])
 def test_each_wrong_field_is_named_and_nothing_is_written(field, value):
     entry, _, _ = _deliver()
@@ -133,33 +135,49 @@ def test_each_wrong_field_is_named_and_nothing_is_written(field, value):
     assert accountRequests.forProposal(entry['proposalId']) == []
 
 
-def test_the_optional_fields_may_be_left_out():
+def test_external_custody_names_its_custodian_and_no_other_platform_does():
     entry, _, _ = _deliver()
-    payload = _payload(entry['proposalId'])
-    del payload['kycReference']
-    del payload['notes']
-    r = dashboardRouter.createAccountRequest(payload, caller=_caller('alice'))['request']
-    assert r['kycReference'] == '' and r['notes'] == ''
+    uid = entry['proposalId']
+    for name in (None, '  '):
+        refused = dashboardRouter.createAccountRequest(
+            _payload(uid, custodyPlatform='External COD', custodianName=name), caller=_caller('alice'))
+        assert refused.status_code == 422 and _body(refused)['field'] == 'custodianName'
+    r = dashboardRouter.createAccountRequest(
+        _payload(uid, custodyPlatform='External COD', custodianName=' Pictet '),
+        caller=_caller('alice'))['request']
+    assert (r['custodyPlatform'], r['custodianName']) == ('External COD', 'Pictet')
+    # a name sent with a platform of our own is not recorded
+    other, _, _ = _deliver()
+    r = dashboardRouter.createAccountRequest(
+        _payload(other['proposalId'], custodyPlatform='GSCO', custodianName='Pictet'),
+        caller=_caller('alice'))['request']
+    assert r['custodianName'] == ''
 
 
-def test_text_is_trimmed_and_the_amount_may_arrive_as_a_string():
+def test_text_is_trimmed():
     entry, _, _ = _deliver()
     r = dashboardRouter.createAccountRequest(
-        _payload(entry['proposalId'], clientName='  Herrera Family Trust  ', fundingAmount='25000000'),
+        _payload(entry['proposalId'], mandateName='  Herrera Family Trust  ', taxDomicile=' Spain '),
         caller=_caller('alice'))['request']
-    assert r['clientName'] == 'Herrera Family Trust' and r['fundingAmount'] == 25e6
+    assert r['mandateName'] == 'Herrera Family Trust' and r['taxDomicile'] == 'Spain'
 
 
 # ------------------------------------------------------------------ store ---
 
-def test_the_options_ride_the_schema_and_are_marked_placeholder():
+def test_the_options_ride_the_schema():
     schema = dashboardRouter.getScenarioSchema(_request('alice'), caller=_caller('alice'))
     o = schema['options']['accountRequest']
-    assert o['accountTypes'] == accountRequests.ACCOUNT_TYPES
-    assert o['bookingCentres'] == accountRequests.BOOKING_CENTRES
-    assert o['fundingSources'] == accountRequests.FUNDING_SOURCES
+    assert o['clientRelationships'] == ['New', 'Existing']
+    assert o['accountTypes'] == ['Individual/Joint', 'Trust', 'PIV', 'Insurance Wrapper',
+                                 'Private Pension', 'Charity/Foundation/Endowment', 'Fund',
+                                 'Corporation']
+    assert o['mifidClasses'] == ['Retail', 'Professional']
+    assert o['yesNo'] == ['Yes', 'No']
+    assert o['custodyPlatforms'] == ['GSI', 'GSLU', 'GSCO', 'GSBZ', 'External COD']
+    assert o['externalCustody'] == 'External COD'
+    assert o['defaults'] == {'capitalIncomeSplit': 'No'}, 'the one field with an answer to start'
     assert set(o['required']) == set(accountRequests.REQUIRED)
-    assert o['placeholder'] is True, 'until Operations confirms the lists'
+    assert 'placeholder' not in o
     # stamped on a copy: the port's own schema is not mutated for the next caller
     own = getScenarioPort().get_schema(BasisInput(currency='USD', hedging='Hedged'), None, None)
     assert 'accountRequest' not in (own.get('options') or {})
@@ -173,6 +191,57 @@ def test_requests_live_in_the_registers_file_and_reference_its_rows():
     try:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert {'proposals', 'proposalSleeves', 'accountRequests'} <= tables
+        fk = conn.execute('PRAGMA foreign_key_list(accountRequests)').fetchall()
+        assert [(row[2], row[3], row[4]) for row in fk] == [('proposals', 'proposalId', 'proposalId')]
+    finally:
+        conn.close()
+
+
+def test_a_table_from_before_the_current_fields_keeps_every_request(tmp_path, monkeypatch):
+    """The form once asked for the client, a booking centre, the funding and a
+    KYC reference. Opening a register whose table has that shape rebuilds it:
+    every request stays, in order, read as it was made, and still counts as
+    the proposal's one request."""
+    monkeypatch.setenv('SCENARIO_REGISTER_DB', str(tmp_path / 'before.db'))
+    entry, _, _ = _deliver()
+    uid = entry['proposalId']
+    conn = sqlite3.connect(str(tmp_path / 'before.db'))
+    conn.executescript("""
+        CREATE TABLE accountRequests (
+            requestId TEXT PRIMARY KEY, proposalId TEXT NOT NULL REFERENCES proposals(proposalId),
+            submittedAt TEXT NOT NULL, submittedBy TEXT NOT NULL, clientName TEXT NOT NULL,
+            accountType TEXT NOT NULL, bookingCentre TEXT NOT NULL, taxResidency TEXT NOT NULL,
+            fundingAmount REAL NOT NULL, fundingSource TEXT NOT NULL, fundingDate TEXT NOT NULL,
+            kycReference TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '');
+        CREATE INDEX ar_proposal ON accountRequests (proposalId, submittedAt);
+        CREATE INDEX ar_at ON accountRequests (submittedAt DESC);""")
+    conn.execute('INSERT INTO accountRequests VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                 ('ar_0123456789ab', uid, '2026-09-18T14:05:00', 'jmercer', 'Ashworth', 'Trust',
+                  'London', 'Spain', 25e6, 'Wire', '2026-09-30', 'KYC-1', 'Two tranches.'))
+    conn.commit()
+    conn.close()
+
+    [r] = accountRequests.forProposal(uid)
+    assert r['requestId'] == 'ar_0123456789ab' and r['submittedBy'] == 'jmercer'
+    assert (r['mandateName'], r['accountType'], r['taxDomicile']) == ('Ashworth', 'Trust', 'Spain')
+    assert (r['bookingCentre'], r['fundingAmount'], r['fundingSource']) == ('London', 25e6, 'Wire')
+    assert (r['fundingDate'], r['kycReference'], r['notes']) == ('2026-09-30', 'KYC-1', 'Two tranches.')
+    assert r['clientRelationship'] == r['mifidClass'] == r['custodyPlatform'] == ''
+    again = dashboardRouter.createAccountRequest(_payload(uid), caller=_caller('alice'))
+    assert again.status_code == 422 and 'ar_0123456789ab' in _body(again)['error']
+
+    # and a request made now sits beside it in the rebuilt table
+    other, _, _ = _deliver()
+    made = dashboardRouter.createAccountRequest(_payload(other['proposalId']),
+                                                caller=_caller('alice'))['request']
+    assert [x['requestId'] for x in accountRequests.listRequests()] == [made['requestId'],
+                                                                         'ar_0123456789ab']
+    conn = sqlite3.connect(str(tmp_path / 'before.db'))
+    try:
+        names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master")}
+        assert 'accountRequestsBefore' not in names and {'ar_proposal', 'ar_at'} <= names
+        held = [r[1] for r in conn.execute('PRAGMA table_info(accountRequests)')]
+        assert 'clientName' not in held and 'mandateName' in held
         fk = conn.execute('PRAGMA foreign_key_list(accountRequests)').fetchall()
         assert [(row[2], row[3], row[4]) for row in fk] == [('proposals', 'proposalId', 'proposalId')]
     finally:
@@ -285,7 +354,7 @@ def test_account_opening_has_two_doors_and_neither_is_an_action_row_button():
     assert '.lp-cta::after' not in css, 'Start Here must not point at Open an Account'
 
     # the card's link is below the rule, not in the action row
-    actions = source.index("'<div class=\"dlg-actions\">'")
+    actions = source.index("id=\"dlgsave\"")
     assert actions < source.index("id=\"dlgaccount\""), \
         'the account link must come after the action row, not inside it'
     assert 'dlg-aside' in source and 'btn-inline' in source
@@ -320,14 +389,14 @@ def test_the_account_card_opens_on_the_uid_alone_and_grows_only_for_a_live_propo
 function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function money(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
-function opt(path, d) { return path.indexOf('accountTypes') > 0 ? ['Trust','Joint'] : d; }
+const OPTIONS = { accountTypes: ['Trust', 'Fund'], yesNo: ['Yes', 'No'], custodyPlatforms: ['GSI', 'External COD'],
+  externalCustody: 'External COD', defaults: { capitalIncomeSplit: 'No' } };
+function opt(path, d) { const k = path.split('.').pop(); return k in OPTIONS ? OPTIONS[k] : d; }
 function riskLabel(r) { return 'Risk ' + r; }
 ''' + region + r'''
 function fresh() {
   return { uid: '', status: 'idle', message: '', proposal: null, requests: [],
-    fields: { clientName: '', accountType: '', bookingCentre: '', taxResidency: '',
-              fundingAmount: null, fundingSource: '', fundingDate: '', kycReference: '', notes: '' },
-    fundingTouched: false, err: null, dirty: false, submitting: false, receipt: null, seq: 0, timer: null };
+    fields: acBlankFields(), err: null, dirty: false, submitting: false, receipt: null, seq: 0, timer: null };
 }
 const P = { proposalId: 'pr_bafdb99b80ba', primaryPwa: 'J. Mercer', mandateSize: 25000000,
   topAccountSize: 10000000, currency: 'USD', hedging: 'Hedged', variant: 'PMG Multi-Asset Portfolio',
@@ -339,11 +408,13 @@ const out = {};
 function snap(name) {
   const html = accountFormMarkup();
   out[name] = { open: accountExpanded(), status: accountStatusText(),
-    uidBox: html.includes('id="acuid"'), fields: html.includes('id="acclient"'),
+    uidBox: html.includes('id="acuid"'), fields: html.includes('id="acname"'),
+    custodian: html.includes('id="accustodian"'), split: (html.match(/id="acsplit"[^]*?<\/select>/) || [''])[0]
+      .includes('value="No" selected'),
     digest: html.includes('class="ac-digest"'), submit: html.includes('id="acsubmit"'),
     change: html.includes('id="acchange"'), spin: html.includes('ac-spin'),
     held: html.includes('dlg-held'), copy: html.includes('id="accopy"'),
-    from: html.includes('id="acfundfrom"'), kept: html.includes('details are kept'),
+    kept: html.includes('details are kept'),
     sleeves: (html.match(/<b>(\d+) sleeves?<\/b><span>([^<]*)</) || []).slice(1) };
 }
 account = fresh(); snap('idle');
@@ -353,11 +424,13 @@ account.status = 'notfound'; account.message = 'No proposal.'; snap('notfound');
 account.status = 'found'; account.proposal = P;
 account.requests = [{requestId:'ar_52e1c07b9a3d', submittedBy:'jmercer', submittedAt:'2026-09-18T14:05:00'}];
 snap('held');
-account.requests = []; account.fields.fundingAmount = 25000000; account.fields.clientName = 'Ashworth';
-snap('found');
-account.fundingTouched = true; snap('typedFunding');
-['accountType','bookingCentre','taxResidency','fundingSource','fundingDate'].forEach(k => account.fields[k] = 'x');
-snap('ready');
+account.requests = []; snap('untouched');
+account.fields.mandateName = 'Ashworth'; snap('found');
+['clientRelationship','accountType','mifidClass','taxDomicile','ukRndClient','gsAffiliate']
+  .forEach(k => account.fields[k] = 'x');
+account.fields.custodyPlatform = 'External COD'; snap('external');
+account.fields.custodianName = 'Pictet'; snap('ready');
+account.fields.custodyPlatform = 'GSI'; account.fields.custodianName = ''; snap('ownCustody');
 account.status = 'idle'; account.proposal = null; snap('changed');
 process.stdout.write(JSON.stringify(out));
 '''
@@ -378,9 +451,14 @@ process.stdout.write(JSON.stringify(out));
     # a live match: the card grows, the UID locks with a way back, the terms read as text
     f = got['found']
     assert f['open'] and not f['uidBox'] and f['change'] and f['digest'] and f['fields'] and f['submit']
-    assert f['from'], 'the funding the card filled in says where it came from'
     assert f['sleeves'] == ['4', 'Equity, Fixed Income, Real Assets and 1 more']
-    assert not got['typedFunding']['from'], 'a typed amount is the user\'s own'
+    assert f['split'], 'the capital/income split starts at No'
+    assert not got['untouched']['kept'] and got['untouched']['status'].startswith('8 required fields'), \
+        'the default is the card\'s answer, not the user\'s, and is not one left to give'
+    # the custodian is asked for only for external custody, and then required
+    assert not f['custodian'] and got['external']['custodian']
+    assert got['external']['status'] == '1 required field remaining: Custodian Name.'
+    assert not got['ownCustody']['custodian'] and got['ownCustody']['status'].startswith('Ready.')
     assert got['ready']['status'] == ('Ready. Submitting records the request against '
                                       'pr_bafdb99b80ba (J. Mercer, $25,000,000).')
 

@@ -2,8 +2,8 @@
 
 A request to open an account on the terms of a delivered proposal. The form
 on the landing page fills itself from a Proposal UID (D75), the user adds what
-the proposal cannot know - the client, the account, the funding - and Submit
-records one row here, beside the proposal it names.
+the proposal cannot know - the mandate, the client, the account and its
+custody - and Submit records one row here, beside the proposal it names.
 
 The table lives IN THE REGISTER'S DATABASE FILE (``SCENARIO_REGISTER_DB``): a
 request references a proposal row by its UID and has no meaning without it,
@@ -16,10 +16,16 @@ names the request that already exists - a duplicate account opening is the
 costlier mistake, and the rule is one line to relax if a proposal may ever
 fund several accounts.
 
-The option lists are PLACEHOLDERS until Operations confirms them (like the
-fee card's placeholder rates, D55): they ride the schema so the page renders
-whatever this module says and a later delivery can source them elsewhere
-without touching the page.
+The option lists ride the schema, so the page renders whatever this module
+says and a later delivery can source them elsewhere without touching the
+page. So do the one default (no capital/income split) and the custody platform
+that needs a custodian named.
+
+The form once asked for the client, a booking centre, the funding and a KYC
+reference. A request recorded then keeps those answers in the columns at the
+end of the table, and is otherwise read as it was: its client name as the
+mandate name and its tax residency as the tax domicile; what it was never
+asked is left empty.
 """
 
 from __future__ import annotations
@@ -34,36 +40,73 @@ from .types import PortfolioKey, ValidationError
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS accountRequests (
-    requestId     TEXT PRIMARY KEY,
-    proposalId    TEXT NOT NULL REFERENCES proposals(proposalId),
-    submittedAt   TEXT NOT NULL,
-    submittedBy   TEXT NOT NULL,
-    clientName    TEXT NOT NULL,
-    accountType   TEXT NOT NULL,
-    bookingCentre TEXT NOT NULL,
-    taxResidency  TEXT NOT NULL,
-    fundingAmount REAL NOT NULL,
-    fundingSource TEXT NOT NULL,
-    fundingDate   TEXT NOT NULL,
-    kycReference  TEXT NOT NULL DEFAULT '',
-    notes         TEXT NOT NULL DEFAULT ''
+    requestId          TEXT PRIMARY KEY,
+    proposalId         TEXT NOT NULL REFERENCES proposals(proposalId),
+    submittedAt        TEXT NOT NULL,
+    submittedBy        TEXT NOT NULL,
+    mandateName        TEXT NOT NULL,
+    clientRelationship TEXT NOT NULL DEFAULT '',
+    accountType        TEXT NOT NULL,
+    mifidClass         TEXT NOT NULL DEFAULT '',
+    capitalIncomeSplit TEXT NOT NULL DEFAULT '',
+    taxDomicile        TEXT NOT NULL,
+    ukRndClient        TEXT NOT NULL DEFAULT '',
+    gsAffiliate        TEXT NOT NULL DEFAULT '',
+    custodyPlatform    TEXT NOT NULL DEFAULT '',
+    custodianName      TEXT NOT NULL DEFAULT '',
+    -- asked by the form before it took the fields above; NULL on every
+    -- request recorded since
+    bookingCentre      TEXT,
+    fundingAmount      REAL,
+    fundingSource      TEXT,
+    fundingDate        TEXT,
+    kycReference       TEXT,
+    notes              TEXT
 );
 CREATE INDEX IF NOT EXISTS ar_proposal ON accountRequests (proposalId, submittedAt);
 CREATE INDEX IF NOT EXISTS ar_at ON accountRequests (submittedAt DESC);
 """
 
-#: Placeholder option lists - to be confirmed with Operations (see module doc).
-ACCOUNT_TYPES = ['Individual', 'Joint', 'Trust', 'Corporate', 'Foundation']
-BOOKING_CENTRES = ['New York', 'London', 'Frankfurt', 'Zurich', 'Singapore', 'Hong Kong']
-FUNDING_SOURCES = ['Wire', 'Transfer in kind', 'Internal transfer']
+# A table from before the current fields is rebuilt into the one above in one
+# transaction, every request kept and in the same order.
+_REBUILD = """
+BEGIN;
+ALTER TABLE accountRequests RENAME TO accountRequestsBefore;
+DROP INDEX IF EXISTS ar_proposal;
+DROP INDEX IF EXISTS ar_at;
+{schema}
+INSERT INTO accountRequests (requestId, proposalId, submittedAt, submittedBy, mandateName,
+                             accountType, taxDomicile, bookingCentre, fundingAmount,
+                             fundingSource, fundingDate, kycReference, notes)
+    SELECT requestId, proposalId, submittedAt, submittedBy, clientName, accountType,
+           taxResidency, bookingCentre, fundingAmount, fundingSource, fundingDate,
+           kycReference, notes
+    FROM accountRequestsBefore ORDER BY rowid;
+DROP TABLE accountRequestsBefore;
+COMMIT;
+"""
 
-#: What the form must have before Submit is live; the server re-enforces.
-REQUIRED = ('clientName', 'accountType', 'bookingCentre', 'taxResidency',
-            'fundingAmount', 'fundingSource', 'fundingDate')
-OPTIONAL = ('kycReference', 'notes')
-_COLUMNS = ('requestId', 'proposalId', 'submittedAt', 'submittedBy') + REQUIRED + OPTIONAL
+CLIENT_RELATIONSHIPS = ['New', 'Existing']
+ACCOUNT_TYPES = ['Individual/Joint', 'Trust', 'PIV', 'Insurance Wrapper', 'Private Pension',
+                 'Charity/Foundation/Endowment', 'Fund', 'Corporation']
+MIFID_CLASSES = ['Retail', 'Professional']
+YES_NO = ['Yes', 'No']
+CUSTODY_PLATFORMS = ['GSI', 'GSLU', 'GSCO', 'GSBZ', 'External COD']
+#: the platform that is someone else's custody, so the custodian is named
+EXTERNAL_CUSTODY = 'External COD'
+#: the only field with an answer before the user gives one
+DEFAULTS = {'capitalIncomeSplit': 'No'}
 
-_MAX_TEXT = {'clientName': 200, 'taxResidency': 100, 'kycReference': 100, 'notes': 2000}
+#: What the form must have before Submit is live; the server re-enforces. The
+#: custodian's name is required too, but only for external custody.
+REQUIRED = ('mandateName', 'clientRelationship', 'accountType', 'mifidClass',
+            'capitalIncomeSplit', 'taxDomicile', 'ukRndClient', 'gsAffiliate',
+            'custodyPlatform')
+FIELDS = REQUIRED + ('custodianName',)
+BEFORE = ('bookingCentre', 'fundingAmount', 'fundingSource', 'fundingDate', 'kycReference', 'notes')
+_COLUMNS = ('requestId', 'proposalId', 'submittedAt', 'submittedBy') + FIELDS + BEFORE
+
+_MAX_TEXT = {'mandateName': 200, 'taxDomicile': 100, 'custodianName': 200}
 
 _lock = threading.Lock()
 
@@ -73,15 +116,19 @@ class ProposalNotFound(LookupError):
 
 
 def options() -> dict:
-    return {'accountTypes': list(ACCOUNT_TYPES), 'bookingCentres': list(BOOKING_CENTRES),
-            'fundingSources': list(FUNDING_SOURCES), 'required': list(REQUIRED),
-            'placeholder': True}
+    return {'clientRelationships': list(CLIENT_RELATIONSHIPS), 'accountTypes': list(ACCOUNT_TYPES),
+            'mifidClasses': list(MIFID_CLASSES), 'yesNo': list(YES_NO),
+            'custodyPlatforms': list(CUSTODY_PLATFORMS), 'externalCustody': EXTERNAL_CUSTODY,
+            'defaults': dict(DEFAULTS), 'required': list(REQUIRED)}
 
 
 def _connect() -> sqlite3.Connection:
     # the register's tables first: ours references one of them
     conn = proposalRegister._connect()
     with _lock:
+        held = {row[1] for row in conn.execute('PRAGMA table_info(accountRequests)')}
+        if 'clientName' in held:
+            conn.executescript(_REBUILD.format(schema=_SCHEMA))
         conn.executescript(_SCHEMA)
         conn.commit()
     conn.execute('PRAGMA foreign_keys = ON')
@@ -153,7 +200,7 @@ def _text(payload, field, required, limit=None) -> str:
 def _choice(payload, field, choices, label) -> str:
     value = _text(payload, field, True)
     if value not in choices:
-        raise ValidationError(field, 'Choose a {} from the list.'.format(label))
+        raise ValidationError(field, 'Choose {} from the list.'.format(label))
     return value
 
 
@@ -168,26 +215,20 @@ def validate(payload) -> dict:
         raise ValidationError('proposalId',
                               'A Proposal UID is pr_ followed by twelve letters or digits.')
     out = {'proposalId': proposalId}
-    out['clientName'] = _text(payload, 'clientName', True, _MAX_TEXT['clientName'])
-    out['accountType'] = _choice(payload, 'accountType', ACCOUNT_TYPES, 'account type')
-    out['bookingCentre'] = _choice(payload, 'bookingCentre', BOOKING_CENTRES, 'booking centre')
-    out['taxResidency'] = _text(payload, 'taxResidency', True, _MAX_TEXT['taxResidency'])
-    amount = payload.get('fundingAmount')
-    try:
-        amount = float(amount) if amount not in (None, '') else 0.0
-    except (TypeError, ValueError):
-        raise ValidationError('fundingAmount', 'Enter the initial funding as an amount.')
-    if not amount > 0 or amount != amount or amount == float('inf'):
-        raise ValidationError('fundingAmount', 'Enter the initial funding as an amount above zero.')
-    out['fundingAmount'] = amount
-    out['fundingSource'] = _choice(payload, 'fundingSource', FUNDING_SOURCES, 'funding source')
-    date = _text(payload, 'fundingDate', True)
-    try:
-        out['fundingDate'] = datetime.date.fromisoformat(date).isoformat()
-    except ValueError:
-        raise ValidationError('fundingDate', 'Enter the expected funding date.')
-    out['kycReference'] = _text(payload, 'kycReference', False, _MAX_TEXT['kycReference'])
-    out['notes'] = _text(payload, 'notes', False, _MAX_TEXT['notes'])
+    out['mandateName'] = _text(payload, 'mandateName', True, _MAX_TEXT['mandateName'])
+    out['clientRelationship'] = _choice(payload, 'clientRelationship', CLIENT_RELATIONSHIPS,
+                                        'the client relationship')
+    out['accountType'] = _choice(payload, 'accountType', ACCOUNT_TYPES, 'an account type')
+    out['mifidClass'] = _choice(payload, 'mifidClass', MIFID_CLASSES, 'the MiFID class')
+    out['capitalIncomeSplit'] = _choice(payload, 'capitalIncomeSplit', YES_NO, 'Yes or No')
+    out['taxDomicile'] = _text(payload, 'taxDomicile', True, _MAX_TEXT['taxDomicile'])
+    out['ukRndClient'] = _choice(payload, 'ukRndClient', YES_NO, 'Yes or No')
+    out['gsAffiliate'] = _choice(payload, 'gsAffiliate', YES_NO, 'Yes or No')
+    out['custodyPlatform'] = _choice(payload, 'custodyPlatform', CUSTODY_PLATFORMS, 'a custody platform')
+    # a custodian of the platform's own needs no name; external custody does
+    external = out['custodyPlatform'] == EXTERNAL_CUSTODY
+    out['custodianName'] = (_text(payload, 'custodianName', True, _MAX_TEXT['custodianName'])
+                            if external else '')
     return out
 
 
@@ -218,7 +259,8 @@ def record(user: str, payload) -> dict:
             conn.execute(
                 'INSERT INTO accountRequests ({}) VALUES ({})'.format(
                     ', '.join(_COLUMNS), ', '.join('?' * len(_COLUMNS))),
-                (requestId, proposalId, _now(), user or '') + tuple(fields[f] for f in REQUIRED + OPTIONAL))
+                (requestId, proposalId, _now(), user or '') + tuple(fields[f] for f in FIELDS)
+                + (None,) * len(BEFORE))
         return get(requestId, conn=conn)
     finally:
         conn.close()
@@ -227,7 +269,9 @@ def record(user: str, payload) -> dict:
 # ------------------------------------------------------------------- read ---
 
 def _row(row) -> dict:
-    return {key: row[key] for key in row.keys()}
+    """A request as it was made: the answers the form asked for then, and none
+    of the empty columns of a form it never saw."""
+    return {key: row[key] for key in row.keys() if not (key in BEFORE and row[key] is None)}
 
 
 def _forProposal(conn, proposalId) -> list:

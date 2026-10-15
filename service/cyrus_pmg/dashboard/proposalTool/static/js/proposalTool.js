@@ -3081,14 +3081,16 @@ function renderDialog() {
         ? '<span class="field-hint">Type at least two characters.</span>' : '')
     + '</div>'
     + (err ? '<p class="md-err" id="mderr" role="alert">' + esc(err.msg) + '</p>' : '')
-    /* Both cards carry the same right-aligned pair. The account opening
-       request used to be a third button on this line, where its only
+    /* Both cards carry the same pair, split to the card's two edges: the way
+       on at the left, where the fields above it start, and Cancel apart from
+       it at the right, so the two are never read as one control. The account
+       opening request used to be a third button on this line, where its only
        neighbours were Continue and Cancel - a terminal action on a delivered
        proposal sitting among the controls for starting one (D107). */
-    + '<div class="dlg-actions">'
-    + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button>'
+    + '<div class="dlg-actions split">'
     + '<button type="button" class="btn btn-primary" id="dlgsave"' + dis + '>'
-    + (draft.saving ? 'Working…' : (first ? 'Continue' : 'Save mandate')) + '</button></div>'
+    + (draft.saving ? 'Working…' : (first ? 'Continue' : 'Save mandate')) + '</button>'
+    + '<button type="button" class="btn btn-ghost" id="dlgcancel"' + dis + '>Cancel</button></div>'
     /* Below the rule, and only on the landing card: the other job someone may
        have come for, named by its precondition so it cannot be read as a
        second way to start. The landing page carries the same door (D107). */
@@ -3121,20 +3123,36 @@ var UID_PATTERN = /^pr_[0-9a-f]{12}$/;
 var UID_SHAPE = 'A Proposal UID is pr_ followed by twelve letters or digits.';
 
 /* The fields the user supplies. Option lists come from the schema
-   (options.accountRequest), so the page never carries a list of its own. */
+   (options.accountRequest), so the page never carries a list of its own; so
+   does the one default. Every field is required; the custodian's name is
+   asked for, and required, only for external custody. */
 var AC_FIELDS = [
-  { id: 'acclient', key: 'clientName',    label: 'Client / account name', kind: 'text',   required: true },
-  { id: 'actype',   key: 'accountType',   label: 'Account type',          kind: 'select', required: true, options: 'accountTypes' },
-  { id: 'acbook',   key: 'bookingCentre', label: 'Booking centre',        kind: 'select', required: true, options: 'bookingCentres' },
-  { id: 'actax',    key: 'taxResidency',  label: 'Tax residency',         kind: 'text',   required: true, placeholder: 'Country' },
-  { id: 'acfund',   key: 'fundingAmount', label: 'Initial funding',       kind: 'money',  required: true,
-    hint: 'From the mandate size. Change it if the first tranche differs.' },
-  { id: 'acsrc',    key: 'fundingSource', label: 'Funding source',        kind: 'select', required: true, options: 'fundingSources' },
-  { id: 'acdate',   key: 'fundingDate',   label: 'Expected funding date', kind: 'date',   required: true },
-  { id: 'ackyc',    key: 'kycReference',  label: 'KYC / onboarding reference', kind: 'text', required: false },
-  { id: 'acnotes',  key: 'notes',         label: 'Notes for Onboarding',  kind: 'textarea', required: false, wide: true,
-    placeholder: 'Anything Onboarding should know that the proposal does not say.' }
+  { id: 'acname',   key: 'mandateName',        label: 'Mandate Name',         kind: 'text',   required: true },
+  { id: 'acrel',    key: 'clientRelationship', label: 'Client Relationship',  kind: 'select', required: true, options: 'clientRelationships' },
+  { id: 'actype',   key: 'accountType',        label: 'Account Type',         kind: 'select', required: true, options: 'accountTypes' },
+  { id: 'acmifid',  key: 'mifidClass',         label: 'MiFID Class',          kind: 'select', required: true, options: 'mifidClasses' },
+  { id: 'acsplit',  key: 'capitalIncomeSplit', label: 'Capital Income Split Requirement', kind: 'select', required: true, options: 'yesNo' },
+  { id: 'actax',    key: 'taxDomicile',        label: 'Tax Domicile',         kind: 'text',   required: true, placeholder: 'Country' },
+  { id: 'acuknd',   key: 'ukRndClient',        label: 'UK RND Client',        kind: 'select', required: true, options: 'yesNo' },
+  { id: 'acgs',     key: 'gsAffiliate',        label: 'GS Employee or Affiliate', kind: 'select', required: true, options: 'yesNo' },
+  { id: 'accustody', key: 'custodyPlatform',   label: 'Custody Platform',     kind: 'select', required: true, options: 'custodyPlatforms' },
+  { id: 'accustodian', key: 'custodianName',   label: 'Custodian Name',       kind: 'text',   required: true, external: true }
 ];
+
+/* The custodian's name belongs to external custody alone: hidden, it is
+   neither asked for nor sent. */
+function acAsked(spec) {
+  return !spec.external
+    || account.fields.custodyPlatform === opt('options.accountRequest.externalCustody', 'External COD');
+}
+
+/* A fresh set of answers: empty, but for the defaults the schema names. */
+function acBlankFields() {
+  var defaults = opt('options.accountRequest.defaults', {}) || {};
+  var fields = {};
+  AC_FIELDS.forEach(function (spec) { fields[spec.key] = defaults[spec.key] || ''; });
+  return fields;
+}
 
 function acFieldId(key) {
   if (key === 'proposalId') return 'acuid';
@@ -3160,9 +3178,7 @@ function openAccountDialog(opener) {
   account = {
     uid: '', status: 'idle',          /* 'idle'|'looking'|'found'|'notfound'|'malformed'|'error' */
     message: '', proposal: null, requests: [],
-    fields: { clientName: '', accountType: '', bookingCentre: '', taxResidency: '',
-              fundingAmount: null, fundingSource: '', fundingDate: '', kycReference: '', notes: '' },
-    fundingTouched: false,            /* the default (mandate size) never overwrites a typed amount */
+    fields: acBlankFields(),
     err: null, dirty: false, submitting: false, receipt: null,
     seq: 0, timer: null
   };
@@ -3219,11 +3235,6 @@ async function lookupProposal(uid, seq) {
     if (!account || account.seq !== seq) return;
     account.status = 'found'; account.message = '';
     account.proposal = found.proposal; account.requests = found.requests || [];
-    /* Untouched, the funding follows the proposal - including a new one after
-       Change. Typed, it is the user's and stays. */
-    if (!account.fundingTouched) {
-      account.fields.fundingAmount = found.proposal.mandateSize || null;
-    }
     if (account.requests.length) {
       announce('polite', 'This proposal already has an account opening request, '
         + account.requests[0].requestId + '.');
@@ -3251,9 +3262,9 @@ async function lookupProposal(uid, seq) {
 function accountMissing() {
   var f = account.fields;
   return AC_FIELDS.filter(function (spec) {
-    if (!spec.required) return false;
+    if (!spec.required || !acAsked(spec)) return false;
     var v = f[spec.key];
-    return (spec.kind === 'money') ? !(v > 0) : !(v && String(v).trim());
+    return !(v && String(v).trim());
   });
 }
 
@@ -3288,13 +3299,12 @@ function accountExpanded() {
             && !account.requests.length);
 }
 
-/* Anything the user has typed about the account, so a changed UID can say it
-   was kept. The funding default does not count: the card wrote that. */
+/* Anything the user has given about the account, so a changed UID can say it
+   was kept. A default does not count: the card wrote that. */
 function accountHasDetails() {
-  var f = account.fields;
+  var f = account.fields, blank = acBlankFields();
   return AC_FIELDS.some(function (spec) {
-    if (spec.kind === 'money') return account.fundingTouched && f[spec.key] > 0;
-    return !!(f[spec.key] && String(f[spec.key]).trim());
+    return !!(f[spec.key] && String(f[spec.key]).trim()) && f[spec.key] !== blank[spec.key];
   });
 }
 
@@ -3497,13 +3507,10 @@ function accountFieldsMarkup(busy) {
   function invalid(id) {
     return (errField === id) ? ' aria-invalid="true" aria-describedby="acerr"' : '';
   }
-  return '<div class="dlg-sect">The account</div><div class="dlg-grid">' + AC_FIELDS.map(function (spec) {
+  return '<div class="dlg-sect">The account</div><div class="dlg-grid">' + AC_FIELDS.filter(acAsked).map(function (spec) {
     var v = a.fields[spec.key];
-    /* the one field the card filled in says so, until the user makes it theirs */
-    var from = (spec.kind === 'money' && !a.fundingTouched && v > 0)
-      ? '<span class="ac-from" id="acfundfrom">From mandate</span>' : '';
     var label = '<label for="' + spec.id + '">' + esc(spec.label)
-      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + from + '</label>';
+      + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + '</label>';
     var common = ' id="' + spec.id + '" data-acf="' + spec.key + '"'
       + (spec.required ? ' aria-required="true"' : '') + invalid(spec.id)
       + (busy ? ' disabled' : '');
@@ -3514,14 +3521,6 @@ function accountFieldsMarkup(busy) {
         + choices.map(function (o) {
             return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>';
           }).join('') + '</select>';
-    } else if (spec.kind === 'textarea') {
-      control = '<textarea' + common + ' rows="2" placeholder="' + esc(spec.placeholder || '') + '">'
-        + esc(v || '') + '</textarea>';
-    } else if (spec.kind === 'date') {
-      control = '<input type="date"' + common + ' value="' + esc(v || '') + '">';
-    } else if (spec.kind === 'money') {
-      control = '<input type="text" inputmode="numeric" autocomplete="off"' + common
-        + ' value="' + (v > 0 ? esc(money(v)) : '') + '">';
     } else {
       control = '<input type="text" autocomplete="off"' + common
         + (spec.placeholder ? ' placeholder="' + esc(spec.placeholder) + '"' : '')
@@ -3569,16 +3568,13 @@ function onAccountInput(e) {
   if (!key) return false;
   var spec = AC_FIELDS.filter(function (s) { return s.key === key; })[0];
   if (!spec) return false;
-  if (spec.kind === 'money') {
-    account.fields[key] = parseMoney(t.value) || null;
-    account.fundingTouched = true;
-    var from = document.getElementById('acfundfrom');
-    if (from) from.remove();
-  } else {
-    account.fields[key] = t.value;
-  }
+  var was = acAsked({ external: true });
+  account.fields[key] = t.value;
   account.err = null; account.dirty = true;
-  patchAccountFooter();
+  /* the custody platform decides whether the custodian is asked for, so a
+     change to it that adds or takes away that field redraws the card */
+  if (acAsked({ external: true }) !== was) preserveFocus(renderAccountDialog);
+  else patchAccountFooter();
   return true;
 }
 
@@ -3587,7 +3583,7 @@ async function submitAccountRequest() {
   account.submitting = true; account.err = null;
   renderAccountDialog();
   var body = { proposalId: account.proposal.proposalId };
-  AC_FIELDS.forEach(function (spec) { body[spec.key] = account.fields[spec.key]; });
+  AC_FIELDS.forEach(function (spec) { body[spec.key] = acAsked(spec) ? account.fields[spec.key] : ''; });
   try {
     var made = await apiFetch('/scenario/account-requests', {
       method: 'POST',
@@ -4095,13 +4091,6 @@ document.addEventListener('input', function (e) {
    only for a field that has a value: a user who has not reached the mandate
    field yet must not be told it is wrong. */
 document.addEventListener('focusout', function (e) {
-  if (account && e.target.id === 'acfund') {          /* the amount re-formats on blur */
-    var amount = parseMoney(e.target.value);
-    account.fields.fundingAmount = amount || null;
-    e.target.value = amount ? money(amount) : '';
-    patchAccountFooter();
-    return;
-  }
   if (!draft) return;
   if (e.target.id === 'mdtop' || e.target.id === 'mdsize') {
     var value = parseMoney(e.target.value);
@@ -4122,7 +4111,7 @@ document.addEventListener('focusout', function (e) {
   }
 });
 
-/* selects and the date control report through change rather than input */
+/* selects report through change rather than input */
 document.addEventListener('change', function (e) {
   if (account && e.target && e.target.dataset && e.target.dataset.acf) onAccountInput(e);
 });

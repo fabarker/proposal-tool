@@ -458,10 +458,11 @@ _FONTS = 'import cyrus_pmg.pmgService.scenario.houseFonts as h; print(sorted(h.F
 _ROUTES = ("from cyrus_pmg.pmgService.dashboardRouter import router; "
            "print(len([r for r in router.routes if getattr(r, 'path', '').startswith('/scenario')]))")
 _UPGRADE = '''
-from cyrus_pmg.pmgService.scenario import proposalRegister, sleeveRepo
+from cyrus_pmg.pmgService.scenario import accountRequests, proposalRegister, sleeveRepo
 c = sleeveRepo.connection()
 c.close()
 proposalRegister.describe()
+accountRequests.describe()
 print('OK')
 '''
 

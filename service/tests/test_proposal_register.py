@@ -449,10 +449,10 @@ def test_saved_views_count_and_filter_the_whole_register():
     # a request moves it out of noAccount, and the row says so
     accountRequests.record('viewer', {
         'proposalId': proposalId,
-        'clientName': 'View Test', 'accountType': accountRequests.ACCOUNT_TYPES[0],
-        'bookingCentre': accountRequests.BOOKING_CENTRES[0], 'taxResidency': 'CH',
-        'fundingAmount': 1_000_000, 'fundingSource': accountRequests.FUNDING_SOURCES[0],
-        'fundingDate': '2026-10-01'})
+        'mandateName': 'View Test', 'clientRelationship': 'New',
+        'accountType': accountRequests.ACCOUNT_TYPES[0], 'mifidClass': 'Retail',
+        'capitalIncomeSplit': 'No', 'taxDomicile': 'CH', 'ukRndClient': 'No',
+        'gsAffiliate': 'No', 'custodyPlatform': accountRequests.CUSTODY_PLATFORMS[0]})
     after = proposalRegister.listProposals(limit=500)
     assert [e for e in after['entries'] if e['proposalId'] == proposalId][0]['accountRequested'] is True
     assert proposalId not in {e['proposalId'] for e in
