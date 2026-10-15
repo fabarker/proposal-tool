@@ -803,7 +803,6 @@ def buildAssumptionsDoc(assets, results=None, engineParity: bool = False) -> She
     # by category up front, follow the canonical order, and every asset
     # lands under its OWN category header and every category prints in the
     # same order as ``portfolios`` / ``risk_dashboard`` / ``Implementation``.
-    # (Found and fixed on the Cyrus host; carried here so a port keeps it.)
     if results and not engineParity:
         order, keptAssets = _categoryOrder(results)
         byCategory = {}
@@ -1334,7 +1333,7 @@ NUMBER_FORMATS = ('General', '0.00%', '0.0%', '0%', '0.0', '0.00',
                   '$#,##0', 'mmm-yy')
 
 #: English month abbreviations, spelt out so 'mmm-yy' cannot drift with the
-#: host's locale the way strftime('%b') would.
+#: server's locale the way strftime('%b') would.
 _MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
 

@@ -421,7 +421,7 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 /* ── export card, from proposalToolv2 ──
    Its structure verbatim; its greens, ambers and reds swapped for the ones
    this page's badges already use, so the card reads as part of the document
-   rather than as a transplant. */
+   rather than as a borrowed one. */
 .impl-viz{padding-bottom:44px;border-bottom:1px solid var(--line-strong)}
 .export-card{margin:44px 0 0;padding:24px 26px;display:grid;
   grid-template-columns:60px 1fr auto;gap:20px;align-items:center;

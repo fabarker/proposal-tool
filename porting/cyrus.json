@@ -1,0 +1,18 @@
+{
+  "commit": "e948732",
+  "hostOwned": [
+    "advisors.xlsx"
+  ],
+  "bake": {
+    "from": "os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'var', 'baked')",
+    "to": "os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', 'var', 'baked')"
+  },
+  "routerDrop": [
+    "# ===== TRANSPLANT BLOCK BEGIN (PORTING.md §9.1) ==============================",
+    "# ===== TRANSPLANT BLOCK END ==================================================",
+    "# names the Proposal Tool endpoint block needs since e948732"
+  ],
+  "routerDropAfterBlank": [
+    "# ===== TRANSPLANT BLOCK END =================================================="
+  ]
+}

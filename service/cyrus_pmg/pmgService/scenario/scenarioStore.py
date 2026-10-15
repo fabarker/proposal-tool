@@ -1,8 +1,8 @@
 """File-backed scenario state.
 
 Scenario state - mandate, basis, column keys, sleeves - must survive a refresh
-(spec 11.8) and must be visible to every service worker: the host launches
-pmgService with more than one uvicorn worker, so an in-memory store would 404
+(spec 11.8) and must be visible to every service worker: the dashboard
+launches pmgService with more than one uvicorn worker, so an in-memory store would 404
 on whichever worker did not create the scenario. One JSON file per scenario,
 written atomically, is worker-safe and survives restarts. Recorded as
 deviation D8.

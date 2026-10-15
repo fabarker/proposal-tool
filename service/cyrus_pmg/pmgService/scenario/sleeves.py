@@ -17,7 +17,7 @@ Until D57 the tables were written here: a BASELINE library for the Multi-Asset
 type and per-type deltas (D9, D29), checked at import for weights summing to
 1, unique names and priced fee groups. The same sleeves, product for product
 and weight for weight, are now the seed the repository loads on first open
-(proposal-tool/sleeveSource), and the same checks run at save instead.
+(sleeveSource), and the same checks run at save instead.
 
 A sleeve is served in the shape it always was: a name and a list of products,
 each carrying the eleven fields of spec 4.1 minus the management fee (D51) -

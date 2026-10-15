@@ -721,7 +721,7 @@ def portfolioName(basis: BasisInput, key: PortfolioKey) -> str:
 
 
 def exportFilename(basis: BasisInput, proposalId: str) -> str:
-    """The workbook filename (spec 14.2, D75): hedging slugged, host-local
+    """The workbook filename (spec 14.2, D75): hedging slugged, server-local
     date, and the Proposal UID last - beside the extension, where a reader
     finds it, and after the date, so a folder of proposals still sorts by
     currency and day. There is no form of this name without the UID."""

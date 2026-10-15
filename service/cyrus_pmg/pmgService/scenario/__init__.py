@@ -1,13 +1,12 @@
-"""The Proposal Tool back end - the transplant payload (PORTING.md §3.2, §6).
+"""The Proposal Tool back end.
 
 Everything the scenario endpoints need lives in this package, and the package
-imports no other part of the host: intra-package relative imports, the
+imports no other part of the service: intra-package relative imports, the
 standard library, openpyxl, pandas and python-pptx only. It never imports the
-analytics library either: the bake is produced in epsilon-phi and delivered
-to this repository as data, and nothing here computes a figure (D126). The endpoint block in
-dashboardRouter.py is its one caller; the host's auth module is reached from
-that block, never from here. A copy of this directory into
-``cyrus_pmg/pmgService/`` therefore needs no edits.
+analytics library either: the bake is produced elsewhere and delivered as
+data, and nothing here computes a figure (D126). The endpoint block in
+dashboardRouter.py is its one caller; the auth module is reached from that
+block, never from here.
 
     scenarioPort.py       the port contract every adapter implements (spec 4.2)
     types.py              BasisInput, MandateInput, PortfolioKey, the errors
@@ -17,14 +16,12 @@ that block, never from here. A copy of this directory into
     saaKeys.py            portfolio NAME -> key: the closed vocabularies (D54)
     universe.py           the strategic universe read from SCENARIO_SAA_SOURCE
     portfolio_weights.py  asset metadata and the weight universe's loaders
-                          (from backend/portfolio_weights.py, the hand-off; the
-                          engine bridge it carried left with D126)
     fixturesAdapter.py    ScenarioPort over synthetic analytics - tests, demos
     bakedAdapter.py       ScenarioPort over the delivered bake - production, and
                           the only source of analytics there is (D126)
     bake.py               the store layout the service reads, the census, and a
-                          fixtures bake for tests; a real bake is delivered from
-                          epsilon-phi (D17, D126)
+                          fixtures bake for tests; a real bake is delivered
+                          (D17, D126)
     assetEstimates.py     per-asset long-term estimates for the assumptions sheet
     registry.py           adapter selection via SCENARIO_ADAPTER
     scenarioStore.py      file-backed scenario state, shared across workers
@@ -47,5 +44,5 @@ that block, never from here. A copy of this directory into
 
 Data files beside the modules: advisors.xlsx, fees.json, feeRates.csv,
 assetEstimates.json. Everything else the package reads is named by a
-SCENARIO_* variable (PORTING.md §11.4) and delivered as data (Appendix C).
+SCENARIO_* variable and delivered as data.
 """

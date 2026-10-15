@@ -55,7 +55,7 @@ a sleeve that cannot be priced is never offered to a PWA.
 
 Seeding. A database that does not exist yet is created and filled from the
 seed extract (SCENARIO_SLEEVES_SEED; the packaged default is the stand-in
-under proposal-tool/sleeveSource, today's library written out row by row).
+under sleeveSource, today's library written out row by row).
 Once the database exists the seed is never read again. The same table shape
 is the interchange format - exportRows / importRows, driven by sleeveTools.
 
@@ -329,7 +329,7 @@ def connection() -> sqlite3.Connection:
 def _seedOnce(conn: sqlite3.Connection) -> None:
     """Fill an empty library from the seed - once, whatever else is starting.
 
-    The host runs several service workers, so *is the library empty?* and
+    The service runs several workers, so *is the library empty?* and
     *fill it* are asked by several processes at once against one file, and a
     plain check-then-act lets two of them both answer yes. Asking again inside
     a write transaction is what makes the pair atomic: BEGIN IMMEDIATE takes

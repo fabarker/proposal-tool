@@ -9,7 +9,7 @@ cannot be offered and one it gains appears on the next bake.
 
 The extract's location is configuration: ``SCENARIO_SAA_SOURCE`` names a CSV
 or XLSX. The packaged default is the fictitious stand-in under
-``proposal-tool/saaSource``, which the host points at its real extract.
+``saaSource``; a deployment points it at its real extract.
 
 Everything is memoised for the life of the process; the source is static
 between bakes. ``reload()`` exists for tests.

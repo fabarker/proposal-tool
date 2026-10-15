@@ -21,7 +21,7 @@ Typical use from a notebook or IDE console::
     from pathlib import Path
     import runpy
 
-    result = runpy.run_path("proposal-tool/portfolio_weights.py")
+    result = runpy.run_path("portfolio_weights.py")
     weights = result["portfolio_weights_df"]
     weights.to_excel("portfolio_weights.xlsx", index=False)
 
@@ -35,7 +35,7 @@ Typical use from a notebook or IDE console::
 
 Run the module directly to load one portfolio and print its allocation::
 
-    python proposal-tool/portfolio_weights.py \
+    python portfolio_weights.py \
         --currency GBP \
         --allocation "Full" \
         --risk-level "Mod Agg" \
@@ -750,10 +750,9 @@ def _variant_label_for_inputs(
         return "Full ex RE" if exclude_real_estate else "Full + RE"
     return "Ex HFs ex RE" if exclude_real_estate else "Ex HFs + RE"
 
-# The engine bridge that stood here - the analytics context, the hedge ratio
-# per policy and the SAAPortfolio builder - left with D126: the analytics
-# run in epsilon-phi, which delivers the bake, and this repository never
-# builds a portfolio. What remains is the weight universe and its loaders.
+# The analytics run elsewhere and arrive as the delivered bake (D126), so
+# nothing here builds a portfolio. What remains is the weight universe and its
+# loaders.
 
 
 def load_portfolio_weights(

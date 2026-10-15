@@ -3,20 +3,20 @@
 // Host integration seam.
 //
 // The Flask frontend reverse-proxies /api/* to the FastAPI backend, rewriting
-// /api/<x> to /api/v1/<x>. On a host page globals.js has already set API_BASE;
-// this resolves it however the host chose to declare it, and falls back so the
+// /api/<x> to /api/v1/<x>. On the dashboard globals.js has already set API_BASE;
+// this resolves it however globals.js chose to declare it, and falls back so the
 // page still works opened standalone.
 //
 // THE BARE NAME AND THE WINDOW PROPERTY ARE NOT THE SAME THING (D87). This
 // used to read `if (typeof API_BASE === 'undefined') window.API_BASE = ...`,
 // which every call site then read back as `window.API_BASE`. That holds only
-// while the host's globals.js assigns `window.API_BASE = ...`, as this repo's
-// stand-in does. A host that writes `const API_BASE = ...` instead creates a
+// while globals.js assigns `window.API_BASE = ...`. A globals.js that writes
+// `const API_BASE = ...` instead creates a
 // SCRIPT-SCOPED binding and no window property: the bare name exists, so the
 // guard skipped, `window.API_BASE` stayed undefined, and every call built
 // "undefined/scenario/..." relative to the page's own path - answered by the
 // static file server with a 404, so the tool reported the service as down
-// while the service was fine. Found on the host, at Cyrus.
+// while the service was fine.
 // ---------------------------------------------------------------------------
 function resolveApiBase(fromWindow, fromScope, origin) {
     if (typeof fromWindow === 'string' && fromWindow) return fromWindow;
@@ -25,7 +25,7 @@ function resolveApiBase(fromWindow, fromScope, origin) {
 }
 window.API_BASE = resolveApiBase(
     window.API_BASE,
-    /* a script-scoped const/let from the host's globals.js */
+    /* a script-scoped const/let from globals.js */
     (typeof API_BASE === 'string' ? API_BASE : null),
     window.location.origin);
 
@@ -47,7 +47,7 @@ function clearAlert() {
 /**
  * Single entry point for every backend call.
  *
- * Follows the host's error contract: a non-2xx body carries `error`, and a 401
+ * Follows the dashboard's error contract: a non-2xx body carries `error`, and a 401
  * carries `loginUrl` which we follow so GSSSO can re-authenticate the browser.
  * Nothing in the prototype calls this yet - the data is generated client-side -
  * but this is the seam the adapter plugs into.
@@ -76,7 +76,7 @@ async function apiFetch(path, opts) {
             body = await resp.json();
             if (body && body.loginUrl) { window.location = body.loginUrl; return; }
             // Two error shapes reach here. This block's own failures put the
-            // message in `error` and add `field` (spec 3.5). The host wraps its
+            // message in `error` and add `field` (spec 3.5). The dashboard wraps its
             // own in PmgAppException, which puts the HTTP status PHRASE in
             // `error` and the message in `detail` - so reading `error` alone
             // would show a caller 'Forbidden' instead of the reason. Prefer the

@@ -1,6 +1,6 @@
 """Offline bake: precompute every portfolio the tool can ever be asked for.
 
-The Proposal Tool is a lookup, not a solve (DECISIONS Q2). Its input space is
+The Proposal Tool is a lookup, not a solve. Its input space is
 closed: every portfolio the supplying database offers (the strategic universe,
 D54) x 4 hedging policies. Nothing a PWA selects is unknown in advance, so the
 analytics can be computed once per data version and served from disk.
@@ -22,11 +22,9 @@ Layout under the store directory (SCENARIO_BAKED_DIR):
 One file per (currency, hedging) so a cold process reads only the slice it
 needs (~700 KB, ~10 ms) instead of the whole universe.
 
-Where the bake is made (D126): NOT here. The analytics library lives in
-epsilon-phi, and so does the producer that runs it - epsilon-phi's copy of
-this module with its live adapter. A bake is DELIVERED to this repository as
-the files above (the contract is PORTING.md Appendix C.6), and the service
-reads them and nothing else. What this module keeps is the consumer's half:
+Where the bake is made (D126): NOT here. The analytics library lives
+elsewhere, and so does the producer that runs it. A bake is DELIVERED as the
+files above, and the service reads them and nothing else. What this module keeps is the consumer's half:
 the layout and paths every reader uses, ``--census`` to validate an extract
 before a bake is asked for, and a bake from the fixtures port so tests and
 demos can build a store with the same shape and no analytics at all::
@@ -232,11 +230,11 @@ def census() -> int:
 
 
 def _makePort(adapter: str):
-    # the only port this repository can bake from: the analytics behind a
-    # real bake live in epsilon-phi, which delivers the store (D126)
+    # the only port this module can bake from: the analytics behind a real
+    # bake live elsewhere, and the store is delivered (D126)
     if adapter != 'fixtures':
-        raise ValueError('this repository bakes from fixtures only; a real bake '
-                         'is delivered from epsilon-phi')
+        raise ValueError('this module bakes from fixtures only; a real bake '
+                         'is delivered')
     from .fixturesAdapter import FixturesScenarioPort
     return FixturesScenarioPort()
 

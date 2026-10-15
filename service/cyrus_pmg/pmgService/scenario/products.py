@@ -9,7 +9,7 @@ per product and one column per field -
     DistributionYield  MinimumInvestment
 
 - the last two optional in the file and None when absent (D63) - and the
-packaged default is the stand-in under proposal-tool/productSource.
+packaged default is the stand-in under productSource.
 ProductId is the key sleeves reference (sleeveRepo.py). The catalogue is read
 only here: it is what the delivering team sent, and it changes by delivery,
 never through the service (D56).

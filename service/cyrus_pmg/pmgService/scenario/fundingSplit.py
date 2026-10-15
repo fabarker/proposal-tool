@@ -300,7 +300,7 @@ def _write(conn, scope, destinations, action, note, user) -> None:
     revision = top + 1
     body = json.dumps(destinations)
     stamp = _now()
-    # REPLACE rather than an upsert: the host's SQLite may predate 3.24
+    # REPLACE rather than an upsert: the server's SQLite may predate 3.24
     conn.execute('INSERT OR REPLACE INTO policies (kind, scope, body, revision, updatedBy, '
                  'updatedAt) VALUES (?, ?, ?, ?, ?, ?)',
                  (KIND, scope, body, revision, user or '', stamp))

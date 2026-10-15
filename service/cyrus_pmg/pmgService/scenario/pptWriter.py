@@ -22,7 +22,7 @@ the RAW value with strict inequalities - a -0.04% that prints as -0.0% is
 red, an exact zero keeps the base ink - which is precisely how the Excel
 renderer's CellIsRule behaves.
 
-Scale is the workbook's own print convention transplanted: a page's table
+Scale is the workbook's own print convention carried over: a page's table
 scales to the slide's content box by ONE factor - fonts, row heights and
 column widths together, ``fitToWidth=1`` for a fixed canvas - so proportions
 survive even where absolute sizes cannot.

@@ -1,7 +1,7 @@
 """Delivered CSV extracts, read the way Excel and copying leave them.
 
-Two things were met on the Cyrus host and patched there in the readers of the
-delivered extracts (the products, the strategic universe, the sleeve seed):
+Two things the readers of the delivered extracts (the products, the strategic
+universe, the sleeve seed) must tolerate:
 
 * a file saved from Excel starts with a byte-order mark, which the readers
   drop by opening with ``encoding='utf-8-sig'``;
@@ -9,8 +9,7 @@ delivered extracts (the products, the strategic universe, the sleeve seed):
   extra pair of double quotes end to end, so ``csv.reader`` reads the whole
   row as a single field. ``unwrapRows`` takes that pair off.
 
-The host's patches are kept here, in one place, so a port carries them rather
-than overwriting them.
+Both are handled here, in one place, for all three readers.
 """
 
 from __future__ import annotations

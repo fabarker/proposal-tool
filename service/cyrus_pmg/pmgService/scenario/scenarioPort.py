@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 
 class ScenarioPort(Protocol):
-    """Everything the UI needs from the host. Eight methods, no more."""
+    """Everything the UI needs from the back end. Eight methods, no more."""
 
     def get_schema(self, basis: "BasisInput", mandate: "MandateInput",
                    variant: str = None) -> "Schema":

@@ -1,5 +1,9 @@
 # Bringing Cyrus up to date with the Proposal Tool
 
+> **Superseded for routine updates (D162).** Cyrus is current to the D161 port; each later change
+> reaches it as one file, `porting/update.py` - see `porting/README.md`. This guide and the paste
+> bundle it describes are history.
+
 This guide updates a Cyrus host that already runs the Proposal Tool. It replaces the update notes
 in `PORTING.md` §0A, which it was checked against and corrects in three places (see the end).
 `PORTING.md` remains the reference for a **first** port and for everything this guide cites by

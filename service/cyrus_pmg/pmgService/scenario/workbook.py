@@ -4,8 +4,8 @@ Four sheets, and none of them needs ``Reporting`` or a ``SAAPortfolio``
 (D67). Every figure on ``portfolios`` and ``risk_dashboard`` was already
 carried by the resolved payloads the export passes in; ``assumptions`` reads
 the per-asset estimates the bake now records beside them; ``Implementation``
-was always the tool's own work. That is what lets the service be ported
-somewhere the analytics library cannot go.
+was always the tool's own work. That is what lets the service run where the
+analytics library is not installed.
 
 Three jobs live here:
 

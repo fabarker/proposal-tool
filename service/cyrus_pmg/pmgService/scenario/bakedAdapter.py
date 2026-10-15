@@ -10,8 +10,8 @@ its rules, the advisor directory, the sleeve library.
 
 A miss - an unbaked combination, or a currency the bake does not cover -
 raises AnalyticsError, which the UI renders as a column error with Retry.
-There is no second source of analytics: the bake is produced in epsilon-phi
-and delivered to this service, and nothing here computes a figure (D126).
+There is no second source of analytics: the bake is produced elsewhere and
+delivered to this service, and nothing here computes a figure (D126).
 
 Exports (D67): the workbook and the deck are written from the payloads this
 adapter just served, plus the per-asset estimates recorded beside the slices,

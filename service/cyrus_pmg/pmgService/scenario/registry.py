@@ -1,4 +1,4 @@
-"""Adapter selection - the one switch the host flips.
+"""Adapter selection - the one switch the deployment flips.
 
 SCENARIO_ADAPTER chooses the ScenarioPort implementation:
 
@@ -8,12 +8,12 @@ SCENARIO_ADAPTER chooses the ScenarioPort implementation:
 
 There is no other source of analytics. A portfolio the bake does not hold is
 refused with AnalyticsError, never computed: the analytics library that
-produces the bake lives in epsilon-phi, which delivers the store, and this
-repository never imports it (D126).
+produces the bake lives elsewhere, the store is delivered, and this service
+never imports it (D126).
 
 The instance is a process-level singleton so adapter caches live for the
-process. Selection is configuration, not structure: the host sets the
-variable in its environment defaults.
+process. Selection is configuration, not structure: the deployment sets the
+variable in the service's environment.
 """
 
 from __future__ import annotations

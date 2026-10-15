@@ -8,8 +8,8 @@
 <link rel="stylesheet" href="static/css/proposalTool.css">
 </head>
 <body class="has-rail">
-<!-- Host convention: accessGate.js first so the sign-in overlay can render,
-     then globals.js which sets API_BASE. Absolute paths, served by the host's
+<!-- Dashboard convention: accessGate.js first so the sign-in overlay can render,
+     then globals.js which sets API_BASE. Absolute paths, served by the dashboard's
      Flask process; opened from file:// they 404 harmlessly and the page's own
      typeof guard keeps API_BASE working. -->
 <script src="/static/js/accessGate.js"></script>
@@ -244,11 +244,11 @@
 </div>
 
   <!-- describe(): data version, source, as-of - for support and
-       reproducibility (spec 4, the port's describe method). -->
+       reproducibility (spec 4, the adapter's describe method). -->
   <p class="doc-foot" id="doc-foot" hidden></p>
 </main>
-<!-- Page JS last so every node it touches already exists. No module system in the
-     host, so load order is load-bearing: this file defines App, then the picker and
+<!-- Page JS last so every node it touches already exists. No module system on the
+     dashboard, so load order is load-bearing: this file defines App, then the picker and
      implementation layers attach to it. -->
 <!-- Mandate dialog, rendered on demand. -->
 <div id="mandateDialog" hidden></div>

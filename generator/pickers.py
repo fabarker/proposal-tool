@@ -150,7 +150,7 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 
 .lp-eyebrow{font-family:var(--f-num);font-size:11.5px;letter-spacing:.24em;
   text-transform:uppercase;color:#7C8B9C;margin:0 0 26px;font-weight:600}
-/* The host gets its name in the accent rather than the eyebrow's grey. It is
+/* The platform gets its name in the accent rather than the eyebrow's grey. It is
    a credit, and a credit nobody reads is not one - this is the only word on
    the line that has to carry. */
 .lp-eyebrow b{color:var(--accent);font-weight:700}
