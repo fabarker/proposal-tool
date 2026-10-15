@@ -1,5 +1,5 @@
 {
-  "commit": "ba55985",
+  "commit": "94d304e",
   "hostOwned": [
     "advisors.xlsx"
   ],
@@ -9,14 +9,5 @@
   },
   "routerDrop": [],
   "routerDropAfterBlank": [],
-  "notes": [
-    [
-      "D136: a third in Investment Grade Fixed Income, two thirds in Public Equity",
-      "The original split: a third in Investment Grade Fixed Income, two thirds in Public Equity"
-    ],
-    [
-      "D155: the two overlays as the code applied them - the tilt, 8% of the portfolio from Investment Grade Fixed Income, then the premium, 7.5% of Investment Grade Fixed Income as the tilt left it",
-      "The two overlays as the code applied them - the tilt, 8% of the portfolio from Investment Grade Fixed Income, then the premium, 7.5% of Investment Grade Fixed Income as the tilt left it"
-    ]
-  ]
+  "notes": []
 }
