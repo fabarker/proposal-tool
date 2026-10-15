@@ -10,6 +10,11 @@ the file refuses to overwrite anything edited on Cyrus, the new endpoint block
 when it changed, and the imports it may need. Nothing in it names a commit, a
 date or this repository, and it writes nothing on Cyrus but the code.
 
+What it ships is the copy cyrusClean.py makes: comments without the references
+to what only this repository has, the code untouched. It will not build while
+the copy of HEAD carries a trace; the copy Cyrus already holds is rebuilt with
+the cleaner as it stood at the commit Cyrus is at.
+
     python3 service/tools/buildCyrusUpdate.py            build porting/update.py
     python3 service/tools/buildCyrusUpdate.py --confirm  Cyrus has it: record that
 
@@ -29,6 +34,7 @@ import re
 import subprocess
 import sys
 import textwrap
+import types
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,6 +43,7 @@ OUT = os.path.join(ROOT, 'porting', 'update.py')
 BUILT = os.path.join(ROOT, 'porting', 'update.json')
 AREAS = {'package': 'service/cyrus_pmg/pmgService/scenario/', 'page': 'proposalTool/'}
 ROUTER = 'service/cyrus_pmg/pmgService/dashboardRouter.py'
+CLEANER = 'service/tools/cyrusClean.py'
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 #: GitHub's file view and a clipboard both carry a few hundred KB comfortably
 WARN_BYTES = 450000
@@ -80,14 +87,44 @@ def _whole(lines):
     return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()[:16]
 
 
-def _tree(commit):
-    """{key: bytes} for the package and the page at *commit*."""
+def _cleaner(commit):
+    """cyrusClean as it stood at *commit*, or None before there was one: the
+    copy Cyrus holds of a commit is the one that commit's cleaner made."""
+    try:
+        source = _git('show', commit + ':' + CLEANER)
+    except subprocess.CalledProcessError:
+        return None
+    module = types.ModuleType('cyrusClean_' + commit)
+    exec(compile(source, CLEANER + '@' + commit, 'exec'), module.__dict__)
+    return module
+
+
+def _tree(commit, cleaner=None):
+    """{key: bytes} for the package and the page at *commit*, as Cyrus gets them."""
     out = {}
     for area, prefix in AREAS.items():
         for path in _git('ls-tree', '-r', '--name-only', commit, prefix).split('\n'):
             if path and not path.endswith(('.pyc', '.DS_Store')):
-                out[area + '/' + path[len(prefix):]] = _git('show', commit + ':' + path, binary=True)
+                data = _git('show', commit + ':' + path, binary=True)
+                out[area + '/' + path[len(prefix):]] = cleaner.clean(path, data) if cleaner else data
     return out
+
+
+def _cleanBlock(cleaner, block):
+    return cleaner.cleanText('block.py', '\n'.join(block)).split('\n') if cleaner else block
+
+
+def _unclean(cleaner, head):
+    """[problems] with the copy *cleaner* makes of *head*: code that changed,
+    or a trace left in a comment."""
+    problems = []
+    for area, prefix in AREAS.items():
+        for path in _git('ls-tree', '-r', '--name-only', head, prefix).split('\n'):
+            if path.endswith(cleaner.TEXT):
+                raw = _git('show', head + ':' + path)
+                problems += ['{}: {}'.format(path, p)
+                             for p in cleaner.check(path, raw, cleaner.cleanText(path, raw))]
+    return problems
 
 
 def _needs(lines, block):
@@ -110,18 +147,27 @@ def _needs(lines, block):
 def build():
     with open(STATE, encoding='utf-8') as fh:
         state = json.load(fh)
-    dirty = _git('status', '--porcelain', '--', *(list(AREAS.values()) + [ROUTER])).strip()
+    dirty = _git('status', '--porcelain', '--', *(list(AREAS.values()) + [ROUTER, CLEANER])).strip()
     if dirty:
         sys.exit('commit the shipped files first:\n' + dirty)
     base = _git('rev-parse', '--short', state['commit']).strip()
     head = _git('rev-parse', '--short', 'HEAD').strip()
-    then, now = _tree(base), _tree(head)
+    baseCleaner, headCleaner = _cleaner(base), _cleaner(head)
+    problems = _unclean(headCleaner, head)
+    oldRouter, newRouter = _lines(_git('show', base + ':' + ROUTER)), _lines(_git('show', head + ':' + ROUTER))
+    oldRange, newRange = _blockRange(oldRouter), _blockRange(newRouter)
+    rawBlock = '\n'.join(newRouter[newRange[0]:newRange[1]])
+    problems += ['the endpoint block: ' + p
+                 for p in headCleaner.check('block.py', rawBlock, headCleaner.cleanText('block.py', rawBlock))]
+    if problems:
+        sys.exit('the copy for Cyrus is not clean - reword these in cyrusClean.REWRITES, or here:\n  '
+                 + '\n  '.join(problems))
+    then, now = _tree(base, baseCleaner), _tree(head, headCleaner)
     write = sorted(k for k in now if then.get(k) is None or _hash(then[k]) != _hash(now[k]))
     delete = sorted(k for k in then if k not in now)
 
-    oldRouter, newRouter = _lines(_git('show', base + ':' + ROUTER)), _lines(_git('show', head + ':' + ROUTER))
-    oldRange, newRange = _blockRange(oldRouter), _blockRange(newRouter)
-    oldBlock, newBlock = oldRouter[oldRange[0]:oldRange[1]], newRouter[newRange[0]:newRange[1]]
+    oldBlock = _cleanBlock(baseCleaner, oldRouter[oldRange[0]:oldRange[1]])
+    newBlock = _cleanBlock(headCleaner, newRouter[newRange[0]:newRange[1]])
     changed = oldBlock != newBlock
     routes = sum(1 for l in newBlock if re.match(r"@router\.\w+\('/scenario", l))
 
@@ -163,6 +209,7 @@ def build():
         'ROUTERDROP': state.get('routerDrop', []),
         'ROUTERDROPBLANK': state.get('routerDropAfterBlank', []),
         'NEEDS': _needs(newRouter, (newRange[0], newRange[1])),
+        'NOTES': state.get('notes', []),
     }
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cyrusUpdateTemplate.py'),
               encoding='utf-8') as fh:
@@ -179,7 +226,8 @@ def build():
         json.dump({'from': base, 'to': head, 'write': write, 'delete': delete,
                    'routerBlock': changed, 'bytes': len(script)}, fh, indent=2)
         fh.write('\n')
-    code = any(k.startswith('package/') for k in write + delete) or changed or fill['ROUTERDROP']
+    code = (any(k.startswith('package/') for k in write + delete) or changed or fill['ROUTERDROP']
+            or fill['NOTES'])
     print('porting/update.py: {} -> {}: {} to write ({} as changed lines), {} to delete{}; '
           '{:,} bytes{}'.format(
         base, head, len(write), len(patches), len(delete), ', the endpoint block' if changed else '',
@@ -198,7 +246,7 @@ def confirm():
         sys.exit('porting/update.json was built from {}, but Cyrus is recorded at {}'.format(
             built['from'], state['commit']))
     state['commit'] = built['to']
-    state['routerDrop'], state['routerDropAfterBlank'] = [], []
+    state['routerDrop'], state['routerDropAfterBlank'], state['notes'] = [], [], []
     with open(STATE, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(state, fh, indent=2, ensure_ascii=False)
         fh.write('\n')

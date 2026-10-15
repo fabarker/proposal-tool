@@ -59,7 +59,7 @@ def _census() -> int:
     print('           schema v{} · {} revisions on record · {} sleeve(s) archived'.format(
         store.get('schemaVersion', 1), store.get('revisions', 0), store.get('archived', 0)))
     if c.get('editions'):
-        print('           {} labelled edition(s) with rules (D89)'.format(c['editions']))
+        print('           {} labelled edition(s) with rules'.format(c['editions']))
     print('catalogue  {}'.format(cat['path']))
     print('           {} products, modified {}'.format(cat['products'], cat['modified']))
     print('types')

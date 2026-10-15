@@ -260,7 +260,7 @@ def main(argv=None) -> int:
     parser.add_argument('--all', action='store_true',
                         help='bake every currency x hedging slice')
     parser.add_argument('--adapter', default='fixtures', choices=('fixtures',),
-                        help='fixtures only: a real bake is delivered (D126)')
+                        help='fixtures only: a real bake is delivered')
     parser.add_argument('--out', default=None, help='store directory')
     parser.add_argument('--workers', type=int, default=1,
                         help='parallel slice workers (one process per slice)')

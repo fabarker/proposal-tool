@@ -13,8 +13,9 @@ then writes the code, upgrades the databases if the new code needs it, and
 checks that the package imports and the router carries every endpoint.
 
 It writes nothing into the project but the code itself: no record of the
-update, no comment, no marker. Its backups and its report stay beside this
-file.
+update, no comment, no marker. The bake's manifest keeps the name of each
+file the bake was made from, but not the folder. Its backups and its report
+stay beside this file.
 
 Python 3.8 or later, standard library only.
 """
@@ -254,6 +255,81 @@ def applyRouter(path, plan):
     _writeText(path, lines, ends, plan['bom'])
 
 
+# ------------------------------------------------------------------- bake ---
+
+def _isFolder(value):
+    return value.startswith(('/', '\\')) or (len(value) > 2 and value[1] == ':'
+                                               and value[2] in '/\\')
+
+
+def _fileName(value):
+    return value.replace('\\', '/').rsplit('/', 1)[-1]
+
+
+def _named(data, fix=False):
+    """Every `path` in the manifest that names a folder; with *fix*, cut to its file name."""
+    found = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key == 'path' and isinstance(value, str) and _isFolder(value):
+                found.append(value)
+                if fix:
+                    data[key] = _fileName(value)
+            else:
+                found += _named(value, fix)
+    elif isinstance(data, list):
+        for value in data:
+            found += _named(value, fix)
+    return found
+
+
+def bakeDirs(src):
+    """Every folder the service may read the bake from: the setting, then the
+    default the host's bake.py names."""
+    dirs = [os.getenv('SCENARIO_BAKED_DIR', '')] + sorted(_runConfigs(src).get('SCENARIO_BAKED_DIR', ()))
+    package = os.path.join(src, AREAS['package'])
+    try:
+        line = BAKE['to'] if BAKE['to'].encode() in _read(os.path.join(package, 'bake.py')) else BAKE['from']
+    except OSError:
+        line = BAKE['from']
+    dirs.append(os.path.join(package, *(['..'] * line.count("'..'") + ['var', 'baked'])))
+    out = []
+    for d in dirs:
+        if d and os.path.abspath(d) not in out:
+            out.append(os.path.abspath(d))
+    return out
+
+
+def manifestPlan(path):
+    """The bake's manifest as the update leaves it: the folders a file was
+    read from where the bake was made, cut to the file's name."""
+    raw = _read(path)
+    bom = raw.startswith(b'\xef\xbb\xbf')
+    text = (raw[3:] if bom else raw).decode('utf-8')
+    data = json.loads(text)
+    found = _named(data, fix=True)
+    if not found:
+        return None
+    new = text
+    for value in set(found):
+        new = new.replace(json.dumps(value), json.dumps(_fileName(value)))
+    if json.loads(new) != data:                  # written some other way: written as the bake writes
+        new = json.dumps(data, separators=(',', ':'))
+    return {'path': path, 'count': len(found),
+            'data': (b'\xef\xbb\xbf' if bom else b'') + new.encode('utf-8')}
+
+
+def applyManifest(item):
+    tmp = item['path'] + '.tmp'
+    try:
+        with open(tmp, 'wb') as fh:
+            fh.write(item['data'])
+        os.replace(tmp, item['path'])
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
 # ------------------------------------------------------- service settings ---
 
 def _runConfigs(src):
@@ -317,6 +393,28 @@ def dbState(path, table):
         return {'version': version[0] if version else '?', 'rows': rows}
     except sqlite3.Error as exc:
         return {'error': str(exc)}
+    finally:
+        conn.close()
+
+
+def _notesToReword(path):
+    conn = sqlite3.connect('file:{}?mode=ro'.format(path.replace('\\', '/')), uri=True)
+    try:
+        return conn.execute('SELECT COUNT(*) FROM policyHistory WHERE note IN ({})'.format(
+            ', '.join('?' * len(NOTES))), [old for old, _ in NOTES]).fetchone()[0]
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
+def _rewordNotes(path):
+    conn = sqlite3.connect(path)
+    try:
+        done = sum(conn.execute('UPDATE policyHistory SET note = ? WHERE note = ?', (new, old)).rowcount
+                   for old, new in NOTES)
+        conn.commit()
+        return done
     finally:
         conn.close()
 
@@ -434,6 +532,24 @@ def survey(src):
         if router['dropped']:
             say('   {} line(s) taken out that are not part of the code'.format(router['dropped']))
 
+    plan['manifests'] = []
+    say('')
+    say('== The bake')
+    for folder in bakeDirs(src):
+        path = os.path.join(folder, 'manifest.json')
+        if not os.path.isfile(path):
+            continue
+        try:
+            item = manifestPlan(path)
+        except (OSError, ValueError) as exc:
+            problems.append('the bake\'s manifest cannot be read: {} ({})'.format(path, exc))
+            continue
+        if item:
+            plan['manifests'].append(item)
+            say('   {}: {} folder name(s) cut to the file name'.format(path, item['count']))
+        else:
+            say('   {}: names no folder'.format(path))
+
     dbs, dbProblems = dbPaths(src)
     problems += dbProblems
     plan['dbs'] = [(t, v, p, table, dbState(p, table)) for t, v, p, table in dbs]
@@ -446,6 +562,13 @@ def survey(src):
             problems.append('{} cannot be read: {}'.format(title, state['error']))
         else:
             say('   {}: schema {}, {} {} ({})'.format(title, state['version'], state['rows'], table, path))
+
+    plan['reword'] = 0
+    for title, var, path, table, state in plan['dbs']:
+        if table == 'sleeves' and state and 'error' not in state and NOTES:
+            plan['reword'] = _notesToReword(path)
+    if plan['reword']:
+        say('   {} history note(s) to reword'.format(plan['reword']))
 
     plan['code'] = any(k.startswith('package/') for _, k in files) or router.get('work', False)
     running = _serviceRunning()
@@ -511,8 +634,13 @@ def go(plan):
     router = plan['router']
     if router['work']:
         shutil.copyfile(os.path.join(src, ROUTER), os.path.join(dest, 'dashboardRouter.py'))
+    manifests = []
+    for n, item in enumerate(plan['manifests']):
+        to = os.path.join(dest, 'manifest-{}.json'.format(n))
+        shutil.copyfile(item['path'], to)
+        manifests.append([item['path'], to])
     dbs = []
-    for title, var, path, table, state in (plan['dbs'] if plan['code'] else []):
+    for title, var, path, table, state in (plan['dbs'] if plan['code'] or plan['reword'] else []):
         if state is None:
             continue
         copies = []
@@ -525,8 +653,8 @@ def go(plan):
                 copies.append([path + suffix, to])
         dbs.append({'title': title, 'path': path, 'copies': copies})
     with open(os.path.join(dest, 'backup.json'), 'w', encoding='utf-8') as fh:
-        json.dump({'src': src, 'files': saved, 'router': router['work'], 'dbs': dbs,
-                   'complete': True}, fh, indent=2)
+        json.dump({'src': src, 'files': saved, 'router': router['work'], 'manifests': manifests,
+                   'dbs': dbs, 'complete': True}, fh, indent=2)
     say('')
     say('== Backed up to {}'.format(dest))
 
@@ -548,6 +676,11 @@ def go(plan):
         if router['work']:
             applyRouter(os.path.join(src, ROUTER), router)
             say('== The router: done')
+        step = 'the bake\'s manifest'
+        for item in plan['manifests']:
+            applyManifest(item)
+        if plan['manifests']:
+            say('== The bake\'s manifest: done')
         step = 'the databases'
         present = [d for d in plan['dbs'] if d[4] is not None]
         if plan['code'] and len(present) == len(plan['dbs']):
@@ -563,6 +696,13 @@ def go(plan):
                     title, before['version'],
                     '' if now['version'] == before['version'] else ' -> ' + now['version'],
                     now['rows'], table))
+        if plan['reword']:
+            title, var, path, table, before = next(d for d in plan['dbs'] if d[3] == 'sleeves')
+            done = _rewordNotes(path)
+            now = dbState(path, table)
+            if now is None or 'error' in now or now['rows'] != before['rows']:
+                raise RuntimeError('{} changed its rows: {} before, {} after'.format(title, before, now))
+            say('== {}: {} history note(s) reworded'.format(title, done))
     except Exception as exc:                          # noqa: BLE001 - reported with the way back
         say('')
         say('STOPPED at {}: {}'.format(step, exc))
@@ -609,6 +749,8 @@ def undo():
             os.remove(path)
     if record['router']:
         shutil.copyfile(os.path.join(dest, 'dashboardRouter.py'), os.path.join(src, ROUTER))
+    for live, saved in record.get('manifests', []):
+        shutil.copyfile(saved, live)
     for db in record['dbs']:
         for suffix in ('-wal', '-shm'):
             if os.path.isfile(db['path'] + suffix):
@@ -616,8 +758,9 @@ def undo():
         for live, saved in db['copies']:
             shutil.copyfile(saved, live)
     shutil.move(dest, dest + '-undone')
-    say('Put back as it was before the update ({} file(s){}{}).'.format(
+    say('Put back as it was before the update ({} file(s){}{}{}).'.format(
         len(record['files']), ', the router' if record['router'] else '',
+        ', the bake\'s manifest' if record.get('manifests') else '',
         ', the databases' if record['dbs'] else ''))
     say('Start isgPMGService, then press Ctrl+F5 on the page.')
     return 0
@@ -638,7 +781,7 @@ def main(argv=None):
             for p in problems:
                 say('  - ' + p)
             return 1
-        if not plan['files'] and not plan['router']['work']:
+        if not (plan['files'] or plan['router']['work'] or plan['manifests'] or plan['reword']):
             say('Nothing to do: this machine already has this update.')
             return 0
         if args.action == 'look':
@@ -662,6 +805,8 @@ ROUTER_BLOCK = json.loads(r'''@@ROUTERBLOCK@@''')
 ROUTER_DROP = json.loads(r'''@@ROUTERDROP@@''')
 ROUTER_DROP_AFTER_BLANK = json.loads(r'''@@ROUTERDROPBLANK@@''')
 NEEDS = json.loads(r'''@@NEEDS@@''')
+#: history notes an earlier version wrote, and how they read now
+NOTES = json.loads(r'''@@NOTES@@''')
 ROUTES = int('@@ROUTES@@')
 PAYLOAD = """
 @@PAYLOAD@@

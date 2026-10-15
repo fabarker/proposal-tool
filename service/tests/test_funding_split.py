@@ -53,7 +53,7 @@ def test_the_house_split_is_seeded_with_d136s_thirds(store):
     assert house['destinations'] == _split((IG, 33.3333), (EQ, 66.6667))
     assert fundingSplit.describe()['overrides'] == {}
     (first,) = fundingSplit.history('*')
-    assert first['action'] == 'baseline' and first['actor'] == 'system' and 'D136' in first['note']
+    assert first['action'] == 'baseline' and first['actor'] == 'system' and first['note'].startswith('The original split')
     # opening again seeds nothing more
     fundingSplit.describe()
     assert len(fundingSplit.history('*')) == 1

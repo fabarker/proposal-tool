@@ -215,7 +215,7 @@ def _seedHouse(conn) -> None:
             conn.execute('INSERT INTO policyHistory (kind, scope, revision, action, body, note, '
                          'actor, at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)',
                          (KIND, HOUSE, 'baseline', body,
-                          'D136: a third in Investment Grade Fixed Income, two thirds in Public Equity',
+                          'The original split: a third in Investment Grade Fixed Income, two thirds in Public Equity',
                           'system', stamp))
         conn.commit()
     except Exception:

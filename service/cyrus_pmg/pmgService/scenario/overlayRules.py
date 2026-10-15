@@ -480,7 +480,7 @@ def seed(conn) -> None:
             conn.execute('INSERT INTO policyHistory (kind, scope, revision, action, body, note, '
                          'actor, at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)',
                          (KIND, HOUSE, 'baseline', body,
-                          'D155: the two overlays as the code applied them - the tilt, 8% of the '
+                          'The two overlays as the code applied them - the tilt, 8% of the '
                           'portfolio from Investment Grade Fixed Income, then the premium, 7.5% of '
                           'Investment Grade Fixed Income as the tilt left it',
                           'system', stamp))

@@ -1059,7 +1059,7 @@ def assumptions_dataframe(
         ),
         (
             "Availability",
-            "All theoretical combinations are generated. ui_available flags combinations currently disabled in the prototype.",
+            "All theoretical combinations are generated. ui_available flags combinations currently disabled in the UI.",
         ),
         (
             "Production status",

@@ -38,7 +38,7 @@ Tests (dev-side; nothing ships to the host's untested dashboard package):
 
 ```bash
 cd proposal-tool/service && PYTHONPATH=. python3 -m pytest tests -q
-# 563 passed at D161 (requirements-dev.txt); no analytics library is on the path, ever
+# 569 passed at D163 (requirements-dev.txt); no analytics library is on the path, ever
 ```
 
 ## The two adapters
