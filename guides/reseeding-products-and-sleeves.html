@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Re-seeding Products and Sleeves</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --sunk:#EEF2F9; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --good:#176A33; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#9B1C1C; --bad-tint:#FDE8E8; --code:#F1F3F7;
+  --f-display:"Newsreader",Georgia,serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0F1420; --surface:#161C2B; --sunk:#1C2438; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --line:#26304A; --line-strong:#364266;
+  --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --sunk:#1C2438; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --line:#26304A; --line-strong:#364266;
+  --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);
+  font-size:16px;line-height:1.6}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 28px 96px;
+  display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:0 46px}
+@media (max-width:960px){.wrap{grid-template-columns:minmax(0,1fr);padding:26px 16px 64px}.toc{display:none}}
+main{min-width:0}
+.mast{grid-column:1/-1;border-bottom:2px solid var(--navy);padding-bottom:20px;margin-bottom:38px}
+.eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(32px,4.4vw,48px);line-height:1.05;
+  margin:0 0 12px;color:var(--navy);letter-spacing:-.01em;text-wrap:balance}
+.sub{font-size:17.5px;color:var(--ink-2);max-width:64ch;margin:0 0 16px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12.5px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+.toc{position:sticky;top:22px;align-self:start;font-size:12.5px;border-left:1px solid var(--line);
+  padding-left:15px}
+.toc p{margin:0 0 9px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:700}
+.toc a{display:block;color:var(--ink-2);text-decoration:none;padding:3px 0;line-height:1.35}
+.toc a:hover{color:var(--accent)}
+.toc a.ind{padding-left:11px;color:var(--ink-3);font-size:12px}
+h2{font-family:var(--f-display);font-weight:500;font-size:29px;line-height:1.15;margin:54px 0 12px;
+  color:var(--navy);letter-spacing:-.005em;text-wrap:balance}
+h2:first-child{margin-top:0}
+h3{font-size:16.5px;font-weight:700;margin:30px 0 8px;color:var(--ink)}
+p{margin:0 0 13px;max-width:70ch}
+ul,ol{margin:0 0 13px;padding-left:21px;max-width:70ch}
+li{margin:0 0 6px}
+code{font-family:var(--f-mono);font-size:.87em;background:var(--code);padding:1px 5px;
+  border-radius:4px;color:var(--ink)}
+strong{font-weight:700}
+.lede{font-size:17.5px;line-height:1.55}
+/* ---- the three words ---- */
+.words{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 26px}
+@media (max-width:760px){.words{grid-template-columns:1fr}}
+.words div{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;
+  padding:14px 16px}
+.words b{display:block;font-family:var(--f-display);font-size:21px;font-weight:500;color:var(--navy);
+  margin-bottom:4px}
+.words p{margin:0;font-size:14px;color:var(--ink-2);max-width:none}
+/* ---- steps ---- */
+.step{counter-increment:s;position:relative;margin:0 0 34px;padding-left:52px}
+.steps{counter-reset:s}
+.step::before{content:counter(s);position:absolute;left:0;top:-2px;width:34px;height:34px;
+  border-radius:50%;background:var(--navy);color:var(--paper);display:flex;align-items:center;
+  justify-content:center;font-family:var(--f-display);font-size:17px;line-height:1}
+.step h3{margin:2px 0 8px;font-size:18px}
+/* ---- figures ---- */
+.shot{margin:14px 0 6px;padding:0;background:var(--sunk);border:1px solid var(--line-strong);
+  border-radius:9px;overflow:hidden}
+.shot img{display:block;width:100%;height:auto}
+.shot figcaption{font-size:12.5px;color:var(--ink-2);padding:9px 14px;background:var(--surface);
+  border-top:1px solid var(--line);line-height:1.45}
+.shot.crop img{background:var(--surface)}
+/* A portrait crop at full width dwarfs the prose around it; cap the height
+   and centre it, which leaves the landscape crops of the rule builder
+   untouched because they are nowhere near this tall. */
+.shot.tall{display:flex;flex-direction:column;align-items:center}
+.shot.tall img{width:auto;max-width:100%;max-height:560px}
+.shot.tall figcaption{width:100%}
+/* ---- callouts ---- */
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:11px 15px;
+  border-radius:0 7px 7px 0;margin:16px 0;max-width:70ch}
+.note.good{border-color:var(--good);background:var(--good-tint)}
+.note.bad{border-color:var(--bad);background:var(--bad-tint)}
+.note.warn{border-color:var(--warn);background:var(--warn-tint)}
+.note p:last-child{margin-bottom:0}
+.note b.h{display:block;margin-bottom:3px}
+/* ---- tables ---- */
+.tblwrap{overflow-x:auto;margin:14px 0 22px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+thead th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:700;background:var(--sunk);white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.key{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;
+  border-radius:999px;white-space:nowrap}
+.pill.ed{background:var(--navy);color:var(--paper)}
+.pill.fb{background:var(--sunk);color:var(--ink-2);border:1px solid var(--line-strong)}
+/* ---- quick reference ---- */
+.qr{background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;
+  padding:20px 24px;margin:20px 0}
+.qr h3{margin-top:0}
+.qr dl{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:7px 18px;margin:0;font-size:14.5px}
+@media (max-width:640px){.qr dl{grid-template-columns:1fr}.qr dt{margin-top:8px}}
+.qr dt{font-weight:700;color:var(--navy)}
+.qr dd{margin:0;color:var(--ink-2)}
+.foot{grid-column:1/-1;margin-top:52px;padding-top:15px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--ink-3);max-width:none}
+pre.out{font-family:var(--f-mono);font-size:12.5px;line-height:1.55;background:var(--code);
+  border:1px solid var(--line);border-radius:7px;padding:11px 14px;margin:8px 0 16px;overflow-x:auto;
+  white-space:pre;color:var(--ink)}
+kbd{font-family:var(--f-mono);font-size:.8em;border:1px solid var(--line-strong);border-bottom-width:2px;
+  border-radius:4px;padding:0 5px;background:var(--surface)}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+<header class="mast">
+  <p class="eyebrow">PMG Proposal Tool &middot; Data operations &middot; Operator guide</p>
+  <h1>Re-seeding Products and Sleeves</h1>
+  <p class="sub">How to replace the product catalogue and reload the sleeve library on the
+  Cyrus project, including editions, their rules and the implementation types, without losing
+  the record of what was there before.</p>
+  <div class="meta">
+    <span><b>For</b> whoever looks after the tool's data on Cyrus</span>
+    <span><b>Project</b> <code>H:\cyrus-repo\isg-cyrus-pmg</code></span>
+    <span><b>Written</b> 15 October 2026</span>
+  </div>
+</header>
+
+<main>
+
+<h2 id="map">What lives where</h2>
+<p class="lede">The products and the sleeves are kept in different ways, so they are re-seeded in
+different ways. Products are a <strong>file the tool reads</strong>. Sleeves are rows in a
+<strong>database the tool writes to</strong>, which keeps a full history of every change.</p>
+
+<div class="tblwrap"><table>
+<thead><tr><th>Data</th><th>Kept in</th><th>Set by</th><th>How you change it</th></tr></thead>
+<tbody>
+<tr><td><strong>Product catalogue</strong></td><td>A CSV or Excel file</td>
+<td class="key">SCENARIO_PRODUCTS_SOURCE</td><td>Swap the file. Read again as soon as it changes, with no restart.</td></tr>
+<tr><td><strong>Sleeve library</strong></td><td><code>src\var\sleeves.db</code></td>
+<td class="key">SCENARIO_SLEEVES_DB</td><td>Import a file with the sleeve tool, or edit sleeve by sleeve in the console.</td></tr>
+<tr><td>Funding split, overlay rules</td><td>The same <code>sleeves.db</code></td><td>&mdash;</td>
+<td>The console only. A sleeve import does not touch them.</td></tr>
+<tr><td>Fee card</td><td><code>feeRates.csv</code> in the package</td><td class="key">SCENARIO_FEES_SOURCE</td>
+<td>Not covered here; see <a href="#fees">the note on fees</a>.</td></tr>
+<tr><td>Proposals and account requests</td><td><code>src\var\proposals.db</code></td>
+<td class="key">SCENARIO_REGISTER_DB</td><td>Never re-seeded. Nothing below touches it.</td></tr>
+</tbody></table></div>
+
+<p>The order matters, because each layer checks the one before it:
+<strong>fee card &rarr; products &rarr; sleeves</strong>. A product must name a fee group the fee card
+knows, and a sleeve may only hold products the catalogue knows.</p>
+
+<div class="note"><b class="h">Keep the working files outside the project</b>
+<p>Use a folder of its own, such as <code>H:\pt-seed</code>, for exports, new files and
+backups, the same way the updates live in <code>H:\pt-update</code>. Nothing you prepare then ends
+up in the project's own folders.</p></div>
+
+<h2 id="setup">One-time setup: a run configuration for the sleeve tool</h2>
+<p>Everything below is done by one small program, the <em>sleeve tool</em>
+(<code>cyrus_pmg.pmgService.scenario.sleeveTools</code>). It must see the same settings as the
+service: the same product file, the same database and the same portfolio extract. The simplest
+way to guarantee that is to copy the service's own run configuration in PyCharm.</p>
+<div class="steps">
+<div class="step"><h3>Copy the service's configuration</h3>
+<p>In PyCharm open <strong>Run &rarr; Edit Configurations&hellip;</strong>, select
+<strong>isgPMGService</strong> and press <strong>Copy Configuration</strong> (the icon of two
+pages, or <kbd>Ctrl</kbd>+<kbd>D</kbd>). Name the copy <strong>Sleeve tools</strong>.</p></div>
+<div class="step"><h3>Point it at the sleeve tool</h3>
+<p>Beside the script field there is a drop-down that reads <em>Script path</em>; change it to
+<strong>Module name</strong> and type <code>cyrus_pmg.pmgService.scenario.sleeveTools</code>.
+In <strong>Parameters</strong> type <code>--census</code>. Leave the working directory and the
+environment variables exactly as they were copied. Press <strong>OK</strong>.</p></div>
+<div class="step"><h3>Run it once to see what you have</h3>
+<p>Choose <strong>Sleeve tools</strong> in the run drop-down at the top right and press the green
+triangle. The census prints in the Run window. It is read-only, and it is safe to run at any time,
+with the service running or not.</p></div>
+</div>
+
+<p>The census is the first thing to read and the last thing to check. Its top lines tell you where
+everything is:</p>
+<pre class="out">store      H:\cyrus-repo\isg-cyrus-pmg\src\var\sleeves.db
+           108 sleeves, seeded 2026-10-15T22:49:31 from &hellip;\sleeves.csv
+           schema v6 &middot; 312 revisions on record &middot; 102 sleeve(s) archived
+           4 labelled edition(s) with rules
+catalogue  H:\&hellip;\products.csv
+           73 products, modified 2026-09-27T16:53:51
+types
+  PMG Multi-Asset Portfolio     27 sleeves
+  PMG ESG                       32 sleeves
+  US Onshore                    26 sleeves
+  Irish Onshore                 23 sleeves
+fixed      Asset Allocation Strategies, Hybrid Fixed Income</pre>
+<ul>
+<li><strong>store</strong> is the sleeve database the tool is using. Back up this file.</li>
+<li><strong>catalogue</strong> is the product file the tool is reading. Replace this file to
+re-seed products.</li>
+<li><strong>sleeves</strong> counts every edition, a sleeve's fallback included. <strong>labelled
+edition(s) with rules</strong> counts only the editions that carry rules.</li>
+<li>Anything wrong is listed underneath, under <strong>BROKEN</strong> or <strong>NOT IN THE
+CATALOGUE</strong>. The run then ends with exit code 1 instead of 0.</li>
+</ul>
+<p>To run anything else, edit the configuration's <strong>Parameters</strong>, for example to
+<code>--export H:\pt-seed\library.csv</code>, run it, and set it back to <code>--census</code>
+afterwards. Each run does one thing.</p>
+
+<h2 id="products">Re-seeding the product catalogue</h2>
+<p>There is no import for products: the catalogue <em>is</em> the file. Replacing the file is
+the whole re-seed. The tool reads it again the next time it is asked for a product, and refuses
+the whole file if any row is wrong, so a bad file never half-loads.</p>
+
+<h3>The columns</h3>
+<p>Row one holds the headers; the tool finds columns by their names, so the order is free. A row
+whose first cell is empty is skipped.</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Column</th><th>Required</th><th>What goes in it</th></tr></thead>
+<tbody>
+<tr><td class="key">ProductId</td><td>Yes</td><td>The product's permanent id, such as <code>gs-access-em-equity-etf</code>. Sleeves refer to products by this id, so never change one that is in use. Must be unique.</td></tr>
+<tr><td class="key">Name</td><td>Yes</td><td>What the PWA sees. Cannot be empty.</td></tr>
+<tr><td class="key">Ticker</td><td>Column yes, value no</td><td>May be blank, e.g. for an SMA.</td></tr>
+<tr><td class="key">AssetClass</td><td>Yes</td><td>e.g. <code>Emerging Markets</code>, <code>IG Corporate</code>.</td></tr>
+<tr><td class="key">Style</td><td>Yes</td><td><code>Active</code> or <code>Passive</code>.</td></tr>
+<tr><td class="key">Vehicle</td><td>Yes</td><td>e.g. <code>ETF</code>, <code>Mutual Fund</code>, <code>SMA</code>, <code>UCITS</code>.</td></tr>
+<tr><td class="key">Source</td><td>Yes</td><td>e.g. <code>Internal</code>.</td></tr>
+<tr><td class="key">Liquidity</td><td>Yes</td><td>e.g. <code>Daily</code>.</td></tr>
+<tr><td class="key">ExposureCurrency</td><td>Yes</td><td>e.g. <code>USD</code>.</td></tr>
+<tr><td class="key">ProductCost</td><td>Yes</td><td>A percentage written as a number: <code>0.25</code> means 0.25%. Not negative.</td></tr>
+<tr><td class="key">FeeGroup</td><td>Yes</td><td>One of the fee card's groups: <code>Passive</code>, <code>Core Active</code>, <code>Specialist Active</code>, <code>Alternatives</code>, <code>Asset Allocation</code>. The management fee comes from the fee card through this group, not from the product.</td></tr>
+<tr><td class="key">ShareClass</td><td>Optional</td><td><code>Dis</code> or <code>Acc</code>, or blank.</td></tr>
+<tr><td class="key">DistributionYield</td><td>Optional</td><td>A percentage as a number, e.g. <code>3.20</code>.</td></tr>
+<tr><td class="key">MinimumInvestment</td><td>Optional</td><td>In currency units, e.g. <code>5000000</code>.</td></tr>
+</tbody></table></div>
+<p>An example row, under the headers in the order the current file uses:</p>
+<pre class="out">ProductId,Name,Ticker,AssetClass,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
+gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Active,SMA,Dis,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
+
+<h3>Steps</h3>
+<div class="steps">
+<div class="step"><h3>Start from the current file</h3>
+<p>Run the census and note the <strong>catalogue</strong> path. Copy that file to
+<code>H:\pt-seed</code> twice: once as the backup (e.g. <code>products-2026-10-15.csv</code>) and
+once as the file you will edit (<code>products-new.csv</code>).</p></div>
+<div class="step"><h3>Make your changes in Excel</h3>
+<p>To <strong>add a product</strong>, add a row. To <strong>change</strong> one, edit its cells
+but keep its <code>ProductId</code>. To <strong>remove</strong> one, delete its row, but first
+read the next step, because sleeves that hold it will stop being offered.</p>
+<p>Save with <strong>File &rarr; Save As &rarr; CSV UTF-8 (Comma delimited)</strong>. An
+<code>.xlsx</code> also works, provided the catalogue is on the first sheet.</p></div>
+<div class="step"><h3>Check it before it goes live</h3>
+<p>In the <strong>Sleeve tools</strong> configuration, add one environment variable,
+<code>SCENARIO_PRODUCTS_SOURCE</code> = <code>H:\pt-seed\products-new.csv</code>, and run the
+census. The live service is not affected; only this run reads the new file.</p>
+<p>A clean census ends with no <strong>BROKEN</strong> list. If a product your sleeves use is
+missing, the census names it and every sleeve that holds it:</p>
+<pre class="out">BROKEN (6):
+  Irish Onshore / Public Equity / Passive
+      Product 'gs-access-world-equity-ucits' is no longer in the catalogue.
+  &hellip;
+NOT IN THE CATALOGUE (1):
+  gs-access-world-equity-ucits  referenced by Irish Onshore / Public Equity / Passive, &hellip;</pre>
+<p>Either put the product back, or plan to change those sleeves in the same sitting (see
+<a href="#sleeves">the sleeves</a>). If the file itself is wrong, a missing column, a duplicate id, an
+unknown fee group or a bad number, the census says so and nothing is read.</p>
+<p>Remove the environment variable again when you are done.</p></div>
+<div class="step"><h3>Swap it in</h3>
+<p>Copy <code>products-new.csv</code> over the file at the catalogue path, under that file's own
+name. The service picks it up on its next request; press <kbd>Ctrl</kbd>+<kbd>F5</kbd> on any open
+page. Run the census once more: the <strong>catalogue</strong> line should show today's time and
+the new count.</p></div>
+</div>
+<div class="note"><b class="h">Undoing it</b><p>Copy the backup back over the catalogue file.
+Nothing else needs to change.</p></div>
+
+<h2 id="sleeves">Re-seeding the sleeve library</h2>
+<p>A sleeve file is loaded with the sleeve tool's <code>--import</code>. The import checks every
+row the same way the console checks a save, and loads <strong>nothing</strong> if any row fails, so
+the library is never left half-changed. Every change it makes is recorded in each sleeve's history,
+and nothing is destroyed.</p>
+
+<h3>The vocabulary</h3>
+<div class="tblwrap"><table>
+<thead><tr><th>Word</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><strong>Variant</strong></td><td>The implementation type the sleeve belongs to: <code>PMG Multi-Asset Portfolio</code>, <code>PMG ESG</code>, <code>US Onshore</code> or <code>Irish Onshore</code>. The PWA chooses this in step 2.</td></tr>
+<tr><td><strong>Category</strong></td><td>One of the seven: <code>Investment Grade Fixed Income</code>, <code>Hybrid Fixed Income</code>, <code>Other Fixed Income</code>, <code>Public Equity</code>, <code>Hedge Funds</code>, <code>Private Equity &amp; Other Private Assets</code>, <code>Asset Allocation Strategies</code>.</td></tr>
+<tr><td><strong>Sleeve</strong></td><td>The name the PWA picks, e.g. <code>Global Equity Core</code>.</td></tr>
+<tr><td><strong>Edition</strong></td><td>A version of the same sleeve for particular portfolios. Left <strong>blank</strong> it is the <span class="pill fb">fallback</span>, the version everyone gets unless a labelled edition claims their portfolio. Filled in, e.g. <code>GBP</code>, it is a <span class="pill ed">labelled edition</span> and needs at least one rule.</td></tr>
+<tr><td><strong>Rule</strong></td><td>Which strategic portfolios a labelled edition is for, by currency, risk level and allocation type.</td></tr>
+</tbody></table></div>
+
+<h3>The two files</h3>
+<p><strong>The sleeves file</strong> has one row per product in an edition:</p>
+<pre class="out">Variant,Category,Sleeve,Edition,ProductId,Weight</pre>
+<p><code>Weight</code> is a fraction, so 60% is <code>0.6</code>. In Excel you may format the column
+as a percentage and type <code>60%</code>, which is the same value. Each edition's weights must total
+exactly 100%, and a product may appear only once in an edition.</p>
+<p><strong>The rules file</strong> has one row per rule, and sits beside the sleeves file with
+<code>.rules</code> added to its name (<code>library.csv</code> &rarr;
+<code>library.rules.csv</code>):</p>
+<pre class="out">Variant,Category,Sleeve,Edition,Currency,RiskLevel,AllocationType</pre>
+<p>A library with no labelled editions needs no rules file. An Excel workbook can carry both
+instead: a sheet named <code>Sleeves</code> and a sheet named <code>Rules</code>.</p>
+
+<h3>Add to the library, or replace it</h3>
+<div class="tblwrap"><table>
+<thead><tr><th>Parameters</th><th>What happens</th><th>Use it when</th></tr></thead>
+<tbody>
+<tr><td class="key">--import FILE</td><td><strong>Adds and updates.</strong> An edition in the file with the same variant, category, sleeve and edition label as a live one replaces it as a new revision, keeping its identity and history. Everything not in the file stays as it is.</td><td>You are changing or adding some sleeves.</td></tr>
+<tr><td class="key">--import FILE --replace</td><td><strong>Replaces.</strong> Every live sleeve is archived first, each with a final revision recording who and when, and then the file is loaded as the whole library, all in one step.</td><td>You want the library to be exactly the file.</td></tr>
+</tbody></table></div>
+<div class="note warn"><b class="h">A replace loads exactly what the file holds, even if that is nothing</b>
+<p>An empty or half-finished file with <code>--replace</code> archives the whole library and loads
+what little is there. The import cannot know you meant more. Run the census straight after; if
+anything is missing, see <a href="#undo">undoing a re-seed</a>.</p></div>
+
+<h3>Steps</h3>
+<div class="steps">
+<div class="step"><h3>Export what is there now</h3>
+<p>Set the <strong>Sleeve tools</strong> parameters to
+<code>--export H:\pt-seed\library.csv</code> and run. It writes <code>library.csv</code>, and
+<code>library.rules.csv</code> beside it if any edition has rules. This is the starting point for your
+edits, in exactly the right format.</p></div>
+<div class="step"><h3>Keep a backup</h3>
+<p>Copy the export to <code>H:\pt-seed\library-2026-10-15.csv</code> (and its rules file the same way).
+Then stop <strong>isgPMGService</strong> and copy the <strong>store</strong> file
+(<code>src\var\sleeves.db</code>) to <code>H:\pt-seed\sleeves-2026-10-15.db</code>. Copy the
+database only while the service is stopped.</p></div>
+<div class="step"><h3>Edit in Excel</h3>
+<p>Open <code>library.csv</code>, change, add or delete rows, and save it as <strong>CSV UTF-8</strong>.
+If you add labelled editions, add their rules to <code>library.rules.csv</code>. Create that file with
+the header line above if the export did not write one. The <a href="#editions">next section</a>
+shows how to write editions and rules.</p></div>
+<div class="step"><h3>Import</h3>
+<p>Set the parameters to <code>--import H:\pt-seed\library.csv --replace</code> (or without
+<code>--replace</code> to add and update only) and run. Success reads:</p>
+<pre class="out">replaced the library with 108 editions from H:\pt-seed\library.csv (with 5 rule(s))</pre>
+<p>A refusal names the problem, and nothing has changed:</p>
+<pre class="out">REFUSED (weights): Weights sum to 90.00%; a sleeve must sum to exactly 100%.
+nothing was written</pre>
+<p>Fix the file and run again. The <a href="#refused">table of refusals</a> lists the usual ones.</p></div>
+<div class="step"><h3>Check, then start the service</h3>
+<p>Set the parameters back to <code>--census</code> and run. Look for no <strong>BROKEN</strong> list,
+the counts per type you expect, and an exit code of 0. Then start <strong>isgPMGService</strong>,
+<strong>dashboardFrontend</strong> and <strong>optimizationService</strong>, and press
+<kbd>Ctrl</kbd>+<kbd>F5</kbd> on the page.</p></div>
+</div>
+
+<h2 id="editions">Editions, rules and types: how to seed each kind</h2>
+<p>All the examples below were loaded through the import and checked with the census before this
+guide was written. Each one is a set of rows to add to <code>library.csv</code> and, where it has
+rules, <code>library.rules.csv</code>.</p>
+
+<h3>How a rule reads</h3>
+<ul>
+<li><strong>Within a row, every filled cell must match</strong> (AND). A blank cell means any value.</li>
+<li><strong>Several values in one cell</strong> are separated by <code>|</code>, and any of them matches
+(OR): <code>LowVol|Conservative</code>.</li>
+<li><strong>Several rows for one edition</strong> mean the edition applies if any row matches (OR).</li>
+<li>A rule must fill at least one cell. A rule that matches everything is what the fallback is for.</li>
+</ul>
+<div class="tblwrap"><table>
+<thead><tr><th>Cell</th><th>Values it accepts</th></tr></thead>
+<tbody>
+<tr><td class="key">Currency</td><td><code>USD</code> <code>GBP</code> <code>CHF</code> <code>EUR</code></td></tr>
+<tr><td class="key">RiskLevel</td><td><code>LowVol</code> <code>Conservative</code> <code>ConsMod</code> <code>Moderate</code> <code>ModAgg</code> <code>Agg</code> <code>Higher Risk</code> <code>All Equity</code></td></tr>
+<tr><td class="key">AllocationType</td><td><code>Full</code> <code>Core</code> <code>ex-Alts</code> <code>ex-HFs</code> <code>NA</code> (<code>NA</code> is the all-equity portfolio, which has no allocation type)</td></tr>
+</tbody></table></div>
+<p>The values are written exactly as above, capitals included. Only values present in the current
+portfolio extract are accepted.</p>
+
+<h3>Which edition a portfolio gets</h3>
+<ol>
+<li>If exactly one labelled edition's rules match the portfolio, that edition is served.</li>
+<li>If none match, the fallback is served.</li>
+<li>If none match and there is no fallback, the sleeve is not offered for that portfolio at all.</li>
+<li>Two labelled editions of one sleeve may never claim the same portfolio. The import refuses it,
+naming the portfolios they share.</li>
+</ol>
+<p>The PWA never sees which edition applied: they pick the sleeve by name, and the tool serves the
+right products.</p>
+
+<h3>1. A plain sleeve: one fallback, no rules</h3>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,,gs-us-equity-insights-fund,0.6
+PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,,northbrook-intl-equity,0.3
+PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,,gs-emerging-markets-equity,0.1</pre>
+<p>The Edition cell is empty, so these rows are the fallback. No rules file entry is needed.</p>
+
+<h3>2. A different line-up for one currency</h3>
+<p>GBP portfolios get two different products; everyone else keeps the fallback above.</p>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,GBP,gs-access-world-equity-ucits,0.7
+PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,GBP,gs-access-em-equity-etf,0.3</pre>
+<p>and in the rules file:</p>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,GBP,GBP,,</pre>
+
+<h3>3. Several risk levels in one currency</h3>
+<p>The cautious EUR portfolios, and no others, get a single passive product.</p>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,Cautious EUR,gs-access-intl-equity-etf,1</pre>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,Cautious EUR,EUR,LowVol|Conservative|ConsMod,</pre>
+
+<h3>4. Two unrelated groups: two rule rows</h3>
+<p>One edition for growth-minded USD portfolios <em>and</em> for CHF Full portfolios. These can't be
+said in one row, so the edition gets two.</p>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,USD growth / CHF Full,gs-us-equity-insights-fund,0.5
+PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,USD growth / CHF Full,gs-emerging-markets-equity,0.5</pre>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,USD growth / CHF Full,USD,Agg|Higher Risk|All Equity,
+PMG Multi-Asset Portfolio,Public Equity,Global Equity Core,USD growth / CHF Full,CHF,,Full</pre>
+<p>Examples 1 to 4 together make one sleeve, <em>Global Equity Core</em>, with a fallback and three
+labelled editions that never claim the same portfolio.</p>
+
+<h3>5. A sleeve offered only to some portfolios</h3>
+<p>Leave out the fallback and give the sleeve only a labelled edition. It then appears only where
+that edition's rules match; here, GBP portfolios.</p>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,UK Equity Income,GBP only,gs-access-world-equity-ucits,1</pre>
+<pre class="out">PMG Multi-Asset Portfolio,Public Equity,UK Equity Income,GBP only,GBP,,</pre>
+
+<h3>6. The same sleeve under another implementation type</h3>
+<p>A sleeve belongs to one variant per set of rows. To offer <em>Global Equity Core</em> to ESG
+proposals too, repeat it under <code>PMG ESG</code>, with that type's own products. Its editions
+and rules are separate from the Multi-Asset ones.</p>
+<pre class="out">PMG ESG,Public Equity,Global Equity Core,,gs-access-esg-us-equity-etf,0.5
+PMG ESG,Public Equity,Global Equity Core,,gs-esg-international-equity,0.5</pre>
+<div class="note"><b class="h">The four types are fixed in the tool</b><p>A file can use only
+<code>PMG Multi-Asset Portfolio</code>, <code>PMG ESG</code>, <code>US Onshore</code> and
+<code>Irish Onshore</code>. A new implementation type is a change to the tool itself, not to the
+data.</p></div>
+
+<h3>7. The two fixed categories</h3>
+<p><code>Hybrid Fixed Income</code> and <code>Asset Allocation Strategies</code> hold exactly
+<strong>one</strong> sleeve per type, which the overlays attach automatically. Give each type one
+sleeve in each, with no labelled editions. A replace that leaves them out is accepted by the import,
+but the census then reports each missing one and ends with exit code 1, and the overlays have nothing
+to attach. Always keep them in the file.</p>
+
+<h3>Naming</h3>
+<ul>
+<li>Names and labels are tidied when loaded: spaces at the ends are removed, and doubled spaces
+become one.</li>
+<li>Names that differ only in capitals or spacing count as the same name.</li>
+<li>Label editions for the person reading the list, e.g. <code>GBP</code> or <code>Cautious EUR</code>.
+The word <code>fallback</code> is reserved.</li>
+</ul>
+
+<h2 id="refused">When the import refuses</h2>
+<div class="tblwrap"><table>
+<thead><tr><th>Message begins</th><th>What it means</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td class="key">REFUSED (weights)</td><td>An edition's weights do not total 100%.</td><td>Correct the weights of the edition named.</td></tr>
+<tr><td class="key">REFUSED (products)</td><td><code>Product '&hellip;' is not in the catalogue.</code></td><td>Fix the id, or add the product to the catalogue first.</td></tr>
+<tr><td class="key">REFUSED (rules)</td><td><code>Overlaps the GBP edition on 6 portfolios: &hellip;</code></td><td>Narrow one of the two editions so that each portfolio is claimed once.</td></tr>
+<tr><td class="key">REFUSED (rules)</td><td><code>Rule 2: 'EURO' is not in the universe. Known values: USD, GBP, CHF, EUR.</code></td><td>Use a value from the table above, spelled exactly.</td></tr>
+<tr><td class="key">REFUSED (rules)</td><td>A labelled edition with no rule, or a rule with every cell blank.</td><td>Give the edition at least one rule with at least one filled cell.</td></tr>
+<tr><td class="key">REFUSED (label)</td><td>Rules given for a fallback (an edition with a blank label).</td><td>Give that edition a label, or remove its rules.</td></tr>
+<tr><td class="key">cannot read &hellip;</td><td>The file could not be opened, or its header row is not one of the two the tool knows.</td><td>Check the path, close the file in Excel, and keep the header row exactly as exported.</td></tr>
+</tbody></table></div>
+<div class="note warn"><b class="h">Watch for a stray rules file</b>
+<p>If the import finds no <code>library.rules.csv</code> beside your file, it looks for a
+<code>sleeveRules.csv</code> in the same folder and uses that. Keep <code>H:\pt-seed</code> free of
+old rules files, or name yours to match.</p></div>
+
+<h2 id="undo">Undoing a re-seed</h2>
+<ul>
+<li><strong>Quickest:</strong> import the export you took first, with <code>--replace</code>:
+<code>--import H:\pt-seed\library-2026-10-15.csv --replace</code>. The library is back as it was, and
+the detour stays on the record.</li>
+<li><strong>One sleeve:</strong> in the console, open the sleeve's history and restore it, or restore
+it from the Archive.</li>
+<li><strong>Everything, exactly:</strong> stop the service and copy
+<code>sleeves-2026-10-15.db</code> back over <code>src\var\sleeves.db</code>. This also brings back
+the funding split and overlay rules as they were at the backup.</li>
+</ul>
+
+<h2 id="dont">What not to do</h2>
+<div class="note bad"><b class="h">Don't delete <code>sleeves.db</code> to start again</b>
+<p>A new, empty database seeds itself once from a seed file, and the tool's own instructions mention
+it. On a working system it costs far more than it saves:</p>
+<ul>
+<li>every sleeve's history and the archive go;</li>
+<li>the funding split and the overlay rules return to their starting values;</li>
+<li>sleeves get new numbers, so the proposals already on record no longer point at the sleeves they
+were built from;</li>
+<li>if the seed file is missing, the new database starts empty and stays empty: it never tries to
+seed again.</li>
+</ul>
+<p>An import with <code>--replace</code> gives the same clean library without any of that.</p></div>
+
+<h2 id="fees">A note on the fee card</h2>
+<p>If new products need a fee group the card does not have, the fee card must change first. Its
+tool, <code>feeTools --accept</code>, rewrites a file inside the package as well as the rate file.
+On Cyrus that makes the next tool update refuse to run, because it would overwrite a file changed by
+hand. Send a fee card change to be made with the tool's code instead.</p>
+
+<h2 id="ref">Quick reference</h2>
+<div class="qr">
+<h3>Sleeve tools parameters</h3>
+<dl>
+<dt>--census</dt><dd>What is there, and what is broken. Read-only.</dd>
+<dt>--export FILE</dt><dd>Write the live library to FILE and FILE's <code>.rules</code> sibling.</dd>
+<dt>--import FILE</dt><dd>Add and update from FILE; everything else stays.</dd>
+<dt>--import FILE --replace</dt><dd>Archive the library and load FILE as the whole of it.</dd>
+<dt>--archived</dt><dd>List archived sleeves.</dd>
+<dt>--history ID</dt><dd>Every revision of one sleeve (the number in square brackets in a listing).</dd>
+<dt>--activity</dt><dd>The 40 latest changes across the library.</dd>
+</dl>
+</div>
+<div class="qr">
+<h3>A re-seed in order</h3>
+<dl>
+<dt>1. Census</dt><dd>Note the store and catalogue paths.</dd>
+<dt>2. Backups</dt><dd>Product file copy, sleeve export, and <code>sleeves.db</code> copy with the service stopped.</dd>
+<dt>3. Products</dt><dd>Edit, check with the census pointed at the new file, swap.</dd>
+<dt>4. Sleeves</dt><dd>Edit the export, import, census.</dd>
+<dt>5. Start</dt><dd>The three services, then <kbd>Ctrl</kbd>+<kbd>F5</kbd>.</dd>
+</dl>
+</div>
+
+</main>
+
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#map">What lives where</a>
+  <a href="#setup">One-time setup</a>
+  <a href="#products">Products</a>
+  <a href="#sleeves">Sleeves</a>
+  <a href="#editions">Editions, rules, types</a>
+  <a class="ind" href="#editions">How a rule reads</a>
+  <a class="ind" href="#editions">Which edition is served</a>
+  <a class="ind" href="#editions">Seven worked examples</a>
+  <a href="#refused">Refusals</a>
+  <a href="#undo">Undoing</a>
+  <a href="#dont">What not to do</a>
+  <a href="#fees">The fee card</a>
+  <a href="#ref">Quick reference</a>
+</nav>
+
+<footer class="foot">Every example, message and census line above was produced by the tool itself,
+from a copy of the library with the examples loaded through the import, on 15 October 2026. Paths are
+shown as they appear on Cyrus.</footer>
+</div>
+
+</body>
+</html>
