@@ -1097,6 +1097,9 @@ PAGE_SHELL = """<!doctype html>
 <div id="feeDialog" hidden></div>
 <div id="priceDialog" hidden></div>
 <div id="customDialog" hidden></div>
+<div id="chargesDialog" hidden></div>
+<div id="cslDialog" hidden></div>
+<div id="cpDialog" hidden></div>
 <div id="greetDialog" hidden></div>
 <div id="repoDialog" hidden></div>
 

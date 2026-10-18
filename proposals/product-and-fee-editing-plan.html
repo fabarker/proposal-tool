@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product and Fee Editing</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --sunk:#EEF2F9; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --good:#176A33; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#9B1C1C; --bad-tint:#FDE8E8; --code:#F1F3F7;
+  --f-display:"Newsreader",Georgia,serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0F1420; --surface:#161C2B; --sunk:#1C2438; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --line:#26304A; --line-strong:#364266;
+  --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --sunk:#1C2438; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --line:#26304A; --line-strong:#364266;
+  --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);
+  font-size:16px;line-height:1.6}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 28px 96px;
+  display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:0 46px}
+@media (max-width:960px){.wrap{grid-template-columns:minmax(0,1fr);padding:26px 16px 64px}.toc{display:none}}
+main{min-width:0}
+.mast{grid-column:1/-1;border-bottom:2px solid var(--navy);padding-bottom:20px;margin-bottom:38px}
+.eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(32px,4.4vw,48px);line-height:1.05;
+  margin:0 0 12px;color:var(--navy);letter-spacing:-.01em;text-wrap:balance}
+.sub{font-size:17.5px;color:var(--ink-2);max-width:64ch;margin:0 0 16px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12.5px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+.toc{position:sticky;top:22px;align-self:start;font-size:12.5px;border-left:1px solid var(--line);
+  padding-left:15px}
+.toc p{margin:0 0 9px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:700}
+.toc a{display:block;color:var(--ink-2);text-decoration:none;padding:3px 0;line-height:1.35}
+.toc a:hover{color:var(--accent)}
+.toc a.ind{padding-left:11px;color:var(--ink-3);font-size:12px}
+h2{font-family:var(--f-display);font-weight:500;font-size:29px;line-height:1.15;margin:54px 0 12px;
+  color:var(--navy);letter-spacing:-.005em;text-wrap:balance}
+h2:first-child{margin-top:0}
+h3{font-size:16.5px;font-weight:700;margin:30px 0 8px;color:var(--ink)}
+p{margin:0 0 13px;max-width:70ch}
+ul,ol{margin:0 0 13px;padding-left:21px;max-width:70ch}
+li{margin:0 0 6px}
+code{font-family:var(--f-mono);font-size:.87em;background:var(--code);padding:1px 5px;
+  border-radius:4px;color:var(--ink)}
+strong{font-weight:700}
+.lede{font-size:17.5px;line-height:1.55}
+/* ---- the three words ---- */
+.words{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 26px}
+@media (max-width:760px){.words{grid-template-columns:1fr}}
+.words div{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;
+  padding:14px 16px}
+.words b{display:block;font-family:var(--f-display);font-size:21px;font-weight:500;color:var(--navy);
+  margin-bottom:4px}
+.words p{margin:0;font-size:14px;color:var(--ink-2);max-width:none}
+/* ---- steps ---- */
+.step{counter-increment:s;position:relative;margin:0 0 34px;padding-left:52px}
+.steps{counter-reset:s}
+.step::before{content:counter(s);position:absolute;left:0;top:-2px;width:34px;height:34px;
+  border-radius:50%;background:var(--navy);color:var(--paper);display:flex;align-items:center;
+  justify-content:center;font-family:var(--f-display);font-size:17px;line-height:1}
+.step h3{margin:2px 0 8px;font-size:18px}
+/* ---- figures ---- */
+.shot{margin:14px 0 6px;padding:0;background:var(--sunk);border:1px solid var(--line-strong);
+  border-radius:9px;overflow:hidden}
+.shot img{display:block;width:100%;height:auto}
+.shot figcaption{font-size:12.5px;color:var(--ink-2);padding:9px 14px;background:var(--surface);
+  border-top:1px solid var(--line);line-height:1.45}
+.shot.crop img{background:var(--surface)}
+/* A portrait crop at full width dwarfs the prose around it; cap the height
+   and centre it, which leaves the landscape crops of the rule builder
+   untouched because they are nowhere near this tall. */
+.shot.tall{display:flex;flex-direction:column;align-items:center}
+.shot.tall img{width:auto;max-width:100%;max-height:560px}
+.shot.tall figcaption{width:100%}
+/* ---- callouts ---- */
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:11px 15px;
+  border-radius:0 7px 7px 0;margin:16px 0;max-width:70ch}
+.note.good{border-color:var(--good);background:var(--good-tint)}
+.note.bad{border-color:var(--bad);background:var(--bad-tint)}
+.note.warn{border-color:var(--warn);background:var(--warn-tint)}
+.note p:last-child{margin-bottom:0}
+.note b.h{display:block;margin-bottom:3px}
+/* ---- tables ---- */
+.tblwrap{overflow-x:auto;margin:14px 0 22px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+thead th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:700;background:var(--sunk);white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.key{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;
+  border-radius:999px;white-space:nowrap}
+.pill.ed{background:var(--navy);color:var(--paper)}
+.pill.fb{background:var(--sunk);color:var(--ink-2);border:1px solid var(--line-strong)}
+/* ---- quick reference ---- */
+.qr{background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;
+  padding:20px 24px;margin:20px 0}
+.qr h3{margin-top:0}
+.qr dl{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:7px 18px;margin:0;font-size:14.5px}
+@media (max-width:640px){.qr dl{grid-template-columns:1fr}.qr dt{margin-top:8px}}
+.qr dt{font-weight:700;color:var(--navy)}
+.qr dd{margin:0;color:var(--ink-2)}
+.foot{grid-column:1/-1;margin-top:52px;padding-top:15px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--ink-3);max-width:none}
+pre.out{font-family:var(--f-mono);font-size:12.5px;line-height:1.55;background:var(--code);
+  border:1px solid var(--line);border-radius:7px;padding:11px 14px;margin:8px 0 16px;overflow-x:auto;
+  white-space:pre;color:var(--ink)}
+table.fields td.key{white-space:normal;width:26%}
+.cap{font-size:12.5px;color:var(--ink-3);margin:6px 0 20px}
+/* ---- mock-ups ---- */
+.mock{background:var(--sunk);border:1px dashed var(--line-strong);border-radius:10px;padding:18px;
+  margin:14px 0 4px;overflow-x:auto}
+.mk-card{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;padding:16px 18px;
+  max-width:440px;font-size:13.5px;box-shadow:0 1px 3px rgba(9,44,97,.06)}
+.mk-eyeb{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.mk-title{font-family:var(--f-display);font-size:20px;color:var(--navy);line-height:1.2;margin:4px 0 3px}
+.mk-sub{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+.mk-stamp{display:inline-block;margin:9px 0 4px;font-size:12px;font-weight:600;color:var(--good);
+  background:var(--good-tint);border-radius:999px;padding:2px 10px}
+.mk-figs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.mk-figs div{background:var(--sunk);border-radius:6px;padding:6px 9px}
+.mk-figs small{display:block;font-size:10.5px;color:var(--ink-3)}
+.mk-figs b{font-size:16px;font-variant-numeric:tabular-nums}
+.mk-dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;margin:6px 0 10px}
+.mk-dl span:nth-child(odd){color:var(--ink-3)}
+.mk-hist{border-top:1px solid var(--line);padding-top:8px;font-size:12px;color:var(--ink-2)}
+.mk-hist b{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.mk-hist div{padding:3px 0}
+.mk-hist i{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--ink-3);margin-right:6px}
+.mk-acts{display:flex;gap:8px;margin-top:12px}
+.mk-btn{display:inline-block;font-size:12.5px;font-weight:600;border:1px solid var(--line-strong);border-radius:6px;
+  padding:4px 11px;background:var(--surface);color:var(--ink);white-space:nowrap}
+.mk-btn.pri{background:var(--navy);border-color:var(--navy);color:var(--paper)}
+.mk-btn.dim{opacity:.45}
+.mk-tabhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px;margin-bottom:12px}
+.mk-tabhead b{font-family:var(--f-display);font-size:20px;font-weight:500;color:var(--navy);margin-right:4px}
+.mk-tabhead span:not(.mk-btn){color:var(--ink-3);font-size:12px;margin-right:auto}
+.mk-seg{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;margin-bottom:10px}
+.mk-seg span{border:1px solid var(--line-strong);border-radius:6px;padding:3px 10px;background:var(--surface)}
+.mk-seg span.on{background:var(--navy);color:var(--paper);border-color:var(--navy)}
+.mk-seg .mk-pick{margin-left:8px}
+table.mk-grid{background:var(--surface);font-size:12.5px;min-width:620px;border:1px solid var(--line);border-radius:6px}
+table.mk-grid th,table.mk-grid td{padding:6px 10px}
+table.mk-grid th:not(:first-child){text-align:right}
+table.mk-grid td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mono)}
+table.mk-grid td.chg{background:var(--warn-tint);font-weight:700}
+table.mk-grid td.bad{background:var(--bad-tint);color:var(--bad);font-weight:700;box-shadow:inset 0 0 0 1.5px var(--bad)}
+table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--ink-3)}
+.mk-err{font-size:12.5px;color:var(--bad);margin:8px 0 0}
+.mk-bar{display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px 12px;background:var(--surface);
+  border:1px solid var(--line-strong);border-radius:8px;font-size:12.5px}
+.mk-bar span:first-child{margin-right:auto;font-weight:600}
+/* ---- decisions ---- */
+.dec{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0 20px}
+@media (max-width:760px){.dec{grid-template-columns:1fr}}
+.dec div{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;padding:13px 16px}
+.dec b{display:block;color:var(--navy);margin-bottom:4px;font-size:15px}
+.dec p{margin:0;font-size:14px;color:var(--ink-2);max-width:none}
+@media print{.toc{display:none}.wrap{display:block}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+<header class="mast">
+<p class="eyebrow">Plan for review · no code changed</p>
+<h1>Editing products and fees in the Repository</h1>
+<p class="sub">Add and change products from the product card, add and change fees from a new Fees tab, and keep a full record of who changed what and when.</p>
+<div class="meta"><span><b>Status</b> proposal, awaiting your decisions</span><span><b>Prepared</b> 16 October 2026</span><span><b>Covers</b> products · fees · the change log · moving Cyrus across</span></div>
+</header>
+
+<main>
+
+<h2 id="summary">In short</h2>
+<p class="lede">Today products and fees are both <strong>delivered files</strong> the tool only reads. To edit them inside the tool they have to move into the tool's own database, the same one that already holds the sleeves, the overlay rules and the funding split. That database already records every sleeve change with the admin and the time. Products and fees would get the same treatment.</p>
+
+<div class="words">
+<div><b>Products</b><p>An <em>Edit</em> button on the product card and a <em>New product</em> button on the Catalogue. Every product shows an <em>As of</em> date and who set it, plus its full history with a restore.</p></div>
+<div><b>Fees</b><p>A new <em>Fees</em> tab in the Repository. Change rates in the grid, add a fee group, review the changes and save them with a note. The card's history can be restored the same way.</p></div>
+<div><b>The log</b><p>Every change is kept: who (from the sign-in), when, what it was before and after, and the note. The Activity tab becomes the one place to see all of it. Each delivered proposal records which product and fee versions priced it.</p></div>
+</div>
+
+<div class="note warn"><b class="h">The one real change of principle</b>
+<p>The tool was built on the idea that the product file and the fee file are <em>delivered</em> by another team and never edited by hand. This plan reverses that: the <strong>database becomes the master</strong>, and a delivered file becomes something an admin <em>imports</em>, with a preview of what it would change. If a data team still sends files, nothing is lost: an import is reviewed and logged like any other change.</p></div>
+
+<h2 id="today">Where things stand today</h2>
+<div class="tblwrap"><table>
+<thead><tr><th></th><th>Products</th><th>Fees</th></tr></thead>
+<tbody>
+<tr><td><b>Held in</b></td><td>A CSV or XLSX file named by <code>SCENARIO_PRODUCTS_SOURCE</code></td><td><code>feeRates.csv</code> (180 rates) plus <code>fees.json</code> (version and as-of date)</td></tr>
+<tr><td><b>When it's read</b></td><td>Re-read whenever the file changes on disk</td><td>Once, when the service starts. A new card means a restart.</td></tr>
+<tr><td><b>Seen in the tool</b></td><td>The Catalogue tab and the product card, view only</td><td>The <em>View fee card</em> button in step 2, view only, for everyone</td></tr>
+<tr><td><b>How it changes</b></td><td>Someone replaces the file</td><td>The fee tool's <code>--accept</code> command</td></tr>
+<tr><td><b>Who changed it, and when</b></td><td>Not recorded. The Catalogue shows only the file's modified date.</td><td>Not recorded. There's one as-of date for the whole card.</td></tr>
+</tbody></table></div>
+<p>For comparison, sleeves already have everything this plan asks for: each save is a new revision recording the admin and the time, nothing is ever deleted, an earlier version can be restored, and a save made against an out-of-date screen is refused. The overlay rules and the funding split are kept the same way. The plan reuses that machinery rather than inventing a second one.</p>
+
+<h2 id="principles">How it will behave</h2>
+<ul>
+<li><strong>One database.</strong> Products and the fee card go into <code>sleeves.db</code>, the Repository's database. Sleeves are checked against products at save time, and having both in one file keeps that check in a single step. It also means one file to back up.</li>
+<li><strong>Every change is a revision.</strong> A save adds a row recording the whole product (or the whole fee card) as it stood afterwards. Earlier rows are never rewritten or removed, so any earlier version can be read back and put back in force.</li>
+<li><strong>Who and when come from the sign-in.</strong> The admin's sign-in name is taken from the session, never typed. The time is the server's clock, the same as sleeves today.</li>
+<li><strong>Nothing is destroyed.</strong> A product is <em>withdrawn</em>, not deleted, and it can be restored. A fee group is removed only when no product uses it, and the removal stays in the history.</li>
+<li><strong>The same checks as the file.</strong> Everything the product and fee files are checked for today is checked at save, naming the field, so a bad value is refused while you're looking at it.</li>
+<li><strong>Two admins at once.</strong> If someone else saved the same product or the fee card after you opened it, your save is refused with a message, and the screen reloads their version. Nothing is silently overwritten.</li>
+<li><strong>Takes effect at once.</strong> A change reaches proposals being built straight away: no restart and no refresh of the file. A proposal already delivered keeps its workbook and deck exactly as they were sent, and its record says which product and fee versions priced it.</li>
+</ul>
+
+<h2 id="products">Products</h2>
+
+<h3 id="p-fields">What a product holds</h3>
+<p>The fourteen fields of today's file, unchanged, plus the stamps that make the history visible.</p>
+<div class="tblwrap"><table class="fields">
+<thead><tr><th>Field</th><th>Entered as</th><th>Checked at save</th></tr></thead>
+<tbody>
+<tr><td class="key">Product ID</td><td>Text. Suggested from the name (e.g. <code>gs-access-ig-corporate-etf</code>). <b>Can't be changed once saved.</b></td><td>Required and unique. Sleeves refer to products by this ID, so it never changes.</td></tr>
+<tr><td class="key">Name</td><td>Text</td><td>Required</td></tr>
+<tr><td class="key">Ticker</td><td>Text</td><td>Optional; a blank one shows as a dash</td></tr>
+<tr><td class="key">Asset class · Style · Vehicle · Source · Liquidity · Exposure currency</td><td>A list of the values already in the catalogue, plus <em>New value…</em></td><td>Required. The list keeps spellings consistent: no <em>Mutual fund</em> beside <em>Mutual Fund</em>.</td></tr>
+<tr><td class="key">Share class</td><td>Distributing · Accumulating · None</td><td>One of the three</td></tr>
+<tr><td class="key">Product cost</td><td>A percentage, e.g. <code>0.25</code></td><td>A number, not negative</td></tr>
+<tr><td class="key">Fee group</td><td>A list of the fee card's groups</td><td>Must be a group the fee card prices</td></tr>
+<tr><td class="key">Distribution yield</td><td>A percentage, optional</td><td>A number, not negative</td></tr>
+<tr><td class="key">Minimum investment</td><td>Currency units, optional</td><td>A number, not negative. Shows the warning below.</td></tr>
+<tr><td class="key"><span class="pill ed">new</span> As of · Changed by</td><td>Set automatically on every save</td><td>Not editable</td></tr>
+<tr><td class="key"><span class="pill ed">new</span> Created · Created by · Version</td><td>Set automatically</td><td>Not editable</td></tr>
+</tbody></table></div>
+
+<h3 id="p-asof">The As of date</h3>
+<p>Each product's <strong>As of</strong> is the moment its current values took effect, with the admin who saved them. A product loaded from the file on day one shows the load date and <em>seeded from file</em>. The date shows up in four places:</p>
+<ul>
+<li><strong>The product card</strong>, under the name: <em>As of 16 Oct 2026, 14:02 · pmgadmin · version 3</em>.</li>
+<li><strong>A new Catalogue column, As of</strong>. It can be sorted, and it can be filtered with a facet: <em>Changed in the last 7 / 30 / 90 days</em>.</li>
+<li><strong>The Catalogue header.</strong> <em>Catalogue as of</em> becomes the date of the most recent change to any product, not the file's date.</li>
+<li><strong>The Activity tab</strong>, as one entry per change (see <a href="#log">the change log</a>).</li>
+</ul>
+<div class="note"><b class="h">A second date, if you want it</b>
+<p>The stamp above records when the tool was told. If you also need when the <em>figures</em> are true (for example, yields as of the last month-end), the product can carry a <strong>Data as of</strong> date. The admin types it, and it's checked to be a real date no later than today. That's decision 2 below.</p></div>
+
+<h3 id="p-card">The product card, with Edit</h3>
+<p>The card keeps everything it shows today, and gains the stamp, an <em>Edit</em> button and a <em>History</em> section.</p>
+<div class="mock">
+<div class="mk-card">
+<span class="mk-eyeb">Product</span>
+<div class="mk-title">GS Access IG Corporate ETF</div>
+<div class="mk-sub">GIGB · IG Corporate · gs-access-ig-corporate-etf</div>
+<div class="mk-stamp">As of 16 Oct 2026, 14:02 · pmgadmin · version 3</div>
+<div class="mk-figs"><div><small>Product cost</small><b>0.14</b></div><div><small>Yield</small><b>4.80</b></div><div><small>Net</small><b>+4.66</b></div></div>
+<div class="mk-dl"><span>Vehicle</span><span>ETF · Passive</span><span>Share class</span><span>Distributing</span><span>Liquidity</span><span>Daily</span><span>Used in</span><span>3 sleeves</span></div>
+<div class="mk-hist"><b>History</b>
+<div><i>16 Oct 14:02</i> pmgadmin · Product cost 0.12 → 0.14 · <em>"Repriced by the issuer"</em></div>
+<div><i>2 Oct 09:40</i> pmgadmin · Share class Accumulating → Distributing</div>
+<div><i>1 Oct 08:00</i> seeded from file</div>
+</div>
+<div class="mk-acts"><span class="mk-btn pri">Edit</span><span class="mk-btn">Pin to compare</span></div>
+</div>
+</div>
+<p class="cap">Mock-up, not the final styling. The History rows show a field-by-field change, the note if there was one, and a <em>Restore this version</em> link on each older version.</p>
+
+<h3 id="p-edit">Changing a product: the steps</h3>
+<ol>
+<li>Open the Catalogue, then open the product's card.</li>
+<li>Click <strong>Edit</strong>. The card turns into a form with the current values filled in. The Product ID is shown but locked.</li>
+<li>Change what's needed. Each field is checked as you leave it, and a problem shows under that field.</li>
+<li>Above the Save button, the card shows what the change will reach. For example: <em>This product is in 3 sleeves across 2 implementation types. Proposals being built that use them are re-priced at once.</em></li>
+<li>If the minimum investment goes up, the card adds: <em>A position below a product's minimum stops the download. 2 sleeves give this product less than the new minimum on a $10m mandate.</em></li>
+<li>Optionally add a note (up to 240 characters), then click <strong>Save</strong>. The card goes back to view mode with the new As of date, and a new History row.</li>
+</ol>
+
+<h3 id="p-new">Adding a product</h3>
+<ol>
+<li>On the Catalogue, click <strong>+ New product</strong> beside the search box.</li>
+<li>Choose <strong>Start from blank</strong>, or <strong>Copy an existing product</strong>, which fills everything except the ID and the name. This is the same choice the New sleeve form already offers.</li>
+<li>Type the name. An ID is suggested from it, and you can change the ID until you save.</li>
+<li>Fill in the fields and click <strong>Save</strong>. The product shows up in the Catalogue straight away, as version 1.</li>
+<li>A new product isn't in any sleeve yet. The card says <em>Not in any sleeve yet</em> and offers <strong>Add to a sleeve →</strong>, which opens the Sleeves tab.</li>
+</ol>
+
+<h3 id="p-withdraw">Withdrawing and restoring</h3>
+<ul>
+<li><strong>Withdraw</strong>, on the card's menu, takes a product out of the Catalogue. It's refused while any live sleeve holds the product, and the message lists those sleeves with links so you can take it out of them first. That's decision 6 below.</li>
+<li>Withdrawn products stay visible under a <em>Show withdrawn</em> filter on the Catalogue, with who withdrew them and when. <strong>Restore</strong> brings one back.</li>
+<li>Withdrawing never removes history, and a withdrawn product's ID can't be reused.</li>
+</ul>
+
+<h3 id="p-import">Loading a product file: the re-seed route</h3>
+<p>The file is no longer read live. Instead, the Catalogue gets an <strong>Import file</strong> button, and the sleeve tool gets a matching command. An import always shows a preview first:</p>
+<pre class="out">products.xlsx · 73 rows
+  2 new            gs-us-equity-esg-etf, gs-em-debt-ucits
+  5 changed        11 fields in all (each listed: field, before, after)
+ 66 unchanged
+  1 not in the file   gsam-legacy-muni-sma  (kept · tick to withdraw)
+  0 refused</pre>
+<ol>
+<li>Choose the file. It's checked exactly as the file is checked today. A file with any error is refused whole, naming the row and the field, and nothing is changed.</li>
+<li>Read the preview. Products in the catalogue but missing from the file are <em>kept</em> unless you tick them to be withdrawn, and the same rule as above applies to those that are in sleeves.</li>
+<li>Click <strong>Apply import</strong>. Each new or changed product gets a revision marked <em>imported</em> with your name, the file's name and the time. Unchanged products aren't touched, so their As of dates stay true.</li>
+</ol>
+<div class="note good"><p>This is the route for the Cyrus re-seed you're planning: import the new file and review the preview, and the log then records the re-seed as one dated event. The re-seeding guide would be rewritten around it.</p></div>
+
+<h2 id="fees">Fees</h2>
+
+<h3 id="f-where">Where</h3>
+<p>A new <strong>Fees</strong> tab in the Repository, next to Catalogue. It's for admins only, like the rest of the Repository. The <em>View fee card</em> button in step 2 stays read-only for everyone. Its line <em>The card is delivered and read only</em> becomes <em>As of 16 Oct 2026 · pmgadmin · maintained in the Repository</em>.</p>
+
+<h3 id="f-what">What can be changed</h3>
+<p>Today's card has two schedules (CASP, priced on one ladder, and RDR, priced by fee group), five account-size tiers and six levels. The levels are Management and PMG, each at Floor, Target and Ceiling. That makes 180 rates.</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Change</th><th>How</th><th>Checked at save</th><th>Release</th></tr></thead>
+<tbody>
+<tr><td><b>A rate</b></td><td>Type in the grid, viewed by tier or by fee group, the same two views as today's fee card</td><td>A number, not negative; on every band, Floor ≤ Target ≤ Ceiling</td><td>First</td></tr>
+<tr><td><b>Add a fee group</b></td><td><em>+ Fee group</em>: a name, then all 30 rates (5 tiers × 6 levels), or copy an existing group's rates and adjust them</td><td>Unique name; every rate present; the band check</td><td>First</td></tr>
+<tr><td><b>Remove a fee group</b></td><td>On the group's row</td><td>Refused while any product uses it, listing those products</td><td>First</td></tr>
+<tr><td><b>Rename a fee group</b></td><td>On the group's row; every product in the group moves with it, each getting a logged revision</td><td>Unique name</td><td>Second</td></tr>
+<tr><td><b>Tiers</b>: change a boundary, add or remove a tier</td><td>A tier editor above the grid</td><td>The tiers start at $0 and leave no gaps; the top tier has no upper limit; every new rate is filled</td><td>Second, if wanted (decision 3)</td></tr>
+<tr><td><b>Schedules and levels</b></td><td colspan="2">Not editable. The CASP/RDR pricing logic and the six-level vocabulary are part of how the tool calculates, not data.</td><td>Not planned</td></tr>
+</tbody></table></div>
+
+<h3 id="f-mock">The Fees tab while editing</h3>
+<div class="mock">
+<div class="mk-tabhead"><b>Fees</b><span>As of 2 Oct 2026, 09:12 · pmgadmin · version 4</span><span class="mk-btn">History</span><span class="mk-btn">Import file</span><span class="mk-btn pri">Edit rates</span></div>
+<div class="mk-seg"><span class="on">By fee group</span><span>By tier</span> <span class="mk-pick">RDR · Core Active ▾</span></div>
+<table class="mk-grid">
+<thead><tr><th>Tier</th><th>Mgmt Floor</th><th>Mgmt Target</th><th>Mgmt Ceiling</th><th>PMG Floor</th><th>PMG Target</th><th>PMG Ceiling</th></tr></thead>
+<tbody>
+<tr><td>Under $10m</td><td>0.40</td><td>0.55</td><td>0.70</td><td>0.42</td><td>0.51</td><td>0.60</td></tr>
+<tr><td>$10m – $25m</td><td>0.33</td><td>0.48</td><td>0.63</td><td>0.35</td><td class="chg">0.46<s>0.44</s></td><td>0.53</td></tr>
+<tr><td>$25m – $50m</td><td>0.27</td><td>0.42</td><td>0.57</td><td>0.29</td><td class="chg">0.40<s>0.38</s></td><td>0.47</td></tr>
+<tr><td>$50m – $100m</td><td>0.21</td><td>0.36</td><td>0.51</td><td>0.23</td><td>0.32</td><td class="bad">0.30<s>0.41</s></td></tr>
+<tr><td>$100m and up</td><td>0.15</td><td>0.30</td><td>0.45</td><td>0.17</td><td>0.26</td><td>0.35</td></tr>
+</tbody></table>
+<div class="mk-err">$50m – $100m · PMG: Ceiling 0.30 is below Target 0.32</div>
+<div class="mk-bar"><span>3 rates changed · 1 problem</span><span class="mk-btn">Discard</span><span class="mk-btn pri dim">Review and save</span></div>
+</div>
+<p class="cap">Mock-up with example figures. Changed rates are highlighted with the old value struck through, and a rate that breaks a band is marked and blocks the save until it's fixed.</p>
+
+<h3 id="f-steps">Changing rates: the steps</h3>
+<ol>
+<li>Repository → <strong>Fees</strong> → <strong>Edit rates</strong>.</li>
+<li>Pick the view (by fee group or by tier) and type the new rates. Any number of rates, across any groups and tiers, go into one change.</li>
+<li>Click <strong>Review and save</strong>. A summary lists every rate that moves, e.g. <em>RDR · Core Active · $10m – $25m · PMG Target: 0.44% → 0.46%</em>, and what it reaches, e.g. <em>19 products in the Core Active group</em>.</li>
+<li>Type a <strong>note</strong>, which is required for fee changes (decision 5), e.g. <em>2027 pricing round, approved by the pricing committee 14 Oct</em>.</li>
+<li>Click <strong>Save</strong>. The card becomes version 5 with your name and the time, and proposals being priced use it from the next calculation.</li>
+</ol>
+
+<h3 id="f-hist">History, restore and import</h3>
+<ul>
+<li><strong>History</strong> lists every version of the card: who, when, the note, and each rate that moved. Any earlier version has <strong>Restore</strong>, which saves it again as a new version, so the restore is logged too.</li>
+<li><strong>Import file</strong> takes a fee file in today's format and shows the same rate-by-rate preview (the fee tool's diff already does this). Applying it saves a version marked <em>imported</em>, with the file's name. The fee tool's command does the same from the terminal.</li>
+</ul>
+
+<h3 id="f-reach">What a fee change reaches</h3>
+<ul>
+<li><strong>Proposals being built:</strong> re-priced at once, on their next calculation.</li>
+<li><strong>Custom rates</strong> on a proposal keep their entered value. The floor and ceiling they must sit between come from the card, so they move with it. Today a custom rate is checked against them only when it is entered, so the plan adds a check that flags one now outside them before the proposal can be downloaded.</li>
+<li><strong>Delivered proposals:</strong> the workbook and the deck already sent are never changed. The register records the fee card version that priced each one.</li>
+<li><strong>The workbook's <em>Fee Card</em> line</strong>, which today prints the file's version, prints <em>Version 5 · as of 16 Oct 2026</em>.</li>
+</ul>
+
+<h2 id="log">The change log</h2>
+<p>Every change to products, fees, sleeves, overlay rules and the funding split is written to the same database as a permanent record:</p>
+<div class="tblwrap"><table>
+<thead><tr><th>What's recorded</th><th>Where it comes from</th></tr></thead>
+<tbody>
+<tr><td><b>Who</b></td><td>The signed-in admin's name, from the session</td></tr>
+<tr><td><b>When</b></td><td>The server's clock, to the second</td></tr>
+<tr><td><b>What</b></td><td>The action: created, updated, imported, withdrawn, restored, reverted, seeded</td></tr>
+<tr><td><b>Before and after</b></td><td>The full record after the change. The record before it is the previous version, so field-by-field differences are always available.</td></tr>
+<tr><td><b>Why</b></td><td>The note, if one was given (required for fees)</td></tr>
+</tbody></table></div>
+<h3>One Activity tab for everything</h3>
+<p>The Activity tab shows sleeve changes only today. It gains an <strong>Area</strong> filter: <em>Sleeves · Products · Fees · Overlay rules · Funding split</em>. Its existing filters (action, admin, date range, search) and its CSV download then work across all of them. An entry reads, for example:</p>
+<pre class="out">16 Oct 2026 14:02  Products  updated   pmgadmin  GS Access IG Corporate ETF       Product cost 0.12 → 0.14   "Repriced by the issuer"
+16 Oct 2026 11:30  Fees      updated   pmgadmin  Fee card v5                     2 rates moved              "2027 pricing round…"
+15 Oct 2026 17:05  Sleeves   updated   pmgadmin  Core Fixed Income (PMG ESG)     2 products reweighted</pre>
+<h3>What a delivered proposal records</h3>
+<p>The register gains two facts for each proposal delivered from then on: the <strong>product catalogue version</strong> and the <strong>fee card version</strong> it was priced with. That answers the question <em>what were the fees when this went out?</em> from the register alone, and the version can be opened from the History.</p>
+
+<h2 id="tech">What changes underneath</h2>
+<p>For the record. You don't need to read this to make the decisions.</p>
+<ul>
+<li><strong>Database.</strong> The Repository's database moves to its next schema version. It gains a products table with a product history table. The fee card is stored like the overlay rules: the whole card per version, about 180 rates.</li>
+<li><strong>Products in the service.</strong> The rest of the tool keeps asking for products exactly as now and gets the same shape back, now read from the database. The file reader stays, used for the first load and for imports.</li>
+<li><strong>Fees in the service.</strong> The card is read from the database and refreshed when a new version is saved, so no restart is needed. The check that the card is complete and consistent moves from service start to save time, so a broken card can't be saved in the first place.</li>
+<li><strong>New admin-only service calls:</strong> create, change, withdraw, restore and revert a product; a product's history; import preview and apply; read and save the fee card against the version it was opened at; its history; restore; fee import preview and apply.</li>
+<li><strong>Terminal tools.</strong> The sleeve tool gains product export, import and history. The fee tool's import writes a new version into the database instead of replacing the file.</li>
+<li><strong>Templates.</strong> The data template's products and feeRates sheets stay as the format for the first load and for imports.</li>
+</ul>
+
+<h2 id="cyrus">Moving Cyrus across</h2>
+<ol>
+<li><strong>First, the share class update on its own.</strong> Cyrus's product file already uses the full words, which Cyrus's current code refuses. That change is ready and waiting, so it should go to Cyrus before any of this starts.</li>
+<li><strong>The update that brings this work</strong> runs like the account card one: stop isgPMGService, copy the file, run <code>go</code>, start the services. During <code>go</code>, after the usual backup, the database is upgraded:
+<ul>
+<li>the products are loaded once from the file Cyrus uses today, each marked <em>seeded from file</em> with the file's name;</li>
+<li>the fee card is loaded once from Cyrus's fee file, as version 1 marked <em>seeded</em>;</li>
+<li>nothing else changes: the sleeves, the register and the overlay rules are kept as they are.</li>
+</ul></li>
+<li><strong>After the update,</strong> changing the product file on Cyrus does nothing by itself. A new file goes in through <em>Import file</em>, so that's the moment to do your re-seed, and the log records it.</li>
+<li><strong>Undo</strong> restores the database exactly as it was before, as with every update so far. That gets tested on the fake Cyrus before you're given the update.</li>
+</ol>
+
+<h2 id="stages">Building it in stages</h2>
+<div class="tblwrap"><table>
+<thead><tr><th>Stage</th><th>What it delivers</th><th>What you'd see</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td>Products move into the database; the first load from file; the As of stamp</td><td>As of on the card and in the Catalogue. No editing yet, and every figure the same as before.</td></tr>
+<tr><td class="num">2</td><td>Edit, New product, withdraw and restore, product history, Import file</td><td>The product card features above</td></tr>
+<tr><td class="num">3</td><td>The fee card moves into the database; the Fees tab with rate editing, add and remove fee group, history, restore, import</td><td>The Fees tab above, and the step 2 fee card showing its version</td></tr>
+<tr><td class="num">4</td><td>One Activity tab across every area; the register recording versions; the workbook's Fee Card line</td><td>The Area filter, and the two new facts on a delivered proposal</td></tr>
+<tr><td class="num">5</td><td>Re-seeding guide and admin manual updated; the Cyrus update built, tried on the fake Cyrus with undo</td><td>The update for Cyrus</td></tr>
+</tbody></table></div>
+<p>Each stage ends with the full test suite passing and the live databases untouched. Stages 1 and 2 could go to Cyrus as one update and stages 3 and 4 as a second, or everything at the end as one (decision 9).</p>
+
+<h2 id="tests">How it gets tested</h2>
+<ul>
+<li><strong>Products:</strong> create, change, withdraw, restore and revert, each leaving the right revision; every field check refusing with the right message; the refusal of a save made against an out-of-date screen; a withdraw refused while a sleeve holds the product; import preview and apply, and an import with one bad row changing nothing.</li>
+<li><strong>Fees:</strong> a rate change re-pricing a proposal on its next calculation with no restart; the band check; adding a group with every rate and removing one refused while in use; restore; an import matching today's fee-tool diff exactly.</li>
+<li><strong>The first load:</strong> a database of today's shape upgrades, and the products and fees it serves afterwards are identical, field for field and rate for rate, to what the files served before. Every existing workbook and deck test passes unchanged.</li>
+<li><strong>The log:</strong> every action appearing in Activity under the right area, admin and time, and in the CSV download.</li>
+<li><strong>Access:</strong> every new service call refused for anyone who isn't an admin.</li>
+<li><strong>Cyrus:</strong> the update on the fake Cyrus with its current files, then undo restoring the database exactly.</li>
+</ul>
+
+<h2 id="decisions">Decisions for you</h2>
+<p>My recommendation comes first in each. The plan above is written as if every recommendation is accepted.</p>
+<div class="dec">
+<div><b>1 · Which is the master for products?</b><p><strong>The database (recommended),</strong> with the file as an import. Or: keep the file as the master and store the edits made in the tool as overrides on top of it. Overrides are harder to explain, and harder to reason about when the next file arrives.</p></div>
+<div><b>2 · The As of date</b><p><strong>The automatic stamp only (recommended to start):</strong> when the values took effect and who saved them. Or add a typed <em>Data as of</em> date for when the figures were sourced.</p></div>
+<div><b>3 · How much of the fee card can be edited at first?</b><p><strong>Rates, and adding and removing fee groups (recommended);</strong> renaming groups and editing tiers in a second release. Or all of it at once.</p></div>
+<div><b>4 · Who may change fees?</b><p><strong>The same admins as the rest of the Repository (recommended to start),</strong> with every change logged. Or a separate, shorter list of fee admins, which would need a new setting on Cyrus.</p></div>
+<div><b>5 · Notes on saving</b><p><strong>Required for fee changes, optional for products (recommended).</strong> Or optional everywhere, or required everywhere.</p></div>
+<div><b>6 · Withdrawing a product that's in a sleeve</b><p><strong>Refused, listing the sleeves (recommended).</strong> Or allowed, which leaves those sleeves broken and held back from proposals until fixed, as happens today when a product goes missing from the file.</p></div>
+<div><b>7 · Should the As of date appear in the workbook or deck?</b><p><strong>No: on screen only (recommended);</strong> the register records the versions. Or add a product As of column to the workbook's Implementation sheet.</p></div>
+<div><b>8 · What the Activity tab covers</b><p><strong>Everything, including overlay rules and the funding split (recommended),</strong> so there's one log. Or only products and fees beside sleeves; the other two already have histories in their own tabs.</p></div>
+<div><b>9 · Updates to Cyrus</b><p><strong>Two (recommended):</strong> products after stage 2, fees and the log after stage 4. Or one at the end.</p></div>
+<div><b>10 · The share class change</b><p><strong>Push it and send it to Cyrus now, on its own (recommended),</strong> because Cyrus's product file already needs it.</p></div>
+</div>
+
+<h2 id="risks">Things to be aware of</h2>
+<ul>
+<li><strong>Mistakes are easier to make.</strong> Today a wrong rate needs someone to edit a file. Afterwards any admin can make one in seconds. The review step, the required note for fees, the history and one-click restore are the guard rails, and every change can be traced to a person.</li>
+<li><strong>The file stops being the truth.</strong> Anyone used to opening the product file to check a value would need to look in the tool instead, or use the export.</li>
+<li><strong>Other people's records.</strong> If the fees are also recorded somewhere official outside the tool, changes made here won't flow back there. The note and the export are the bridge.</li>
+<li><strong>The guides.</strong> The re-seeding guide and the admin manual both describe the files as read only. Both get updated in stage 5.</li>
+</ul>
+
+<p class="foot">Plan only: no code, data or database has been changed. Once you've answered the decisions, stage 1 can start.</p>
+</main>
+
+<nav class="toc" aria-label="Contents">
+<p>Contents</p>
+<a href="#summary">In short</a>
+<a href="#today">Where things stand</a>
+<a href="#principles">How it will behave</a>
+<a href="#products">Products</a>
+<a class="ind" href="#p-asof">The As of date</a>
+<a class="ind" href="#p-card">The product card</a>
+<a class="ind" href="#p-new">Adding a product</a>
+<a class="ind" href="#p-withdraw">Withdrawing</a>
+<a class="ind" href="#p-import">Loading a file</a>
+<a href="#fees">Fees</a>
+<a class="ind" href="#f-what">What can change</a>
+<a class="ind" href="#f-mock">The Fees tab</a>
+<a class="ind" href="#f-hist">History and import</a>
+<a class="ind" href="#f-reach">What it reaches</a>
+<a href="#log">The change log</a>
+<a href="#tech">Underneath</a>
+<a href="#cyrus">Moving Cyrus across</a>
+<a href="#stages">Stages</a>
+<a href="#tests">Testing</a>
+<a href="#decisions">Decisions for you</a>
+<a href="#risks">Things to be aware of</a>
+</nav>
+</div>
+
+</body>
+</html>

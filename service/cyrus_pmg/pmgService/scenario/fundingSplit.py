@@ -8,14 +8,14 @@ constant in rules.py, a third Investment Grade Fixed Income and two thirds
 Public Equity. It is now a repository setting the desk changes in the
 console, with a note, a history and a restore, like a sleeve.
 
-Scopes. The HOUSE split (scope '*') applies to every implementation type. A
+Scopes. The default split (scope '*') applies to every implementation type. A
 type may carry an OVERRIDE of its own, which then applies to it alone;
-removing the override puts the type back on the house split. None is set on
+removing the override puts the type back on the default split. None is set on
 first open.
 
 Weights. Percentages with at most four decimal places, each above zero,
 adding up to exactly 100.0000. Four places lets a third be written as
-33.3333, so the seeded house split, 33.3333 and 66.6667, reproduces D136's
+33.3333, so the seeded default split, 33.3333 and 66.6667, reproduces D136's
 thirds to within a millionth of a percentage point, which no printed figure
 can show.
 
@@ -31,7 +31,7 @@ Storage. Two tables in the repository's own file (sleeveRepo, schema
 revision 4): ``policies`` holds the split in force per scope, and
 ``policyHistory`` one append-only row per revision - the split in full, the
 note, who and when. A restore adds a revision; nothing is rewritten. The
-house split is seeded, once, the first time anything reads it: a *baseline*
+default split is seeded, once, the first time anything reads it: a *baseline*
 revision recording D136's thirds, so an upgrade changes no figure.
 
 Reads open a connection per call, like the sleeves: the split is read when
@@ -57,7 +57,7 @@ MAX_DESTINATIONS = 3
 _SCALE = 10 ** PLACES
 _WHOLE = 100 * _SCALE
 
-#: D136's thirds, as percentages to four places: what the house split is
+#: D136's thirds, as percentages to four places: what the default split is
 #: seeded with, and what it was before this module existed
 BASELINE = [('Investment Grade Fixed Income', 33.3333), ('Public Equity', 66.6667)]
 
@@ -65,6 +65,7 @@ ACTIONS = ['baseline', 'updated', 'reverted', 'removed']
 
 _lock = threading.Lock()
 _eligibleCache = None        # (universe generation, [entries])
+_splitsCache = None          # (the file's stamp, {scope: entry}) - every split on the file
 
 
 def _now() -> str:
@@ -174,7 +175,7 @@ def normalise(destinations) -> list:
 
 def _scope(scope) -> str:
     if scope is not None and not isinstance(scope, str):
-        raise ValidationError('scope', 'Name the scope: the house split or an implementation type.')
+        raise ValidationError('scope', 'Name the scope: the default split or an implementation type.')
     scope = (scope or '').strip()
     if scope == HOUSE:
         return HOUSE
@@ -200,7 +201,7 @@ def _row(conn, scope):
 
 
 def _seedHouse(conn) -> None:
-    """The house split's baseline, once - race-safe the way the library's
+    """The default split's baseline, once - race-safe the way the library's
     seed is (sleeveRepo._seedOnce): asked again inside a write transaction."""
     if _row(conn, HOUSE) is not None:
         return
@@ -235,19 +236,51 @@ def _entry(row, inherited=False) -> dict:
             'updatedAt': row['updatedAt'], 'inherited': inherited}
 
 
+def _splits() -> dict:
+    """Every split on the file by scope, from memory while the file has not
+    moved (sleeveRepo.fileStamp, which every committed write changes): the
+    schema asks on every open and every mandate change, so it reads through
+    a plain read-only connection, not the full one that checks the schema
+    and every seed. A file without the default split yet goes the full way,
+    which writes it."""
+    global _splitsCache
+    path = sleeveRepo.dbPath()
+    stamp = sleeveRepo.fileStamp(path)
+    with _lock:
+        if stamp is not None and _splitsCache is not None and _splitsCache[0] == stamp:
+            return _splitsCache[1]
+    found = None
+    if stamp is not None:
+        conn = sleeveRepo.readOnly(path)
+        if conn is not None:
+            try:
+                rows = conn.execute('SELECT * FROM policies WHERE kind = ?', (KIND,)).fetchall()
+                found = {r['scope']: _entry(r) for r in rows}
+            except Exception:                  # noqa: BLE001 - read again the full way
+                found = None
+            finally:
+                conn.close()
+    if not found or HOUSE not in found:
+        conn = _connect()
+        try:
+            stamp = sleeveRepo.fileStamp(path)
+            rows = conn.execute('SELECT * FROM policies WHERE kind = ?', (KIND,)).fetchall()
+            found = {r['scope']: _entry(r) for r in rows}
+        finally:
+            conn.close()
+    with _lock:
+        _splitsCache = (stamp, found)
+    return found
+
+
 def current(variant=None) -> dict:
-    """The split in force for *variant*: its override, or the house split
-    (``inherited`` True). No variant means the house split."""
-    conn = _connect()
-    try:
-        if variant and variant != HOUSE:
-            own = _row(conn, variant)
-            if own is not None:
-                return _entry(own)
-            return _entry(_row(conn, HOUSE), inherited=True)
-        return _entry(_row(conn, HOUSE))
-    finally:
-        conn.close()
+    """The split in force for *variant*: its override, or the default split
+    (``inherited`` True). No variant means the default split."""
+    splits = _splits()
+    entry = splits.get(variant) if variant and variant != HOUSE else None
+    entry = dict(entry or splits[HOUSE], inherited=entry is None and bool(variant) and variant != HOUSE)
+    entry['destinations'] = [dict(d) for d in entry['destinations']]
+    return entry
 
 
 def shares(variant=None) -> list:
@@ -264,7 +297,7 @@ def summary(variant=None) -> dict:
 
 
 def describe() -> dict:
-    """Everything the console shows: the house split, every override, the
+    """Everything the console shows: the default split, every override, the
     categories and whether each may hold the money, and the types."""
     conn = _connect()
     try:
@@ -329,11 +362,11 @@ def save(scope, destinations, note, user='') -> dict:
 
 
 def removeOverride(scope, note, user='') -> dict:
-    """Put *scope* back on the house split. The override's revisions stay on
+    """Put *scope* back on the default split. The override's revisions stay on
     the record, closed by a *removed* revision."""
     scope = _scope(scope)
     if scope == HOUSE:
-        raise ValidationError('scope', 'The house split cannot be removed, only changed.')
+        raise ValidationError('scope', 'The default split cannot be removed, only changed.')
     note = _note(note)
     conn = _connect()
     try:

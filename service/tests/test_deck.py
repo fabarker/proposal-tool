@@ -502,8 +502,10 @@ def test_the_allocation_and_implementation_indent_a_third_less_than_the_risk_tab
     assumptions steps in half as far (D137). Read off each cell's left
     margin: the padding plus the step, at the table's size."""
     third = pptWriter._INDENT_EM * 2 / 3
+    # and the strategic slides in a template (D174) as the allocation
     assert pptWriter._INDENT_EM_BY_DOC == {'portfolios': third, 'Implementation': third,
                                            'Initial Allocation': third,
+                                           'comparing': third, 'return_risk': third,
                                            'assumptions': pptWriter._INDENT_EM / 2}
     plan = _plan()                                     # with its cover, as _deck() draws it
     prs = Presentation(io.BytesIO(_deck()))
@@ -1017,8 +1019,8 @@ def test_the_page_offers_one_download_and_awaits_its_writes():
     with open(os.path.join(root, 'js', 'core.js'), encoding='utf-8') as handle:
         core = handle.read()
     assert core.count("trackWrite(apiFetch('/scenario/'"
-                      " + encodeURIComponent(state.scenarioId), {") == 6, \
-        'six fire-and-forget writes, each tracked'
+                      " + encodeURIComponent(state.scenarioId), {") == 8, \
+        'six fire-and-forget writes, the custom sleeves\' (D170) and the custom portfolio\'s (D171), each tracked'
     assert 'writesSettled: writesSettled,' in core
     with open(os.path.join(root, 'js', 'implementation.js'), encoding='utf-8') as handle:
         impl = handle.read()

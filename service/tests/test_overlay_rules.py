@@ -1,10 +1,10 @@
 """D155: the overlay rules, held in the repository and resolved in order.
 
 The tilt and the premium were code in rules.py. They are now an ordered list
-of rules the desk keeps in the console's Overlay Funding tab - a house list
+of rules the desk keeps in the console's Overlay Funding tab - a default list
 for every implementation type, optionally a type's own - resolved top to
 bottom, each rule reading the allocation as the rules above it left it. The
-seeded house list reproduces the code it replaced to the last bit; moving a
+seeded default list reproduces the code it replaced to the last bit; moving a
 rule changes the figures the way the order says; a list under which a
 portfolio holds a rule's sources but cannot fund it is refused; and the page
 resolves the list exactly as the files do.
@@ -122,7 +122,7 @@ def _oldPremium(categories, on, currency):
 
 # ------------------------------------------------------------ the store ---
 
-def test_the_house_list_is_seeded_with_the_two_overlays_as_the_code_had_them(store):
+def test_the_default_list_is_seeded_with_the_two_overlays_as_the_code_had_them(store):
     entry = overlayRules.current()
     assert entry['scope'] == '*' and entry['revision'] == 1 and not entry['inherited']
     assert entry['rules'] == rules.baselineOverlays()
@@ -154,7 +154,7 @@ def test_a_schema_5_file_is_brought_to_6_and_seeded(store):
     raw = sqlite3.connect(str(path))
     version = raw.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     raw.close()
-    assert int(version) == sleeveRepo.SCHEMA_VERSION == 6
+    assert int(version) == sleeveRepo.SCHEMA_VERSION == 8          # the catalogue's (D165), the switch (D169)
 
 
 # ------------------------------------------------------------ the engine ---
@@ -336,11 +336,11 @@ def test_a_note_is_required_and_a_no_op_is_refused(store):
 
 # --------------------------------------------- order, types, history ---
 
-def test_premium_first_is_refused_for_the_house_list_and_why(store):
+def test_premium_first_is_refused_for_the_default_list_and_why(store):
     """USD Higher Risk Full holds exactly 8% IGFI: the tilt takes all of it
     when it comes first, but after the premium's 7.5% only 7.4% is left.
     Every Multi-Asset portfolio holding IGFI must be able to fund the tilt,
-    so the house list cannot put the premium first - and says which
+    so the default list cannot put the premium first - and says which
     portfolio stops it. A type without that portfolio can (below)."""
     ttf, svp = _house()
     with pytest.raises(ValidationError) as caught:
@@ -395,16 +395,16 @@ def test_a_type_inherits_until_edited_and_goes_back_on_removal(store):
     own = overlayRules.save(ESG, [svp, ttf], 'ESG reads the premium first', 'alice')
     assert own['entry']['scope'] == ESG and not overlayRules.current(ESG)['inherited']
     assert overlayRules.current('US Onshore')['inherited']
-    assert overlayRules.current()['rules'] == [ttf, svp], 'the house list is untouched'
+    assert overlayRules.current()['rules'] == [ttf, svp], 'the default list is untouched'
     assert overlayRules.history(ESG)[0]['change'] == ('Own list: Order changed: Strategic Volatility '
         'Premium moved above Tactical Tilts')
-    back = overlayRules.removeOverride(ESG, 'back to the house', 'alice')
+    back = overlayRules.removeOverride(ESG, 'back to the default', 'alice')
     assert back['inherited'] and overlayRules.current(ESG)['inherited']
-    assert overlayRules.history(ESG)[0]['change'] == 'Back on the house list'
+    assert overlayRules.history(ESG)[0]['change'] == 'Back on the default list'
     with pytest.raises(ValidationError):
         overlayRules.removeOverride(ESG, 'again', 'alice')
     with pytest.raises(ValidationError):
-        overlayRules.removeOverride('*', 'the house', 'alice')
+        overlayRules.removeOverride('*', 'the default', 'alice')
 
 
 def test_a_rule_with_no_sleeve_is_saved_with_a_warning_and_attaches_automatically(store):
@@ -456,14 +456,14 @@ def test_the_register_records_the_rules_a_proposal_was_built_with(store, monkeyp
     assert kept['overlays']['scope'] == '*' and kept['overlays']['revision'] == 1
     assert [r['id'] for r in kept['overlays']['rules']] == ['ttf', 'svp']
     row = dict(zip(proposalRegister.EXPORT_COLUMNS, proposalRegister.exportRows()[0]))
-    assert row['Overlays'].startswith('r1 (house) 1 Tactical Tilts applied 8%')
+    assert row['Overlays'].startswith('r1 (default) 1 Tactical Tilts applied 8%')
     # a later change leaves the delivered record as it was
     overlayRules.save('*', _house() + [_gold(sources=EQUITY_ONLY)], 'later', 'alice')
     assert proposalRegister.getProposal(entry['proposalId'])['overlays']['revision'] == 1
     conn = sqlite3.connect(str(store / 'proposals.db'))
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     conn.close()
-    assert int(version) == proposalRegister.SCHEMA_VERSION == 5
+    assert int(version) == proposalRegister.SCHEMA_VERSION == 9    # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177)
 
 
 def test_the_schema_serves_the_list_in_force_for_the_type(store):
@@ -528,7 +528,7 @@ def _jsResolver():
 
 
 def test_the_page_resolves_every_list_exactly_as_the_files_do(store):
-    """The JavaScript resolver, run by node over the house list, the premium
+    """The JavaScript resolver, run by node over the default list, the premium
     first, a third rule of each basis in each place, every switch and two
     currencies, across a spread of portfolios: the same names in the same
     order and the same weights, asset by asset, as rules.resolveOverlays."""
@@ -718,7 +718,7 @@ def test_a_stale_write_is_refused_and_concurrent_saves_take_turns(store, monkeyp
     with pytest.raises(overlayRules.StaleError) as caught:
         overlayRules.save('*', [ttf, dict(svp, size=6.0)], 'second', 'bob', base=base)
     assert 'changed by alice' in str(caught.value) and 'r2' in str(caught.value)
-    # a type inheriting the house list was made against the house list
+    # a type inheriting the default list was made against the default list
     overlayRules.save(ESG, [ttf, svp], 'own', 'bob', base={'scope': '*', 'revision': 2})
     with pytest.raises(overlayRules.StaleError):
         overlayRules.removeOverride(ESG, 'back', 'bob', base={'scope': '*', 'revision': 2})

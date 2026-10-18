@@ -40,7 +40,11 @@ function pillFor(v) {
   return '<span class="pill ' + (map[v] || 'p-pas') + '">' + App.esc(v) + '</span>';
 }
 
-function isAuto(category) { return App.autoSleeveCategories().indexOf(category) >= 0; }
+/* nothing is attached by rule in a custom portfolio (D171): the overlays'
+   lines are products like any other */
+function isAuto(category) {
+  return !App.cpActive() && App.autoSleeveCategories().indexOf(category) >= 0;
+}
 
 /* Sleeve groups (D60): categories implemented together, which therefore carry
    one sleeve chosen once. The grouping rides the schema, so this file names no
@@ -73,6 +77,75 @@ function sleeveCategories(categories) {
   });
   return out;
 }
+
+/* custom-sleeve-helpers-begin
+   Custom sleeves (D170), DOM-free so the suite runs them through node beside
+   the Python they mirror (workbook.buildImplementationRows). A custom sleeve
+   is in force for a line where no library sleeve is chosen. Weighted as a
+   percentage of the PORTFOLIO, its total replaces the line's weight and
+   nothing else moves: the person decides where any difference goes, and the
+   book is not delivered until it adds to 100% again. */
+var CUSTOM_BALANCE = 0.005;         /* customSleeves.BALANCE_TOLERANCE */
+
+function customTotal(def) {
+  return ((def && def.products) || []).reduce(function (t, p) { return t + (Number(p.weightPct) || 0); }, 0);
+}
+
+function customName(def) {
+  var name = String((def && def.name) || '').trim();
+  return name ? 'Custom: ' + name : 'Custom';
+}
+
+/* *lines* as implemented: each keeps the weight it began from as
+   strategicWeightPct, and carries the custom sleeve in force on it */
+function implementLines(lines, sleevesMap, customMap) {
+  return lines.map(function (line) {
+    var out = { name: line.name, weightPct: line.weightPct, strategicWeightPct: line.weightPct };
+    var def = (sleevesMap || {})[line.name] ? null : ((customMap || {})[line.name] || null);
+    if (def) {
+      out.custom = def;
+      if (def.mode === 'portfolio' && (def.products || []).length) out.weightPct = customTotal(def);
+    }
+    return out;
+  });
+}
+
+/* what the implemented lines add to, whether that is 100%, and whether a
+   custom sleeve has moved a line away from its strategic weight */
+function balanceOf(lines) {
+  var total = 0, departs = false;
+  lines.forEach(function (l) {
+    total += l.weightPct;
+    if (l.custom && l.custom.mode === 'portfolio'
+        && Math.abs(l.weightPct - l.strategicWeightPct) >= 0.005) departs = true;
+  });
+  return { total: total, balanced: Math.abs(total - 100) < CUSTOM_BALANCE, departs: departs };
+}
+
+/* *values* scaled to add to exactly *target*, to 2dp, by largest remainder:
+   what switching a custom sleeve between its two weightings does, so the
+   sleeve means the same afterwards */
+function scaleWeights(values, target) {
+  var sum = values.reduce(function (a, b) { return a + b; }, 0);
+  if (!(sum > 0)) return values.map(function () { return 0; });
+  var exact = values.map(function (v) { return v / sum * target; });
+  var cents = Math.round(target * 100);
+  var units = exact.map(function (v) { return Math.floor(v * 100 + 1e-9); });
+  var short = cents - units.reduce(function (a, b) { return a + b; }, 0);
+  var order = exact.map(function (v, i) { return { i: i, rem: v * 100 - units[i] }; })
+    .sort(function (a, b) { return (b.rem - a.rem) || (a.i - b.i); });
+  for (var n = 0; n < short && order.length; n++) units[order[n % order.length].i] += 1;
+  return units.map(function (u) { return u / 100; });
+}
+
+/* "12.5" or "12.50" or "12.5%": a weight to 2dp above zero, or NaN */
+function parseWeight(text) {
+  var t = String(text == null ? '' : text).trim().replace(/%$/, '').trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(t) && !/^\.\d{1,2}$/.test(t)) return NaN;
+  var v = parseFloat(t);
+  return v > 0 ? v : NaN;
+}
+/* custom-sleeve-helpers-end */
 
 /* ---- the management fee (D51) -------------------------------------------
    Not a property of the product. It is resolved from the fee schedule, the
@@ -345,6 +418,8 @@ var initialShown = false;
    applies them (D155): with the seeded list the tilt first, then the
    premium, whose share is of what the tilt leaves. */
 function baseCategories() {
+  /* a custom portfolio's lines are its products' categories (D171) */
+  if (App.cpActive()) return App.cpLines ? App.cpLines() : [];
   var base = App.base();
   if (!base || base.status !== 'ready') return [];
   return App.resolveOverlays(base.data.categories, App.overlayList(),
@@ -363,24 +438,81 @@ function strategicCategories() {
    variant-specific too, so it cannot be attached earlier either (D29). */
 function sleeveFor(category) {
   if (!App.variant()) return null;
+  if (App.cpActive()) return App.cpSleeveFor ? App.cpSleeveFor(category) : null;
   var under = sleeveCategory(category);
   var lib = App.sleeveLib()[under];
   if (!lib || lib.status !== 'ready') return null;
   if (isAuto(category)) return lib.sleeves[0] || null;
   var name = App.sleeves()[under];
-  if (!name) return null;
+  if (!name) return customSleeveFor(under);
   for (var i = 0; i < lib.sleeves.length; i++) {
     if (lib.sleeves[i].name === name) return lib.sleeves[i];
   }
   return null;
 }
 
+/* The custom sleeve held for *under*, in the shape a library sleeve is
+   served in - whole products, each with its share of the sleeve - or null:
+   none held, its products not read yet, or one of them no longer the
+   category's to hold (customProblems says which). */
+function customSleeveFor(under) {
+  var def = App.customSleeves()[under];
+  if (!def || !(def.products || []).length) return null;
+  var lib = App.customLib()[under];
+  if (!lib || lib.status !== 'ready') return null;
+  var total = customTotal(def), products = [];
+  for (var i = 0; i < def.products.length; i++) {
+    var found = null;
+    for (var j = 0; j < lib.products.length; j++) {
+      if (lib.products[j].productId === def.products[i].productId) { found = lib.products[j]; break; }
+    }
+    if (!found || !(total > 0)) return null;
+    products.push(Object.assign({}, found, { weight: def.products[i].weightPct / total,
+                                             weightPct: def.products[i].weightPct }));
+  }
+  return { name: customName(def), custom: true, mode: def.mode || 'sleeve', totalPct: total,
+           note: def.note || '', products: products };
+}
+
+/* the products a held custom sleeve may no longer hold, by name */
+function customProblems(under) {
+  var def = App.customSleeves()[under], lib = App.customLib()[under];
+  if (!def || !lib || lib.status !== 'ready') return [];
+  var ids = lib.products.map(function (p) { return p.productId; });
+  return (def.products || []).filter(function (p) { return ids.indexOf(p.productId) === -1; })
+    .map(function (p) { return p.productId; });
+}
+
 function ensureLibraries() {
+  /* a custom portfolio reads its products and the library at once (D171) */
+  if (App.cpActive()) { App.ensureCpLib(); return; }
   if (App.step() !== 'impl' || !App.variant()) return;
   sleeveCategories(baseCategories()).forEach(function (category) {
     App.ensureSleeveLib(category.name);
+    /* a held custom sleeve is read against its category's products (D170) */
+    if (App.customSleeves()[category.name]) App.ensureCustomLib(category.name);
   });
 }
+
+/* The sleeve LINES as implemented (D60, D170): grouped categories as one,
+   and a custom sleeve weighted against the portfolio setting its own. */
+function combinedLines() {
+  var combined = [], seen = {};
+  baseCategories().forEach(function (category) {
+    var key = sleeveCategory(category.name);
+    if (seen[key] === undefined) {
+      seen[key] = combined.length;
+      combined.push({ name: key, weightPct: 0 });
+    }
+    combined[seen[key]].weightPct += category.weightPct;
+  });
+  return combined;
+}
+function implementedLines() {
+  if (App.cpActive()) return implementLines(combinedLines(), {}, {});
+  return implementLines(combinedLines(), App.sleeves(), App.customSleeves());
+}
+function portfolioBalance() { return balanceOf(implementedLines()); }
 
 function filledCount() {
   var live = sleeveCategories(baseCategories());
@@ -414,21 +546,15 @@ function rows() {
      Private Assets are one choice in the rail (D60) and one sleeve in the
      repository, so they are one row whose weight is the sum of theirs.
      Mirrors buildImplementationRows. */
-  var combined = [], seen = {};
-  baseCategories().forEach(function (category) {
-    var key = sleeveCategory(category.name);
-    if (seen[key] === undefined) {
-      seen[key] = combined.length;
-      combined.push({ name: key, weightPct: 0 });
-    }
-    combined[seen[key]].weightPct += category.weightPct;
-  });
+  var combined = implementedLines();
+  var closed = complete() && balanceOf(combined).balanced;
   combined.forEach(function (category) {
     var sleeve = sleeveFor(category.name);
     var items = [];
     if (sleeve) {
       sleeve.products.forEach(function (product) {
         var item = {
+          productId: product.productId,
           name: product.name, ticker: product.ticker, assetClass: product.assetClass,
           style: product.style, vehicle: product.vehicle,
           shareClass: product.shareClass || null, source: product.source,
@@ -446,13 +572,15 @@ function rows() {
     groups.push({
       category: category.name,
       weightPct: category.weightPct,
+      strategicWeightPct: category.strategicWeightPct,
       auto: isAuto(category.name),
       sleeve: sleeve ? sleeve.name : null,
+      custom: sleeve && sleeve.custom ? sleeve : null,
       items: items
     });
   });
   if (all.length) {
-    var printed = complete()
+    var printed = closed
       ? roundWeights(all.map(function (i) { return i.exact; }))
       : all.map(function (i) { return Math.round(i.exact * 100) / 100; });
     all.forEach(function (item, ix) {
@@ -478,7 +606,7 @@ function rows() {
       group.initialWeightPct = byLine[group.category] || 0;
       group.items.forEach(function (item) { item.initialExact = group.initialWeightPct * item.share; });
     });
-    var printedInitial = complete()
+    var printedInitial = closed
       ? roundWeights(all.map(function (i) { return i.initialExact; }))
       : all.map(function (i) { return Math.round(i.initialExact * 100) / 100; });
     all.forEach(function (item, ix) {
@@ -494,6 +622,9 @@ function rows() {
      0.00 adds nothing to that sum. A category keeps its row while it has
      weight: an unimplemented one with an allocation is precisely what this
      page is asking a PWA to fix. Mirrors buildImplementationRows. */
+  /* A custom portfolio keeps every row it holds, weighed or not: a product
+     just added is waiting for its weight (D171). */
+  if (App.cpActive()) return groups;
   groups.forEach(function (group) {
     group.items = group.items.filter(function (item) {
       return item.weight !== 0 || (item.initialWeight || 0) !== 0;
@@ -891,9 +1022,270 @@ function feeFields() {
         ? '<button type="button" class="btn btn-ghost fee-view" data-priceview>'
           + 'How this is calculated</button>'
         : '')
-    + '</div></div></div>';
+    + '</div>' + chargesField() + '</div></div>';
   return html;
 }
+
+/* ---- the other charges (D177) ------------------------------------------
+   Three charges the Fees Summary slide quotes and the fee card does not
+   hold: the FX commissions by trade size, the charge on equity and ETF
+   trades, and the annual custody fee. A PWA sets them for each proposal at
+   their discretion, so they are entered here, beside the schedule and the
+   level, and saved with the scenario. The FX trade sizes are the house's
+   and shown greyed out; the custody fee stands at its default until it is
+   changed, or set to nothing for GSBZ Custody. Any may be left unset while
+   the proposal is built, but a priced proposal is not downloaded until
+   every one is set: Download opens this card first and carries on once it
+   is complete. The fields are the schema's (fees.otherCharges), not this
+   file's. */
+function chargeFields() { return App.opt('fees.otherCharges', []); }
+
+/* the charges as they stand: the fixed ones at the house's values, a
+   default one at its default until it is set (otherCharges.withDefaults) */
+function chargesWithDefaults(map) {
+  var out = Object.assign({}, map || {});
+  chargeFields().forEach(function (f) {
+    if (typeof f.fixed === 'number') out[f.id] = f.fixed;
+    else if (typeof f.default === 'number' && typeof out[f.id] !== 'number') out[f.id] = f.default;
+  });
+  return out;
+}
+
+function chargesSet(map) {
+  map = chargesWithDefaults(map);
+  return chargeFields().filter(function (f) { return typeof map[f.id] === 'number'; }).length;
+}
+
+function chargesMissing(map) {
+  map = chargesWithDefaults(map);
+  return chargeFields().filter(function (f) { return typeof map[f.id] !== 'number'; })
+    .map(function (f) { return f.label; });
+}
+
+/* a priced proposal is delivered with every charge set */
+function chargesComplete() {
+  return !App.includeFees() || !chargeFields().length || !chargesMissing(App.otherCharges()).length;
+}
+
+function chargesField() {
+  var fields = chargeFields();
+  if (!fields.length) return '';
+  var set = chargesSet(App.otherCharges());
+  return '<div class="fee-field' + (set === fields.length ? ' done' : '') + '">'
+    + '<span class="fee-label">Other Charges</span>'
+    + '<p class="vr-note">' + (set === fields.length
+        ? 'FX commissions, transaction fees and custody, as the Fees Summary slide quotes them.'
+        : set + ' of ' + fields.length + ' set. The Fees Summary slide quotes the FX '
+          + 'commissions, the transaction fees and the custody fee.')
+    + '</p>'
+    + '<button type="button" class="btn btn-ghost fee-view" data-chargesview'
+    + (App.canEdit() ? '' : ' disabled') + '>'
+    + (set ? 'Edit other charges' : 'Enter other charges') + '</button>'
+    + '</div>';
+}
+
+/* thenExport: opened by Download with charges still to set, so Apply
+   carries on with the download once every one is */
+var chargesPanel = { open: false, draft: null, bad: {}, returnTo: null, thenExport: false };
+
+function chargeText(field, value) {
+  if (typeof value !== 'number') return '';
+  return field.unit === 'bps' ? String(value) : value.toLocaleString('en-US');
+}
+
+/* dollars as 5,000,000, 5m or 500k; basis points as 10 or 10bps */
+function parseCharge(field, text) {
+  var t = String(text || '').trim().toLowerCase().replace(/[$,\s]/g, '');
+  if (!t) return { empty: true };
+  var usd = field.unit === 'usd';
+  var hint = usd ? 'Enter an amount in dollars, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
+  var m = t.match(/^(\d*\.?\d+)(k|m|bn|bps|bp)?$/);
+  if (!m) return { bad: hint };
+  var v = parseFloat(m[1]), suffix = m[2] || '';
+  if (usd) {
+    if (suffix === 'k') v *= 1e3;
+    else if (suffix === 'm') v *= 1e6;
+    else if (suffix === 'bn') v *= 1e9;
+    else if (suffix) return { bad: hint };
+    v = Math.round(v);
+  } else {
+    if (suffix && suffix.indexOf('bp') !== 0) return { bad: hint };
+    v = Math.round(v * 100) / 100;
+  }
+  if (v > field.max) {
+    return { bad: field.label + ' can be at most '
+      + (usd ? '$' + field.max.toLocaleString('en-US') : field.max + ' bps') + '.' };
+  }
+  return { v: v };
+}
+
+function openChargesPanel(thenExport) {
+  if (!App.canEdit()) return;
+  chargesPanel.open = true;
+  chargesPanel.thenExport = !!thenExport;
+  chargesPanel.draft = chargesWithDefaults(App.otherCharges());
+  chargesPanel.bad = {};
+  chargesPanel.returnTo = document.activeElement;
+  renderChargesPanel();
+  /* to the first still to set, else the first that can be changed */
+  var inputs = Array.prototype.slice.call(document.querySelectorAll('#chargesDialog [data-charge]:not([disabled])'));
+  var first = inputs.filter(function (i) { return !i.value; })[0] || inputs[0];
+  if (first) first.focus();
+}
+
+function closeChargesPanel(apply) {
+  var draft = chargesPanel.draft;
+  if (apply) {
+    var high = draft.fxHighEdge, low = draft.fxLowEdge;
+    if (typeof high === 'number' && typeof low === 'number' && low >= high) {
+      chargesPanel.bad.fxLowEdge = 'The lower trade size must be under the higher one.';
+      renderChargesPanel();
+      return;
+    }
+    if (Object.keys(chargesPanel.bad).length) return;    /* put right first */
+    /* on the way to a download, every charge is required */
+    var gaps = chargesPanel.thenExport ? chargesMissing(draft) : [];
+    if (gaps.length) {
+      var err = document.getElementById('chargesErr');
+      if (err) { err.textContent = 'Enter every charge to download: ' + gaps.join(', ') + ' still to set.'; err.hidden = false; }
+      var empty = Array.prototype.slice.call(document.querySelectorAll('#chargesDialog [data-charge]:not([disabled])'))
+        .filter(function (i) { return !i.value; })[0];
+      if (empty) empty.focus();
+      return;
+    }
+  }
+  var thenExport = apply && chargesPanel.thenExport;
+  if (!apply && chargesPanel.thenExport) {
+    App.announce('polite', 'Download cancelled: the other charges are still to set.');
+  }
+  chargesPanel.open = false; chargesPanel.draft = null; chargesPanel.bad = {};
+  chargesPanel.thenExport = false;
+  renderChargesPanel();
+  if (apply) App.setOtherCharges(draft);
+  var trigger = chargesPanel.returnTo && document.contains(chargesPanel.returnTo)
+    ? chargesPanel.returnTo : document.querySelector('[data-chargesview]');
+  chargesPanel.returnTo = null;
+  focusOnClose(trigger);
+  /* the save barrier in exportProposal waits for the charges just applied */
+  if (thenExport) exportProposal();
+}
+
+/* GSBZ Custody holds the assets itself, so the proposal quotes no custody fee */
+function zeroCharge(id) {
+  if (!chargesPanel.open) return;
+  var input = document.getElementById('oc-' + id);
+  var field = chargeFields().filter(function (f) { return f.id === id; })[0];
+  if (input && field) { input.value = chargeText(field, 0); noteCharge(input); }
+}
+
+/* A value is checked as it is left; the row says so in place, so the form
+   is never redrawn under the cursor. */
+function noteCharge(input) {
+  var field = chargeFields().filter(function (f) { return f.id === input.dataset.charge; })[0];
+  if (!field) return;
+  var parsed = parseCharge(field, input.value);
+  delete chargesPanel.bad[field.id];
+  if (parsed.bad) chargesPanel.bad[field.id] = parsed.bad;
+  else if (parsed.empty && typeof field.default === 'number') {
+    /* emptied, a default charge goes back to its default */
+    chargesPanel.draft[field.id] = field.default;
+    input.value = chargeText(field, field.default);
+  }
+  else if (parsed.empty) delete chargesPanel.draft[field.id];
+  else {
+    chargesPanel.draft[field.id] = parsed.v;
+    input.value = chargeText(field, parsed.v);
+  }
+  var row = input.closest('.oc-row');
+  if (row) row.classList.toggle('bad', !!parsed.bad);
+  var zero = document.querySelector('#chargesDialog [data-chargezero="' + field.id + '"]');
+  if (zero) zero.disabled = chargesPanel.draft[field.id] === 0;
+  input.setAttribute('aria-invalid', parsed.bad ? 'true' : 'false');
+  var err = document.getElementById('chargesErr');
+  var first = Object.keys(chargesPanel.bad).map(function (k) { return chargesPanel.bad[k]; })[0];
+  if (err) { err.textContent = first || ''; err.hidden = !first; }
+  var note = document.getElementById('chargesNote');
+  if (note) note.textContent = chargesSet(chargesPanel.draft) + ' of ' + chargeFields().length + ' set';
+}
+
+function renderChargesPanel() {
+  var host = document.getElementById('chargesDialog'); if (!host) return;
+  if (!chargesPanel.open) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!feePanel.open && !pricePanel.open && !customPanel.open && !cslPanel.open) {
+      App.setBackgroundInert(false);
+    }
+    return;
+  }
+  host.hidden = false;
+  App.setBackgroundInert(true);
+  var groups = [], byGroup = {};
+  chargeFields().forEach(function (f) {
+    if (!byGroup[f.group]) { byGroup[f.group] = []; groups.push(f.group); }
+    byGroup[f.group].push(f);
+  });
+  var body = groups.map(function (g) {
+    return '<fieldset class="oc-group"><legend>' + App.esc(g) + '</legend>'
+      + byGroup[g].map(function (f) {
+          var bad = chargesPanel.bad[f.id], id = 'oc-' + f.id;
+          var fixed = typeof f.fixed === 'number';
+          var row = '<div class="oc-row' + (bad ? ' bad' : '') + (fixed ? ' fixed' : '') + '">'
+            + '<label for="' + id + '">' + App.esc(f.label)
+            + (fixed ? ' <span class="oc-fixed">Fixed</span>' : '') + '</label>'
+            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? '$' : '') + '</span>'
+            + '<input type="text" inputmode="decimal" autocomplete="off" id="' + id + '"'
+            + ' data-charge="' + App.esc(f.id) + '"'
+            + ' value="' + App.esc(chargeText(f, chargesPanel.draft[f.id])) + '"'
+            + (fixed ? ' disabled title="Set by the house; it cannot be changed"' : '')
+            + ' aria-invalid="' + (bad ? 'true' : 'false') + '">'
+            + '<span class="oc-unit">' + (f.unit === 'bps' ? 'bps' : '') + '</span></span></div>';
+          /* the way to no custody fee, said plainly beside it */
+          if (f.zero) {
+            row += '<div class="oc-zero"><span>' + App.esc(f.zero) + '.</span>'
+              + '<button type="button" class="btn btn-ghost" data-chargezero="' + App.esc(f.id) + '"'
+              + (chargesPanel.draft[f.id] === 0 ? ' disabled' : '') + '>Set to $0</button></div>';
+          }
+          return row;
+        }).join('')
+      + '</fieldset>';
+  }).join('');
+  var first = Object.keys(chargesPanel.bad).map(function (k) { return chargesPanel.bad[k]; })[0];
+  host.innerHTML =
+      '<div class="scrim" data-chargesscrim></div>'
+    + '<div class="dialog oc" role="dialog" aria-modal="true" aria-labelledby="chargesTitle">'
+    + '<button type="button" class="dlg-close" id="chargesclose" aria-label="Close">×</button>'
+    + '<div class="rc-head"><h2 id="chargesTitle">Other charges</h2></div>'
+    + (chargesPanel.thenExport
+        ? '<p class="oc-must" role="status">Enter the other charges to download. The download '
+          + 'carries on once every one is set.</p>'
+        : '')
+    + '<p class="pb-sub">The charges this proposal quotes beside its fees, on the Fees Summary '
+    + 'slide. The commissions are yours to set for this client. The FX trade sizes are fixed, '
+    + 'and the custody fee is $5,000 unless you change it. A priced proposal is downloaded '
+    + 'only once every charge is set.</p>'
+    + body
+    + '<p class="md-err" role="alert" id="chargesErr"' + (first ? '' : ' hidden') + '>'
+    + App.esc(first || '') + '</p>'
+    + '<div class="rc-actions"><span class="rc-note" id="chargesNote">'
+    + chargesSet(chargesPanel.draft) + ' of ' + chargeFields().length + ' set</span>'
+    + '<span class="cf-actions"><button type="button" class="btn btn-ghost" id="chargescancel">Cancel</button>'
+    + '<button type="button" class="btn btn-primary" id="chargesapply">'
+    + (chargesPanel.thenExport ? 'Apply and download' : 'Apply') + '</button></span></div>'
+    + '</div>';
+}
+
+document.addEventListener('keydown', function (e) {
+  if (!chargesPanel.open) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeChargesPanel(false); return; }
+  /* Enter commits and moves down the form, then to Apply */
+  if (e.key === 'Enter' && e.target.dataset && e.target.dataset.charge !== undefined) {
+    e.preventDefault();
+    var inputs = Array.prototype.slice.call(document.querySelectorAll('#chargesDialog [data-charge]:not([disabled])'));
+    noteCharge(e.target);
+    var next = inputs[inputs.indexOf(e.target) + 1] || document.getElementById('chargesapply');
+    if (next) next.focus();
+  }
+});
 
 /* Under the custom level: the rows this book holds and what each carries,
    and the way back into the card. A fee group with no products in the model
@@ -971,8 +1363,8 @@ function feeOutcomeLine() {
 function feeCardLine() { return ''; }
 
 /* ---- the rate card viewer (D55) -------------------------------------------
-   Every cell at one tier or one fee group, read only. The card is what the
-   delivering team sent; it changes by delivery (feeTools --accept), never
+   Every cell at one tier or one fee group, read only. The card is kept in
+   the repository and changed by an admin on its Fees tab (D166), never
    here, so there is nothing to type into and nothing to save. The whole card
    is fetched once and pivoted in the client, so flipping the axis or the
    selection is instant. */
@@ -991,6 +1383,13 @@ function focusOnClose(trigger) {
   if (document.activeElement !== trigger) {
     window.setTimeout(function () { if (document.contains(trigger)) trigger.focus(); }, 0);
   }
+}
+
+/* a stamp as the viewer gives it: the day, in words */
+function feeEditedOn(iso) {
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function feeCellKey(schedule, group, tier, source, point) {
@@ -1116,7 +1515,7 @@ function renderFeePanel() {
   var host = document.getElementById('feeDialog'); if (!host) return;
   if (!feePanel.open) {
     host.innerHTML = ''; host.hidden = true;
-    if (!pricePanel.open && !customPanel.open) App.setBackgroundInert(false);   /* another may be up */
+    if (!pricePanel.open && !customPanel.open && !cslPanel.open && !chargesPanel.open) App.setBackgroundInert(false);   /* another may be up */
     return;
   }
   host.hidden = false;
@@ -1211,12 +1610,12 @@ function renderFeePanel() {
     + '<button type="button" class="dlg-close" id="feeclose" aria-label="Close">×</button>'
     + '<div class="rc-head">'
     + '<h2 id="feeTitle">Fee card</h2>'
-    /* The delivery's version and origin are not printed (D104): in a
-       development build they name the card as a placeholder, which is a fact
-       about the environment rather than about the price. The as-of date is
-       the card's own and stays. */
+    /* The card's origin is not printed (D104): in a development build it
+       names the card as a placeholder, which is a fact about the environment
+       rather than about the price. When it was last edited is the card's own
+       and stays (D166). */
     + '<p class="rc-meta">'
-    + (delivery.asOf ? '<span>as of <b>' + App.esc(delivery.asOf) + '</b></span>' : '')
+    + (delivery.lastEditedAt ? '<span>last edited <b>' + App.esc(feeEditedOn(delivery.lastEditedAt)) + '</b></span>' : '')
     + '</p>'
     + '</div>'
     + controls
@@ -1224,7 +1623,7 @@ function renderFeePanel() {
     + legend
     + (feePanel.error ? '<p class="md-err" role="alert">' + App.esc(feePanel.error) + '</p>' : '')
     + '<div class="rc-actions">'
-    + '<span class="rc-note">The card is delivered and read only — it changes by delivery, not here.</span>'
+    + '<span class="rc-note">Read only here: admins keep the card on the Repository’s Fees tab.</span>'
     + '<button type="button" class="btn btn-primary" id="feecancel">Close</button>'
     + '</div></div>';
 }
@@ -1299,7 +1698,7 @@ function renderPricePanel() {
   if (!pricePanel.open) {
     host.innerHTML = ''; host.hidden = true;
     /* the fee card, or the custom card, may still be up behind this one */
-    if (!feePanel.open && !customPanel.open) App.setBackgroundInert(false);
+    if (!feePanel.open && !customPanel.open && !cslPanel.open && !chargesPanel.open) App.setBackgroundInert(false);
     return;
   }
   host.hidden = false;
@@ -1413,7 +1812,7 @@ function renderGreetPanel() {
     if (greetPanel.open) { greetPanel.open = false; markGreeted(); }
     host.innerHTML = ''; host.hidden = true;
     document.body.classList.remove('greeting');
-    if (!feePanel.open && !pricePanel.open && !customPanel.open) App.setBackgroundInert(false);
+    if (!feePanel.open && !pricePanel.open && !customPanel.open && !cslPanel.open && !chargesPanel.open) App.setBackgroundInert(false);
     return;
   }
   host.hidden = false;
@@ -1591,7 +1990,7 @@ function renderCustomPanel() {
   var host = document.getElementById('customDialog'); if (!host) return;
   if (!customPanel.open) {
     host.innerHTML = ''; host.hidden = true;
-    if (!feePanel.open && !pricePanel.open) App.setBackgroundInert(false);
+    if (!feePanel.open && !pricePanel.open && !cslPanel.open && !chargesPanel.open) App.setBackgroundInert(false);
     return;
   }
   host.hidden = false;
@@ -1741,6 +2140,393 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+/* ---- the custom sleeve builder (D170) ------------------------------------
+   A sleeve built for this proposal from the products the category's library
+   sleeves hold under this implementation type. Weights are a percentage of
+   the sleeve - adding to 100 and scaled by the category's strategic weight,
+   as a library sleeve is - or of the portfolio, when their total becomes the
+   category's weight and nothing else moves. A draft until "Use this sleeve",
+   which the server checks before anything changes here; Cancel and Escape
+   leave the proposal as it was. */
+var cslPanel = { open: false, under: null, draft: null, existing: false, error: null,
+                 busy: false, query: '', confirmDiscard: false, returnTo: null };
+
+function cslLine(under) {
+  return implementedLines().filter(function (l) { return l.name === under; })[0] || null;
+}
+function cslStrategic(under) { var l = cslLine(under); return l ? l.strategicWeightPct : 0; }
+function cslLib() { return App.customLib()[cslPanel.under] || null; }
+function cslProduct(id) {
+  var lib = cslLib();
+  if (!lib || lib.status !== 'ready') return null;
+  return lib.products.filter(function (p) { return p.productId === id; })[0] || null;
+}
+function fmt2(v) { return (Math.round(Number(v) * 100) / 100).toFixed(2); }
+
+function openCustomBuilder(under, trigger) {
+  if (!App.mayBuildCustom(under)) return;
+  var held = App.customSleeves()[under];
+  cslPanel = {
+    open: true, under: under, existing: !!held, error: null, busy: false, query: '',
+    confirmDiscard: false, returnTo: trigger || document.activeElement,
+    draft: held
+      ? { name: held.name || '', note: held.note || '', mode: held.mode || 'sleeve',
+          rows: (held.products || []).map(function (p) { return { productId: p.productId, text: fmt2(p.weightPct) }; }) }
+      : { name: '', note: '', mode: 'sleeve', rows: [] }
+  };
+  App.ensureCustomLib(under, function () { if (cslPanel.open) renderCustomBuilder(); });
+  renderCustomBuilder();
+  var first = document.getElementById('cslName');
+  if (first) first.focus();
+}
+
+function closeCustomBuilder() {
+  var trigger = cslPanel.returnTo;
+  cslPanel.open = false;
+  renderCustomBuilder();
+  focusOnClose(trigger && document.contains(trigger) ? trigger
+    : document.querySelector('.sl-row select[data-cat="' + String(cslPanel.under).replace(/"/g, '\\"') + '"]'));
+}
+
+/* What the draft comes to: per row its weight, its share of the portfolio,
+   its dollars and whether that is below the product's minimum; and the
+   totals and checks the footer shows. A minimum is a warning here, as it is
+   in the rail for a library sleeve: the export is where it blocks. */
+function cslFigures() {
+  var d = cslPanel.draft, strategic = cslStrategic(cslPanel.under);
+  var mandate = App.mandateSize() || 0, out = { rows: [], sum: 0, bad: 0, below: 0, cost: 0 };
+  d.rows.forEach(function (r) {
+    var w = parseWeight(r.text), product = cslProduct(r.productId);
+    var ofP = isNaN(w) ? NaN : (d.mode === 'sleeve' ? w * strategic / 100 : w);
+    var amount = isNaN(ofP) ? NaN : mandate * ofP / 100;
+    var min = product && product.minimumInvestment;
+    var below = !isNaN(amount) && !!min && amount < min - 0.5;
+    if (isNaN(w)) out.bad += 1; else out.sum += w;
+    if (below) out.below += 1;
+    out.rows.push({ w: w, ofP: ofP, amount: amount, below: below, product: product });
+  });
+  out.sum = Math.round(out.sum * 100) / 100;
+  if (out.sum > 0) {
+    out.rows.forEach(function (r) { if (!isNaN(r.w) && r.product) out.cost += r.w / out.sum * r.product.productCost; });
+  }
+  var lib = cslLib();
+  out.missing = lib && lib.status === 'ready' ? out.rows.filter(function (r) { return !r.product; }).length : 0;
+  out.full = d.mode === 'sleeve' ? Math.abs(out.sum - 100) < 1e-9 : (out.sum > 0 && out.sum <= 100);
+  out.ok = !!lib && lib.status === 'ready' && d.rows.length > 0
+    && !out.bad && !out.missing && out.full;
+  /* in % of the portfolio: what the whole book would add to with this line */
+  var line = cslLine(cslPanel.under);
+  out.categoryPct = d.mode === 'sleeve' ? strategic : out.sum;
+  out.bookPct = portfolioBalance().total - (line ? line.weightPct : 0) + out.categoryPct;
+  return out;
+}
+
+function cslFootHtml(f) {
+  var d = cslPanel.draft;
+  var tot = d.mode === 'sleeve'
+    ? 'Total <b class="' + (f.full ? 'ok' : 'no') + '">' + App.num(f.sum, 2, '%') + '</b>'
+      + (f.full || !d.rows.length ? '' : ' · ' + App.num(Math.abs(100 - f.sum), 2, '%') + ' ' + (f.sum < 100 ? 'still to place' : 'too much'))
+    : 'Category <b class="' + (f.full ? 'ok' : 'no') + '">' + App.num(f.sum, 2, '%') + '</b> of the portfolio'
+      + ' <span class="mut">(strategic ' + App.num(cslStrategic(cslPanel.under), 2, '%') + ')</span>';
+  if (f.sum > 0) tot += ' · cost ' + App.num(f.cost, 2, '%');
+  var chips = [];
+  if (d.mode === 'portfolio' && d.rows.length) {
+    var book = Math.abs(f.bookPct - 100) < CUSTOM_BALANCE;
+    chips.push('<span class="csl-chip ' + (book ? 'ok' : 'warn') + '">'
+      + (book ? '✓ The portfolio adds to 100%' : 'The portfolio would add to ' + App.num(f.bookPct, 2, '%')) + '</span>');
+  }
+  if (f.bad) chips.push('<span class="csl-chip bad">' + f.bad + ' weight' + (f.bad === 1 ? '' : 's') + ' to fix</span>');
+  if (f.missing) chips.push('<span class="csl-chip bad">' + f.missing + ' no longer this category’s</span>');
+  if (f.below) chips.push('<span class="csl-chip warn">' + f.below + ' below minimum</span>');
+  return '<span class="csl-tot">' + tot + '</span><span class="csl-chips">' + chips.join('') + '</span>';
+}
+
+/* the same weight seen the other way: of the portfolio while weighting the
+   sleeve, of the sleeve while weighting the portfolio */
+function cslOtherText(x, f) {
+  if (isNaN(x.w)) return '—';
+  if (cslPanel.draft.mode === 'sleeve') return App.num(x.ofP, 2, '%');
+  return f.sum > 0 ? App.num(x.w / f.sum * 100, 2, '%') : '—';
+}
+
+function cslRowsHtml(f) {
+  var d = cslPanel.draft;
+  if (!d.rows.length) {
+    return '<p class="csl-empty">No products yet. Add them from the list below, or start from a library sleeve.</p>';
+  }
+  return '<div class="csl-wrap"><table class="csl-tbl"><thead><tr><th scope="col">Product</th>'
+    + '<th scope="col">Vehicle</th><th scope="col" class="num">Cost</th><th scope="col" class="num">Minimum</th>'
+    + '<th scope="col" class="num">' + (d.mode === 'sleeve' ? '% of sleeve' : '% of portfolio') + '</th>'
+    + '<th scope="col" class="num">' + (d.mode === 'sleeve' ? 'Of portfolio' : 'Of sleeve') + '</th><th scope="col" class="num">Amount</th>'
+    + '<th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody>'
+    + d.rows.map(function (r, i) {
+        var x = f.rows[i], p = x.product, label = p ? p.name : r.productId;
+        return '<tr' + (p || !(cslLib() && cslLib().status === 'ready') ? '' : ' class="gone"') + '>'
+          + '<th scope="row"><b>' + App.esc(label) + '</b>'
+          + '<small>' + (p ? App.esc([p.assetClass, p.style].filter(Boolean).join(' · '))
+                           : (cslLib() && cslLib().status === 'ready' ? 'No longer one of this category’s products: remove it' : ''))
+          + '</small></th>'
+          + '<td>' + (p ? App.esc(p.vehicle) : '') + '</td>'
+          + '<td class="num">' + (p ? App.num(p.productCost, 2, '%') : '') + '</td>'
+          + '<td class="num">' + (p && p.minimumInvestment ? money(p.minimumInvestment) : '—') + '</td>'
+          + '<td class="num"><input type="text" inputmode="decimal" id="cslW' + i + '" data-cslw="' + i + '" value="'
+          + App.esc(r.text) + '"' + (r.text !== '' && isNaN(x.w) ? ' aria-invalid="true"' : '')
+          + ' aria-label="Weight of ' + App.esc(label) + ', '
+          + (d.mode === 'sleeve' ? 'percent of the sleeve' : 'percent of the portfolio') + '"></td>'
+          + '<td class="num" data-cslof="' + i + '">' + cslOtherText(x, f) + '</td>'
+          + '<td class="num' + (x.below ? ' below' : '') + '" data-cslamt="' + i + '">'
+          + (isNaN(x.amount) ? '—' : money(x.amount)) + (x.below ? '<small>below its minimum</small>' : '') + '</td>'
+          + '<td><button type="button" class="csl-rm" data-cslrm="' + i + '" aria-label="Remove '
+          + App.esc(label) + '">×</button></td></tr>';
+      }).join('') + '</tbody></table></div>';
+}
+
+function cslAddHtml() {
+  var lib = cslLib(), d = cslPanel.draft;
+  if (!lib || lib.status === 'loading') return '<p class="csl-empty">Reading this category’s products…</p>';
+  if (lib.status === 'error') return '<p class="md-err">' + App.esc(lib.error) + '</p>';
+  var held = d.rows.map(function (r) { return r.productId; });
+  var q = cslPanel.query.trim().toLowerCase();
+  var free = lib.products.filter(function (p) { return held.indexOf(p.productId) === -1; });
+  var shown = free.filter(function (p) {
+    return !q || [p.name, p.ticker, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
+  });
+  return '<div class="csl-add-h"><h3>Products in ' + App.esc(cslPanel.under) + '</h3>'
+    + '<span class="mut">' + lib.products.length + ' held by its sleeves under ' + App.esc(App.variant() || '')
+    + '</span>'
+    + (lib.products.length > 8 ? '<input type="search" id="cslQ" placeholder="Search the products" value="'
+        + App.esc(cslPanel.query) + '" aria-label="Search this category’s products">' : '') + '</div>'
+    + (shown.length
+        ? '<ul class="csl-list">' + shown.map(function (p) {
+            return '<li><span class="csl-pn"><b>' + App.esc(p.name) + '</b><small>'
+              + App.esc([p.assetClass, p.style, p.vehicle].filter(Boolean).join(' · ')) + ' · cost '
+              + App.num(p.productCost, 2, '%') + (p.minimumInvestment ? ' · minimum ' + money(p.minimumInvestment) : '')
+              + '</small></span><button type="button" class="btn btn-ghost" data-csladd="' + App.esc(p.productId) + '"'
+              + ' aria-label="Add ' + App.esc(p.name) + '">Add</button></li>';
+          }).join('') + '</ul>'
+        : '<p class="csl-empty">' + (free.length ? 'No product matches.' : 'Every product this category holds is in the sleeve.') + '</p>');
+}
+
+function renderCustomBuilder() {
+  var host = document.getElementById('cslDialog'); if (!host) return;
+  if (!cslPanel.open) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!feePanel.open && !pricePanel.open && !customPanel.open && !chargesPanel.open) App.setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  App.setBackgroundInert(true);
+  /* a redraw - the products arriving, a row added - keeps the focus where it was */
+  var had = document.activeElement && host.contains(document.activeElement) ? document.activeElement : null;
+  var hadId = had && had.id, hadAt = had && typeof had.selectionStart === 'number' ? had.selectionStart : null;
+  if (hadId) window.setTimeout(function () {
+    var back = document.getElementById(hadId);
+    if (back && document.activeElement !== back && (!document.activeElement || document.activeElement === document.body
+        || !host.contains(document.activeElement))) {
+      back.focus();
+      if (hadAt !== null && typeof back.setSelectionRange === 'function') { try { back.setSelectionRange(hadAt, hadAt); } catch (e) { /* not a text box */ } }
+    }
+  }, 0);
+  var d = cslPanel.draft, under = cslPanel.under, f = cslFigures();
+  var strategic = cslStrategic(under), mandate = App.mandateSize() || 0;
+  var lib = App.sleeveLib()[under];
+  var froms = (lib && lib.status === 'ready' ? lib.sleeves : []).map(function (sl) {
+    return '<option value="' + App.esc(sl.name) + '">A copy of ' + App.esc(sl.name) + '</option>';
+  }).join('');
+  var nameMax = App.opt('customSleeves.nameMax', 80), noteMax = App.opt('customSleeves.noteMax', 300);
+  host.innerHTML =
+      '<div class="scrim" data-cslscrim></div>'
+    + '<div class="dialog wide csl" role="dialog" aria-modal="true" aria-labelledby="cslTitle">'
+    + '<button type="button" class="dlg-close" id="cslclose" aria-label="Close">×</button>'
+    + '<div class="csl-head"><h2 id="cslTitle">Custom sleeve · ' + App.esc(under) + '</h2>'
+    + '<p class="rc-meta"><span>Strategic weight <b>' + App.num(strategic, 2, '%') + '</b></span>'
+    + '<span><b>' + money(mandate * strategic / 100) + '</b> of a ' + money(mandate) + ' mandate</span>'
+    + '<span>' + App.esc(App.variant() || '') + '</span></p></div>'
+    + '<div class="csl-fields">'
+    + '<label for="cslFrom">Start from</label><select id="cslFrom"><option value="">'
+    + (d.rows.length ? 'These products' : 'Nothing: blank') + '</option>' + froms + '</select>'
+    + '<label for="cslName">Name</label><input type="text" id="cslName" maxlength="' + nameMax + '" value="'
+    + App.esc(d.name) + '" placeholder="Optional; it is called “Custom” without one">'
+    + '<label for="cslNote">Note</label><input type="text" id="cslNote" maxlength="' + noteMax + '" value="'
+    + App.esc(d.note) + '" placeholder="Optional">'
+    + '<span class="lbl" id="cslModeLbl">Weights are</span><div><span class="rc-seg" role="group" aria-labelledby="cslModeLbl">'
+    + '<button type="button" data-cslmode="sleeve" aria-pressed="' + (d.mode === 'sleeve') + '">% of the sleeve</button>'
+    + '<button type="button" data-cslmode="portfolio" aria-pressed="' + (d.mode === 'portfolio') + '">% of the portfolio</button></span>'
+    + '<p class="csl-hint">' + (d.mode === 'sleeve'
+        ? 'The weights add to 100% and are scaled by the category’s strategic ' + App.num(strategic, 2, '%') + ', as a library sleeve’s are.'
+        : 'Each weight is a share of the whole portfolio. Their total replaces the strategic '
+          + App.num(strategic, 2, '%') + ' and nothing else moves: the portfolio must add to 100% before the proposal can be delivered.')
+    + '</p></div></div>'
+    + cslRowsHtml(f)
+    + (d.rows.length ? '<p class="csl-tools"><button type="button" class="btn btn-ghost" data-cslspread>Spread evenly</button></p>' : '')
+    + '<div class="csl-add">' + cslAddHtml() + '</div>'
+    + (cslPanel.error ? '<p class="md-err" role="alert">' + App.esc(cslPanel.error) + '</p>' : '')
+    + '<div class="rc-actions csl-actions"><span class="csl-foot" id="cslFoot" aria-live="polite">' + cslFootHtml(f) + '</span>'
+    + '<span class="cf-actions">'
+    + (cslPanel.existing
+        ? '<button type="button" class="btn btn-ghost csl-discard" data-csldiscard>'
+          + (cslPanel.confirmDiscard ? 'Confirm: discard it' : 'Discard the custom sleeve') + '</button>' : '')
+    + '<button type="button" class="btn btn-ghost" id="cslcancel">Cancel</button>'
+    + '<button type="button" class="btn btn-primary" id="csluse"' + (f.ok && !cslPanel.busy ? '' : ' disabled') + '>'
+    + (cslPanel.busy ? 'Saving…' : 'Use this sleeve') + '</button></span></div>'
+    + '</div>';
+}
+
+/* typing updates the figures in place, so focus stays in the box */
+function cslRefresh() {
+  var f = cslFigures();
+  f.rows.forEach(function (x, i) {
+    var of = document.querySelector('[data-cslof="' + i + '"]'), amt = document.querySelector('[data-cslamt="' + i + '"]');
+    var input = document.getElementById('cslW' + i);
+    if (of) of.textContent = cslOtherText(x, f);
+    if (amt) {
+      amt.className = 'num' + (x.below ? ' below' : '');
+      amt.innerHTML = (isNaN(x.amount) ? '—' : money(x.amount)) + (x.below ? '<small>below its minimum</small>' : '');
+    }
+    if (input) {
+      if (input.value !== '' && isNaN(x.w)) input.setAttribute('aria-invalid', 'true');
+      else input.removeAttribute('aria-invalid');
+    }
+  });
+  var foot = document.getElementById('cslFoot'); if (foot) foot.innerHTML = cslFootHtml(f);
+  var use = document.getElementById('csluse'); if (use) use.disabled = !f.ok || cslPanel.busy;
+}
+
+/* the weights as numbers (0 for a box not yet valid), and back */
+function cslValues() { return cslPanel.draft.rows.map(function (r) { var w = parseWeight(r.text); return isNaN(w) ? 0 : w; }); }
+function cslSetValues(values) {
+  cslPanel.draft.rows.forEach(function (r, i) { r.text = fmt2(values[i]); });
+}
+
+function cslSetMode(mode) {
+  var d = cslPanel.draft;
+  if (d.mode === mode) return;
+  var strategic = cslStrategic(cslPanel.under);
+  var values = cslValues(), sum = values.reduce(function (a, b) { return a + b; }, 0);
+  /* converted, so the sleeve means the same until a weight is changed */
+  if (sum > 0) {
+    var target = mode === 'portfolio' ? sum / 100 * strategic : 100;
+    cslSetValues(scaleWeights(values, Math.round(target * 100) / 100));
+  }
+  d.mode = mode;
+  renderCustomBuilder();
+}
+
+function cslSpread() {
+  var d = cslPanel.draft, n = d.rows.length; if (!n) return;
+  var sum = cslValues().reduce(function (a, b) { return a + b; }, 0);
+  var target = d.mode === 'sleeve' ? 100
+    : (sum > 0 ? Math.round(sum * 100) / 100 : Math.round(cslStrategic(cslPanel.under) * 100) / 100);
+  cslSetValues(scaleWeights(d.rows.map(function () { return 1; }), target));
+  renderCustomBuilder();
+}
+
+function cslStartFrom(name) {
+  var lib = App.sleeveLib()[cslPanel.under];
+  var sleeve = lib && (lib.sleeves || []).filter(function (sl) { return sl.name === name; })[0];
+  if (!sleeve) return;
+  var d = cslPanel.draft;
+  var target = d.mode === 'sleeve' ? 100 : Math.round(cslStrategic(cslPanel.under) * 100) / 100;
+  var values = scaleWeights(sleeve.products.map(function (p) { return p.weight; }), target);
+  d.rows = sleeve.products.map(function (p, i) { return { productId: p.productId, text: fmt2(values[i]) }; });
+  cslPanel.error = null;
+  renderCustomBuilder();
+  App.announce('polite', 'Started from a copy of ' + name + ': ' + d.rows.length + ' product'
+    + (d.rows.length === 1 ? '' : 's') + '.');
+}
+
+async function cslUse() {
+  var f = cslFigures(); if (!f.ok || cslPanel.busy) return;
+  var d = cslPanel.draft, under = cslPanel.under;
+  var definition = { name: d.name.trim(), note: d.note.trim(), mode: d.mode,
+                     products: d.rows.map(function (r) { return { productId: r.productId, weightPct: parseWeight(r.text) }; }) };
+  cslPanel.busy = true; cslPanel.error = null; renderCustomBuilder();
+  var refused = await App.setCustomSleeve(under, definition);
+  cslPanel.busy = false;
+  if (refused) { cslPanel.error = refused; renderCustomBuilder(); return; }
+  closeCustomBuilder();
+  var bal = portfolioBalance();
+  App.announce('polite', customName(definition) + ' is the ' + under + ' sleeve.'
+    + (bal.balanced ? '' : ' The portfolio adds to ' + App.num(bal.total, 2, '%')
+       + ': change a custom sleeve until it adds to 100%.'));
+}
+
+async function cslDiscard() {
+  if (!cslPanel.confirmDiscard) {
+    cslPanel.confirmDiscard = true; renderCustomBuilder();
+    var b = document.querySelector('[data-csldiscard]'); if (b) b.focus();
+    return;
+  }
+  var under = cslPanel.under;
+  cslPanel.busy = true; renderCustomBuilder();
+  var refused = await App.setCustomSleeve(under, null);
+  cslPanel.busy = false;
+  if (refused) { cslPanel.error = refused; cslPanel.confirmDiscard = false; renderCustomBuilder(); return; }
+  closeCustomBuilder();
+  App.announce('polite', 'The custom ' + under + ' sleeve is discarded.');
+}
+
+document.addEventListener('input', function (e) {
+  if (!cslPanel.open || !e.target.closest || !e.target.closest('#cslDialog')) return;
+  var el = e.target;
+  if (el.dataset.cslw !== undefined) {
+    cslPanel.draft.rows[+el.dataset.cslw].text = el.value; cslPanel.error = null; cslRefresh(); return;
+  }
+  if (el.id === 'cslName') { cslPanel.draft.name = el.value; return; }
+  if (el.id === 'cslNote') { cslPanel.draft.note = el.value; return; }
+  if (el.id === 'cslQ') {
+    cslPanel.query = el.value;
+    var box = document.querySelector('#cslDialog .csl-add'); if (box) box.innerHTML = cslAddHtml();
+    var again = document.getElementById('cslQ');
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+  }
+});
+document.addEventListener('change', function (e) {
+  if (!cslPanel.open || e.target.id !== 'cslFrom' || !e.target.value) return;
+  cslStartFrom(e.target.value);
+  var from = document.getElementById('cslFrom'); if (from) from.focus();
+});
+document.addEventListener('click', function (e) {
+  if (!cslPanel.open || !e.target.closest || !e.target.closest('#cslDialog')) return;
+  var t = e.target.closest('button,[data-cslscrim]'); if (!t) return;
+  var ds = t.dataset;
+  if (t.id === 'cslclose' || t.id === 'cslcancel' || ds.cslscrim !== undefined) { closeCustomBuilder(); return; }
+  if (t.id === 'csluse') { cslUse(); return; }
+  if (ds.csldiscard !== undefined) { cslDiscard(); return; }
+  if (ds.cslmode) {
+    cslSetMode(ds.cslmode);
+    var m = document.querySelector('[data-cslmode="' + ds.cslmode + '"]'); if (m) m.focus();
+    return;
+  }
+  if (ds.cslspread !== undefined) {
+    cslSpread();
+    var sp = document.querySelector('[data-cslspread]'); if (sp) sp.focus();
+    return;
+  }
+  if (ds.cslrm !== undefined) {
+    var i = +ds.cslrm;
+    cslPanel.draft.rows.splice(i, 1); cslPanel.error = null; renderCustomBuilder();
+    var next = document.querySelector('[data-cslrm="' + Math.min(i, cslPanel.draft.rows.length - 1) + '"]')
+      || document.getElementById('cslQ') || document.querySelector('[data-csladd]');
+    if (next) next.focus();
+    return;
+  }
+  if (ds.csladd) {
+    cslPanel.draft.rows.push({ productId: ds.csladd, text: '' });
+    cslPanel.error = null; renderCustomBuilder();
+    var w = document.getElementById('cslW' + (cslPanel.draft.rows.length - 1)); if (w) w.focus();
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (!cslPanel.open) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCustomBuilder(); return; }
+  if (e.key === 'Enter' && e.target.dataset && e.target.dataset.cslw !== undefined) {
+    e.preventDefault();
+    var next = document.getElementById('cslW' + (+e.target.dataset.cslw + 1)) || document.getElementById('csluse');
+    if (next && !next.disabled) next.focus();
+  }
+});
+
 /* ---- the rail tier (spec 9.4) ------------------------------------------- */
 /* ---- what a sleeve costs, before it is chosen (C2) ------------------------
    Choosing between SMA Only, Mutual Funds and Passive is the central act of
@@ -1782,6 +2568,13 @@ function sleeveShapeText(shape) {
 
 function renderRail() {
   var el = document.getElementById('tier-sleeves'); if (!el) return;
+  /* a custom portfolio's own tier, on both steps; pricing on the second
+     (D171) - no sleeve pickers and no overlay switches */
+  if (App.cpActive() && App.phase() === 'workspace' && App.cpRailHtml) {
+    el.hidden = false;
+    el.innerHTML = App.cpRailHtml() + (App.step() === 'impl' ? feeFields() : '');
+    return;
+  }
   if (App.step() !== 'impl' || App.phase() !== 'workspace') { el.hidden = true; return; }
   el.hidden = false;
   var base = App.base();
@@ -1841,13 +2634,30 @@ function renderRail() {
      control for it would be a control that can never be used; the count and
      the note below say it is in the model (D53). */
   html += '<div class="sl-list">';
-  var pickable = sleeveCategories(baseCategories()).filter(function (category) {
+  /* the lines as implemented: a custom sleeve weighted against the portfolio
+     shows its own weight, the strategic one struck through (D170) */
+  var lines = implementedLines();
+  var pickable = lines.filter(function (category) {
     return !isAuto(category.name);
   });
+  var bal = balanceOf(lines);
+  if (!bal.balanced || lines.some(function (l) { return l.custom && l.custom.mode === 'portfolio'; })) {
+    html += '<p class="sl-bal ' + (bal.balanced ? 'ok' : 'bad') + '" role="status">'
+      + (bal.balanced
+          ? 'The portfolio adds to 100.00%.'
+          : 'The portfolio adds to <b>' + App.num(bal.total, 2, '%') + '</b>: '
+            + App.num(Math.abs(100 - bal.total), 2, '%') + (bal.total < 100 ? ' still to place' : ' too much')
+            + '. Change a custom sleeve set as % of the portfolio until it adds to 100%.')
+      + (bal.departs ? ' It departs from the strategic allocation, so the delivered files leave that out.' : '')
+      + '</p>';
+  }
   var next = sleeveNext(pickable);
   pickable.forEach(function (category, i) {
     var lib = App.sleeveLib()[category.name];
     var chosen = sleeveFor(category.name);
+    var held = App.customSleeves()[category.name] || null;
+    var customOn = !!held && !App.sleeves()[category.name];
+    var mayBuild = App.mayBuildCustom(category.name);
     var select;
     if (!lib || lib.status === 'loading') {
       select = '<select id="sl' + i + '" disabled><option>Loading sleeves…</option></select>';
@@ -1861,14 +2671,40 @@ function renderRail() {
           + (App.sleeves()[category.name] === s.name ? ' selected' : '') + '>'
           + App.esc(s.name) + '</option>';
       }).join('');
+      /* a held custom sleeve, or the way to build one where this person may
+         (D170); one this person may not build is shown only while it is in
+         force, so a PWA never puts one in force (D172) */
+      var custom = (held && (customOn || mayBuild) ? '<option value="__custom__"' + (customOn ? ' selected' : '') + '>'
+                      + App.esc(customName(held)) + '</option>' : '')
+        + (!held && mayBuild ? '<option value="__build__">Build a custom sleeve…</option>' : '');
       select = '<select id="sl' + i + '" data-cat="' + App.esc(category.name) + '"'
         + (App.canEdit() ? '' : ' disabled') + '>'
-        + '<option value="">Select a sleeve…</option>' + options + '</select>';
+        + '<option value="">Select a sleeve…</option>' + options
+        + (custom ? '<optgroup label="Custom">' + custom + '</optgroup>' : '') + '</select>';
+    }
+    var moved = Math.abs(category.weightPct - category.strategicWeightPct) >= 0.005;
+    var after = '';
+    if (chosen && chosen.custom) {
+      after = '<span class="sl-shape sl-custom"><span class="sl-cchip">Custom'
+        + (chosen.mode === 'portfolio' ? ' \u00b7 % of portfolio' : '') + '</span>'
+        + sleeveShapeText(sleeveShape(chosen, category.weightPct)).replace(/^<span class="sl-shape">|<\/span>$/g, '')
+        + (mayBuild ? '<button type="button" class="sl-edit" data-custedit="' + App.esc(category.name) + '">Edit</button>'
+                    : '<span class="mut">built by an admin</span>') + '</span>';
+    } else if (customOn) {
+      var gone = customProblems(category.name);
+      after = '<span class="sl-shape sl-custom">' + (gone.length
+          ? '<span class="bad">' + gone.length + ' product' + (gone.length === 1 ? ' is' : 's are')
+            + ' no longer this category\u2019s</span>'
+            + (mayBuild ? '<button type="button" class="sl-edit" data-custedit="' + App.esc(category.name) + '">Edit</button>' : '')
+          : '<span>Reading the custom sleeve\u2026</span>') + '</span>';
+    } else if (chosen) {
+      after = sleeveShapeText(sleeveShape(chosen, category.weightPct));
     }
     html += '<div class="sl-row' + (chosen ? ' done' : '') + (i === next ? ' is-next' : '') + '">'
       + '<span class="cat"><b><label for="sl' + i + '">' + App.esc(category.name) + '</label></b>'
-      + '<span>' + App.num(category.weightPct, 1, '%') + '</span></span>' + select
-      + (chosen ? sleeveShapeText(sleeveShape(chosen, category.weightPct)) : '') + '</div>';
+      + '<span>' + App.num(category.weightPct, moved ? 2 : 1, '%')
+      + (moved ? ' <s class="sl-was" title="The strategic weight">' + App.num(category.strategicWeightPct, 2, '%') + '</s>' : '')
+      + '</span></span>' + select + after + '</div>';
   });
   /* The count is already beside the heading; the bar is the only thing this
      adds, so the sentence that repeated both is gone (D2). */
@@ -2027,9 +2863,23 @@ function renderDonuts(groups, done) {
    not see was the one they could not go and look at. */
 function rowAnchor(category, name) { return category + '|' + name; }
 
+/* the categories whose custom sleeve is in force but holds a product the
+   category no longer may */
+function customStuck() {
+  return Object.keys(App.customSleeves()).filter(function (under) {
+    return !App.sleeves()[under] && customProblems(under).length;
+  });
+}
+
 function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   var breached = breaches(groups);
   var reason = null, blocking = false;
+  /* a custom portfolio is held to its own checks and, outside its usual
+     ranges, to an admin's approval (D171) */
+  var cp = App.cpActive() && App.cpGate ? App.cpGate(groups) : null;
+  /* what puts a position below its minimum right: in a custom portfolio a
+     weight, not a sleeve (D171) */
+  var fixWords = cp ? 'Raise the mandate or the weight.' : 'Raise the mandate or change the sleeve.';
   if (!App.canExport()) reason = 'Export is not available for your role.';
   else if (!App.variant()) reason = 'Choose an implementation variant first.';
   /* Only a proposal that includes fees needs a schedule: one that does not
@@ -2040,7 +2890,19 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
     reason = 'Set a custom rate for every fee group in the model: '
       + customUnpriced(groups).join(', ') + ' still to set.';
   }
-  else if (!done) reason = 'Attach a sleeve to every category to enable the download.';
+  else if (cp && cp.problem) reason = cp.problem;
+  /* a custom sleeve holding what its category no longer may (D170) */
+  else if (!cp && customStuck().length) {
+    reason = 'The custom sleeve for ' + customStuck().join(' and ')
+      + ' holds a product its category no longer may. Edit it to continue.';
+  }
+  else if (!cp && !done) reason = 'Attach a sleeve to every category to enable the download.';
+  /* the person decides where a custom sleeve's difference goes, and the book
+     is not delivered until it adds to 100% (D170) */
+  else if (!cp && !portfolioBalance().balanced) {
+    reason = 'The portfolio adds to ' + App.num(portfolioBalance().total, 2, '%')
+      + ', not 100%. Change a custom sleeve set as % of the portfolio until it does.';
+  }
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
   /* A hard block: a position below the product's minimum cannot be bought,
      so the materials cannot be produced. The server refuses it too. */
@@ -2049,11 +2911,12 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
     reason = breached.length === 1
       ? breached[0].name + ' in ' + breached[0].category + ' is below mandate minimum ('
         + money(breached[0].notional) + ' against a ' + money(breached[0].minimum)
-        + ' minimum). Raise the mandate or change the sleeve.'
+        + ' minimum). ' + fixWords
       : breached.length + ' positions are below mandate minimum: '
         + breached.map(function (b) { return b.name; }).join(', ')
-        + '. Raise the mandate or change the sleeve.';
+        + '. ' + fixWords;
   }
+  else if (cp && cp.approval) reason = cp.approval.text;
 
   var tone, headline, html;
   if (exporting.status === 'working') {
@@ -2073,19 +2936,31 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
     html = breached.length === 1
       ? links + ' in ' + App.esc(breached[0].category) + ' is below mandate minimum ('
         + App.esc(money(breached[0].notional)) + ' against a '
-        + App.esc(money(breached[0].minimum)) + ' minimum). Raise the mandate or change the sleeve.'
+        + App.esc(money(breached[0].minimum)) + ' minimum). ' + fixWords
       : breached.length + ' positions are below mandate minimum: ' + links
-        + '. Raise the mandate or change the sleeve.';
+        + '. ' + fixWords;
+  } else if (cp && cp.approval && reason === cp.approval.text) {
+    tone = 'blocked'; headline = cp.approval.headline;
+    html = App.esc(reason);
   } else if (reason) {
     tone = 'blocked';
-    headline = done ? 'Blocked' : 'Not ready';
+    headline = cp ? (cp.problem && cp.empty ? 'Not started' : 'Not deliverable') : (done ? 'Blocked' : 'Not ready');
     html = App.esc(reason);
+  } else if (cp) {
+    tone = 'ready'; headline = cp.approved ? 'Approved' : 'Ready to download';
+    html = App.esc(cp.approved ? cp.approved + ' Ready to download.'
+      : 'Ready — the portfolio adds to 100.00%, every check passes and the scenario is saved.');
   } else {
     tone = 'ready'; headline = 'Ready to download';
     html = App.esc('Ready — every category is implemented and the scenario is saved.');
   }
+  /* the charges do not hold the button back: Download asks for them */
+  if (tone === 'ready' && !chargesComplete()) {
+    html += ' ' + App.esc('Download asks for the other charges first.');
+  }
   return { reason: reason, blocking: blocking, tone: tone, headline: headline,
-           html: html, disabled: !!reason || exporting.status === 'working' };
+           html: html, disabled: !!reason || exporting.status === 'working',
+           actions: cp && cp.approval && reason === cp.approval.text ? cp.approval.actions : '' };
 }
 
 /* Take the reader to the row a gate names (B3), and leave it lit long enough
@@ -2145,8 +3020,10 @@ function renderView() {
       /* one tab stop for the pair; the arrow keys move within it (G1) */
       b.tabIndex = on ? 0 : -1;
       if (b.dataset.step !== 'impl') return;
-      b.disabled = !ready;
-      b.classList.toggle('step-beckon', ready && !App.implSeen());
+      /* a custom portfolio is built there from nothing (D171) */
+      var open = ready || App.cpActive();
+      b.disabled = !open;
+      b.classList.toggle('step-beckon', open && !App.implSeen());
     });
   }
   var aa = document.getElementById('view-aa');
@@ -2158,18 +3035,19 @@ function renderView() {
   if (onLanding || App.step() !== 'impl') return;
 
   var base = App.base();
-  if (!base) {
+  var custom = App.cpActive();
+  if (!custom && !base) {
     el.innerHTML = '<div class="impl-empty"><h3>No proposed portfolio yet</h3>'
       + '<p>Choose an allocation and risk level in the rail to build the proposed portfolio, '
       + 'then attach a sleeve to each of its categories.</p></div>';
     return;
   }
-  if (base.status === 'loading') {
+  if (!custom && base.status === 'loading') {
     el.innerHTML = '<div class="impl-empty"><h3>Resolving the proposed portfolio…</h3>'
       + '<p>The implementation model builds from the proposed portfolio’s categories.</p></div>';
     return;
   }
-  if (base.status === 'error') {
+  if (!custom && base.status === 'error') {
     el.innerHTML = '<div class="impl-empty"><h3>The proposed portfolio could not be built</h3>'
       + '<p>Retry it from the allocation step; the implementation model needs its categories.</p></div>';
     return;
@@ -2177,7 +3055,7 @@ function renderView() {
   if (!App.variant()) {
     el.innerHTML = '<div class="impl-empty"><h3>Choose an implementation variant</h3>'
       + '<p>The variant decides which sleeves each category of <strong>'
-      + App.esc(base.data.name) + '</strong> can hold, and what those sleeves '
+      + App.esc(custom ? 'the custom portfolio' : base.data.name) + '</strong> can hold, and what those sleeves '
       + 'contain. Nothing can be attached until it is set. Choose one at the '
       + 'top of the rail.</p></div>';
     return;
@@ -2227,26 +3105,34 @@ function renderView() {
      rather than sitting as a second note, so the two steps open identically. */
   var html = '<div class="impl-head"><div>'
     + '<h2 class="stage-title">Portfolio Implementation</h2>'
-    + '<p class="stage-sub">Implementing <strong>'
-    + App.esc(base.data.name) + '</strong> against a mandate of '
-    + money(App.mandateSize()) + '.</p>'
+    + (custom
+        ? '<p class="stage-sub">A <strong>custom portfolio</strong> with the <strong>'
+          + App.esc(App.riskLabel(App.customPortfolio().profile)) + '</strong> risk profile, against a mandate of '
+          + money(App.mandateSize()) + '.</p>'
+        : '<p class="stage-sub">Implementing <strong>'
+          + App.esc(base.data.name) + '</strong> against a mandate of '
+          + money(App.mandateSize()) + '.</p>')
     + '</div>'
     /* The count, and then the thing that actually gates the download (D2).
        Three indicators used to report the same easy fact and none the hard
        one: with every sleeve attached all three read "4 of 4" and the screen
        looked finished while the export was blocked. */
-    + '<div class="completion-summary">'
+    + (custom ? App.cpSummaryHtml(gate) : '<div class="completion-summary">'
     + '<div class="completion-line"><span>' + counts.filled + ' of ' + counts.total
     + ' sleeves</span><strong class="cs-state ' + gate.tone + '">'
     + App.esc(gate.headline) + '</strong></div>'
     + '<div class="progress-track' + (done ? ' is-done' : '') + '" role="img" aria-label="'
     + counts.filled + ' of ' + counts.total + ' categories implemented"><i style="--progress:'
     + (counts.total ? Math.round(counts.filled / counts.total * 100) : 0) + '%"></i></div>'
-    + '</div></div>';
+    + '</div>') + '</div>';
+  /* A custom portfolio with nothing in it is a blank slate: the ways in and
+     what it is checked against, and no table yet (D171). */
+  var blank = custom && App.cpIsEmpty();
+  if (blank) html += App.cpBlankHtml();
 
   /* The button that shows the initial allocation, only where there is one
      (D136); the note beside it says why it is there either way. */
-  if (ini) {
+  if (ini && !blank) {
     var held = ini.commitment.held;
     html += '<div class="ini-bar' + (initialShown ? ' ini-on' : '') + '">'
       + '<button type="button" class="ini-btn" data-initial="1" aria-controls="implTbl" aria-pressed="'
@@ -2263,6 +3149,8 @@ function renderView() {
             + bpText(t.bp) + ' long-term</span>' : '')
       + '</span></div>';
   }
+  if (custom && !blank) html += App.cpToolbarHtml();
+  if (!blank) {
   html += '<div class="tblwrap" tabindex="0" aria-label="Implementation model, scrolls horizontally">'
     + '<table class="tbl impl' + (fees ? '' : ' no-fees')
     + (fees && feeReveal ? ' fees-in' : '') + (ini ? ' has-ini' + (initialShown ? ' ini-on' : '') : '')
@@ -2334,7 +3222,22 @@ function renderView() {
       + (held ? '<small class="pc" aria-label="' + held + ' product'
                 + (held === 1 ? '' : 's') + '">' + held + '</small>' : '');
     var pill;
-    if (group.auto) {
+    if (custom) {
+      /* the products are the build (D171): no sleeve to go to */
+      pill = App.cpBandHtml(group);
+    } else if (group.custom) {
+      /* a custom sleeve (D170): the pill opens its builder where this person
+         may change it; nothing to remove here - the builder discards it */
+      var editable = App.mayBuildCustom(group.category);
+      pill = '<span class="pill p-sleeve is-custom">'
+        + (editable
+            ? '<button type="button" class="pill-go" data-custedit="' + App.esc(group.category) + '"'
+              + ' title="Edit the custom ' + App.esc(group.category) + ' sleeve"'
+              + ' aria-label="Edit the custom ' + App.esc(group.category) + ' sleeve, ' + App.esc(group.sleeve) + '">'
+              + pillInner + '</button>'
+            : pillInner)
+        + '</span>';
+    } else if (group.auto) {
       /* Attached by rule, not by choice (spec 2.6): no picker to go to, no
          remove control, and a labelled mark rather than an emoji (G2). */
       pill = '<span class="pill p-sleeve is-auto" title="Attached by rule; this category is not chosen">'
@@ -2359,7 +3262,10 @@ function renderView() {
       + '<td class="txt prodcol">' + (group.sleeve
           ? pill
           : '<span class="bdg b-warn">No sleeve attached</span>') + '</td>'
-      + '<td class="num">' + App.num(shownWeight, 2, '%') + '</td>'
+      + '<td class="num">' + App.num(shownWeight, 2, '%')
+      + (Math.abs(group.weightPct - (group.strategicWeightPct === undefined ? group.weightPct : group.strategicWeightPct)) >= 0.005
+          ? '<small class="was" title="The strategic weight">' + App.num(group.strategicWeightPct, 2, '%') + '</small>' : '')
+      + '</td>'
       + (ini ? iniCell('num', bandPrivate ? '<span class="zero">' + App.num(0, 2, '%') + '</span>'
           : '<span' + (bandMoved ? ' class="mv"' : '') + '>' + App.num(bandIni.weight, 2, '%') + '</span>') : '')
       + '<td class="num">' + money(shownNotional) + '</td>'
@@ -2387,8 +3293,9 @@ function renderView() {
             ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
               + App.esc(money(item.notional)) + ', below its '
               + App.esc(money(item.minimumInvestment)) + ' minimum">below min</span>' : '')
+        + (custom ? App.cpNameExtras(item, group) : '')
         + '</td>'
-        + '<td class="num">' + App.num(item.weight, 2, '%') + '</td>'
+        + '<td class="num">' + (custom ? App.cpWeightCell(item) : App.num(item.weight, 2, '%')) + '</td>'
         + (ini ? iniCell('num', bandPrivate ? '<span class="zero">' + App.num(0, 2, '%') + '</span>'
             : '<span' + (item.initialWeight !== item.weight ? ' class="mv"' : '') + '>'
               + App.num(item.initialWeight, 2, '%') + '</span>') : '')
@@ -2404,7 +3311,7 @@ function renderView() {
         + '<td class="txt tick">' + App.esc(item.ticker) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
-        + '<td class="txt tick">' + (item.shareClass
+        + '<td class="txt">' + (item.shareClass
             ? App.esc(item.shareClass) : '<span class="mut">&mdash;</span>') + '</td>'
         + '<td class="txt">' + pillFor(item.source) + '</td>'
         + '<td class="txt">' + App.esc(item.liquidity) + '</td>'
@@ -2431,10 +3338,10 @@ function renderView() {
   html += '<tr class="grand"><th scope="row">Implemented total</th>'
     + '<td class="prodcol"></td>'
     + '<td class="num">' + App.num(t.weight, 2, '%')
-    + (done ? '' : '<small class="of-all">of 100%</small>') + '</td>'
+    + (custom ? App.cpTotalNote(t.weight) : done ? '' : '<small class="of-all">of 100%</small>') + '</td>'
     + (ini ? iniCell('num', App.num(ini.total.weight, 2, '%')) : '')
     + '<td class="num">' + money(t.notional)
-    + (done ? '' : '<small class="of-all">' + App.num(restPct, 2, '%')
+    + (done || custom ? '' : '<small class="of-all">' + App.num(restPct, 2, '%')
         + ' not yet implemented</small>') + '</td>'
     + (ini ? iniCell('num', money(ini.total.notional)) : '')
     + '<td colspan="' + implTotalSpan() + '"></td>'
@@ -2445,11 +3352,17 @@ function renderView() {
   html += '</tbody></table></div>'
     /* the shadow that says the table carries on to the right (A3, H3) */
     + '<span class="tbl-more" id="implTbl-more" aria-hidden="true"></span>';
+  }
   /* The consequence of the change just made, under the thing it was made to
      (B4). The card at the foot then confirms rather than discloses. */
   html += '<p class="impl-state ' + gate.tone + '" role="status">'
     + '<b>' + App.esc(gate.headline) + '</b>' + gate.html + '</p>';
-  html += renderDonuts(groups, done);
+  /* why an approval went (D171) */
+  if (custom && App.customPortfolio().notice) {
+    html += '<p class="impl-state blocked" role="status"><b>Approval</b>'
+      + App.esc(App.customPortfolio().notice) + '</p>';
+  }
+  if (!blank) html += renderDonuts(groups, done);
 
   html += '<section class="export-card" aria-labelledby="exporttitle">'
     + '<div class="export-icon" aria-hidden="true"><span>X</span></div>'
@@ -2458,18 +3371,31 @@ function renderView() {
     + '<h3 id="exporttitle">Download the proposal</h3>'
     /* all four sheets, by name (D122, plan A7): the old copy omitted
        assumptions */
-    + '<p>Generates the Portfolios, Risk Dashboard, Assumptions and '
-    + 'Implementation sheets from the persisted scenario, as an Excel workbook '
+    /* a custom sleeve that moved the weights leaves the strategic sheets out (D170) */
+    + (custom ? '<p>Generates the Custom Allocation and Implementation sheets'
+        + (ini ? ' and the Initial Allocation' : '')
+        : portfolioBalance().departs ? '<p>Generates the Implementation sheets'
+        : '<p>Generates the Portfolios, Risk Dashboard, Assumptions and Implementation sheets')
+    + ' from the persisted scenario, as an Excel workbook '
     + 'and a PowerPoint presentation of the same tables — delivered together '
-    + 'in one .zip under one Proposal UID, both protected.</p>'
+    + 'in one .zip under one Proposal UID, both protected.'
+    + (custom ? ' The strategic portfolios set beside it on the allocation step go in as comparisons; '
+        + 'nobody analysed the custom portfolio, so its figures are estimates and say so.'
+        : portfolioBalance().departs ? ' The custom sleeves moved the weights away from the strategic '
+        + 'allocation, so its Portfolios, Risk Dashboard and Assumptions are left out.' : '')
+    + '</p>'
     + '<p class="export-gate ' + gate.tone + '" id="implgate">' + gate.html + '</p>'
     + '</div>'
+    /* an approval's own buttons, while one is the way on, above the one
+       download they lead to (D171) */
+    + (gate.actions ? '<div class="cp-appr">' + gate.actions : '')
     /* one button, both files (D123): a proposal is never half-delivered */
     + '<button type="button" class="btn btn-export" id="implexport"'
     + (gate.disabled || exporting.status === 'working' ? ' disabled' : '')
     + ' aria-describedby="implgate"'
     + (gate.reason ? ' title="' + App.esc(gate.reason) + '"' : '') + '>'
     + (exporting.status === 'working' ? 'Preparing…' : 'Download proposal') + '</button>'
+    + (gate.actions ? '</div>' : '')
     + '</section>';
   el.innerHTML = html;
   publishPinnedColumnWidth(el);
@@ -2492,6 +3418,9 @@ async function exportProposal() {
      one zip - there is no way to take one without the other */
   var exporting = App.exporting();
   if (exporting.status === 'working') return;
+  /* the other charges are required: with any still to set, the card opens
+     and the download carries on from its Apply */
+  if (!chargesComplete()) { openChargesPanel(true); return; }
   exporting.status = 'working';
   exporting.error = null;
   App.refresh();
@@ -2555,6 +3484,10 @@ document.addEventListener('change', function (e) {
     renderFeePanel();                    /* the card is already here: no fetch */
     return;
   }
+  if (e.target.dataset.charge !== undefined && chargesPanel.open) {
+    noteCharge(e.target);
+    return;
+  }
   if (e.target.dataset.crate !== undefined && customPanel.open) {
     var parts = e.target.dataset.crate.split('|');
     var rateSchedule = parts[0], rateGroup = parts[1] || null;
@@ -2582,6 +3515,17 @@ document.addEventListener('change', function (e) {
     } else {
       hideFeesThen(function () { App.setIncludeFees(false); });
     }
+    return;
+  }
+  if (e.target.dataset.cat !== undefined && e.target.value === '__build__') {
+    /* the option opens the builder; the choice stays as it was (D170) */
+    var cat = e.target.dataset.cat, picker = e.target;
+    renderRail();
+    openCustomBuilder(cat, document.getElementById(picker.id) || picker);
+    return;
+  }
+  if (e.target.dataset.cat !== undefined && e.target.value === '__custom__') {
+    App.useCustomSleeve(e.target.dataset.cat);
     return;
   }
   if (e.target.dataset.cat !== undefined) {
@@ -2619,9 +3563,18 @@ document.addEventListener('click', function (e) {
   /* a named product in the gate goes to its row (B3) */
   var goRow = e.target.closest ? e.target.closest('[data-implgo]') : null;
   if (goRow) { showImplRow(goRow.dataset.implgo); return; }
+  /* a custom sleeve's Edit, in the rail or on its pill (D170) */
+  var custEdit = e.target.closest ? e.target.closest('[data-custedit]') : null;
+  if (custEdit) { openCustomBuilder(custEdit.dataset.custedit, custEdit); return; }
   /* the sleeve pill goes to the picker that set it (C3) */
   var goSleeve = e.target.closest ? e.target.closest('[data-gosleeve]') : null;
   if (goSleeve) { focusSleevePicker(goSleeve.dataset.gosleeve); return; }
+  /* the other charges (D177) */
+  if (e.target.closest && e.target.closest('[data-chargesview]')) { openChargesPanel(); return; }
+  if (e.target.id === 'chargesclose' || e.target.id === 'chargescancel'
+      || (e.target.dataset && e.target.dataset.chargesscrim !== undefined)) { closeChargesPanel(false); return; }
+  if (e.target.id === 'chargesapply') { closeChargesPanel(true); return; }
+  if (e.target.dataset && e.target.dataset.chargezero) { zeroCharge(e.target.dataset.chargezero); return; }
   /* the custom fee card (D96) */
   if (e.target.closest && e.target.closest('[data-customview]')) { openCustomPanel(); return; }
   if (e.target.id === 'customclose' || e.target.id === 'customcancel'

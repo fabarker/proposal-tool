@@ -598,12 +598,12 @@ def test_tiers_are_half_open_and_exhaustive():
     """[min, max): a size on a boundary belongs to the tier above it, the
     first tier starts at zero and the last has no ceiling. Nothing between
     zero and infinity is unpriced, and nothing else is priced."""
-    assert fees.tierFor(0)['id'] == fees.TIERS[0]['id']
-    for earlier, later in zip(fees.TIERS, fees.TIERS[1:]):
+    assert fees.tierFor(0)['id'] == fees.tiers()[0]['id']
+    for earlier, later in zip(fees.tiers(), fees.tiers()[1:]):
         edge = earlier['max']
         assert fees.tierFor(edge - 0.01)['id'] == earlier['id']
         assert fees.tierFor(edge)['id'] == later['id']
-    assert fees.tierFor(10 ** 13)['id'] == fees.TIERS[-1]['id']
+    assert fees.tierFor(10 ** 13)['id'] == fees.tiers()[-1]['id']
     for bad in (None, -1, 'big', True):
         with pytest.raises(ValueError):
             fees.tierFor(bad)
@@ -612,19 +612,19 @@ def test_tiers_are_half_open_and_exhaustive():
 def test_casp_prices_every_group_the_same():
     """One rate per tier and level, whatever the product's group - and the
     group may be omitted altogether."""
-    for tier in fees.TIERS:
+    for tier in fees.tiers():
         size = tier['min']
         for level in fees.LEVELS:
             uniform = fees.managementFee('CASP', size, level)
-            for group in fees.FEE_GROUPS + ['not a group']:
+            for group in fees.feeGroups() + ['not a group']:
                 assert fees.managementFee('CASP', size, level, group) == uniform
 
 
 def test_rdr_prices_by_group_and_requires_one():
-    for tier in fees.TIERS:
+    for tier in fees.tiers():
         size = tier['min']
         for level in fees.LEVELS:
-            byGroup = {g: fees.managementFee('RDR', size, level, g) for g in fees.FEE_GROUPS}
+            byGroup = {g: fees.managementFee('RDR', size, level, g) for g in fees.feeGroups()}
             assert len(set(byGroup.values())) > 1, (tier['id'], level)
     with pytest.raises(KeyError):
         fees.managementFee('RDR', 1e6, fees.DEFAULT_LEVEL)
@@ -635,12 +635,12 @@ def test_rdr_prices_by_group_and_requires_one():
 def test_levels_run_floor_to_ceiling_and_tiers_run_downhill():
     """A level is a point on a band, so floor <= target <= ceiling at every
     cell; and a bigger account never pays a higher rate than a smaller one."""
-    schedules = [('CASP', [None]), ('RDR', fees.FEE_GROUPS)]
+    schedules = [('CASP', [None]), ('RDR', fees.feeGroups())]
     for schedule, groups in schedules:
         for group in groups:
             for source in fees.SOURCES:
                 previous = None
-                for tier in fees.TIERS:
+                for tier in fees.tiers():
                     size = tier['min']
                     band = [fees.managementFee(schedule, size, fees.levelId(source, p), group)
                             for p in ('Floor', 'Target', 'Ceiling')]
@@ -672,9 +672,9 @@ def test_every_product_carries_a_priced_fee_group_and_no_fee():
             for sleeve in sleeves.listSleeves(category, variant):
                 for product in sleeve['products']:
                     assert 'managementFee' not in product, (variant, product['name'])
-                    assert product['feeGroup'] in fees.FEE_GROUPS, (variant, product['name'])
+                    assert product['feeGroup'] in fees.feeGroups(), (variant, product['name'])
                     seen.add(product['feeGroup'])
-    assert seen == set(fees.FEE_GROUPS), 'every group should be exercised by some product'
+    assert seen == set(fees.feeGroups()), 'every group should be exercised by some product'
 
 
 def test_fee_schedule_has_no_default_and_the_level_has_the_prescribed_one(tmp_path, monkeypatch):
@@ -724,11 +724,11 @@ def test_schema_carries_the_fee_framework_at_the_mandates_tier():
     assert set(rates['CASP']['levels']) == set(fees.LEVELS)
     # RDR still reads the one tier the TOP account size falls in
     assert rates['RDR']['byGroup'] is True and rates['RDR']['marginal'] is False
-    assert set(rates['RDR']['groups']) == set(fees.FEE_GROUPS)
+    assert set(rates['RDR']['groups']) == set(fees.feeGroups())
     for level in fees.LEVELS:
         assert rates['CASP']['levels'][level] == fees.effectiveRate('CASP', 26e6, level)
         assert rates['CASP']['levels'][level] != fees.managementFee('CASP', TOP_ACCOUNT, level)
-        for group in fees.FEE_GROUPS:
+        for group in fees.feeGroups():
             assert rates['RDR']['groups'][group][level] == \
                 fees.managementFee('RDR', TOP_ACCOUNT, level, group)
 
@@ -820,7 +820,7 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
         assert rows[3][:2] == ('Account Size Tier', '{} ({})'.format(tier['id'], tier['label']))
     # and which card priced it (D55): the delivered version, flagged as placeholder
     assert rows[4][0] == 'Fee Card'
-    assert fees.DELIVERY['version'] in rows[4][1] and 'placeholder' in rows[4][1]
+    assert fees.deliveryInfo()['version'] in rows[4][1] and 'placeholder' in rows[4][1]
     assert rows[5] == (None,) * len(IMPL_COLUMNS)
     assert rows[6] == tuple(IMPL_COLUMNS)
     mgmt, bp = (IMPL_COLUMNS.index(c) for c in ('Mgmt fee', 'Wtd fee (bp)'))
@@ -966,7 +966,7 @@ def test_the_premium_product_is_priced_like_any_other():
     assert len(products) == 1
     product = products[0]
     assert product['name'] == 'Strategic Volatility Premium'
-    assert product['feeGroup'] in fees.FEE_GROUPS
+    assert product['feeGroup'] in fees.feeGroups()
     assert (product['vehicle'], product['source'], product['liquidity'],
             product['exposureCurrency']) == ('Mutual Fund', 'Internal', 'Daily', 'USD')
     for schedule in fees.SCHEDULES:
@@ -1108,7 +1108,7 @@ def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
                           text=True, env=environment)
     assert done.returncode == 0, done.stderr[-600:]
     routes, asked = done.stdout.split()
-    assert int(routes) == 42, 'the whole block registered without the extract'
+    assert int(routes) == 64, 'the whole block registered without the extract'
     assert asked == 'raised', 'and the data is still required when it is wanted'
 
 
@@ -1178,12 +1178,12 @@ def test_the_card_is_read_from_the_delivery_and_its_shape_is_derived():
     from cyrus_pmg.pmgService.scenario import feeTools
     assert fees.ratesPath().endswith('feeRates.csv')
     assert fees.deliveryInfo()['cells'] == 180
-    assert [t['id'] for t in fees.TIERS] == ['T1', 'T2', 'T3', 'T4', 'T5']
-    assert fees.TIERS[0]['label'] == 'Under $10m' and fees.TIERS[-1]['label'] == '$100m and up'
-    assert fees.TIERS[1]['label'] == '$10m – $25m'
-    assert fees.FEE_GROUPS == ['Passive', 'Core Active', 'Specialist Active',
+    assert [t['id'] for t in fees.tiers()] == ['T1', 'T2', 'T3', 'T4', 'T5']
+    assert fees.tiers()[0]['label'] == 'Under $10m' and fees.tiers()[-1]['label'] == '$100m and up'
+    assert fees.tiers()[1]['label'] == '$10m – $25m'
+    assert fees.feeGroups() == ['Passive', 'Core Active', 'Specialist Active',
                                'Alternatives', 'Asset Allocation']
-    assert fees.DELIVERY['version'] and fees.PLACEHOLDER
+    assert fees.deliveryInfo()['version'] and fees.PLACEHOLDER
     assert feeTools.census() == 0
 
 
@@ -1230,41 +1230,62 @@ def test_the_card_the_viewer_reads_pivots_both_ways_over_the_same_cells():
                 assert card['cells'][key] == rate
                 assert rate == fees.managementFee(
                     row['schedule'], tier['min'], level, row['feeGroup'])
-    assert card['delivery']['version'] == fees.DELIVERY['version']
+    assert card['delivery']['version'] == fees.deliveryInfo()['version']
     with pytest.raises(KeyError):
         fees.grid('T9')
 
 
-def test_the_card_cannot_be_written_through_the_service():
-    """Read only (D55): the module offers no way to change a rate, and the
-    router carries no write for it. The card changes by delivery."""
+def test_the_card_is_read_only_to_a_pwa_and_written_only_by_an_admin():
+    """The pricing module still writes nothing (D55): the card changes as a
+    new version saved through feeCard, from the repository's Fees tab (D166).
+    So the one fee route a PWA has is a read, and every route that can
+    change the card is the repository's, behind the admin role."""
     from cyrus_pmg.pmgService import dashboardRouter
-    for gone in ('applyEdits', 'resetEdits', 'overlayInfo'):
+    for gone in ('applyEdits', 'resetEdits', 'overlayInfo', 'save'):
         assert not hasattr(fees, gone), gone
-    paths = {(r.path, tuple(sorted(r.methods))) for r in dashboardRouter.router.routes}
-    feeRoutes = {p: m for p, m in paths if p.endswith('/fees')}
-    assert feeRoutes == {'/scenario/fees': ('GET',)}, feeRoutes
-    from cyrus_pmg.pmgService.core import accessControl
-    assert not hasattr(accessControl, 'requireFeeAdmin')
+    writes = {}
+    for r in dashboardRouter.router.routes:
+        if '/fees' not in r.path:
+            continue
+        names = [d.call.__name__ for d in r.dependant.dependencies]
+        if r.path == '/scenario/fees':
+            assert tuple(sorted(r.methods)) == ('GET',), r.path
+            assert 'requireAdmin' not in names
+            continue
+        assert r.path.startswith('/scenario/repository/fees'), r.path
+        assert 'requireAdmin' in names, r.path
+        if r.methods - {'GET'}:
+            writes[r.path] = tuple(sorted(r.methods))
+    assert writes == {'/scenario/repository/fees': ('PUT',),
+                      '/scenario/repository/fees/revert': ('POST',),
+                      '/scenario/repository/fees/import/preview': ('POST',),
+                      '/scenario/repository/fees/import': ('POST',)}, writes
 
 
 def test_the_workbook_names_the_card_that_priced_it(tmp_path):
     rows = _exported(tmp_path, {'includeFees': True, 'feeSchedule': 'RDR',
                                 'feeLevel': 'PMG Target'})
     assert rows[4][0] == 'Fee Card'
-    assert fees.DELIVERY['version'] in rows[4][1] and 'placeholder' in rows[4][1]
+    assert fees.deliveryInfo()['version'] in rows[4][1] and 'placeholder' in rows[4][1]
 
 
 def test_a_redelivery_is_diffed_cell_by_cell(tmp_path, capsys):
+    """A file is reviewed against the card in force rate by rate, by the
+    tiers' ranges (D166), before it is put in force - and one the card could
+    not price from, a rate missing, is refused naming the rate."""
     from cyrus_pmg.pmgService.scenario import feeTools
     lines = open(fees.ratesPath()).read().splitlines()
     moved = [l if not l.startswith('RDR,Passive,T1,') else l.rsplit(',', 1)[0] + ',0.20'
-             for l in lines][:-1]                                     # and one cell removed
+             for l in lines]
     path = tmp_path / 'redelivery.csv'; path.write_text('\n'.join(moved) + '\n')
     assert feeTools.diff(str(path)) == 0
     out = capsys.readouterr().out
-    assert 'of 180 rates changed, 0 added, 1 removed' in out
-    assert 'REMOVED' in out
+    assert '6 rate(s) moved' in out
+    assert 'RDR · Passive · Under $10m · PMG Target' in out and '→ 0.2' in out
+    short = tmp_path / 'short.csv'; short.write_text('\n'.join(lines[:-1]) + '\n')
+    assert feeTools.diff(str(short)) == 1
+    out = capsys.readouterr().out
+    assert 'REFUSED' in out and 'no rate for RDR Asset Allocation T5 PMG Ceiling' in out
 
 
 # ---- excluding fees from the proposal (D52) ----
@@ -1380,7 +1401,7 @@ def test_a_marginal_schedule_fills_the_tiers_in_turn():
     """D83. Money in each band pays that band's own rate, and the bands cover
     the mandate exactly - the card reader guarantees a contiguous ladder from
     zero, so a blend can never divide by a partial fill."""
-    ladder = {t['id']: t for t in fees.TIERS}
+    ladder = {t['id']: t for t in fees.tiers()}
 
     for amount in (1.0, 9_999_999, 10e6, 26e6, 100e6, 250e6, 5e9):
         bands = fees.marginalBands(amount)
@@ -1409,7 +1430,7 @@ def test_a_marginal_schedule_fills_the_tiers_in_turn():
               for a in (6e6, 26e6, 60e6, 300e6)]
     assert blends == sorted(blends, reverse=True)
     # never cheaper than the cheapest band nor dearer than the dearest
-    rates = [fees._rate('CASP', None, t['id'], 'PMG', 'Target') for t in fees.TIERS]
+    rates = [fees._rate('CASP', None, t['id'], 'PMG', 'Target') for t in fees.tiers()]
     for blend in blends:
         assert min(rates) <= blend <= max(rates)
 
@@ -1625,22 +1646,22 @@ def test_js_fee_mirror_agrees_with_python():
     fn = source[source.index('function resolveFee('):source.index('function feeRates(')]
 
     cases, expected = [], []
-    for tier in fees.TIERS:
+    for tier in fees.tiers():
         size = tier['min']
         rates = fees.ratesAtTier(tier['id'])
         for schedule in fees.SCHEDULES:
             for level in fees.LEVELS:
-                for group in fees.FEE_GROUPS:
+                for group in fees.feeGroups():
                     cases.append([rates, schedule, level, group])
                     expected.append(fees.managementFee(schedule, size, level, group))
                 cases.append([rates, schedule, level, 'not a group'])
                 expected.append(fees.managementFee('CASP', size, level)
                                 if schedule == 'CASP' else None)
-            cases.append([rates, schedule, 'PMG Middle', fees.FEE_GROUPS[0]])
+            cases.append([rates, schedule, 'PMG Middle', fees.feeGroups()[0]])
             expected.append(None)
-        cases.append([rates, 'Flat', fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0]])
+        cases.append([rates, 'Flat', fees.DEFAULT_LEVEL, fees.feeGroups()[0]])
         expected.append(None)
-    cases.append([None, 'CASP', fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0]])
+    cases.append([None, 'CASP', fees.DEFAULT_LEVEL, fees.feeGroups()[0]])
     expected.append(None)
 
     # ...and against what the client is actually SERVED, which for a marginal
@@ -1651,7 +1672,7 @@ def test_js_fee_mirror_agrees_with_python():
         served = fees.ratesFor(TOP_ACCOUNT, mandate)
         for schedule in fees.SCHEDULES:
             for level in fees.LEVELS:
-                for group in fees.FEE_GROUPS:
+                for group in fees.feeGroups():
                     cases.append([served, schedule, level, group])
                     expected.append(fees.productFee(schedule, level, group,
                                                     topAccountSize=TOP_ACCOUNT,
@@ -1667,23 +1688,23 @@ def test_js_fee_mirror_agrees_with_python():
     served = fees.ratesFor(TOP_ACCOUNT, 26e6)
     customMap = {'CASP': 0.51,
                  'RDR': {g: fees.customBounds('RDR', TOP_ACCOUNT, 26e6, g)[0]
-                         for g in fees.FEE_GROUPS[:-1]}}
+                         for g in fees.feeGroups()[:-1]}}
     custom = {'level': fees.CUSTOM_LEVEL, 'map': customMap}
     for schedule in fees.SCHEDULES:
-        for group in fees.FEE_GROUPS + ['not a group']:
+        for group in fees.feeGroups() + ['not a group']:
             cases.append([served, schedule, fees.CUSTOM_LEVEL, group, custom])
             expected.append(fees.productFee(schedule, fees.CUSTOM_LEVEL, group,
                                             topAccountSize=TOP_ACCOUNT, mandateSize=26e6,
                                             customFees=customMap))
-        cases.append([served, schedule, fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0], custom])
-        expected.append(fees.productFee(schedule, fees.DEFAULT_LEVEL, fees.FEE_GROUPS[0],
+        cases.append([served, schedule, fees.DEFAULT_LEVEL, fees.feeGroups()[0], custom])
+        expected.append(fees.productFee(schedule, fees.DEFAULT_LEVEL, fees.feeGroups()[0],
                                         topAccountSize=TOP_ACCOUNT, mandateSize=26e6,
                                         customFees=customMap))
-    cases.append([served, 'RDR', fees.CUSTOM_LEVEL, fees.FEE_GROUPS[0], {'level': fees.CUSTOM_LEVEL, 'map': {}}])
+    cases.append([served, 'RDR', fees.CUSTOM_LEVEL, fees.feeGroups()[0], {'level': fees.CUSTOM_LEVEL, 'map': {}}])
     expected.append(None)
-    cases.append([served, 'RDR', fees.CUSTOM_LEVEL, fees.FEE_GROUPS[0], {'level': fees.CUSTOM_LEVEL, 'map': {'RDR': 0.3}}])
+    cases.append([served, 'RDR', fees.CUSTOM_LEVEL, fees.feeGroups()[0], {'level': fees.CUSTOM_LEVEL, 'map': {'RDR': 0.3}}])
     expected.append(None)                        # the wrong shape is no rate
-    cases.append([served, 'CASP', fees.CUSTOM_LEVEL, fees.FEE_GROUPS[0], None])
+    cases.append([served, 'CASP', fees.CUSTOM_LEVEL, fees.feeGroups()[0], None])
     expected.append(None)                        # no custom block: the card does not price it
 
     script = fn + '\nconst cases = ' + json.dumps(cases) + ';\n' \
@@ -2739,15 +2760,16 @@ def test_the_top_fee_tier_says_and_up_with_an_empty_cell(tmp_path):
         assert 'tierMax' in str(caught.value) and 'EMPTY' in str(caught.value), refused
 
     # and the packaged card is the shape the guidance describes
-    assert fees.TIERS[-1]['max'] is None and fees.TIERS[-1]['label'].endswith('and up')
-    assert all(t['max'] is not None for t in fees.TIERS[:-1]), 'only the last is open-ended'
+    assert fees.tiers()[-1]['max'] is None and fees.tiers()[-1]['label'].endswith('and up')
+    assert all(t['max'] is not None for t in fees.tiers()[:-1]), 'only the last is open-ended'
     huge = fees.tierFor(10 ** 12)
-    assert huge['id'] == fees.TIERS[-1]['id'], 'any size above the last edge lands in the top tier'
+    assert huge['id'] == fees.tiers()[-1]['id'], 'any size above the last edge lands in the top tier'
 
 
 def test_the_share_class_rides_from_the_catalogue_to_the_sheet():
-    """D81. Dis or Acc, read from the delivered catalogue, carried onto every
-    line item and printed in its own column beside the vehicle."""
+    """D81. Distributing or Accumulating, read from the delivered catalogue,
+    carried onto every line item and printed in its own column beside the
+    vehicle."""
     from openpyxl import load_workbook
     from cyrus_pmg.pmgService.scenario import products
     assert IMPL_COLUMNS.index('Share Class') == IMPL_COLUMNS.index('Vehicle') + 1
@@ -2761,7 +2783,8 @@ def test_the_share_class_rides_from_the_catalogue_to_the_sheet():
     for item in items:
         assert item['shareClass'] in products.SHARE_CLASSES, item['name']
         assert item['shareClass'] == products.get(item['productId'])['shareClass']
-    assert {i['shareClass'] for i in items} == {'Dis', 'Acc'}, 'both classes are in play'
+    assert {i['shareClass'] for i in items} == {'Distributing', 'Accumulating'}, \
+        'both classes are in play'
 
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
     header = next(r for r in range(1, 12)
@@ -2770,49 +2793,41 @@ def test_the_share_class_rides_from_the_catalogue_to_the_sheet():
           for c in range(1, sheet.max_column + 1)].index('Share Class') + 1
     printed = [sheet.cell(row=r, column=at).value for r in range(header + 1, sheet.max_row + 1)
                if str(sheet.cell(row=r, column=1).value or '').startswith('  ')]
-    assert printed and set(printed) <= {'Dis', 'Acc'}, printed
+    assert printed and set(printed) <= {'Distributing', 'Accumulating'}, printed
 
 
 def test_a_share_class_the_catalogue_does_not_define_is_refused(tmp_path):
-    """A closed pair: a typo in the delivery is refused on load, not printed.
-    And a delivery with no such column at all still loads, serving None (D63)."""
-    import csv, os
+    """A closed pair: a typo in a product file is refused on load, not
+    printed. The short forms an older file used are read as the words (D164).
+    And a file with no such column at all still loads, reading None (D63)."""
+    import csv
     from cyrus_pmg.pmgService.scenario import products
 
     cell = {'ProductId': 'p-1', 'Name': 'Probe', 'Ticker': 'PRB', 'AssetClass': 'Equity',
             'Style': 'Active', 'Vehicle': 'ETF', 'Source': 'Internal', 'Liquidity': 'Daily',
             'ExposureCurrency': 'USD', 'ProductCost': '0.2', 'FeeGroup': 'Passive',
-            'ShareClass': 'Dis', 'DistributionYield': '1.0', 'MinimumInvestment': ''}
+            'ShareClass': 'Distributing', 'DistributionYield': '1.0', 'MinimumInvestment': ''}
     path = tmp_path / 'products.csv'
 
-    def write(columns, **over):
+    def read(columns, **over):
         row = dict(cell, **over)
         with io.open(str(path), 'w', encoding='utf-8', newline='') as handle:
             writer = csv.DictWriter(handle, fieldnames=columns, extrasaction='ignore')
             writer.writeheader()
             writer.writerow(row)
-        products.reload()
+        byId, _ = products.readFile(str(path))
+        return byId['p-1']
 
     every = products.COLUMNS + products.OPTIONAL
-    os.environ['SCENARIO_PRODUCTS_SOURCE'] = str(path)
-    try:
-        write(every)
-        assert products.get('p-1')['shareClass'] == 'Dis'
-
-        write(every, ShareClass='Distributing')
-        with pytest.raises(products.BadCatalogue) as caught:
-            products.all()
-        assert 'share class' in str(caught.value)
-
-        write(every, ShareClass='')          # blank on a row: no share class
-        assert products.get('p-1')['shareClass'] is None
-
-        write(products.COLUMNS)              # the column absent entirely
-        assert products.get('p-1')['shareClass'] is None
-    finally:
-        os.environ.pop('SCENARIO_PRODUCTS_SOURCE', None)
-        products.reload()
-    assert len(products.all()) == 73, 'the packaged catalogue is back'
+    assert read(every)['shareClass'] == 'Distributing'
+    assert read(every, ShareClass='Acc')['shareClass'] == 'Accumulating'     # the short form
+    assert read(every, ShareClass='Dis')['shareClass'] == 'Distributing'
+    with pytest.raises(products.BadCatalogue) as caught:
+        read(every, ShareClass='Distribution')
+    assert 'share class' in str(caught.value)
+    assert read(every, ShareClass='')['shareClass'] is None          # blank on a row: none
+    assert read(products.COLUMNS)['shareClass'] is None              # the column absent
+    assert len(products.all()) == 73, 'reading a file changes nothing in the catalogue'
 
 
 def test_a_position_below_its_products_minimum_is_flagged_and_listed():
@@ -3031,7 +3046,7 @@ def test_custom_level_is_a_level_and_its_bounds_are_the_bounding_source_band():
     rules.validateFeeLevel(fees.CUSTOM_LEVEL)              # accepted beside the six
     floorId = fees.levelId(fees.CUSTOM_BOUNDS_SOURCE, fees.POINTS[0])
     ceilId = fees.levelId(fees.CUSTOM_BOUNDS_SOURCE, fees.POINTS[-1])
-    for group in fees.FEE_GROUPS:
+    for group in fees.feeGroups():
         low, high = fees.customBounds('RDR', TOP_ACCOUNT, 26e6, group)
         assert low == fees.managementFee('RDR', TOP_ACCOUNT, floorId, group)
         assert high == fees.managementFee('RDR', TOP_ACCOUNT, ceilId, group)
@@ -3040,7 +3055,7 @@ def test_custom_level_is_a_level_and_its_bounds_are_the_bounding_source_band():
     assert low == fees.effectiveRate('CASP', 26e6, floorId)
     assert high == fees.effectiveRate('CASP', 26e6, ceilId)
     assert fees.customRows('CASP') == [None]
-    assert fees.customRows('RDR') == fees.FEE_GROUPS
+    assert fees.customRows('RDR') == fees.feeGroups()
 
 
 def test_validate_custom_fees_holds_each_row_inside_its_bounds():
@@ -3089,7 +3104,7 @@ def _customModel(schedule, customFees):
 
 def test_implementation_model_prices_every_product_by_its_custom_row():
     custom = {'RDR': {g: fees.customBounds('RDR', TOP_ACCOUNT, 26e6, g)[0]
-                      for g in fees.FEE_GROUPS}}
+                      for g in fees.feeGroups()}}
     model = _customModel('RDR', custom)
     assert model['custom'] and model['priced'] and not model['unpricedGroups']
     items = [i for g in model['groups'] for i in g['items']]
@@ -3140,7 +3155,7 @@ def test_workbook_header_states_custom_rates_and_who_entered_them(tmp_path):
     result = PORT.resolve_portfolio(BASIS, key)
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     custom = {'RDR': {g: fees.customBounds('RDR', TOP_ACCOUNT, 26e6, g)[1]
-                      for g in fees.FEE_GROUPS}}
+                      for g in fees.feeGroups()}}
     payload = PORT.build_export(BASIS, MANDATE_26M, [result],
                                 {'sleeves': chosen, 'variant': sleeves.VARIANTS[0],
                                  'feeSchedule': 'RDR', 'feeLevel': fees.CUSTOM_LEVEL,
@@ -3153,7 +3168,7 @@ def test_workbook_header_states_custom_rates_and_who_entered_them(tmp_path):
     labels = [r[0] for r in rows_[:14]]
     assert rows_[labels.index('Fee Level')][1] == fees.CUSTOM_LEVEL
     stated = {r[0]: r[1] for r in rows_[:14] if r[0] and str(r[0]).startswith('Custom Rate · ')}
-    assert set(stated) == {'Custom Rate · ' + g for g in fees.FEE_GROUPS}
+    assert set(stated) == {'Custom Rate · ' + g for g in fees.feeGroups()}
     assert stated['Custom Rate · Passive'] == '{:.2f}%'.format(custom['RDR']['Passive'])
     assert 'Effective Rate' not in labels and 'Account Size Tier' not in labels
     assert rows_[labels.index('Custom Rates Entered By')][1].startswith('alice')

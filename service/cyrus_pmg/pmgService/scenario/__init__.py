@@ -26,14 +26,22 @@ block, never from here.
     registry.py           adapter selection via SCENARIO_ADAPTER
     scenarioStore.py      file-backed scenario state, shared across workers
     advisors.py           the Primary PWA directory (advisors.xlsx)
-    products.py           the delivered product catalogue (D56, D63)
+    products.py           the product catalogue, kept in the repository and
+                          edited from the console; loaded once from
+                          SCENARIO_PRODUCTS_SOURCE, then by import (D63, D165)
     sleeves.py            the sleeve library facade (VARIANTS, listSleeves, ...)
     sleeveRepo.py         the library itself: a SQLite store the service writes,
                           seeded once from SCENARIO_SLEEVES_SEED (D57, D65)
     sleeveRules.py        which strategic portfolios an edition of a sleeve is for (D89)
-    sleeveTools.py        census / export / import for that store
-    fees.py               the fee framework and the delivered rate card (D55)
-    feeTools.py           census / diff / accept for the card
+    sleeveTools.py        census / export / import for that store, and the
+                          catalogue's export, import and history
+    fees.py               the fee framework: pricing from the card in force (D55)
+    feeCard.py            the fee card, kept in the repository and edited on the
+                          console's Fees tab; loaded once from
+                          SCENARIO_FEES_SOURCE (D166)
+    feeTools.py           census / diff / accept / export for the card
+    repositoryFeed.py     the repository's record as one feed: sleeves,
+                          products, the fee card, overlays, the split (D167)
     sheetDoc.py           the report as data: the four sheets built once (D119)
     workbook.py           the Excel renderer of those Docs (D67, D73, D119)
     pptWriter.py          the PowerPoint renderer: the deck, fitted and locked (D121-D125)
@@ -42,7 +50,8 @@ block, never from here.
     proposalRegister.py   every delivered proposal, kept for ever (D69, D75)
     accountRequests.py    account opening requests against a proposal (D76)
 
-Data files beside the modules: advisors.xlsx, fees.json, feeRates.csv,
-assetEstimates.json. Everything else the package reads is named by a
+Data files beside the modules: advisors.xlsx, fees.json, feeRates.csv (the
+card the repository is first loaded with when SCENARIO_FEES_SOURCE names no
+other), assetEstimates.json. Everything else the package reads is named by a
 SCENARIO_* variable and delivered as data.
 """

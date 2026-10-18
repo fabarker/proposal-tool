@@ -62,6 +62,9 @@ PACKAGE_MARKS = [
     (125, 'the house fonts in the deck', 'houseFonts.py'),
     (148, 'the funding split', 'fundingSplit.py'),
     (155, 'the overlay rules', 'overlayRules.py'),
+    (170, 'custom sleeves', 'customSleeves.py'),
+    (171, 'custom portfolios', 'customPortfolio.py'),
+    (172, 'one switch for PWAs', 'customAccess.py'),
 ]
 #: (D-number, what, a string the built page carries from then on)
 PAGE_MARKS = [
@@ -74,11 +77,15 @@ PAGE_MARKS = [
     (156, 'the Sleeves view as cards and a table', 'pmg.repository.sleevesView'),
     (157, 'the New sleeve form', 'pmg.repository.newSleeveStart'),
     (158, 'the New edition form', 'pmg.repository.editionMode'),
+    (170, 'the custom sleeve builder', 'cslDialog'),
+    (171, 'the custom portfolio', 'cpDialog'),
+    (172, 'the custom workflows switch', 'custom-access'),
 ]
 #: names the router imports outside the block markers, and since when
 ROUTER_IMPORTS = [
     ('import io', 'D123'), ('import json', 'D122'), ('import zipfile', 'D123'),
     ('validateCustomFees', 'D96'), ('fundingSplit', 'D148'), ('overlayRules', 'D155'),
+    ('customSleeves', 'D170'), ('customPortfolio', 'D171'), ('customAccess', 'D172'),
 ]
 
 
@@ -301,7 +308,7 @@ def main(argv=None):
                 behind = True
 
     _say('The stores (opened read-only)')
-    expected = {'SCENARIO_SLEEVES_DB': 6, 'SCENARIO_REGISTER_DB': 5}
+    expected = {'SCENARIO_SLEEVES_DB': 8, 'SCENARIO_REGISTER_DB': 6}
     for variable, path in storePaths(src).items():
         found = _schemaVersion(path)
         if found is None:

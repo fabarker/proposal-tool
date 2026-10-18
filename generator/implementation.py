@@ -288,6 +288,31 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
    their Custom cell is inert. The rail block under the level lists the rows. */
 #customDialog .scrim{z-index:94}
 #customDialog .dialog{z-index:95}
+/* ── other charges (D177) ──
+   A short form: the FX commissions by trade size, the equity and ETF charge
+   and the custody fee, each with its unit beside it. */
+#chargesDialog .scrim{z-index:94}
+#chargesDialog .dialog{z-index:95}
+.dialog.oc{width:min(560px,calc(100vw - 32px))}
+.oc-group{border:0;margin:14px 0 0;padding:0;min-width:0}
+.oc-group legend{font-weight:600;font-size:13px;color:var(--ink);padding:0;margin-bottom:4px}
+.oc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;
+  border-bottom:1px solid var(--line,#E3E7EE)}
+.oc-row label{font-size:13px;color:var(--ink-2)}
+.oc-in{display:inline-flex;align-items:center;gap:5px;flex:none}
+.oc-in input{width:132px;text-align:right;font-family:var(--f-num);font-size:13px;padding:5px 8px;
+  border:1px solid var(--line-strong,#CDD5E0);border-radius:6px;background:#fff}
+.oc-unit{min-width:24px;font-size:12px;color:var(--ink-3)}
+.oc-unit.pre{min-width:0;text-align:right}
+.oc-row.bad input{border-color:#B42318;background:#FFF5F5}
+.oc-row.fixed input:disabled{background:var(--bg-2,#F1F3F6);color:var(--ink-3);border-color:var(--line,#E3E7EE);
+  cursor:not-allowed}
+.oc-fixed{font-size:11px;color:var(--ink-3);margin-left:6px;text-transform:uppercase;letter-spacing:.04em}
+.oc-zero{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;
+  margin-top:6px;border-radius:6px;background:#FFF8E6;border:1px solid #F2D58A;font-size:13px;color:var(--ink)}
+.oc-zero .btn{flex:none}
+.oc-must{margin:10px 0 12px;padding:8px 10px;border-radius:6px;background:#EEF4FF;border:1px solid #B9CDF2;
+  font-size:13px;font-weight:600;color:var(--ink)}
 .dialog.cf{width:min(1060px,calc(100vw - 32px))}
 .cf-tools .cf-lbl{font-size:13px;color:var(--ink-2)}
 .cf-grid tbody th.rowhead{min-width:232px}
@@ -310,6 +335,59 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 .rate-grid td.cust.bad .cf-in{border-color:var(--neg);background:#FDE8E8}
 .rate-grid tr.mark td.cust{background:#EEF3FC}
 .cf-actions{display:flex;gap:8px}
+/* the custom sleeve builder (D170) */
+.dialog.csl{width:min(980px,calc(100vw - 32px));padding:22px 26px 20px;max-height:calc(100vh - 32px);overflow:auto}
+.csl-head{margin:0 0 14px;padding-right:36px}
+.csl-head h2{margin:0 0 4px}
+.csl-fields{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 14px;align-items:center;
+  margin:0 0 14px;font-size:13px}
+.csl-fields > label,.csl-fields > .lbl{font-weight:600;color:var(--ink-2)}
+.csl-fields input,.csl-fields select{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line-strong);
+  border-radius:4px;background:var(--surface);color:var(--ink);width:100%;max-width:520px}
+.csl .rc-seg{display:inline-flex}
+.csl .rc-seg button[aria-pressed="true"]{background:#16243A;color:#fff;font-weight:600}
+.csl-hint{margin:5px 0 0;font-size:12.5px;color:var(--ink-3);max-width:70ch}
+.csl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+.csl-tbl{border-collapse:collapse;width:100%;font-size:13px}
+.csl-tbl th,.csl-tbl td{padding:6px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.csl-tbl thead th{font-family:var(--f-num);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:700;background:var(--surface-2);white-space:nowrap}
+.csl-tbl tbody th b{display:block;font-weight:600}
+.csl-tbl tbody th small,.csl-tbl td small{display:block;font-size:11.5px;color:var(--ink-3);font-weight:400}
+.csl-tbl .num{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.csl-tbl td.below{color:#9B1C1C;font-weight:600}
+.csl-tbl td.below small{color:#9B1C1C}
+.csl-tbl tr.gone th b{color:#9B1C1C}
+.csl-tbl input{width:78px;text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;
+  padding:4px 6px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink)}
+.csl-tbl input[aria-invalid="true"]{border-color:var(--neg);background:#FDE8E8}
+.csl-rm{appearance:none;background:none;border:0;font-size:17px;line-height:1;color:var(--ink-3);cursor:pointer;padding:2px 5px}
+.csl-rm:hover{color:#9B1C1C}
+.csl-tools{margin:8px 0 0}
+.csl-empty{margin:8px 0;font-size:13px;color:var(--ink-3)}
+.csl-add{margin:16px 0 0;border-top:1px solid var(--line);padding-top:12px}
+.csl-add-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0 0 8px}
+.csl-add-h h3{margin:0;font-size:14px}
+.csl-add-h .mut{font-size:12px;color:var(--ink-3)}
+.csl-add-h input{margin-left:auto;font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line-strong);
+  border-radius:4px;min-width:220px}
+.csl-list{list-style:none;margin:0;padding:0;display:grid;gap:4px;max-height:240px;overflow:auto}
+.csl-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 8px;
+  border:1px solid var(--line);border-radius:4px}
+.csl-pn b{display:block;font-size:13px;font-weight:600}
+.csl-pn small{font-size:11.5px;color:var(--ink-3)}
+.csl-actions{align-items:center}
+.csl-foot{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-family:var(--f-num);font-size:12.5px;color:var(--ink-2)}
+.csl-tot b.ok{color:#176A33}
+.csl-tot b.no{color:#8A5A00}
+.csl-tot .mut{color:var(--ink-3)}
+.csl-chips{display:flex;flex-wrap:wrap;gap:5px}
+.csl-chip{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;letter-spacing:.02em}
+.csl-chip.ok{background:#E6F3EC;color:#176A33}
+.csl-chip.warn{background:#FBF1DC;color:#8A5A00}
+.csl-chip.bad{background:#FDE8E8;color:#9B1C1C}
+.csl-discard{color:#9B1C1C}
+@media (max-width:640px){.csl-fields{grid-template-columns:1fr}}
 .cf-rows{list-style:none;margin:6px 0 2px;padding:0;display:grid;gap:3px;font-size:12.5px;color:var(--rail-ink-2)}
 .cf-rows li{display:flex;justify-content:space-between;gap:8px}
 .cf-rows b{color:var(--rail-ink);font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
@@ -369,6 +447,21 @@ body.rail-collapsed .dialog.greet{left:calc(var(--rail-w-collapsed,48px) + 26px)
 .sl-shape{display:flex;flex-wrap:wrap;gap:3px 12px;font-family:var(--f-num);font-size:11.5px;
   color:var(--rail-ink-3);letter-spacing:.02em;margin-top:1px}
 .sl-shape .bad{color:#F3A9A2;font-weight:700}
+/* custom sleeves in the rail (D170): the sleeve marked, its Edit, the
+   strategic weight a custom one replaced, and whether the book adds to 100% */
+.sl-shape.sl-custom{align-items:center}
+.sl-cchip{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.04em;
+  padding:0 7px;border-radius:9px;background:#3A2C55;color:#D9C6F5;border:1px solid #6B559A;line-height:16px}
+.sl-edit{appearance:none;background:none;border:0;padding:0;font:inherit;font-size:12px;font-weight:600;
+  color:var(--rail-accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.sl-edit:focus-visible{outline:2px solid var(--rail-accent);outline-offset:2px}
+.sl-shape .mut{color:var(--rail-ink-3);font-style:italic}
+.sl-was{color:var(--rail-ink-3);margin-left:4px;font-size:11px}
+.sl-bal{margin:0 0 4px;padding:8px 10px;border-radius:4px;font-size:12.5px;line-height:1.45;
+  color:var(--rail-ink-2);border:1px solid var(--rail-line)}
+.sl-bal.bad{border-color:#B9645A;background:rgba(185,100,90,.16);color:#F7D2CD}
+.sl-bal.ok{border-color:#3F7A5A;background:rgba(63,122,90,.16)}
+.sl-bal b{color:var(--rail-ink);font-family:var(--f-num)}
 
 /* ── implementation table ── */
 /* 30px below, matching .sec-head.stage-head - both steps open on the same
@@ -533,6 +626,11 @@ body.has-rail.step-impl .shell{max-width:none}
 /* attached by rule: a labelled glyph, not an emoji (G2) */
 .pill-lock{width:9px;height:9px;margin-left:5px;vertical-align:-1px;opacity:.7}
 .pill.p-sleeve.is-auto{cursor:default}
+/* a custom sleeve (D170): the same pill in violet, and the strategic weight it
+   replaced under the band's own */
+.pill.p-sleeve.is-custom{background:#F1EBF9;color:#5B3591;border:1px solid #C7B3E3}
+td small.was{display:block;font-family:var(--f-num);font-size:10.5px;font-weight:400;color:var(--ink-3);
+  text-decoration:line-through;line-height:1.2}
 .pill{display:inline-block;font-family:var(--f-num);font-size:11px;font-weight:700;
   letter-spacing:.04em;padding:1px 7px;border-radius:9px;white-space:nowrap}
 .p-act{background:#E3EBFA;color:#1E4FA3;border:1px solid #B9CDF0}
@@ -666,6 +764,134 @@ body.has-rail.step-impl .shell{max-width:none}
   padding:clamp(28px,5vw,52px);text-align:center}
 .impl-empty h3{margin:0 0 7px;font-size:18.5px;color:#16243A;font-family:var(--f-display)}
 .impl-empty p{margin:0 auto;max-width:44ch;font-size:15px;color:var(--ink-2)}
+/* ── custom portfolios (D171) ────────────────────────────────────────────── */
+/* the rail: the switch between the two kinds, the custom tier */
+.cp-confirm{margin:10px 0 0;padding:10px 12px;border:1px solid var(--rail-line);border-radius:4px;
+  font-size:12.5px;line-height:1.45;color:var(--rail-ink-2)}
+.cp-confirm b{display:block;color:var(--rail-ink);font-size:13px;margin:0 0 3px}
+.cp-confirm p{margin:0}
+.cp-confirm-btns{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
+.cp-confirm-btns .btn{font-size:12px;padding:6px 10px;flex:1 1 auto}
+.cp-railstat{margin:0 0 10px;padding:8px 10px;border-radius:4px;font-size:12.5px;line-height:1.45;
+  color:var(--rail-ink-2);border:1px solid var(--rail-line)}
+.cp-railstat b{color:var(--rail-ink);font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.cp-railstat.bad{border-color:#B9645A;background:rgba(185,100,90,.16);color:#F7D2CD}
+.cp-railstat.warn{border-color:#C9963F;background:rgba(201,150,63,.15);color:#F6E3BE}
+.cp-railstat.ok{border-color:#3F7A5A;background:rgba(63,122,90,.16)}
+.cp-line.is-out .cat span{color:#F3A9A2;font-weight:700}
+.cp-line.is-wide .cat span{color:#F6D58E;font-weight:700}
+.sl-shape .warn{color:#F6D58E;font-weight:700}
+.cp-rail-btns{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
+.cp-rail-btns .btn{font-size:12px;padding:6px 10px}
+.cp-rail-note{margin:12px 0 0}
+/* step 1: what a custom proposal shows there */
+body.cp-on #view-aa .sec.viz{display:none}
+/* the grouped lines' names are long: they wrap rather than clip */
+body.cp-on .tbl.alloc tbody tr.cat th .cw{white-space:normal}
+.col-nm .cp-unbuilt{display:block;font-size:10px;font-weight:600;letter-spacing:.04em;color:#B45309;text-transform:none}
+.col-role.cp-role{color:var(--ink-3)}
+tr.asset.cp-ac th .cw{padding-left:14px;color:var(--ink-2)}
+.cp-dash{color:var(--ink-3)}
+.cp-est{font-family:var(--f-num);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#B45309;margin-left:4px}
+/* step 2: the blank slate */
+.cp-blank{border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface);
+  padding:22px 22px 18px;margin:0 0 22px}
+.cp-blank h3{margin:0 0 4px;font-family:var(--f-display);font-size:20px;font-weight:600;color:var(--ink)}
+.cp-blank > p{margin:0 0 16px;font-size:14px;color:var(--ink-2);max-width:86ch;line-height:1.5}
+.cp-ways{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 18px}
+@media (max-width:900px){.cp-ways{grid-template-columns:1fr}}
+.cp-way{appearance:none;text-align:left;font:inherit;cursor:pointer;border:1px solid var(--line-strong);
+  border-radius:var(--radius);background:var(--bg);padding:14px 16px;display:grid;gap:4px;color:var(--ink)}
+.cp-way:hover{border-color:var(--accent);background:var(--surface)}
+.cp-way:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cp-way b{font-size:15px;color:var(--accent)}
+.cp-way span{font-size:13px;color:var(--ink-2);line-height:1.45}
+.cp-lim-h{margin:0 0 6px;font-family:var(--f-num);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-2);font-weight:600}
+.cp-lim{width:100%;max-width:620px;border-collapse:collapse;font-size:13px}
+.cp-lim th,.cp-lim td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}
+.cp-lim thead th{font-family:var(--f-num);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-2);font-weight:600}
+.cp-lim .n{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.cp-lim-more{margin:8px 0 0;font-size:12.5px;color:var(--ink-2);max-width:86ch;line-height:1.5}
+/* step 2: the build, editable */
+.cp-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.cp-tools .btn{font-size:12.5px;padding:7px 12px}
+.cp-refused{margin:0 0 10px}
+.tbl.impl input.cp-w{width:78px;text-align:right;font-family:var(--f-num);font-size:14px;font-variant-numeric:tabular-nums;
+  border:1px solid var(--line-strong);border-radius:3px;padding:3px 6px;background:#fff;color:var(--ink)}
+.tbl.impl input.cp-w:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+.tbl.impl input.cp-w[aria-invalid="true"]{border-color:#B42318;background:#FDE8E8}
+.tbl.impl input.cp-w.zero{border-style:dashed;background:#FFFBEB}
+.tbl.impl input.cp-w.new{box-shadow:0 0 0 2px #FDE68A}
+.tbl.impl input.cp-w:disabled{background:transparent;border-color:transparent;color:var(--ink)}
+.cp-x{appearance:none;border:0;background:none;color:var(--ink-3);font-size:15px;line-height:1;padding:0 4px;
+  cursor:pointer;margin-left:4px;vertical-align:1px}
+.cp-x:hover{color:#B42318}
+.cp-x:focus-visible{outline:2px solid var(--accent);border-radius:2px}
+.cp-cat{font:inherit;font-size:11.5px;margin-left:8px;border:1px dashed #C9963F;border-radius:3px;padding:1px 3px;
+  background:#FFFBEB;color:#7A4A00;max-width:210px}
+.cp-sug{font-family:var(--f-num);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#B45309;margin-left:6px}
+.pill.p-sleeve.is-built{background:#EAF1FC;color:#174C99;border:1px solid #91B1E3}
+.cp-scale{display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-family:var(--f-num);font-size:11.5px;
+  color:var(--ink-2);font-weight:400}
+.cp-scale input{width:62px;text-align:right;font:inherit;font-size:12px;border:1px solid var(--line-strong);
+  border-radius:3px;padding:1px 5px;background:#fff}
+.cp-band{font-family:var(--f-num);font-size:11px;color:var(--ink-2);margin-left:10px;font-weight:400;white-space:nowrap}
+.cp-band.wide{color:#B45309;font-weight:600}
+.cp-band.out{color:#B42318;font-weight:600}
+td small.cp-left{display:block;font-family:var(--f-num);font-size:10.5px;font-weight:400;color:#9B1C1C;line-height:1.2}
+tr.grand td small.cp-left{color:#FDE8E8}
+.cp-appr{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.cp-appr .btn{white-space:nowrap}
+/* the dialogs */
+.dialog.cp-dlg{max-height:calc(100vh - 32px);overflow:auto}
+.dialog.cp-dlg.cp-wide{width:min(1060px,calc(100vw - 32px))}
+.cp-sub{margin:0 0 14px;font-size:14px;color:var(--ink-2);max-width:80ch;line-height:1.45}
+.cp-pick-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}
+.cp-pick-h input[type=search]{font:inherit;font-size:13.5px;padding:6px 9px;border:1px solid var(--line-strong);
+  border-radius:4px;min-width:240px;flex:1}
+.cp-pick-h select{font:inherit;font-size:12.5px;padding:5px 6px;border:1px solid var(--line-strong);border-radius:4px;
+  background:#fff;max-width:170px}
+.cp-pick-wrap{max-height:min(52vh,460px);overflow:auto;border:1px solid var(--line);border-radius:4px}
+.cp-pick{width:100%;border-collapse:collapse;font-size:13px}
+.cp-pick th,.cp-pick td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.cp-pick thead th{position:sticky;top:0;background:var(--surface-2);font-family:var(--f-num);font-size:10.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);z-index:1;white-space:nowrap}
+.cp-pick thead th button{appearance:none;border:0;background:none;font:inherit;color:inherit;letter-spacing:inherit;
+  text-transform:inherit;cursor:pointer;padding:0}
+.cp-pick td.n,.cp-pick th.n{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cp-pick tr.held td{color:var(--ink-3)}
+.cp-pick tr:hover td{background:var(--row-hover)}
+.cp-pick b{font-weight:600;color:var(--ink)}
+.cp-pick small{display:block;color:var(--ink-2);font-size:11.5px}
+.cp-pick .cp-none{padding:18px;text-align:center;color:var(--ink-2)}
+.cp-held{font-family:var(--f-num);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.cp-paste{width:100%;min-height:150px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+  border:1px solid var(--line-strong);border-radius:4px;padding:8px}
+.cp-paste.cp-note{min-height:80px;font-family:inherit}
+.cp-note-l{display:block;font-weight:600;font-size:13px;margin:0 0 4px}
+.cp-prev{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0 0}
+.cp-prev th,.cp-prev td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left}
+.cp-prev td.n,.cp-prev th.n{text-align:right;font-family:var(--f-num)}
+.cp-prev tr.bad td{background:#FDE8E8;color:#9B1C1C}
+.cp-prev small{display:block;color:var(--ink-2);font-size:11.5px}
+.cp-paste-note{margin:6px 0 0}
+.cp-sl-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.4fr);gap:16px;margin:0 0 6px}
+@media (max-width:820px){.cp-sl-grid{grid-template-columns:1fr}}
+.cp-sl-list{max-height:min(54vh,470px);overflow:auto;border:1px solid var(--line);border-radius:4px;padding:4px 0}
+.cp-sl-cat{margin:8px 12px 2px;font-family:var(--f-num);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-2);font-weight:600}
+.cp-sl{display:grid;grid-template-columns:18px minmax(0,1fr);gap:8px;align-items:start;padding:6px 12px;cursor:pointer;font-size:13.5px}
+.cp-sl:hover{background:var(--row-hover)}
+.cp-sl small{display:block;color:var(--ink-2);font-size:11.5px}
+.cp-sl input:checked + span b{color:var(--accent)}
+.cp-sl-prev h3{margin:0 0 2px;font-size:16px}
+.cp-sl-prev .rc-note{margin:0 0 10px}
+.cp-sl-w{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 4px;font-size:13.5px;font-weight:600}
+.cp-sl-w input{width:90px;text-align:right;font:inherit;font-family:var(--f-num);font-size:14px;
+  border:1px solid var(--line-strong);border-radius:4px;padding:4px 7px;background:#fff}
+.cp-sl-w input[aria-invalid="true"]{border-color:#B42318;background:#FDE8E8}
 """
 
 # ── sleeve library ─────────────────────────────────────────────────────────────
@@ -678,4 +904,5 @@ def _asset(name):
     with open(os.path.join(here, 'js', name), encoding='utf-8') as fh:
         return fh.read()
 
-IMPL_JS = _asset('implementation.js')
+# the custom portfolio (D171) attaches to the implementation layer, after it
+IMPL_JS = _asset('implementation.js') + '\n' + _asset('customPortfolio.js')

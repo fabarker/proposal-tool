@@ -7,10 +7,10 @@ each a literal table to fill in:
 | Sheet | Becomes | Pointed at by |
 |---|---|---|
 | `saaPortfolios` | `saaPortfolios.csv` | `SCENARIO_SAA_SOURCE` |
-| `products` | `products.csv` | `SCENARIO_PRODUCTS_SOURCE` |
+| `products` | `products.csv` | `SCENARIO_PRODUCTS_SOURCE` - the first load only; after it, the Catalogue's *Import a file* |
 | `sleeves` | `sleeves.csv` | `SCENARIO_SLEEVES_SEED` |
 | `sleeveRules` | `sleeveRules.csv` | `SCENARIO_SLEEVES_RULES` (optional; else beside the seed) |
-| `feeRates` | `feeRates.csv` | `SCENARIO_FEES_SOURCE` |
+| `feeRates` | `feeRates.csv` | `SCENARIO_FEES_SOURCE` - the first load only; after it, the Fees tab's *Import a file* |
 | `advisors` | `advisors.xlsx` | replaces the packaged file (no override) |
 | `assetEstimates` | `assetEstimates.json` | `SCENARIO_ASSET_ESTIMATES` |
 

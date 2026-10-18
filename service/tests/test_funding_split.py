@@ -1,11 +1,11 @@
 """D148: the private-markets funding split, held in the repository.
 
 Until capital is called, a private-markets commitment is held in other
-categories by the split the desk sets in the console: a house split for
+categories by the split the desk sets in the console: a default split for
 every implementation type, and optionally a type's own. The weights are
 percentages to four places adding up to exactly 100; only a category every
 private-markets book holds may take a share. Every change carries a note and
-adds a revision; a restore is a revision too. The seeded house split is
+adds a revision; a restore is a revision too. The seeded default split is
 D136's thirds, and reproduces its figures.
 """
 
@@ -47,7 +47,7 @@ def _split(*pairs):
 
 # ------------------------------------------------------------ the store ---
 
-def test_the_house_split_is_seeded_with_d136s_thirds(store):
+def test_the_default_split_is_seeded_with_d136s_thirds(store):
     house = fundingSplit.describe()['house']
     assert house['scope'] == '*' and house['revision'] == 1
     assert house['destinations'] == _split((IG, 33.3333), (EQ, 66.6667))
@@ -100,21 +100,21 @@ def test_a_change_needs_a_note_a_known_scope_and_a_change(store):
     assert 'already in force' in caught.value.message
 
 
-def test_a_type_can_carry_its_own_split_and_go_back_to_the_house(store):
+def test_a_type_can_carry_its_own_split_and_go_back_to_the_default(store):
     assert fundingSplit.current(ESG)['inherited']
     own = fundingSplit.save(ESG, _split((OF, 50), (EQ, 50)), 'ESG parks in credit', 'alice')
     assert own['scope'] == ESG and own['revision'] == 1 and not own['inherited']
     assert rules.privateFunding(ESG) == [(OF, 0.5), (EQ, 0.5)]
-    assert rules.privateFunding('US Onshore') == rules.privateFunding(), 'the others keep the house'
-    back = fundingSplit.removeOverride(ESG, 'back to the house', 'alice')
+    assert rules.privateFunding('US Onshore') == rules.privateFunding(), 'the others keep the default'
+    back = fundingSplit.removeOverride(ESG, 'back to the default', 'alice')
     assert back['inherited'] and rules.privateFunding(ESG) == rules.privateFunding()
     history = fundingSplit.history(ESG)
     assert [(h['revision'], h['action']) for h in history] == [(2, 'removed'), (1, 'updated')]
-    assert history[0]['destinations'] is None and history[0]['note'] == 'back to the house'
+    assert history[0]['destinations'] is None and history[0]['note'] == 'back to the default'
     with pytest.raises(ValidationError):
         fundingSplit.removeOverride(ESG, 'again', 'alice')
     with pytest.raises(ValidationError):
-        fundingSplit.removeOverride('*', 'the house', 'alice')
+        fundingSplit.removeOverride('*', 'the default', 'alice')
 
 
 def test_a_restore_is_a_new_revision(store):
@@ -201,7 +201,7 @@ def test_the_register_records_the_split_a_proposal_was_built_with(store, monkeyp
     assert kept['fundingSplit'] == {'scope': '*', 'revision': 1,
                                     'destinations': _split((IG, 33.3333), (EQ, 66.6667))}
     row = dict(zip(proposalRegister.EXPORT_COLUMNS, proposalRegister.exportRows()[0]))
-    assert row['FundingSplit'] == ('r1 (house) Investment Grade Fixed Income 33.3333% · '
+    assert row['FundingSplit'] == ('r1 (default) Investment Grade Fixed Income 33.3333% · '
                                    'Public Equity 66.6667%')
     # a later change to the split leaves the delivered record as it was
     fundingSplit.save('*', _split((OF, 40), (EQ, 60)), 'later', 'alice')
@@ -230,7 +230,7 @@ def test_the_deck_and_the_page_say_a_four_place_third_as_a_third():
 
 def test_the_page_parks_any_split_as_the_files_do(store):
     """The page's mirror reads the split from the schema; given a split other
-    than the house's, it still lands where the Python does."""
+    than the default's, it still lands where the Python does."""
     node = shutil.which('node')
     if not node:
         pytest.skip('node not available')

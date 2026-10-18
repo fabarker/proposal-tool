@@ -66,7 +66,7 @@ var repo = {
 var fund = {
   loaded: false, busy: false, saving: false, error: null,
   data: null,                  /* describe(): house, overrides, eligible, variants */
-  scope: '*',                  /* '*' for the house split, or a type */
+  scope: '*',                  /* '*' for the default split, or a type */
   draft: null,                 /* [{ category, weight }] while the desk is editing */
   note: '',
   history: null,               /* { scope, entries } */
@@ -92,7 +92,9 @@ var cat = {
   cursorBand: null,                  /* and, banded, which band's copy of it */
   detail: null,                      /* the product open in the side panel */
   compare: false,                    /* the pinned products, lined up */
-  openChip: null                     /* 'cols' while the column picker is open */
+  openChip: null,                    /* 'cols' while the column picker is open */
+  withdrawn: false,                  /* the withdrawn products shown instead (D165) */
+  importSaid: ''                     /* what the last import did */
 };
 
 /* The archive (D66, option A): the sleeves taken out of the library, as a
@@ -117,10 +119,11 @@ var ARC_COLUMNS = [
    only what the server handed back; every filter change is a fresh read. */
 var act = {
   query: '', actions: [], actor: '', variant: '', range: '30d',
+  area: '',                         /* '' for every area, or one (D167) */
   entries: [], next: null, total: 0, facets: null, earliest: '',
   busy: false, loaded: false, error: null
 };
-var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'restored', 'imported'];
+var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'withdrawn', 'restored', 'imported', 'disabled', 'enabled'];
 
 /* The proposal register (D69): every delivered proposal, for ever. The page
    holds what the server handed back; a filter change is a fresh read. The
@@ -142,7 +145,8 @@ var reg = {
    adding to them, which is what keeps the counts honest (D116). */
 var REG_VIEWS = [
   ['recent', 'Last 90 days'], ['week', 'This week'], ['mine', 'Mine'],
-  ['moved', 'Sleeves moved'], ['noAccount', 'No account yet'], ['all', 'All time']
+  ['moved', 'Sleeves moved'], ['noAccount', 'No account yet'], ['custom', 'Custom sleeves'],
+  ['portfolios', 'Custom portfolios'], ['all', 'All time']
 ];
 function regApplyView(key) {
   reg.view = key;
@@ -162,11 +166,13 @@ var actTimer = null;
 var CAT_FACETS = [
   { key: 'category', label: 'Category' },
   { key: 'vehicle', label: 'Vehicle' },
-  { key: 'shareClass', label: 'Share class', order: ['Dis', 'Acc'] },
+  { key: 'shareClass', label: 'Share class', order: ['Distributing', 'Accumulating'] },
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
-  { key: 'book', label: 'Implementation type' }
+  { key: 'book', label: 'Implementation type' },
+  /* when its values last changed (D165), in bands that do not overlap */
+  { key: 'edited', label: 'Last edited', order: ['Last 7 days', '8 to 30 days ago', '31 to 90 days ago', 'Over 90 days ago'] }
 ];
 /* Every column, in order. The product column cannot be taken away; the
    rest can, and the picker remembers. num: right-aligned condensed figures.
@@ -188,7 +194,8 @@ var CAT_COLUMNS = [
   { key: 'distributionYield', label: 'Yield', num: true },
   { key: 'net', label: 'Net', num: true, derived: true },
   { key: 'minimumInvestment', label: 'Min', num: true },
-  { key: 'used', label: 'Used', num: true }
+  { key: 'used', label: 'Used', num: true },
+  { key: 'lastEditedAt', label: 'Edited' }
 ];
 var CAT_NUMERIC = { productCost: 1, distributionYield: 1, net: 1, minimumInvestment: 1, used: 1 };
 var UNPLACED = 'Not yet placed';
@@ -276,6 +283,7 @@ function catEnrich(products, sleeves, mandateSize) {
 function catValuesOf(row, field) {
   if (field === 'category') return row.categories.length ? row.categories : ['Not yet placed'];
   if (field === 'book') return row.books.length ? row.books : ['Not yet placed'];
+  if (field === 'edited') return [catEditedBucket(row.p.lastEditedAt, Date.now())];
   return [row.p[field] || ''];
 }
 function catMatches(p, q) {
@@ -391,12 +399,508 @@ function catGroups(rows, order, chosen) {
 }
 /* catalogue-helpers-end */
 
+/* product-editor-helpers-begin
+   The product form's draft and checks (D165), DOM-free so the suite runs
+   them through node. They say what the server's own check (products.clean)
+   would, so Save is offered only for a product that can be saved; the server
+   is still the authority, and a refusal it gives lands on the same field. */
+var PRD_FIELDS = [
+  { key: 'productId', label: 'Product ID', kind: 'id', wide: true },
+  { key: 'name', label: 'Name', kind: 'text', wide: true },
+  { key: 'ticker', label: 'Ticker', kind: 'text', optional: true },
+  { key: 'assetClass', label: 'Asset class', kind: 'word' },
+  { key: 'style', label: 'Style', kind: 'word' },
+  { key: 'vehicle', label: 'Vehicle', kind: 'word' },
+  { key: 'shareClass', label: 'Share class', kind: 'share', optional: true },
+  { key: 'source', label: 'Source', kind: 'word' },
+  { key: 'liquidity', label: 'Liquidity', kind: 'word' },
+  { key: 'exposureCurrency', label: 'Exposure currency', kind: 'word' },
+  { key: 'productCost', label: 'Product cost', kind: 'pct', unit: '%' },
+  { key: 'feeGroup', label: 'Fee group', kind: 'group' },
+  { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
+  { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
+];
+var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
+var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
+var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240,
+                productCost: 10, distributionYield: 50 };
+
+function prdText(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+/* a figure as typed: '0.25%' and '5,000,000' are numbers, a blank is null,
+   anything else NaN */
+function prdNumber(text, pct) {
+  var t = String(text == null ? '' : text).trim().replace(/,/g, '');
+  if (pct && /%$/.test(t)) t = t.slice(0, -1).trim();
+  if (t === '') return null;
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return NaN;
+  return parseFloat(t);
+}
+/* an ID suggested from a name: lower case, words joined by hyphens */
+function prdSlug(name) {
+  return String(name || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/g, '');
+}
+/* a product as the form holds it: every field the text in its box */
+function prdDraftFrom(p) {
+  var d = {};
+  PRD_FIELDS.forEach(function (f) {
+    var v = p ? p[f.key] : '';
+    if (f.key === 'ticker' && v === '—') v = '';
+    d[f.key] = (v === null || v === undefined) ? '' : String(v);
+  });
+  return d;
+}
+function prdExample(key) {
+  return key === 'productCost' ? 'a percentage, such as 0.25 for 0.25%'
+    : key === 'distributionYield' ? 'a percentage, such as 3.2' : 'an amount, such as 5000000';
+}
+function prdFigureProblem(d, key, label, required) {
+  var v = prdNumber(d[key], key !== 'minimumInvestment');
+  if (v === null) return required ? label + ' is needed: ' + prdExample(key) + '.' : '';
+  if (isNaN(v)) return label + ' ' + JSON.stringify(String(d[key]).trim()) + ' is not a number: give ' + prdExample(key) + '.';
+  if (v < 0) return label + ' cannot be negative.';
+  if (PRD_MAX[key] && v >= PRD_MAX[key]) {
+    return label + ' of ' + v + '% looks wrong: it is a percentage, so 0.25 means 0.25%.';
+  }
+  return '';
+}
+/* {field: message} for a draft. ctx: { isNew, feeGroups: [], takenIds:
+   {id: name}, withdrawnIds: {id: name} } */
+function prdProblems(d, ctx) {
+  var out = {};
+  var id = String(d.productId || '').trim();
+  if (ctx.isNew) {
+    if (!id) out.productId = 'Give the product an ID. Sleeves refer to products by it, and it cannot be changed later.';
+    else if (id.length > PRD_MAX.productId) out.productId = 'Keep the product ID to ' + PRD_MAX.productId + ' characters.';
+    else if (/[\x00-\x1f]/.test(id)) out.productId = 'A product ID cannot hold tabs or line breaks.';
+    else if ((ctx.takenIds || {})[id]) out.productId = 'The ID ' + id + ' is already ' + ctx.takenIds[id] + '. Choose another.';
+    else if ((ctx.withdrawnIds || {})[id]) {
+      out.productId = 'The ID ' + id + ' belongs to ' + ctx.withdrawnIds[id] + ', which was withdrawn. An ID is never '
+        + 'reused: restore that product, or choose another ID.';
+    }
+  }
+  var name = prdText(d.name);
+  if (!name) out.name = 'Give the product a name.';
+  else if (name.length > PRD_MAX.name) out.name = 'Keep the name to ' + PRD_MAX.name + ' characters.';
+  if (prdText(d.ticker).length > PRD_MAX.ticker) out.ticker = 'Keep the ticker to ' + PRD_MAX.ticker + ' characters.';
+  PRD_FIELDS.forEach(function (f) {
+    if (f.kind !== 'word') return;
+    var w = prdText(d[f.key]);
+    if (!w) out[f.key] = f.label + ' is needed.';
+    else if (w.length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.toLowerCase() + ' to ' + PRD_MAX.word + ' characters.';
+  });
+  if (d.shareClass && PRD_SHARE_CLASSES.indexOf(d.shareClass) === -1) {
+    out.shareClass = 'The share class must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or none.';
+  }
+  var cost = prdFigureProblem(d, 'productCost', 'Product cost', true);
+  if (cost) out.productCost = cost;
+  if (!d.feeGroup) out.feeGroup = 'Choose a fee group: it is how the fee card prices the product.';
+  else if ((ctx.feeGroups || []).indexOf(d.feeGroup) === -1) {
+    out.feeGroup = 'The fee group ' + d.feeGroup + ' is not on the fee card.';
+  }
+  var y = prdFigureProblem(d, 'distributionYield', 'Distribution yield', false);
+  if (y) out.distributionYield = y;
+  var m = prdFigureProblem(d, 'minimumInvestment', 'Minimum investment', false);
+  if (m) out.minimumInvestment = m;
+  return out;
+}
+/* the draft as the server reads it: words as words, figures as numbers */
+function prdPayload(d) {
+  var out = {};
+  PRD_FIELDS.forEach(function (f) {
+    if (f.kind === 'pct') out[f.key] = prdNumber(d[f.key], true);
+    else if (f.kind === 'amount') out[f.key] = prdNumber(d[f.key], false);
+    else if (f.key === 'productId') out[f.key] = String(d[f.key] || '').trim();
+    else out[f.key] = prdText(d[f.key]);
+  });
+  return out;
+}
+/* one field's value as a history line shows it */
+function prdShow(key, v) {
+  if (v === null || v === undefined || v === '' || v === '—') return '—';
+  if (key === 'minimumInvestment') return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (key === 'productCost' || key === 'distributionYield') return String(parseFloat(Number(v).toPrecision(12)));
+  return String(v);
+}
+/* what saving the draft would move, field by field: [{key, label, before, after}] */
+function prdChanges(before, d) {
+  var now = prdPayload(d), out = [];
+  PRD_FIELDS.forEach(function (f) {
+    if (f.key === 'productId') return;
+    var was = before ? before[f.key] : null, is = now[f.key];
+    if (f.key === 'ticker' && was === '—') was = '';
+    if (f.kind === 'pct' || f.kind === 'amount') {
+      var a = (was === null || was === undefined || was === '') ? null : Number(was);
+      var b = (is === null || is === undefined || (typeof is === 'number' && isNaN(is))) ? null : is;
+      if (a === null && b === null) return;
+      if (a !== null && b !== null && Math.abs(a - b) <= 1e-12) return;
+    } else if (prdText(was) === prdText(is)) {
+      return;
+    }
+    out.push({ key: f.key, label: f.label, before: prdShow(f.key, was), after: prdShow(f.key, is) });
+  });
+  return out;
+}
+/* the word in use a typed one is most likely a slip for: the same but for
+   its capitals, or one or two letters off - or null */
+function prdDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  var row = [], i, j;
+  for (j = 0; j <= b.length; j += 1) row.push(j);
+  for (i = 1; i <= a.length; i += 1) {
+    var prev = row[0]; row[0] = i;
+    for (j = 1; j <= b.length; j += 1) {
+      var here = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1));
+      prev = here;
+    }
+  }
+  return row[b.length];
+}
+function prdNear(v, words) {
+  var low = String(v || '').toLowerCase(), best = null, bestAt = 3;
+  if (low.length < 3) return null;
+  (words || []).forEach(function (w) {
+    var d = prdDistance(low, w.toLowerCase());
+    if (d < bestAt) { bestAt = d; best = w; }
+  });
+  return best;
+}
+/* which band of the Last edited facet a stamp falls in - disjoint, so a
+   product stands in one */
+var CAT_EDITED = ['Last 7 days', '8 to 30 days ago', '31 to 90 days ago', 'Over 90 days ago'];
+function catEditedBucket(iso, now) {
+  var t = Date.parse(iso || '');
+  if (isNaN(t)) return CAT_EDITED[3];
+  var days = (now - t) / 86400000;
+  return days <= 7 ? CAT_EDITED[0] : days <= 30 ? CAT_EDITED[1] : days <= 90 ? CAT_EDITED[2] : CAT_EDITED[3];
+}
+/* product-editor-helpers-end */
+
+/* fee-editor-helpers-begin
+   The Fees tab's draft and its checks (D166), DOM-free for the suite. The
+   draft is the card as the editor holds it: every rate the text in its box,
+   and every tier and fee group with a key of its own that survives an edit -
+   a renamed group is still the group it was, and a split tier's half is a
+   tier of its own. These say what the server's check (feeCard.normalise)
+   would, and what a save would change, in the words the history uses. */
+function feeG(v) { return String(parseFloat(Number(v).toPrecision(6))); }
+function feeName(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+/* a rate as the card reads: two places at least, as the step 2 viewer
+   prints it, and a third or fourth when the card has one */
+function feeShow(text) {
+  var v = feeNum(text);
+  if (v === null || isNaN(v)) return String(text == null ? '' : text);
+  var places = (String(feeG(v)).split('.')[1] || '').length;
+  return v.toFixed(Math.max(2, places));
+}
+function feeTierLabel(min, max) {
+  var m = function (v) { return '$' + feeG(v / 1e6) + 'm'; };
+  if (!(min > 0)) return max == null ? 'Every account size' : 'Under ' + m(max);
+  if (max == null) return m(min) + ' and up';
+  return m(min) + ' – ' + m(max);
+}
+/* a rate as typed, null when blank, NaN when it is not a number */
+function feeNum(text) {
+  var t = String(text == null ? '' : text).trim();
+  if (/%$/.test(t)) t = t.slice(0, -1).trim();
+  if (t === '') return null;
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(t)) return NaN;
+  return parseFloat(t);
+}
+function feeClone(x) { return JSON.parse(JSON.stringify(x)); }
+/* the stored card as the editor holds it */
+function feeDraftFrom(card) {
+  var d = { tiers: [], feeGroups: [], rates: {}, seq: 0 };
+  card.tiers.forEach(function (t) { d.tiers.push({ key: t.id, min: t.min, max: t.max }); });
+  card.feeGroups.forEach(function (g) { d.feeGroups.push({ key: 'g:' + g, name: g, from: g }); });
+  Object.keys(card.rates).forEach(function (schedule) {
+    d.rates[schedule] = {};
+    Object.keys(card.rates[schedule]).forEach(function (row) {
+      var key = row === '' ? '' : 'g:' + row, byTier = {};
+      Object.keys(card.rates[schedule][row]).forEach(function (tier) {
+        var levels = card.rates[schedule][row][tier], out = {};
+        Object.keys(levels).forEach(function (l) { out[l] = feeG(levels[l]); });
+        byTier[tier] = out;
+      });
+      d.rates[schedule][key] = byTier;
+    });
+  });
+  return d;
+}
+/* the rows of the card, in order: a uniform schedule's one, then a grouped
+   schedule's one per group */
+function feeRowsOf(d, schedules) {
+  var out = [];
+  schedules.forEach(function (s) {
+    if (!s.byGroup) { out.push({ schedule: s.id, key: '', name: '', label: s.id }); return; }
+    d.feeGroups.forEach(function (g) {
+      out.push({ schedule: s.id, key: g.key, name: feeName(g.name), label: s.id + ' · ' + (feeName(g.name) || 'new group') });
+    });
+  });
+  return out;
+}
+function feeCellKey(schedule, rowKey, tierKey, level) { return [schedule, rowKey, tierKey, level].join('|'); }
+function feeRateText(d, schedule, rowKey, tierKey, level) {
+  var r = ((d.rates[schedule] || {})[rowKey] || {})[tierKey] || {};
+  return r[level];
+}
+/* every problem with a draft: [{field, key?, message}], the key naming a
+   cell ('schedule|row|tier|level'), a tier ('tier|key') or a group
+   ('group|key'). ctx: { schedules, sources, points, levels, rateMax,
+   groupMax } */
+function feeProblems(d, ctx) {
+  var out = [];
+  if (!d.tiers.length) out.push({ field: 'tiers', message: 'The card needs at least one account-size tier.' });
+  d.tiers.forEach(function (t, i) {
+    var where = 'The tier from ' + (t.min > 0 ? '$' + feeG(t.min / 1e6) + 'm' : '$0');
+    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at $0, so every account size has a tier.' });
+    if (t.max !== null && t.max !== undefined) {
+      if (typeof t.max !== 'number' || !isFinite(t.max)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has an upper edge that is not an amount.' });
+      else if (!(t.max > t.min)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has no room: its upper edge must be above its lower one.' });
+    }
+    if (i === d.tiers.length - 1 && t.max !== null && t.max !== undefined) {
+      out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The highest tier must have no upper edge: it is the one every larger account falls in.' });
+    }
+  });
+  if (!d.feeGroups.length) out.push({ field: 'feeGroups', message: 'The card needs at least one fee group.' });
+  var seen = {};
+  d.feeGroups.forEach(function (g) {
+    var n = feeName(g.name);
+    if (!n) out.push({ field: 'feeGroups', key: 'group|' + g.key, message: 'Every fee group needs a name.' });
+    else if (n.length > ctx.groupMax) out.push({ field: 'feeGroups', key: 'group|' + g.key, message: 'Keep a fee group name to ' + ctx.groupMax + ' characters.' });
+    else if (seen[n.toLowerCase()]) out.push({ field: 'feeGroups', key: 'group|' + g.key, message: 'There are two fee groups called ' + n + '.' });
+    seen[n.toLowerCase()] = true;
+  });
+  feeRowsOf(d, ctx.schedules).forEach(function (row) {
+    d.tiers.forEach(function (t) {
+      var where = row.label + ' · ' + feeTierLabel(t.min, t.max), values = {};
+      ctx.levels.forEach(function (level) {
+        var key = feeCellKey(row.schedule, row.key, t.key, level);
+        var v = feeNum(feeRateText(d, row.schedule, row.key, t.key, level));
+        if (v === null || isNaN(v)) { out.push({ field: 'rates', key: key, message: where + ' · ' + level + ' has no rate.' }); return; }
+        if (v < 0 || v >= ctx.rateMax) {
+          out.push({ field: 'rates', key: key, message: where + ' · ' + level + ': ' + feeShow(v) + ' is not a rate. A rate is a percentage from 0 up to '
+            + feeG(ctx.rateMax) + ': 0.45 means 0.45%.' });
+          return;
+        }
+        values[level] = v;
+      });
+      ctx.sources.forEach(function (source) {
+        for (var i = 0; i + 1 < ctx.points.length; i += 1) {
+          var a = source + ' ' + ctx.points[i], b = source + ' ' + ctx.points[i + 1];
+          if (values[a] !== undefined && values[b] !== undefined && values[a] > values[b]) {
+            out.push({ field: 'rates', key: feeCellKey(row.schedule, row.key, t.key, a),
+                       also: feeCellKey(row.schedule, row.key, t.key, b),
+                       message: where + ' · ' + source + ': ' + ctx.points[i] + ' ' + feeShow(values[a]) + ' is above '
+                         + ctx.points[i + 1] + ' ' + feeShow(values[b]) + '.' });
+          }
+        }
+      });
+    });
+  });
+  return out;
+}
+/* what saving the draft would change, as the history will say it: the
+   tiers, the groups renamed, added and removed, then every rate that moved
+   - compared by the tier's range, so a renumbered tier meets itself */
+function feeChanges(card, d, ctx) {
+  var lines = [], moved = [];
+  var was = card.tiers.map(function (t) { return feeTierLabel(t.min, t.max); });
+  var now = d.tiers.map(function (t) { return feeTierLabel(t.min, t.max); });
+  if (was.join('|') !== now.join('|')) lines.push('Tiers: ' + was.join(' · ') + ' → ' + now.join(' · '));
+  d.feeGroups.forEach(function (g) {
+    if (g.from && feeName(g.name) !== g.from) lines.push('Renamed fee group ' + g.from + ' to ' + feeName(g.name));
+  });
+  d.feeGroups.forEach(function (g) { if (!g.from) lines.push('Added fee group ' + (feeName(g.name) || 'with no name yet')); });
+  card.feeGroups.forEach(function (name) {
+    if (!d.feeGroups.some(function (g) { return g.from === name; })) lines.push('Removed fee group ' + name);
+  });
+  var oldTier = {};
+  card.tiers.forEach(function (t) { oldTier[feeTierLabel(t.min, t.max)] = t.id; });
+  ctx.schedules.forEach(function (s) {
+    var rows = s.byGroup
+      ? d.feeGroups.filter(function (g) { return g.from; }).map(function (g) { return { old: g.from, key: g.key, name: feeName(g.name) }; })
+      : [{ old: '', key: '', name: '' }];
+    rows.forEach(function (row) {
+      d.tiers.forEach(function (t) {
+        var label = feeTierLabel(t.min, t.max), oldId = oldTier[label];
+        if (!oldId) return;
+        ctx.levels.forEach(function (level) {
+          var held = ((card.rates[s.id] || {})[row.old] || {})[oldId];
+          var a = held ? held[level] : undefined;
+          var b = feeNum(feeRateText(d, s.id, row.key, t.key, level));
+          if (a === undefined || b === null || isNaN(b)) return;
+          if (Math.abs(a - b) > 1e-9) {
+            moved.push([s.id].concat(row.name ? [row.name] : []).concat([label, level]).join(' · ')
+              + ' ' + feeShow(a) + ' → ' + feeShow(b));
+          }
+        });
+      });
+    });
+  });
+  return { lines: lines.concat(moved), rates: moved.length, structure: lines.length };
+}
+/* the rate a cell had on the card in force, matched by the tier's range and
+   the group it was, or undefined for a cell that is new */
+function feeOldRate(card, d, schedule, rowKey, tierKey, level) {
+  var t = d.tiers.filter(function (x) { return x.key === tierKey; })[0];
+  if (!t) return undefined;
+  var label = feeTierLabel(t.min, t.max), oldId = null;
+  card.tiers.forEach(function (x) { if (feeTierLabel(x.min, x.max) === label) oldId = x.id; });
+  if (!oldId) return undefined;
+  var row = '';
+  if (rowKey) {
+    var g = d.feeGroups.filter(function (x) { return x.key === rowKey; })[0];
+    if (!g || !g.from) return undefined;
+    row = g.from;
+  }
+  var held = ((card.rates[schedule] || {})[row] || {})[oldId];
+  return held ? held[level] : undefined;
+}
+/* split a tier at a round amount inside it; the new half copies its rates */
+function feeSplitTier(d, i) {
+  var t = d.tiers[i]; if (!t) return false;
+  var cut = t.max == null ? (t.min > 0 ? t.min * 2 : 10000000) : (t.min + t.max) / 2;
+  cut = Math.round(cut / 500000) * 500000;
+  if (!(cut > t.min) || (t.max != null && !(cut < t.max))) return false;
+  d.seq = (d.seq || 0) + 1;
+  var key = 'n' + d.seq;
+  d.tiers.splice(i + 1, 0, { key: key, min: cut, max: t.max });
+  t.max = cut;
+  Object.keys(d.rates).forEach(function (s) {
+    Object.keys(d.rates[s]).forEach(function (row) { d.rates[s][row][key] = feeClone(d.rates[s][row][t.key] || {}); });
+  });
+  return true;
+}
+/* a tier takes the next one's range; the next one's rates go */
+function feeMergeTier(d, i) {
+  if (i < 0 || i + 1 >= d.tiers.length) return false;
+  var gone = d.tiers[i + 1];
+  d.tiers[i].max = gone.max;
+  d.tiers.splice(i + 1, 1);
+  Object.keys(d.rates).forEach(function (s) {
+    Object.keys(d.rates[s]).forEach(function (row) { delete d.rates[s][row][gone.key]; });
+  });
+  return true;
+}
+/* the edge between tier i and the next, in dollars (NaN for a slip) */
+function feeSetEdge(d, i, value) {
+  if (i < 0 || i + 1 >= d.tiers.length) return false;
+  d.tiers[i].max = value; d.tiers[i + 1].min = value;
+  return true;
+}
+function feeAddGroup(d, name, likeKey, schedules, levels) {
+  d.seq = (d.seq || 0) + 1;
+  var key = 'n' + d.seq;
+  d.feeGroups.push({ key: key, name: name, from: null });
+  schedules.forEach(function (s) {
+    if (!s.byGroup) return;
+    d.rates[s.id] = d.rates[s.id] || {};
+    var like = likeKey ? d.rates[s.id][likeKey] : null, byTier = {};
+    d.tiers.forEach(function (t) {
+      var out = {};
+      levels.forEach(function (l) { out[l] = like && like[t.key] ? like[t.key][l] : ''; });
+      byTier[t.key] = out;
+    });
+    d.rates[s.id][key] = byTier;
+  });
+  return key;
+}
+function feeRemoveGroup(d, key) {
+  d.feeGroups = d.feeGroups.filter(function (g) { return g.key !== key; });
+  Object.keys(d.rates).forEach(function (s) { delete d.rates[s][key]; });
+}
+/* the draft as the server reads it: {card: {tiers, feeGroups, rates}, renames} */
+function feePayload(d, schedules, levels) {
+  var card = { tiers: d.tiers.map(function (t) { return { id: t.key, min: t.min, max: t.max }; }),
+               feeGroups: d.feeGroups.map(function (g) { return feeName(g.name); }), rates: {} };
+  schedules.forEach(function (s) {
+    card.rates[s.id] = {};
+    var rows = s.byGroup ? d.feeGroups.map(function (g) { return { key: g.key, name: feeName(g.name) }; })
+                         : [{ key: '', name: '' }];
+    rows.forEach(function (row) {
+      var byTier = {};
+      d.tiers.forEach(function (t) {
+        var out = {};
+        levels.forEach(function (l) { out[l] = feeNum(feeRateText(d, s.id, row.key, t.key, l)); });
+        byTier[t.key] = out;
+      });
+      card.rates[s.id][row.name] = byTier;
+    });
+  });
+  var renames = d.feeGroups.filter(function (g) { return g.from && feeName(g.name) !== g.from; })
+    .map(function (g) { return [g.from, feeName(g.name)]; });
+  return { card: card, renames: renames };
+}
+/* a block copied from a spreadsheet, as the clipboard carries it: a line a
+   row, a tab between cells. The labels copied with it - header rows, a first
+   column of tier names - are taken off; what is left must be all rates.
+   {cells: [[text]]} or {error} */
+function feeReadBlock(text) {
+  var lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  var rows = lines.map(function (l) { return l.split('\t').map(function (c) { return c.trim(); }); });
+  var isRate = function (c) { var v = feeNum(c); return v !== null && !isNaN(v); };
+  while (rows.length && !rows[0].some(isRate)) rows.shift();
+  var width = 0;
+  rows.forEach(function (r) { width = Math.max(width, r.length); });
+  rows = rows.map(function (r) { while (r.length < width) r.push(''); return r; });
+  while (width && rows.every(function (r) { return !isRate(r[0]); })) {
+    rows.forEach(function (r) { r.shift(); }); width -= 1;
+  }
+  while (width && rows.every(function (r) { return r[width - 1] === ''; })) {
+    rows.forEach(function (r) { r.pop(); }); width -= 1;
+  }
+  if (!rows.length || !width) return { error: 'The clipboard holds no rates. Copy the block of rates in Excel, then paste.' };
+  for (var i = 0; i < rows.length; i += 1) {
+    for (var j = 0; j < width; j += 1) {
+      var v = feeNum(rows[i][j]);
+      var where = 'Row ' + (i + 1) + ', column ' + (j + 1) + ' of the block';
+      if (v === null) return { error: where + ' is empty. Nothing was pasted.' };
+      if (isNaN(v)) return { error: where + ' is ' + JSON.stringify(rows[i][j]) + ', not a rate. Nothing was pasted.' };
+      rows[i][j] = feeG(v);
+    }
+  }
+  return { cells: rows };
+}
+/* the block into one row of the card - one schedule's, or one group's - its
+   rows the tiers and its columns the levels. A block the card's own shape
+   fills the whole row wherever it was pasted; a smaller one starts at the
+   box it was pasted into. {count, changed} or {error}, nothing written */
+function feePasteBlock(d, schedule, rowKey, levels, cells, at) {
+  var nt = d.tiers.length, nl = levels.length, h = cells.length, w = cells[0].length;
+  var whole = h === nt && w === nl;
+  var t0 = whole ? 0 : at.tier, l0 = whole ? 0 : at.level;
+  if (t0 + h > nt || l0 + w > nl) {
+    var shape = h + ' row' + (h === 1 ? '' : 's') + ' by ' + w + ' column' + (w === 1 ? '' : 's');
+    if (h === nl && w === nt) {
+      return { error: 'The block is ' + shape + ': its tiers run across. The card has the tiers down and the ' + nl
+        + ' levels across - turn the block round in Excel (Paste Special, Transpose) and paste again.' };
+    }
+    return { error: 'The block is ' + shape + '; ' + (t0 || l0 ? 'from that box ' : '') + 'the card has room for '
+      + (nt - t0) + ' by ' + (nl - l0) + '. Nothing was pasted.' };
+  }
+  d.rates[schedule] = d.rates[schedule] || {};
+  var byTier = d.rates[schedule][rowKey] = d.rates[schedule][rowKey] || {}, changed = 0;
+  cells.forEach(function (r, i) {
+    var t = d.tiers[t0 + i], out = byTier[t.key] = byTier[t.key] || {};
+    r.forEach(function (text, j) {
+      var level = levels[l0 + j], was = feeNum(out[level]);
+      if (was === null || isNaN(was) || Math.abs(was - feeNum(text)) > 1e-9) changed += 1;
+      out[level] = text;
+    });
+  });
+  return { count: h * w, changed: changed, whole: whole };
+}
+/* fee-editor-helpers-end */
+
 var catRowCache = null;
 function catRows() {
   if (!catRowCache) {
     var mandate = (typeof App.mandateSize === 'function') ? App.mandateSize() : null;
-    catRowCache = catEnrich(repo.data.products, repo.data.sleeves,
-                            typeof mandate === 'number' ? mandate : null);
+    catRowCache = catEnrich(cat.withdrawn ? (repo.data.withdrawnProducts || []) : repo.data.products,
+                            repo.data.sleeves, typeof mandate === 'number' ? mandate : null);
   }
   return catRowCache;
 }
@@ -706,6 +1210,7 @@ function hashFor(view) {
   if (view === 'proposals') return regHash();
   if (view === 'uncalled') return '#uncalled';
   if (view === 'overlays') return '#overlays';
+  if (view === 'fees') return '#fees';
   return '#repository';
 }
 function syncHash() {
@@ -716,7 +1221,7 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = ['catalogue', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(view) !== -1 ? view : 'sleeves';
+  repo.view = ['catalogue', 'fees', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(view) !== -1 ? view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -729,6 +1234,10 @@ function openRepository(trigger, view, at) {
 function switchView(view) {
   if (view === repo.view) return;
   if (repo.dirty && repo.view === 'sleeves') { repo.leaving = { view: view }; render(); return; }
+  /* an open product form, or a card being edited, keeps its changes (D165, D166) */
+  if (repo.view === 'catalogue' && prdDirty()) { prd.leaving = true; render(); prdFocus('#prdSave'); return; }
+  if (repo.view === 'fees' && feeDirty()) { fct.flash = 'Save or discard the changes to the card first.'; render(); return; }
+  if (repo.view === 'catalogue') { prdStop(); imp = null; }
   repo.view = view; cat.openChip = null; cat.detail = null;
   repo.historyOpen = false; repo.history = null; repo.openRevision = null;
   render();
@@ -739,6 +1248,7 @@ function switchView(view) {
   }
   if (view === 'uncalled' && !fund.loaded) loadFunding();
   if (view === 'overlays' && !ovl.loaded) loadOverlays();
+  if (view === 'fees' && !fct.loaded) loadFeeCard();
 }
 
 async function api(method, path, body) {
@@ -771,6 +1281,7 @@ async function loadRepository() {
     }
     if (repo.view === 'uncalled') loadFunding();
     if (repo.view === 'overlays') loadOverlays();
+    if (repo.view === 'fees') loadFeeCard();
   } catch (err) { repo.error = err.message; }
   repo.busy = false;
   render();
@@ -822,11 +1333,15 @@ function closeRepository(force) {
   if (!force && ovlDirty()) {
     ovl.leaving = { close: true }; repo.view = 'overlays'; render(); ovlFocus('[data-ovl="leavekeep"]'); return;
   }
+  /* and an open product form or a card being edited (D165, D166) */
+  if (!force && prdDirty()) { prd.leaving = true; repo.view = 'catalogue'; render(); prdFocus('#prdSave'); return; }
+  if (!force && feeDirty()) { fct.flash = 'Save or discard the changes to the card first.'; repo.view = 'fees'; render(); return; }
+  prdStop(); imp = null; fct.draft = null; fct.review = null; cat.importSaid = '';
   ncReset();
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (/^#(repository|catalogue|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
+  if (/^#(repository|catalogue|fees|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -1118,6 +1633,31 @@ async function copyToVariant(sleeveId, variant) {
       forgetLibrary(made.category);
       sv.focus = '.sv-offer:not([disabled])||#svOffers';
       App.announce('polite', made.name + ' is now offered under ' + variant + '.');
+    }
+  } catch (err) { repo.error = err.message; }
+  repo.saving = false; render();
+}
+
+/* Disable a sleeve or enable it again (D169). Not a new version: what it
+   holds is unchanged, so an open draft and its base stay as they are; the
+   entry is replaced and the implementation page's cached list for the
+   category is dropped so the picker reads the change. */
+async function setOffered(sleeveId, offered) {
+  var entry = sleeveById(sleeveId); if (!entry || repo.saving) return;
+  repo.menu = null; repo.saving = true; repo.error = null; render();
+  try {
+    var r = await api('POST', '/scenario/repository/sleeves/' + sleeveId + '/offered', { offered: offered });
+    if (!r) return;
+    if (!r.ok) {
+      repo.error = r.body.error || ('Could not ' + (offered ? 'enable' : 'disable') + ' it (' + r.status + ')');
+    } else {
+      var made = r.body.sleeve;
+      repo.data.sleeves = repo.data.sleeves.map(function (x) { return x.id === made.id ? made : x; });
+      catRowCache = null;
+      forgetLibrary(made.category);
+      sv.focus = '[data-svoffer="' + made.id + '"]';
+      App.announce('polite', offered ? made.name + ' is offered to PWAs again.'
+        : made.name + ' is disabled. PWAs can no longer choose it; it stays in the library.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -1489,11 +2029,14 @@ var ACTION_WORDS = {
   baseline: 'history begins', created: 'created', updated: 'edited',
   reverted: 'put an earlier version back', deleted: 'archived',
   restored: 'restored to the library', imported: 'loaded from a file',
-  seeded: 'loaded with the library'
+  seeded: 'loaded with the library', withdrawn: 'withdrawn from the catalogue',
+  removed: 'put back on the default',
+  disabled: 'no longer offered to PWAs', enabled: 'offered to PWAs again'
 };
 var ACTION_LABELS = {
   created: 'Created', updated: 'Edited', reverted: 'Reverted', deleted: 'Archived',
-  restored: 'Restored', imported: 'Imported', seeded: 'Seeded', baseline: 'Baseline'
+  restored: 'Restored', imported: 'Imported', seeded: 'Loaded', baseline: 'Baseline',
+  withdrawn: 'Withdrawn', removed: 'Removed', disabled: 'Disabled', enabled: 'Enabled'
 };
 
 function revisionHtml(entry) {
@@ -1677,6 +2220,8 @@ function sleeveMenuHtml() {
     + (adds || '<p class="none">Offered under every implementation type.</p>')
     + '<p class="sep"></p>'
     + '<button type="button" class="repo-mi" data-repoedition="' + entry.id + '">Add an edition for particular portfolios…</button>'
+    + (entry.fixed ? '' : '<button type="button" class="repo-mi" data-svoffer="' + entry.id + '" data-to="' + (entry.disabled ? '1' : '0') + '">'
+        + (entry.disabled ? 'Enable: offer it to PWAs again' : 'Disable: stop offering it to PWAs') + '</button>')
     + '<p class="sep"></p>'
     + (repo.menu.confirm
         ? '<div class="repo-mconf" role="group" aria-label="Confirm archive"><p>Archive <b>' + esc(entry.name) + '</b> from '
@@ -1806,8 +2351,10 @@ function svVehicles(s) {
   return out;
 }
 function svStatus(s) {
-  /* a sleeve the server finds a problem with is withheld from the pickers */
+  /* a sleeve the server finds a problem with is withheld from the pickers;
+     a disabled one is left out of them on purpose (D169) */
   var n = (s.problems || []).length;
+  if (s.disabled) return { ok: false, off: true, label: 'Disabled' + (n ? ' \u00b7 ' + svPlural(n, 'problem') : '') };
   return { ok: !n, label: n ? 'Withheld \u00b7 ' + svPlural(n, 'problem') : 'Ready' };
 }
 function svMatches(s, query) {
@@ -1834,7 +2381,7 @@ function svSortValue(s, key) {
   if (key === 'products') return (s.products || []).length;
   if (key === 'vehicles') return svVehicles(s).join(', ').toLowerCase() || null;
   if (key === 'cost') return svCost(s);
-  if (key === 'status') return (s.problems || []).length;
+  if (key === 'status') return (s.problems || []).length * 2 + (s.disabled ? 1 : 0);
   if (key === 'created') return s.createdAt || null;
   return null;
 }
@@ -2175,7 +2722,7 @@ function edMatch(rules, f) {
 function edApplies(rules, keys) {
   return (keys || []).filter(function (k) { return edMatch(rules, edFields(k)); });
 }
-/* the words for a value: risk levels by the house's names, the all-equity
+/* the words for a value: risk levels by the firm's names, the all-equity
    "allocation" as what it is */
 function edValueLabel(field, v, labels) {
   if (field === 'allocationType' && v === 'NA') return 'All equity';
@@ -2397,7 +2944,20 @@ function svSiblings(s) {
 }
 function svStatusChip(s) {
   var st = svStatus(s);
+  if (st.off) return '<span class="sv-chip off" title="Not offered to PWAs: the implementation page leaves it out">\u2298 ' + esc(st.label) + '</span>';
   return '<span class="sv-chip ' + (st.ok ? 'ok' : 'bad') + '">' + (st.ok ? '\u2713 ' : '! ') + esc(st.label) + '</span>';
+}
+/* Disable or Enable (D169): a disabled sleeve stays in the library and here,
+   and is left out of the implementation page's picker. A fixed category's
+   one sleeve is attached by its overlay, so it has no switch. */
+function svOfferBtnHtml(s, cls) {
+  if (isFixed(s.category)) return '';
+  var what = s.name + (s.label ? ' (' + s.label + ')' : '') + ', ' + s.variant;
+  return '<button type="button" class="' + cls + (s.disabled ? ' is-off' : '') + '" data-svoffer="' + s.id + '" data-to="' + (s.disabled ? '1' : '0') + '"'
+    + (repo.saving ? ' disabled' : '')
+    + ' aria-label="' + esc((s.disabled ? 'Enable ' : 'Disable ') + what) + '"'
+    + ' title="' + (s.disabled ? 'Offer it to PWAs again' : 'Stop offering it to PWAs. It stays in the library.') + '">'
+    + (s.disabled ? 'Enable' : 'Disable') + '</button>';
 }
 function svEditionChip(s) {
   if (s.label) return '<span class="sv-chip info">Edition: ' + esc(s.label) + '</span>';
@@ -2405,6 +2965,39 @@ function svEditionChip(s) {
 }
 function svFixedChip(category) {
   return isFixed(category) ? '<span class="sv-chip mute">Fixed \u00b7 one per type</span>' : '';
+}
+/* The custom workflows (D172): one switch decides whether PWAs may enter
+   them at all - custom sleeves and custom portfolios alike. Admins always
+   may. It starts off. */
+function svAccessHtml() {
+  var ca = repo.data.customAccess; if (!ca) return '';
+  var on = !!ca.pwas;
+  return '<div class="sv-csettings sv-access"><span><b>Custom/Bespoke Allocations and Implementations:</b> '
+    + 'Enable/Disable Custom/Bespoke Workflows for PWAs</span>'
+    + '<button type="button" class="sv-cswitch' + (on ? ' on' : '') + '" data-svaccess data-to="' + (on ? '0' : '1') + '"'
+    + ' aria-pressed="' + on + '"' + (repo.saving ? ' disabled' : '')
+    + ' title="' + (on ? 'PWAs can build custom sleeves and custom portfolios.'
+                       : 'Only admins can build custom sleeves and custom portfolios; PWAs do not see either.') + '">'
+    + 'For PWAs: <b>' + (on ? 'On' : 'Off') + '</b><i aria-hidden="true"></i></button>'
+    + (ca.updatedBy ? '<small>Last changed by ' + esc(ca.updatedBy) + ', ' + esc(shortDateTime(ca.updatedAt)) + '</small>' : '')
+    + '</div>';
+}
+async function setCustomAccess(open) {
+  if (repo.saving) return;
+  repo.saving = true; repo.error = null; render();
+  try {
+    var r = await api('POST', '/scenario/repository/custom-access', { open: open });
+    if (!r) return;
+    if (!r.ok) {
+      repo.error = r.body.error || ('Could not change who may use the custom workflows (' + r.status + ')');
+    } else {
+      repo.data.customAccess = r.body.customAccess;
+      sv.focus = '[data-svaccess]';
+      App.announce('polite', open ? 'PWAs can now build custom sleeves and custom portfolios.'
+        : 'Custom sleeves and custom portfolios are for admins only.');
+    }
+  } catch (err) { repo.error = err.message; }
+  repo.saving = false; render();
 }
 function svWhere(variant, category) {
   return '<span class="sv-cell">' + svSw(category) + esc(category) + '</span><span class="sv-dot" aria-hidden="true">\u00b7</span><span>' + esc(variant) + '</span>';
@@ -2524,7 +3117,8 @@ function svTilesHtml() {
   return '<div class="sv-tiles">' + repo.data.categories.map(function (c) {
     var list = sleevesIn(repo.variant, c), names = [];
     list.forEach(function (s) { if (names.indexOf(s.name) === -1) names.push(s.name); });
-    var withheld = list.filter(function (s) { return !svStatus(s).ok; }).length;
+    var withheld = list.filter(function (s) { return !svStatus(s).ok && !s.disabled; }).length;
+    var off = list.filter(function (s) { return s.disabled; }).length;
     var editions = list.length - names.length;
     return '<button type="button" class="sv-tile" data-svtile="' + esc(c) + '" style="--cc:' + svColour(c) + '">'
       + '<span class="sv-tile-h">' + esc(c) + '</span>'
@@ -2533,8 +3127,9 @@ function svTilesHtml() {
       + '<span class="sv-tile-names">' + (names.length
           ? esc(names.slice(0, 4).join(' \u00b7 ')) + (names.length > 4 ? ' \u00b7 +' + (names.length - 4) + ' more' : '')
           : 'No sleeve yet') + '</span>'
-      + ((isFixed(c) || withheld) ? '<span class="sv-tile-c">' + svFixedChip(c)
-          + (withheld ? '<span class="sv-chip bad">' + withheld + ' withheld</span>' : '') + '</span>' : '')
+      + ((isFixed(c) || withheld || off) ? '<span class="sv-tile-c">' + svFixedChip(c)
+          + (withheld ? '<span class="sv-chip bad">' + withheld + ' withheld</span>' : '')
+          + (off ? '<span class="sv-chip off">' + off + ' disabled</span>' : '') + '</span>' : '')
       + '</button>';
   }).join('') + '</div>';
 }
@@ -2542,13 +3137,15 @@ function svCardHtml(s, why) {
   var rows = (s.products || []).map(function (r) {
     return '<span class="sv-card-r"><span>' + esc(r.product ? r.product.name : r.productId) + '</span><b>' + money2(r.weight * 100) + '%</b></span>';
   }).join('');
-  return '<button type="button" class="sv-card" data-svcard="' + s.id + '" data-svmenu="' + s.id + '">'
+  return '<div class="sv-cardw' + (s.disabled ? ' off' : '') + '">'
+    + '<button type="button" class="sv-card" data-svcard="' + s.id + '" data-svmenu="' + s.id + '">'
     + '<span class="sv-card-h"><b>' + esc(s.name) + '</b>' + svEditionChip(s) + '</span>'
     + (why !== undefined ? '<span class="sv-card-w">' + svWhere(s.variant, s.category) + '</span>'
         + (why ? '<span class="sv-card-why">' + esc(why.charAt(0).toUpperCase() + why.slice(1)) + '</span>' : '') : '')
     + '<span class="sv-card-p">' + rows + '</span>'
     + '<span class="sv-card-f">' + svStatusChip(s) + '<small>' + svPlural(s.products.length, 'product')
-    + ' \u00b7 weighted cost ' + esc(svCostText(s)) + '</small></span></button>';
+    + ' \u00b7 weighted cost ' + esc(svCostText(s)) + '</small></span></button>'
+    + svOfferBtnHtml(s, 'sv-offbtn') + '</div>';
 }
 function svCrumbsHtml() {
   var h = '<nav class="sv-crumbs" aria-label="Where you are">';
@@ -2577,7 +3174,8 @@ function svHitsHtml() {
 function svCardsBodyHtml() {
   if (repo.query.trim() && sv.level < 2) return svHitsHtml();
   if (sv.level === 0) {
-    return svCrumbsHtml() + '<div class="sv-row">' + svTypesHtml() + '</div>' + svTilesHtml();
+    return svCrumbsHtml() + '<div class="sv-row">' + svTypesHtml() + '</div>' + svAccessHtml()
+      + svTilesHtml();
   }
   if (sv.level === 1) {
     var list = sleevesIn(repo.variant, repo.category);
@@ -2667,6 +3265,13 @@ function svDetailsHtml(entry) {
   return '<dl class="sv-kv">'
     + '<dt>Note to PWAs</dt><dd>' + (entry.note ? esc(entry.note) : '<span class="sv-hint">None</span>') + '</dd>'
     + '<dt>Offered under</dt><dd class="sv-offers" id="svOffers" tabindex="-1">' + offer + '</dd>'
+    + '<dt>Offered to PWAs</dt><dd class="sv-offrow">' + (fixed
+        ? '<span class="sv-hint">Always: its overlay attaches it to every proposal.</span>'
+        : (entry.disabled
+            ? '<span class="sv-chip off">\u2298 Disabled</span> <span class="sv-hint">' + (entry.disabledBy ? 'by ' + esc(entry.disabledBy) + ' ' : '')
+              + esc(shortDateTime(entry.disabledAt)) + ' \u00b7 left out of the implementation page\u2019s picker</span> '
+            : '<span class="sv-chip ok">\u2713 Yes</span> <span class="sv-hint">in the implementation page\u2019s picker</span> ')
+          + svOfferBtnHtml(entry, 'btn')) + '</dd>'
     + '<dt>This version</dt><dd>Created ' + esc(shortDateTime(entry.createdAt)) + (entry.createdBy ? ' by ' + esc(entry.createdBy) : '')
     + ' <span class="sv-hint">\u00b7 saving a change puts this version in the Archive</span></dd>'
     + (entry.firstCreatedAt && entry.firstCreatedAt !== entry.createdAt
@@ -4461,6 +5066,7 @@ function arcFooterHtml() {
 function actParams(before) {
   var q = new URLSearchParams();
   if (act.actions.length) q.set('actions', act.actions.join(','));
+  if (act.area) q.set('areas', act.area);
   if (act.actor) q.set('actor', act.actor);
   if (act.variant) q.set('variant', act.variant);
   if (act.query.trim()) q.set('q', act.query.trim());
@@ -4501,7 +5107,11 @@ function actSelect(name, attr, label, values, chosen) {
       }).join('') + '</select></label>';
 }
 function actToolbarHtml() {
-  var facets = act.facets || { action: {}, actor: {}, variant: {} };
+  var facets = act.facets || { action: {}, actor: {}, variant: {}, area: {} };
+  var areaCounts = facets.area || {};
+  var areas = [['', 'Every area']].concat(ACT_AREAS.map(function (a) {
+    return [a[0], a[1] + ' (' + (areaCounts[a[0]] || 0) + ')'];
+  }));
   var chips = ACT_ACTIONS.map(function (a) {
     var on = act.actions.indexOf(a) !== -1, n = facets.action[a] || 0;
     return '<button type="button" class="act-chip' + (on ? ' on' : '') + (!on && !n ? ' off' : '') + '" data-acttoggle="' + a + '" aria-pressed="' + on + '">'
@@ -4515,10 +5125,11 @@ function actToolbarHtml() {
     + '<input type="search" id="actSearch" placeholder="Search sleeve, product, who, what changed…" value="' + esc(act.query) + '"'
     + ' aria-label="Search the record"><kbd aria-hidden="true">/</kbd></label>'
     + '<span class="act-chips" role="group" aria-label="Actions">' + chips + '</span>'
+    + actSelect('area', 'actarea', 'Area', areas, act.area)
     + actSelect('who', 'actwho', 'Who', people, act.actor)
     + actSelect('book', 'actbook', 'Implementation type', books, act.variant)
     + actSelect('range', 'actrange', 'When', ACT_RANGES, act.range)
-    + ((act.query.trim() || act.actions.length || act.actor || act.variant || act.range !== '30d')
+    + ((act.query.trim() || act.actions.length || act.actor || act.variant || act.area || act.range !== '30d')
         ? '<button type="button" class="cat-clear" data-actclear>Clear</button>' : '')
     + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/activity.csv?' + actParams(null).replace(/&?limit=\d+/, '')) + '" download>Export CSV</a>'
     + '</div>';
@@ -4544,6 +5155,8 @@ function actFeedHtml() {
       day = d;
       out.push('<p class="act-day">' + esc(longDate(e.at)) + '</p>');
     }
+    /* the catalogue, the fee card, the overlay rules and the split (D167) */
+    if (e.area && e.area !== 'sleeves') { out.push(actOtherHtml(e)); return; }
     var sub = esc(e.category) + ' · ' + esc(e.variant) + ' · r' + e.revision
       + (e.action === 'baseline' ? ' · history begins here' : '')
       + (e.products.length ? ' · ' + e.products.length + ' product' + (e.products.length === 1 ? '' : 's') : '');
@@ -4566,6 +5179,63 @@ function actFeedHtml() {
       + (act.busy ? 'Reading…' : 'Earlier changes') + '</button></div>');
   }
   return out.join('');
+}
+var ACT_AREAS = [['sleeves', 'Sleeves'], ['products', 'Products'], ['fees', 'Fee card'],
+                 ['overlays', 'Overlay rules'], ['funding', 'Funding split'], ['availability', 'Sleeves offered'],
+                 ['access', 'Custom workflows for PWAs']];
+var ACT_AREA_WORDS = { products: 'Products', fees: 'Fee card', overlays: 'Overlay rules', funding: 'Funding split',
+                       availability: 'Sleeves offered', access: 'Custom workflows for PWAs' };
+function actOtherHtml(e) {
+  var label = ACTION_LABELS[e.action] || e.action;
+  var who = e.actor === 'seed' || e.actor === 'system' ? '' : e.actor;
+  var sub = [ACT_AREA_WORDS[e.area] || e.area];
+  /* a sleeve disabled or enabled again (D169): where it is, not a version */
+  if (e.area === 'availability') sub = [e.category, e.variant].concat(e.label ? ['edition ' + e.label] : []);
+  if (e.area === 'products' && e.batch) sub.push(e.batch + ' product' + (e.batch === 1 ? '' : 's'));
+  else if (e.revision) sub.push((e.area === 'products' || e.area === 'fees' ? 'version ' : 'r') + e.revision);
+  var all = e.changes || [], lines = all.slice(0, 8);
+  var changes = lines.length ? '<ul class="rev-changes act-changes">' + lines.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+    + (all.length > 8 ? '<li class="mut">and ' + (all.length - 8) + ' more</li>' : '') + '</ul>' : '';
+  var held = e.batch && e.products && e.products.length
+    ? '<ul class="rev-changes act-changes act-batch">' + e.products.map(function (p) {
+        return '<li>' + esc(p.name) + (p.changes && p.changes.length ? ': ' + esc(p.changes.join('; ')) : '') + '</li>';
+      }).join('') + (e.batch > e.products.length ? '<li class="mut">and ' + (e.batch - e.products.length) + ' more</li>' : '') + '</ul>'
+    : '';
+  var note = e.note ? '<p class="act-note">“' + esc(e.note) + '”</p>' : '';
+  var button;
+  if (e.area === 'products') {
+    button = e.productId
+      ? '<button type="button" class="btn act-btn" data-actopen="products" data-actid="' + esc(e.productId) + '">Open the product</button>'
+      : '<button type="button" class="btn act-btn" data-actopen="products">Open the catalogue</button>';
+  } else if (e.area === 'fees') {
+    button = '<button type="button" class="btn act-btn" data-actopen="fees">Open the Fees tab</button>';
+  } else if (e.area === 'overlays') {
+    button = '<button type="button" class="btn act-btn" data-actopen="overlays">Open Overlay Funding</button>';
+  } else if (e.area === 'access') {
+    button = '<button type="button" class="btn act-btn" data-actopen="sleeves">Open the Sleeves tab</button>';
+  } else if (e.area === 'availability') {
+    button = e.live && sleeveById(e.sleeveId)
+      ? '<button type="button" class="btn act-btn" data-actsleeve="' + e.sleeveId + '">Open sleeve</button>' : '';
+  } else {
+    button = '<button type="button" class="btn act-btn" data-actopen="funding">Open Uncalled Capital</button>';
+  }
+  return '<div class="act-ev' + (e.current ? ' now' : '') + ' act-' + esc(e.area) + '">'
+    + '<span class="t">' + esc((e.at || '').slice(11, 16)) + '</span>'
+    + '<div class="w"><p><b>' + esc(e.name) + '</b> <span class="act-badge ' + esc(e.action) + '">' + esc(label) + '</span>'
+    + (who ? ' <span class="mut">by ' + esc(who) + '</span>' : '') + '</p>'
+    + '<small>' + esc(sub.join(' · ')) + '</small>' + changes + held + note + '</div>'
+    + '<span class="a">' + button + '</span></div>';
+}
+function actOpen(area, id) {
+  if (area === 'products') {
+    var entry = id ? prdEntry(id) : null;
+    switchView('catalogue');
+    if (repo.view !== 'catalogue') return;
+    cat.filters = {}; cat.query = ''; cat.compare = false;
+    if (entry) { cat.withdrawn = !!entry.withdrawn; forgetJoins(); cat.detail = id; cat.cursor = id; }
+    render(); return;
+  }
+  switchView(area === 'fees' ? 'fees' : area === 'overlays' ? 'overlays' : area === 'sleeves' ? 'sleeves' : 'uncalled');
 }
 function longDate(iso) {
   if (!iso) return '';
@@ -4613,6 +5283,8 @@ function regParams(before) {
   }
   if (reg.view === 'moved') q.set('moved', '1');
   if (reg.view === 'noAccount') q.set('noAccount', '1');
+  if (reg.view === 'custom') q.set('custom', '1');
+  if (reg.view === 'portfolios') q.set('portfolios', '1');
   q.set('limit', '60');
   if (before) q.set('before', before);
   return q.toString();
@@ -4631,8 +5303,33 @@ async function loadRegister(reset) {
     reg.summary = r.body.summary || null;
     reg.loaded = true;
     loadRegisterViews();
+    if (reset) loadAwaiting();
   } catch (err) { reg.error = err.message; }
   reg.busy = false; render();
+}
+/* The custom portfolios waiting for an admin's approval (D171): each opens
+   its scenario, where the approval is given or the portfolio sent back. */
+async function loadAwaiting() {
+  try {
+    var r = await api('GET', '/scenario/repository/custom-portfolios/awaiting');
+    if (r && r.ok) { reg.awaiting = r.body.awaiting || []; reg.awaitingUser = r.body.user; render(); }
+  } catch (err) { /* the list simply does not show */ }
+}
+function regAwaitingHtml() {
+  var list = reg.awaiting || [];
+  if (!list.length) return '';
+  return '<div class="reg-await" role="region" aria-label="Custom portfolios awaiting approval">'
+    + '<p class="reg-await-h"><b>Custom portfolios awaiting approval</b> \u00b7 ' + list.length
+    + ' \u00b7 an admin who did not build or submit one approves it or sends it back from its scenario</p>'
+    + list.map(function (a) {
+        var mine = a.builtBy === reg.awaitingUser || a.submittedBy === reg.awaitingUser;
+        return '<div class="reg-await-row"><span><b>' + esc(a.primaryPwa || a.scenarioId) + '</b> \u00b7 '
+          + esc(App.riskLabel ? App.riskLabel(a.profile) : a.profile) + ' risk profile \u00b7 ' + a.products + ' products \u00b7 '
+          + money(a.mandateSize, a.currency) + '<small>Built by ' + esc(a.builtBy) + ' \u00b7 submitted by ' + esc(a.submittedBy)
+          + ' ' + esc(shortDate(a.at)) + ' ' + esc((a.at || '').slice(11, 16))
+          + (a.note ? ' \u00b7 \u201c' + esc(a.note) + '\u201d' : '') + (mine ? ' \u00b7 yours, so another admin approves it' : '') + '</small></span>'
+          + '<a class="btn" href="?scenario=' + encodeURIComponent(a.scenarioId) + '" target="_blank" rel="noopener">Open the scenario</a></div>';
+      }).join('') + '</div>';
 }
 /* The view counts are over the whole register, so they do not move with the
    filters and are read once per session rather than once per page. */
@@ -4790,6 +5487,21 @@ function regBodyHtml() {
         + e.moved + ' moved</span>');
     }
     if (e.accountRequested) since.push('<span class="arc-badge ok" title="An account opening request exists">account</span>');
+    /* built with a custom sleeve, and whether that moved the weights (D170) */
+    if ((e.sleeves || []).some(function (p) { return p.custom; })) {
+      since.push('<span class="arc-badge cus" title="Delivered with a custom sleeve">custom</span>');
+    }
+    /* built product by product, and approved outside its usual range (D171) */
+    if (e.customPortfolio) {
+      since.push('<span class="arc-badge cus" title="Built product by product, '
+        + esc(e.customPortfolio.profileLabel || e.customPortfolio.profile) + ' risk profile">custom portfolio</span>');
+      if (e.customPortfolio.approvedBy) {
+        since.push('<span class="arc-badge acc" title="Approved by ' + esc(e.customPortfolio.approvedBy) + '">approved</span>');
+      }
+    }
+    if (e.departs) {
+      since.push('<span class="arc-badge warn" title="Its custom sleeves moved the weights, so its files leave the strategic allocation out">off strategic</span>');
+    }
     if (e.sequence > 1) since.push('<span class="arc-badge acc" title="The ' + e.sequence + 'th proposal of its scenario">#' + e.sequence + '</span>');
     if (e.tacticalTilt) since.push('<span class="arc-badge mute">tilt</span>');
     var name = String(e.primaryPwa || '');
@@ -4832,6 +5544,7 @@ function copyProposalUid(button, uid) {
 }
 
 function regPinBadge(pin) {
+  if (pin.custom) return ' <span class="arc-badge cus" title="Built for this proposal">custom</span>';
   if (pin.sleeveId == null || pin.revision == null) return '';
   if (pin.archived) return ' <span class="arc-badge gone" title="This sleeve has since been archived">r' + pin.revision + ' · archived</span>';
   if (pin.moved) return ' <span class="arc-badge warn" title="The library has moved on since this proposal">r' + pin.revision + ' · r' + pin.nowRevision + ' now</span>';
@@ -4861,10 +5574,24 @@ function regImplementedHtml(record) {
   (record.sleeves || []).forEach(function (p) { pins[p.category] = p; });
   var rows = '';
   groups.forEach(function (g) {
-    var pin = pins[g.category] || {sleeveId: g.sleeveId, revision: g.revision};
+    var pin = pins[g.category] || {sleeveId: g.sleeveId, revision: g.revision, custom: g.custom};
+    var strategic = g.strategicWeightPct;
+    var moved = strategic != null && Math.abs(strategic - g.weightPct) >= 0.005;
     rows += '<tr class="grp"><td>' + esc(g.category) + '</td>'
       + '<td>' + (g.sleeve ? esc(g.sleeve) + regPinBadge(pin) : '<span class="mut">no sleeve</span>') + '</td>'
-      + '<td></td><td class="num">' + money2(g.weightPct) + '%</td><td class="num"></td></tr>';
+      + '<td></td><td class="num">' + money2(g.weightPct) + '%'
+      + (moved ? '<small class="reg-was" title="The strategic weight">' + money2(strategic) + '%</small>' : '')
+      + '</td><td class="num"></td></tr>';
+    /* a custom sleeve: what it held as built, who built it, and the way to
+       make it a library sleeve (D170) */
+    if (g.custom) {
+      var c = g.custom;
+      rows += '<tr class="reg-custom"><td colspan="5">'
+        + '<span>' + (c.mode === 'portfolio' ? 'Weighted as % of the portfolio' : 'Weighted as % of the sleeve')
+        + (c.builtBy ? ' \u00b7 built by ' + esc(c.builtBy) : '') + (c.note ? ' \u00b7 \u201c' + esc(c.note) + '\u201d' : '') + '</span>'
+        + '<button type="button" class="btn btn-ghost" data-regtolib="' + esc(g.category) + '">Make it a library sleeve\u2026</button>'
+        + '</td></tr>';
+    }
     g.items.forEach(function (it) {
       rows += '<tr><td class="sub">' + esc(it.name || it.productId) + '</td><td></td>'
         + '<td class="mut">' + esc([it.ticker, it.vehicle].filter(Boolean).join(' · ') || '—') + '</td>'
@@ -4876,6 +5603,38 @@ function regImplementedHtml(record) {
     + '<th>Ticker · vehicle</th><th class="num">Weight</th><th class="num">Notional</th></tr></thead>'
     + '<tbody>' + rows + '</tbody></table>';
 }
+/* A custom sleeve, from the register, into the New sleeve form: its products,
+   weighted as a share of the sleeve, its name and note. The admin chooses
+   its types and creates it through the normal route, so it meets every
+   library rule (D170). */
+function regToLibrary(category) {
+  var r = reg.record; if (!r) return;
+  var g = (r.implemented || []).filter(function (x) { return x.category === category; })[0];
+  if (!g || !g.custom) return;
+  var c = g.custom, rows = c.products || [];
+  var total = rows.reduce(function (t, p) { return t + (Number(p.weightPct) || 0); }, 0);
+  if (!(total > 0)) return;
+  var cents = rows.map(function (p) { return Math.floor(p.weightPct / total * 10000 + 1e-9); });
+  var short = 10000 - cents.reduce(function (a, b) { return a + b; }, 0);
+  rows.map(function (p, i) { return { i: i, rem: p.weightPct / total * 10000 - cents[i] }; })
+    .sort(function (a, b) { return (b.rem - a.rem) || (a.i - b.i); })
+    .slice(0, short).forEach(function (o) { cents[o.i] += 1; });
+  var products = rows.map(function (p, i) { return { productId: p.productId, weightPct: cents[i] / 100 }; });
+  sv.focus = '#repoName';
+  goTo({ fresh: true, create: true, variant: r.variant, category: category,
+         sv: sv.mode === 'table' ? { drawer: true, compare: false } : { level: 2 },
+         then: function () {
+           if (!repo.draft || !repo.draft.create) return;
+           repo.draft.startFrom = 'blank';
+           repo.draft.name = c.name || '';
+           repo.draft.note = c.note || '';
+           repo.draft.products = products;
+           markDirty(); render();
+           App.announce('polite', 'The New sleeve form holds the custom sleeve\u2019s ' + products.length
+             + ' products. Name it, choose its types and create it.');
+         } });
+}
+
 function regDetailHtml() {
   if (!reg.detail) return '';
   var r = reg.record;
@@ -4888,7 +5647,9 @@ function regDetailHtml() {
     + '<div class="arc-dh"><div>'
     + '<h3>' + esc(r.primaryPwa) + '</h3>'
     + '<p><b>' + money(r.mandateSize, r.currency) + '</b> · ' + esc(r.currency) + ' · ' + esc(r.hedging)
-    + ' · ' + esc((r.baseKey || '').split('|').slice(1, 3).join(' '))
+    + ' · ' + (r.customPortfolio
+        ? 'Custom, ' + esc(r.customPortfolio.profileLabel || r.customPortfolio.profile) + ' risk profile'
+        : esc((r.baseKey || '').split('|').slice(1, 3).join(' ')))
     + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '') + '</p>'
     + '<p>' + esc(r.variant)
     + (r.includeFees ? ' · ' + esc((r.feeSchedule || '') + ' ' + (r.feeLevel || '')) : ' · no fees') + '</p>'
@@ -4898,6 +5659,21 @@ function regDetailHtml() {
     + ' by ' + esc(r.exportedBy) + (r.createdBy && r.createdBy !== r.exportedBy ? ' · started by ' + esc(r.createdBy) : '')
     + ' · workbook ' + Math.round(r.workbookBytes / 1024) + ' KB · sha ' + esc((r.workbookSha || '').slice(0, 8)) + '…'
     + (moved ? ' · <b class="warn">' + moved + ' sleeve' + (moved === 1 ? '' : 's') + ' moved since</b>' : '') + '</p>'
+    /* built product by product: who built it and who approved it (D171) */
+    + (r.customPortfolio ? '<p class="repo-prov">Built product by product'
+        + (r.customPortfolio.builtBy ? ' by ' + esc(r.customPortfolio.builtBy) : '')
+        + (r.customPortfolio.approvedBy ? ' · approved by ' + esc(r.customPortfolio.approvedBy) + ' '
+            + esc(shortDate(r.customPortfolio.approvedAt || '')) + (r.customPortfolio.approvalNote
+              ? ' · \u201c' + esc(r.customPortfolio.approvalNote) + '\u201d' : '') : '')
+        + ' · compared with ' + ((r.customPortfolio.comparisons || []).length
+            ? esc(r.customPortfolio.comparisons.map(function (k) { return k.split('|').slice(1, 3).join(' '); }).join(', ')) : 'nothing')
+        + '</p>' : '')
+    /* its custom sleeves moved the weights, so its files leave the strategic allocation out (D170) */
+    + (r.departs ? '<p class="repo-prov"><b class="warn">Its custom sleeves changed the category weights, so its '
+        + 'workbook and deck leave the strategic allocation out.</b></p>' : '')
+    /* the catalogue and the fee card it was priced with (D165, D166) */
+    + (r.catalogueRevision ? '<p class="repo-prov">Priced with catalogue version ' + r.catalogueRevision
+        + (r.feeCardRevision ? ' · fee card version ' + r.feeCardRevision : ' · no fees') + '</p>' : '')
     + '</div><div class="arc-dact">'
     + '<a class="btn btn-primary" href="' + esc(window.API_BASE + '/scenario/repository/proposals/' + encodeURIComponent(r.proposalId) + '/workbook') + '" download>Download the workbook</a>'
     /* the deck delivered with it (D123); a proposal from before decks has none */
@@ -4920,7 +5696,7 @@ function regDetailHtml() {
    that can be read through. Below 1100px the CSS drops it back under the
    table, where it is the only thing that fits. */
 function registerViewHtml() {
-  return regToolbarHtml()
+  return regAwaitingHtml() + regToolbarHtml()
     + '<div class="arc-b reg-b' + (reg.detail ? ' open' : '') + '">'
     + '<div class="cat-tblwrap arc-tblwrap reg-list" tabindex="0" aria-label="Proposal register, scrolls">'
     + '<table class="cat-tbl dense arc-tbl reg-tbl"><thead>' + regHeadHtml() + '</thead>'
@@ -5104,7 +5880,22 @@ function catToolbarHtml() {
     + '<button type="button" class="btn arc-export" data-catcsv'
     + (catVisible().length ? '' : ' disabled') + '>Export CSV</button>'
     + '<span class="cat-count" id="catCount">' + catCountText() + '</span>'
+    + '</div>'
+    /* the catalogue is maintained here (D165) */
+    + '<div class="cat-tools cat-own">'
+    + '<button type="button" class="btn btn-primary" data-prd="new"' + (cat.withdrawn ? ' disabled' : '') + '>+ New product</button>'
+    + '<button type="button" class="btn" data-prd="import">Import a file</button>'
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/products.csv') + '" download>Download the product file</a>'
+    + '<button type="button" class="btn' + (cat.withdrawn ? ' on' : '') + '" data-prd="withdrawn" aria-pressed="' + !!cat.withdrawn + '">'
+    + (cat.withdrawn ? '← The catalogue' : 'Withdrawn · ' + ((repo.data.withdrawnProducts || []).length)) + '</button>'
+    + '<span class="cat-src">' + esc(catSourceText()) + '</span>'
+    + (cat.importSaid ? '<span class="prd-flash" role="status">' + esc(cat.importSaid) + '</span>' : '')
     + '</div>';
+}
+function catSourceText() {
+  var c = repo.data.catalogue || {};
+  return 'Catalogue version ' + (c.revision || 1) + ' · last edited ' + shortDateTime(c.lastEditedAt)
+    + (c.lastEditedBy ? ' · ' + (c.lastEditedBy === 'seed' ? 'loaded from the product file' : c.lastEditedBy) : '');
 }
 
 /* every band at once: with eight of them, one at a time is a chore */
@@ -5117,8 +5908,9 @@ function catFoldAllHtml() {
 }
 
 function catCountText() {
-  var n = catVisible().length, all = repo.data.products.length;
-  return (n === all ? all + ' products' : 'Showing ' + n + ' of ' + all)
+  var n = catVisible().length, all = catRows().length;
+  var what = cat.withdrawn ? ' withdrawn product' + (all === 1 ? '' : 's') : ' products';
+  return (n === all ? all + what : 'Showing ' + n + ' of ' + all + (cat.withdrawn ? ' withdrawn' : ''))
     + (cat.sort ? ' · sorted by ' + esc(catColumnLabel(cat.sort.key)) + (cat.sort.dir === 'desc' ? ' ↓' : ' ↑')
         + (cat.group ? ' within category' : '') : '')
     + (catFiltersInForce() ? ' · <button type="button" class="cat-clear" data-catclearall>Clear</button>' : '');
@@ -5182,6 +5974,7 @@ function catCellHtml(row, c, sorted) {
       row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2));
     case 'minimumInvestment': return td('num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(p.minimumInvestment)));
     case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
+    case 'lastEditedAt': return td('mute ed', esc(shortDate(p.lastEditedAt)));
     default: return td('mute', esc(p[c.key]));
   }
 }
@@ -5285,19 +6078,281 @@ function catCompareHtml() {
 }
 
 function catDetailHtml() {
+  /* the form, adding or editing (D165), or the card */
+  if (prd.mode === 'new') return prdFormHtml();
   var row = cat.detail ? catRow(cat.detail) : null;
   if (!row) return '';
+  if (prd.mode === 'edit' && prd.draft && prd.draft.productId === row.p.productId) return prdFormHtml();
+  return prdViewHtml(row);
+}
+
+
+/* ---- the catalogue kept here (D165) --------------------------------------
+   The catalogue is the repository's own now, so the product card edits as
+   well as reads: Edit turns the card into the form, + New product opens the
+   same form empty or copied from another product, Withdraw takes a product
+   out (refused while a sleeve holds it) and Restore puts it back. Every save
+   is a new version with who and when, read back in the card's History. A
+   file goes in through Import, which shows what it would do first.
+
+   The form's checks are the server's in miniature (product-editor-helpers);
+   a refusal the server gives still lands on the field it names. A save
+   refreshes the whole repository payload, so every view - the sleeves'
+   hydrated products included - reads the catalogue as it now is. */
+var prd = {
+  mode: null,                  /* null | 'edit' | 'new' */
+  draft: null,                 /* the form's text, field by field */
+  original: null,              /* the product the edit started from (or the copy's source) */
+  base: null,                  /* the version the edit was opened at */
+  note: '',
+  shown: {},                   /* the fields whose problems are on show: touched, or a save asked */
+  serverError: null,           /* { field, message } from the last refused save */
+  error: null, stale: false, saving: false,
+  flash: '',                   /* what the last write said, on the card */
+  start: 'blank', copyOf: '',  /* a new product starts blank or copied, as a new sleeve does (D157) */
+  idTyped: false,              /* the ID was typed by hand, so it stops following the name */
+  history: null,               /* { productId, entries } */
+  historyOpen: false, historyBusy: false,
+  confirm: null,               /* 'withdraw' | { revert: n } while asking */
+  leaving: false               /* a move was asked for with unsaved changes */
+};
+
+/* the import dialog, for a product file or a fee card file (D165, D166) */
+var imp = null;
+
+function prdLive() { return (repo.data && repo.data.products) || []; }
+function prdWithdrawn() { return (repo.data && repo.data.withdrawnProducts) || []; }
+function prdEntry(id) {
+  return prdLive().filter(function (p) { return p.productId === id; })[0]
+    || prdWithdrawn().filter(function (p) { return p.productId === id; })[0] || null;
+}
+function prdCtx(isNew) {
+  var taken = {}, gone = {};
+  prdLive().forEach(function (p) { taken[p.productId] = p.name; });
+  prdWithdrawn().forEach(function (p) { gone[p.productId] = p.name; });
+  return { isNew: isNew, feeGroups: (repo.data && repo.data.feeGroups) || [], takenIds: taken, withdrawnIds: gone };
+}
+function prdProblemsNow() { return prd.draft ? prdProblems(prd.draft, prdCtx(prd.mode === 'new')) : {}; }
+function prdDirty() {
+  if (!prd.mode || !prd.draft) return false;
+  if (prd.mode === 'new') return PRD_FIELDS.some(function (f) { return prdText(prd.draft[f.key]) !== ''; }) || !!prd.note.trim();
+  return prdChanges(prd.original, prd.draft).length > 0 || !!prd.note.trim();
+}
+function prdStamp(p) {
+  if (!p) return '';
+  if (p.withdrawn) {
+    return 'Withdrawn ' + shortDateTime(p.withdrawnAt) + (p.withdrawnBy ? ' · ' + p.withdrawnBy : '') + ' · version ' + p.revision;
+  }
+  return 'Last edited ' + shortDateTime(p.lastEditedAt) + (p.lastEditedBy ? ' · ' + prdWho(p.lastEditedBy) : '')
+    + ' · version ' + p.revision;
+}
+function prdWho(name) { return name === 'seed' ? 'loaded from the product file' : name; }
+
+/* the sleeves a product is in, and the implementation types they are under */
+function prdReach(productId) {
+  var uses = usedIn(productId), types = [];
+  uses.forEach(function (u) { if (types.indexOf(u.variant) === -1) types.push(u.variant); });
+  return { sleeves: uses.length, types: types.length };
+}
+
+function prdStartEdit(id) {
+  var p = prdEntry(id); if (!p || p.withdrawn) return;
+  prd.mode = 'edit'; prd.original = p; prd.draft = prdDraftFrom(p); prd.base = p.revision;
+  prd.note = ''; prd.shown = {}; prd.serverError = null; prd.error = null; prd.stale = false;
+  prd.flash = ''; prd.confirm = null; prd.leaving = false;
+  cat.detail = id; cat.compare = false;
+  render();
+  prdFocus('#prdF-name');
+}
+function prdStartNew() {
+  prd.mode = 'new'; prd.original = null; prd.draft = prdDraftFrom(null); prd.base = null;
+  prd.note = ''; prd.shown = {}; prd.serverError = null; prd.error = null; prd.stale = false;
+  prd.flash = ''; prd.start = 'blank'; prd.copyOf = ''; prd.idTyped = false; prd.confirm = null; prd.leaving = false;
+  cat.detail = null; cat.compare = false;
+  render();
+  prdFocus('#prdF-name');
+}
+function prdUseCopy(id) {
+  var p = prdEntry(id);
+  prd.copyOf = id || '';
+  var keep = { productId: prd.idTyped ? prd.draft.productId : '', name: prd.draft.name };
+  prd.draft = prdDraftFrom(p || null);
+  prd.draft.productId = keep.productId; prd.draft.name = keep.name;
+  if (!prd.idTyped) prd.draft.productId = prdSlug(keep.name);
+  prd.original = null;
+}
+function prdStop() {
+  prd.mode = null; prd.draft = null; prd.original = null; prd.base = null; prd.note = '';
+  prd.shown = {}; prd.serverError = null; prd.error = null; prd.stale = false; prd.confirm = null; prd.leaving = false;
+}
+function prdCancel() {
+  var was = prd.mode, id = prd.draft && prd.draft.productId;
+  prdStop();
+  render();
+  if (was === 'edit' && id) prdFocus('[data-prd="edit"]'); else prdFocus('[data-prd="new"]');
+}
+function prdFocus(selector) {
+  window.setTimeout(function () {
+    var el = document.querySelector('#repoDialog ' + selector);
+    if (el && el.focus) el.focus();
+  }, 0);
+}
+
+/* the payload of the repository again, after a write: the catalogue, the
+   sleeves that hydrate its products, the vocabulary and the fee groups */
+async function prdRefreshData() {
+  try {
+    var r = await api('GET', '/scenario/repository');
+    if (r && r.ok) { repo.data = r.body; forgetJoins(); }
+  } catch (err) { /* the write landed; the next read catches up */ }
+}
+
+async function prdPost(method, path, body, after) {
+  prd.saving = true; prd.error = null; prd.stale = false; prd.serverError = null; render();
+  try {
+    var r = await api(method, path, body);
+    if (!r) return false;
+    if (!r.ok) {
+      prd.stale = r.status === 409;
+      if (r.body.field && prd.draft && prd.draft[r.body.field] !== undefined) {
+        prd.serverError = { field: r.body.field, message: r.body.error };
+        prd.shown[r.body.field] = true;
+      } else {
+        prd.error = r.body.error || ('Could not save (' + r.status + ')');
+      }
+      return false;
+    }
+    await prdRefreshData();
+    if (after) after(r.body);
+    return true;
+  } catch (err) { prd.error = err.message; return false; }
+  finally {
+    prd.saving = false; render();
+  }
+}
+
+async function prdSave() {
+  var probs = prdProblemsNow();
+  PRD_FIELDS.forEach(function (f) { prd.shown[f.key] = true; });
+  if (Object.keys(probs).length) { render(); prdFocusFirstProblem(probs); return; }
+  var payload = prdPayload(prd.draft);
+  if (prd.mode === 'new') {
+    await prdPost('POST', '/scenario/repository/products', { product: payload, note: prd.note }, function (body) {
+      var made = body.product;
+      prdStop();
+      cat.detail = made.productId; cat.cursor = made.productId;
+      cat.filters = {}; cat.query = '';
+      prd.flash = 'Added to the catalogue · version 1';
+      prdHistoryForget();
+    });
+  } else {
+    await prdPost('PUT', '/scenario/repository/products',
+      { productId: prd.draft.productId, product: payload, note: prd.note, base: prd.base }, function (body) {
+        prdStop();
+        prd.flash = 'Saved · version ' + body.product.revision;
+        prdHistoryForget();
+      });
+  }
+}
+function prdFocusFirstProblem(probs) {
+  var first = PRD_FIELDS.filter(function (f) { return probs[f.key]; })[0];
+  if (first) prdFocus('#prdF-' + first.key);
+}
+async function prdWithdraw(id) {
+  var p = prdEntry(id); if (!p) return;
+  prd.confirm = null;
+  await prdPost('POST', '/scenario/repository/products/withdraw', { productId: id, note: prd.note, base: p.revision },
+    function () {
+      cat.importSaid = p.name + ' withdrawn: it is under Withdrawn, and can be restored.';
+      cat.detail = null; prd.note = ''; prdHistoryForget();
+    });
+}
+async function prdRestore(id) {
+  var p = prdEntry(id); if (!p) return;
+  await prdPost('POST', '/scenario/repository/products/restore', { productId: id, note: prd.note }, function () {
+    prd.flash = p.name + ' is back in the catalogue.';
+    cat.withdrawn = false; forgetJoins(); cat.detail = id; prd.note = ''; prdHistoryForget();
+  });
+}
+async function prdRevert(id, revision) {
+  var p = prdEntry(id); if (!p) return;
+  prd.confirm = null;
+  await prdPost('POST', '/scenario/repository/products/revert',
+    { productId: id, revision: revision, note: prd.note, base: p.revision }, function (body) {
+      prd.flash = 'Version ' + revision + ' put back as version ' + body.product.revision;
+      prd.note = ''; prdHistoryForget();
+      loadProductHistory(id);
+    });
+}
+
+function prdHistoryForget() { prd.history = null; }
+async function loadProductHistory(id) {
+  prd.historyBusy = true; render();
+  try {
+    var r = await api('GET', '/scenario/repository/products/history?productId=' + encodeURIComponent(id));
+    if (r && r.ok) prd.history = { productId: id, entries: r.body.history || [] };
+  } catch (err) { /* the card still reads without it */ }
+  prd.historyBusy = false;
+  if (repo.open && repo.view === 'catalogue') render();
+}
+
+/* ---- rendering: the card ---- */
+function prdHistoryHtml(p) {
+  var open = prd.historyOpen && prd.history && prd.history.productId === p.productId;
+  var head = '<div class="prd-hh"><span class="h">History</span>'
+    + '<button type="button" class="cat-link" data-prd="history" aria-expanded="' + !!open + '">'
+    + (prd.historyOpen ? 'Hide' : 'Show every version') + '</button></div>';
+  if (!prd.historyOpen) return '<div class="prd-hist">' + head + '</div>';
+  if (!open) return '<div class="prd-hist">' + head + '<p class="repo-loading">' + (prd.historyBusy ? 'Reading…' : '') + '</p></div>';
+  return '<div class="prd-hist">' + head + '<ol class="fund-hist prd-hist-l">' + prd.history.entries.map(function (h) {
+    var canRestore = !h.current && !p.withdrawn && h.action !== 'withdrawn' && h.action !== 'restored';
+    var asking = prd.confirm && prd.confirm.revert === h.revision;
+    return '<li><div class="fund-hist-h"><b>v' + h.revision + '</b> <span class="act">' + esc(PRD_ACTION_WORDS[h.action] || h.action) + '</span>'
+      + (h.current ? ' <span class="now">in force</span>' : '')
+      + (canRestore ? '<button type="button" class="cat-link" data-prd="askrevert" data-rev="' + h.revision + '"'
+          + (prd.saving || prd.mode ? ' disabled' : '') + '>Restore this version</button>' : '')
+      + '</div>'
+      + (h.changeWords && h.changeWords.length
+          ? '<ul class="rev-changes prd-hist-c">' + h.changeWords.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>'
+          : h.action === 'seeded' ? '<div class="fund-hist-w">Loaded from ' + esc(h.source || 'the product file') + '</div>' : '')
+      + (h.source && h.action === 'imported' ? '<div class="fund-hist-w">From ' + esc(h.source) + '</div>' : '')
+      + (h.note ? '<div class="fund-hist-n">“' + esc(h.note) + '”</div>' : '')
+      + '<div class="fund-hist-by">' + esc(prdWho(h.actor) || 'unknown') + ' · ' + esc(shortDateTime(h.at)) + '</div>'
+      + (asking ? '<div class="prd-ask" role="alertdialog" aria-label="Restore version ' + h.revision + '">'
+          + '<p>Put version ' + h.revision + '’s values back? It becomes a new version; nothing is rewound.</p>'
+          + '<button type="button" class="btn btn-primary" data-prd="revert" data-rev="' + h.revision + '">Restore version ' + h.revision + '</button>'
+          + '<button type="button" class="btn" data-prd="unask">Cancel</button></div>' : '')
+      + '</li>';
+  }).join('') + '</ol></div>';
+}
+var PRD_ACTION_WORDS = {
+  seeded: 'loaded', created: 'added', updated: 'edited', imported: 'imported', withdrawn: 'withdrawn',
+  restored: 'restored', reverted: 'an earlier version put back'
+};
+
+function prdViewHtml(row) {
   var p = row.p, uses = usedIn(p.productId);
   var list = uses.map(function (u) {
     return '<div class="r"><b>' + esc(u.name) + ' · ' + money2(u.weight * 100) + '%</b>'
       + '<small>' + esc(u.variant) + ' · ' + esc(u.category) + '</small>'
       + '<button type="button" class="cat-link" data-catopen="' + u.id + '">Open in repository →</button></div>';
-  }).join('') || '<div class="r none">Not in any sleeve yet.</div>';
+  }).join('') || '<div class="r none">Not in any sleeve yet.' + (p.withdrawn ? '' : ' <button type="button" class="cat-link" data-prd="place">Add to a sleeve →</button>') + '</div>';
+  var asking = prd.confirm === 'withdraw';
+  var acts;
+  if (p.withdrawn) {
+    acts = '<button type="button" class="btn btn-primary" data-prd="restore"' + (prd.saving ? ' disabled' : '') + '>Restore to the catalogue</button>';
+  } else {
+    acts = '<button type="button" class="btn btn-primary" data-prd="edit"' + (prd.saving ? ' disabled' : '') + '>Edit</button>'
+      + '<button type="button" class="btn" data-catpin="' + esc(p.productId) + '">' + (cat.pins.indexOf(p.productId) !== -1 ? 'Unpin' : 'Pin to compare') + '</button>'
+      + '<button type="button" class="btn btn-ghost prd-wd" data-prd="askwithdraw"' + (prd.saving ? ' disabled' : '') + '>Withdraw</button>';
+  }
   return '<div class="cat-detail" role="region" aria-label="' + esc(p.name) + '">'
     + '<button type="button" class="dlg-close" data-catdetailclose aria-label="Close">×</button>'
-    + '<span class="eyeb">Product</span>'
+    + '<span class="eyeb">' + (p.withdrawn ? 'Withdrawn product' : 'Product') + '</span>'
     + '<h4>' + esc(p.name) + '</h4>'
     + '<span class="tk">' + esc(p.ticker) + ' · ' + esc(p.assetClass) + ' · ' + esc(p.productId) + '</span>'
+    + '<span class="cat-stamp' + (p.withdrawn ? ' gone' : '') + '">' + esc(prdStamp(p)) + '</span>'
+    + (prd.flash ? '<p class="prd-flash" role="status">' + esc(prd.flash) + '</p>' : '')
     + '<div class="cat-mg">'
     + '<div class="m"><small>Product cost</small><b>' + catFigure(p.productCost, 2) + '</b></div>'
     + '<div class="m"><small>Yield</small><b>' + catFigure(p.distributionYield, 2) + '</b></div>'
@@ -5305,12 +6360,346 @@ function catDetailHtml() {
     + '</div>'
     + '<dl class="cat-dl">'
     + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
+    + '<dt>Share class</dt><dd>' + esc(p.shareClass || '—') + '</dd>'
     + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
+    + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
     + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
-    + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd></dl>'
+    + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
+    + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
-    + '<div class="acts"><button type="button" class="btn" data-catpin="' + esc(p.productId) + '">' + (cat.pins.indexOf(p.productId) !== -1 ? 'Unpin' : 'Pin to compare') + '</button></div>'
+    + prdHistoryHtml(p)
+    + (asking ? '<div class="prd-ask" role="alertdialog" aria-label="Withdraw ' + esc(p.name) + '">'
+        + (uses.length
+            ? '<p>' + esc(p.name) + ' is in ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's')
+              + '. A product a sleeve holds cannot be withdrawn: take it out of ' + (uses.length === 1 ? 'that sleeve' : 'them') + ' first.</p>'
+              + '<button type="button" class="btn" data-prd="unask">Close</button>'
+            : '<p>Take ' + esc(p.name) + ' out of the catalogue? It keeps its history, shows under Withdrawn, and can be restored.</p>'
+              + '<label class="prd-note-l" for="prdNote">Note <small>optional</small></label>'
+              + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '" placeholder="Why it is leaving">'
+              + '<button type="button" class="btn btn-danger" data-prd="withdraw"' + (prd.saving ? ' disabled' : '') + '>' + (prd.saving ? 'Withdrawing…' : 'Withdraw') + '</button>'
+              + '<button type="button" class="btn" data-prd="unask">Cancel</button>')
+        + '</div>' : '')
+    + (prd.error ? '<p class="md-err" role="alert">' + esc(prd.error) + '</p>' : '')
+    + '<div class="acts">' + acts + '</div>'
     + '</div>';
+}
+
+/* ---- rendering: the form ---- */
+function prdFieldHtml(f, d, probs) {
+  var id = 'prdF-' + f.key;
+  var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
+  var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
+  var label = '<label for="' + id + '">' + esc(f.label) + (f.unit ? ' <small>' + f.unit + '</small>' : '')
+    + (f.optional ? ' <small>optional</small>' : '') + '</label>';
+  var invalid = err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '';
+  var input, hint = '';
+  if (f.key === 'productId' && prd.mode === 'edit') {
+    input = '<span class="prd-locked" id="' + id + '">' + esc(d.productId) + '</span>';
+    hint = '<small class="prd-hint">Fixed: sleeves refer to the product by its ID.</small>';
+  } else if (f.kind === 'share') {
+    input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
+      + [['', 'None']].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, s]; })).map(function (o) {
+          return '<option value="' + esc(o[0]) + '"' + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        }).join('') + '</select>';
+  } else if (f.kind === 'group') {
+    var groups = (repo.data && repo.data.feeGroups) || [];
+    input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
+      + '<option value=""' + (d[f.key] ? '' : ' selected') + '>Choose…</option>'
+      + groups.map(function (g) { return '<option value="' + esc(g) + '"' + (d[f.key] === g ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('')
+      + '</select>';
+  } else {
+    var words = f.kind === 'word' ? ((repo.data.productVocabulary || {})[f.key] || []) : null;
+    input = '<input id="' + id + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
+      + ' value="' + esc(d[f.key]) + '"' + invalid
+      + (f.kind === 'pct' || f.kind === 'amount' ? ' inputmode="decimal"' : '')
+      + (words ? ' list="prdL-' + f.key + '"' : '')
+      + (f.key === 'productId' ? ' placeholder="Suggested from the name"' : '')
+      + (f.key === 'minimumInvestment' ? ' placeholder="None"' : '')
+      + (f.key === 'distributionYield' ? ' placeholder="None"' : '') + '>'
+      + (words ? '<datalist id="prdL-' + f.key + '">' + words.map(function (w) { return '<option value="' + esc(w) + '">'; }).join('') + '</datalist>' : '');
+    if (words) hint = '<small class="prd-hint" id="prdH-' + f.key + '">' + prdNewWordHint(f.key) + '</small>';
+  }
+  return '<div class="prd-f' + (f.wide ? ' wide' : '') + '">' + label + input + hint
+    + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></div>';
+}
+/* a word nobody uses yet is said to be new, so a typo reads as one */
+function prdNewWordHint(key) {
+  var v = prdText(prd.draft && prd.draft[key]);
+  if (!v) return '';
+  var words = ((repo.data && repo.data.productVocabulary) || {})[key] || [];
+  if (words.indexOf(v) !== -1) return '';
+  var same = words.filter(function (w) { return w.toLowerCase() === v.toLowerCase(); })[0];
+  if (same) return 'The catalogue spells it ' + esc(same) + '.';
+  var near = prdNear(v, words);
+  return near ? 'Did you mean ' + esc(near) + '? No product uses ' + esc(v) + ' yet.' : 'A new value: no product uses it yet.';
+}
+function prdReachHtml() {
+  if (prd.mode !== 'edit') return '';
+  var reach = prdReach(prd.draft.productId);
+  var moved = prdChanges(prd.original, prd.draft);
+  var minUp = moved.some(function (c) { return c.key === 'minimumInvestment'; })
+    && prdNumber(prd.draft.minimumInvestment, false) !== null
+    && (prd.original.minimumInvestment === null || prdNumber(prd.draft.minimumInvestment, false) > prd.original.minimumInvestment);
+  return '<div class="prd-reach" id="prdReach">'
+    + (reach.sleeves
+        ? '<p>In ' + reach.sleeves + ' sleeve' + (reach.sleeves === 1 ? '' : 's') + ' across ' + reach.types + ' implementation type'
+          + (reach.types === 1 ? '' : 's') + '. Proposals being built with ' + (reach.sleeves === 1 ? 'it' : 'them') + ' are re-priced at once.</p>'
+        : '<p>Not in any sleeve, so no proposal uses it yet.</p>')
+    + (minUp && reach.sleeves
+        ? '<p class="warn">A position below a product’s minimum stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
+    + '</div>';
+}
+function prdFormHtml() {
+  var d = prd.draft, probs = prdProblemsNow(), isNew = prd.mode === 'new';
+  var count = Object.keys(probs).length, dirty = prdDirty();
+  var moved = isNew ? [] : prdChanges(prd.original, d);
+  var title = isNew ? (prdText(d.name) || 'New product') : prdText(d.name) || prd.original.name;
+  var start = '';
+  if (isNew) {
+    var options = prdLive().slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
+    start = '<div class="prd-start"><div class="repo-seg" role="tablist" aria-label="Start from">'
+      + '<button type="button" role="tab" data-prd="startblank" aria-selected="' + (prd.start === 'blank') + '">Start from blank</button>'
+      + '<button type="button" role="tab" data-prd="startcopy" aria-selected="' + (prd.start === 'copy') + '">Copy an existing product</button>'
+      + '</div>'
+      + (prd.start === 'copy'
+          ? '<select id="prdCopyOf" aria-label="The product to copy"><option value="">Choose a product to copy…</option>'
+            + options.map(function (p) { return '<option value="' + esc(p.productId) + '"' + (prd.copyOf === p.productId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('')
+            + '</select><small class="prd-hint">Everything but the ID and the name is filled in from it.</small>'
+          : '')
+      + '</div>';
+  }
+  return '<div class="cat-detail prd-edit" role="region" aria-label="' + esc(isNew ? 'New product' : 'Edit ' + title) + '">'
+    + '<span class="eyeb">' + (isNew ? 'New product' : 'Editing · version ' + prd.base) + '</span>'
+    + '<h4 id="prdTitle">' + esc(title) + '</h4>'
+    + start
+    + '<div class="prd-grid">' + PRD_FIELDS.map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
+    + prdReachHtml()
+    + '<div class="prd-f wide"><label for="prdNote">Note <small>optional</small></label>'
+    + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '"'
+    + ' placeholder="' + (isNew ? 'Why it is being added' : 'Why it is changing') + '"></div>'
+    + (prd.leaving ? '<p class="prd-warn" role="alert">Save or cancel the changes to ' + esc(title) + ' first.</p>' : '')
+    + (prd.error ? '<p class="md-err" role="alert">' + esc(prd.error) + '</p>' : '')
+    + '<div class="acts prd-acts">'
+    + (prd.stale ? '<button type="button" class="btn" data-prd="reload">Reload the product</button>' : '')
+    + '<button type="button" class="btn btn-primary" id="prdSave" data-prd="save"' + ((isNew ? count : (count || !moved.length)) || prd.saving || prd.stale ? ' disabled' : '') + '>'
+    + (prd.saving ? 'Saving…' : isNew ? 'Add to the catalogue' : 'Save changes') + '</button>'
+    + '<button type="button" class="btn" data-prd="cancel"' + (prd.saving ? ' disabled' : '') + '>Cancel</button>'
+    + '<span class="prd-status" id="prdStatus" role="status">' + esc(prdStatusText(probs, moved, dirty)) + '</span>'
+    + '</div></div>';
+}
+function prdStatusText(probs, moved, dirty) {
+  var n = Object.keys(probs).length;
+  if (prd.mode === 'new') return n ? n + ' field' + (n === 1 ? '' : 's') + ' to fill or fix' : 'Ready to add';
+  if (!moved.length) return dirty ? '' : 'No changes yet';
+  return (n ? n + ' to fix · ' : '') + moved.length + ' change' + (moved.length === 1 ? '' : 's');
+}
+/* the parts typing changes, without the boxes, so the caret stays */
+function prdUpdate() {
+  if (!prd.draft) return;
+  var probs = prdProblemsNow(), isNew = prd.mode === 'new';
+  var moved = isNew ? [] : prdChanges(prd.original, prd.draft), dirty = prdDirty();
+  PRD_FIELDS.forEach(function (f) {
+    var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
+    var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
+    var box = document.getElementById('prdE-' + f.key); if (box) box.textContent = err;
+    var input = document.getElementById('prdF-' + f.key);
+    if (input && input.tagName !== 'SPAN') {
+      if (err) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'prdE-' + f.key); }
+      else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
+    }
+    var hint = document.getElementById('prdH-' + f.key); if (hint) hint.innerHTML = prdNewWordHint(f.key);
+  });
+  var save = document.getElementById('prdSave');
+  if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);
+  var status = document.getElementById('prdStatus'); if (status) status.textContent = prdStatusText(probs, moved, dirty);
+  var reach = document.getElementById('prdReach'); if (reach) reach.outerHTML = prdReachHtml();
+  var title = document.getElementById('prdTitle');
+  if (title) title.textContent = prdText(prd.draft.name) || (isNew ? 'New product' : prd.original.name);
+}
+
+/* ---- the import dialog: a product file or a fee card file ---- */
+function impOpen(kind) {
+  imp = { kind: kind, step: 'choose', name: '', content: '', preview: null, withdraw: [], note: '',
+          busy: false, error: null, stale: false };
+  render();
+  prdFocus('#impFile');
+}
+function impClose() { imp = null; render(); }
+function impRead(file) {
+  return new Promise(function (resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function () { resolve(String(reader.result || '')); };
+    reader.onerror = function () { reject(new Error('The file could not be read.')); };
+    reader.readAsDataURL(file);
+  });
+}
+async function impChoose(file) {
+  if (!imp || !file) return;
+  imp.busy = true; imp.error = null; imp.stale = false; imp.preview = null; imp.withdraw = [];
+  imp.name = file.name; render();
+  try {
+    imp.content = await impRead(file);
+    var path = imp.kind === 'fees' ? '/scenario/repository/fees/import/preview' : '/scenario/repository/products/import/preview';
+    var r = await api('POST', path, { name: imp.name, content: imp.content });
+    if (!r) return;
+    if (!r.ok) { imp.error = r.body.error || ('The file could not be read (' + r.status + ')'); imp.step = 'choose'; }
+    else { imp.preview = r.body; imp.step = 'preview'; }
+  } catch (err) { imp.error = err.message; imp.step = 'choose'; }
+  finally { if (imp) { imp.busy = false; render(); } }
+}
+async function impApply() {
+  if (!imp || !imp.preview) return;
+  imp.busy = true; imp.error = null; imp.stale = false; render();
+  try {
+    var r;
+    if (imp.kind === 'fees') {
+      r = await api('POST', '/scenario/repository/fees/import',
+        { name: imp.name, content: imp.content, note: imp.note, base: imp.preview.revision });
+    } else {
+      r = await api('POST', '/scenario/repository/products/import',
+        { name: imp.name, content: imp.content, withdraw: imp.withdraw, note: imp.note, base: imp.preview.revision });
+    }
+    if (!r) return;
+    if (!r.ok) { imp.error = r.body.error || ('Could not import (' + r.status + ')'); imp.stale = r.status === 409; return; }
+    var said;
+    if (imp.kind === 'fees') {
+      fct.data = r.body.fees || fct.data; fct.draft = null;
+      fct.flash = 'Imported ' + imp.name + ' · the card is version ' + r.body.saved.revision;
+      loadFeeHistory(); feeRefetchSchema();
+      await prdRefreshData();
+    } else {
+      var done = r.body['import'];
+      said = [done.added + ' added', done.changed + ' changed'];
+      if (done.restored) said.push(done.restored + ' back from withdrawn');
+      if (done.withdrawn) said.push(done.withdrawn + ' withdrawn');
+      prd.flash = '';
+      cat.importSaid = 'Imported ' + done.file + ': ' + said.join(', ') + ' · the catalogue is version ' + done.revision;
+      await prdRefreshData();
+      prdHistoryForget();
+    }
+    imp = null;
+  } catch (err) { if (imp) imp.error = err.message; }
+  finally { if (imp) imp.busy = false; render(); }
+}
+function impListHtml(title, items, body) {
+  if (!items.length) return '';
+  return '<details class="imp-sec"' + (items.length <= 6 ? ' open' : '') + '><summary><b>' + items.length + '</b> ' + esc(title) + '</summary>'
+    + '<ul>' + items.map(body).join('') + '</ul></details>';
+}
+function impProductsPreviewHtml(p) {
+  var nothing = !p.added.length && !p.changed.length && !p.restored.length && !imp.withdraw.length;
+  return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' row' + (p.rows === 1 ? '' : 's') + ': '
+    + [p.added.length + ' new', p.changed.length + ' changed', p.restored.length + ' back from withdrawn',
+       p.unchanged + ' unchanged', p.missing.length + ' not in the file'].join(' · ') + '</p>'
+    + impListHtml('new', p.added, function (a) { return '<li><b>' + esc(a.name) + '</b> <small>' + esc(a.productId) + '</small></li>'; })
+    + impListHtml('changed', p.changed, function (c) {
+        return '<li><b>' + esc(c.name) + '</b><ul class="rev-changes">' + c.changeWords.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></li>';
+      })
+    + impListHtml('back from withdrawn', p.restored, function (c) {
+        return '<li><b>' + esc(c.name) + '</b>' + (c.changeWords.length ? '<ul class="rev-changes">' + c.changeWords.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') + '</li>';
+      })
+    + impListHtml('in the catalogue but not in the file - kept unless ticked', p.missing, function (m) {
+        var on = imp.withdraw.indexOf(m.productId) !== -1;
+        return '<li><label class="imp-wd' + (m.canWithdraw ? '' : ' off') + '"><input type="checkbox" data-impwd="' + esc(m.productId) + '"'
+          + (on ? ' checked' : '') + (m.canWithdraw ? '' : ' disabled') + '> Withdraw <b>' + esc(m.name) + '</b></label>'
+          + (m.canWithdraw ? '' : ' <small>in ' + m.sleeves.length + ' sleeve' + (m.sleeves.length === 1 ? '' : 's') + ', so it stays</small>') + '</li>';
+      })
+    + (nothing ? '<p class="imp-same">The file matches the catalogue: there is nothing to import.</p>' : '')
+    + '<label class="prd-note-l" for="impNote">Note <small>optional</small></label>'
+    + '<input id="impNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(imp.note) + '" placeholder="Where the file came from">';
+}
+function impFeesPreviewHtml(p) {
+  var blocked = p.blocked || [];
+  return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' rates · '
+    + (p.same ? 'the same card as the one in force' : p.rates + ' rate' + (p.rates === 1 ? '' : 's') + ' would move') + '</p>'
+    + (p.changes.length ? '<ul class="rev-changes imp-lines">' + p.changes.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '')
+    + (blocked.length ? '<ul class="fund-msgs">' + blocked.map(function (b) {
+        return '<li>The file has no ' + esc(b.feeGroup) + ' group, which prices ' + b.products + ' product' + (b.products === 1 ? '' : 's')
+          + '. Move them to another group first.</li>';
+      }).join('') + '</ul>' : '')
+    + '<label class="prd-note-l" for="impNote">Note <small>required</small></label>'
+    + '<input id="impNote" class="prd-note" type="text" maxlength="240" autocomplete="off" value="' + esc(imp.note) + '" placeholder="Why the card is changing">';
+}
+function impCanApply() {
+  if (!imp || !imp.preview || imp.busy) return false;
+  var p = imp.preview;
+  if (imp.kind === 'fees') return !p.same && !(p.blocked || []).length && !!imp.note.trim();
+  return !!(p.added.length || p.changed.length || p.restored.length || imp.withdraw.length);
+}
+function impDialogHtml() {
+  if (!imp) return '';
+  var fees = imp.kind === 'fees';
+  var body;
+  if (imp.step === 'choose' || !imp.preview) {
+    body = '<p class="imp-lede">' + (fees
+        ? 'Choose a fee card file: a CSV with one row per rate - schedule, feeGroup, tier, tierMin, tierMax, source, point, rate. '
+          + 'Nothing changes until you have seen what it would move and applied it.'
+        : 'Choose a product file: a CSV, or an Excel workbook with the products on its first sheet or one called products, '
+          + 'with the columns the product file has always had. Nothing changes until you have seen what it would do and applied it.') + '</p>'
+      + '<input type="file" id="impFile" accept="' + (fees ? '.csv' : '.csv,.xlsx') + '"' + (imp.busy ? ' disabled' : '') + '>'
+      + (imp.busy ? '<p class="repo-loading">Reading ' + esc(imp.name) + '…</p>' : '');
+  } else {
+    body = fees ? impFeesPreviewHtml(imp.preview) : impProductsPreviewHtml(imp.preview);
+  }
+  return '<div class="imp-scrim" data-imp="close"></div>'
+    + '<div class="imp-dlg" role="dialog" aria-modal="true" aria-labelledby="impTitle">'
+    + '<button type="button" class="dlg-close" data-imp="close" aria-label="Close">×</button>'
+    + '<h3 id="impTitle">' + (fees ? 'Import a fee card file' : 'Import a product file') + '</h3>'
+    + body
+    + (imp.error ? '<p class="md-err" role="alert">' + esc(imp.error) + '</p>' : '')
+    + '<div class="imp-acts">'
+    + (imp.step === 'preview' ? '<button type="button" class="btn btn-primary" data-imp="apply"' + (impCanApply() ? '' : ' disabled') + '>'
+        + (imp.busy ? 'Importing…' : 'Apply the import') + '</button>' : '')
+    + (imp.stale || imp.step === 'preview' ? '<button type="button" class="btn" data-imp="again"' + (imp.busy ? ' disabled' : '') + '>'
+        + (imp.stale ? 'Preview it again' : 'Choose another file') + '</button>' : '')
+    + '<button type="button" class="btn" data-imp="close"' + (imp.busy ? ' disabled' : '') + '>Cancel</button>'
+    + '</div></div>';
+}
+
+function prdClick(el) {
+  var act = el.dataset.prd; if (act === undefined) return false;
+  var id = cat.detail;
+  if (act === 'edit') { prdStartEdit(id); return true; }
+  if (act === 'new') { if (prdDirty()) { prd.leaving = true; render(); return true; } prdStartNew(); return true; }
+  if (act === 'cancel') { prdCancel(); return true; }
+  if (act === 'save') { prdSave(); return true; }
+  if (act === 'reload') {
+    var keep = prd.mode === 'edit' ? prd.draft.productId : null;
+    prdStop();
+    prdRefreshData().then(function () { if (keep) prdStartEdit(keep); else render(); });
+    return true;
+  }
+  if (act === 'startblank') { prd.start = 'blank'; prdUseCopy(''); render(); return true; }
+  if (act === 'startcopy') { prd.start = 'copy'; render(); prdFocus('#prdCopyOf'); return true; }
+  if (act === 'askwithdraw') { prd.confirm = 'withdraw'; prd.note = ''; render(); prdFocus('#prdNote'); return true; }
+  if (act === 'askrevert') { prd.confirm = { revert: parseInt(el.dataset.rev, 10) }; render(); return true; }
+  if (act === 'unask') { prd.confirm = null; render(); return true; }
+  if (act === 'withdraw') { prdWithdraw(id); return true; }
+  if (act === 'restore') { prdRestore(id); return true; }
+  if (act === 'revert') { prdRevert(id, parseInt(el.dataset.rev, 10)); return true; }
+  if (act === 'history') {
+    prd.historyOpen = !prd.historyOpen;
+    if (prd.historyOpen && !(prd.history && prd.history.productId === id)) { loadProductHistory(id); return true; }
+    render(); return true;
+  }
+  if (act === 'place') {
+    /* to the Sleeves view, where a sleeve takes it */
+    cat.detail = null; switchView('sleeves'); return true;
+  }
+  if (act === 'withdrawn') {
+    if (prdDirty()) { prd.leaving = true; render(); return true; }
+    prdStop(); cat.withdrawn = !cat.withdrawn; cat.detail = null; cat.cursor = null; cat.filters = {}; forgetJoins();
+    render(); return true;
+  }
+  if (act === 'import') { impOpen('products'); return true; }
+  return false;
+}
+function impClick(el) {
+  var act = el.dataset.imp; if (act === undefined) return false;
+  if (act === 'close') { if (!imp || !imp.busy) impClose(); return true; }
+  if (act === 'apply') { impApply(); return true; }
+  if (act === 'again') { if (imp) { imp.step = 'choose'; imp.preview = null; imp.error = null; imp.stale = false; render(); prdFocus('#impFile'); } return true; }
+  return false;
 }
 
 function catOrphansHtml() {
@@ -5528,8 +6917,8 @@ function render() {
   var onCatalogue = repo.view === 'catalogue';
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals', onUncalled = repo.view === 'uncalled';
-  var onOverlays = repo.view === 'overlays';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays;
+  var onOverlays = repo.view === 'overlays', onFees = repo.view === 'fees';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees;
 
   /* One tab strip in the header, and it navigates (A1). The implementation
      type used to sit beside it, identical in shape and selected state but
@@ -5538,6 +6927,7 @@ function render() {
      list, so it has moved onto the sleeve list's own header. */
   var VIEWS = [['sleeves', 'Sleeves', onSleeves, 0],
                ['catalogue', 'Catalogue', onCatalogue, 0],
+               ['fees', 'Fees', onFees, 0],
                ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
                ['activity', 'Activity', onActivity, 0],
                ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0],
@@ -5557,7 +6947,7 @@ function render() {
     /* what the date is OF (A3): it is the product catalogue's, and on the
        sleeves view it sat directly over a sleeve carrying its own saved-on
        line, where an unlabelled date reads as that sleeve's */
-    header += '<span class="repo-src">Catalogue as of ' + esc(shortDate(d.catalogue.modified)) + '</span>';
+    header += '<span class="repo-src">Catalogue last edited ' + esc(shortDate(d.catalogue.lastEditedAt)) + '</span>';
   }
   header += '<button type="button" class="dlg-close" id="repoclose" data-repoclose aria-label="Close">×</button></div>';
 
@@ -5576,9 +6966,13 @@ function render() {
     body = uncalledViewHtml();
   } else if (onOverlays) {
     body = overlaysViewHtml();
+  } else if (onFees) {
+    body = feesViewHtml();
   } else {
     body = sleevesViewHtml();
   }
+  /* the import dialog, over whichever view opened it (D165, D166) */
+  if (imp) body += impDialogHtml();
 
   var leaving = '';
   if (repo.leaving) {
@@ -5599,6 +6993,8 @@ function render() {
     footer = uncalledFooterHtml();
   } else if (onOverlays) {
     footer = overlaysFooterHtml();
+  } else if (onFees) {
+    footer = feesFooterHtml();
   } else if (onCatalogue && d) {
     footer = catKeysHtml()
       + '<div class="repo-f cat-f">' + catTrayHtml()
@@ -5625,7 +7021,7 @@ function render() {
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
     + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '')
-    + (onUncalled ? ' uncalled' : '') + (onOverlays ? ' uncalled overlays' : '') + (onSleeves ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
+    + (onUncalled ? ' uncalled' : '') + (onOverlays ? ' uncalled overlays' : '') + (onFees ? ' uncalled fees' : '') + (onSleeves ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
     + header + leaving + body + footer + '</div>';
   syncHash();
   if (onOverlays) ovlAfterRender();
@@ -5732,7 +7128,7 @@ function catEdge() {
    signed in as them". The five views are named rather than hidden behind one
    "Repository" link, because the admin knows which of them they came for. */
 var LANDING_VIEWS = [
-  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['archive', 'Archive'],
+  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['fees', 'Fees'], ['archive', 'Archive'],
   ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation'],
   ['overlays', 'Overlay Funding']
 ];
@@ -5786,6 +7182,7 @@ function renderEntryLinks() {
     }
     if (show && window.location.hash.indexOf('#uncalled') === 0) openRepository(null, 'uncalled');
     if (show && window.location.hash.indexOf('#overlays') === 0) openRepository(null, 'overlays');
+    if (show && window.location.hash.indexOf('#fees') === 0) openRepository(null, 'fees');
   }
 }
 
@@ -5803,7 +7200,7 @@ function renderEntryLinks() {
 })();
 
 /* ---- the Uncalled Capital Allocation view (D148, D149) -------------------
-   How a private-markets commitment is held until capital is called. The house
+   How a private-markets commitment is held until capital is called. The default
    split applies to every implementation type; a type may carry its own. The
    weights are percentages to four places adding up to exactly 100, and only a
    category every private-markets book holds may take a share - the server
@@ -5836,7 +7233,7 @@ async function loadFundingHistory() {
   if (repo.open && repo.view === 'uncalled') render();
 }
 
-/* the split in force for the chosen scope, and whether it is the house
+/* the split in force for the chosen scope, and whether it is the default
    split standing in for a type with none of its own */
 function fundInForce() {
   var d = fund.data; if (!d) return null;
@@ -5928,16 +7325,16 @@ function uncalledViewHtml() {
   }
   var d = fund.data, now = fundInForce(), rows = fundRows(), editing = !!fund.draft;
   var readOnly = now.inherited && !editing;
-  var scopes = '<option value="*"' + (fund.scope === '*' ? ' selected' : '') + '>House split · every implementation type</option>'
+  var scopes = '<option value="*"' + (fund.scope === '*' ? ' selected' : '') + '>Default split · every implementation type</option>'
     + d.variants.map(function (v) {
         var own = (d.overrides || {})[v];
         return '<option value="' + esc(v) + '"' + (fund.scope === v ? ' selected' : '') + '>'
-          + esc(v) + (own ? ' · its own split' : ' · uses the house split') + '</option>';
+          + esc(v) + (own ? ' · its own split' : ' · uses the default split') + '</option>';
       }).join('');
   var said = fund.scope === '*'
     ? 'Applies to every implementation type that has no split of its own.'
-    : now.inherited ? esc(fund.scope) + ' has no split of its own: it uses the house split.'
-    : 'Applies to ' + esc(fund.scope) + ' only. Remove it to put the type back on the house split.';
+    : now.inherited ? esc(fund.scope) + ' has no split of its own: it uses the default split.'
+    : 'Applies to ' + esc(fund.scope) + ' only. Remove it to put the type back on the default split.';
   var elig = fundEligible();
   var body = rows.map(function (row, i) {
     var e = elig.filter(function (x) { return x.category === row.category; })[0];
@@ -5963,10 +7360,10 @@ function uncalledViewHtml() {
   var problems = readOnly ? [] : fundProblems(rows);
   var hist = fund.history && fund.history.scope === fund.scope ? fund.history.entries : null;
   var histHtml = hist == null ? '<p class="repo-loading">' + (fund.historyBusy ? 'Loading…' : '') + '</p>'
-    : !hist.length ? '<p class="fund-none">No revisions yet: ' + esc(fund.scope) + ' has always used the house split.</p>'
+    : !hist.length ? '<p class="fund-none">No revisions yet: ' + esc(fund.scope) + ' has always used the default split.</p>'
     : '<ol class="fund-hist">' + hist.map(function (h, i) {
         var what = h.destinations ? h.destinations.map(function (x) { return esc(x.category) + ' ' + esc(String(x.weightPct)) + '%'; }).join(' · ')
-          : 'Back on the house split';
+          : 'Back on the default split';
         var restorable = i > 0 && h.destinations;
         return '<li><div class="fund-hist-h"><b>r' + h.revision + '</b> <span class="act">' + esc(h.action) + '</span>'
           + (i === 0 && !now.inherited ? ' <span class="now">in force</span>' : '')
@@ -5989,7 +7386,7 @@ function uncalledViewHtml() {
     + '<div class="fund-acts">'
     + (canAdd ? '<button type="button" class="btn" data-fundadd>+ Add a category</button>' : '')
     + (fund.scope !== '*' && now.inherited && !editing ? '<button type="button" class="btn" data-fundown>Give ' + esc(fund.scope) + ' its own split</button>' : '')
-    + (fund.scope !== '*' && !now.inherited && !editing ? '<button type="button" class="btn btn-danger" data-funddrop>Put ' + esc(fund.scope) + ' back on the house split</button>' : '')
+    + (fund.scope !== '*' && !now.inherited && !editing ? '<button type="button" class="btn btn-danger" data-funddrop>Put ' + esc(fund.scope) + ' back on the default split</button>' : '')
     + '</div>'
     + '<div class="fund-bar" id="fundBar" aria-hidden="true">' + fundBarHtml(rows) + '</div>'
     + '<ul class="fund-msgs" id="fundMsgs">' + problems.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>'
@@ -5997,7 +7394,7 @@ function uncalledViewHtml() {
     + '<p class="fund-rule">Only a category every private-markets portfolio holds can take a share: otherwise a portfolio without it would have nowhere to put it. '
     + 'Weights are percentages with up to ' + FUND_PLACES + ' decimal places, so a third is 33.3333.</p>'
     + '</section>'
-    + '<aside class="ucap-side" aria-label="History"><h4>History · ' + (fund.scope === '*' ? 'house split' : esc(fund.scope)) + '</h4>' + histHtml + '</aside>'
+    + '<aside class="ucap-side" aria-label="History"><h4>History · ' + (fund.scope === '*' ? 'default split' : esc(fund.scope)) + '</h4>' + histHtml + '</aside>'
     + '</div>';
 }
 
@@ -6131,7 +7528,7 @@ var ovl = {
   loaded: false, busy: false, saving: false, error: null,
   stale: false,                /* the last save was refused as stale (409) */
   data: null,                  /* describe(): lists, categories, portfolios, samples */
-  scope: '*',                  /* '*' for the house list, or a type */
+  scope: '*',                  /* '*' for the default list, or a type */
   draft: null,                 /* [rule] while the desk is editing; sizes and weights as typed */
   base: null,                  /* { scope, revision } of the list the draft was made against */
   note: '',
@@ -6468,25 +7865,25 @@ function ovlWords(rule) {
 }
 function ovlScopeHtml(now) {
   var d = ovl.data;
-  var scopes = '<option value="*"' + (ovl.scope === '*' ? ' selected' : '') + '>House list · every implementation type</option>'
+  var scopes = '<option value="*"' + (ovl.scope === '*' ? ' selected' : '') + '>Default list · every implementation type</option>'
     + d.variants.map(function (v) {
         var own = (d.overrides || {})[v];
         return '<option value="' + esc(v) + '"' + (ovl.scope === v ? ' selected' : '') + '>'
-          + esc(v) + (own ? ' · its own list' : ' · uses the house list') + '</option>';
+          + esc(v) + (own ? ' · its own list' : ' · uses the default list') + '</option>';
       }).join('');
   var said = ovl.scope === '*'
     ? 'Applies to every implementation type that has no list of its own.'
-    : now.inherited && !ovl.draft ? esc(ovl.scope) + ' has no list of its own: it uses the house list.'
+    : now.inherited && !ovl.draft ? esc(ovl.scope) + ' has no list of its own: it uses the default list.'
     : now.inherited ? 'Saving gives ' + esc(ovl.scope) + ' a list of its own.'
-    : 'Applies to ' + esc(ovl.scope) + ' only. Remove it to put the type back on the house list.';
+    : 'Applies to ' + esc(ovl.scope) + ' only. Remove it to put the type back on the default list.';
   return '<div class="ucap-scope"><label for="ovlScope">Rules for</label><select id="ovlScope">' + scopes + '</select>'
     + '<span class="ucap-said">' + said + '</span></div>';
 }
 function ovlLeavingHtml() {
   if (!ovl.leaving) return '';
-  var to = ovl.leaving.close ? 'close the repository' : 'switch to ' + (ovl.leaving.scope === '*' ? 'the house list' : ovl.leaving.scope);
+  var to = ovl.leaving.close ? 'close the repository' : 'switch to ' + (ovl.leaving.scope === '*' ? 'the default list' : ovl.leaving.scope);
   return '<div class="repo-notice ovl-leaving" role="alertdialog" aria-live="assertive" aria-label="Unsaved changes">'
-    + '<span>You have unsaved changes to the ' + (ovl.scope === '*' ? 'house list' : esc(ovl.scope) + ' list') + '.</span>'
+    + '<span>You have unsaved changes to the ' + (ovl.scope === '*' ? 'default list' : esc(ovl.scope) + ' list') + '.</span>'
     + '<button type="button" class="btn" data-ovl="leavekeep">Keep editing</button>'
     + '<button type="button" class="btn btn-danger" data-ovl="leavego">Discard them and ' + esc(to) + '</button></div>';
 }
@@ -6593,7 +7990,7 @@ function ovlTraceHtml(list, chk, res) {
 function ovlHistoryHtml(now) {
   var hist = ovl.history && ovl.history.scope === ovl.scope ? ovl.history.entries : null;
   if (hist == null) return '<p class="repo-loading">' + (ovl.historyBusy ? 'Loading…' : '') + '</p>';
-  if (!hist.length) return '<p class="fund-none">No revisions yet: ' + esc(ovl.scope) + ' has always used the house list.</p>';
+  if (!hist.length) return '<p class="fund-none">No revisions yet: ' + esc(ovl.scope) + ' has always used the default list.</p>';
   return '<ol class="fund-hist">' + hist.map(function (h, i) {
     var restorable = i > 0 && h.rules;
     return '<li><div class="fund-hist-h"><b>r' + h.revision + '</b> <span class="act">' + esc(h.action) + '</span>'
@@ -6671,7 +8068,7 @@ function ovlActionsHtml(list, readOnly, now) {
     + (readOnly ? '' : list.length < max ? '<button type="button" class="btn" id="ovlAdd" data-ovl="add">+ Add rule</button>'
         : '<button type="button" class="btn" disabled>' + max + ' rules at most</button>')
     + (ovl.scope !== '*' && now.inherited && !editing ? '<button type="button" class="btn" data-ovl="own">Give ' + esc(ovl.scope) + ' its own list</button>' : '')
-    + (ovl.scope !== '*' && !now.inherited && !editing ? '<button type="button" class="btn btn-danger" data-ovl="drop">Put ' + esc(ovl.scope) + ' back on the house list</button>' : '')
+    + (ovl.scope !== '*' && !now.inherited && !editing ? '<button type="button" class="btn btn-danger" data-ovl="drop">Put ' + esc(ovl.scope) + ' back on the default list</button>' : '')
     + (ovl.undo ? '<span class="ovl-undo" role="status">Removed ' + esc(ovl.undo.rule.name || 'a rule') + ' <button type="button" class="cat-link" id="ovlUndo" data-ovl="undo">Undo</button></span>' : '')
     + '</div>';
 }
@@ -6698,7 +8095,7 @@ function overlaysViewHtml() {
     + '</section>'
     + '<aside class="ucap-side ovl-side" aria-label="The rules resolved, and their history"' + modal + '>'
     + '<h4>Resolved, step by step</h4><div id="ovlTraceBox">' + (res ? ovlTraceHtml(list, chk, res) : '') + '</div>'
-    + '<h4 class="ovl-hh">History · ' + (ovl.scope === '*' ? 'house list' : esc(ovl.scope)) + '</h4>' + ovlHistoryHtml(now)
+    + '<h4 class="ovl-hh">History · ' + (ovl.scope === '*' ? 'default list' : esc(ovl.scope)) + '</h4>' + ovlHistoryHtml(now)
     + '</aside>'
     + (ovl.edit != null ? ovlDrawerHtml(list, chk) : '')
     + '</div>';
@@ -6940,7 +8337,7 @@ function ovlClick(el) {
     return true;
   }
   if (act === 'drop') {
-    if (!ovl.note.trim()) { ovl.error = 'Write a note first: putting a type back on the house list is a change like any other.'; ovl.flash = ''; render(); return true; }
+    if (!ovl.note.trim()) { ovl.error = 'Write a note first: putting a type back on the default list is a change like any other.'; ovl.flash = ''; render(); return true; }
     ovlPost('POST', '/scenario/repository/overlays/remove', { scope: ovl.scope, note: ovl.note, base: ovlBaseNow() });
     return true;
   }
@@ -7047,6 +8444,753 @@ document.addEventListener('dragend', function () {
   document.querySelectorAll('.ovl-card.dragging').forEach(function (c) { c.classList.remove('dragging'); });
 });
 
+
+/* ---- the Fees tab (D166, D168) -------------------------------------------
+   The fee card every priced proposal reads, kept in the repository. Laid
+   out as group cards - CASP's and each fee group's, its tiers down and its
+   levels across, the shape a block copied in Excel pastes into - or, a
+   switch away, as a price list: one source at a time, the groups down and
+   the tiers across, each figure the target over its floor - ceiling. Edit
+   the card puts every rate in a box; a group is added, renamed where its
+   name is printed (its products follow) or removed (refused while a product
+   uses it), a tier split in two or merged with the next, an edge moved.
+   Review and save lists every change in the history's words and asks for
+   the note every change to the card carries. A save is a new version; the
+   history puts any earlier one back as a new version too. */
+var FEE_LAYOUT_KEY = 'pmg.repository.feesLayout';
+var fct = {
+  loaded: false, busy: false, saving: false, error: null, stale: false, flash: '',
+  data: null,                  /* describe(): the card, its version, the vocabulary, usage */
+  draft: null,                 /* the editor's copy (fee-editor-helpers), while editing */
+  layout: 'cards',             /* 'cards' - a card a group | 'list' - a price list, one source */
+  source: 0,                   /* the price list's source: an index into data.sources */
+  openCell: null,              /* the price list's figure open for editing: 'schedule|row|tier' */
+  tiersOpen: false,            /* the cards' tier editor, unfolded */
+  pasteAt: null,               /* the card waiting for a paste: 'schedule|row' */
+  pasted: null,                /* { id, text, undo } - the last paste, which can be taken back */
+  pasteError: null,            /* { id, text } - a paste refused */
+  note: '',
+  history: null, historyBusy: false,
+  review: null,                /* null | 'save' | { revert: n } - the dialog asking first */
+  touched: false,              /* a save was asked for: show every problem */
+  addName: '', addLike: ''
+};
+try { if (window.localStorage.getItem(FEE_LAYOUT_KEY) === 'list') fct.layout = 'list'; } catch (e) { /* private window */ }
+
+async function loadFeeCard() {
+  fct.busy = true; fct.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/fees');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the fee card (' + r.status + ')'));
+    fct.data = r.body; fct.loaded = true;
+  } catch (err) { fct.error = err.message; }
+  fct.busy = false;
+  render();
+  loadFeeHistory();
+}
+async function loadFeeHistory() {
+  fct.historyBusy = true;
+  try {
+    var r = await api('GET', '/scenario/repository/fees/history');
+    if (r && r.ok) fct.history = r.body.history || [];
+  } catch (err) { /* the side panel only */ }
+  fct.historyBusy = false;
+  if (repo.open && repo.view === 'fees') render();
+}
+function feeCtx() {
+  var d = fct.data;
+  return { schedules: d.schedules, sources: d.sources, points: d.points, levels: d.levels,
+           rateMax: d.rateMax, groupMax: d.groupMax };
+}
+function feeDraftNow() { return fct.draft || feeDraftFrom(fct.data.card); }
+function feeDirty() {
+  /* a change to save, or something typed that could not be saved */
+  if (!fct.draft) return false;
+  return feeChanges(fct.data.card, fct.draft, feeCtx()).lines.length > 0
+    || feeProblems(fct.draft, feeCtx()).length > 0;
+}
+function feeRefetchSchema() {
+  /* the step 2 table prices from the schema, which carries the card */
+  if (App.refetchSchema) {
+    try {
+      var again = App.refetchSchema();
+      if (again && again.catch) again.catch(function () { /* the page refetches on its own next */ });
+    } catch (e) { /* likewise */ }
+  }
+}
+function feeUsage(group) {
+  var u = ((fct.data && fct.data.usage) || {})[group];
+  return u ? u.length : 0;
+}
+
+/* ---- rendering ---- */
+function feeStampHtml() {
+  var d = fct.data;
+  return '<span class="fee-stamp">Last edited ' + esc(shortDateTime(d.lastEditedAt))
+    + (d.lastEditedBy ? ' · ' + esc(d.lastEditedBy === 'seed' ? 'loaded from the fee card file' : d.lastEditedBy) : '')
+    + ' · version ' + d.revision + '</span>'
+    + (d.placeholder ? ' <span class="fee-ph" title="The card the tool was installed with, not yet edited or imported">placeholder card</span>' : '');
+}
+function feeGroupOf(d, key) { return d.feeGroups.filter(function (x) { return x.key === key; })[0] || null; }
+function feeRowId(row) { return row.schedule + '|' + row.key; }
+function feeCellSel(key) { return '[data-feecell="' + String(key).replace(/["\\]/g, '\\$&') + '"]'; }
+function feeTierText(d, key) {
+  var t = d.tiers.filter(function (x) { return x.key === key; })[0];
+  return t ? feeTierLabel(t.min, t.max) : '';
+}
+/* the point a card prints in bold, and the price list prints large */
+function feeTargetIdx() {
+  var points = fct.data.points, i = points.indexOf('Target');
+  return i >= 0 ? i : Math.floor(points.length / 2);
+}
+function feeChanged(d, schedule, rowKey, tierKey, level) {
+  var old = feeOldRate(fct.data.card, d, schedule, rowKey, tierKey, level);
+  var v = feeNum(feeRateText(d, schedule, rowKey, tierKey, level));
+  return old !== undefined && v !== null && !isNaN(v) && Math.abs(v - old) > 1e-9;
+}
+function feeCellHtml(d, schedule, rowKey, tierKey, level, editing, bad, cls) {
+  var key = feeCellKey(schedule, rowKey, tierKey, level);
+  var text = feeRateText(d, schedule, rowKey, tierKey, level);
+  var old = feeOldRate(fct.data.card, d, schedule, rowKey, tierKey, level);
+  var changed = editing && feeChanged(d, schedule, rowKey, tierKey, level);
+  var fresh = editing && old === undefined;
+  var c = 'num fee-c' + (cls ? ' ' + cls : '') + (changed ? ' chg' : '') + (fresh ? ' new' : '') + (bad[key] ? ' bad' : '');
+  if (!editing) return '<td class="' + c + '">' + esc(text === undefined ? '—' : feeShow(text)) + '</td>';
+  return '<td class="' + c + '" data-feecellbox="' + esc(key) + '"><input class="fee-in" inputmode="decimal" autocomplete="off" data-feecell="' + esc(key) + '"'
+    + ' value="' + esc(text === undefined ? '' : feeShow(text)) + '" aria-label="' + esc(level + ', ' + feeTierText(d, tierKey)) + '"' + (bad[key] ? ' aria-invalid="true"' : '') + '>'
+    + (changed ? '<s>' + esc(feeShow(old)) + '</s>' : '') + '</td>';
+}
+/* a row's changes and problems: its card's foot, and its mark in the list */
+function feeRowStat(d, row, probs) {
+  var prefix = feeRowId(row) + '|', changed = 0;
+  var problems = probs.filter(function (p) {
+    return p.key && (p.key.indexOf(prefix) === 0 || (row.key && p.key === 'group|' + row.key));
+  }).length;
+  d.tiers.forEach(function (t) {
+    fct.data.levels.forEach(function (l) { if (feeChanged(d, row.schedule, row.key, t.key, l)) changed += 1; });
+  });
+  var g = row.key ? feeGroupOf(d, row.key) : null;
+  var fresh = !!(g && !g.from), renamed = !!(g && g.from && feeName(g.name) !== g.from);
+  var bits = [];
+  if (fresh) bits.push('new group');
+  if (renamed) bits.push('renamed');
+  if (changed) bits.push(changed + ' rate' + (changed === 1 ? '' : 's') + ' changed');
+  if (problems) bits.push(problems + ' problem' + (problems === 1 ? '' : 's'));
+  return { text: bits.join(' · '), cls: problems ? 'bad' : (changed || renamed || fresh) ? 'chg' : '' };
+}
+/* who a row prices */
+function feeGroupNote(d, row) {
+  if (!row.key) {
+    var s = fct.data.schedules.filter(function (x) { return x.id === row.schedule; })[0];
+    return s && s.marginal ? 'marginal, then one blended rate' : 'one rate for all';
+  }
+  var g = feeGroupOf(d, row.key);
+  if (!g) return '';
+  if (!g.from) return 'new';
+  var used = feeUsage(g.from);
+  return (used ? used + ' product' + (used === 1 ? '' : 's') : 'no product uses it')
+    + (feeName(g.name) !== g.from ? ' · was ' + g.from + (used ? ', its products follow' : '') : '');
+}
+function feeRowNameHtml(d, row, editing, bad) {
+  if (!row.key) return '<b class="fee-rn">Every product</b>';
+  var g = feeGroupOf(d, row.key);
+  if (!editing || !g) return '<b class="fee-rn">' + esc(row.name) + '</b>';
+  return '<span class="fee-gbox' + (bad['group|' + g.key] ? ' bad' : '') + '" data-feegroupbox="' + esc(g.key) + '">'
+    + '<input type="text" class="fee-gn" data-feegroup="' + esc(g.key) + '" value="' + esc(g.name) + '" maxlength="' + fct.data.groupMax + '"'
+    + ' autocomplete="off" aria-label="Name of the fee group"' + (bad['group|' + g.key] ? ' aria-invalid="true"' : '') + '></span>';
+}
+function feeRemoveHtml(d, row) {
+  var g = feeGroupOf(d, row.key), used = g && g.from ? feeUsage(g.from) : 0;
+  return '<button type="button" class="cat-link fee-x" data-fee="rmgroup" data-key="' + esc(row.key) + '"'
+    + (used ? ' disabled title="It prices ' + used + ' product' + (used === 1 ? '' : 's') + ': move them to another group first"' : '') + '>Remove</button>';
+}
+function feeAddHtml(d) {
+  var likes = d.feeGroups.map(function (g) {
+    return '<option value="' + esc(g.key) + '"' + (fct.addLike === g.key ? ' selected' : '') + '>' + esc(feeName(g.name) || 'new group') + '</option>';
+  }).join('');
+  return '<div class="fee-add"><input type="text" id="feeAddName" maxlength="' + fct.data.groupMax + '" placeholder="New group name" value="' + esc(fct.addName) + '" autocomplete="off" aria-label="New group name">'
+    + '<label for="feeAddLike">with the rates of</label><select id="feeAddLike"><option value="">no group: blank rates</option>' + likes + '</select>'
+    + '<button type="button" class="btn" data-fee="addgroup">Add the group</button></div>';
+}
+function feeEdgeInputHtml(t, i) {
+  return '<input type="text" inputmode="decimal" class="fee-edge" data-feeedge="' + i + '" value="' + esc(t.maxText !== undefined ? t.maxText : feeG(t.max / 1e6)) + '"'
+    + ' autocomplete="off" aria-label="Upper edge of ' + esc(feeTierLabel(t.min, t.max)) + ', in millions">';
+}
+function feeTiersHtml(d, bad) {
+  return '<ol class="fee-tiers">' + d.tiers.map(function (t, i) {
+    var last = i === d.tiers.length - 1;
+    return '<li class="' + (bad['tier|' + t.key] ? 'bad' : '') + '" data-feetierbox="' + esc(t.key) + '">'
+      + '<span class="fee-tl" data-feetlabel="' + esc(t.key) + '">' + esc(feeTierLabel(t.min, t.max)) + '</span>'
+      + '<span class="fee-te">' + (last ? 'and up' : 'up to $' + feeEdgeInputHtml(t, i) + 'm') + '</span>'
+      + '<button type="button" class="btn btn-ghost" data-fee="split" data-i="' + i + '">Split</button>'
+      + (last ? '' : '<button type="button" class="btn btn-ghost" data-fee="merge" data-i="' + i + '" title="Join this tier and the next into one">Merge with next</button>')
+      + '</li>';
+  }).join('') + '</ol>';
+}
+function feePasteKey() { return /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘V' : 'Ctrl+V'; }
+/* a paste's word, in the card it went to */
+function feePasteMsgHtml(d, id) {
+  if (fct.pasteError && (fct.pasteError.id === id || id === null)) return '<p class="fee-pmsg bad" role="alert">' + esc(fct.pasteError.text) + '</p>';
+  if (fct.pasted && (fct.pasted.id === id || id === null)) {
+    return '<p class="fee-pmsg ok" role="status">' + esc(fct.pasted.text) + ' <button type="button" class="cat-link" data-fee="unpaste">Undo the paste</button></p>';
+  }
+  if (id !== null && fct.pasteAt === id) {
+    return '<p class="fee-pmsg" role="status">Press ' + feePasteKey() + ' to paste the block copied in Excel: ' + d.tiers.length + ' tiers down, '
+      + fct.data.levels.length + ' levels across. Tier names and headings copied with it are left out.</p>';
+  }
+  return '';
+}
+
+function feeToolsHtml(editing) {
+  var points = fct.data.points;
+  var lay = '<div class="repo-seg" role="tablist" aria-label="Lay the card out">'
+    + '<button type="button" role="tab" data-fee="layout" data-to="cards" aria-selected="' + (fct.layout === 'cards') + '">Group cards</button>'
+    + '<button type="button" role="tab" data-fee="layout" data-to="list" aria-selected="' + (fct.layout === 'list') + '">Price list</button></div>';
+  var src = fct.layout !== 'list' ? '' : '<div class="repo-seg" role="tablist" aria-label="Which rates the list shows">'
+    + fct.data.sources.map(function (s, i) {
+      return '<button type="button" role="tab" data-fee="source" data-i="' + i + '" aria-selected="' + (fct.source === i) + '">' + esc(s) + '</button>';
+    }).join('') + '</div>';
+  var hint = fct.layout === 'list'
+    ? 'The large figure is the ' + points[feeTargetIdx()].toLowerCase() + '; ' + points[0].toLowerCase() + ' – ' + points[points.length - 1].toLowerCase() + ' beneath.'
+      + (editing ? ' Click a figure to change its rates.' : '')
+    : 'Copy a group’s rates in Excel - tiers down, the ' + fct.data.levels.length + ' levels across - and paste them into its card.';
+  return '<div class="fee-tools">' + lay + src + '<span class="fee-hint">' + esc(hint) + '</span><span class="spacer"></span>'
+    + (editing ? '' : '<button type="button" class="btn btn-primary" data-fee="edit"' + (fct.saving ? ' disabled' : '') + '>Edit the card</button>')
+    + '</div>';
+}
+/* the cards' tiers: read along the top, changed in a panel that unfolds */
+function feeTierStripHtml(d, editing, bad) {
+  return '<div class="fee-tstrip"><span class="fee-eyebrow">Account-size tiers</span>'
+    + d.tiers.map(function (t, i) {
+      return (i ? '<span class="fee-arr" aria-hidden="true">›</span>' : '')
+        + '<span class="fee-tchip' + (bad['tier|' + t.key] ? ' bad' : '') + '" data-feetierbox="' + esc(t.key) + '" data-feetlabel="' + esc(t.key) + '">'
+        + esc(feeTierLabel(t.min, t.max)) + '</span>';
+    }).join('')
+    + '<span class="spacer"></span>'
+    + (editing ? '<button type="button" class="btn btn-ghost" data-fee="tiers" aria-expanded="' + fct.tiersOpen + '">'
+        + (fct.tiersOpen ? 'Done with the tiers' : 'Change the tiers') + '</button>' : '')
+    + '</div>'
+    + (editing && fct.tiersOpen ? '<div class="fee-tpanel"><p class="fee-help">CASP fills the tiers in turn; RDR reads the tier the top account size falls in. '
+        + 'A split copies the tier’s rates into both halves, on every card.</p>' + feeTiersHtml(d, bad) + '</div>' : '');
+}
+/* Group cards: a card a row of the card - the uniform schedule's, then a
+   group's each - its tiers down and its levels across, the shape a block
+   copied from a spreadsheet pastes into */
+function feeCardsHtml(d, editing, bad, probs) {
+  var levels = fct.data.levels, sources = fct.data.sources, points = fct.data.points, ti = feeTargetIdx();
+  var colCls = function (i) {
+    var k = i % points.length;
+    return (k === ti ? 'tg' : '') + (k === points.length - 1 && i < levels.length - 1 ? ' gap' : '');
+  };
+  var cols = '<colgroup><col class="fee-ct-l">' + levels.map(function () { return '<col>'; }).join('') + '</colgroup>';
+  var head = '<thead><tr><th></th>' + sources.map(function (s, i) {
+      return '<th scope="colgroup" colspan="' + points.length + '"' + (i < sources.length - 1 ? ' class="gap"' : '') + '>' + esc(s) + '</th>';
+    }).join('') + '</tr>'
+    + '<tr><th scope="col" class="l">Tier</th>' + levels.map(function (l, i) {
+      return '<th scope="col" class="num ' + colCls(i) + '" title="' + esc(l) + '">' + esc(points[i % points.length]) + '</th>';
+    }).join('') + '</tr></thead>';
+  return '<div class="fee-cards">' + feeRowsOf(d, fct.data.schedules).map(function (row) {
+    var id = feeRowId(row), stat = editing ? feeRowStat(d, row, probs) : { text: '', cls: '' };
+    var body = d.tiers.map(function (t) {
+      return '<tr><th scope="row" class="l" data-feetlabel="' + esc(t.key) + '">' + esc(feeTierLabel(t.min, t.max)) + '</th>'
+        + levels.map(function (l, i) { return feeCellHtml(d, row.schedule, row.key, t.key, l, editing, bad, colCls(i)); }).join('') + '</tr>';
+    }).join('');
+    return '<section class="fee-card' + (stat.cls ? ' ' + stat.cls : '') + '" data-feecard="' + esc(id) + '" aria-label="' + esc(row.label) + '">'
+      + '<div class="fee-card-h"><span class="fee-sch">' + esc(row.schedule) + '</span>' + feeRowNameHtml(d, row, editing, bad)
+      + '<small class="fee-gnote" data-feegroupnote="' + esc(id) + '">' + esc(feeGroupNote(d, row)) + '</small></div>'
+      + '<table class="fee-ct' + (editing ? ' editing' : '') + '">' + cols + head + '<tbody>' + body + '</tbody></table>'
+      + feePasteMsgHtml(d, id)
+      + '<div class="fee-card-f"><span class="fee-cstat" data-feecardstat="' + esc(id) + '">' + esc(stat.text) + '</span><span class="spacer"></span>'
+      + '<button type="button" class="cat-link" data-fee="pastehere" data-row="' + esc(id) + '"' + (fct.saving ? ' disabled' : '') + '>Paste from Excel</button>'
+      + (editing && row.key ? feeRemoveHtml(d, row) : '')
+      + '</div></section>';
+  }).join('')
+    + (editing ? '<section class="fee-card fee-newg" aria-labelledby="feeNewG"><h4 id="feeNewG">A new fee group</h4>'
+        + '<p class="fee-help">Start it from another group’s rates, or blank and paste its rates in.</p>' + feeAddHtml(d) + '</section>' : '')
+    + '</div>';
+}
+/* Price list: one source at a time, the groups down and the tiers across,
+   each figure the target large over its floor - ceiling; the tiers' edges
+   and the groups' names edited where they are printed */
+function feeListCellHtml(d, row, t, lv, editing, bad) {
+  var id = feeRowId(row) + '|' + t.key, points = fct.data.points, ti = feeTargetIdx();
+  var keys = lv.map(function (l) { return feeCellKey(row.schedule, row.key, t.key, l); });
+  var texts = lv.map(function (l) { return feeRateText(d, row.schedule, row.key, t.key, l); });
+  var changed = editing && lv.some(function (l) { return feeChanged(d, row.schedule, row.key, t.key, l); });
+  var wrong = editing && keys.some(function (k) { return bad[k]; });
+  var cls = 'fee-lc' + (changed ? ' chg' : '') + (wrong ? ' bad' : '');
+  if (editing && fct.openCell === id) {
+    return '<td class="' + cls + ' open"><div class="fee-trio">' + lv.map(function (l, k) {
+      var old = feeOldRate(fct.data.card, d, row.schedule, row.key, t.key, l), c = feeChanged(d, row.schedule, row.key, t.key, l);
+      return '<span class="fee-c' + (c ? ' chg' : '') + (bad[keys[k]] ? ' bad' : '') + '" data-feecellbox="' + esc(keys[k]) + '">'
+        + '<label for="feeO' + k + '">' + esc(points[k]) + '</label>'
+        + '<input id="feeO' + k + '" class="fee-in" inputmode="decimal" autocomplete="off" data-feecell="' + esc(keys[k]) + '"'
+        + ' value="' + esc(texts[k] === undefined ? '' : feeShow(texts[k])) + '"' + (bad[keys[k]] ? ' aria-invalid="true"' : '') + '>'
+        + (c ? '<s>' + esc(feeShow(old)) + '</s>' : '') + '</span>';
+    }).join('') + '</div></td>';
+  }
+  var show = function (x) { return x === undefined || x === '' ? '—' : feeShow(x); };
+  var inner = '<span class="fee-big">' + esc(show(texts[ti])) + '</span>'
+    + '<span class="fee-rng">' + esc(show(texts[0])) + ' – ' + esc(show(texts[texts.length - 1])) + '</span>';
+  if (!editing) return '<td class="' + cls + '">' + inner + '</td>';
+  return '<td class="' + cls + '"><button type="button" class="fee-lb" data-fee="open" data-cell="' + esc(id) + '"'
+    + ' aria-label="' + esc(row.label + ', ' + feeTierLabel(t.min, t.max) + ': change its rates') + '">' + inner + '</button></td>';
+}
+function feeListHtml(d, editing, bad, probs) {
+  var sources = fct.data.sources, points = fct.data.points;
+  if (!(fct.source < sources.length)) fct.source = 0;
+  var lv = points.map(function (p) { return sources[fct.source] + ' ' + p; });
+  var cols = '<colgroup><col class="fee-lg">' + d.tiers.map(function () { return '<col>'; }).join('') + '</colgroup>';
+  var head = '<thead><tr><th scope="col" class="l">Fee group</th>' + d.tiers.map(function (t, i) {
+    var last = i === d.tiers.length - 1;
+    return '<th scope="col"' + (bad['tier|' + t.key] ? ' class="bad"' : '') + ' data-feetierbox="' + esc(t.key) + '">'
+      + '<span class="fee-lt" data-feetlabel="' + esc(t.key) + '">' + esc(feeTierLabel(t.min, t.max)) + '</span>'
+      + (editing ? '<span class="fee-te">' + (last ? 'and up' : 'up to $' + feeEdgeInputHtml(t, i) + 'm') + '</span>'
+          + '<span class="fee-tacts"><button type="button" class="cat-link" data-fee="split" data-i="' + i + '">Split</button>'
+          + (last ? '' : '<button type="button" class="cat-link" data-fee="merge" data-i="' + i + '" title="Join this tier and the next into one">Merge</button>')
+          + '</span>' : '')
+      + '</th>';
+  }).join('') + '</tr></thead>';
+  var body = feeRowsOf(d, fct.data.schedules).map(function (row) {
+    var id = feeRowId(row), stat = editing ? feeRowStat(d, row, probs) : { cls: '' };
+    return '<tr data-feecard="' + esc(id) + '"' + (stat.cls ? ' class="' + stat.cls + '"' : '') + '><th scope="row" class="l">'
+      + '<span class="fee-sch">' + esc(row.schedule) + '</span>' + feeRowNameHtml(d, row, editing, bad)
+      + '<span class="fee-gline"><small class="fee-gnote" data-feegroupnote="' + esc(id) + '">' + esc(feeGroupNote(d, row)) + '</small>'
+      + (editing && row.key ? feeRemoveHtml(d, row) : '') + '</span></th>'
+      + d.tiers.map(function (t) { return feeListCellHtml(d, row, t, lv, editing, bad); }).join('') + '</tr>';
+  }).join('');
+  return feePasteMsgHtml(d, null)
+    + '<div class="fee-listwrap"><table class="fee-list' + (editing ? ' editing' : '') + '">' + cols + head + '<tbody>' + body + '</tbody></table></div>'
+    + (editing ? '<div class="fee-listadd"><h4>A new fee group</h4>' + feeAddHtml(d) + '</div>' : '');
+}
+function feeHistoryHtml() {
+  var h = fct.history;
+  if (h == null) return '<p class="repo-loading">' + (fct.historyBusy ? 'Reading…' : '') + '</p>';
+  return '<ol class="fund-hist">' + h.map(function (v) {
+    var lines = v.changes || [];
+    return '<li><div class="fund-hist-h"><b>v' + v.revision + '</b> <span class="act">' + esc(FEE_ACTION_WORDS[v.action] || v.action) + '</span>'
+      + (v.current ? ' <span class="now">in force</span>' : '')
+      + (!v.current ? '<button type="button" class="cat-link" data-fee="askrevert" data-rev="' + v.revision + '"'
+          + (fct.saving || fct.draft ? ' disabled' : '') + ' aria-label="Restore version ' + v.revision + '">Restore v' + v.revision + '</button>' : '')
+      + '</div>'
+      + (lines.length ? '<ul class="rev-changes fee-hl">' + lines.slice(0, 8).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+          + (lines.length > 8 ? '<li class="mut">and ' + (lines.length - 8) + ' more</li>' : '') + '</ul>' : '')
+      + (v.note ? '<div class="fund-hist-n">“' + esc(v.note) + '”</div>' : '')
+      + '<div class="fund-hist-by">' + esc(v.actor === 'seed' ? 'loaded from the fee card file' : (v.actor || 'unknown')) + ' · ' + esc(shortDateTime(v.at)) + '</div></li>';
+  }).join('') + '</ol>';
+}
+var FEE_ACTION_WORDS = { seeded: 'loaded', updated: 'edited', imported: 'imported', reverted: 'an earlier version put back' };
+
+function feeReviewHtml() {
+  if (!fct.review) return '';
+  var restoring = fct.review.revert !== undefined;
+  var lines = restoring ? [] : feeChanges(fct.data.card, fct.draft, feeCtx()).lines;
+  return '<div class="imp-scrim" data-fee="unreview"></div>'
+    + '<div class="imp-dlg fee-review" role="dialog" aria-modal="true" aria-labelledby="feeReviewTitle">'
+    + '<button type="button" class="dlg-close" data-fee="unreview" aria-label="Close">×</button>'
+    + '<h3 id="feeReviewTitle">' + (restoring ? 'Restore version ' + fct.review.revert : 'Review the change to the fee card') + '</h3>'
+    + (restoring
+        ? '<p class="imp-lede">Version ' + fct.review.revert + '’s card is put back as a new version. Nothing is rewound: the versions since stay on the record.</p>'
+        : '<p class="imp-lede">This becomes version ' + (fct.data.revision + 1) + '. Proposals being priced use it from their next calculation; a proposal already delivered keeps the card it was priced with.</p>'
+          + '<ul class="rev-changes imp-lines">' + lines.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>')
+    + '<label class="prd-note-l" for="feeNote">Note <small>required: every change to the fee card says why</small></label>'
+    + '<input id="feeNote" class="prd-note" type="text" maxlength="' + fct.data.noteMax + '" autocomplete="off" value="' + esc(fct.note) + '" placeholder="For example: 2027 pricing round, approved 14 Oct">'
+    + (fct.error ? '<p class="md-err" role="alert">' + esc(fct.error) + '</p>' : '')
+    + '<div class="imp-acts">'
+    + (fct.stale ? '<button type="button" class="btn" data-fee="reload">Reload the card</button>' : '')
+    + '<button type="button" class="btn btn-primary" id="feeSaveGo" data-fee="' + (restoring ? 'revert' : 'save') + '"'
+    + (fct.note.trim() && !fct.saving && !fct.stale ? '' : ' disabled') + '>'
+    + (fct.saving ? 'Saving…' : restoring ? 'Restore version ' + fct.review.revert : 'Save the card') + '</button>'
+    + '<button type="button" class="btn" data-fee="unreview"' + (fct.saving ? ' disabled' : '') + '>Back</button>'
+    + '</div></div>';
+}
+
+function feesViewHtml() {
+  if (!fct.data) {
+    return '<div class="ucap-b"><p class="repo-loading">' + (fct.error ? esc(fct.error) : 'Loading the fee card…') + '</p></div>';
+  }
+  var d = feeDraftNow(), editing = !!fct.draft;
+  var probs = editing ? feeProblems(d, feeCtx()) : [];
+  var bad = {};
+  probs.forEach(function (p) { if (p.key) bad[p.key] = true; if (p.also) bad[p.also] = true; });
+  var shown = editing && (fct.touched ? probs : probs.filter(function (p) { return p.field !== 'rates' || !/has no rate/.test(p.message); }));
+  return '<div class="ucap-b fee-b">'
+    + '<section class="ucap-main" aria-labelledby="feeTitle">'
+    + '<div class="fee-h"><h3 id="feeTitle">Fees</h3>' + feeStampHtml() + '</div>'
+    + '<p class="ucap-lede">Every proposal that includes fees is priced from this card: CASP charges every product one blended rate, '
+    + 'RDR charges each product by its fee group, and each has six levels - Management and PMG, at Floor, Target and Ceiling. '
+    + 'A change applies to proposals being built at once; a delivered proposal keeps its workbook, and the register records the version that priced it.</p>'
+    + (fct.flash ? '<p class="prd-flash" role="status">' + esc(fct.flash) + '</p>' : '')
+    + feeToolsHtml(editing)
+    + '<ul class="fund-msgs" id="feeProblems">' + (shown || []).slice(0, 8).map(function (p) { return '<li>' + esc(p.message) + '</li>'; }).join('')
+    + ((shown || []).length > 8 ? '<li>and ' + (shown.length - 8) + ' more</li>' : '') + '</ul>'
+    + (fct.layout === 'list' ? feeListHtml(d, editing, bad, probs) : feeTierStripHtml(d, editing, bad) + feeCardsHtml(d, editing, bad, probs))
+    + '</section>'
+    + '<aside class="ucap-side fee-side" aria-label="The card’s files and history">'
+    + '<div class="fee-files"><button type="button" class="btn" data-fee="import"' + (editing ? ' disabled' : '') + '>Import a file</button>'
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/fees.csv') + '" download>Download the card</a></div>'
+    + '<h4>History</h4>' + feeHistoryHtml()
+    + '</aside>'
+    + feeReviewHtml()
+    + '</div>';
+}
+function feeStatusText(d) {
+  if (!fct.draft) return fct.flash ? '' : '';
+  var probs = feeProblems(d, feeCtx()), ch = feeChanges(fct.data.card, d, feeCtx());
+  var bits = [];
+  if (ch.rates) bits.push(ch.rates + ' rate' + (ch.rates === 1 ? '' : 's') + ' changed');
+  if (ch.structure) bits.push(ch.structure + ' change' + (ch.structure === 1 ? '' : 's') + ' to the groups or tiers');
+  if (probs.length) bits.push(probs.length + ' problem' + (probs.length === 1 ? '' : 's'));
+  return bits.join(' · ') || 'No changes yet';
+}
+function feesFooterHtml() {
+  var d = fct.data ? feeDraftNow() : null;
+  var ready = !!(fct.draft && d && !feeProblems(d, feeCtx()).length && feeChanges(fct.data.card, d, feeCtx()).lines.length);
+  return '<div class="repo-f fee-f"' + (fct.review ? ' inert' : '') + '>'
+    + '<span class="ovl-pend' + (fct.draft && d && feeProblems(d, feeCtx()).length ? ' bad' : '') + '" id="feePending" role="status">' + esc(d ? feeStatusText(d) : '') + '</span>'
+    + '<span class="spacer"></span>'
+    + (fct.error && !fct.review ? '<span class="md-err" role="alert">' + esc(fct.error) + '</span>' : '')
+    + (fct.draft ? '<button type="button" class="btn" data-fee="discard"' + (fct.saving ? ' disabled' : '') + '>Discard changes</button>' : '')
+    + (fct.draft ? '<button type="button" class="btn btn-primary" id="feeReview" data-fee="review"' + (ready && !fct.saving ? '' : ' disabled') + '>Review and save</button>' : '')
+    + '</div>';
+}
+/* typing in a rate, a name or an edge: the marks, the cards' counts, the
+   tiers' labels, the problems and the footer follow without the boxes
+   being redrawn */
+function feeUpdate() {
+  if (!fct.draft) return;
+  var d = fct.draft, probs = feeProblems(d, feeCtx()), bad = {};
+  probs.forEach(function (p) { if (p.key) bad[p.key] = true; if (p.also) bad[p.also] = true; });
+  document.querySelectorAll('#repoDialog [data-feecellbox]').forEach(function (td) {
+    /* a card's cell, or one of the three in the price list's open figure */
+    var key = td.dataset.feecellbox, parts = key.split('|');
+    var schedule = parts[0], level = parts[parts.length - 1], tierKey = parts[parts.length - 2];
+    var rowKey = parts.slice(1, parts.length - 2).join('|');
+    var old = feeOldRate(fct.data.card, d, schedule, rowKey, tierKey, level);
+    var v = feeNum(feeRateText(d, schedule, rowKey, tierKey, level));
+    var changed = old !== undefined && v !== null && !isNaN(v) && Math.abs(v - old) > 1e-9;
+    td.classList.toggle('chg', changed);
+    td.classList.toggle('bad', !!bad[key]);
+    var input = td.querySelector('input');
+    if (input) { if (bad[key]) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid'); }
+    var s = td.querySelector('s');
+    if (changed && !s) td.insertAdjacentHTML('beforeend', '<s>' + esc(feeShow(old)) + '</s>');
+    if (!changed && s) s.remove();
+    if (changed && s) s.textContent = feeShow(old);
+  });
+  var shown = fct.touched ? probs : probs.filter(function (p) { return p.field !== 'rates' || !/has no rate/.test(p.message); });
+  var list = document.getElementById('feeProblems');
+  if (list) list.innerHTML = shown.slice(0, 8).map(function (p) { return '<li>' + esc(p.message) + '</li>'; }).join('')
+    + (shown.length > 8 ? '<li>and ' + (shown.length - 8) + ' more</li>' : '');
+  document.querySelectorAll('#repoDialog [data-feegroupbox]').forEach(function (box) {
+    box.classList.toggle('bad', !!bad['group|' + box.dataset.feegroupbox]);
+  });
+  document.querySelectorAll('#repoDialog [data-feetierbox]').forEach(function (box) {
+    box.classList.toggle('bad', !!bad['tier|' + box.dataset.feetierbox]);
+  });
+  d.tiers.forEach(function (t) {
+    document.querySelectorAll('#repoDialog [data-feetlabel="' + String(t.key).replace(/["\\]/g, '\\$&') + '"]').forEach(function (n) {
+      n.textContent = feeTierLabel(t.min, t.max);
+    });
+  });
+  var rows = {};
+  feeRowsOf(d, fct.data.schedules).forEach(function (r) { rows[feeRowId(r)] = r; });
+  document.querySelectorAll('#repoDialog [data-feecard]').forEach(function (box) {
+    var row = rows[box.dataset.feecard]; if (!row) return;
+    var stat = feeRowStat(d, row, probs);
+    box.classList.toggle('chg', stat.cls === 'chg');
+    box.classList.toggle('bad', stat.cls === 'bad');
+    var said = box.querySelector('[data-feecardstat]'); if (said) said.textContent = stat.text;
+    var note = box.querySelector('[data-feegroupnote]'); if (note) note.textContent = feeGroupNote(d, row);
+  });
+  var foot = document.querySelector('.dialog.repo > .repo-f');
+  if (foot) foot.outerHTML = feesFooterHtml();
+}
+
+async function feePost(method, path, body, said) {
+  fct.saving = true; fct.error = null; fct.stale = false; render();
+  try {
+    var r = await api(method, path, body);
+    if (!r) return false;
+    if (!r.ok) { fct.error = r.body.error || ('Could not save (' + r.status + ')'); fct.stale = r.status === 409; return false; }
+    fct.data = r.body.fees; fct.draft = null; fct.review = null; fct.note = ''; fct.touched = false;
+    fct.flash = said(r.body.saved);
+    loadFeeHistory(); feeRefetchSchema();
+    await prdRefreshData();
+    return true;
+  } catch (err) { fct.error = err.message; return false; }
+  finally { fct.saving = false; render(); }
+}
+function feeSave() {
+  var payload = feePayload(fct.draft, fct.data.schedules, fct.data.levels);
+  return feePost('PUT', '/scenario/repository/fees',
+    { card: payload.card, renames: payload.renames, note: fct.note, base: fct.data.revision },
+    function (saved) {
+      return 'Saved as version ' + saved.revision + (saved.productsMoved
+        ? ' · ' + saved.productsMoved + ' product' + (saved.productsMoved === 1 ? '' : 's') + ' moved with the renamed group' : '');
+    });
+}
+function feeRevert(revision) {
+  return feePost('POST', '/scenario/repository/fees/revert', { revision: revision, note: fct.note, base: fct.data.revision },
+    function (saved) { return 'Version ' + revision + ' put back as version ' + saved.revision; });
+}
+
+/* the draft's own copy of the card, begun by Edit the card or by a paste */
+function feeBegin() {
+  fct.draft = feeDraftFrom(fct.data.card); fct.flash = ''; fct.error = null; fct.touched = false;
+  fct.pasted = null; fct.pasteError = null; fct.pasteAt = null;
+}
+/* a block pasted into a box: into that box's row of the card */
+function feePasteInto(cellKey, text) {
+  var d = fct.draft; if (!d) return;
+  var parts = cellKey.split('|'), schedule = parts[0], level = parts[parts.length - 1], tierKey = parts[parts.length - 2];
+  var rowKey = parts.slice(1, parts.length - 2).join('|'), id = schedule + '|' + rowKey;
+  var row = feeRowsOf(d, fct.data.schedules).filter(function (r) { return feeRowId(r) === id; })[0];
+  var at = { tier: d.tiers.map(function (t) { return t.key; }).indexOf(tierKey), level: fct.data.levels.indexOf(level) };
+  fct.pasteAt = null; fct.pasted = null; fct.pasteError = null;
+  var block = feeReadBlock(text), before = feeClone(d), done = block.error ? block
+    : feePasteBlock(d, schedule, rowKey, fct.data.levels, block.cells, at);
+  if (done.error) fct.pasteError = { id: id, text: done.error };
+  else {
+    fct.pasted = { id: id, undo: before,
+                   text: 'Pasted ' + done.count + ' rate' + (done.count === 1 ? '' : 's') + ' into ' + (row ? row.label : schedule)
+                     + (done.changed ? ': ' + done.changed + ' changed.' : ': the same as before.') };
+  }
+  render(); prdFocus(feeCellSel(cellKey));
+}
+
+function feeClick(el) {
+  var act = el.dataset.fee; if (act === undefined) return false;
+  if (act === 'layout') {
+    fct.layout = el.dataset.to === 'list' ? 'list' : 'cards'; fct.openCell = null; fct.pasteAt = null;
+    try { window.localStorage.setItem(FEE_LAYOUT_KEY, fct.layout); } catch (e) { /* private window */ }
+    render(); return true;
+  }
+  if (act === 'source') { fct.source = parseInt(el.dataset.i, 10) || 0; fct.openCell = null; render(); return true; }
+  if (act === 'edit') { feeBegin(); render(); prdFocus('.fee-in, .fee-lb'); return true; }
+  if (act === 'pastehere') {
+    /* the clipboard is not the page's to read: the card's first box takes
+       the focus, and the paste that follows lands there */
+    if (!fct.draft) feeBegin();
+    fct.pasteAt = el.dataset.row; fct.pasted = null; fct.pasteError = null;
+    render();
+    var at = String(el.dataset.row).split('|');
+    prdFocus(feeCellSel(feeCellKey(at[0], at.slice(1).join('|'), fct.draft.tiers[0].key, fct.data.levels[0])));
+    return true;
+  }
+  if (act === 'discard') {
+    fct.draft = null; fct.error = null; fct.stale = false; fct.touched = false;
+    fct.openCell = null; fct.tiersOpen = false; fct.pasteAt = null; fct.pasted = null; fct.pasteError = null;
+    render(); return true;
+  }
+  if (act === 'review') {
+    fct.touched = true;
+    if (feeProblems(fct.draft, feeCtx()).length) { render(); return true; }
+    fct.review = 'save'; fct.error = null; render(); prdFocus('#feeNote'); return true;
+  }
+  if (act === 'askrevert') { fct.review = { revert: parseInt(el.dataset.rev, 10) }; fct.error = null; render(); prdFocus('#feeNote'); return true; }
+  if (act === 'unreview') { if (!fct.saving) { fct.review = null; fct.error = null; render(); } return true; }
+  if (act === 'save') { feeSave(); return true; }
+  if (act === 'revert') { feeRevert(fct.review.revert); return true; }
+  if (act === 'reload') { fct.review = null; fct.draft = null; fct.stale = false; fct.error = null; loadFeeCard(); return true; }
+  if (act === 'import') { impOpen('fees'); return true; }
+  if (!fct.draft) return true;
+  var d = fct.draft, i = el.dataset.i != null ? parseInt(el.dataset.i, 10) : null;
+  if (act === 'open') { fct.openCell = el.dataset.cell; render(); prdFocus('#feeO' + feeTargetIdx()); return true; }
+  if (act === 'unpaste') { if (fct.pasted) { fct.draft = fct.pasted.undo; fct.pasted = null; render(); } return true; }
+  if (act === 'tiers') { fct.tiersOpen = !fct.tiersOpen; render(); if (fct.tiersOpen) prdFocus('.fee-tpanel .fee-edge'); return true; }
+  if (act === 'split') { if (feeSplitTier(d, i)) { fct.openCell = null; render(); } return true; }
+  if (act === 'merge') { if (feeMergeTier(d, i)) { fct.openCell = null; render(); } return true; }
+  if (act === 'rmgroup') {
+    var g = d.feeGroups.filter(function (x) { return x.key === el.dataset.key; })[0];
+    if (g && !(g.from && feeUsage(g.from))) {
+      feeRemoveGroup(d, g.key);
+      fct.openCell = null;
+      render();
+    }
+    return true;
+  }
+  if (act === 'addgroup') {
+    var name = feeName(fct.addName);
+    if (!name) { prdFocus('#feeAddName'); return true; }
+    var key = feeAddGroup(d, name, fct.addLike || null, fct.data.schedules, fct.data.levels);
+    fct.addName = '';
+    var grouped = fct.data.schedules.filter(function (s) { return s.byGroup; })[0];
+    if (grouped && fct.layout === 'cards') {
+      /* its card waits for a paste, the first box ready */
+      fct.pasteAt = grouped.id + '|' + key; fct.pasted = null; fct.pasteError = null;
+      render(); prdFocus(feeCellSel(feeCellKey(grouped.id, key, d.tiers[0].key, fct.data.levels[0])));
+    } else render();
+    return true;
+  }
+  return true;
+}
+
+/* ---- the product form, the import dialog and the Fees tab: their keys and
+   their typing (D165, D166). Registered before the console's own key handler,
+   which is a capture handler too, so a dialog of theirs hears Escape first. */
+document.addEventListener('keydown', function (e) {
+  if (!repo.open) return;
+  if (e.key !== 'Escape' && e.key !== 'Enter') return;
+  if (e.key === 'Enter') {
+    /* Enter in the product form's boxes saves, as the sleeve name's does */
+    var t = e.target;
+    if (t && t.dataset && t.dataset.prdf !== undefined && t.tagName === 'INPUT' && prd.mode) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      var save = document.getElementById('prdSave'); if (save && !save.disabled) prdSave();
+      return;
+    }
+    if (t && t.id === 'feeAddName' && fct.draft) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      feeClick({ dataset: { fee: 'addgroup' } }); return;
+    }
+    /* Enter in the price list's open figure closes it */
+    if (t && t.dataset && t.dataset.feecell !== undefined && repo.view === 'fees' && fct.openCell) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      var shut = fct.openCell; fct.openCell = null; render();
+      prdFocus('[data-fee="open"][data-cell="' + shut.replace(/["\\]/g, '\\$&') + '"]'); return;
+    }
+    return;
+  }
+  if (imp) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (!imp.busy) impClose();
+    return;
+  }
+  if (repo.view === 'fees' && fct.review) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (!fct.saving) { fct.review = null; fct.error = null; render(); prdFocus('#feeReview'); }
+    return;
+  }
+  if (repo.view === 'catalogue' && prd.confirm) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    prd.confirm = null; render(); return;
+  }
+  if (repo.view === 'catalogue' && prd.mode) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    /* a form with changes in it is not thrown away by a key */
+    if (prdDirty()) { prd.leaving = true; render(); prdFocus('#prdSave'); return; }
+    prdCancel(); return;
+  }
+  if (repo.view === 'fees' && fct.openCell) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    var was = fct.openCell; fct.openCell = null; render();
+    prdFocus('[data-fee="open"][data-cell="' + was.replace(/["\\]/g, '\\$&') + '"]'); return;
+  }
+  if (repo.view === 'fees' && fct.draft && feeDirty()) {
+    /* nor is a card with changes in it */
+    e.preventDefault(); e.stopImmediatePropagation();
+    fct.flash = 'Save or discard the changes to the card first.'; render();
+  }
+}, true);
+
+document.addEventListener('input', function (e) {
+  if (!repo.open) return;
+  var el = e.target;
+  if (el.id === 'impNote' && imp) {
+    imp.note = el.value;
+    var go = document.querySelector('#repoDialog [data-imp="apply"]'); if (go) go.disabled = !impCanApply();
+    return;
+  }
+  if (el.id === 'prdNote') { prd.note = el.value; return; }
+  if (el.dataset && el.dataset.prdf !== undefined && prd.draft) {
+    var key = el.dataset.prdf;
+    prd.draft[key] = el.value;
+    if (prd.serverError && prd.serverError.field === key) prd.serverError = null;
+    prd.leaving = false;
+    if (key === 'productId') prd.idTyped = el.value.trim() !== '';
+    if (key === 'name' && prd.mode === 'new' && !prd.idTyped) {
+      prd.draft.productId = prdSlug(el.value);
+      var idBox = document.getElementById('prdF-productId'); if (idBox) idBox.value = prd.draft.productId;
+    }
+    prdUpdate(); return;
+  }
+  if (el.id === 'feeNote') {
+    fct.note = el.value;
+    var go2 = document.getElementById('feeSaveGo'); if (go2) go2.disabled = !(fct.note.trim() && !fct.saving && !fct.stale);
+    return;
+  }
+  if (el.id === 'feeAddName') { fct.addName = el.value; return; }
+  if (!fct.draft) return;
+  if (el.dataset && el.dataset.feecell !== undefined) {
+    var parts = el.dataset.feecell.split('|');
+    var schedule = parts[0], level = parts[parts.length - 1], tierKey = parts[parts.length - 2];
+    var rowKey = parts.slice(1, parts.length - 2).join('|');
+    var rows = fct.draft.rates[schedule] = fct.draft.rates[schedule] || {};
+    var tiers = rows[rowKey] = rows[rowKey] || {};
+    var levels = tiers[tierKey] = tiers[tierKey] || {};
+    levels[level] = el.value.trim();
+    fct.flash = '';
+    if (fct.pasted || fct.pasteError || fct.pasteAt) {
+      /* typing after a paste: its word, and its undo, go */
+      fct.pasted = null; fct.pasteError = null; fct.pasteAt = null;
+      document.querySelectorAll('#repoDialog .fee-pmsg').forEach(function (n) { n.remove(); });
+    }
+    feeUpdate(); return;
+  }
+  if (el.dataset && el.dataset.feegroup !== undefined) {
+    var g = fct.draft.feeGroups.filter(function (x) { return x.key === el.dataset.feegroup; })[0];
+    if (g) {
+      g.name = el.value;
+      /* the group's name in the lists that offer it, without a redraw */
+      document.querySelectorAll('#feeAddLike option[value="' + g.key.replace(/"/g, '\\"') + '"]').forEach(function (o) { o.textContent = feeName(g.name) || 'new group'; });
+      feeUpdate();
+    }
+    return;
+  }
+  if (el.dataset && el.dataset.feeedge !== undefined) {
+    var i = parseInt(el.dataset.feeedge, 10), m = feeNum(el.value);
+    fct.draft.tiers[i].maxText = el.value;
+    feeSetEdge(fct.draft, i, m === null || isNaN(m) ? NaN : Math.round(m * 1e6 * 100) / 100);
+    feeUpdate(); return;
+  }
+});
+
+document.addEventListener('change', function (e) {
+  if (!repo.open) return;
+  var el = e.target;
+  if (el.id === 'impFile' && imp && el.files && el.files[0]) { impChoose(el.files[0]); return; }
+  if (el.dataset && el.dataset.impwd !== undefined && imp) {
+    var id = el.dataset.impwd;
+    imp.withdraw = imp.withdraw.filter(function (x) { return x !== id; });
+    if (el.checked) imp.withdraw.push(id);
+    var go = document.querySelector('#repoDialog [data-imp="apply"]'); if (go) go.disabled = !impCanApply();
+    return;
+  }
+  if (el.id === 'prdCopyOf' && prd.mode === 'new') { prdUseCopy(el.value); render(); prdFocus('#prdF-name'); return; }
+  if (el.dataset && el.dataset.prdf !== undefined && prd.draft && el.tagName === 'SELECT') {
+    prd.draft[el.dataset.prdf] = el.value;
+    prd.shown[el.dataset.prdf] = true;
+    if (prd.serverError && prd.serverError.field === el.dataset.prdf) prd.serverError = null;
+    prdUpdate(); return;
+  }
+  if (el.id === 'feeAddLike') { fct.addLike = el.value; return; }
+});
+
+/* a block copied in Excel, pasted into a box of the Fees tab: the whole of
+   the box's row when it is the card's shape, else from the box on. One
+   figure pastes into the box as typed. */
+document.addEventListener('paste', function (e) {
+  if (!repo.open || repo.view !== 'fees' || !fct.draft) return;
+  var el = e.target;
+  if (!el || !el.dataset || el.dataset.feecell === undefined) return;
+  var text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (!/[\t\n]/.test(String(text).replace(/\r/g, '\n').trim())) return;
+  e.preventDefault();
+  feePasteInto(el.dataset.feecell, text);
+});
+
+/* a field's problem shows once it has been left, not while it is first typed */
+document.addEventListener('focusout', function (e) {
+  if (!repo.open || !prd.draft) return;
+  var el = e.target;
+  if (el && el.dataset && el.dataset.prdf !== undefined) {
+    prd.shown[el.dataset.prdf] = true;
+    prdUpdate();
+  }
+});
+
 /* ---- events ------------------------------------------------------------- */
 document.addEventListener('click', function (e) {
   var t = e.target.closest ? e.target.closest('#repolink, #catlink') : null;
@@ -7067,7 +9211,7 @@ document.addEventListener('click', function (e) {
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
     + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svcopy],[data-svopen],'
-    + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],'
+    + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-ncstart],[data-nccat],[data-ncsrc],[data-nckeepmine],[data-ncreplace],[data-ncadd],[data-ncspread],[data-nccreate],[data-nccancel],'
     + '[data-ncdlgclose],[data-ncdlgscrim],[data-ncusename],[data-ncdscope],[data-ncdclear],[data-ncdsort],[data-ncdrow],[data-ncdadd],'
@@ -7080,18 +9224,19 @@ document.addEventListener('click', function (e) {
     + '[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
-    + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actrestore],[data-actrange],'
-    + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose],'
+    + '[data-acttoggle],[data-actclear],[data-actmore],[data-actview],[data-actsleeve],[data-actrestore],[data-actrange],'
+    + '[data-regrow],[data-regclear],[data-regmore],[data-regpic],[data-regdetailclose],[data-regtolib],'
     + '[data-regview],[data-regfilters],[data-reguid],'
     + '[data-fundadd],[data-fundrm],[data-fundsave],[data-funddiscard],[data-fundown],[data-funddrop],[data-fundrestore],'
-    + '[data-ovl]') : null;
+    + '[data-ovl],[data-prd],[data-fee],[data-imp],[data-actopen]') : null;
   if (!el) {
     /* a click anywhere else closes an open picker, chip menu or context menu */
     if (repo.picker && !e.target.closest('.repo-menu, #repoSearch')) closePicker();
     if (cat.openChip && !e.target.closest('.cat-chipwrap')) { cat.openChip = null; render(); }
     if (repo.menu && !e.target.closest('.repo-ctx')) { repo.menu = null; render(); }
-    /* a click on the table's empty space, or anywhere outside the panel, closes the panel */
-    if (cat.detail && repo.view === 'catalogue' && !e.target.closest('.cat-detail')) { cat.detail = null; render(); }
+    /* a click on the table's empty space, or anywhere outside the panel, closes the panel -
+       never an open form, which closes by its own Cancel (D165) */
+    if (cat.detail && repo.view === 'catalogue' && !prd.mode && !imp && !e.target.closest('.cat-detail, .imp-dlg')) { cat.detail = null; prd.confirm = null; prd.flash = ''; render(); }
     return;
   }
   var ds = el.dataset;
@@ -7099,6 +9244,10 @@ document.addEventListener('click', function (e) {
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
   if (fundClick(ds)) return;
   if (ovlClick(el)) return;
+  if (impClick(el)) return;
+  if (prdClick(el)) return;
+  if (feeClick(el)) return;
+  if (ds.actopen !== undefined) { actOpen(ds.actopen, ds.actid); return; }
   /* the Sleeves view (D156): every move that leaves the open sleeve goes
      through goTo, so an unsaved draft asks first in either view */
   if (ds.svmode !== undefined) { svSwitchMode(ds.svmode); return; }
@@ -7154,6 +9303,9 @@ document.addEventListener('click', function (e) {
   }
   if (ds.repomenukeep !== undefined) { repo.menu = null; render(); return; }
   if (ds.reporemoveyes !== undefined) { removeFromCategory(parseInt(ds.reporemoveyes, 10)); return; }
+  if (ds.svoffer !== undefined) { setOffered(parseInt(ds.svoffer, 10), ds.to === '1'); return; }
+  /* the custom workflows (D172): opened to PWAs or closed */
+  if (ds.svaccess !== undefined) { setCustomAccess(ds.to === '1'); return; }
   if (ds.svopen !== undefined) { sv.compare = false; svOpen(parseInt(ds.svopen, 10)); return; }
   if (ds.svcopy !== undefined) { copyToVariant(repo.draft && repo.draft.id, ds.svcopy); return; }
   /* One create path (B2), from wherever the admin is standing: the cards'
@@ -7301,10 +9453,15 @@ document.addEventListener('click', function (e) {
     loadActivity(true); return;
   }
   if (ds.actrange !== undefined) { act.range = ds.actrange; loadActivity(true); return; }
-  if (ds.actclear !== undefined) { act.query = ''; act.actions = []; act.actor = ''; act.variant = ''; act.range = '30d'; loadActivity(true); return; }
+  if (ds.actclear !== undefined) { act.query = ''; act.actions = []; act.actor = ''; act.variant = ''; act.area = ''; act.range = '30d'; loadActivity(true); return; }
   if (ds.actmore !== undefined) { loadActivity(false); return; }
   if (ds.actview !== undefined) { openRevisionFrom(parseInt(ds.actview, 10), parseInt(ds.actrev, 10), ds.actarchived === '1'); return; }
   if (ds.actrestore !== undefined) { restoreArchived([parseInt(ds.actrestore, 10)]); return; }
+  if (ds.actsleeve !== undefined) {
+    var onOff = sleeveById(parseInt(ds.actsleeve, 10));
+    if (onOff) goTo({ variant: onOff.variant, category: onOff.category, to: onOff.id });
+    return;
+  }
   /* the register (D69) */
   if (ds.regrow !== undefined) {
     if (e.target.closest('a')) return;
@@ -7314,6 +9471,7 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (ds.regdetailclose !== undefined) { reg.detail = null; syncHash(); render(); return; }
+  if (ds.regtolib !== undefined) { regToLibrary(ds.regtolib); return; }
   if (ds.regview !== undefined) {
     if (reg.view !== ds.regview) { regApplyView(ds.regview); syncHash(); loadRegister(true); }
     return;
@@ -7373,7 +9531,7 @@ document.addEventListener('click', function (e) {
   }
   if (ds.catclearpins !== undefined) { cat.pins = []; cat.compare = false; render(); return; }
   if (ds.catcompare !== undefined) { if (cat.pins.length || cat.compare) { cat.compare = !cat.compare; cat.detail = null; render(); } return; }
-  if (ds.catdetailclose !== undefined) { cat.detail = null; render(); catFocusCursor(); return; }
+  if (ds.catdetailclose !== undefined) { cat.detail = null; prd.confirm = null; prd.flash = ''; render(); catFocusCursor(); return; }
   if (ds.catopen !== undefined) {
     var used = sleeveById(parseInt(ds.catopen, 10));
     if (used) {
@@ -7383,9 +9541,13 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (ds.catrow !== undefined) {
+    /* an open form keeps its changes: another row waits for Save or Cancel (D165) */
+    if (prd.mode) { if (prdDirty()) { prd.leaving = true; render(); prdFocus('#prdSave'); return; } prdStop(); }
     cat.cursor = ds.catrow;
     cat.cursorBand = ds.catband === undefined ? null : ds.catband;
     cat.detail = cat.detail === ds.catrow ? null : ds.catrow;
+    prd.confirm = null; prd.flash = ''; cat.importSaid = '';
+    if (prd.historyOpen && cat.detail && !(prd.history && prd.history.productId === cat.detail)) loadProductHistory(cat.detail);
     render(); return;
   }
 });
@@ -7434,6 +9596,7 @@ document.addEventListener('change', function (e) {
   }
   /* the feed's selects (D66) */
   if (ds.actwho !== undefined) { act.actor = e.target.value; loadActivity(true); return; }
+  if (ds.actarea !== undefined) { act.area = e.target.value; loadActivity(true); return; }
   if (ds.actbook !== undefined) { act.variant = e.target.value; loadActivity(true); return; }
   if (ds.actrange !== undefined) { act.range = e.target.value; loadActivity(true); return; }
   /* the register's selects (D69) */

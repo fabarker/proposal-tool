@@ -42,6 +42,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.dml import MSO_THEME_COLOR
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -51,7 +52,8 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
-from . import houseFonts, sheetDoc
+from . import fees, houseFonts, houseTemplate, sheetDoc
+from . import otherCharges as _charges
 from .fontMetrics import METRICS as _METRICS
 from .sheetDoc import SheetDoc, paginate, renderNumber
 # the measurer lives with the Docs now, which size Excel's columns with it
@@ -94,6 +96,10 @@ _NAMES_RULE = ('names', '000000')
 _CLASS_RULE = ('class', '000000')
 
 _A_NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+#: in a template, the deck names the theme's body face rather than a face of
+#: its own, so text it draws is in the template's font (D174)
+_THEME_BODY = '+mn-lt'
+_HOUSE_FACES = (sheetDoc.SANS, sheetDoc.SANS_LIGHT)
 
 
 def _in(inches: float) -> Emu:
@@ -106,6 +112,47 @@ def _pt(points: float) -> Emu:
 
 # ---- the two XML helpers -------------------------------------------------
 
+#: a Doc colour may name a theme colour - "scheme:<slot>", or
+#: "scheme:<slot>:<lighter by>" - so a template's theme dresses it (D174)
+_SCHEME = {'tx1': MSO_THEME_COLOR.TEXT_1, 'tx2': MSO_THEME_COLOR.TEXT_2,
+           'bg1': MSO_THEME_COLOR.BACKGROUND_1, 'bg2': MSO_THEME_COLOR.BACKGROUND_2,
+           'accent1': MSO_THEME_COLOR.ACCENT_1, 'accent2': MSO_THEME_COLOR.ACCENT_2,
+           'accent3': MSO_THEME_COLOR.ACCENT_3, 'accent4': MSO_THEME_COLOR.ACCENT_4,
+           'accent5': MSO_THEME_COLOR.ACCENT_5, 'accent6': MSO_THEME_COLOR.ACCENT_6}
+
+
+def _scheme(colour):
+    """(slot, lighter by) for a theme colour, or None for a value."""
+    if not colour or not str(colour).startswith('scheme:'):
+        return None
+    parts = str(colour).split(':')
+    return parts[1], float(parts[2]) if len(parts) > 2 else 0.0
+
+
+def _setColour(colorFormat, colour) -> None:
+    """A colour on a run or a fill: a theme colour as the theme's, lightened
+    as asked, or a value as it is."""
+    themed = _scheme(colour)
+    if themed is None:
+        colorFormat.rgb = RGBColor.from_string(colour or '000000')
+        return
+    slot, lighter = themed
+    colorFormat.theme_color = _SCHEME[slot]
+    if lighter:
+        colorFormat.brightness = lighter
+
+
+def _colourXml(colour) -> str:
+    themed = _scheme(colour)
+    if themed is None:
+        return '<a:srgbClr val="{}"/>'.format(colour or '000000')
+    slot, lighter = themed
+    if not lighter:
+        return '<a:schemeClr val="{}"/>'.format(slot)
+    return ('<a:schemeClr val="{}"><a:lumMod val="{}"/><a:lumOff val="{}"/></a:schemeClr>'
+            .format(slot, int(round((1 - lighter) * 100000)), int(round(lighter * 100000))))
+
+
 def _edgeXml(tag: str, edge, scale: float) -> str:
     """One a:lnX element: the Doc's edge, or an explicit no-line - because a
     PowerPoint table style draws borders of its own, and the only way to get
@@ -115,9 +162,9 @@ def _edgeXml(tag: str, edge, scale: float) -> str:
     style, colour = edge
     widthPt, dash = _EDGE_PT[style]
     return ('<a:{tag} {ns} w="{w}" cap="flat"><a:solidFill>'
-            '<a:srgbClr val="{c}"/></a:solidFill>{dash}</a:{tag}>').format(
+            '{c}</a:solidFill>{dash}</a:{tag}>').format(
                 tag=tag, ns=_A_NS, w=int(round(widthPt * scale * 12700)),
-                c=colour or '000000',
+                c=_colourXml(colour),
                 dash='<a:prstDash val="{}"/>'.format(dash) if dash else '')
 
 
@@ -162,15 +209,20 @@ def _textbox(slide, left, top, width, height):
 
 
 def _para(frame, text, sizePt, colour, bold=False, first=False,
-          align=PP_ALIGN.LEFT, name=sheetDoc.SANS):
+          align=PP_ALIGN.LEFT, name=sheetDoc.SANS, themed=False):
     paragraph = frame.paragraphs[0] if first else frame.add_paragraph()
     paragraph.alignment = align
     run = paragraph.add_run()
     run.text = text
-    run.font.name = name
     run.font.size = Pt(sizePt)
     run.font.bold = bold
-    run.font.color.rgb = RGBColor.from_string(colour)
+    if themed:
+        # the template's body face and its text colour (D174)
+        run.font.name = _THEME_BODY
+        run.font.color.theme_color = MSO_THEME_COLOR.TEXT_1
+    else:
+        run.font.name = name
+        run.font.color.rgb = RGBColor.from_string(colour)
     return paragraph
 
 
@@ -234,6 +286,8 @@ _INDENT_EM = 1.0125                   # an indented label's step: 1.35 less a qu
 #: risk table's crises and horizons keep _INDENT_EM (D135); the assumptions'
 #: asset names step in half as far (D137)
 _INDENT_EM_BY_DOC = {'portfolios': _INDENT_EM * 2 / 3,
+                     'comparing': _INDENT_EM * 2 / 3,
+                     'return_risk': _INDENT_EM * 2 / 3,
                      'Implementation': _INDENT_EM * 2 / 3,
                      'Initial Allocation': _INDENT_EM * 2 / 3,
                      'assumptions': _INDENT_EM / 2}
@@ -257,9 +311,14 @@ _PAD_STRATEGIC_EM = 0.14
 #: the padding the combined slide's two tables keep on their rows whatever
 #: their height: the pair sets smaller to have it (D140)
 _PAD_PAIR_EM = 0.08
+#: the strategic slides in a template are fitted with none: the reference's
+#: rows are tight, and the allocation's six groups and their lines then sit
+#: on one 4:3 slide at the floor; the rows open into what height is left
+#: (D174)
+_PAD_REFERENCE_EM = 0.0
 #: each Doc's body size: a cell's deck size is the fitted size scaled by its
 #: own over this, so a Doc's relative sizes survive the fit
-_DOC_BASE = {'portfolios': 11.0, 'risk_dashboard': 12.0,
+_DOC_BASE = {'portfolios': 11.0, 'risk_dashboard': 12.0, 'comparing': 11.0, 'return_risk': 11.0,
              'Implementation': 12.0, 'Initial Allocation': 12.0, 'assumptions': 11.0}
 #: the label column's share of the width, by portfolio count; the figures
 #: share the rest equally
@@ -342,7 +401,7 @@ class TablePlan:
 
     __slots__ = ('doc', 'rows', 'header', 'box', 'shares', 'spans',
                  'font', 'heights', 'fitLabel', 'oneLine', 'natural', 'hold',
-                 'ceiling', 'floor', 'measureRows', 'pad', 'fixed', 'breaks')
+                 'ceiling', 'floor', 'measureRows', 'pad', 'fixed', 'breaks', 'themed')
 
     def __init__(self, doc, rows, header, box, shares, spans, fitLabel=False,
                  oneLine=False, natural=False, hold=(), pad=_PAD_V_EM, fixed=None,
@@ -365,6 +424,8 @@ class TablePlan:
         self.ceiling = BASE_PT
         self.floor = MIN_PT
         self.measureRows = list(rows)
+        # drawn in a template, in its body face (D174)
+        self.themed = False
 
     def widths(self, f=None):
         """The column widths in points at size *f* (the plan's own size when
@@ -787,9 +848,9 @@ def shareSlide(plans) -> None:
         strategicRows([plan])
 
 
-def combinedBoxes():
+def combinedBoxes(box=None):
     """The combined slide's two boxes: allocation left, risk right."""
-    left, top, width, height = FULL_BOX
+    left, top, width, height = box or FULL_BOX
     left += _COMBINED_INSET
     width -= 2 * _COMBINED_INSET
     top += _COMBINED_VINSET
@@ -910,6 +971,8 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
     doc, f, base = plan.doc, plan.font, _base(plan.doc)
     font = spec.font or _DEFAULT_FONT
     face = font.get('name', sheetDoc.SANS)
+    if plan.themed and face in _HOUSE_FACES:
+        face = _THEME_BODY
     size = f * font.get('size', base) / base
     ink = _signInk(doc, rowIndex, column, spec.value) or font.get('color')
     align = spec.align or {}
@@ -941,7 +1004,8 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
         run.font.name = face
         run.font.size = Pt(max(size, 1))
         run.font.bold = bool(font.get('bold'))
-        run.font.color.rgb = RGBColor.from_string(ink or '000000')
+        # in a template a cell with no ink of its own takes the theme's text
+        _setColour(run.font.color, ink or ('scheme:tx1' if plan.themed else '000000'))
         if font.get('underline'):
             run.font.underline = True                  # 'single', as in the Doc
         if not run.text:
@@ -952,7 +1016,7 @@ def _fillCell(cell, spec, plan: TablePlan, rowIndex: int, column: int,
             mark.set('sz', str(int(round(max(size, 1) * 100))))
     if spec.fill:
         cell.fill.solid()
-        cell.fill.fore_color.rgb = RGBColor.from_string(spec.fill)
+        _setColour(cell.fill.fore_color, spec.fill)
     else:
         cell.fill.background()
     _setCellBorders(cell, spec.border if border is None else border, 1.0)
@@ -1017,7 +1081,7 @@ _DONUT_TITLE_ALLOW_PT = 26.0
 _DONUT_GAP_IN = 0.18
 
 
-def donutLayout(items):
+def donutLayout(items, box=None):
     """Where each composition doughnut and its legend go, in points (D144).
 
     The five charts share the content width, as before. Each chart's frame
@@ -1036,7 +1100,7 @@ def donutLayout(items):
     charts = [(key, label, donutBreakdown(items, key)) for key, label in DONUT_DIMENSIONS]
     charts = [chart for chart in charts if chart[2]]
     across = len(DONUT_DIMENSIONS)
-    left0, top0, boxWidth, boxHeight = FULL_BOX
+    left0, top0, boxWidth, boxHeight = box or FULL_BOX
     gap = _DONUT_GAP_IN * 72.0
     width = (boxWidth - gap * (across - 1)) / across
     frameHeight = width + _DONUT_TITLE_ALLOW_PT
@@ -1071,7 +1135,7 @@ def donutLayout(items):
     return out
 
 
-def _renderDonuts(slide, items) -> None:
+def _renderDonuts(slide, items, box=None, themed=False) -> None:
     """The five composition doughnuts, native charts fed straight from
     ``donutBreakdown`` - no hidden sheet, because a PowerPoint chart carries
     its data - each slice coloured by its palette slot, and no share printed
@@ -1082,7 +1146,7 @@ def _renderDonuts(slide, items) -> None:
     runs them across. Each is a stack of colour keys and names placed where
     ``donutLayout`` puts them - one entry to a line, centred under its ring -
     in the embedded house face, so what was measured is what is shown."""
-    for chart_ in donutLayout(items):
+    for chart_ in donutLayout(items, box):
         slices = chart_['slices']
         # the printed shares, as fractions, so the chart's data reads them as
         # percentages to one place
@@ -1097,8 +1161,12 @@ def _renderDonuts(slide, items) -> None:
         title = chart.chart_title.text_frame.paragraphs[0].runs[0].font
         title.size = Pt(DONUT_TITLE_PT)
         title.bold = True
-        title.name = sheetDoc.SANS
-        title.color.rgb = RGBColor.from_string(_HEAD_INK)
+        if themed:
+            title.name = _THEME_BODY
+            title.color.theme_color = MSO_THEME_COLOR.TEXT_2
+        else:
+            title.name = sheetDoc.SANS
+            title.color.rgb = RGBColor.from_string(_HEAD_INK)
         chart.has_legend = False
         chart.plots[0].has_data_labels = False
         series = chart.series[0]
@@ -1128,7 +1196,7 @@ def _renderDonuts(slide, items) -> None:
             frame.margin_left = frame.margin_right = 0
             frame.margin_top = frame.margin_bottom = 0
             frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-            _para(frame, entry['label'], DONUT_LEGEND_PT, '404040', first=True)
+            _para(frame, entry['label'], DONUT_LEGEND_PT, '404040', first=True, themed=themed)
 
 
 # ---- the house faces (D125) ----------------------------------------------
@@ -1255,10 +1323,37 @@ def _protectDeck(presentation, password: str = SHEET_PASSWORD) -> None:
         root.append(verifier)
 
     package = presentation.part.package
-    final = Part(PackURI('/docProps/custom.xml'), _CUSTOM_PROPERTIES_CT, package,
-                 _MARK_AS_FINAL.encode('utf-8'))
-    package.relate_to(final, RT.CUSTOM_PROPERTIES)
+    try:
+        existing = package.part_related_by(RT.CUSTOM_PROPERTIES)
+    except KeyError:
+        existing = None
+    if existing is None:
+        final = Part(PackURI('/docProps/custom.xml'), _CUSTOM_PROPERTIES_CT, package,
+                     _MARK_AS_FINAL.encode('utf-8'))
+        package.relate_to(final, RT.CUSTOM_PROPERTIES)
+    else:
+        _markFinal(existing)
     presentation.core_properties.content_status = 'Final'
+
+
+def _markFinal(part) -> None:
+    """A template's own custom properties - a sensitivity label, say - kept,
+    and ``_MarkAsFinal`` set among them (D174): a second custom-properties
+    part would make the file one PowerPoint must repair."""
+    ours = etree.fromstring(_MARK_AS_FINAL.encode('utf-8'))
+    root = etree.fromstring(part.blob)
+    for prop in list(root):
+        if prop.get('name') == '_MarkAsFinal':
+            root.remove(prop)
+    flag = ours[0]
+    pids = [int(prop.get('pid')) for prop in root if (prop.get('pid') or '').isdigit()]
+    flag.set('pid', str(max(pids + [1]) + 1))
+    root.append(flag)
+    blob = etree.tostring(root, xml_declaration=True, encoding='UTF-8', standalone=True)
+    if hasattr(part, '_element'):
+        part._element = etree.fromstring(blob)
+    else:
+        part._blob = blob
 
 
 # ---- the deck ------------------------------------------------------------
@@ -1304,6 +1399,14 @@ _NOTE_RISK = ('Stress rows show predicted performance had each portfolio been he
               'through the episode; losses print red, gains green.')
 _NOTE_TAIL = ('VaR and CVaR are stated as positive loss magnitudes at 99% confidence, '
               'over 1 month, 1 year and 3 years.')
+#: the strategic slides' notes in a template (D174)
+_NOTE_GROUPS = ('Each group is a category of the allocation as the scenario shows it; the lines '
+                'beneath add up to their group as printed, and a portfolio without a line '
+                'prints 0.0%.')
+_NOTE_STRESS = ('Predicted performance had each portfolio been held through each period, '
+                'nominal and real; losses print red, gains green.')
+_NOTE_VAR = ('Value at risk is the size of the loss not exceeded with 99% confidence, '
+             'nominal, over each horizon.')
 
 
 #: the words for the shares the rule parks the commitment in (D141)
@@ -1321,7 +1424,7 @@ def _shareWords(share: float) -> str:
     return '{:g}%'.format(round(share * 100, 4))
 
 
-def _initialSlide(model: dict, includeFees: bool, proposalId: str = None):
+def _initialSlide(model: dict, includeFees: bool, proposalId: str = None, box=None):
     """The slide after the implementation table for a private-markets book
     (D141): its initial allocation against the long-term target - each
     measure a Long-term and an Initial column, no descriptive columns - with
@@ -1334,7 +1437,7 @@ def _initialSlide(model: dict, includeFees: bool, proposalId: str = None):
     # the measures' row sits above the header and repeats with it
     view = _tableSlice(doc, headerRow - 1)
     count = 2 + 3 * len(sheetDoc.initialMeasures(includeFees, deck=True))
-    plans = planTable(view, _dropped(FULL_BOX), [1.0] * count,
+    plans = planTable(view, _dropped(box or FULL_BOX), [1.0] * count,
                       header=(headerRow - 1, headerRow), natural=True, hold=(0, 1))
     openRows(plans)
     sub = ('Until capital is called, the {:.2f}% (${:,.0f}) committed to private markets is '
@@ -1356,13 +1459,17 @@ def _initialSlide(model: dict, includeFees: bool, proposalId: str = None):
 def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = True,
              variant: str = None, feeSchedule: str = None, feeLevel: str = None,
              proposalId: str = None, customFeesBy: str = None, customFeesAt=None,
-             cover: bool = True):
+             cover: bool = True, box=None, restyle: bool = False, areas=None):
     """Every slide of the deck, decided and not yet drawn (D124).
 
     Returns a list of slides, each a dict with ``kind`` - 'cover', 'table' or
     'charts' - and for the others its heading, subheading, footnotes and
     either its TablePlans or the items the charts are drawn from. Pure: the
-    renderer transcribes it and the tests read it.
+    renderer transcribes it and the tests read it. Each also names its
+    ``mark``, the marker slide a template puts it in at (D174), and its
+    ``short`` subtitle, which a template's subtitle takes while the long one
+    joins the footnotes; the tables and charts are fitted into *box* - the
+    template's content box - or, without one, the deck's own (``FULL_BOX``).
 
     The configuration follows the number of portfolios. With no comparison or
     one, allocation and risk share ONE slide - allocation left, risk right,
@@ -1373,41 +1480,109 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     risk table is whole. Should the pair ever not fit one slide at MIN_PT, it
     splits. The allocation's and the risk table's label columns are fitted to
     their longest labels, so none wraps (D128, D130).
+
+    A *model* whose custom sleeves move a category's weight away from the
+    strategic allocation (``departs``, D170) leaves the strategic allocation
+    out: no allocation, risk or assumptions slides, the implementation alone.
+
+    A custom portfolio (D171) leads with its own allocation, the strategic
+    portfolios set beside it as comparisons, and has no risk or assumptions
+    slides: nobody analysed it.
+
+    *restyle*, for a deck built in a template (D174), lays the strategic
+    slides out as the reference slides do - Comparing Allocations and Risk
+    and Return Analysis, always a slide each (``buildComparingDoc``,
+    ``buildReturnRiskDoc``) - and there is no combined slide; the
+    Implemented Model has no fee columns, and Portfolio Fee Structure
+    carries them, with a private-markets book's initial allocation, in place
+    of the initial allocation slide (D176). A table the template draws in an
+    area of its own slide - *areas*, name -> box - is planned in that box,
+    as a slide of ``kind`` 'area', and the deck makes no slide of it.
     """
-    portDoc = sheetDoc.buildPortfoliosDoc(results)
-    riskDoc = sheetDoc.buildRiskDoc(results)
-    assumDoc = sheetDoc.buildAssumptionsDoc(assets, results)
+    box = box or FULL_BOX
+    custom = bool(model.get('customPortfolio'))
+    strategic = not model.get('departs') and not custom
+    portDoc = sheetDoc.buildPortfoliosDoc(results) if strategic else None
+    riskDoc = sheetDoc.buildRiskDoc(results) if strategic else None
+    assumDoc = sheetDoc.buildAssumptionsDoc(assets, results) if strategic else None
     # the long-term target's table; a private-markets book's initial
     # allocation follows it on a slide of its own (D141)
     initial = model.get('initial')
-    columns = implColumns(includeFees, deck=True)
+    # in a template the fees are on Portfolio Fee Structure (D176)
+    implFees = includeFees and not restyle
+    columns = implColumns(implFees, deck=True)
     implDoc, headerRow, _ = sheetDoc.buildImplementationDoc(
         model, columns, _WIDTHS,
         variant=variant, feeSchedule=feeSchedule, feeLevel=feeLevel,
-        includeFees=includeFees, proposalId=proposalId,
+        includeFees=implFees, proposalId=None if restyle else proposalId,   # no UID on a template deck
         customFeesBy=customFeesBy, customFeesAt=customFeesAt)
+    areas = areas or {}
 
     basisLine = '{} · {}'.format(basis.currency, basis.hedging)
     names = ' against '.join(str(r['name']) for r in results)
     money = renderNumber(mandate.mandateSize, '$#,##0')
     preamble = _preamblePairs(implDoc, headerRow)
     count = len(results)
-    portShares = _shares(_PORT_LABEL.get(count, 30.0), _docColumns(portDoc))
-    riskShares = _shares(_RISK_LABEL.get(count, 20.0), _docColumns(riskDoc))
+    portShares = _shares(_PORT_LABEL.get(count, 30.0), _docColumns(portDoc)) if strategic else None
+    riskShares = _shares(_RISK_LABEL.get(count, 20.0), _docColumns(riskDoc)) if strategic else None
 
     slides = []
     if cover:
-        slides.append({'kind': 'cover'})
+        slides.append({'kind': 'cover', 'mark': 'cover'})
 
-    def tables(plans, heading, sub, notes):
+    def tables(plans, heading, sub, notes, mark, short):
         for part, plan in enumerate(plans, 1):
             slides.append({'kind': 'table', 'heading': heading,
                            'sub': _continued(sub, part, len(plans)),
-                           'notes': notes, 'tables': [plan]})
+                           'short': short if part == 1 else (short + ' (continued)' if short
+                                                             else 'Continued'),
+                           'notes': notes, 'tables': [plan], 'mark': mark})
+
+    def area(name, doc, shares, header=(1,)):
+        """A table for an area on the template's own slide, planned in it."""
+        plans = planTable(doc, areas[name], shares, header=header, fitLabel=True,
+                          pad=_PAD_REFERENCE_EM)
+        slides.append({'kind': 'area', 'mark': name, 'tables': plans})
+
+    if custom:
+        customDoc = sheetDoc.buildCustomAllocationDoc(model, results)
+        customPlans = planTable(customDoc, box,
+                                _shares(_PORT_LABEL.get(count + 1, 30.0), _docColumns(customDoc)),
+                                fitLabel=True)
+        strategicRows(customPlans)
+        tables(customPlans, 'Custom Allocation',
+               '{} — built product by product, {} risk profile{}'.format(
+                   basisLine, model['customPortfolio']['profileLabel'],
+                   ', against ' + names if results else ''),
+               sheetDoc.customNotes(model), 'comparing-allocations',
+               '{} Risk Profile'.format(model['customPortfolio']['profileLabel']))
 
     together = None
-    if count <= 2:
-        leftBox, rightBox = combinedBoxes()
+    if restyle and strategic:
+        names2 = '{} — {}'.format(basisLine, names)
+        compDoc = sheetDoc.buildComparingDoc(results)
+        compPlans = planTable(compDoc, box, _shares(_PORT_LABEL.get(count, 30.0),
+                                                    _docColumns(compDoc)),
+                              header=(1, 2, 3), fitLabel=True, pad=_PAD_REFERENCE_EM)
+        strategicRows(compPlans)
+        riskDoc2 = sheetDoc.buildReturnRiskDoc(results)
+        riskPlans2 = planTable(riskDoc2, box, _shares(_RISK_LABEL.get(count, 20.0),
+                                                      _docColumns(riskDoc2)),
+                               header=(1, 2, 3), fitLabel=True, pad=_PAD_REFERENCE_EM)
+        strategicRows(riskPlans2)
+        if 'comparing-allocations' in areas:
+            area('comparing-allocations', compDoc, compPlans[0].shares, (1, 2, 3))
+        else:
+            tables(compPlans, 'Strategic Asset Allocation', names2,
+                   [_NOTE_GROUPS, _NOTE_ESTIMATES], 'comparing-allocations',
+                   'Comparing Allocations')
+        if 'risk-return' in areas:
+            area('risk-return', riskDoc2, riskPlans2[0].shares, (1, 2, 3))
+        else:
+            tables(riskPlans2, 'Strategic Asset Allocation', names2,
+                   [_NOTE_STRESS, _NOTE_VAR], 'risk-return', 'Risk and Return Analysis')
+    elif strategic and count <= 2:
+        leftBox, rightBox = combinedBoxes(box)
         # the pair keeps a little padding on every row, and sets smaller
         # where its rows need the height to have it (D140)
         left = planTable(portDoc, leftBox, portShares, fitLabel=True, pad=_PAD_PAIR_EM)
@@ -1423,42 +1598,47 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
             'sub': '{} — {} — allocation per asset category, risk per portfolio, '
                    'nominal and real'.format(basisLine, names),
             'notes': [_NOTE_ALLOC, _NOTE_RISK + ' ' + _NOTE_TAIL],
-            'tables': together})
-    else:
+            'tables': together, 'mark': 'comparing-allocations', 'short': 'Allocation and Risk'})
+    if strategic and not restyle and not together:
         # each on a slide of its own, rows opened a little and centred (D139)
-        portPlans = planTable(portDoc, FULL_BOX, portShares, fitLabel=True)
+        portPlans = planTable(portDoc, box, portShares, fitLabel=True)
         strategicRows(portPlans)
-        riskPlans = planTable(riskDoc, FULL_BOX, riskShares, fitLabel=True)
+        riskPlans = planTable(riskDoc, box, riskShares, fitLabel=True)
         strategicRows(riskPlans)
         tables(portPlans, 'Strategic Asset Allocation',
                '{} — {}, per asset category with portfolio-level estimates'.format(
-                   basisLine, names), [_NOTE_ALLOC, _NOTE_ESTIMATES])
+                   basisLine, names), [_NOTE_ALLOC, _NOTE_ESTIMATES], 'comparing-allocations',
+               'Comparing Allocations')
         tables(riskPlans, 'Risk Dashboard',
                'Factor-based risk analytics — stress periods and tail-loss measures, '
-               'nominal and real, per portfolio', [_NOTE_RISK, _NOTE_TAIL])
+               'nominal and real, per portfolio', [_NOTE_RISK, _NOTE_TAIL], 'risk-return',
+               'Stress Periods and Tail Loss')
 
     implView = _tableSlice(implDoc, headerRow)
     implNotes = ['Weights are rounded to 2dp by largest remainder across the whole table, '
                  'so the column closes on exactly 100.00%; notionals derive from the '
                  'printed weight on the {} mandate.'.format(money),
                  (('Management fees resolve from the schedule and level named above.'
-                   if includeFees else '')
+                   if implFees else '')
                   + (' This is the long-term target; the initial allocation, held while '
                      'private-markets capital is called, is on the next slide.'
-                     if initial else '')).strip()]
+                     if initial and not restyle else '')
+                  + (' This is the long-term target; Portfolio Fee Structure sets the '
+                     'initial allocation beside it.' if initial and restyle else '')).strip()]
     # nothing on a second line, every row one height, a little space under
     # the rule (D137); the category and product columns exactly as wide as
     # their longest names and the rest of the slide's width shared equally
     # among the others, so the table always spans the slide (D138)
     held = [columns.index(c) for c in ('Categories & Asset Classes', 'Products')
             if c in columns]
-    implPlans = planTable(implView, _dropped(FULL_BOX), [_WIDTHS[c] for c in columns],
+    implPlans = planTable(implView, _dropped(box), [_WIDTHS[c] for c in columns],
                           header=(headerRow,), natural=True, hold=held)
     openRows(implPlans)
     tables(implPlans, 'Implemented Model', ' · '.join(preamble) if preamble else basisLine,
-           implNotes)
-    if initial:
-        tables(*_initialSlide(model, includeFees, proposalId))
+           implNotes, 'implemented-model', variant or basisLine)
+    if initial and not restyle:
+        tables(*_initialSlide(model, includeFees, proposalId, box), 'implemented-model',
+               'While Private-Markets Capital Is Called')
 
     items = [item for group in model.get('groups', []) for item in group['items']]
     if items:
@@ -1467,16 +1647,48 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
             'sub': 'Share of allocation by product attribute — five views of the same 100%',
             'notes': ['Slice colours follow the page’s palette by the alphabetical rule '
                       'the screen uses; printed shares close on exactly 100.0.'],
-            'items': items})
+            'items': items, 'box': box, 'mark': 'composition', 'short': 'By Product Attribute'})
+
+    if restyle:
+        structure = sheetDoc.buildFeeStructureDoc(model, includeFees)
+        if structure is not None:
+            head = tuple(r for r in sorted(structure.rows) if r < min(structure.sections))
+            count = _docColumns(structure)
+            plans = planTable(structure, _dropped(box), [24.0, 30.0] + [11.0] * (count - 2),
+                              header=head, natural=True, hold=(0, 1))
+            openRows(plans)
+            priced = 'Product Cost' in [c.value for c in structure.rows[head[-1]].cells.values()]
+            feeLine = ' · '.join(part for part in (
+                basisLine,
+                'Fee Schedule ' + feeSchedule if priced and feeSchedule else None,
+                'Fee Level ' + feeLevel if priced and feeLevel else None,
+                'Effective Rate {:.4f}%'.format(model['effectiveRate'])
+                if priced and model.get('marginal') and model.get('effectiveRate') is not None
+                else None) if part)
+            tables(plans, 'Portfolio Fee Structure' if priced else 'Portfolio Allocation',
+                   feeLine,
+                   ([sheetDoc.FEE_STRUCTURE_NOTE] if priced else [])
+                   + ['Weights to one place, each column rounded together so it closes on '
+                      'exactly 100.0%.'
+                      + (' Initial is what the portfolio holds while private-markets capital '
+                         'is called; target, once it is.' if initial else '')],
+                   'fee-structure', '')
+        if 'fee-ladder' in areas:
+            ladder = sheetDoc.buildFeeLadderDoc(model, feeSchedule if includeFees else None,
+                                                feeLevel)
+            if ladder is not None:
+                area('fee-ladder', ladder, [60.0, 40.0])
 
     # nothing on a second line and every row one height, across the width
     # as before; moved down under the rule where the slide has the room
     # (D137); its rows at their own height, not opened into the slide (D138)
     # its column heads' row at 1.4 cm, the mean return's head on two lines
     # broken where the sheet breaks it, after 'Return' (D142)
+    if not strategic:
+        return slides
     meanReturn = [(2, c) for c, cell in assumDoc.rows[2].cells.items()
                   if str(cell.value or '').startswith('Estimated Mean Return')]
-    assumptions = planTable(assumDoc, FULL_BOX, [w for _, w in sheetDoc.ASSUMPTION_WIDTHS],
+    assumptions = planTable(assumDoc, box, [w for _, w in sheetDoc.ASSUMPTION_WIDTHS],
                             header=(1, 2), oneLine=True, fixed={2: _ASSUMPTIONS_HEAD_PT},
                             breaks=meanReturn)
     settleDown(assumptions)
@@ -1487,7 +1699,8 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
            ['Range ends are inked red and green, low — mean — high across; the table '
             'shows only the assets the strategic slides hold.',
             'Estimates are a property of the {} universe recorded at bake time; '
-            'modelling windows are per asset, at a 2.5% risk-free rate.'.format(basisLine)])
+            'modelling windows are per asset, at a 2.5% risk-free rate.'.format(basisLine)],
+           'assumptions', 'Per-Asset Estimates')
     return slides
 
 
@@ -1497,7 +1710,7 @@ def writeDeck(basis, mandate, results, sleevesMap, autoCategories,
               includeFees: bool = True, volPremium: bool = False,
               assets=None, model: dict = None, proposalId: str = None,
               customFees: dict = None, customFeesBy: str = None,
-              customFeesAt=None, cover: bool = True) -> bytes:
+              customFeesAt=None, cover: bool = True, otherCharges: dict = None) -> bytes:
     """The proposal deck: the workbook's sheets as slides, same engine (D121).
 
     Same inputs as ``writeWorkbook``, and the model built once the same way
@@ -1509,6 +1722,10 @@ def writeDeck(basis, mandate, results, sleevesMap, autoCategories,
     What goes on which slide, and at what size, is ``planDeck``'s decision
     (D124); this function draws it. Every deck is locked like the workbook
     (D123): a password to modify - the workbook's own - and Mark as Final.
+
+    Where ``SCENARIO_DECK_TEMPLATE`` names a template, the deck is built in
+    it instead (``_writeOnTemplate``, D174); where it names none, the deck
+    is drawn as before.
     """
     if not includeFees:
         feeSchedule = None
@@ -1518,15 +1735,16 @@ def writeDeck(basis, mandate, results, sleevesMap, autoCategories,
                                         tacticalTilt, feeSchedule, feeLevel,
                                         mandate.topAccountSize, volPremium,
                                         basis.currency, customFees)
+    templatePath = houseTemplate.configuredPath()
+    if templatePath:
+        return _writeOnTemplate(templatePath, basis, mandate, results, model, assets,
+                                includeFees, variant, feeSchedule, feeLevel, proposalId,
+                                customFeesBy, customFeesAt, cover, otherCharges)
     slides = planDeck(basis, mandate, results, model, assets, includeFees, variant,
                       feeSchedule, feeLevel, proposalId, customFeesBy, customFeesAt,
                       cover)
 
-    basisLine = '{} · {}'.format(basis.currency, basis.hedging)
-    money = renderNumber(mandate.mandateSize, '$#,##0')
-    footer = ('Proposal UID ' + proposalId if proposalId
-              else 'Draft — no delivered proposal for this scenario')
-
+    footer = _footer(proposalId)
     presentation = Presentation()
     presentation.slide_width = _in(SLIDE_W_IN)
     presentation.slide_height = _in(SLIDE_H_IN)
@@ -1546,10 +1764,7 @@ def writeDeck(basis, mandate, results, sleevesMap, autoCategories,
             rule.line.fill.background()
             rule.shadow.inherit = False
             lines = _textbox(slide, MARGIN_IN, 3.62, SLIDE_W_IN - 2 * MARGIN_IN, 1.6)
-            details = [basisLine + (' · ' + variant if variant else ''),
-                       'Mandate {} · {}'.format(money, mandate.primaryPwa),
-                       datetime.date.today().strftime('%d %B %Y')]
-            for index, line in enumerate(details):
+            for index, line in enumerate(_coverLines(basis, mandate, model, variant)):
                 _para(lines, line, 13, _SUB_INK, first=index == 0)
             page_ = _textbox(slide, SLIDE_W_IN - MARGIN_IN - 2.5,
                              SLIDE_H_IN - 0.58, 2.5, 0.5)
@@ -1565,19 +1780,163 @@ def writeDeck(basis, mandate, results, sleevesMap, autoCategories,
             for table in plan['tables']:
                 _renderPlan(slide, table)
 
-    presentation.core_properties.title = ('PMG Proposal {} - {} {}'.format(
-        proposalId, basis.currency, basis.hedging) if proposalId
-        else 'PMG Proposal - {} {}'.format(basis.currency, basis.hedging))
-    presentation.core_properties.author = 'PMG Proposal Tool'
-    presentation.core_properties.comments = (
-        'Strategic allocation, risk dashboard, long-term estimates and the '
-        'implemented model.')
-    if proposalId:
-        presentation.core_properties.identifier = proposalId
-        presentation.core_properties.keywords = proposalId
-
+    _describe(presentation, basis, proposalId, model)
     _houseTheme(presentation)
     _embedFonts(presentation)
+    _protectDeck(presentation)
+    buffer = io.BytesIO()
+    presentation.save(buffer)
+    return buffer.getvalue()
+
+
+def _footer(proposalId) -> str:
+    return ('Proposal UID ' + proposalId if proposalId
+            else 'Draft — no delivered proposal for this scenario')
+
+
+def _coverLines(basis, mandate, model, variant):
+    """The cover's lines: the basis and type, a custom portfolio's profile,
+    the mandate and the PWA, and the date."""
+    money = renderNumber(mandate.mandateSize, '$#,##0')
+    return ([u'{} · {}'.format(basis.currency, basis.hedging) + (' · ' + variant if variant else '')]
+            + ([u'Custom portfolio · {} risk profile'.format(
+                model['customPortfolio']['profileLabel'])] if model.get('customPortfolio') else [])
+            + [u'Mandate {} · {}'.format(money, mandate.primaryPwa),
+               datetime.date.today().strftime('%d %B %Y')])
+
+
+def _describe(presentation, basis, proposalId, model) -> None:
+    """The file's properties: its title, its author, what it holds and,
+    for a delivery, the UID ``stampedProposalId`` reads (D123)."""
+    properties = presentation.core_properties
+    properties.title = ('PMG Proposal {} - {} {}'.format(
+        proposalId, basis.currency, basis.hedging) if proposalId
+        else 'PMG Proposal - {} {}'.format(basis.currency, basis.hedging))
+    properties.author = 'PMG Proposal Tool'
+    properties.comments = (
+        'A custom portfolio\'s allocation and the implemented model.' if model.get('customPortfolio')
+        else 'Strategic allocation, risk dashboard, long-term estimates and the '
+        'implemented model.' if not model.get('departs') else 'The implemented model.')
+    if proposalId:
+        properties.identifier = proposalId
+        properties.keywords = proposalId
+
+
+# ---- the deck in a template (D174) -----------------------------------------------
+
+def _percent(value: float) -> str:
+    return '{:.2f}%'.format(value)
+
+
+def _millions(amount: float) -> str:
+    """A mandate in millions as the reference writes it: $25m, $12.5m."""
+    return '${}m'.format('{:,.2f}'.format(amount / 1e6).rstrip('0').rstrip('.'))
+
+
+def fieldValues(model: dict, mandate, proposalId: str = None, priced: bool = True,
+                charges: dict = None) -> dict:
+    """The figure each template field is filled with, for one proposal, as
+    text (D174). A field with no figure is absent, and a template slide that
+    asks for it is refused rather than delivered half-filled.
+
+    The advisory fee is each product's management fee times its printed
+    weight, added up; the product cost the same with each product's cost;
+    the total cost - and the weighted cost the fee slides quote - is the
+    model's own total, rounded once, so it can differ by 0.01 from the two
+    added. A private-markets book's initial cost is its initial total. The
+    charges the PWA quotes beside the fees fill their fields when the
+    proposal is priced (``otherCharges``, D177)."""
+    values = {'mandateSize': _millions(mandate.mandateSize),
+              'date': datetime.date.today().strftime('%d %B %Y')}
+    if getattr(mandate, 'primaryPwa', None):
+        values['primaryPwa'] = mandate.primaryPwa
+    total = (model.get('total') or {}).get('wtdFeeBp')
+    if priced and total is not None:
+        items = [item for group in model.get('groups', []) for item in group['items']]
+        fee = sum(item.get('printedPct', 0.0) * (item.get('managementFee') or 0.0)
+                  for item in items) / 100.0
+        cost = sum(item.get('printedPct', 0.0) * float(item.get('productCost') or 0.0)
+                   for item in items) / 100.0
+        values.update(advisoryFee=_percent(fee), productCost=_percent(cost),
+                      totalCost=_percent(total / 100.0), weightedCost=_percent(total / 100.0))
+        initial = (model.get('initial') or {}).get('total') or {}
+        if initial.get('wtdFeeBp') is not None:
+            values['initialCost'] = _percent(initial['wtdFeeBp'] / 100.0)
+    if priced:
+        values.update(_charges.fieldValues(charges))
+    return values
+
+
+def deckContext(model: dict, feeSchedule: str = None) -> dict:
+    """What a template's conditions are tested against (D174): priced at
+    all; priced by CASP, the marginal ladder; strategic, a proposal that
+    keeps the strategic allocation; and holding private markets."""
+    priced = feeSchedule is not None
+    return {'fees': priced,
+            'casp': priced and fees.isMarginal(feeSchedule),
+            'strategic': not model.get('departs') and not model.get('customPortfolio'),
+            'private markets': bool(model.get('initial'))}
+
+
+def _writeOnTemplate(path, basis, mandate, results, model, assets, includeFees, variant,
+                     feeSchedule, feeLevel, proposalId, customFeesBy, customFeesAt,
+                     cover, otherCharges=None) -> bytes:
+    """The deck built in a template (D174): the template opened, every slide
+    the deck plans added from its layout and fitted into its content box,
+    and the slides put where the template's marks say (``houseTemplate``).
+    The template's theme and fonts are its own - nothing re-themes it or
+    embeds a second copy of a face - and the deck is locked as ever."""
+    template = houseTemplate.Template(path)
+    template.check()
+    slides = planDeck(basis, mandate, results, model, assets, includeFees, variant,
+                      feeSchedule, feeLevel, proposalId, customFeesBy, customFeesAt,
+                      cover and 'cover' in template.markers, box=template.box, restyle=True,
+                      areas=template.areas)
+    built, order, areaPlans = {}, [], {}
+    for plan in slides:
+        mark = plan['mark']
+        if plan['kind'] == 'area':
+            areaPlans[mark] = plan['tables']
+            continue
+        if mark not in order:
+            order.append(mark)
+        if plan['kind'] == 'cover':
+            lines = _coverLines(basis, mandate, model, variant)
+            slide = template.addSlide('Investment Proposal', lines[0], body=lines[1:])
+        else:
+            # the short subtitle on the slide, the long one first in the notes
+            slide = template.addSlide(plan['heading'], plan['short'],
+                                      [plan['sub']] + list(plan['notes']))
+            if plan['kind'] == 'charts':
+                _renderDonuts(slide, plan['items'], plan['box'], themed=True)
+            else:
+                for table in plan['tables']:
+                    table.themed = True
+                    _renderPlan(slide, table)
+        template.stamp(slide)
+        built.setdefault(mark, []).append(slide)
+
+    def drawArea(slide, name, box):
+        plans = areaPlans.get(name)
+        if not plans:
+            return False
+        if len(plans) > 1:
+            raise houseTemplate.TemplateError(
+                'The area "tool: {}" is too small for its table: make the shape taller, or '
+                'give the table a marker slide of its own.'.format(name))
+        for plan in plans:
+            plan.themed = True
+            _renderPlan(slide, plan)
+        return True
+
+    template.place(built, order, deckContext(model, feeSchedule),
+                   fieldValues(model, mandate, proposalId, includeFees, otherCharges), drawArea)
+    presentation = template.presentation
+    _describe(presentation, basis, proposalId, model)
+    # the template's own history is not the deck's
+    presentation.core_properties.last_modified_by = 'PMG Proposal Tool'
+    presentation.core_properties.created = datetime.datetime.now().replace(microsecond=0)
+    presentation.core_properties.revision = 1
     _protectDeck(presentation)
     buffer = io.BytesIO()
     presentation.save(buffer)
@@ -1606,4 +1965,5 @@ def deckFromImplementation(basis, mandate, portfolios, implementation) -> bytes:
                      customFees=implementation.get('customFees'),
                      customFeesBy=implementation.get('customFeesBy'),
                      customFeesAt=implementation.get('customFeesAt'),
-                     cover=implementation.get('cover', True))
+                     cover=implementation.get('cover', True),
+                     otherCharges=implementation.get('otherCharges'))

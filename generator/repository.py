@@ -351,6 +351,8 @@ REPO_CSS = r"""
 .act-badge.updated{background:#E3EBFA;color:#1E4FA3}
 .act-badge.reverted,.act-badge.restored{background:#FEF3C7;color:#7A4A0A}
 .act-badge.deleted{background:#FDE8E8;color:#9B1C1C}
+.act-badge.disabled{background:#EEF0F3;color:#4A5568}
+.act-badge.enabled{background:#E3F2E8;color:#155F2E}
 .act-none{padding:24px 20px;margin:0}
 .act-more{padding:14px 20px 18px;text-align:center}
 /* ── the proposal register (D69) ──
@@ -371,6 +373,13 @@ REPO_CSS = r"""
 .arc-badge.mute{background:var(--surface-2);color:var(--ink-2)}
 .arc-badge.warn{background:#FEF3C7;color:#7A4A0A}
 .arc-badge.ok{background:#EAF5EE;color:#176A33}
+/* custom sleeves (D170): a proposal built with one, the weight a custom sleeve
+   replaced, and what it held */
+.arc-badge.cus{background:#F1EBF9;color:#5B3591}
+.reg-pic small.reg-was{display:block;font-weight:400;font-size:10.5px;color:var(--ink-3);text-decoration:line-through}
+.reg-pic tr.reg-custom td{font-size:12px;color:var(--ink-2);padding-top:2px}
+.reg-pic tr.reg-custom span{margin-right:10px}
+.reg-pic tr.reg-custom .btn{font-size:12px;padding:2px 9px}
 
 /* ── the register, laid out as a list and a pane (D116) ── */
 /* The saved views come before the filters: one press for the question people
@@ -972,6 +981,30 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .sv-chip.warn{background:#FFF1D6;color:#7A4A00;border-color:#D9AD55}
 .sv-chip.info{background:#EAF1FC;color:#174C99;border-color:#91B1E3}
 .sv-chip.mute{background:var(--surface-2);color:var(--sv-ink2);border-color:var(--sv-rule)}
+.sv-chip.cus{background:#F1EBF9;color:#5B3591;border-color:#C7B3E3}
+/* the switch that opens the custom workflows to PWAs (D172) */
+.sv-cswitch{appearance:none;display:inline-flex;align-items:center;gap:8px;font:inherit;font-size:13px;
+  color:var(--ink);background:var(--surface);border:1px solid var(--sv-frame);border-radius:999px;
+  padding:3px 4px 3px 12px;cursor:pointer}
+.sv-cswitch i{width:32px;height:18px;border-radius:999px;background:var(--sv-frame);position:relative;display:inline-block}
+.sv-cswitch i::after{content:"";position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:50%;
+  background:var(--surface);transition:left .15s}
+.sv-cswitch.on i{background:#176A33}
+.sv-cswitch.on i::after{left:17px}
+.sv-cswitch:hover{border-color:var(--accent)}
+.sv-cswitch:disabled{opacity:.55;cursor:default}
+.sv-csettings{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 14px;padding:9px 12px;
+  border:1px solid var(--sv-rule);border-radius:8px;background:var(--surface);font-size:13px;color:var(--sv-ink2)}
+.sv-csettings b{color:var(--ink)}
+.sv-csettings small{flex-basis:100%;font-size:12px}
+.reg-await{margin:0 0 12px;padding:10px 12px;border:1px solid #E8C77A;border-radius:6px;background:#FFFBEB}
+.reg-await-h{margin:0 0 6px;font-size:13px;color:var(--ink-2)}
+.reg-await-h b{color:var(--ink)}
+.reg-await-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;
+  border-top:1px solid #F1DFAF;font-size:13px}
+.reg-await-row small{display:block;color:var(--ink-2);font-size:12px}
+.reg-await-row .btn{font-size:12px;padding:5px 10px}
+@media (prefers-reduced-motion:reduce){.sv-cswitch i::after{transition:none}}
 .sv-crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14.5px;margin:0 0 14px;color:#16243A}
 .sv-crumbs button{appearance:none;border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:2px 3px;border-radius:3px}
 .sv-crumbs button:hover{text-decoration:underline}
@@ -1012,6 +1045,20 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .sv-card-r b{font-family:var(--f-num);font-weight:600;font-variant-numeric:tabular-nums}
 .sv-card-f{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:auto}
 .sv-card-f small{font-size:13.5px;color:var(--sv-ink2)}
+/* a sleeve disabled for PWAs (D169): still here, plainly set aside */
+.sv-chip.off{background:#EEF0F3;color:#4A5568;border-color:#B8C0CC;border-style:dashed}
+.sv-cardw{position:relative;display:flex;min-width:0}
+.sv-cardw>.sv-card{flex:1;min-width:0}
+.sv-cardw .sv-card-f{padding-right:86px}
+.sv-offbtn{position:absolute;right:12px;bottom:12px;appearance:none;font:inherit;font-size:13px;font-weight:600;
+  padding:4px 13px;border-radius:999px;border:1px solid var(--sv-frame);background:var(--surface);color:var(--sv-ink2);cursor:pointer}
+.sv-offbtn:hover{border-color:#A11F15;color:#A11F15}
+.sv-offbtn.is-off{background:#16243A;color:#fff;border-color:#16243A}
+.sv-offbtn.is-off:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.sv-offbtn:disabled{opacity:.5;cursor:default}
+.sv-cardw.off .sv-card{background:var(--surface-2);border-style:dashed}
+.sv-cardw.off .sv-card-h b,.sv-cardw.off .sv-card-p{opacity:.55}
+.sv-offrow .btn{margin-left:6px}
 /* the sleeve page */
 .sv-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 16px}
 .sv-head-t{flex:1 1 320px;min-width:0}
@@ -1464,6 +1511,222 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
   .ne-cell{min-height:40px;padding:4px}
   .ne-cell small{display:none}
   .ne-rule .repo-rule-f{grid-template-columns:1fr}
+}
+/* ── the catalogue kept here (D165) ──
+   The card says when its values last moved and who moved them; it edits in
+   place, wider while it does, two fields a row. The toolbar's second line is
+   what the catalogue is and how it changes. */
+.cat-own{gap:8px;padding-top:0}
+.cat-own .btn{padding:6px 11px;font-size:11.5px}
+.cat-own .btn.on{background:#16243A;border-color:#16243A;color:#fff}
+.cat-own .cat-src{font-family:var(--f-num);font-size:11.5px;color:var(--ink-3);margin-left:auto}
+.cat-own .prd-flash{flex-basis:100%}
+.cat-stamp{display:inline-block;align-self:flex-start;font-family:var(--f-num);font-size:11.5px;font-weight:600;color:#176A33;
+  background:#E6F3EC;border-radius:10px;padding:2px 9px}
+.cat-stamp.gone{color:#7A4A0A;background:#FEF3C7}
+.cat-tbl td.ed{white-space:nowrap;font-family:var(--f-num);font-size:12px}
+.prd-flash{margin:0;font-size:12.5px;color:#176A33;background:#E6F3EC;border:1px solid #B7DCC6;border-radius:5px;padding:6px 9px}
+.prd-warn{margin:0;font-size:12.5px;color:#7A4A0A;background:#FEF3C7;border:1px solid #F3D48A;border-radius:5px;padding:6px 9px}
+.prd-wd{margin-left:auto;color:#9B1C1C;border-color:#E5A29B}
+.prd-wd:hover{color:#9B1C1C;border-color:#9B1C1C}
+.prd-ask{border:1px solid #F3D48A;background:#FFFBEB;border-radius:6px;padding:10px 11px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.prd-ask p{margin:0;flex-basis:100%;font-size:12.5px;color:var(--ink);line-height:1.45}
+.prd-ask .prd-note{flex-basis:100%}
+.prd-hist{border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.prd-hh{display:flex;align-items:center;justify-content:space-between}
+.prd-hh .h{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.prd-hist-l{margin-top:8px}
+.prd-hist-c{margin:3px 0 2px;padding-left:12px}
+.cat-detail.prd-edit{width:460px}
+/* the card's parts keep their height and the panel scrolls, rather than the
+   parts being squeezed to fit it */
+.cat-detail>*{flex-shrink:0}
+/* the form's Save stays in reach at the foot of the panel, however long the form */
+.prd-edit .prd-acts{position:sticky;bottom:-16px;margin:0 -18px -16px;padding:10px 18px 14px;background:var(--surface);
+  border-top:1px solid var(--line);z-index:1}
+.prd-start{display:grid;gap:6px}
+.prd-start select{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);color:var(--ink)}
+.prd-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.prd-f{display:grid;gap:3px;min-width:0}
+.prd-f.wide{grid-column:1 / -1}
+.prd-f label{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.prd-f label small{font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-3)}
+.prd-f input,.prd-f select{font:inherit;font-size:13.5px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);color:var(--ink);min-width:0;width:100%;box-sizing:border-box}
+.prd-f input[aria-invalid="true"],.prd-f select[aria-invalid="true"]{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+.prd-locked{font-family:var(--f-num);font-size:13px;padding:5px 7px;border:1px dashed var(--line-strong);border-radius:4px;
+  color:var(--ink-2);background:var(--surface-2);word-break:break-all}
+.prd-hint{font-size:11.5px;color:var(--ink-3);min-height:0}
+.prd-err{margin:0;min-height:15px;font-size:11.5px;line-height:1.3;color:#B42318}
+.prd-err:empty{min-height:4px}
+.prd-note{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);color:var(--ink);width:100%;box-sizing:border-box}
+.prd-note-l{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.prd-note-l small{font-weight:500;text-transform:none;letter-spacing:0}
+.prd-reach{display:grid;gap:6px}
+.prd-reach p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.prd-reach p.warn{color:#7A4A0A;background:#FEF3C7;border-radius:5px;padding:6px 9px}
+.prd-acts{align-items:center}
+.prd-status{font-family:var(--f-num);font-size:11.5px;color:var(--ink-3)}
+/* the import dialog, for a product file or a fee card file */
+.imp-scrim{position:absolute;inset:0;background:rgba(15,36,62,.22);z-index:8}
+.imp-dlg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(640px,calc(100% - 40px));
+  max-height:calc(100% - 60px);overflow:auto;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;
+  box-shadow:0 22px 60px rgba(12,24,44,.28);padding:20px 22px;z-index:9;display:grid;gap:10px;font-size:13.5px}
+.imp-dlg h3{margin:0;font-size:17px;color:var(--ink);padding-right:30px}
+.imp-dlg .dlg-close{top:12px;right:14px}
+.imp-lede{margin:0;color:var(--ink-2);line-height:1.5}
+.imp-sum{margin:0;color:var(--ink)}
+.imp-sec{border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.imp-sec summary{cursor:pointer;font-size:13px;color:var(--ink)}
+.imp-sec ul{list-style:none;margin:6px 0 2px;padding:0;display:grid;gap:5px;max-height:220px;overflow:auto}
+.imp-sec li small{font-family:var(--f-num);color:var(--ink-3)}
+.imp-sec .rev-changes{padding-left:14px;margin:2px 0 0}
+.imp-wd{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.imp-wd.off{cursor:default;color:var(--ink-3)}
+.imp-lines{max-height:260px;overflow:auto;padding-left:14px}
+.imp-same{margin:0;color:#7A4A0A}
+.imp-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+/* ── the Fees tab (D166) ──
+   The Uncalled Capital Allocation view's frame: the card read or edited in
+   the main column, its files and its history at the side. */
+.dialog.repo.fees{width:min(1480px,calc(100vw - 32px))}
+.fee-b{grid-template-columns:minmax(0,1fr) 340px;position:relative}
+.fee-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 6px}
+.fee-h h3{margin:0}
+.fee-stamp{font-family:var(--f-num);font-size:12px;font-weight:600;color:#176A33;background:#E6F3EC;border-radius:10px;padding:2px 9px}
+.fee-ph{font-family:var(--f-num);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#7A4A0A;background:#FEF3C7;
+  border-radius:9px;padding:1px 8px}
+.fee-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 10px}
+.fee-tools .spacer{flex:1}
+.fee-hint{font-size:12.5px;color:var(--ink-3);line-height:1.4;max-width:540px}
+.fee-eyebrow{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-right:4px}
+.fee-in{width:72px;text-align:right;font-family:var(--f-num);font-size:13.5px;padding:4px 6px;border:1.5px solid var(--line-strong);
+  border-radius:4px;background:var(--surface);color:var(--ink)}
+.fee-c s{display:block;font-size:10.5px;color:var(--ink-3);text-align:right}
+.fee-c.chg{background:#FFF7E0}
+.fee-c.chg .fee-in{border-color:#D9A21B;font-weight:700}
+.fee-c.new{background:#EEF4FC}
+.fee-c.bad{background:#FDE8E8}
+.fee-c.bad .fee-in{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+.fee-gbox.bad .fee-gn{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+/* Group cards: the tiers along the top, then a card a row of the card */
+.fee-tstrip{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 12px;margin:0 0 12px;
+  border:1.5px solid var(--line-strong);border-radius:8px;background:var(--surface-2)}
+.fee-tstrip .spacer{flex:1}
+.fee-tstrip .btn{padding:5px 10px;font-size:11px}
+.fee-tchip{font-family:var(--f-num);font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;
+  padding:3px 9px;border-radius:5px;background:var(--surface);border:1px solid var(--line-strong)}
+.fee-tchip.bad{border-color:#B42318;color:#9B1C1C;background:#FDE8E8}
+.fee-arr{color:var(--ink-3)}
+.fee-tpanel{border:1.5px solid var(--line-strong);border-radius:8px;padding:12px 14px;margin:-4px 0 12px;background:var(--surface)}
+.fee-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:14px}
+.fee-card{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:var(--surface);
+  border:1.5px solid var(--line-strong);border-radius:9px}
+.fee-card.chg{border-color:#D9A21B;box-shadow:0 0 0 3px rgba(217,162,27,.14)}
+.fee-card.bad{border-color:#B42318;box-shadow:0 0 0 3px rgba(180,35,24,.10)}
+.fee-card-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.fee-sch{font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.fee-rn{font-size:15px;color:var(--ink)}
+.fee-gnote{font-size:12px;color:var(--ink-3)}
+.fee-ct{width:100%;border-collapse:collapse;table-layout:fixed;font-family:var(--f-num);font-size:13px;font-variant-numeric:tabular-nums}
+.fee-ct .fee-ct-l{width:23%}
+.fee-ct th{font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);padding:6px 5px 4px;text-align:right}
+.fee-ct thead tr:first-child th{text-align:center;color:var(--ink-2);padding-bottom:0}
+.fee-ct th.l{text-align:left;padding-left:12px}
+.fee-ct tbody th{font-size:12.5px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-2);white-space:nowrap;
+  border-top:1px solid var(--line);padding:5px 4px 5px 12px}
+.fee-ct td{padding:5px;text-align:right;border-top:1px solid var(--line)}
+.fee-ct .gap{border-right:1px solid var(--line-strong)}
+.fee-ct td.tg{font-weight:700}
+.fee-ct.editing td{padding:3px;vertical-align:top}
+.fee-ct .fee-in{width:100%;min-width:0;padding:3px 4px;font-size:12.5px}
+.fee-ct td.tg .fee-in{font-weight:700}
+.fee-card-f{display:flex;align-items:center;gap:12px;margin-top:auto;padding:7px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+.fee-card-f .spacer{flex:1}
+.fee-card.chg .fee-cstat{color:#7A4A0A}
+.fee-card.bad .fee-cstat{color:#9B1C1C}
+.fee-pmsg{margin:0;padding:7px 12px;font-size:12.5px;line-height:1.45;background:#EEF4FC;color:#1E4FA3;border-top:1px solid var(--line)}
+.fee-pmsg.ok{background:#E6F3EC;color:#176A33}
+.fee-pmsg.bad{background:#FDE8E8;color:#9B1C1C}
+.fee-pmsg .cat-link{margin-left:6px}
+.fee-list + .fee-pmsg,.fee-tools ~ .fee-pmsg{border:0;border-radius:6px;margin:0 0 10px}
+.fee-newg{border-style:dashed;padding:12px 14px;justify-content:center}
+.fee-newg h4,.fee-listadd h4{margin:0 0 4px;font-size:14px;color:var(--ink)}
+/* Price list: one source, the groups down and the tiers across */
+.fee-listwrap{overflow-x:auto}
+.fee-list{width:100%;min-width:820px;border-collapse:separate;border-spacing:0;table-layout:fixed;background:var(--surface);
+  border:1.5px solid var(--line-strong);border-radius:8px}
+.fee-list .fee-lg{width:20%}
+.fee-list thead th{padding:9px 8px;text-align:center;vertical-align:bottom;font-size:13.5px;font-weight:600;color:var(--ink);
+  background:var(--surface-2);border-bottom:1.5px solid var(--line-strong);border-left:1px solid var(--line)}
+.fee-list thead th.l{text-align:left;border-left:0;font-family:var(--f-num);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.fee-list thead th.bad{background:#FDE8E8}
+.fee-lt{display:block}
+.fee-list .fee-te{display:flex;justify-content:center;margin-top:5px;font-weight:400}
+.fee-tacts{display:flex;justify-content:center;gap:10px;margin-top:4px}
+.fee-list tbody th{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);font-weight:600;vertical-align:middle}
+.fee-list tbody th .fee-sch{display:block;font-weight:400}
+.fee-gline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-weight:400}
+.fee-list tbody tr.chg th{box-shadow:inset 3px 0 0 #D9A21B}
+.fee-list tbody tr.bad th{box-shadow:inset 3px 0 0 #B42318}
+.fee-list td{text-align:center;padding:8px 6px;border-bottom:1px solid var(--line);border-left:1px solid var(--line)}
+.fee-list tbody tr:last-child td,.fee-list tbody tr:last-child th{border-bottom:0}
+.fee-big{display:block;font-family:var(--f-num);font-size:22px;font-weight:600;line-height:1.1;color:var(--ink);font-variant-numeric:tabular-nums}
+.fee-rng{display:block;margin-top:3px;font-family:var(--f-num);font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.fee-lc.chg{background:#FFF7E0}
+.fee-lc.bad{background:#FDE8E8}
+.fee-lc.open{box-shadow:inset 0 0 0 2px #D9A21B;padding:6px}
+.fee-lb{appearance:none;background:none;border:0;width:100%;padding:2px 0;border-radius:5px;cursor:pointer;color:inherit}
+.fee-lb:hover{background:var(--surface-2)}
+.fee-lb:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.fee-trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;text-align:left}
+.fee-trio label{display:block;margin:0 0 2px;font-family:var(--f-num);font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.fee-trio .fee-c{border-radius:4px;padding:2px}
+.fee-trio .fee-in{width:100%;min-width:0;padding:3px 4px;font-size:13px}
+.fee-listadd{margin-top:14px;padding:12px 14px;border:1.5px dashed var(--line-strong);border-radius:8px}
+.fee-help{margin:0 0 10px;font-size:12.5px;color:var(--ink-3);line-height:1.45}
+.fee-tiers{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.fee-tiers li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fee-tiers li.bad .fee-edge,.fee-list th.bad .fee-edge{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+.fee-gn{font:inherit;font-size:13.5px;padding:4px 7px;border:1.5px solid var(--line-strong);border-radius:4px;background:var(--surface);
+  color:var(--ink);width:170px}
+.fee-x,.fee-tiers .btn{padding:3px 8px;font-size:11px}
+.fee-add{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--ink-3)}
+.fee-add input,.fee-add select{font:inherit;font-size:13px;padding:4px 7px;border:1px solid var(--line-strong);border-radius:4px;
+  background:var(--surface);color:var(--ink)}
+.fee-add input{width:170px}
+.fee-tl{font-weight:600;color:var(--ink);min-width:130px;font-size:13px}
+.fee-te{font-family:var(--f-num);font-size:12.5px;color:var(--ink-2);display:inline-flex;align-items:center;gap:2px}
+.fee-edge{width:62px;text-align:right;font-family:var(--f-num);font-size:13px;padding:3px 6px;border:1.5px solid var(--line-strong);
+  border-radius:4px;background:var(--surface);color:var(--ink)}
+.fee-files{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.fee-files .btn{padding:6px 11px;font-size:11.5px}
+.fee-hl{margin:4px 0 2px;padding-left:12px}
+.fee-review .imp-lines li{font-size:12.5px}
+.act-note{margin:4px 0 0;font-size:12.5px;color:var(--ink-2)}
+.act-badge.withdrawn,.act-badge.removed{background:#FDE8E8;color:#9B1C1C}
+/* the dialog's own boxes are full width at 15.5px (pickers.py); these are
+   form fields set in a row, so they say their own size, at the dialog's
+   specificity */
+.dialog .prd-f input[type=text],.dialog .prd-f select{font-family:var(--f-body);font-size:13.5px;padding:5px 8px}
+.dialog .prd-f select{padding-right:26px}
+.dialog .prd-start select{font-size:13px;padding:5px 26px 5px 8px}
+.dialog input[type=text].prd-note{font-family:var(--f-body);font-size:13px;padding:5px 8px}
+.dialog input[type=text].fee-gn{width:200px;flex:0 0 200px;font-family:var(--f-body);font-size:13.5px;padding:4px 7px}
+.dialog .fee-card-h input[type=text].fee-gn{width:190px;flex:0 1 190px;font-size:14px;font-weight:600;padding:3px 7px}
+.dialog .fee-list input[type=text].fee-gn{width:100%;flex:none;font-weight:600;padding:3px 6px;margin:2px 0}
+.dialog .fee-list input[type=text].fee-edge{width:56px;flex:0 0 56px;padding:2px 5px}
+.dialog input[type=text].fee-edge{width:72px;flex:0 0 72px;font-size:13px;padding:3px 6px;text-align:right}
+.dialog .fee-add input[type=text]{width:180px;font-family:var(--f-body);font-size:13px;padding:4px 7px}
+.dialog .fee-add select{width:auto;font-size:13px;padding:4px 26px 4px 7px}
+.fee-tiers li{flex-wrap:nowrap}
+.fee-tiers .btn{white-space:nowrap}
+.fee-tiers .fee-te{white-space:nowrap}
+@media (max-width:900px){
+  .fee-b{grid-template-columns:minmax(0,1fr)}
+  .cat-detail.prd-edit{width:100%}
 }
 """
 

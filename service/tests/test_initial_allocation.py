@@ -74,7 +74,7 @@ def test_the_rule_parks_the_private_line_a_third_and_two_thirds():
     assert lines[3]['weightPct'] == 9.0, 'the caller keeps its lines'
     assert [line['name'] for line in parked] == [line['name'] for line in lines], 'order kept'
     assert rules.initialLines([{'name': IG, 'weightPct': 60.0}, {'name': EQ, 'weightPct': 40.0}]) is None
-    # the house split in force: D136's thirds, kept to four places (D148)
+    # the default split in force: D136's thirds, kept to four places (D148)
     assert rules.privateFunding() == [(IG, pytest.approx(1 / 3, abs=1e-6)),
                                       (EQ, pytest.approx(2 / 3, abs=1e-6))]
     # and any split handed in parks by that split instead

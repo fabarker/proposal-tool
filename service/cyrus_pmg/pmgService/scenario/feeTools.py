@@ -1,90 +1,100 @@
-"""Manage the delivered rate card (D55): census, diff, accept.
+"""The fee card from the command line (D55, D166): census, diff, accept, export.
 
-The card comes from another team as a long CSV - one row per cell. The tool
-that earns its keep is the DIFF: a re-delivery is reviewed as "these eleven
-cells moved", cell by cell, before anyone points the service at it. The
-census says what a file holds; accept copies it into place and stamps the
-delivery's provenance into fees.json.
+The card is kept in the repository and maintained from the console's Fees
+tab, where every change is reviewed and recorded. This is for everything
+around it. The tool that earns its keep is the DIFF: a file a pricing team
+sends is reviewed as "these eleven rates moved", rate by rate, before it is
+put in force. The census says what the card in force holds; accept puts a
+file in force as a new version of the card, with a note, exactly as the Fees
+tab's import does; export writes the card in force as the file it can be
+loaded from again.
 
     python3 -m cyrus_pmg.pmgService.scenario.feeTools --census
     python3 -m cyrus_pmg.pmgService.scenario.feeTools --diff new.csv
     python3 -m cyrus_pmg.pmgService.scenario.feeTools --accept new.csv \\
-        --version 2026.3 --source "PMG pricing desk" [--as-of 2026-09-01]
+        --note "2027 pricing round" [--version 2026.3 --source "PMG pricing desk" --as-of 2026-09-01]
+    python3 -m cyrus_pmg.pmgService.scenario.feeTools --export card.csv
 
 Accept refuses a card the framework cannot price from - a gap, disagreeing
-tier edges, a crossed band - so a bad delivery fails here rather than at the
-next service start. The card is read only in the service: this is the only way
-it changes.
+tier edges, a crossed band - and one that would take away a fee group a
+product is priced by. The service reads the new version at once.
 """
 
 from __future__ import annotations
 
 import argparse
-import datetime
-import json
-import os
-import shutil
+import base64
+import getpass
 import sys
 
-from . import fees
+from . import feeCard, fees
+from .types import ValidationError
 
 
-def _cellStr(cell) -> str:
-    schedule, group, tier, source, point = cell
-    return '{:<4} {:<18} {:<3} {:<10} {}'.format(schedule, group or '-', tier, source, point)
-
-
-def census(path=None) -> int:
-    card = fees._readDelivery(path or fees.ratesPath())
-    info = fees.deliveryInfo()
-    print('card       {}'.format(path or info['path']))
-    print('version    {}   as of {}   from {}'.format(
-        info.get('version'), info.get('asOf'), info.get('source')))
-    print('cells      {}   tiers {}   fee groups {}'.format(
-        card['rows'], len(card['tiers']), len(card['feeGroups'])))
-    for t in card['tiers']:
+def census() -> int:
+    held = feeCard.current()
+    info = fees.deliveryInfo(held)
+    print('card       in the repository · {}'.format(info['version']))
+    print('           last edited {} by {}{}'.format(
+        (info['lastEditedAt'] or '').replace('T', ' '), info['lastEditedBy'] or 'unknown',
+        ' · placeholder' if info['placeholder'] else ''))
+    if held.get('note'):
+        print('           {}'.format(held['note']))
+    print('rates      {}   tiers {}   fee groups {}'.format(
+        len(held['cells']), len(held['tiers']), len(held['feeGroups'])))
+    for t in held['tiers']:
         print('  {:<3} {:<16} [{:,.0f}, {})'.format(
             t['id'], t['label'], t['min'], '∞' if t['max'] is None else '{:,.0f}'.format(t['max'])))
-    print('groups     {}'.format(', '.join(card['feeGroups'])))
+    print('groups     {}'.format(', '.join(held['feeGroups'])))
     for schedule in fees.SCHEDULES:
-        groups = [None] if not fees.byGroup(schedule) else card['feeGroups']
+        groups = [None] if not fees.byGroup(schedule) else held['feeGroups']
         for g in groups:
-            rates = [v for (s, gg, _, _, _), v in card['cells'].items() if s == schedule and gg == g]
+            rates = [v for (s, gg, _, _, _), v in held['cells'].items() if s == schedule and gg == g]
             if rates:
                 print('  {:<4} {:<18} {:.2f}% – {:.2f}%'.format(schedule, g or '-', min(rates), max(rates)))
     return 0
 
 
+def _read(path: str):
+    with open(path, 'rb') as fh:
+        return base64.b64encode(fh.read()).decode('ascii')
+
+
 def diff(path: str) -> int:
-    """Cell-by-cell: the candidate against the delivery in force."""
-    new = fees._readDelivery(path)['cells']
-    old = fees._DELIVERED['cells']
-    changed = [(c, old[c], new[c]) for c in old if c in new and old[c] != new[c]]
-    added = [c for c in new if c not in old]
-    removed = [c for c in old if c not in new]
-    for cell, a, b in sorted(changed):
-        print('  {}   {:>6.2f} → {:<6.2f}  ({:+.2f})'.format(_cellStr(cell), a, b, b - a))
-    for cell in sorted(added):
-        print('  {}   added  {:.2f}'.format(_cellStr(cell), new[cell]))
-    for cell in sorted(removed):
-        print('  {}   REMOVED (was {:.2f})'.format(_cellStr(cell), old[cell]))
-    print('{} of {} rates changed, {} added, {} removed'.format(
-        len(changed), len(old), len(added), len(removed)))
+    """Rate by rate: the file against the card in force."""
+    try:
+        preview = feeCard.importPreview(path, _read(path))
+    except ValidationError as exc:
+        print('REFUSED: {}'.format(exc.message))
+        return 1
+    for line in preview['changes']:
+        print('  {}'.format(line))
+    if preview['blocked']:
+        for b in preview['blocked']:
+            print('  CANNOT REMOVE {} - {} product(s) are priced by it'.format(b['feeGroup'], b['products']))
+    print('{} rate(s) moved{}'.format(preview['rates'], ' · the card is the same' if preview['same'] else ''))
     return 0
 
 
-def accept(path: str, version: str, source: str, asOf: str = None) -> int:
-    card = fees._readDelivery(path)                # raises BadRateCard on a bad file
-    target = fees.ratesPath()
-    shutil.copyfile(path, target)
-    cfg = json.load(open(fees._CONFIG_PATH, encoding='utf-8'))
-    cfg['delivery'] = {'source': source, 'version': version,
-                       'asOf': asOf or datetime.date.today().isoformat()}
-    cfg['placeholder'] = False
-    with open(fees._CONFIG_PATH, 'w', encoding='utf-8') as fh:
-        json.dump(cfg, fh, indent=2)
-    print('accepted {} cells as version {} into {}'.format(card['rows'], version, target))
-    print('restart the service: the delivery is read at import')
+def accept(path: str, note: str, version: str = None, source: str = None, asOf: str = None) -> int:
+    words = ' · '.join(x for x in (note, source and 'from ' + source, version and 'version ' + version,
+                                    asOf and 'as of ' + asOf) if x)
+    try:
+        saved = feeCard.importFile(path, _read(path), words, user=getpass.getuser())
+    except ValidationError as exc:
+        print('REFUSED ({}): {}'.format(exc.field, exc.message))
+        print('nothing was written')
+        return 1
+    print('the fee card is now version {}'.format(saved['revision']))
+    for line in saved['changes']:
+        print('  {}'.format(line))
+    return 0
+
+
+def export(path: str) -> int:
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        fh.write(feeCard.exportCsv())
+    print('wrote the fee card ({}) to {}'.format(fees.deliveryInfo()['version'], path))
     return 0
 
 
@@ -93,6 +103,8 @@ def main(argv=None) -> int:
     ap.add_argument('--census', action='store_true')
     ap.add_argument('--diff', metavar='CSV')
     ap.add_argument('--accept', metavar='CSV')
+    ap.add_argument('--export', metavar='CSV')
+    ap.add_argument('--note')
     ap.add_argument('--version')
     ap.add_argument('--source')
     ap.add_argument('--as-of', dest='asOf')
@@ -100,9 +112,11 @@ def main(argv=None) -> int:
     if args.diff:
         return diff(args.diff)
     if args.accept:
-        if not (args.version and args.source):
-            ap.error('--accept needs --version and --source')
-        return accept(args.accept, args.version, args.source, args.asOf)
+        if not args.note:
+            ap.error('--accept needs --note: every change to the fee card says why')
+        return accept(args.accept, args.note, args.version, args.source, args.asOf)
+    if args.export:
+        return export(args.export)
     return census()
 
 

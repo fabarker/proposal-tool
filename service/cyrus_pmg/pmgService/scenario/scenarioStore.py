@@ -106,6 +106,9 @@ def createScenario(mandate: MandateInput, basis: BasisInput, createdBy: str = ''
             # there, so one default serves every currency (D53).
             'volPremium': True,
             'sleeves': {},
+            # the proposal's own sleeves, by the name they are chosen under:
+            # products and weights built on the implementation page (D170)
+            'customSleeves': {},
             # a proposal shows no fees until a PWA asks for them (D52); the
             # schedule is then a choice with no default, like the variant,
             # and the level has a prescribed one, the PMG target (D51)
@@ -114,6 +117,11 @@ def createScenario(mandate: MandateInput, basis: BasisInput, createdBy: str = ''
             'feeLevel': DEFAULT_FEE_LEVEL,
             # the PWA's own rates, by schedule, for the custom level (D96)
             'customFees': {},
+            # the charges the PWA quotes beside the fees (D177)
+            'otherCharges': {},
+            # a proposal built product by product (D171): None until one is
+            # begun; its ``active`` says which kind the proposal is
+            'customPortfolio': None,
         }
         _writeAtomic(_path(scenarioId), state)
         return state
@@ -143,19 +151,30 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
                    variant: str = None, tacticalTilt: bool = None,
                    feeSchedule: str = None, feeLevel: str = None,
                    includeFees: bool = None, volPremium: bool = None,
-                   customFees: dict = None, customFeesBy: str = None) -> dict:
+                   customFees: dict = None, customFeesBy: str = None,
+                   customSleeves: dict = None, customPortfolio: dict = None,
+                   otherCharges: dict = None, otherChargesBy: str = None) -> dict:
     """Apply a partial state update (the PUT endpoint - deviation D2).
 
     *customFees* replaces the whole map (D96) and records who wrote it and
     when, for the workbook's header: a custom rate has no delivery behind it,
-    so the sheet says whose it is.
+    so the sheet says whose it is. *otherCharges* replaces the charges the
+    PWA quotes beside the fees (D177), and records whose they are the same
+    way.
 
     A variant change clears the sleeve map in the same write unless the caller
     supplied one, because sleeve names are only meaningful under the variant
-    they were chosen from (D29). It also drops any column the new variant
+    they were chosen from (D29). The custom sleeves go with it unless the
+    caller supplied them: their products are the ones the old type's
+    library holds (D170). It also drops any column the new variant
     cannot build, since the variant now decides the available allocations and
     not merely the implementation (D49). Doing both here rather than in the
     router keeps them from ever being persisted out of step.
+
+    A custom portfolio (D171) is kept through a variant change: a build is
+    too much work to throw away, and a product the new type may not hold is
+    flagged, not dropped. Its approval was of the old type and goes with the
+    fingerprint the router checks. *customPortfolio* replaces the whole entry.
 
     Columns the new variant still offers are kept, so moving between two
     variants that share an allocation does not throw away resolved work. The
@@ -173,9 +192,15 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
             state['variant'] = variant
             if sleeves is None:
                 state['sleeves'] = {}
+            if customSleeves is None:
+                state['customSleeves'] = {}
             _pruneColumnsForVariant(state, variant)
         if sleeves is not None:
             state['sleeves'] = dict(sleeves)
+        if customSleeves is not None:
+            state['customSleeves'] = dict(customSleeves)
+        if customPortfolio is not None:
+            state['customPortfolio'] = dict(customPortfolio)
         if tacticalTilt is not None:
             state['tacticalTilt'] = bool(tacticalTilt)
         if volPremium is not None:
@@ -190,6 +215,10 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
             state['customFees'] = dict(customFees)
             state['customFeesBy'] = customFeesBy or ''
             state['customFeesAt'] = time.time()
+        if otherCharges is not None:
+            state['otherCharges'] = dict(otherCharges)
+            state['otherChargesBy'] = otherChargesBy or customFeesBy or ''
+            state['otherChargesAt'] = time.time()
         return _save(state)
 
 
@@ -244,3 +273,40 @@ def removeColumn(scenarioId: str, key: PortfolioKey) -> dict:
             raise ValidationError('key', 'The proposed portfolio cannot be removed.')
         state['comparisons'] = [c for c in state['comparisons'] if c != keyStr]
         return _save(state)
+
+
+def awaitingApproval() -> list:
+    """Every live scenario whose custom portfolio is waiting for an admin's
+    approval (D171), newest first: what the console lists so an admin can
+    open it. Read straight from the files; an expired one is not listed."""
+    cutoff = time.time() - _retentionSeconds()
+    out = []
+    try:
+        names = os.listdir(_storeDir())
+    except OSError:
+        return out
+    for name in names:
+        if not (name.startswith('sc_') and name.endswith('.json')):
+            continue
+        path = os.path.join(_storeDir(), name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                continue
+            with open(path, encoding='utf-8') as fh:
+                state = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        custom = state.get('customPortfolio') or {}
+        approval = custom.get('approval') or {}
+        if not custom.get('active') or approval.get('state') != 'submitted':
+            continue
+        mandate = state.get('mandate') or {}
+        out.append({'scenarioId': state.get('id'), 'variant': state.get('variant'),
+                    'profile': custom.get('profile'), 'products': len(custom.get('products') or []),
+                    'builtBy': custom.get('builtBy') or '', 'submittedBy': approval.get('by') or '',
+                    'note': approval.get('note') or '', 'at': approval.get('at') or '',
+                    'primaryPwa': mandate.get('primaryPwa') or '',
+                    'mandateSize': mandate.get('mandateSize'),
+                    'currency': (state.get('basis') or {}).get('currency')})
+    out.sort(key=lambda e: e['at'], reverse=True)
+    return out

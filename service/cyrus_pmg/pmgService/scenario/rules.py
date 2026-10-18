@@ -15,6 +15,7 @@ from functools import lru_cache
 from numbers import Real
 
 from . import fees
+from . import otherCharges as _otherCharges
 from . import portfolio_weights as pw
 from . import saaKeys, universe
 from .sleeves import VARIANTS as IMPLEMENTATION_VARIANTS, variantExists
@@ -289,7 +290,7 @@ def volPremiumCategories(categories, volPremium, currency) -> list:
 
 # ------------------------------------------------ the overlay rules (D155) ---
 # The two overlays above were hard-coded until D155. They are now an ORDERED
-# LIST OF RULES the repository holds (overlayRules.py): a house list for every
+# LIST OF RULES the repository holds (overlayRules.py): a default list for every
 # implementation type and, optionally, a type's own. Each rule moves weight
 # out of one or more strategic categories into a category of its own, and the
 # list is resolved top to bottom - each rule reading the allocation as the
@@ -340,7 +341,7 @@ OVERLAY_TOLERANCE = 1e-9
 
 def baselineOverlays() -> list:
     """The two rules as the code applied them before D155, in their order:
-    what the repository's house list is seeded with, so an upgrade changes
+    what the repository's default list is seeded with, so an upgrade changes
     no figure."""
     return [
         {'id': 'ttf', 'name': 'Tactical Tilts', 'into': TACTICAL_TILT_CATEGORY,
@@ -536,7 +537,7 @@ def overlaySourceCategories() -> list:
 
 
 def overlayRulesFor(variant=None) -> list:
-    """The rules in force for *variant*: its own list, or the house list."""
+    """The rules in force for *variant*: its own list, or the default list."""
     from . import overlayRules
     return overlayRules.current(variant)['rules']
 
@@ -570,7 +571,7 @@ PRIVATE_FUNDED_FROM = SLEEVE_GROUPS[0]['name']
 
 def privateFunding(variant=None) -> list:
     """The split in force for *variant* as ``[(category, share)]``, shares as
-    fractions: the type's own override, or the house split (D148)."""
+    fractions: the type's own override, or the default split (D148)."""
     from . import fundingSplit
     return fundingSplit.shares(variant)
 
@@ -582,7 +583,7 @@ def initialLines(lines, funding=None):
     *lines* are ``{'name', 'weightPct'}`` with the private categories already
     combined under PRIVATE_FUNDED_FROM, as ``buildImplementationRows`` makes
     them. The private line's weight P moves to the *funding* lines -
-    ``[(category, share)]``, the house split when not given - in their shares,
+    ``[(category, share)]``, the default split when not given - in their shares,
     and the private line is left at zero: its commitment is the long-term
     weight, which the caller keeps. Returns copies.
 
@@ -609,7 +610,7 @@ def implementedCategories(categories, tacticalTilt, volPremium=False,
     """The strategic categories as implemented: the overlay rules in force
     for *variant*, in their order (D155) - or *overlays*, a list given.
 
-    The order is the list's: with the seeded house list the tilt comes first,
+    The order is the list's: with the seeded default list the tilt comes first,
     because the premium's share is of what the tilt leaves behind. Every
     caller that builds an implementation model goes through here.
     """
@@ -720,15 +721,17 @@ def portfolioName(basis: BasisInput, key: PortfolioKey) -> str:
     return '{} {}'.format(key.currency, portfolioHeader(key))
 
 
-def exportFilename(basis: BasisInput, proposalId: str) -> str:
+def exportFilename(basis: BasisInput, proposalId: str, custom: bool = False) -> str:
     """The workbook filename (spec 14.2, D75): hedging slugged, server-local
     date, and the Proposal UID last - beside the extension, where a reader
     finds it, and after the date, so a folder of proposals still sorts by
-    currency and day. There is no form of this name without the UID."""
+    currency and day. There is no form of this name without the UID. A
+    custom portfolio says so before the currency (D171)."""
     import datetime
     slug = basis.hedging.replace(' ', '')
-    return 'PMG_Scenario_{}_{}_{}_{}.xlsx'.format(
-        basis.currency, slug, datetime.date.today().isoformat(), proposalId)
+    return 'PMG_Scenario_{}{}_{}_{}_{}.xlsx'.format(
+        'Custom_' if custom else '', basis.currency, slug, datetime.date.today().isoformat(),
+        proposalId)
 
 
 def validateBasis(basis: BasisInput) -> None:
@@ -812,7 +815,7 @@ def validateCustomFees(customFees, mandate: MandateInput = None) -> None:
             if value is None:
                 continue
             label = _customRowLabel(schedule, group)
-            if group is not None and group not in fees.FEE_GROUPS:
+            if group is not None and group not in fees.feeGroups():
                 raise ValidationError('customFees', 'Unknown fee group {!r}.'.format(group))
             if (isinstance(value, bool) or not isinstance(value, Real)
                     or value != value or value in (float('inf'), float('-inf'))):
@@ -908,7 +911,7 @@ def _servedFunding(variant) -> dict:
 
 def _servedOverlays(variant) -> dict:
     """The overlay rules as the schema serves them: the list in force for
-    *variant*, which scope and revision it is, and whether it is the house
+    *variant*, which scope and revision it is, and whether it is the default
     list standing in for a type with none of its own."""
     from . import overlayRules
     entry = overlayRules.current(variant)
@@ -972,7 +975,9 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             # resolve (D155): the page's mirror applies them as the model does
             'overlays': _servedOverlays(variant),
         },
-        'fees': fees.feePayload(topAccountSize, mandateSize),
+        'fees': dict(fees.feePayload(topAccountSize, mandateSize),
+                     # the charges a PWA quotes beside the fees, for the form (D177)
+                     otherCharges=_otherCharges.describe()),
         'capabilities': capabilities,
         'dataInfo': dataInfo,
     }

@@ -30,12 +30,30 @@ between environments, and reviewing it as a table:
         The sleeves archived out of the library, with who did it and when.
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --activity [N]
-        The last N changes across the whole library, newest first (D66):
-        who did what to which sleeve, and what moved. Default 40.
+        The last N changes across the whole repository, newest first (D66,
+        D167): sleeves, products, the fee card, the overlay rules and the
+        funding split - who did what, and what moved. Default 40.
 
-The store is SCENARIO_SLEEVES_DB, the catalogue SCENARIO_PRODUCTS_SOURCE;
-a store that does not exist yet is created and seeded from
-SCENARIO_SLEEVES_SEED on the first command that opens it.
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --products-export out.csv
+        The product catalogue as a product file (D165): one row per live
+        product, the columns the file has always had. Edit it and import it.
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --products-import in.csv [--withdraw-missing] [--note TEXT]
+        Load a product file (CSV or XLSX) through the same checks the console
+        gives a product, after printing what it would do. New products are
+        added and changed ones updated; ones the file leaves out are kept,
+        or withdrawn with --withdraw-missing - except any a sleeve holds,
+        which refuses the whole load. A single bad row refuses it too.
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --product-history ID
+        Every version of one product, oldest first: who changed it, when,
+        why, and what moved.
+
+The store is SCENARIO_SLEEVES_DB. The catalogue and the fee card are kept in
+it (D165, D166). A store that does not exist yet is created and seeded on
+the first command that opens it: the fee card from SCENARIO_FEES_SOURCE, the
+catalogue from SCENARIO_PRODUCTS_SOURCE, the sleeves from
+SCENARIO_SLEEVES_SEED - each once, and never read again.
 """
 
 from __future__ import annotations
@@ -46,7 +64,7 @@ import getpass
 import os
 import sys
 
-from . import products, sleeveRepo
+from . import products, repositoryFeed, sleeveRepo
 from .types import ValidationError
 
 
@@ -60,8 +78,12 @@ def _census() -> int:
         store.get('schemaVersion', 1), store.get('revisions', 0), store.get('archived', 0)))
     if c.get('editions'):
         print('           {} labelled edition(s) with rules'.format(c['editions']))
-    print('catalogue  {}'.format(cat['path']))
-    print('           {} products, modified {}'.format(cat['products'], cat['modified']))
+    print('catalogue  in the store · version {} · {} products{}'.format(
+        cat['revision'], cat['products'],
+        ' · {} withdrawn'.format(cat['withdrawn']) if cat['withdrawn'] else ''))
+    print('           last edited {} by {} · loaded {} from {}'.format(
+        (cat['lastEditedAt'] or '').replace('T', ' '), cat['lastEditedBy'] or 'unknown',
+        (cat['seededAt'] or 'never')[:10], os.path.basename(cat['seededFrom'] or '') or 'nothing'))
     print('types')
     for variant in sleeveRepo.VARIANTS:
         entry = c['byVariant'].get(variant, {'sleeves': 0, 'broken': 0})
@@ -135,7 +157,7 @@ def _archived() -> int:
 
 
 def _activity(limit: int) -> int:
-    page = sleeveRepo.activity(limit=limit)
+    page = repositoryFeed.activity(limit=limit)
     if not page['entries']:
         print('nothing on record')
         return 0
@@ -145,13 +167,76 @@ def _activity(limit: int) -> int:
         if e['at'][:10] != day:
             day = e['at'][:10]
             print('  {}'.format(day))
-        print('    {}  {:<9} {:<14} {} / {} / {}  r{}'.format(
-            e['at'][11:16], e['action'], (e['actor'] or 'unknown')[:14],
-            e['variant'], e['category'], e['name'], e['revision']))
+        if e['area'] == 'sleeves':
+            what = '{} / {} / {}  r{}'.format(e['variant'], e['category'], e['name'], e['revision'])
+        else:
+            what = '{}: {}{}'.format(repositoryFeed.AREA_LABELS[e['area']], e['name'],
+                                     '  r{}'.format(e['revision']) if e.get('revision') else '')
+        print('    {}  {:<9} {:<14} {}'.format(
+            e['at'][11:16], e['action'], (e['actor'] or 'unknown')[:14], what))
         for change in e['changes']:
             print('             - {}'.format(change))
+        if e.get('note') and e['area'] != 'sleeves':
+            print('             "{}"'.format(e['note']))
     if page['next']:
         print('\n(more: raise the limit)')
+    return 0
+
+
+def _productsExport(path: str) -> int:
+    rows = products.exportRows()
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows(rows)
+    print('wrote {} product(s) to {}'.format(len(rows) - 1, path))
+    return 0
+
+
+def _productsImport(path: str, withdrawMissing: bool, note: str) -> int:
+    import base64
+    try:
+        with open(path, 'rb') as fh:
+            content = base64.b64encode(fh.read()).decode('ascii')
+        preview = products.importPreview(path, content)
+    except (OSError, ValidationError, products.BadCatalogue) as exc:
+        print('REFUSED: {}'.format(getattr(exc, 'message', exc)))
+        print('nothing was written')
+        return 1
+    print('{}: {} row(s)'.format(preview['file'], preview['rows']))
+    print('  {} new, {} changed, {} back from withdrawn, {} unchanged, {} not in the file'.format(
+        len(preview['added']), len(preview['changed']), len(preview['restored']),
+        preview['unchanged'], len(preview['missing'])))
+    for item in preview['changed'] + preview['restored']:
+        print('  {}  {}'.format(item['productId'], '; '.join(item['changeWords']) or 'back'))
+    withdraw = [m['productId'] for m in preview['missing']] if withdrawMissing else []
+    try:
+        done = products.importFile(path, content, user=getpass.getuser(), withdraw=withdraw,
+                                   note=note or '', base=preview['revision'])
+    except ValidationError as exc:
+        print('REFUSED ({}): {}'.format(exc.field, exc.message))
+        print('nothing was written')
+        return 1
+    print('imported: {added} added, {changed} changed, {restored} restored, {withdrawn} withdrawn '
+          '- the catalogue is now version {revision}'.format(**done))
+    return 0
+
+
+def _productHistory(productId: str) -> int:
+    trail = products.history(productId)
+    if not trail:
+        print('no product {} on record'.format(productId))
+        return 2
+    print('product {}  {}'.format(productId, trail[0]['product']['name']))
+    print('{} version(s), oldest first\n'.format(len(trail)))
+    for entry in reversed(trail):
+        print('  v{:<3} {:<9} {:<19} {}{}'.format(
+            entry['revision'], entry['action'], entry['at'], entry['actor'] or 'unknown',
+            '   <- in force' if entry['current'] else ''))
+        for line in entry['changeWords']:
+            print('       - {}'.format(line))
+        if entry['note']:
+            print('       "{}"'.format(entry['note']))
+        if entry['source']:
+            print('       from {}'.format(entry['source']))
     return 0
 
 
@@ -216,7 +301,18 @@ def main(argv=None) -> int:
     ap.add_argument('--history', metavar='SLEEVEID', type=int)
     ap.add_argument('--archived', '--deleted', action='store_true', dest='archived')
     ap.add_argument('--activity', metavar='N', type=int, nargs='?', const=40)
+    ap.add_argument('--products-export', metavar='CSV', dest='productsExport')
+    ap.add_argument('--products-import', metavar='FILE', dest='productsImport')
+    ap.add_argument('--withdraw-missing', action='store_true', dest='withdrawMissing')
+    ap.add_argument('--note', default='')
+    ap.add_argument('--product-history', metavar='PRODUCTID', dest='productHistory')
     args = ap.parse_args(argv)
+    if args.productsExport:
+        return _productsExport(args.productsExport)
+    if args.productsImport:
+        return _productsImport(args.productsImport, args.withdrawMissing, args.note)
+    if args.productHistory:
+        return _productHistory(args.productHistory)
     if args.history is not None:
         return _history(args.history)
     if args.archived:

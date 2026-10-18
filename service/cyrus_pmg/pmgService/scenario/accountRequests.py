@@ -147,8 +147,15 @@ def newRequestId() -> str:
 
 def proposalSummary(entry: dict) -> dict:
     """The proposal as the form fills from it: the register row's parameters
-    and the pinned sleeves, nothing a client-facing form does not show."""
-    key = PortfolioKey.fromStr(entry['baseKey'])
+    and the pinned sleeves, nothing a client-facing form does not show. A
+    custom portfolio (D171) has no strategic key: its risk level is its
+    profile, and its allocation reads Custom."""
+    custom = entry.get('customPortfolio')
+    if custom:
+        risk, allocation, excluded = custom.get('profile'), 'Custom', None
+    else:
+        key = PortfolioKey.fromStr(entry['baseKey'])
+        risk, allocation, excluded = key.riskLevel, key.allocationType, key.excludeRealAssets
     return {
         'proposalId': entry['proposalId'],
         'scenarioId': entry['scenarioId'],
@@ -162,16 +169,19 @@ def proposalSummary(entry: dict) -> dict:
         'currency': entry['currency'],
         'hedging': entry['hedging'],
         'variant': entry['variant'],
-        'riskLevel': key.riskLevel,
-        'allocationType': key.allocationType,
-        'excludeRealAssets': key.excludeRealAssets,
+        'riskLevel': risk,
+        'allocationType': allocation,
+        'excludeRealAssets': excluded,
+        'custom': bool(custom),
         'tacticalTilt': bool(entry['tacticalTilt']),
         'volPremium': bool(entry['volPremium']),
         'includeFees': bool(entry['includeFees']),
         'feeSchedule': entry.get('feeSchedule'),
         'feeLevel': entry.get('feeLevel'),
         'workbookName': entry.get('workbookName', ''),
-        'sleeves': [{'category': s['category'], 'sleeve': s['sleeve'], 'revision': s['revision']}
+        # a custom sleeve (D170) is marked so and pins no revision
+        'sleeves': [{'category': s['category'], 'sleeve': s['sleeve'], 'revision': s['revision'],
+                     'custom': bool(s.get('custom'))}
                     for s in entry.get('sleeves', [])],
     }
 

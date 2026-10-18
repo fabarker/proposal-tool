@@ -17,9 +17,17 @@ app. Five tables:
 and, since schema revision 4, the repository's other settings (D148):
 
     policies        kind, scope, body - one setting in force per scope; the
-                    private-markets funding split (fundingSplit.py) and,
-                    from revision 6, the overlay rules (overlayRules.py, D155)
+                    private-markets funding split (fundingSplit.py),
+                    from revision 6 the overlay rules (overlayRules.py, D155)
+                    and from revision 7 the fee card (feeCard.py, D166)
     policyHistory   one append-only row per revision of a setting
+
+and, since schema revision 7, the product catalogue itself (products.py,
+D165), which an admin now maintains here rather than receiving as a file:
+
+    products        one row per product, live or withdrawn
+    productHistory  one append-only row per revision: the whole product as
+                    it stood after that action, with who did it and when
 
 Editions (D89). A row is an EDITION of a sleeve name. A name a PWA picks may
 have several: a fallback with no rules, which applies wherever nothing else
@@ -47,17 +55,23 @@ a new one. History is append-only in the strict sense: a revert adds a
 revision, it never rewrites or removes one.
 
 A sleeve references products by id; the products themselves live in the
-delivered catalogue (products.py, D56) and are joined in when a sleeve is
-served. That join is where a sleeve can fail: a new product extract that no
-longer carries a product leaves every sleeve holding it *broken*. A broken
-sleeve stays in the repository, flagged, but is withheld from listSleeves -
-a sleeve that cannot be priced is never offered to a PWA.
+catalogue (products.py, D165) and are joined in when a sleeve is served.
+That join is where a sleeve can fail: a product the catalogue does not carry
+leaves every sleeve holding it *broken*. A broken sleeve stays in the
+repository, flagged, but is withheld from listSleeves - a sleeve that cannot
+be priced is never offered to a PWA. With the catalogue kept here, a product
+in a live sleeve cannot be withdrawn, so a sleeve breaks this way only when
+the first load of the catalogue lacked a product the library already named.
 
 Seeding. A database that does not exist yet is created and filled from the
 seed extract (SCENARIO_SLEEVES_SEED; the packaged default is the stand-in
 under sleeveSource, today's library written out row by row).
 Once the database exists the seed is never read again. The same table shape
 is the interchange format - exportRows / importRows, driven by sleeveTools.
+The fee card and the catalogue are loaded once the same way, from the files
+they used to be read from (schema 7): the card first, because a product
+names a fee group the card must price, and both before the library, whose
+sleeves name products.
 
 Validation happens at save, not import: weights sum to 1, at least one product,
 no product twice, every product in the catalogue, a unique name within its
@@ -120,9 +134,13 @@ WEIGHT_TOLERANCE = 1e-6
 #: added the soft delete and the history table (D65); 3 added the edition
 #: label and the rules table (D89); 4 the policies and their history (D148);
 #: 5 the version stamps and the superseded versions in the archive (D152);
-#: 6 the overlay rules (D155) - a policy kind, no new table: the house list is
-#: seeded with the two overlays as the code applied them on the first open.
-SCHEMA_VERSION = 6
+#: 6 the overlay rules (D155) - a policy kind, no new table: the default list is
+#: seeded with the two overlays as the code applied them on the first open;
+#: 7 the product catalogue and its history (D165) and the fee card, a policy
+#: kind (D166) - each loaded once from the file it used to be read from;
+#: 8 a sleeve can be disabled - kept in the library, not offered to PWAs - and
+#: every disable and enable is on the record in sleeveSwitches (D169).
+SCHEMA_VERSION = 8
 
 #: what a history row's action can say. baseline is the one nobody performed:
 #: it is the state a sleeve was in when history started being kept.
@@ -148,7 +166,9 @@ CREATE TABLE IF NOT EXISTS {name} (
     deletedBy TEXT NOT NULL DEFAULT '',
     deletedAt TEXT NOT NULL DEFAULT '',
     firstCreatedAt TEXT NOT NULL DEFAULT '',
-    supersededBy   INTEGER NOT NULL DEFAULT 0
+    supersededBy   INTEGER NOT NULL DEFAULT 0,
+    disabledBy     TEXT NOT NULL DEFAULT '',
+    disabledAt     TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -219,6 +239,56 @@ CREATE TABLE IF NOT EXISTS policyHistory (
     at       TEXT NOT NULL,
     UNIQUE (kind, scope, revision)
 );
+CREATE TABLE IF NOT EXISTS products (
+    productId         TEXT PRIMARY KEY,
+    position          INTEGER NOT NULL,
+    name              TEXT NOT NULL,
+    ticker            TEXT NOT NULL DEFAULT '',
+    assetClass        TEXT NOT NULL DEFAULT '',
+    style             TEXT NOT NULL DEFAULT '',
+    vehicle           TEXT NOT NULL DEFAULT '',
+    shareClass        TEXT NOT NULL DEFAULT '',
+    source            TEXT NOT NULL DEFAULT '',
+    liquidity         TEXT NOT NULL DEFAULT '',
+    exposureCurrency  TEXT NOT NULL DEFAULT '',
+    productCost       REAL NOT NULL,
+    feeGroup          TEXT NOT NULL,
+    distributionYield REAL,
+    minimumInvestment REAL,
+    revision          INTEGER NOT NULL,
+    createdBy         TEXT NOT NULL DEFAULT '',
+    createdAt         TEXT NOT NULL,
+    updatedBy         TEXT NOT NULL DEFAULT '',
+    updatedAt         TEXT NOT NULL,
+    withdrawnBy       TEXT NOT NULL DEFAULT '',
+    withdrawnAt       TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS productHistory (
+    id        INTEGER PRIMARY KEY,
+    productId TEXT NOT NULL,
+    revision  INTEGER NOT NULL,
+    action    TEXT NOT NULL,
+    body      TEXT NOT NULL,
+    note      TEXT NOT NULL DEFAULT '',
+    source    TEXT NOT NULL DEFAULT '',
+    actor     TEXT NOT NULL DEFAULT '',
+    at        TEXT NOT NULL,
+    UNIQUE (productId, revision)
+);
+CREATE TABLE IF NOT EXISTS sleeveSwitches (
+    id        INTEGER PRIMARY KEY,
+    sleeveId  INTEGER NOT NULL,
+    action    TEXT NOT NULL,
+    variant   TEXT NOT NULL,
+    category  TEXT NOT NULL,
+    name      TEXT NOT NULL,
+    label     TEXT NOT NULL DEFAULT '',
+    actor     TEXT NOT NULL DEFAULT '',
+    at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sleeve_switches_at ON sleeveSwitches (at);
+CREATE INDEX IF NOT EXISTS products_live ON products (withdrawnAt);
+CREATE INDEX IF NOT EXISTS product_history_at ON productHistory (at);
 """
 
 _lock = threading.Lock()
@@ -310,8 +380,15 @@ def _connect() -> sqlite3.Connection:
     with _lock:
         _migrate(conn)
         conn.executescript(_SCHEMA)
+        # the fee card, then the catalogue, once each (schema 7, D165, D166):
+        # a product must name a group the card prices, and a sleeve names
+        # products. Both read on this connection only - anything that opened
+        # another here would wait on the lock this holds.
+        from . import feeCard
+        feeCard.seed(conn)
+        products.seed(conn, feeCard.groupsOn(conn))
         _seedOnce(conn)
-        # the overlay rules' house list, once (schema 6, D155); read from
+        # the overlay rules' default list, once (schema 6, D155); read from
         # overlayRules lazily - it imports rules, which imports this module
         from .overlayRules import seed as _seedOverlays
         _seedOverlays(conn)
@@ -324,6 +401,39 @@ def connection() -> sqlite3.Connection:
     settings kept beside the sleeves (fundingSplit, D148). The caller closes
     it."""
     return _connect()
+
+
+def fileStamp(path=None):
+    """What identifies one state of the repository's file: its identity, size
+    and modification time, and SQLite's own file change counter (header
+    offset 24), which every committed write increments - the counter is what
+    a coarse or cached modification time on a network share cannot hide.
+    None when there is no file. The settings, the catalogue and the fee card
+    are each kept in memory against it and re-read when it moves, so a read
+    on the hot path costs a stat (D155, D165)."""
+    path = path or dbPath()
+    try:
+        st = os.stat(path)
+        with open(path, 'rb') as handle:
+            header = handle.read(28)
+    except OSError:
+        return None
+    counter = int.from_bytes(header[24:28], 'big') if len(header) >= 28 else -1
+    return (path, st.st_ino, st.st_size, st.st_mtime_ns, counter)
+
+
+def readOnly(path=None):
+    """A plain read-only connection to the file, or None when it cannot be
+    opened: no migration, no schema script, no seed. For the cached reads,
+    which fall back to a full connection when what they need is not there
+    yet."""
+    path = path or dbPath()
+    try:
+        conn = sqlite3.connect('file:{}?mode=ro'.format(path), uri=True, timeout=10)
+    except sqlite3.Error:
+        return None
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def _seedOnce(conn: sqlite3.Connection) -> None:
@@ -450,6 +560,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
                     "WHERE h.sleeveId = sleeves.id AND h.action IN ({}) "
                     "ORDER BY h.revision DESC LIMIT 1), createdAt)".format(
                         ','.join("'{}'".format(a) for a in _VERSION_ACTIONS)))
+
+    # 7 -> 8 (D169): a sleeve can be disabled - in the library, not offered.
+    # Additive: every sleeve already here is offered, which is what the
+    # blank stamp says. The record of the switches is a table of its own,
+    # from _SCHEMA, so a switch is not a revision and no pinned proposal
+    # reads it as the sleeve having moved.
+    if 'disabledAt' not in columns:
+        with conn:
+            conn.execute("ALTER TABLE sleeves ADD COLUMN disabledBy TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE sleeves ADD COLUMN disabledAt TEXT NOT NULL DEFAULT ''")
 
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.
@@ -852,6 +972,9 @@ def _entry(conn, row, productRows, revisions=None):
         # a sleeve, and what happens to it is that it is ARCHIVED (D66)
         'archived': bool(row['deletedAt']),
         'archivedBy': row['deletedBy'], 'archivedAt': row['deletedAt'],
+        # in the library but not offered to PWAs (D169)
+        'disabled': bool(_column(row, 'disabledAt')),
+        'disabledBy': _column(row, 'disabledBy') or '', 'disabledAt': _column(row, 'disabledAt') or '',
         'revisions': revisions if revisions is not None else _revisionCount(conn, row['id']),
     }
 
@@ -877,13 +1000,19 @@ def listSleeves(category: str, variant: str, key=None) -> list:
     that cannot hold it is the worse failure. An empty list is also a
     legitimate answer for a known type - it reaches no sleeve for that
     category, or every sleeve it has is broken - and the completeness gate
-    reports it as such."""
+    reports it as such.
+
+    A disabled sleeve (D169) is left out as though it were not there: a
+    disabled edition lets the name fall back to its fallback edition, and a
+    name whose every edition is disabled is not offered."""
     if not variantExists(variant):
         return []
     conn = _connect()
     try:
         byName, order = {}, []
         for row in _sleeveRows(conn, variant, category):
+            if _column(row, 'disabledAt'):
+                continue
             if row['name'] not in byName:
                 byName[row['name']] = []
                 order.append(row['name'])
@@ -1518,6 +1647,50 @@ def deleteSleeve(sleeveId, user='') -> dict:
         conn.close()
 
 
+def setOffered(sleeveId, offered: bool, user='') -> dict:
+    """Disable a sleeve, or enable it again (D169). A disabled sleeve stays
+    in the library, editable, in the console and on the record, and is left
+    out of everything a PWA picks from - listSleeves. Not a revision: what
+    the sleeve holds has not changed, so its version, the proposals pinned
+    to it and an editor open on it are all undisturbed. The switch is
+    recorded in sleeveSwitches.
+
+    Refused for an archived sleeve, which is offered to nobody already, and
+    for a fixed category's, which an overlay attaches to every proposal."""
+    conn = _connect()
+    try:
+        row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
+        if row is None:
+            raise ValidationError('id', 'That sleeve no longer exists.')
+        if row['deletedAt']:
+            raise ValidationError('id', 'That sleeve is in the Archive. Restore it first.')
+        if row['category'] in fixedCategories():
+            raise ValidationError(
+                'category', '{} is attached automatically by its overlay and always holds one '
+                'sleeve, so it cannot be disabled.'.format(row['category']))
+        if offered == (not row['disabledAt']):
+            raise ValidationError('offered', '{} is already {}.'.format(
+                row['name'], 'offered to PWAs' if offered else 'disabled'))
+        stamp = _now()
+        with conn:
+            conn.execute('UPDATE sleeves SET disabledBy = ?, disabledAt = ? WHERE id = ?',
+                         ('' if offered else user, '' if offered else stamp, sleeveId))
+            conn.execute(
+                'INSERT INTO sleeveSwitches (sleeveId, action, variant, category, name, label, '
+                'actor, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (sleeveId, 'enabled' if offered else 'disabled', row['variant'],
+                 row['category'], row['name'], row['label'], user, stamp))
+        row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
+        return _entry(conn, row, _productRows(conn, sleeveId))
+    finally:
+        conn.close()
+
+
+def switches(conn) -> list:
+    """Every disable and enable, oldest first, for the activity feed (D169)."""
+    return [dict(r) for r in conn.execute('SELECT * FROM sleeveSwitches ORDER BY id')]
+
+
 def restoreSleeve(sleeveId, user='') -> dict:
     """Put a removed sleeve back in the library.
 
@@ -1792,8 +1965,10 @@ def census() -> dict:
     entries = listAll()
     byVariant = {}
     for e in entries:
-        byVariant.setdefault(e['variant'], {'sleeves': 0, 'broken': 0})
+        byVariant.setdefault(e['variant'], {'sleeves': 0, 'broken': 0, 'disabled': 0})
         byVariant[e['variant']]['sleeves'] += 1
+        if e['disabled']:
+            byVariant[e['variant']]['disabled'] += 1
         if e['problems']:
             byVariant[e['variant']]['broken'] += 1
     fixed = []

@@ -49,6 +49,36 @@ def _aPlacedProduct():
     raise AssertionError('the library is empty')
 
 
+import contextlib
+
+
+@contextlib.contextmanager
+def _outOfTheCatalogue(productId):
+    """The catalogue without *productId* while the block runs - the state a
+    first load leaves when the file it was loaded from lacked a product the
+    library named. Written straight to the store, because the catalogue's
+    own withdraw is refused while a sleeve holds the product (D165)."""
+    conn = sleeveRepo.connection()
+    try:
+        conn.execute("UPDATE products SET withdrawnAt = '2026-01-01T00:00:00', withdrawnBy = "
+                     "'test' WHERE productId = ?", (productId,))
+        conn.commit()
+    finally:
+        conn.close()
+    products.reload()
+    try:
+        yield
+    finally:
+        conn = sleeveRepo.connection()
+        try:
+            conn.execute("UPDATE products SET withdrawnAt = '', withdrawnBy = '' WHERE productId = ?",
+                         (productId,))
+            conn.commit()
+        finally:
+            conn.close()
+        products.reload()
+
+
 def _seedRows():
     """The delivered seed in the interchange shape - the seed predates
     editions, so every row is a fallback (edition '') (D89)."""
@@ -78,7 +108,7 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p
-        assert p['feeGroup'] in fees.FEE_GROUPS
+        assert p['feeGroup'] in fees.feeGroups()
         assert p['productCost'] >= 0
     sma = products.get('gsam-core-municipal-sma')
     assert sma['ticker'] == '—'
@@ -87,43 +117,40 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     assert isinstance(sma['distributionYield'], float) and sma['minimumInvestment'] == 5_000_000.0
     # and the share class, a word from a closed pair or None (D81)
     assert {p['shareClass'] for p in rows} <= set(products.SHARE_CLASSES) | {None}
-    assert sma['shareClass'] == 'Dis'
+    assert sma['shareClass'] == 'Distributing'
     assert products.get('gs-access-ig-corporate-etf')['minimumInvestment'] is None
     assert products.get('nope') is None and not products.has('nope')
     assert products.describeSource()['products'] == 73
 
 
-def test_an_extract_without_the_optional_figures_still_loads(tmp_path, monkeypatch):
+def test_an_extract_without_the_optional_figures_still_loads(tmp_path):
     """The two figures are optional in the file (D63): a delivery from before
-    they existed loads, and serves them as None rather than refusing."""
+    they existed loads, and reads them as None rather than refusing - read
+    the way the first load and an import read a file (D165)."""
     with open(CATALOGUE, newline='', encoding='utf-8') as fh:
         rows = list(csv.reader(fh))
     keep = [i for i, h in enumerate(rows[0]) if h not in ('DistributionYield', 'MinimumInvestment')]
     path = tmp_path / 'products.csv'
     with open(path, 'w', newline='', encoding='utf-8') as fh:
         csv.writer(fh).writerows([[r[i] for i in keep] for r in rows])
-    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
-    products.reload()
-    try:
-        p = products.get('gsam-core-municipal-sma')
-        assert p['distributionYield'] is None and p['minimumInvestment'] is None
-        assert len(products.all()) == 73
-    finally:
-        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
-        products.reload()
+    byId, order = products.readFile(str(path))
+    p = byId['gsam-core-municipal-sma']
+    assert p['distributionYield'] is None and p['minimumInvestment'] is None
+    assert len(order) == 73
 
 
 @pytest.mark.parametrize('bad, message', [
     ('FeeGroup', 'fee group'),
     ('ProductCost', 'not a number'),
-    ('ProductId', 'duplicate'),
+    ('ProductId', 'already on row'),
     ('DistributionYield', 'not a number'),
     ('MinimumInvestment', 'negative'),
 ])
-def test_catalogue_rejects_a_bad_extract_at_load(tmp_path, monkeypatch, bad, message):
+def test_catalogue_rejects_a_bad_extract_at_load(tmp_path, bad, message):
     """A wrong fee group would otherwise fail at export under RDR; a bad
     cost or a repeated id would corrupt every sleeve that used it. All are
-    refused before anything is served."""
+    refused, naming the row, before anything is loaded - the first load and
+    every import read a file this way (D165)."""
     with open(CATALOGUE, newline='', encoding='utf-8') as fh:
         rows = list(csv.reader(fh))
     head, body = rows[0], rows[1:]
@@ -139,15 +166,11 @@ def test_catalogue_rejects_a_bad_extract_at_load(tmp_path, monkeypatch, bad, mes
     path = tmp_path / 'products.csv'
     with open(path, 'w', newline='', encoding='utf-8') as fh:
         csv.writer(fh).writerows([head] + body)
-    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
-    products.reload()
-    try:
-        with pytest.raises(products.BadCatalogue) as exc:
-            products.all()
-        assert message in str(exc.value)
-    finally:
-        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
-        products.reload()
+    with pytest.raises(products.BadCatalogue) as exc:
+        products.readFile(str(path))
+    assert message in str(exc.value)
+    assert 'row ' in str(exc.value), 'the refusal names the row'
+    assert len(products.all()) == 73, 'nothing was loaded from it' 
 
 
 # ---- the seed and the served shape (D57) --------------------------------------
@@ -313,17 +336,8 @@ def test_renaming_onto_an_existing_name_is_refused():
 def test_a_sleeve_whose_product_left_the_catalogue_is_withheld_but_listed(tmp_path, monkeypatch):
     """A new product extract without a product breaks every sleeve holding
     it: gone from the pickers, present in the console with the reason."""
-    with open(CATALOGUE, newline='', encoding='utf-8') as fh:
-        rows = list(csv.reader(fh))
     dropped = _aPlacedProduct()
-    kept = [r for r in rows if r[0] != dropped]
-    assert len(kept) == len(rows) - 1
-    path = tmp_path / 'products.csv'
-    with open(path, 'w', newline='', encoding='utf-8') as fh:
-        csv.writer(fh).writerows(kept)
-    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
-    products.reload()
-    try:
+    with _outOfTheCatalogue(dropped):
         holders = [e for e in sleeveRepo.listAll()
                    if any(p['productId'] == dropped for p in e['products'])]
         assert holders, 'the fixture product is in at least one sleeve'
@@ -331,9 +345,6 @@ def test_a_sleeve_whose_product_left_the_catalogue_is_withheld_but_listed(tmp_pa
             assert any(dropped in problem for problem in e['problems'])
             assert not sleeves.sleeveExists(e['category'], e['name'], e['variant'])
         assert len(sleeveRepo.census()['broken']) == len(holders)
-    finally:
-        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
-        products.reload()
     assert sleeveRepo.census()['broken'] == []
 
 
@@ -414,6 +425,11 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/sleeves', ('POST',)),
         ('/scenario/repository/sleeves/{sleeveId}', ('PUT',)),
         ('/scenario/repository/sleeves/{sleeveId}', ('DELETE',)),
+        ('/scenario/repository/sleeves/{sleeveId}/offered', ('POST',)),
+        # the custom portfolios waiting for approval (D171)
+        ('/scenario/repository/custom-portfolios/awaiting', ('GET',)),
+        # the one switch for PWAs (D172)
+        ('/scenario/repository/custom-access', ('POST',)),
         ('/scenario/repository/sleeves/{sleeveId}/history', ('GET',)),
         ('/scenario/repository/sleeves/{sleeveId}/restore', ('POST',)),
         ('/scenario/repository/sleeves/{sleeveId}/revert', ('POST',)),
@@ -441,6 +457,24 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/overlays/remove', ('POST',)),
         ('/scenario/repository/overlays/history', ('GET',)),
         ('/scenario/repository/overlays/revert', ('POST',)),
+        # the product catalogue (D165)
+        ('/scenario/repository/products', ('POST',)),
+        ('/scenario/repository/products', ('PUT',)),
+        ('/scenario/repository/products/withdraw', ('POST',)),
+        ('/scenario/repository/products/restore', ('POST',)),
+        ('/scenario/repository/products/revert', ('POST',)),
+        ('/scenario/repository/products/history', ('GET',)),
+        ('/scenario/repository/products/import/preview', ('POST',)),
+        ('/scenario/repository/products/import', ('POST',)),
+        ('/scenario/repository/products.csv', ('GET',)),
+        # the fee card (D166)
+        ('/scenario/repository/fees', ('GET',)),
+        ('/scenario/repository/fees', ('PUT',)),
+        ('/scenario/repository/fees/history', ('GET',)),
+        ('/scenario/repository/fees/revert', ('POST',)),
+        ('/scenario/repository/fees/import/preview', ('POST',)),
+        ('/scenario/repository/fees/import', ('POST',)),
+        ('/scenario/repository/fees.csv', ('GET',)),
     }
     for key, names in found.items():
         assert 'requireAdmin' in names, key
@@ -489,15 +523,7 @@ def test_a_dropped_product_is_reported_by_product_with_the_sleeves_it_breaks(tmp
     """The other side of a broken sleeve: gathered by product, which is the
     question the catalogue view answers, and printed by the census."""
     dropped = _aPlacedProduct()
-    with open(CATALOGUE, newline='', encoding='utf-8') as fh:
-        rows = list(csv.reader(fh))
-    kept = [r for r in rows if r[0] != dropped]
-    path = tmp_path / 'products.csv'
-    with open(path, 'w', newline='', encoding='utf-8') as fh:
-        csv.writer(fh).writerows(kept)
-    monkeypatch.setenv('SCENARIO_PRODUCTS_SOURCE', str(path))
-    products.reload()
-    try:
+    with _outOfTheCatalogue(dropped):
         orphans = sleeveRepo.orphanProducts()
         assert [o['productId'] for o in orphans] == [dropped]
         breaks = orphans[0]['sleeves']
@@ -507,9 +533,6 @@ def test_a_dropped_product_is_reported_by_product_with_the_sleeves_it_breaks(tmp
         assert sleeveTools.main(['--census']) == 1
         out = capsys.readouterr().out
         assert 'NOT IN THE CATALOGUE (1)' in out and dropped in out
-    finally:
-        monkeypatch.delenv('SCENARIO_PRODUCTS_SOURCE')
-        products.reload()
 
 
 def test_catalogue_helpers_mirror_the_rules_they_implement():

@@ -107,7 +107,7 @@ def test_a_version_four_store_gains_the_stamps_from_its_history(tmp_path, monkey
                      (rev, action, V, C, json.dumps([[A, 1.0]]), at))
     conn.commit(); conn.close()
 
-    assert sleeveRepo.describe()['schemaVersion'] == 6          # and the overlays' (D155)
+    assert sleeveRepo.describe()['schemaVersion'] == 8          # the overlays' (D155), the catalogue's (D165), the switch (D169)
     old = sleeveRepo.getSleeve(3)
     assert old['firstCreatedAt'] == '2026-01-01T00:00:00Z'
     assert old['createdAt'] == '2026-02-01T00:00:00Z', 'the last save that changed it, not the restore'

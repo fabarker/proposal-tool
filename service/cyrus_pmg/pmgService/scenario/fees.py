@@ -12,21 +12,25 @@ from four inputs at pricing time:
                    e.g. 'PMG Target'.
   fee group        the product's group under RDR; ignored under CASP.
 
-WHERE THE DATA LIVES (D55). The rate card is DELIVERED by another team and
-read from a long CSV at SCENARIO_FEES_SOURCE - one row per cell, every
+WHERE THE DATA LIVES (D55, D166). The rate card - every rate, at every
+tier, for every schedule and, under RDR, every fee group - is kept in the
+repository's own database and maintained from the console's Fees tab
+(feeCard.py): one version in force, every earlier one on the record. It was
+delivered as a long CSV at SCENARIO_FEES_SOURCE - one row per cell, every
 coordinate stated: schedule, feeGroup, tier, tierMin, tierMax, source, point,
-rate. The tiers and the fee groups are derived from those rows, the way the
-strategic selectors derive from portfolio names (D54), so nothing here is a
-list that can drift from the delivery. fees.json beside this module holds only
-what is not the delivering team's to say - the schedules, the level vocabulary
-in its order (which a row cannot supply), the default level, the placeholder
-flag - and the delivery's provenance.
+rate - and that file is what the card is loaded from once, on the first open
+after the upgrade, and the shape an import or an export takes. The tiers and
+the fee groups are derived from the card, so nothing here is a list that can
+drift from it. fees.json beside this module holds only what is not the card's
+to say - the schedules, the level vocabulary in its order (which a row cannot
+supply), the default level, the placeholder flag of the packaged card - and
+the packaged card's provenance.
 
-The card is READ ONLY in the service: it is what the delivering team sent, and
-it changes by delivery, never by hand. feeTools --diff shows what a candidate
-would move and --accept puts it in place; the service reads it at import, so a
-new card is a restart, as a new strategic universe is. The UI shows the card
-and cannot edit it.
+The card is read here, never written: a change is a new version, saved
+through feeCard's checks, and reaches the next price without a restart. The
+reads are kept in memory against the repository file's stamp, so pricing
+costs what it always did; each public entry point below takes the card once
+and prices from that one snapshot, so one answer never mixes two versions.
 
 Rates are annual management fees in percent (0.30 means 0.30%), the same unit
 as productCost, so cost + fee is the all-in rate and the workbook's
@@ -41,6 +45,7 @@ scenario; this module only names it.
 from __future__ import annotations
 
 import csv
+import io
 import json
 import os
 from numbers import Real
@@ -61,11 +66,12 @@ def levelId(source: str, point: str) -> str:
 
 
 def tierLabel(low, high) -> str:
-    """'Under $10m', '$10m – $25m', '$100m and up' - presentation, derived."""
+    """'Under $10m', '$10m – $25m', '$100m and up' - presentation, derived;
+    a card of one tier covers every account size."""
     def m(v):
         return '${:g}m'.format(v / 1e6)
     if low <= 0:
-        return 'Under {}'.format(m(high))
+        return 'Every account size' if high is None else 'Under {}'.format(m(high))
     if high is None:
         return '{} and up'.format(m(low))
     return '{} – {}'.format(m(low), m(high))
@@ -75,13 +81,15 @@ class BadRateCard(ValueError):
     """The delivered card is not one this framework can price from."""
 
 
-def _readDelivery(path: str) -> dict:
-    """The delivered rows -> cells, tiers, fee groups. Rejects, never guesses."""
+def _readDelivery(path: str, text: str = None) -> dict:
+    """The delivered rows -> cells, tiers, fee groups. Rejects, never guesses.
+    *text*, when given, is the file's content (an upload named *path*)."""
     cells, tiers, groups = {}, {}, []
     # utf-8-sig transparently drops a BOM if the delivery was saved from Excel
     # or similar; without it the first field name is '\ufeffschedule' and the
     # column check below rejects a card whose header actually reads 'schedule'.
-    with open(path, newline='', encoding='utf-8-sig') as fh:
+    with (io.StringIO(text, newline='') if text is not None
+          else open(path, newline='', encoding='utf-8-sig')) as fh:
         reader = csv.DictReader(fh)
         need = {'schedule', 'feeGroup', 'tier', 'tierMin', 'tierMax', 'source', 'point', 'rate'}
         if not need.issubset(set(reader.fieldnames or [])):
@@ -134,8 +142,10 @@ def _readDelivery(path: str) -> dict:
 
 
 _CONFIG = json.load(open(_CONFIG_PATH, encoding='utf-8'))
-_DELIVERED = _readDelivery(ratesPath())
 
+#: whether the PACKAGED card is a placeholder (fees.json). The card in force
+#: carries its own flag: the seed takes this one, and a card an admin saves or
+#: imports is theirs, not a placeholder.
 PLACEHOLDER = bool(_CONFIG.get('placeholder'))
 SCHEDULES = [s['id'] for s in _CONFIG['schedules']]
 SCHEDULE_NOTES = {s['id']: s['note'] for s in _CONFIG['schedules']}
@@ -153,9 +163,30 @@ DEFAULT_LEVEL = _CONFIG['defaultLevel']
 _CUSTOM = dict(_CONFIG.get('custom') or {})
 CUSTOM_LEVEL = str(_CUSTOM.get('level') or 'Custom')
 CUSTOM_BOUNDS_SOURCE = str(_CUSTOM.get('boundsSource') or SOURCES[0])
-TIERS = [dict(t) for t in _DELIVERED['tiers']]
-FEE_GROUPS = list(_DELIVERED['feeGroups'])
-DELIVERY = dict(_CONFIG.get('delivery') or {})
+
+
+def _card(card=None) -> dict:
+    """The card in force: {cells, tiers, feeGroups, revision, ...}, from
+    memory while the repository's file has not moved (feeCard.current). A
+    caller that already holds one passes it straight through."""
+    if card is not None:
+        return card
+    from . import feeCard
+    return feeCard.current()
+
+
+def tiers(card=None) -> list:
+    """The account-size tiers, lowest first: {id, label, min, max}."""
+    return [dict(t) for t in _card(card)['tiers']]
+
+
+def feeGroups(card=None) -> list:
+    """The fee groups the card prices, in its order."""
+    return list(_card(card)['feeGroups'])
+
+
+def isPlaceholder(card=None) -> bool:
+    return bool(_card(card)['placeholder'])
 
 
 def splitLevel(level: str) -> tuple:
@@ -166,7 +197,7 @@ def splitLevel(level: str) -> tuple:
     return source, point
 
 
-def tierFor(topAccountSize) -> dict:
+def tierFor(topAccountSize, card=None) -> dict:
     """The account-size tier containing *topAccountSize* (half-open [min, max)).
 
     ValueError for a missing, non-numeric or negative size; a tier is a
@@ -176,7 +207,7 @@ def tierFor(topAccountSize) -> dict:
         raise ValueError('Top account size must be a number, got {!r}'.format(topAccountSize))
     if topAccountSize < 0:
         raise ValueError('Top account size cannot be negative: {!r}'.format(topAccountSize))
-    for tier in TIERS:
+    for tier in _card(card)['tiers']:
         if tier['min'] <= topAccountSize and (tier['max'] is None or topAccountSize < tier['max']):
             return dict(tier)
     raise ValueError('No account-size tier covers {!r}'.format(topAccountSize))
@@ -204,20 +235,20 @@ def isMarginal(schedule: str) -> bool:
 
 # ------------------------------------------- marginal pricing (D83) --------
 
-def marginalBands(amount) -> list:
+def marginalBands(amount, card=None) -> list:
     """How *amount* fills the tier ladder: one entry per band it reaches.
 
     Each carries the tier it belongs to, the band's own edges and the money in
-    it. The bands always cover [0, amount] exactly, because the card reader
-    refuses tiers that are not contiguous from zero with an open top
-    (`_assertWellFormed`), so the blend below never divides by a partial fill.
+    it. The bands always cover [0, amount] exactly, because a card is refused
+    unless its tiers are contiguous from zero with an open top (checkCard),
+    so the blend below never divides by a partial fill.
     """
     if isinstance(amount, bool) or not isinstance(amount, Real):
         raise ValueError('The amount must be a number, got {!r}'.format(amount))
     if amount <= 0:
         raise ValueError('The amount must be above zero, got {!r}'.format(amount))
     bands, filled = [], 0.0
-    for tier in TIERS:
+    for tier in _card(card)['tiers']:
         low = tier['min']
         high = amount if tier['max'] is None else min(float(tier['max']), float(amount))
         if high <= low:
@@ -234,7 +265,7 @@ def marginalBands(amount) -> list:
     return bands
 
 
-def effectiveRate(schedule: str, amount, level: str, feeGroup: str = None) -> float:
+def effectiveRate(schedule: str, amount, level: str, feeGroup: str = None, card=None) -> float:
     """The blended rate *amount* pays across the ladder, in percent (D83).
 
     Money in each band pays that band's tier rate; the blend is the total
@@ -244,61 +275,65 @@ def effectiveRate(schedule: str, amount, level: str, feeGroup: str = None) -> fl
     if not isMarginal(schedule):
         raise KeyError('{} is not priced marginally; read its tier rate '
                        'with managementFee()'.format(schedule))
+    card = _card(card)
     source, point = splitLevel(level)
     group = feeGroup if byGroup(schedule) else None
-    if byGroup(schedule) and group not in FEE_GROUPS:
+    if byGroup(schedule) and group not in card['feeGroups']:
         raise KeyError('Unknown fee group: {!r}'.format(feeGroup))
-    paid = sum(band['amount'] * _rate(schedule, group, band['tier'], source, point)
-               for band in marginalBands(amount))
+    paid = sum(band['amount'] * _rate(schedule, group, band['tier'], source, point, card)
+               for band in marginalBands(amount, card))
     return paid / float(amount)
 
 
-def marginalPayload(schedule: str, amount, feeGroup: str = None) -> dict:
+def marginalPayload(schedule: str, amount, feeGroup: str = None, card=None) -> dict:
     """The build-up behind a marginal blend: the bands, and the blended rate
     at every level. What the API serves and what a reader checks a number
     against."""
-    bands = marginalBands(amount)
+    card = _card(card)
+    bands = marginalBands(amount, card)
     source = {}
     for band in bands:
         source[band['tier']] = {level: _rate(schedule, None if not byGroup(schedule) else feeGroup,
-                                             band['tier'], *splitLevel(level))
+                                             band['tier'], *splitLevel(level), card=card)
                                 for level in LEVELS}
     return {
         'schedule': schedule,
         'amount': float(amount),
         'bands': [dict(band, rates=source[band['tier']]) for band in bands],
-        'effective': {level: effectiveRate(schedule, amount, level, feeGroup)
+        'effective': {level: effectiveRate(schedule, amount, level, feeGroup, card)
                       for level in LEVELS},
     }
 
 
 # ------------------------------------------------ the rates ---------------
 
-def _rate(schedule, group, tier, source, point) -> float:
+def _rate(schedule, group, tier, source, point, card=None) -> float:
     try:
-        return float(_DELIVERED['cells'][(schedule, group, tier, source, point)])
+        return float(_card(card)['cells'][(schedule, group, tier, source, point)])
     except KeyError:
         raise KeyError('No rate for {} {} {} {} {}'.format(schedule, group, tier, source, point))
 
 
-def managementFee(schedule: str, topAccountSize, level: str, feeGroup: str = None) -> float:
+def managementFee(schedule: str, topAccountSize, level: str, feeGroup: str = None,
+                  card=None) -> float:
     """The annual management fee, in percent, for one product.
 
     Under CASP the fee group is ignored; under RDR it is required and must be
-    one of FEE_GROUPS. Unknown inputs raise (KeyError for a schedule, level or
-    group; ValueError for the account size).
+    one of the card's fee groups. Unknown inputs raise (KeyError for a
+    schedule, level or group; ValueError for the account size).
     """
-    tierId = tierFor(topAccountSize)['id']
+    card = _card(card)
+    tierId = tierFor(topAccountSize, card)['id']
     source, point = splitLevel(level)
     if not byGroup(schedule):
-        return _rate(schedule, None, tierId, source, point)
-    if feeGroup not in FEE_GROUPS:
+        return _rate(schedule, None, tierId, source, point, card)
+    if feeGroup not in card['feeGroups']:
         raise KeyError('Unknown fee group: {!r}'.format(feeGroup))
-    return _rate(schedule, feeGroup, tierId, source, point)
+    return _rate(schedule, feeGroup, tierId, source, point, card)
 
 
 def productFee(schedule: str, level: str, feeGroup, topAccountSize, mandateSize,
-               customFees=None):
+               customFees=None, card=None):
     """What one product's management fee is, whichever way its schedule prices.
 
     The one entry point the implementation model uses, because the two
@@ -313,8 +348,8 @@ def productFee(schedule: str, level: str, feeGroup, topAccountSize, mandateSize,
         return customRate(customFees, schedule, feeGroup if byGroup(schedule) else None)
     if isMarginal(schedule):
         return effectiveRate(schedule, mandateSize, level,
-                             feeGroup if byGroup(schedule) else None)
-    return managementFee(schedule, topAccountSize, level, feeGroup)
+                             feeGroup if byGroup(schedule) else None, card)
+    return managementFee(schedule, topAccountSize, level, feeGroup, card)
 
 
 # ------------------------------------------------ custom rates (D96) -------
@@ -324,13 +359,13 @@ def isCustom(level) -> bool:
     return level == CUSTOM_LEVEL
 
 
-def customRows(schedule: str) -> list:
+def customRows(schedule: str, card=None) -> list:
     """The rows a custom column has under *schedule*: [None] for a uniform
     schedule, the fee groups for a grouped one."""
-    return list(FEE_GROUPS) if byGroup(schedule) else [None]
+    return feeGroups(card) if byGroup(schedule) else [None]
 
 
-def customBounds(schedule: str, topAccountSize, mandateSize, feeGroup=None) -> tuple:
+def customBounds(schedule: str, topAccountSize, mandateSize, feeGroup=None, card=None) -> tuple:
     """(floor, ceiling) a custom rate may take on one row, in percent.
 
     The bounding source's first and last points, priced the way the schedule
@@ -338,14 +373,15 @@ def customBounds(schedule: str, topAccountSize, mandateSize, feeGroup=None) -> t
     account size's tier under a flat one. So the room a PWA has is the room
     the card gives that source, at this mandate, on that row.
     """
+    card = _card(card)
     low = levelId(CUSTOM_BOUNDS_SOURCE, POINTS[0])
     high = levelId(CUSTOM_BOUNDS_SOURCE, POINTS[-1])
     group = feeGroup if byGroup(schedule) else None
     if isMarginal(schedule):
-        return (effectiveRate(schedule, mandateSize, low, group),
-                effectiveRate(schedule, mandateSize, high, group))
-    return (managementFee(schedule, topAccountSize, low, group),
-            managementFee(schedule, topAccountSize, high, group))
+        return (effectiveRate(schedule, mandateSize, low, group, card),
+                effectiveRate(schedule, mandateSize, high, group, card))
+    return (managementFee(schedule, topAccountSize, low, group, card),
+            managementFee(schedule, topAccountSize, high, group, card))
 
 
 def customRate(customFees, schedule: str, feeGroup=None):
@@ -365,7 +401,7 @@ def customRate(customFees, schedule: str, feeGroup=None):
     return float(value)
 
 
-def ratesAtTier(tierId: str) -> dict:
+def ratesAtTier(tierId: str, card=None) -> dict:
     """Both schedules' rates at one tier, flattened to level ids.
 
     Shape: {schedule: {'byGroup': bool, 'levels': {level: rate}}} for a
@@ -373,27 +409,34 @@ def ratesAtTier(tierId: str) -> dict:
     {level: rate}}}} for a grouped one. The client's mirror resolver reads
     exactly this and never learns the schedule names.
     """
+    card = _card(card)
+
     def flatten(group):
-        return {levelId(s, p): _rate(schedule, group, tierId, s, p)
+        return {levelId(s, p): _rate(schedule, group, tierId, s, p, card)
                 for s in SOURCES for p in POINTS}
 
     out = {}
     for schedule in SCHEDULES:
         if byGroup(schedule):
-            out[schedule] = {'byGroup': True, 'groups': {g: flatten(g) for g in FEE_GROUPS}}
+            out[schedule] = {'byGroup': True,
+                             'groups': {g: flatten(g) for g in card['feeGroups']}}
         else:
             out[schedule] = {'byGroup': False, 'levels': flatten(None)}
     return out
 
 
-def deliveryInfo() -> dict:
-    """Provenance of the delivered card, for describe() and the workbook."""
-    info = dict(DELIVERY)
-    info.update(path=ratesPath(), cells=_DELIVERED['rows'], placeholder=PLACEHOLDER)
-    return info
+def deliveryInfo(card=None) -> dict:
+    """Which card is in force, for describe(), the workbook and the viewers:
+    its version, when it was last edited and by whom, where it came from,
+    and whether it is the packaged placeholder."""
+    card = _card(card)
+    return {'version': 'Version {}'.format(card['revision']), 'revision': card['revision'],
+            'lastEditedAt': card['lastEditedAt'], 'lastEditedBy': card['lastEditedBy'],
+            'source': card['source'], 'cells': len(card['cells']),
+            'placeholder': bool(card['placeholder'])}
 
 
-def ratesFor(topAccountSize=None, mandateSize=None) -> dict:
+def ratesFor(topAccountSize=None, mandateSize=None, card=None) -> dict:
     """The rates the client prices with - the same shape as `ratesAtTier`.
 
     A marginal schedule's numbers are ALREADY BLENDED here (D83), so the
@@ -403,7 +446,8 @@ def ratesFor(topAccountSize=None, mandateSize=None) -> dict:
     has nothing to blend, and without a top account size a flat one has no
     tier; that schedule is then absent and the client shows it unpriced.
     """
-    tier = tierFor(topAccountSize) if topAccountSize is not None else None
+    card = _card(card)
+    tier = tierFor(topAccountSize, card) if topAccountSize is not None else None
     out = {}
     for schedule in SCHEDULES:
         if isMarginal(schedule):
@@ -411,13 +455,14 @@ def ratesFor(topAccountSize=None, mandateSize=None) -> dict:
                 continue
             if byGroup(schedule):
                 out[schedule] = {'byGroup': True, 'marginal': True, 'groups': {
-                    g: {level: effectiveRate(schedule, mandateSize, level, g)
-                        for level in LEVELS} for g in FEE_GROUPS}}
+                    g: {level: effectiveRate(schedule, mandateSize, level, g, card)
+                        for level in LEVELS} for g in card['feeGroups']}}
             else:
                 out[schedule] = {'byGroup': False, 'marginal': True, 'levels': {
-                    level: effectiveRate(schedule, mandateSize, level) for level in LEVELS}}
+                    level: effectiveRate(schedule, mandateSize, level, card=card)
+                    for level in LEVELS}}
         elif tier is not None:
-            out[schedule] = dict(ratesAtTier(tier['id'])[schedule], marginal=False)
+            out[schedule] = dict(ratesAtTier(tier['id'], card)[schedule], marginal=False)
     return out or None
 
 
@@ -428,11 +473,13 @@ def feePayload(topAccountSize=None, mandateSize=None) -> dict:
     marginal blend; a schedule that cannot be priced is simply absent from
     `rates` and the client shows its fee columns unpriced.
     """
-    tier = tierFor(topAccountSize) if topAccountSize is not None else None
-    marginal = {s: marginalPayload(s, mandateSize) for s in SCHEDULES
+    card = _card()
+    tier = tierFor(topAccountSize, card) if topAccountSize is not None else None
+    marginal = {s: marginalPayload(s, mandateSize, card=card) for s in SCHEDULES
                 if isMarginal(s) and not byGroup(s) and mandateSize and mandateSize > 0}
+    info = deliveryInfo(card)
     return {
-        'placeholder': PLACEHOLDER,
+        'placeholder': info['placeholder'],
         'schedules': [{'id': s, 'note': SCHEDULE_NOTES[s], 'byGroup': byGroup(s),
                        'marginal': isMarginal(s)} for s in SCHEDULES],
         'marginal': marginal or None,
@@ -444,11 +491,11 @@ def feePayload(topAccountSize=None, mandateSize=None) -> dict:
         'customBounds': {'source': CUSTOM_BOUNDS_SOURCE,
                          'floor': levelId(CUSTOM_BOUNDS_SOURCE, POINTS[0]),
                          'ceiling': levelId(CUSTOM_BOUNDS_SOURCE, POINTS[-1])},
-        'feeGroups': FEE_GROUPS,
-        'tiers': [dict(t) for t in TIERS],
+        'feeGroups': list(card['feeGroups']),
+        'tiers': [dict(t) for t in card['tiers']],
         'tier': tier,
-        'rates': ratesFor(topAccountSize, mandateSize),
-        'delivery': {k: DELIVERY.get(k) for k in ('source', 'version', 'asOf')},
+        'rates': ratesFor(topAccountSize, mandateSize, card),
+        'delivery': {k: info[k] for k in ('version', 'revision', 'lastEditedAt', 'lastEditedBy')},
     }
 
 
@@ -458,31 +505,33 @@ def card() -> dict:
     """Every cell at every tier, flat. The viewer pivots this in the client -
     by tier (a tier's fee groups) or by fee group (a group's tier ladder) -
     so flipping the axes is not a round trip. 180 cells is a small payload."""
+    held = _card()
     groups = []
     for schedule in SCHEDULES:
-        for group in ([None] if not byGroup(schedule) else FEE_GROUPS):
+        for group in ([None] if not byGroup(schedule) else held['feeGroups']):
             groups.append({'schedule': schedule, 'feeGroup': group})
     cells = {'|'.join([k[0], k[1] or '', k[2], k[3], k[4]]): float(v)
-             for k, v in _DELIVERED['cells'].items()}
-    return {'tiers': [dict(t) for t in TIERS], 'groups': groups,
+             for k, v in held['cells'].items()}
+    return {'tiers': [dict(t) for t in held['tiers']], 'groups': groups,
             'levels': list(LEVELS), 'sources': SOURCES, 'points': POINTS,
-            'cells': cells, 'delivery': deliveryInfo()}
+            'cells': cells, 'delivery': deliveryInfo(held)}
 
 
 def grid(tierId: str) -> dict:
     """Every cell at one tier: a row per schedule and fee group, a column per
     level."""
-    if tierId not in {t['id'] for t in TIERS}:
+    held = _card()
+    if tierId not in {t['id'] for t in held['tiers']}:
         raise KeyError('Unknown tier: {!r}'.format(tierId))
     rows = []
     for schedule in SCHEDULES:
-        for group in ([None] if not byGroup(schedule) else FEE_GROUPS):
+        for group in ([None] if not byGroup(schedule) else held['feeGroups']):
             rows.append({'schedule': schedule, 'feeGroup': group,
-                         'cells': {levelId(s, p): _rate(schedule, group, tierId, s, p)
+                         'cells': {levelId(s, p): _rate(schedule, group, tierId, s, p, held)
                                    for s in SOURCES for p in POINTS}})
-    return {'tier': dict(next(t for t in TIERS if t['id'] == tierId)),
+    return {'tier': dict(next(t for t in held['tiers'] if t['id'] == tierId)),
             'levels': list(LEVELS), 'sources': SOURCES, 'points': POINTS,
-            'rows': rows, 'delivery': deliveryInfo()}
+            'rows': rows, 'delivery': deliveryInfo(held)}
 
 
 def _checkBands(cells, touched) -> None:
@@ -495,36 +544,39 @@ def _checkBands(cells, touched) -> None:
                 where, ' / '.join('{:g}'.format(x) for x in band)))
 
 
-# ------------------------------------------------ the delivery, checked ----
+# ------------------------------------------------ a card, checked ----------
 
-def _assertWellFormed() -> None:
-    """Fail at import if the card is inconsistent.
-
-    Exactly two schedules, one uniform and one grouped; the level vocabulary
-    complete; tiers contiguous from zero and open at the top; every cell the
-    framework will ever ask for present; and at every cell floor <= target
-    <= ceiling, since a level is a point on a band and a band that crosses
-    itself is a data error.
-    """
+def checkConfig() -> None:
+    """Fail at import if fees.json cannot describe a card: exactly two
+    schedules, one uniform and one grouped; the default level a level; the
+    points including the three a band is made of."""
     if sorted(_BY_GROUP.values()) != [False, True]:
         raise BadRateCard('fees.json must describe one uniform and one grouped schedule')
     if DEFAULT_LEVEL not in LEVELS:
         raise BadRateCard('defaultLevel {!r} is not a level'.format(DEFAULT_LEVEL))
     if {'Floor', 'Target', 'Ceiling'} - set(POINTS):
         raise BadRateCard('points must include Floor, Target and Ceiling')
-    if not TIERS or TIERS[0]['min'] != 0 or TIERS[-1]['max'] is not None:
+
+
+def checkCard(tierList, groups, cells) -> None:
+    """Refuse a card the framework cannot price from - the check a delivery
+    always had, now made of every version before it is stored: tiers
+    contiguous from zero and open at the top; at least one fee group; every
+    cell the framework will ever ask for present; at every cell floor <=
+    target <= ceiling, since a level is a point on a band and a band that
+    crosses itself is a data error; and nothing outside the vocabulary."""
+    if not tierList or tierList[0]['min'] != 0 or tierList[-1]['max'] is not None:
         raise BadRateCard('tiers must start at 0 and the last must be open-ended')
-    for earlier, later in zip(TIERS, TIERS[1:]):
+    for earlier, later in zip(tierList, tierList[1:]):
         if earlier['max'] is None or earlier['max'] != later['min']:
             raise BadRateCard('tiers {} and {} are not contiguous'.format(earlier['id'], later['id']))
         if earlier['max'] <= earlier['min']:
             raise BadRateCard('tier {} is empty'.format(earlier['id']))
-    if not FEE_GROUPS:
+    if not groups:
         raise BadRateCard('the card names no fee group')
-    cells = _DELIVERED['cells']
     for schedule in SCHEDULES:
-        for group in ([None] if not byGroup(schedule) else FEE_GROUPS):
-            for tier in TIERS:
+        for group in ([None] if not byGroup(schedule) else groups):
+            for tier in tierList:
                 for source in SOURCES:
                     for point in POINTS:
                         if (schedule, group, tier['id'], source, point) not in cells:
@@ -537,4 +589,4 @@ def _assertWellFormed() -> None:
         raise BadRateCard('rows outside the framework vocabulary: {}'.format(sorted(stray)[:3]))
 
 
-_assertWellFormed()
+checkConfig()

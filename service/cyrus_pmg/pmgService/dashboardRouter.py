@@ -28,8 +28,11 @@ from fastapi.responses import JSONResponse
 
 from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
-from cyrus_pmg.pmgService.scenario import (accountRequests, fees, fundingSplit, overlayRules,
-                                           products, proposalRegister, scenarioStore,
+from cyrus_pmg.pmgService.scenario import (accountRequests, customAccess, customPortfolio,
+                                           customSleeves, feeCard, fees,
+                                           fundingSplit, overlayRules, products,
+                                           otherCharges as _otherCharges,
+                                           proposalRegister, repositoryFeed, scenarioStore,
                                            sleeveRepo, sleeveRules)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
@@ -79,8 +82,9 @@ except Exception:                                     # noqa: BLE001 - reported 
 
 
 def _validationError(exc: ValidationError):
-    # a sleeve saved by someone else since the editor opened it (D156)
-    if isinstance(exc, sleeveRepo.StaleError):
+    # a sleeve, a product or the fee card saved by someone else since the
+    # editor opened it (D156, D165, D166)
+    if isinstance(exc, (sleeveRepo.StaleError, products.StaleError, feeCard.StaleError)):
         return JSONResponse(status_code=409, content={'error': exc.message, 'field': exc.field})
     return JSONResponse(status_code=422,
                         content={'error': exc.message, 'field': exc.field})
@@ -124,6 +128,12 @@ def _scenarioPayload(state: dict) -> dict:
         'feeSchedule': state.get('feeSchedule'),
         'feeLevel': state.get('feeLevel'),
         'customFees': state.get('customFees') or {},
+        # the charges the PWA quotes beside the fees (D177)
+        'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
+        # the proposal's own sleeves, by the name they are chosen under (D170)
+        'customSleeves': state.get('customSleeves') or {},
+        # a proposal built product by product, and whether it is in force (D171)
+        'customPortfolio': state.get('customPortfolio') or None,
     }
 
 
@@ -171,6 +181,18 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
         options = dict(schema.get('options') or {})
         options['accountRequest'] = accountRequests.options()
         schema['options'] = options
+        # Where this caller may build a custom sleeve (D170): every category
+        # a sleeve is picked for, for an admin always and for a PWA while an
+        # admin has opened the custom workflows to PWAs (D172); otherwise none.
+        # The server checks again on every save.
+        settings = customSleeves.describe()
+        schema['customSleeves'] = {
+            'mayBuild': (list(settings['pickable']) if customAccess.may(capabilities['canAdmin'])
+                         else []),
+            'nameMax': settings['nameMax'], 'noteMax': settings['noteMax']}
+        # Under which types this caller may build a custom portfolio, and the
+        # limits a build is checked against (D171). Checked again on save.
+        schema['customPortfolio'] = customPortfolio.forCaller(capabilities['canAdmin'])
         return schema
     except ValidationError as exc:
         return _validationError(exc)
@@ -178,10 +200,52 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
         return _analyticsError(exc)
 
 
+@router.get('/scenario/products')
+def listCategoryProducts(category: str, variant: str = None, caller=Depends(requireAuth)):
+    """The products a custom sleeve in *category* may hold under *variant*
+    (D170): those the category's library sleeves hold under the type, whole
+    as the catalogue has them. Any signed-in user may read it; whether they
+    may build is ``mayBuild``."""
+    try:
+        validateVariant(variant)
+        if category not in sleeveRepo.categories():
+            raise ValidationError('category', 'There is no category {!r}.'.format(category))
+        return {'category': category, 'variant': variant,
+                'products': customSleeves.categoryProducts(category, variant),
+                'mayBuild': customSleeves.mayBuild(category, isAdmin(caller))}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
 # ---- the rate card (D55) ------------------------------------------------
-# Read only: the card is what the delivering team sent, and it changes by
-# delivery (feeTools --accept), never through the service. Static paths,
-# declared before /scenario/{scenarioId} like the others.
+# Read only here, for every PWA: the card is maintained in the repository's
+# Fees tab (D166), whose admin-only calls are below with the repository's.
+# Static paths, declared before /scenario/{scenarioId} like the others.
+
+@router.get('/scenario/custom-portfolio')
+def getCustomPortfolioCatalogue(variant: str = None, currency: str = 'USD',
+                                hedging: str = 'Hedged', caller=Depends(requireAuth)):
+    """What a custom portfolio is built from under *variant* (D171): the
+    products it may hold, each with its category; every line; the type's
+    library sleeves to insert; each risk profile's anchor portfolio and the
+    lines' long-term estimates, for the limits and the figures; and whether
+    this caller may build. Any signed-in user may read it."""
+    try:
+        validateVariant(variant)
+        basis = BasisInput(currency=currency, hedging=hedging)
+        validateBasis(basis)
+        body = customPortfolio.catalogue(variant)
+        body.update(customPortfolio.profiles(getScenarioPort(), basis, variant))
+        body['library'] = customPortfolio.library(variant)
+        body['mayBuild'] = customPortfolio.mayBuild(variant, isAdmin(caller))
+        return body
+    except ValidationError as exc:
+        return _validationError(exc)
+    except AnalyticsError as exc:
+        return _analyticsError(exc)
+
 
 @router.get('/scenario/fees')
 def getFeeCard(tier: str = None, topAccountSize: float = None, whole: bool = False,
@@ -213,6 +277,8 @@ def getFeeCard(tier: str = None, topAccountSize: float = None, whole: bool = Fal
                 raise ValidationError('tier', 'Give a tier id, a top account size, or whole=1.')
             tier = fees.tierFor(topAccountSize)['id']
         return fees.grid(tier)
+    except fees.BadRateCard as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
     except (KeyError, ValueError) as exc:
         return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'tier'})
     except ValidationError as exc:
@@ -290,13 +356,23 @@ def getRepository(caller=Depends(requireAdmin)):
             'sleeves': sleeveRepo.listAll(),
             'archived': sleeveRepo.listArchived(),
             'orphans': sleeveRepo.orphanProducts(),
-            'products': products.all(),
+            # the catalogue with each product's stamps, the products withdrawn
+            # from it, the words its fields are described by and the fee
+            # groups a product may name (D165)
+            'products': products.entries(),
+            'withdrawnProducts': products.entries(withdrawn=True),
+            'productVocabulary': products.vocabulary(),
+            'feeGroups': fees.feeGroups(),
             'catalogue': products.describeSource(),
+            # whether PWAs may enter the custom workflows at all (D172)
+            'customAccess': customAccess.describe(),
             'store': sleeveRepo.describe(),
             'register': proposalRegister.describe(),
             'user': caller.kerberos,
         }
     except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+    except fees.BadRateCard as exc:
         return JSONResponse(status_code=502, content={'error': str(exc)})
 
 
@@ -394,6 +470,36 @@ def deleteRepositorySleeve(sleeveId: int, caller=Depends(requireAdmin)):
         return _validationError(exc)
 
 
+@router.post('/scenario/repository/sleeves/{sleeveId}/offered')
+def offerRepositorySleeve(sleeveId: int, payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Disable a sleeve, or enable it again: {offered: bool} (D169). A
+    disabled sleeve stays in the library and the console, and is not offered
+    to PWAs: the implementation page's picker leaves it out, and a scenario
+    still naming it shows the picker's 'no longer offered' state until a PWA
+    re-picks, as for an archived one. Not a new version of the sleeve."""
+    offered = payload.get('offered')
+    if not isinstance(offered, bool):
+        return _validationError(ValidationError('offered', 'Say whether the sleeve is offered: true or false.'))
+    try:
+        return {'sleeve': sleeveRepo.setOffered(sleeveId, offered, user=caller.kerberos)}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.post('/scenario/repository/custom-access')
+def setCustomAccess(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Open the custom workflows - custom sleeves and custom portfolios - to
+    PWAs, or close them, {open} (D172). Admins enter them either way. Each
+    change is a revision on the record, shown in the Activity tab."""
+    try:
+        customAccess.setPwas(payload.get('open'), user=caller.kerberos)
+        return {'customAccess': customAccess.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
 @router.get('/scenario/repository/sleeves/{sleeveId}/history')
 def getRepositorySleeveHistory(sleeveId: int, caller=Depends(requireAdmin)):
     """Every revision of one sleeve, newest first, each carrying the whole
@@ -418,10 +524,12 @@ def restoreRepositorySleeves(payload: dict = Body(...), caller=Depends(requireAd
 
 
 def _feedFilters(actions: str = '', variant: str = '', category: str = '', actor: str = '',
-                 since: str = '', until: str = '', q: str = '') -> dict:
-    """The feed's query string, as the repository's keyword arguments. Actions
-    arrive comma-joined because a chip set is one parameter, not a list."""
+                 since: str = '', until: str = '', q: str = '', areas: str = '') -> dict:
+    """The feed's query string, as the feed's keyword arguments. Actions and
+    areas arrive comma-joined because a chip set is one parameter, not a
+    list."""
     return {
+        'areas': [a for a in (areas or '').split(',') if a],
         'actions': [a for a in (actions or '').split(',') if a],
         'variant': variant or None, 'category': category or None, 'actor': actor or None,
         'since': since or None, 'until': until or None, 'query': q or '',
@@ -431,13 +539,14 @@ def _feedFilters(actions: str = '', variant: str = '', category: str = '', actor
 @router.get('/scenario/repository/activity')
 def getRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
                           actor: str = '', since: str = '', until: str = '', q: str = '',
-                          limit: int = 100, before: str = '',
+                          areas: str = '', limit: int = 100, before: str = '',
                           caller=Depends(requireAdmin)):
-    """A page of the record as a feed (D66): every revision across every
-    sleeve, newest first, with the counts that frame it. `before` is the
+    """A page of the record as a feed (D66, D167): every change to the
+    sleeves, the products, the fee card, the overlay rules and the funding
+    split, newest first, with the counts that frame it. `before` is the
     cursor a previous page handed back as `next`."""
-    filters = _feedFilters(actions, variant, category, actor, since, until, q)
-    return sleeveRepo.activity(limit=limit, before=before or None, **filters)
+    filters = _feedFilters(actions, variant, category, actor, since, until, q, areas)
+    return repositoryFeed.activity(limit=limit, before=before or None, **filters)
 
 
 def _csv(columns, rows, filename: str) -> Response:
@@ -460,11 +569,221 @@ def exportRepositoryArchive(caller=Depends(requireAdmin)):
 @router.get('/scenario/repository/activity.csv')
 def exportRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
                              actor: str = '', since: str = '', until: str = '', q: str = '',
-                             caller=Depends(requireAdmin)):
+                             areas: str = '', caller=Depends(requireAdmin)):
     """The feed under the same filters, every page of it, as a table."""
-    filters = _feedFilters(actions, variant, category, actor, since, until, q)
-    return _csv(sleeveRepo.ACTIVITY_COLUMNS, sleeveRepo.activityRows(**filters),
-                'sleeve-activity.csv')
+    filters = _feedFilters(actions, variant, category, actor, since, until, q, areas)
+    return _csv(repositoryFeed.ACTIVITY_COLUMNS, repositoryFeed.activityRows(**filters),
+                'repository-activity.csv')
+
+
+# ---- the product catalogue (D165) -----------------------------------------
+# Admin only, like the rest of the repository. A product is named in the
+# body rather than the path, because an id is whatever the catalogue was
+# delivered with and may hold a character a path cannot. Every write carries
+# the signed-in admin as its author and comes back as the {error, field}
+# body the page already shows; `base`, the version the editor opened, makes
+# a save over someone else's newer one a 409.
+
+def _catalogueError(exc):
+    return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+def _productAnswer(product):
+    return {'product': product, 'catalogue': products.describeSource()}
+
+
+@router.post('/scenario/repository/products')
+def createRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Add a product: {product: {productId, name, ...}, note?}."""
+    try:
+        return _productAnswer(products.create(payload.get('product') or {}, user=caller.kerberos,
+                                              note=payload.get('note', '')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return _catalogueError(exc)
+
+
+@router.put('/scenario/repository/products')
+def updateRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Change a product's values: {productId, product, note?, base}. The id
+    itself never changes."""
+    try:
+        return _productAnswer(products.update(
+            str(payload.get('productId') or ''), payload.get('product') or {},
+            user=caller.kerberos, note=payload.get('note', ''), base=payload.get('base')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return _catalogueError(exc)
+
+
+@router.post('/scenario/repository/products/withdraw')
+def withdrawRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Take a product out of the catalogue: {productId, note?, base}. Refused
+    while a live sleeve holds it; kept, with its history, and restorable."""
+    try:
+        return _productAnswer(products.withdraw(
+            str(payload.get('productId') or ''), user=caller.kerberos,
+            note=payload.get('note', ''), base=payload.get('base')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return _catalogueError(exc)
+
+
+@router.post('/scenario/repository/products/restore')
+def restoreRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a withdrawn product back: {productId, note?}."""
+    try:
+        return _productAnswer(products.restore(
+            str(payload.get('productId') or ''), user=caller.kerberos, note=payload.get('note', '')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return _catalogueError(exc)
+
+
+@router.post('/scenario/repository/products/revert')
+def revertRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier version's values back: {productId, revision, note?,
+    base}. It is a new version; nothing is rewound."""
+    number = payload.get('revision')
+    if isinstance(number, str) and number.strip().isdigit():
+        number = int(number)
+    try:
+        return _productAnswer(products.revert(
+            str(payload.get('productId') or ''), number, user=caller.kerberos,
+            note=payload.get('note', ''), base=payload.get('base')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return _catalogueError(exc)
+
+
+@router.get('/scenario/repository/products/history')
+def getRepositoryProductHistory(productId: str = '', caller=Depends(requireAdmin)):
+    """Every version of one product, newest first, with what moved."""
+    return {'productId': productId, 'history': products.history(productId)}
+
+
+@router.post('/scenario/repository/products/import/preview')
+def previewProductImport(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What a product file would do, before anything moves: {name, content}
+    with the file as base64."""
+    try:
+        return products.importPreview(payload.get('name'), payload.get('content'))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
+
+
+@router.post('/scenario/repository/products/import')
+def importProducts(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Apply a product file: {name, content, withdraw: [ids], note?, base} -
+    base being the catalogue version the preview showed."""
+    try:
+        done = products.importFile(payload.get('name'), payload.get('content'),
+                                   user=caller.kerberos, withdraw=payload.get('withdraw') or [],
+                                   note=payload.get('note', ''), base=payload.get('base'))
+        return {'import': done, 'catalogue': products.describeSource()}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
+
+
+@router.get('/scenario/repository/products.csv')
+def exportProducts(caller=Depends(requireAdmin)):
+    """The live catalogue as a product file, ready to edit and import."""
+    rows = products.exportRows()
+    return _csv(rows[0], rows[1:], 'products.csv')
+
+
+# ---- the fee card (D166) ---------------------------------------------------
+# The card every proposal is priced from, kept in the repository: admin only,
+# every change carrying a note and a new version, a write made against an
+# out-of-date card refused with 409.
+
+@router.get('/scenario/repository/fees')
+def getRepositoryFeeCard(caller=Depends(requireAdmin)):
+    """The card in force as the Fees tab edits it, with its version and the
+    products each fee group prices."""
+    try:
+        return feeCard.describe()
+    except (fees.BadRateCard, products.BadCatalogue) as exc:
+        return _catalogueError(exc)
+
+
+def _feeAnswer(saved):
+    return {'saved': saved, 'fees': feeCard.describe()}
+
+
+@router.put('/scenario/repository/fees')
+def saveRepositoryFeeCard(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a new card in force: {card: {tiers, feeGroups, rates}, renames:
+    [[old, new]], note, base}."""
+    try:
+        return _feeAnswer(feeCard.save(payload.get('card'), payload.get('note'),
+                                       user=caller.kerberos, base=payload.get('base'),
+                                       renames=payload.get('renames')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (fees.BadRateCard, products.BadCatalogue) as exc:
+        return _catalogueError(exc)
+
+
+@router.get('/scenario/repository/fees/history')
+def getRepositoryFeeHistory(caller=Depends(requireAdmin)):
+    """Every version of the card, newest first, with what moved."""
+    return {'history': feeCard.history()}
+
+
+@router.post('/scenario/repository/fees/revert')
+def revertRepositoryFeeCard(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier version back in force: {revision, note, base}."""
+    number = payload.get('revision')
+    if isinstance(number, str) and number.strip().isdigit():
+        number = int(number)
+    try:
+        return _feeAnswer(feeCard.revert(number, payload.get('note'), user=caller.kerberos,
+                                         base=payload.get('base')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (fees.BadRateCard, products.BadCatalogue) as exc:
+        return _catalogueError(exc)
+
+
+@router.post('/scenario/repository/fees/import/preview')
+def previewFeeImport(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What a fee card file would change: {name, content} as base64."""
+    try:
+        return feeCard.importPreview(payload.get('name'), payload.get('content'))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (fees.BadRateCard, products.BadCatalogue) as exc:
+        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
+
+
+@router.post('/scenario/repository/fees/import')
+def importFeeCard(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a fee card file in force: {name, content, note, base}."""
+    try:
+        return _feeAnswer(feeCard.importFile(payload.get('name'), payload.get('content'),
+                                             payload.get('note'), user=caller.kerberos,
+                                             base=payload.get('base')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (fees.BadRateCard, products.BadCatalogue) as exc:
+        return _catalogueError(exc)
+
+
+@router.get('/scenario/repository/fees.csv')
+def exportFeeCard(caller=Depends(requireAdmin)):
+    """The card in force as a fee card file, one row per rate."""
+    rows = feeCard.exportRows()
+    return _csv(rows[0], rows[1:], 'fee-card.csv')
 
 
 def _registerFilters(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
@@ -478,6 +797,7 @@ def _registerFilters(exportedBy: str = '', primaryPwa: str = '', currency: str =
 def listRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
                           variant: str = '', since: str = '', until: str = '', q: str = '',
                           limit: int = 100, before: str = '', moved: int = 0, noAccount: int = 0,
+                          custom: int = 0, portfolios: int = 0,
                           caller=Depends(requireAdmin)):
     """A page of the proposal register (D69): every delivered proposal, newest
     first, with the counts that frame it. `before` is the cursor a previous
@@ -485,18 +805,19 @@ def listRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: 
     filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
     return proposalRegister.listProposals(limit=limit, before=before or None,
                                           movedOnly=bool(moved), noAccountOnly=bool(noAccount),
-                                          **filters)
+                                          customOnly=bool(custom), portfolioOnly=bool(portfolios), **filters)
 
 
 @router.get('/scenario/repository/proposals.csv')
 def exportRegisterProposals(exportedBy: str = '', primaryPwa: str = '', currency: str = '',
                             variant: str = '', since: str = '', until: str = '', q: str = '',
-                            moved: int = 0, noAccount: int = 0,
-                            caller=Depends(requireAdmin)):
+                            moved: int = 0, noAccount: int = 0, custom: int = 0,
+                            portfolios: int = 0, caller=Depends(requireAdmin)):
     """The register as a table under the same filters and the same saved view,
     every page of it - so the file is what the screen says it is (D116)."""
     filters = _registerFilters(exportedBy, primaryPwa, currency, variant, since, until, q)
-    filters.update(movedOnly=bool(moved), noAccountOnly=bool(noAccount))
+    filters.update(movedOnly=bool(moved), noAccountOnly=bool(noAccount), customOnly=bool(custom),
+                   portfolioOnly=bool(portfolios))
     return _csv(proposalRegister.EXPORT_COLUMNS, proposalRegister.exportRows(**filters),
                 'proposal-register.csv')
 
@@ -576,14 +897,14 @@ def revertRepositorySleeve(sleeveId: int, payload: dict = Body(...),
 
 
 # ---- the private-markets funding split (D148) ----------------------------
-# How a private-markets commitment is held until capital is called: a house
+# How a private-markets commitment is held until capital is called: a default
 # split for every implementation type and, optionally, a type's own override.
 # Admin only, like every repository write; every change carries a note and
 # adds a revision (fundingSplit.py).
 
 @router.get('/scenario/repository/funding')
 def getFundingSplit(caller=Depends(requireAdmin)):
-    """The house split, every override, and which categories may hold the
+    """The default split, every override, and which categories may hold the
     money - with how many private-markets books hold each."""
     return fundingSplit.describe()
 
@@ -602,7 +923,7 @@ def saveFundingSplit(payload: dict = Body(...), caller=Depends(requireAdmin)):
 
 @router.post('/scenario/repository/funding/remove')
 def removeFundingOverride(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put a type back on the house split: {scope, note}."""
+    """Put a type back on the default split: {scope, note}."""
     try:
         fundingSplit.removeOverride(payload.get('scope'), payload.get('note'),
                                     user=caller.kerberos)
@@ -639,7 +960,7 @@ def revertFundingSplit(payload: dict = Body(...), caller=Depends(requireAdmin)):
 # ---- the overlay rules (D155) ----------------------------------------------
 # The ordered list of overlays - the tilt, the premium and any the desk adds -
 # that move weight between categories as a portfolio is implemented, resolved
-# top to bottom: a house list for every implementation type and, optionally, a
+# top to bottom: a default list for every implementation type and, optionally, a
 # type's own. Admin only, like every repository write; every change carries a
 # note and adds a revision (overlayRules.py). A write may name the list it was
 # made against ({base: {scope, revision}}); when that is no longer the list in
@@ -653,7 +974,7 @@ def _overlayError(exc: ValidationError):
 
 @router.get('/scenario/repository/overlays')
 def getOverlayRules(caller=Depends(requireAdmin)):
-    """The house list, every type's own list, and what the console needs to
+    """The default list, every type's own list, and what the console needs to
     judge a draft as the server will: the strategic categories, every
     portfolio's category weights, the portfolios each type offers and a
     sample, which categories each type has a sleeve in, and the warnings in
@@ -679,7 +1000,7 @@ def saveOverlayRules(payload: dict = Body(...), caller=Depends(requireAdmin)):
 
 @router.post('/scenario/repository/overlays/remove')
 def removeOverlayOverride(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put a type back on the house list: {scope, note, base?}."""
+    """Put a type back on the default list: {scope, note, base?}."""
     try:
         overlayRules.removeOverride(payload.get('scope'), payload.get('note'),
                                     user=caller.kerberos, base=payload.get('base'))
@@ -721,6 +1042,13 @@ def revertOverlayRules(payload: dict = Body(...), caller=Depends(requireAdmin)):
 # paths, declared before /scenario/{scenarioId} like the others. Lookup and
 # Submit both inherit the router-level requireAuth: they are a PWA's own
 # actions (D77).
+
+@router.get('/scenario/repository/custom-portfolios/awaiting')
+def listAwaitingCustomPortfolios(caller=Depends(requireAdmin)):
+    """The custom portfolios waiting for an admin's approval (D171), each
+    with its scenario, so an admin can open it."""
+    return {'awaiting': scenarioStore.awaitingApproval(), 'user': caller.kerberos}
+
 
 _UID_HINT = ('A Proposal UID is pr_ followed by twelve letters or digits: the last part of '
              "the workbook's name, and cell B1 of its Implementation sheet.")
@@ -798,7 +1126,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
     """Persist mandate, basis, variant or sleeve updates (deviations D2, D29).
 
     Accepts any subset of {mandate, basis, variant, tacticalTilt, volPremium,
-    sleeves, includeFees, feeSchedule, feeLevel, customFees}. Mandate updates are validated server-side; sleeve
+    sleeves, includeFees, feeSchedule, feeLevel, customFees, otherCharges}. Mandate updates are validated server-side; sleeve
     maps are checked against the library, and auto-attached categories are
     refused so a client bug cannot store one. The fee schedule and level are
     checked against the framework's lists (D51).
@@ -814,7 +1142,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         current = scenarioStore.getScenario(scenarioId)
         mandate = basis = sleeves = variant = None
         tacticalTilt = feeSchedule = feeLevel = includeFees = None
-        volPremium = customFees = None
+        volPremium = customFees = customs = built = charges = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
             port.validate_mandate(mandate)
@@ -840,6 +1168,8 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             # bounded against the mandate in force after this write (D96)
             customFees = payload['customFees'] or {}
             validateCustomFees(customFees, mandate or MandateInput.fromDict(current['mandate']))
+        if 'otherCharges' in payload:
+            charges = _otherCharges.clean(payload['otherCharges'])
         if 'sleeves' in payload:
             from cyrus_pmg.pmgService.scenario.rules import autoSleeveCategories
             automatic = autoSleeveCategories()
@@ -865,17 +1195,207 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                         'No sleeve named {!r} for {} under {}.'.format(
                             name, category, against))
                 sleeves[category] = name
+        if 'customSleeves' in payload:
+            customs = _customSleevesFrom(payload['customSleeves'], current, variant, caller)
+        if 'customPortfolio' in payload:
+            built = _customPortfolioFrom(payload['customPortfolio'], current, variant, caller)
+        elif variant and variant != current.get('variant') and current.get('customPortfolio'):
+            # the build survives a new type; an approval of it under the old
+            # one does not (D171)
+            built = _voided(dict(current['customPortfolio']), 'implementation type')
         state = scenarioStore.updateScenario(
             scenarioId, mandate=mandate, basis=basis, sleeves=sleeves,
             variant=variant, tacticalTilt=tacticalTilt,
             feeSchedule=feeSchedule, feeLevel=feeLevel,
             includeFees=includeFees, volPremium=volPremium,
-            customFees=customFees, customFeesBy=caller.kerberos)
+            customFees=customFees, customFeesBy=caller.kerberos,
+            customSleeves=customs, customPortfolio=built,
+            otherCharges=charges, otherChargesBy=caller.kerberos)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
     except ValidationError as exc:
         return _validationError(exc)
+
+
+_CUSTOM_FIELDS = ('name', 'note', 'mode', 'products')
+
+
+def _customSleevesFrom(raw, current, variant, caller) -> dict:
+    """The custom sleeves a write sends, checked (D170): the whole map, by
+    the name each is chosen under, None or absent for none. One the caller
+    did not change is kept as stored - a PWA may keep and deliver a sleeve
+    an admin built, or one built before its category was closed - and every
+    other must be one this caller may build, holding products the
+    category's sleeves hold under the type in force after this write."""
+    against = variant or current.get('variant')
+    if raw and not against:
+        raise ValidationError('variant', 'Choose an implementation type before building a '
+                                         'custom sleeve.')
+    # a new type clears what was built under the old one, as the store does
+    held = ({} if variant and variant != current.get('variant')
+            else (current.get('customSleeves') or {}))
+    admin = isAdmin(caller)
+    out = {}
+    for under, definition in (raw or {}).items():
+        if definition is None:
+            continue
+        stored = held.get(under)
+        if stored is not None and isinstance(definition, dict) and all(
+                definition.get(f) == stored.get(f) for f in _CUSTOM_FIELDS):
+            out[under] = stored
+            continue
+        if not customSleeves.mayBuild(under, admin):
+            raise ValidationError(
+                'customSleeves',
+                'Custom sleeves are built by an admin.'
+                if not customSleeves.isFixed(under)
+                else '{} carries its sleeve automatically.'.format(under))
+        out[under] = dict(customSleeves.clean(under, definition, against),
+                          builtBy=caller.kerberos)
+    return out
+
+
+def _now():
+    import datetime
+    return datetime.datetime.now().isoformat(timespec='seconds')
+
+
+def _voided(entry, what) -> dict:
+    """*entry* with an approval in progress or given withdrawn, and the
+    notice the page shows saying why (D171). A build sent back keeps the
+    reason it was sent back for until it is submitted again."""
+    approval = entry.get('approval') or {}
+    if approval.get('state') in ('submitted', 'approved'):
+        entry['notice'] = 'The {} changed after it was {}, so {}: submit it again.'.format(
+            what, 'approved' if approval['state'] == 'approved' else 'submitted',
+            'the approval no longer applies' if approval['state'] == 'approved'
+            else 'the request was withdrawn')
+        entry['approval'] = None
+    return entry
+
+
+def _customPortfolioFrom(raw, current, variant, caller) -> dict:
+    """The custom portfolio a write sends, checked (D171): ``{active,
+    profile, products}``. Making the proposal custom, changing its build or
+    making it strategic again are for those who may build under the type in
+    force after this write; a product the stored build already holds is kept
+    even where it may no longer be held, so it can be swapped out one row at
+    a time, and the export refuses until it is."""
+    if not isinstance(raw, dict):
+        raise ValidationError('customPortfolio', 'A custom portfolio is a risk profile, products '
+                                                 'and weights.')
+    against = variant or current.get('variant')
+    if not against:
+        raise ValidationError('variant', 'Choose an implementation type before building a custom '
+                                         'portfolio.')
+    held = dict(current.get('customPortfolio') or {})
+    build = customPortfolio.clean(
+        {'profile': raw.get('profile'), 'products': raw.get('products') or []}, against,
+        keep={p['productId']: p.get('category') for p in held.get('products') or []})
+    active = bool(raw.get('active'))
+    changed = (not held or build['profile'] != held.get('profile')
+               or build['products'] != held.get('products'))
+    if (changed or active != bool(held.get('active'))) and not customPortfolio.mayBuild(
+            against, isAdmin(caller)):
+        raise ValidationError('customPortfolio', 'Custom portfolios are built by an admin.')
+    out = dict(held, active=active, profile=build['profile'], products=build['products'])
+    out.setdefault('approval', None)
+    out.setdefault('notice', None)
+    if changed:
+        out['builtBy'] = caller.kerberos
+        out['builtAt'] = _now()
+    if changed or (variant and variant != current.get('variant')):
+        what = ('implementation type' if not changed
+                else 'risk profile' if build['products'] == held.get('products') else 'portfolio')
+        _voided(out, what)
+    return out
+
+
+def _customCheck(state, port):
+    """The stored build against its limits, and its profile's anchor
+    portfolio resolved (D171)."""
+    basis = BasisInput.fromDict(state['basis'])
+    variant = state.get('variant')
+    built = state.get('customPortfolio') or {}
+    anchorResult = customPortfolio.anchorFor(port, basis, variant, built.get('profile'))
+    anchor = customPortfolio.anchorLines(anchorResult) if anchorResult else {}
+    mandateSize = (state.get('mandate') or {}).get('mandateSize')
+    return customPortfolio.checks(built, variant, mandateSize, anchor), anchorResult
+
+
+@router.post('/scenario/{scenarioId}/custom-portfolio/approval')
+def customPortfolioApproval(scenarioId: str, payload: dict = Body(...),
+                            caller=Depends(requireAuth)):
+    """Approval of a custom portfolio outside its profile's usual range
+    (D171): {action: submit | withdraw | approve | return, note}. Anyone who
+    may build it submits or withdraws; an admin who neither built nor
+    submitted it approves it or sends it back with a reason. An approval is
+    of this build, profile and type: change any and it no longer applies."""
+    port = getScenarioPort()
+    try:
+        state = scenarioStore.getScenario(scenarioId)
+        built = dict(state.get('customPortfolio') or {})
+        if not built.get('active'):
+            raise ValidationError('customPortfolio', 'This proposal is not a custom portfolio.')
+        variant = state.get('variant')
+        action = payload.get('action')
+        if action not in customPortfolio.APPROVAL_ACTIONS:
+            raise ValidationError('action', 'Submit, withdraw, approve or send back.')
+        note = ' '.join(str(payload.get('note') or '').split())
+        if len(note) > customPortfolio.NOTE_MAX:
+            raise ValidationError('note', 'The note is {} characters; at most {}.'.format(
+                len(note), customPortfolio.NOTE_MAX))
+        admin = isAdmin(caller)
+        approval = dict(built.get('approval') or {})
+        print_ = customPortfolio.fingerprint(built, variant)
+        if action == 'submit':
+            if not customPortfolio.mayBuild(variant, admin):
+                raise ValidationError('customPortfolio', 'Custom portfolios are built by an admin.')
+            check, _ = _customCheck(state, port)
+            mandate = MandateInput.fromDict(state['mandate'])
+            model = customPortfolio.buildModel(built, mandate.mandateSize, variant)
+            if check['status'] == 'bad' or model['breaches']:
+                raise ValidationError('approval', 'It cannot be delivered yet, so there is nothing to '
+                                                  'approve: {}'.format(' '.join(check['problems'])
+                                                                       or 'a position is below its '
+                                                                          'product\'s minimum.'))
+            if check['status'] == 'ok':
+                raise ValidationError('approval', 'Every category is within its usual range: it needs '
+                                                  'no approval.')
+            approval = {'state': 'submitted', 'by': caller.kerberos, 'note': note or '',
+                        'at': _now(), 'fingerprint': print_}
+            built['notice'] = None
+        elif action == 'withdraw':
+            if approval.get('state') != 'submitted':
+                raise ValidationError('approval', 'Nothing is waiting for approval.')
+            if not (customPortfolio.mayBuild(variant, admin) or caller.kerberos == approval.get('by')):
+                raise ValidationError('approval', 'Only someone who may build it withdraws it.')
+            approval = None
+        else:
+            if not admin:
+                raise ValidationError('approval', 'An admin approves a custom portfolio.')
+            if approval.get('state') != 'submitted':
+                raise ValidationError('approval', 'Nothing is waiting for approval.')
+            if caller.kerberos in (built.get('builtBy'), approval.get('by')):
+                raise ValidationError('approval', 'You built or submitted it, so another admin '
+                                                  'approves it.')
+            if approval.get('fingerprint') != print_:
+                raise ValidationError('approval', 'The portfolio changed after it was submitted.')
+            if action == 'return' and not note:
+                raise ValidationError('note', 'Say what needs to change.')
+            approval.update(state='approved' if action == 'approve' else 'returned',
+                            decidedBy=caller.kerberos, decidedAt=_now(),
+                            reason=note if action == 'return' else '')
+        built['approval'] = approval or None
+        state = scenarioStore.updateScenario(scenarioId, customPortfolio=built)
+        return _scenarioPayload(state)
+    except ScenarioNotFound:
+        return _notFound(scenarioId)
+    except ValidationError as exc:
+        return _validationError(exc)
+    except AnalyticsError as exc:
+        return _analyticsError(exc)
 
 
 @router.post('/scenario/{scenarioId}/portfolio')
@@ -943,6 +1463,8 @@ def _assembleExport(scenarioId: str, port):
     around the other's gate. Raises what the endpoints map: ScenarioNotFound,
     ValidationError, AnalyticsError."""
     state = scenarioStore.getScenario(scenarioId)
+    if (state.get('customPortfolio') or {}).get('active'):
+        return _assembleCustomExport(state, port)
     if not state['base']:
         raise ValidationError('base', 'No base portfolio to implement.')
     variant = state.get('variant')
@@ -972,14 +1494,21 @@ def _assembleExport(scenarioId: str, port):
         r['into'] for r in overlayEntry['rules'] if r['into'] not in AUTO_SLEEVE_CATEGORIES]
     from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows
     sleeves = state['sleeves'] or {}
+    # the proposal's own sleeves (D170): one is in force where no library
+    # sleeve is chosen
+    customs = state.get('customSleeves') or {}
     # one choice per sleeve category: grouped categories share theirs (D60)
-    missing, unresolved = [], []
+    missing, unresolved, customProblems = [], [], []
     baseKey = _baseKeyFrom(state['base'])
     for c in results[0]['categories']:
         if c['name'] in automatic:
             continue
         under = sleeveCategory(c['name'])
-        if not sleeves.get(under):
+        if not sleeves.get(under) and customs.get(under):
+            for problem in customSleeves.problems(under, customs[under], variant):
+                if problem not in customProblems:
+                    customProblems.append(problem)
+        elif not sleeves.get(under):
             if under not in missing:
                 missing.append(under)
         elif under not in unresolved and not sleeveExists(under, sleeves[under], variant, baseKey):
@@ -996,15 +1525,21 @@ def _assembleExport(scenarioId: str, port):
             'sleeves',
             'The sleeve chosen for {} is not offered for this portfolio. '
             'Choose another.'.format(', '.join(unresolved)))
+    if customProblems:
+        raise ValidationError(
+            'customSleeves',
+            'A custom sleeve holds a product it no longer may: {}. Edit it before '
+            'exporting.'.format('; '.join(customProblems)))
 
-    implementation = {'sleeves': sleeves, 'variant': variant,
+    implementation = {'sleeves': sleeves, 'customSleeves': customs, 'variant': variant,
                       'tacticalTilt': bool(state.get('tacticalTilt', True)),
                       'volPremium': bool(state.get('volPremium', True)),
                       'includeFees': includeFees,
                       'feeSchedule': feeSchedule, 'feeLevel': feeLevel,
                       'customFees': state.get('customFees') or {},
                       'customFeesBy': state.get('customFeesBy') or '',
-                      'customFeesAt': state.get('customFeesAt')}
+                      'customFeesAt': state.get('customFeesAt'),
+                      'otherCharges': _otherCharges.withDefaults(state.get('otherCharges'))}
     # The implemented model is built ONCE here and handed to both the
     # writer and the register, so the sheet a client receives and the
     # record kept of it are the same model rather than two builds (D69).
@@ -1014,7 +1549,17 @@ def _assembleExport(scenarioId: str, port):
         results[0], sleeves, automatic, mandate.mandateSize, variant,
         implementation['tacticalTilt'], feeSchedule if includeFees else None, feeLevel,
         mandate.topAccountSize, implementation['volPremium'], basis.currency,
-        customFees=implementation['customFees'], overlayEntry=overlayEntry)
+        customFees=implementation['customFees'], overlayEntry=overlayEntry,
+        customSleeves=customs)
+    # A custom sleeve weighted against the portfolio sets its category's
+    # weight and nothing else moves (D170): the person decides where the
+    # difference goes, and a book that does not add to 100% is not delivered.
+    if not model['balanced']:
+        raise ValidationError(
+            'customSleeves',
+            'The implemented portfolio adds to {:.2f}%, not 100%. Change the weights of a custom '
+            'sleeve set as a percentage of the portfolio until it adds to 100%.'.format(
+                model['implementedPct']))
     # An overlay's category carries its sleeve automatically; a rule whose
     # category has no sleeve yet for this type would put weight in the book
     # with no product, and a table that cannot be priced or rounded closed is
@@ -1033,6 +1578,12 @@ def _assembleExport(scenarioId: str, port):
             'customFees',
             'Set a custom rate for every fee group in the model - missing: {}.'.format(
                 ', '.join(model['unpricedGroups'])))
+    # A custom rate is held between the card's floor and ceiling for this
+    # mandate (D96), and the card now changes in the repository (D166): a
+    # rate entered before a change may sit outside the bounds it gives
+    # today, so it is checked again here as it was when it was entered.
+    if includeFees and fees.isCustom(feeLevel):
+        validateCustomFees(implementation['customFees'], mandate)
     # A position smaller than the product will accept is not a position:
     # the export refuses while any survives, so the UI's block cannot be
     # walked past by calling the endpoint directly (item 3).
@@ -1045,6 +1596,91 @@ def _assembleExport(scenarioId: str, port):
                                       b['minimumInvestment']) for b in model['breaches'][:4])
                                   + ('' if len(model['breaches']) <= 4
                                      else ', and {} more'.format(len(model['breaches']) - 4))))
+    # every other check first: the charges are what the page asks for last,
+    # as Download opens their card (D177)
+    _otherCharges.required(implementation['otherCharges'], includeFees)
+    return state, basis, mandate, results, implementation, model
+
+
+def _breachText(breaches) -> str:
+    return 'Below mandate minimum: {}. Raise the mandate or change the weights before exporting.'.format(
+        ', '.join('{} in {} (${:,.0f} against a ${:,.0f} minimum)'.format(
+            b['name'], b['category'], b['notional'], b['minimumInvestment']) for b in breaches[:4])
+        + ('' if len(breaches) <= 4 else ', and {} more'.format(len(breaches) - 4)))
+
+
+def _assembleCustomExport(state, port):
+    """``_assembleExport`` for a custom portfolio (D171): the model is built
+    from the products, through the same rounding, pricing and minimums, and
+    the export refuses while the build is unfinished, outside its limits,
+    or outside its usual ranges without an approval that still applies. The
+    strategic portfolios beside it on the allocation step - its profile's
+    own first - go into the files as comparisons, never as the proposal."""
+    variant = state.get('variant')
+    validateVariant(variant)
+    includeFees = _includeFees(state)
+    feeSchedule = state.get('feeSchedule')
+    feeLevel = state.get('feeLevel')
+    if includeFees:
+        validateFeeSchedule(feeSchedule)
+        validateFeeLevel(feeLevel)
+    basis = BasisInput.fromDict(state['basis'])
+    mandate = MandateInput.fromDict(state['mandate'])
+    built = state['customPortfolio']
+    check, anchorResult = _customCheck(state, port)
+    if check['status'] == 'bad':
+        raise ValidationError('customPortfolio', ' '.join(check['problems']))
+    customFees = state.get('customFees') or {}
+    model = customPortfolio.buildModel(
+        built, mandate.mandateSize, variant, feeSchedule if includeFees else None, feeLevel,
+        mandate.topAccountSize, basis.currency, customFees=customFees)
+    if model.get('unpricedGroups'):
+        raise ValidationError(
+            'customFees',
+            'Set a custom rate for every fee group in the model - missing: {}.'.format(
+                ', '.join(model['unpricedGroups'])))
+    if includeFees and fees.isCustom(feeLevel):
+        validateCustomFees(customFees, mandate)
+    if model['breaches']:
+        raise ValidationError('minimumInvestment', _breachText(model['breaches']))
+    profileLabel = customPortfolio.profileLabel(built['profile'])
+    approval = built.get('approval') or {}
+    if check['status'] == 'warn' and not customPortfolio.approved(built, variant):
+        raise ValidationError('approval', '{} An admin approves it before it is delivered.'.format(
+            customPortfolio.wideText(check, profileLabel)))
+    keys = ([state['base']] if state['base'] else []) + list(state['comparisons'])
+    results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k)) for k in keys]
+    stats = customPortfolio.estimates(port, basis, variant)
+    weights = customPortfolio.weightsByLine(built)
+    model['customPortfolio'] = {
+        'profile': built['profile'], 'profileLabel': profileLabel,
+        'anchorKey': anchorResult['keyStr'] if anchorResult else None,
+        'anchorName': anchorResult['header'] if anchorResult else None,
+        'builtBy': built.get('builtBy') or '', 'builtAt': built.get('builtAt') or '',
+        'approvedBy': approval.get('decidedBy') if approval.get('state') == 'approved' else None,
+        'approvedAt': approval.get('decidedAt') if approval.get('state') == 'approved' else None,
+        'approvalNote': approval.get('note') if approval.get('state') == 'approved' else None,
+        'lines': check['lines'],
+        'limits': {k: customPortfolio.LIMITS[k] for k in ('soft', 'hard', 'concentration',
+                                                           'illiquid')},
+        'figures': customPortfolio.figures(weights, stats, anchorResult),
+        'comparisons': [r['keyStr'] for r in results],
+        # what the files lay the allocation out by: every line in order, and
+        # each comparison's weights by line
+        'order': customPortfolio.lines(),
+        'compared': [customPortfolio.anchorLines(r) for r in results]}
+    implementation = {'sleeves': {}, 'customSleeves': {}, 'variant': variant,
+                      'tacticalTilt': False, 'volPremium': False,
+                      'includeFees': includeFees,
+                      'feeSchedule': feeSchedule, 'feeLevel': feeLevel,
+                      'customFees': customFees,
+                      'customFeesBy': state.get('customFeesBy') or '',
+                      'customFeesAt': state.get('customFeesAt'),
+                      'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
+                      'customPortfolio': model['customPortfolio']}
+    # every other check first: the charges are what the page asks for last,
+    # as Download opens their card (D177)
+    _otherCharges.required(implementation['otherCharges'], includeFees)
     return state, basis, mandate, results, implementation, model
 
 
@@ -1080,7 +1716,7 @@ def exportScenario(scenarioId: str, caller=Depends(requireAuth)):
         delivery = dict(implementation, model=model, proposalId=proposalId)
         content = port.build_export(basis, mandate, results, delivery)
         deck = port.build_export_deck(basis, mandate, results, delivery)
-        filename = exportFilename(basis, proposalId)
+        filename = exportFilename(basis, proposalId, custom=bool(model.get('customPortfolio')))
         stem = filename[:-len('.xlsx')]
         deckName = stem + '.pptx'
         # Record first, deliver second - both files, one transaction.

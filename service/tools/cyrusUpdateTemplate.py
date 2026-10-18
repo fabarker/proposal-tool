@@ -357,7 +357,7 @@ def _runConfigs(src):
             for env in (envs.findall('env') if envs is not None else []):
                 name, value = env.get('name', ''), env.get('value', '').replace('$PROJECT_DIR$', project)
                 if name.startswith('SCENARIO_') and value:
-                    if name.endswith(('_DB', '_DIR')):
+                    if name.endswith(('_DB', '_DIR', '_SOURCE', '_SEED')):
                         value = os.path.normpath(os.path.join(workdir, value))
                     values.setdefault(name, set()).add(value)
     return values
@@ -380,6 +380,37 @@ def dbPaths(src):
         else:
             path = os.path.join(src, 'var', default)
         out.append((title, var, os.path.abspath(path), table))
+    return out, problems
+
+
+#: the files the service reads its first catalogue and fee card from, which
+#: the upgrade must read too, or it loads the packaged stand-ins instead
+SOURCES = (('the product file', 'SCENARIO_PRODUCTS_SOURCE'),
+           ('the fee card file', 'SCENARIO_FEES_SOURCE'))
+
+
+def sourcePaths(src):
+    """{variable: path} for each file the service is set to read, as the
+    upgrade must see it - this shell's setting first, else the run
+    configurations' - and what is wrong with them."""
+    configs = _runConfigs(src)
+    out, problems = {}, []
+    for title, var in SOURCES:
+        chosen = configs.get(var, set())
+        if os.getenv(var):
+            path = os.getenv(var)
+        elif len(chosen) > 1:
+            problems.append('the run configurations name different files for {}'.format(var))
+            continue
+        elif chosen:
+            path = next(iter(chosen))
+        else:
+            continue
+        path = os.path.abspath(path)
+        if not os.path.isfile(path):
+            problems.append('{} names {} for {}, and there is no such file'.format(var, path, title))
+            continue
+        out[var] = path
     return out, problems
 
 
@@ -458,12 +489,24 @@ _FONTS = 'import cyrus_pmg.pmgService.scenario.houseFonts as h; print(sorted(h.F
 _ROUTES = ("from cyrus_pmg.pmgService.dashboardRouter import router; "
            "print(len([r for r in router.routes if getattr(r, 'path', '').startswith('/scenario')]))")
 _UPGRADE = '''
-from cyrus_pmg.pmgService.scenario import accountRequests, proposalRegister, sleeveRepo
+import json
+from cyrus_pmg.pmgService.scenario import accountRequests, fees, products, proposalRegister, sleeveRepo
 c = sleeveRepo.connection()
 c.close()
 proposalRegister.describe()
 accountRequests.describe()
-print('OK')
+out = {}
+try:
+    d = products.describeSource()
+    out.update(products=d['products'], productsFrom=d['seededFrom'])
+except Exception as exc:
+    out['productsProblem'] = str(exc)
+try:
+    f = fees.deliveryInfo()
+    out.update(feeCard=f['version'], feeCardFrom=f['source'])
+except Exception as exc:
+    out['feeCardProblem'] = str(exc)
+print(json.dumps(out))
 '''
 
 
@@ -493,10 +536,10 @@ def survey(src):
         if key in WRITE:
             if now == TARGET[key]:
                 current += 1
-            elif now == BASE.get(key):
-                files.append(('write', key))
             elif key not in BASE and not here:
                 files.append(('new', key))
+            elif now == BASE.get(key):
+                files.append(('write', key))
             else:
                 problems.append('{} was edited here - the update would overwrite it'.format(key))
         elif key in DELETE:
@@ -553,6 +596,8 @@ def survey(src):
 
     dbs, dbProblems = dbPaths(src)
     problems += dbProblems
+    plan['sources'], sourceProblems = sourcePaths(src)
+    problems += sourceProblems
     plan['dbs'] = [(t, v, p, table, dbState(p, table)) for t, v, p, table in dbs]
     say('')
     say('== The databases')
@@ -563,6 +608,10 @@ def survey(src):
             problems.append('{} cannot be read: {}'.format(title, state['error']))
         else:
             say('   {}: schema {}, {} {} ({})'.format(title, state['version'], state['rows'], table, path))
+
+    for title, var in SOURCES:
+        if var in plan['sources']:
+            say('   {}: {} ({})'.format(title, plan['sources'][var], var))
 
     plan['reword'] = 0
     for title, var, path, table, state in plan['dbs']:
@@ -685,9 +734,22 @@ def go(plan):
         step = 'the databases'
         present = [d for d in plan['dbs'] if d[4] is not None]
         if plan['code'] and len(present) == len(plan['dbs']):
-            ok, out = _python(src, _UPGRADE, {d[1]: d[2] for d in plan['dbs']})
+            env = {d[1]: d[2] for d in plan['dbs']}
+            env.update(plan.get('sources') or {})
+            ok, out = _python(src, _UPGRADE, env)
             if not ok:
                 raise RuntimeError('opening them with the new code failed: ' + out)
+            try:
+                loaded = json.loads(out)
+            except ValueError:
+                raise RuntimeError('opening them with the new code said: ' + out)
+            for key in ('productsProblem', 'feeCardProblem'):
+                if loaded.get(key):
+                    raise RuntimeError(loaded[key])
+            say('== The product catalogue: {} products in the database (first loaded from {})'.format(
+                loaded['products'], os.path.basename(loaded['productsFrom'] or '') or 'nothing'))
+            say('== The fee card: {} in the database ({})'.format(
+                loaded['feeCard'], loaded['feeCardFrom'] or 'edited since it was loaded'))
             for title, var, path, table, before in plan['dbs']:
                 now = dbState(path, table)
                 if now is None or 'error' in now or now['rows'] != before['rows']:

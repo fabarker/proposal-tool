@@ -10,11 +10,11 @@ funding split (fundingSplit.py, D148) whose pattern this follows. The shape
 of a rule and the arithmetic are rules.py's (``resolveOverlays``); this
 module keeps the lists and decides what may be saved.
 
-Scopes. The HOUSE list (scope '*') applies to every implementation type. A
+Scopes. The default list (scope '*') applies to every implementation type. A
 type may carry a list of its own, which then applies to it alone; removing it
-puts the type back on the house list. None is set on first open.
+puts the type back on the default list. None is set on first open.
 
-Seeding. The house list is seeded, once, with ``rules.baselineOverlays()`` -
+Seeding. The default list is seeded, once, with ``rules.baselineOverlays()`` -
 the tilt, 8% of the portfolio from Investment Grade Fixed Income, then the
 premium, 7.5% of Investment Grade Fixed Income as the tilt left it - as a
 *baseline* revision, so an upgrade changes no figure. The repository's file
@@ -47,7 +47,7 @@ read, from the bodies themselves.
 
 Concurrency. Every write takes the file's write lock first (BEGIN IMMEDIATE),
 so its reads, its checks and its new revision are one step: two saves cannot
-claim one revision, and a house save and a type's return to the house list
+claim one revision, and a default save and a type's return to the default list
 cannot each pass a check the other invalidates. A write may name the list it
 was made against (``base``: the scope and revision the console showed); when
 that is no longer the list in force it is refused as STALE (HTTP 409), and
@@ -314,7 +314,7 @@ def normalise(ruleList) -> list:
 
 def _scope(scope) -> str:
     if scope is not None and not isinstance(scope, str):
-        raise ValidationError('scope', 'Name the scope: the house list or an implementation type.')
+        raise ValidationError('scope', 'Name the scope: the default list or an implementation type.')
     scope = (scope or '').strip()
     if scope == HOUSE:
         return HOUSE
@@ -349,7 +349,7 @@ def _base(base):
 def _variantsFor(scope, overrides) -> list:
     """The implementation types a list under *scope* applies to: the type
     itself, or every type without a list of its own - and, should every type
-    have one, every type, so a house list is never saved unchecked."""
+    have one, every type, so a default list is never saved unchecked."""
     if scope != HOUSE:
         return [scope]
     inheriting = [v for v in sleeveRepo.VARIANTS if v not in overrides]
@@ -437,7 +437,7 @@ def _refuseShortfalls(ruleList, variants, scope, inForce=None) -> None:
             'be able to fund it: lower its size, fund it from elsewhere, or move it.'.format(
                 lead, rule['name'], _ordinal(index + 1), case['category'], case['after'],
                 case['portfolio'], ' ' + when if when else '',
-                'of the types on the house list' if scope == HOUSE else 'of ' + scope,
+                'of the types on the default list' if scope == HOUSE else 'of ' + scope,
                 ' and '.join(s['category'] for s in rule['sources'])))
 
 
@@ -463,7 +463,7 @@ def _row(conn, scope):
 
 
 def seed(conn) -> None:
-    """The house list's baseline, once - race-safe the way the library's
+    """The default list's baseline, once - race-safe the way the library's
     seed is (sleeveRepo._seedOnce): asked again inside a write transaction.
     Called on every connection to the repository's file, so the first open
     after an upgrade writes it (schema 6)."""
@@ -528,7 +528,7 @@ def _readPolicies():
     against ``_stamp`` - taken BEFORE the read, so a write landing during it
     makes the next read look again rather than keep a stale answer - and
     re-read through a plain read-only connection when the file has moved. A
-    file without the house list yet - never opened since the upgrade - goes
+    file without the default list yet - never opened since the upgrade - goes
     through the full connection, which seeds it."""
     global _readCache
     path = sleeveRepo.dbPath()
@@ -572,8 +572,8 @@ def _overrides(conn) -> dict:
 
 
 def current(variant=None) -> dict:
-    """The list in force for *variant*: its own, or the house list
-    (``inherited`` True). No variant means the house list."""
+    """The list in force for *variant*: its own, or the default list
+    (``inherited`` True). No variant means the default list."""
     rows = _readPolicies()
     if variant and variant != HOUSE:
         if variant in rows:
@@ -583,7 +583,7 @@ def current(variant=None) -> dict:
 
 
 def allRules() -> list:
-    """Every rule in every list, the house list first and then the types'
+    """Every rule in every list, the default list first and then the types'
     in name order: what places the categories in the repository's own list
     (sleeveRepo.categories)."""
     rows = _readPolicies()
@@ -592,7 +592,7 @@ def allRules() -> list:
 
 
 def allIntos() -> list:
-    """Every category a rule in any list goes into, the house list's first."""
+    """Every category a rule in any list goes into, the default list's first."""
     out = []
     for rule in allRules():
         if rule['into'] not in out:
@@ -612,7 +612,7 @@ def _sample(variant) -> str:
 
 
 def describe() -> dict:
-    """Everything the console shows: the house list, every type's own, the
+    """Everything the console shows: the default list, every type's own, the
     strategic categories a rule may be funded from, every portfolio's
     category weights (so the console can judge a draft as the server will),
     which portfolios each type offers, a sample portfolio per type, which
@@ -695,7 +695,7 @@ def describeChange(before, after) -> str:
     Volatility Premium: size 7.5% → 8%', 'Order changed: Strategic
     Volatility Premium moved above Tactical Tilts'."""
     if after is None:
-        return 'Back on the house list'
+        return 'Back on the default list'
     before = before or []
     old = {r['id']: r for r in before}
     new = {r['id']: r for r in after}
@@ -723,7 +723,7 @@ def describeChange(before, after) -> str:
 def history(scope) -> list:
     """Every revision of one scope's list, newest first, each with what
     changed from the list in force before it - for a type's first list of
-    its own, the house list it was taken from - and, for a restore, which
+    its own, the default list it was taken from - and, for a restore, which
     revision it brought back."""
     scope = _scope(scope)
     conn = _connect()
@@ -811,8 +811,8 @@ def _writing(work):
 
 
 def _inForce(conn, scope):
-    """The row in force for *scope* - its own, or the house row - and
-    whether it is the house row standing in."""
+    """The row in force for *scope* - its own, or the default row - and
+    whether it is the default row standing in."""
     own = _row(conn, scope)
     if own is not None:
         return own, False
@@ -827,8 +827,8 @@ def _refuseStale(conn, scope, base) -> None:
         raise StaleError(
             'base', 'The overlay rules for {} were changed by {} at {} since you opened them '
             '(now {} r{}). Reload to see the change, then make yours again.'.format(
-                'the house list' if scope == HOUSE else scope, row['updatedBy'] or 'someone',
-                (row['updatedAt'] or '').replace('T', ' '), 'the house list' if row['scope'] == HOUSE else row['scope'],
+                'the default list' if scope == HOUSE else scope, row['updatedBy'] or 'someone',
+                (row['updatedAt'] or '').replace('T', ' '), 'the default list' if row['scope'] == HOUSE else row['scope'],
                 row['revision']))
 
 
@@ -861,12 +861,12 @@ def save(scope, ruleList, note, user='', base=None) -> dict:
 
 
 def removeOverride(scope, note, user='', base=None) -> dict:
-    """Put *scope* back on the house list. Refused when the house list could
+    """Put *scope* back on the default list. Refused when the default list could
     not be funded by the type's portfolios. The type's revisions stay on the
     record, closed by a *removed* revision."""
     scope = _scope(scope)
     if scope == HOUSE:
-        raise ValidationError('scope', 'The house list cannot be removed, only changed.')
+        raise ValidationError('scope', 'The default list cannot be removed, only changed.')
     note = _note(note)
     base = _base(base)
 
@@ -875,7 +875,7 @@ def removeOverride(scope, note, user='', base=None) -> dict:
         if _row(conn, scope) is None:
             raise ValidationError('scope', '{} has no list of its own to remove.'.format(scope))
         house = json.loads(_row(conn, HOUSE)['body'])
-        # back on the house list, the type must be able to fund it
+        # back on the default list, the type must be able to fund it
         _refuseShortfalls(house, [scope], scope)
         top = conn.execute('SELECT MAX(revision) FROM policyHistory WHERE kind = ? AND '
                            'scope = ?', (KIND, scope)).fetchone()[0]

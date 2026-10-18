@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Custom Sleeves</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Libre+Franklin:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a reading column with a sticky contents rail; the tool's own screens drawn
+   as working mock-ups inside framed plates, in the tool's navy, custom sleeves in violet. */
+:root{
+  --paper:#F7F8FB; --surface:#FFFFFF; --sunk:#EEF2F9; --ink:#1C2733; --ink-2:#4A5A6B; --ink-3:#7A8A9A;
+  --navy:#092C61; --accent:#2E5FCB; --line:#E3E7EE; --line-strong:#CDD5E0;
+  --good:#176A33; --good-tint:#E6F3EC; --warn:#8A5A00; --warn-tint:#FBF1DC;
+  --bad:#9B1C1C; --bad-tint:#FDE8E8; --code:#F1F3F7;
+  --tool-ink:#16243A; --tool-bg:#F2F4F8; --tool-frame:#C9D2DF; --tool-rule:#E4E9F0; --tool-ink2:#5B6B80;
+  --cus:#6B3FA0; --cus-tint:#F1EBF9; --cus-line:#C7B3E3;
+  --f-display:"Newsreader",Georgia,serif;
+  --f-body:"Libre Franklin","Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0F1420; --surface:#161C2B; --sunk:#1C2438; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --line:#26304A; --line-strong:#364266;
+  --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+  --tool-ink:#E3E9F3; --tool-bg:#121826; --tool-frame:#34405A; --tool-rule:#273048; --tool-ink2:#9AA7BB;
+  --cus:#C7A6F0; --cus-tint:#251B36; --cus-line:#56407A;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --paper:#0F1420; --surface:#161C2B; --sunk:#1C2438; --ink:#E6EAF2; --ink-2:#AEB8C8; --ink-3:#7F8CA0;
+  --navy:#DCE6F8; --accent:#7FA4F2; --line:#26304A; --line-strong:#364266;
+  --good:#8FD1AC; --good-tint:#15291F; --warn:#F0C36B; --warn-tint:#2E2412;
+  --bad:#F09A9A; --bad-tint:#2E1717; --code:#1A2133;
+  --tool-ink:#E3E9F3; --tool-bg:#121826; --tool-frame:#34405A; --tool-rule:#273048; --tool-ink2:#9AA7BB;
+  --cus:#C7A6F0; --cus-tint:#251B36; --cus-line:#56407A;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 28px 96px;display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:0 46px}
+@media (max-width:960px){.wrap{grid-template-columns:minmax(0,1fr);padding:26px 16px 64px}.toc{display:none}}
+main{min-width:0}
+.mast{grid-column:1/-1;border-bottom:2px solid var(--navy);padding-bottom:20px;margin-bottom:38px}
+.eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:0 0 10px}
+h1{font-family:var(--f-display);font-weight:500;font-size:clamp(32px,4.4vw,48px);line-height:1.05;margin:0 0 12px;color:var(--navy);letter-spacing:-.01em;text-wrap:balance}
+.sub{font-size:17.5px;color:var(--ink-2);max-width:64ch;margin:0 0 16px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12.5px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+.toc{position:sticky;top:22px;align-self:start;font-size:12.5px;border-left:1px solid var(--line);padding-left:15px}
+.toc p{margin:0 0 9px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.toc a{display:block;color:var(--ink-2);text-decoration:none;padding:3px 0;line-height:1.35}
+.toc a:hover{color:var(--accent)}
+.toc a.ind{padding-left:11px;color:var(--ink-3);font-size:12px}
+h2{font-family:var(--f-display);font-weight:500;font-size:29px;line-height:1.15;margin:56px 0 12px;color:var(--navy);letter-spacing:-.005em;text-wrap:balance}
+h2:first-child{margin-top:0}
+h3{font-size:16.5px;font-weight:700;margin:30px 0 8px;color:var(--ink);text-wrap:balance}
+p{margin:0 0 13px;max-width:70ch}
+ul,ol{margin:0 0 13px;padding-left:21px;max-width:70ch}
+li{margin:0 0 6px}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--code);padding:1px 5px;border-radius:4px;color:var(--ink);overflow-wrap:anywhere}
+.lede{font-size:17.5px;line-height:1.55}
+.words{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 26px}
+@media (max-width:760px){.words{grid-template-columns:1fr}}
+.words div{background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;padding:14px 16px}
+.words b{display:block;font-family:var(--f-display);font-size:21px;font-weight:500;color:var(--navy);margin-bottom:4px}
+.words p{margin:0;font-size:14px;color:var(--ink-2);max-width:none}
+.steps{counter-reset:s}
+.step{counter-increment:s;position:relative;margin:0 0 40px;padding-left:52px}
+.step::before{content:counter(s);position:absolute;left:0;top:-2px;width:34px;height:34px;border-radius:50%;background:var(--navy);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-size:17px;line-height:1}
+@media (max-width:620px){.step{padding-left:0}.step::before{position:static;margin-bottom:8px}}
+.step h3{margin:2px 0 8px;font-size:18px}
+.note{border-left:3px solid var(--accent);background:var(--sunk);padding:11px 15px;border-radius:0 7px 7px 0;margin:16px 0;max-width:70ch}
+.note.good{border-color:var(--good);background:var(--good-tint)}
+.note.warn{border-color:var(--warn);background:var(--warn-tint)}
+.note p:last-child,.note ul:last-child{margin-bottom:0}
+.note b.h{display:block;margin-bottom:3px}
+.tblwrap{overflow-x:auto;margin:14px 0 22px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+thead th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;background:var(--sunk);white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.key{font-family:var(--f-mono);font-size:12.5px}
+td .y{color:var(--good);font-weight:700}
+td .n{color:var(--ink-3)}
+.rec{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--good);background:var(--good-tint);padding:1px 7px;border-radius:999px;margin-right:4px}
+.done{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);background:var(--sunk);border:1px solid var(--line-strong);padding:0 7px;border-radius:999px;margin-right:4px}
+.new{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--cus);background:var(--cus-tint);padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:2px}
+
+/* ---- the screen plates: the tool, drawn ---- */
+.plate{margin:16px 0 8px;border:1px solid var(--line-strong);border-radius:10px;background:var(--tool-bg);overflow:hidden}
+.plate-cap{font-size:12.5px;color:var(--ink-2);padding:9px 14px;background:var(--surface);border-top:1px solid var(--line);line-height:1.45}
+.plate-body{padding:18px;overflow-x:auto}
+.mock{font-family:var(--f-body);color:var(--tool-ink);font-size:13.5px;line-height:1.4}
+.mock button{font:inherit}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--tool-rule);background:var(--surface);color:var(--tool-ink2);white-space:nowrap}
+.chip.cus{background:var(--cus-tint);color:var(--cus);border-color:var(--cus-line)}
+.chip.ok{background:var(--good-tint);color:var(--good);border-color:transparent}
+.chip.warn{background:var(--warn-tint);color:var(--warn);border-color:transparent}
+.chip.bad{background:var(--bad-tint);color:var(--bad);border-color:transparent}
+
+.rail{width:330px;max-width:100%;background:var(--surface);border:1px solid var(--tool-frame);border-radius:8px;padding:14px 16px}
+.rail h4{margin:0 0 10px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--tool-ink2);display:flex;justify-content:space-between}
+.sl-row{padding:9px 0;border-top:1px solid var(--tool-rule)}
+.sl-row .cat{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.sl-row .cat span{color:var(--tool-ink2);font-variant-numeric:tabular-nums}
+.sel{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--tool-frame);border-radius:6px;padding:6px 9px;background:var(--surface);font-size:13.5px}
+.sel::after{content:"";width:7px;height:7px;border-right:1.6px solid var(--tool-ink2);border-bottom:1.6px solid var(--tool-ink2);transform:rotate(45deg) translateY(-2px);margin-left:8px;flex:none}
+.sel.open{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent)}
+.sel.is-cus{border-color:var(--cus-line);background:var(--cus-tint)}
+.dd{border:1px solid var(--tool-frame);border-radius:6px;background:var(--surface);margin-top:3px;box-shadow:0 6px 18px rgba(16,30,60,.14);overflow:hidden}
+.dd div{padding:6px 10px;font-size:13.5px}
+.dd .hd{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--tool-ink2);padding-top:8px}
+.dd .on{background:var(--accent);color:var(--surface)}
+.dd .sep{border-top:1px solid var(--tool-rule);padding:0;margin:3px 0}
+.dd .cusopt{color:var(--cus);font-weight:600}
+.shape{font-size:12px;color:var(--tool-ink2);margin-top:5px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.shape a{color:var(--accent);font-weight:600;text-decoration:none}
+
+.dlg{background:var(--surface);border:1px solid var(--tool-frame);border-radius:10px;box-shadow:0 12px 40px rgba(16,30,60,.18);min-width:780px}
+.dlg-h{padding:16px 20px 12px;border-bottom:1px solid var(--tool-rule);display:flex;gap:14px;align-items:flex-start;justify-content:space-between}
+.dlg-h h4{margin:0;font-size:19px;font-weight:600}
+.dlg-h p{margin:3px 0 0;font-size:13px;color:var(--tool-ink2);max-width:none}
+.x{border:0;background:none;font-size:20px;color:var(--tool-ink2);line-height:1}
+.dlg-b{padding:14px 20px;display:grid;gap:14px}
+.fld{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;align-items:center;font-size:13px}
+.fld > label,.fld > .lbl{color:var(--tool-ink2);font-weight:600}
+.inp{border:1px solid var(--tool-frame);border-radius:6px;padding:6px 9px;background:var(--surface);color:var(--tool-ink);font:inherit;font-size:13.5px;width:100%}
+.seg{display:inline-flex;border:1px solid var(--tool-frame);border-radius:6px;overflow:hidden;flex-wrap:wrap}
+.seg span,.seg button{padding:5px 11px;font-size:12.5px;border:0;border-right:1px solid var(--tool-frame);background:var(--surface);color:var(--tool-ink)}
+.seg button{cursor:pointer;font-weight:500}
+.seg > :last-child{border-right:0}
+.seg .on,.seg button[aria-pressed="true"]{background:var(--tool-ink);color:var(--surface);font-weight:600}
+.modehint{font-size:12px;color:var(--tool-ink2);margin-top:4px}
+.bt{width:100%;border-collapse:collapse;font-size:13px}
+.bt th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--tool-ink2);font-weight:700;text-align:left;padding:6px 8px;border-bottom:1px solid var(--tool-frame);background:transparent;white-space:nowrap}
+.bt td{padding:6px 8px;border-bottom:1px solid var(--tool-rule);vertical-align:middle}
+.bt td.r,.bt th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bt .pn{font-weight:600}
+.bt .ps{font-size:11.5px;color:var(--tool-ink2)}
+.bt input{width:74px;text-align:right;border:1px solid var(--tool-frame);border-radius:5px;padding:4px 6px;font:inherit;font-variant-numeric:tabular-nums;background:var(--surface);color:var(--tool-ink)}
+.bt input[aria-invalid="true"]{border-color:var(--bad)}
+.bt .below{color:var(--bad);font-weight:600}
+.rm{border:0;background:none;color:var(--tool-ink2);font-size:16px;line-height:1;cursor:pointer;padding:2px 4px}
+.lnk{border:0;background:none;color:var(--accent);font-weight:600;cursor:pointer;padding:0;font-size:13px}
+.dlg-f{padding:12px 20px;border-top:1px solid var(--tool-rule);display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:var(--tool-bg);border-radius:0 0 10px 10px}
+.tot{font-variant-numeric:tabular-nums;font-size:13.5px}
+.tot b{font-size:15px}
+.tot.ok b.t{color:var(--good)}
+.tot.no b.t{color:var(--warn)}
+.f-sp{flex:1}
+.btn{border:1px solid var(--tool-frame);background:var(--surface);color:var(--tool-ink);border-radius:6px;padding:7px 14px;font-weight:600;font-size:13px}
+.btn.pri{background:var(--tool-ink);border-color:var(--tool-ink);color:var(--surface)}
+.btn[disabled]{opacity:.45}
+.checks{display:flex;gap:6px;flex-wrap:wrap}
+.room{border:1px dashed var(--cus-line);background:var(--cus-tint);border-radius:8px;padding:10px 12px}
+.room h5{margin:0 0 6px;font-size:12.5px;color:var(--cus);letter-spacing:.02em}
+.room .bt td,.room .bt th{border-color:var(--cus-line);background:transparent}
+.arrow{color:var(--tool-ink2)}
+.up{color:var(--good)} .down{color:var(--bad)}
+
+.pick{border:1px solid var(--tool-frame);border-radius:8px;background:var(--surface);min-width:700px}
+.pick-h{padding:10px 12px;border-bottom:1px solid var(--tool-rule);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pick-h .inp{width:240px}
+.pick .bt td:first-child{width:28px}
+.tick{width:15px;height:15px;border:1.5px solid var(--tool-frame);border-radius:3px;display:inline-block;vertical-align:middle}
+.tick.on{background:var(--accent);border-color:var(--accent);position:relative}
+.tick.on::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--surface);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.added{font-size:11.5px;color:var(--tool-ink2);font-style:italic}
+
+.band{min-width:700px;border:1px solid var(--tool-frame);border-radius:8px;background:var(--surface);overflow:hidden}
+.band .bt tr.cat td{background:var(--tool-bg);font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--cus-line);background:var(--cus-tint);color:var(--cus);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600}
+.was{font-size:11.5px;color:var(--tool-ink2);font-weight:500;text-decoration:line-through}
+
+.catpage{min-width:700px;background:var(--surface);border:1px solid var(--tool-frame);border-radius:10px;padding:14px 18px}
+.cathead{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.cathead h4{margin:0;font-size:19px;font-weight:600}
+.sw{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--tool-frame);border-radius:999px;padding:3px 4px 3px 12px;font-size:12.5px;font-weight:600}
+.sw i{width:34px;height:20px;border-radius:999px;background:var(--good);position:relative;display:inline-block}
+.sw i::after{content:"";position:absolute;right:3px;top:3px;width:14px;height:14px;border-radius:50%;background:var(--surface)}
+.sw.off i{background:var(--tool-frame)}
+.sw.off i::after{right:auto;left:3px}
+.adm{border-collapse:collapse;width:100%;font-size:13px;margin-top:12px}
+.adm td{padding:7px 8px;border-top:1px solid var(--tool-rule)}
+
+.reg{max-width:660px;border:1px solid var(--tool-frame);border-radius:10px;background:var(--surface);padding:14px 18px;font-size:13px}
+.reg h4{margin:0 0 2px;font-size:15px}
+.reg .mut{color:var(--tool-ink2)}
+.reg ul{list-style:none;padding:0;margin:10px 0 0;max-width:none}
+.reg li{display:flex;gap:10px;justify-content:space-between;border-top:1px solid var(--tool-rule);padding:7px 0;margin:0;flex-wrap:wrap}
+
+.decide td:first-child{font-family:var(--f-display);font-size:18px;color:var(--navy);width:38px}
+.small{font-size:13.5px;color:var(--ink-2)}
+.formula{font-family:var(--f-mono);font-size:13px;background:var(--code);border-radius:6px;padding:10px 14px;margin:10px 0 16px;overflow-x:auto;white-space:pre;max-width:100%}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Proposal · Implementation step · revision 2, with your answers</p>
+    <h1>Custom sleeves</h1>
+    <p class="sub">A sleeve built for one proposal from the products a category already uses, weighted either within the sleeve or straight against the whole portfolio. Admins can always build one; PWAs can where an admin has switched the category on.</p>
+    <div class="meta"><span><b>Prepared</b> 17 October 2026</span><span><b>Status</b> proposal only, no code changed</span><span><b>Would be</b> D170</span><span><b>Changed since revision 1</b> the name, who may build, the product list, no reason, and the new weighting switch</span></div>
+  </header>
+
+  <main>
+    <h2 id="summary">In short</h2>
+    <p class="lede">Each sleeve drop-down in the rail gains <b>Build a custom sleeve…</b> wherever the person may build one. Admins always can. PWAs can in the categories an admin has switched on in the Repository. The builder offers the products that category's library sleeves already hold. Its weights can be <b>% of the sleeve</b>, which add to 100% and are scaled by the category's strategic weight as today, or <b>% of the portfolio</b>, which sets the category's weight directly. In the second case the other categories scale to make room. Once used, the sleeve is priced, checked, delivered and recorded like a library sleeve, and it belongs to that proposal only.</p>
+    <div class="words">
+      <div><b>Who</b><p>Admins always. PWAs per category, switched on or off on the Repository's category page.</p></div>
+      <div><b>What</b><p>Up to 10 products, from those the category's library sleeves hold under this implementation type.</p></div>
+      <div><b>How much</b><p>Weights as % of the sleeve, or % of the portfolio, which overrides the strategic weight.</p></div>
+    </div>
+
+    <h2 id="answers">Your answers, and where they landed</h2>
+    <div class="tblwrap"><table class="decide">
+      <thead><tr><th></th><th>You said</th><th>In this revision</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Call it Custom</td><td>“Custom sleeve” throughout: drop-down, builder, pill, register, settings.</td></tr>
+        <tr><td>2</td><td>Admins always; PWAs only where switched on, per category</td><td>A switch on each category's page in the Repository's Sleeves tab. <a href="#admin">See below.</a></td></tr>
+        <tr><td>3</td><td>Products in this category only</td><td>The products the category's library sleeves hold under the proposal's implementation type. No whole-catalogue option.</td></tr>
+        <tr><td>4</td><td>No reason needed</td><td>An optional note, shown in the register when given.</td></tr>
+        <tr><td>5</td><td>No marking in the workbook or deck</td><td>Kept. The new weighting switch raises a related question, <a href="#open">question C</a>.</td></tr>
+        <tr><td>6</td><td>At most 10 products, adjustable</td><td>An admin setting, 10 to start.</td></tr>
+        <tr><td>7</td><td>Allowed for the private assets group</td><td>Yes, weighted as % of the sleeve. <a href="#open">Question B</a> asks about % of the portfolio there.</td></tr>
+        <tr><td>8</td><td>No approval step</td><td>None. The register's Custom view lets admins look them over.</td></tr>
+        <tr><td>9</td><td>Clear on a type change</td><td>Custom sleeves clear with the library choices, and the message names them.</td></tr>
+        <tr><td>10</td><td>All four stages together</td><td>One build, one Cyrus update.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="flow">How it works</h2>
+    <div class="steps">
+
+      <div class="step" id="flow-choose">
+        <h3>Choosing “custom” in the rail</h3>
+        <p>The library sleeves come first as today. Below a divider is <b>Build a custom sleeve…</b>. It appears only when the person may build in that category: always for an admin, and for a PWA when the category is switched on. Overlay-attached categories have no drop-down, so they never get it. Choosing it opens the builder and leaves the current choice in place until the new sleeve is used.</p>
+        <figure class="plate" style="margin:0">
+          <div class="plate-body"><div class="mock" style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+            <div class="rail" aria-label="Mock-up of the rail">
+              <h4><span>Asset Class Implementation</span><span>2 of 5</span></h4>
+              <div class="sl-row"><div class="cat"><b>Public Equity</b><span>46.0%</span></div><div class="sel">Core Global Equity</div></div>
+              <div class="sl-row"><div class="cat"><b>Investment Grade Fixed Income</b><span>24.0%</span></div>
+                <div class="sel open">Select a sleeve…</div>
+                <div class="dd" role="presentation">
+                  <div class="hd">Library</div>
+                  <div>SMA Only</div><div class="on">SMA &amp; ETFs</div><div>SMA Sov. Agency</div><div>SMA: Gilts Only</div><div>Long Duration Govt. Bond Mandate</div>
+                  <div class="sep"></div>
+                  <div class="cusopt">Build a custom sleeve…</div>
+                </div>
+              </div>
+              <div class="sl-row"><div class="cat"><b>Other Fixed Income</b><span>10.0%</span></div><div class="sel">Select a sleeve…</div></div>
+            </div>
+            <div style="max-width:300px;font-size:13px;color:var(--tool-ink2)">
+              <p style="margin:0 0 8px"><b style="color:var(--tool-ink)">The drop-down stays a real drop-down.</b> Keyboard, screen readers and phones work as now. The new option is last, under a divider.</p>
+              <p style="margin:0">For a PWA in a category that is switched off, the option is not there, and the drop-down looks exactly as it does today.</p>
+            </div>
+          </div></div>
+          <figcaption class="plate-cap">The Investment Grade Fixed Income drop-down open; the names are your library under PMG Multi-Asset Portfolio. The category weights are an example portfolio with the overlays off, used throughout this page.</figcaption>
+        </figure>
+      </div>
+
+      <div class="step" id="flow-build">
+        <h3>Building the sleeve <span class="new">weighting switch</span></h3>
+        <p>The builder is a dialog over the page, like the custom fee panel. Its heading gives the category's strategic weight and dollars. Every row shows what its weight buys in dollars, against the product's minimum.</p>
+        <ul>
+          <li><b>Start from</b>: blank, or a copy of a library sleeve offered here, whose products and weights are then changed.</li>
+          <li><b>Name</b>: optional, 80 characters at most. If left empty the sleeve is called “Custom”. <b>Note</b>: optional.</li>
+          <li><b>Weights are</b>: <b>% of the sleeve</b> or <b>% of the portfolio</b>. This is your new point, described in full <a href="#weights">in its own section</a>. Switching converts the numbers, so the sleeve means the same until you change one.</li>
+          <li><b>Spread evenly</b> shares the total across the rows: 100% of the sleeve, or the category's strategic weight of the portfolio.</li>
+        </ul>
+        <p class="small">The mock-up below works. Switch the weighting, change a weight or remove a row. In <b>% of the portfolio</b>, “Put the example back” sets the sleeve to 20% of the portfolio, and the panel shows the other categories making room.</p>
+        <figure class="plate" style="margin:0">
+          <div class="plate-body"><div class="mock">
+            <div class="dlg" role="group" aria-label="Working mock-up of the custom sleeve builder">
+              <div class="dlg-h">
+                <div><h4>Custom sleeve · Investment Grade Fixed Income</h4>
+                  <p>Strategic weight 24.00% · <b>$12,000,000</b> of a $50,000,000 mandate · PMG Multi-Asset Portfolio · USD Moderate Full</p></div>
+                <span class="x" aria-hidden="true">×</span>
+              </div>
+              <div class="dlg-b">
+                <div class="fld">
+                  <span class="lbl">Start from</span><div><span class="seg"><span>Blank</span><span class="on">SMA &amp; ETFs</span><span>Another sleeve…</span></span></div>
+                  <label for="mkName">Name</label><input id="mkName" class="inp" value="IG with sterling credit">
+                  <span class="lbl" id="mkModeLbl">Weights are</span>
+                  <div><span class="seg" role="group" aria-labelledby="mkModeLbl"><button type="button" id="mkModeS" aria-pressed="true">% of the sleeve</button><button type="button" id="mkModeP" aria-pressed="false">% of the portfolio</button></span>
+                    <div class="modehint" id="mkModeHint"></div></div>
+                </div>
+                <div style="overflow-x:auto">
+                <table class="bt" id="mkTbl">
+                  <thead><tr><th>Product</th><th>Vehicle</th><th class="r">Cost</th><th class="r">Minimum</th><th class="r" id="mkWHead">% of sleeve</th><th class="r">Of portfolio</th><th class="r">Amount</th><th></th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                </div>
+                <div><button class="lnk" type="button" id="mkSpread">Spread evenly</button> · <button class="lnk" type="button" id="mkReset">Put the example back</button> · <span style="color:var(--accent);font-weight:600">+ Add products</span></div>
+                <div class="room" id="mkRoom" hidden>
+                  <h5>The other categories make room</h5>
+                  <div style="overflow-x:auto"><table class="bt"><thead><tr><th>Category</th><th class="r">Strategic</th><th class="r">Implemented</th></tr></thead><tbody id="mkRoomBody"></tbody></table></div>
+                </div>
+              </div>
+              <div class="dlg-f">
+                <span class="tot" id="mkTot"></span>
+                <span class="checks" id="mkChecks"></span>
+                <span class="f-sp"></span>
+                <span class="btn">Cancel</span>
+                <button class="btn pri" type="button" id="mkUse" tabindex="-1">Use this sleeve</button>
+              </div>
+            </div>
+          </div></div>
+          <figcaption class="plate-cap">Started from SMA &amp; ETFs with GS Sterling Credit Portfolio (UCITS) added. All four products are held by your Investment Grade Fixed Income library sleeves; costs and minimums are from your catalogue. The GSAM SMA's $5m minimum is checked against the dollars its weight buys.</figcaption>
+        </figure>
+        <div class="note"><b class="h">The checks, live and again on the server</b>
+          <ul>
+            <li>Products are in the category's list, live in the catalogue, each once, each weight above zero. There are no more than 10.</li>
+            <li>In <b>% of the sleeve</b>: the weights add to exactly 100%.</li>
+            <li>In <b>% of the portfolio</b>: the total is above zero, and leaves room for the categories that make room (<a href="#weights">below</a>).</li>
+            <li>No product falls below its minimum investment at this mandate. This is the export's own rule, shown while building rather than at the end.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step" id="flow-pick">
+        <h3>Adding products</h3>
+        <p><b>+ Add products</b> opens a picker inside the dialog. It is the Repository's “Add a product” dialog, moved to code both screens share: search, filters for vehicle, style and source, sortable cost and minimum columns, tick several and add them together. It lists only the category's products: those its library sleeves hold under this implementation type, including disabled sleeves, but not archived ones. To make another product available in a category, an admin puts it in one of that category's library sleeves.</p>
+        <figure class="plate" style="margin:0">
+          <div class="plate-body"><div class="mock">
+            <div class="pick" role="group" aria-label="Mock-up of the product picker">
+              <div class="pick-h"><span class="inp" style="width:240px;color:var(--tool-ink2)">Search the 7 products…</span>
+                <span class="chip">Vehicle: any</span><span class="chip">Style: any</span><span class="chip">Source: any</span>
+                <span style="font-size:12px;color:var(--tool-ink2)">Investment Grade Fixed Income · PMG Multi-Asset Portfolio</span></div>
+              <div style="overflow-x:auto"><table class="bt">
+                <thead><tr><th></th><th>Product</th><th>Asset class</th><th>Vehicle</th><th class="r">Cost</th><th class="r">Minimum</th></tr></thead>
+                <tbody>
+                  <tr><td></td><td><span class="pn">GSAM Intermediate Credit SMA</span> <span class="added">in the sleeve</span></td><td>IG Corporate</td><td>SMA</td><td class="r">0.28%</td><td class="r">$5,000,000</td></tr>
+                  <tr><td></td><td><span class="pn">GS Access IG Corporate ETF</span> <span class="added">in the sleeve</span></td><td>IG Corporate</td><td>ETF</td><td class="r">0.14%</td><td class="r">—</td></tr>
+                  <tr><td></td><td><span class="pn">GS Access Treasury 0-1 ETF</span> <span class="added">in the sleeve</span></td><td>Government</td><td>ETF</td><td class="r">0.12%</td><td class="r">—</td></tr>
+                  <tr><td><span class="tick on"></span></td><td class="pn">GS Sterling Credit Portfolio (UCITS)</td><td>IG Corporate</td><td>UCITS</td><td class="r">0.54%</td><td class="r">$10,000</td></tr>
+                  <tr><td><span class="tick"></span></td><td class="pn">GS Access Global Aggregate (UCITS)</td><td>Aggregate</td><td>UCITS</td><td class="r">0.18%</td><td class="r">$10,000</td></tr>
+                  <tr><td><span class="tick"></span></td><td class="pn">GSAM Core Municipal SMA</td><td>Municipals</td><td>SMA</td><td class="r">0.25%</td><td class="r">$5,000,000</td></tr>
+                  <tr><td><span class="tick"></span></td><td class="pn">GSAM Short Duration SMA</td><td>Short Duration</td><td>SMA</td><td class="r">0.22%</td><td class="r">$5,000,000</td></tr>
+                </tbody></table></div>
+              <div class="dlg-f" style="border-radius:0 0 8px 8px"><span class="tot">1 ticked</span><span class="f-sp"></span><span class="btn">Cancel</span><span class="btn pri">Add 1 product</span></div>
+            </div>
+          </div></div>
+          <figcaption class="plate-cap">The real list: these seven are exactly the products your Investment Grade Fixed Income sleeves hold under PMG Multi-Asset Portfolio today. Under PMG ESG the same category's list is eleven, including the ESG and green bond funds.</figcaption>
+        </figure>
+      </div>
+
+      <div class="step" id="flow-after">
+        <h3>Back on the page</h3>
+        <p>After <b>Use this sleeve</b>, the drop-down reads <b>Custom: IG with sterling credit</b>, with the product count, cost and <b>Edit</b> under it. In the table the category's band carries a violet <span class="chip cus">Custom</span> pill. When the sleeve is weighted as % of the portfolio, the band also shows the strategic weight it replaced, struck through. The other categories show their new weights, and each one that moved shows its strategic weight struck through beside it.</p>
+        <figure class="plate" style="margin:0">
+          <div class="plate-body"><div class="mock" style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+            <div class="rail" aria-label="Mock-up of the rail after building">
+              <h4><span>Asset Class Implementation</span><span>3 of 5</span></h4>
+              <div class="sl-row"><div class="cat"><b>Investment Grade Fixed Income</b><span>20.0% <span class="was">24.0%</span></span></div>
+                <div class="sel is-cus">Custom: IG with sterling credit</div>
+                <div class="shape"><span class="chip cus">Custom · % of portfolio</span><span>4 products · cost 0.25%</span><a href="#flow-build">Edit</a></div></div>
+            </div>
+            <div class="band" aria-label="Mock-up of the implementation table">
+              <table class="bt"><thead><tr><th>Category / product</th><th class="r">Weight</th><th class="r">Amount</th><th class="r">Cost</th></tr></thead>
+              <tbody>
+                <tr class="cat"><td>Public Equity</td><td class="r">48.42% <span class="was">46.00%</span></td><td class="r">$24,210,000</td><td class="r"></td></tr>
+                <tr class="cat"><td>Investment Grade Fixed Income <span class="pill">Custom · IG with sterling credit</span></td><td class="r">20.00% <span class="was">24.00%</span></td><td class="r">$10,000,000</td><td class="r">0.25%</td></tr>
+                <tr><td>GSAM Intermediate Credit SMA</td><td class="r">10.00%</td><td class="r">$5,000,000</td><td class="r">0.28%</td></tr>
+                <tr><td>GS Access IG Corporate ETF</td><td class="r">5.00%</td><td class="r">$2,500,000</td><td class="r">0.14%</td></tr>
+                <tr><td>GS Access Treasury 0-1 ETF</td><td class="r">3.00%</td><td class="r">$1,500,000</td><td class="r">0.12%</td></tr>
+                <tr><td>GS Sterling Credit Portfolio (UCITS)</td><td class="r">2.00%</td><td class="r">$1,000,000</td><td class="r">0.54%</td></tr>
+                <tr class="cat"><td>Other Fixed Income</td><td class="r">10.53% <span class="was">10.00%</span></td><td class="r">$5,265,000</td><td class="r"></td></tr>
+              </tbody></table>
+            </div>
+          </div></div>
+          <figcaption class="plate-cap">The % of the portfolio example: Investment Grade Fixed Income set to 20%, and the other categories each scaled up by 80/76 to fill the 4% it gave back (Hedge Funds and the private assets group, not shown, also move from 10.00% to 10.53% or 10.52%).</figcaption>
+        </figure>
+      </div>
+
+      <div class="step" id="flow-change">
+        <h3>Changing it, or going back to the library</h3>
+        <ul>
+          <li><b>Edit</b> reopens the builder on the sleeve as it stands. Cancel leaves it unchanged.</li>
+          <li>Picking a library sleeve switches back to it. The custom sleeve waits in the drop-down as <b>Custom: IG with sterling credit</b> and comes back unchanged if picked again. One choice is in force at a time. If the custom sleeve set the category's weight, going back to the library also puts the strategic weights back.</li>
+          <li><b>Discard the custom sleeve</b>, at the foot of the builder, removes it from the proposal.</li>
+          <li>A change of <b>implementation type</b> clears it with every other sleeve choice (your answer 9).</li>
+          <li>A change of <b>base portfolio or currency</b> keeps it. In % of the sleeve it follows the new strategic weight. In % of the portfolio it keeps its weight and the others make room again. The product list is checked again, and its minimums re-run.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="weights">% of the sleeve or % of the portfolio <span class="new">new</span></h2>
+    <p>The switch decides what the typed weights mean.</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th></th><th>% of the sleeve</th><th>% of the portfolio</th></tr></thead>
+      <tbody>
+        <tr><td>The weights add to</td><td>100%</td><td>Whatever the category should be, e.g. 20%</td></tr>
+        <tr><td>A product's portfolio weight</td><td>Its weight × the category's strategic weight, as for library sleeves</td><td>Exactly as typed</td></tr>
+        <tr><td>The category's weight</td><td>The strategic weight (after overlays), unchanged</td><td>The total typed, which replaces the strategic weight</td></tr>
+        <tr><td>The rest of the portfolio</td><td>Unchanged</td><td>Scaled so that everything adds to 100%</td></tr>
+        <tr><td>Follows a change of base portfolio</td><td>Yes, through the new strategic weight</td><td>No, it keeps its typed weights</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Where the difference goes</h3>
+    <p>If Investment Grade Fixed Income is set to 20% where the strategic allocation says 24%, 4% has to go somewhere. The proposal is that it goes to the other categories <b>in proportion</b>, the same way an overlay takes its weight from its source categories today. Each category keeps its share of the remainder, and so does every product inside it. Two kinds of category do not move: those an overlay fills, which keep their overlay size, and other custom sleeves set as % of the portfolio, which keep what was typed.</p>
+    <div class="formula">scale  = (100% − overlay categories − every % of portfolio custom sleeve)
+         ÷ (what the remaining categories add to after the overlays)
+a remaining category's weight × scale; every product in it follows</div>
+    <p>In the example: 100% − 20% = 80% is shared by categories that held 76%, so each scales by 80/76 = 1.0526. Public Equity goes from 46.00% to 48.42%, and the three 10% categories go to 10.53%, 10.53% and 10.52%. The rounding is the workbook's own largest-remainder rounding, so the total is exactly 100.00%.</p>
+    <h3>The order things happen in</h3>
+    <ol>
+      <li>The strategic allocation, from the base portfolio.</li>
+      <li>The overlays, exactly as today: they take from their sources and fill their own categories.</li>
+      <li>Custom sleeves weighted as % of the portfolio take their typed weight. Every other category scales to fill what is left.</li>
+      <li>Library sleeves and custom sleeves weighted as % of the sleeve spread each category's weight across their products. Then rounding, minimums, fees, the private funding split and the export checks run, all as today.</li>
+    </ol>
+    <p>Because step 3 comes after the overlays, a % of the portfolio custom sleeve gets exactly what was typed even when an overlay draws on that category. For example, if the tactical tilt takes from Investment Grade Fixed Income and the custom sleeve says 20%, the result is 20%, and the tilt's take falls on the categories that scale.</p>
+    <h3>When it is refused</h3>
+    <ul>
+      <li>The typed total is zero, or leaves nothing for the categories that make room (for example 100% with other categories still holding weight).</li>
+      <li>A product would fall below its minimum. The builder checks the sleeve's own products. Products in the categories that shrink are checked live in the rail and the table, and at export, as today.</li>
+    </ul>
+    <div class="note warn"><b class="h">What the risk and return figures describe</b><p>The Portfolios and Risk sheets, and the deck's analytics, are worked out from the strategic allocation. They do not use the implementation. That is already the case with overlays, which move the implemented weights away from the strategic ones. A % of the portfolio custom sleeve can move them further, by as much as the person types. The figures stay as they are: they describe the strategic allocation. <a href="#open">Question C</a> asks whether the delivered files should say that the implementation departs from it.</p></div>
+
+    <h2 id="rules">The rules it meets</h2>
+    <p>The product checks a library sleeve passes are moved out of <code>sleeveRepo._validate</code> into one function both use. The rules that only make sense for the library are left out.</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th>Rule</th><th>Library sleeve</th><th>Custom sleeve</th></tr></thead>
+      <tbody>
+        <tr><td>Products live in the catalogue, each once, each weight above zero</td><td><span class="y">Yes</span></td><td><span class="y">Yes</span>, same code</td></tr>
+        <tr><td>Weights add to 100% (within 0.0001%)</td><td><span class="y">Yes</span></td><td>In % of the sleeve. In % of the portfolio: above 0 and leaving room</td></tr>
+        <tr><td>Products from the category's own list</td><td><span class="n">Not checked</span></td><td><span class="y">Yes</span></td></tr>
+        <tr><td>At most 10 products (admin setting)</td><td><span class="n">No limit</span></td><td><span class="y">Yes</span></td></tr>
+        <tr><td>Every product at or above its minimum</td><td>At export</td><td>While building, and at export</td></tr>
+        <tr><td>Who may build</td><td>Admins, in the Repository</td><td>Admins always; PWAs where the category is on</td></tr>
+        <tr><td>Name rules, editions, uniqueness</td><td><span class="y">Yes</span></td><td>Name up to 80 characters; nothing else</td></tr>
+        <tr><td>Fixed (overlay-attached) categories</td><td>One sleeve each</td><td>Not offered</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="admin">Switching it on for PWAs</h2>
+    <p>Each category's page in the Repository's Sleeves tab, the screen you showed me with the Disable buttons, gets a switch in its header: <b>Custom sleeves for PWAs</b>. It starts <b>off</b> for every category. A category switched off still lets admins build. The switch applies under every implementation type, as you asked. The per-type product lists keep an ESG proposal to the products the ESG library already uses.</p>
+    <figure class="plate">
+      <div class="plate-body"><div class="mock">
+        <div class="catpage" role="group" aria-label="Mock-up of the category page header">
+          <div class="cathead"><h4>Investment Grade Fixed Income</h4><span style="color:var(--tool-ink2);font-size:13px">6 sleeves under PMG Multi-Asset Portfolio</span><span style="flex:1"></span><span class="sw" title="Mock-up">Custom sleeves for PWAs: On <i></i></span></div>
+          <p style="margin:8px 0 0;font-size:12.5px;color:var(--tool-ink2);max-width:none">Switched on by fbarker, 17 Oct 2026 · PWAs may build from the 7 products this category's sleeves hold under PMG Multi-Asset Portfolio (11 under PMG ESG, 7 under US Onshore, 6 under Irish Onshore). Admins can build either way.</p>
+          <table class="adm" aria-label="Mock-up of the summary on the categories page">
+            <tbody>
+              <tr><td><b>Custom sleeves for PWAs</b>, on the all-categories page</td><td><span class="chip ok">On</span> Investment Grade Fixed Income</td><td><span class="chip ok">On</span> Other Fixed Income</td><td><span class="chip">Off</span> Public Equity</td><td><span class="chip">Off</span> Hedge Funds</td><td><span class="chip">Off</span> Private Equity &amp; Other Private Assets</td></tr>
+              <tr><td><b>Most products in a custom sleeve</b></td><td colspan="5"><span class="inp" style="display:inline-block;width:60px;text-align:right">10</span> <span style="color:var(--tool-ink2)">one setting for every category</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div></div>
+      <figcaption class="plate-cap">The switch in the category header, and how the all-categories page summarises it. The product counts are your real figures for this category under each type; which categories are switched on is an example. Fixed categories (Asset Allocation Strategies, Hybrid Fixed Income) have no switch.</figcaption>
+    </figure>
+    <ul>
+      <li>The setting is kept as a new kind in the existing <code>policies</code> table, with a history. Each switch is recorded with who and when, and appears in the Activity tab under <b>Custom sleeves</b>. No sleeves schema change is needed.</li>
+      <li>Turning a category off stops PWAs building or changing custom sleeves there. A proposal that already holds one keeps it, so a PWA can still deliver it. They see it but cannot change it, and the drop-down offers to switch back to a library sleeve.</li>
+      <li>A custom sleeve an admin built in a switched-off category is handled the same way: the PWA can deliver it but not change it.</li>
+      <li><b>Make it a library sleeve</b>: from the register, an admin opens the New sleeve form filled with a custom sleeve's products. For a % of the portfolio sleeve, the weights are converted to % of the sleeve. The admin names it and creates it through the normal route.</li>
+    </ul>
+
+    <h2 id="client">What the client sees</h2>
+    <p>As you decided, nothing marks a sleeve as custom in the workbook or the deck. The implementation pages show the weights as implemented, so a % of the portfolio sleeve shows there at its typed weight, with the other categories at their scaled weights, exactly as an overlay's effect already shows. The asset allocation, portfolio and risk pages keep showing the strategic allocation.</p>
+
+    <h2 id="record">What gets recorded</h2>
+    <ul>
+      <li><b>The register</b>: each custom row in <code>proposalSleeves</code> has no library id or version, and gains <code>kind</code> (library or custom), <code>mode</code> (sleeve or portfolio), <code>products</code> (id and weight each) and <code>note</code>. The proposal also records each category's strategic and implemented weight, so a departure from the strategic allocation can be seen later. Register schema 7: added columns only.</li>
+      <li><b>The register's screens</b>: a <span class="chip cus">Custom</span> chip, a <b>Custom</b> saved view, and the composition and weighting in the detail panel. A proposal whose implemented weights depart from the strategic ones because of a custom sleeve says so there.</li>
+      <li><b>The CSV</b>: <code>Investment Grade Fixed Income=Custom: IG with sterling credit (% of portfolio, 20.00%)</code>, with the composition in its own column.</li>
+      <li><b>Account opening requests</b> echo the register's pins, marked custom.</li>
+    </ul>
+    <figure class="plate">
+      <div class="plate-body"><div class="mock">
+        <div class="reg" role="group" aria-label="Mock-up of a register entry">
+          <h4>P-2026-0418 · Harbour Family Office <span class="chip cus">Custom</span></h4>
+          <div class="mut">Delivered 17 Oct 2026, 14:05 by jtaylor · PMG Multi-Asset Portfolio · USD Moderate Full · $50,000,000</div>
+          <ul>
+            <li><span>Public Equity <span class="mut">48.42% (strategic 46.00%)</span></span><span>Core Global Equity <span class="mut">r4</span></span></li>
+            <li><span>Investment Grade Fixed Income <span class="mut">20.00% (strategic 24.00%)</span></span><span><span class="chip cus">Custom · % of portfolio</span> IG with sterling credit</span></li>
+            <li style="display:block;border-top:0;padding-top:0;color:var(--tool-ink2)">GSAM Intermediate Credit SMA 10% · GS Access IG Corporate ETF 5% · GS Access Treasury 0-1 ETF 3% · GS Sterling Credit Portfolio (UCITS) 2% of the portfolio · built by jtaylor</li>
+            <li><span>Other Fixed Income <span class="mut">10.53% (strategic 10.00%)</span></span><span>Global High Yield <span class="mut">r2</span></span></li>
+          </ul>
+          <p style="margin:10px 0 0"><span style="color:var(--accent);font-weight:600">Make it a library sleeve…</span> <span class="mut">(admins)</span></p>
+        </div>
+      </div></div>
+      <figcaption class="plate-cap">The register's detail panel. The client, proposal number and the other sleeve names are invented for the example.</figcaption>
+    </figure>
+
+    <h2 id="tech">What changes underneath</h2>
+    <div class="tblwrap"><table>
+      <thead><tr><th>Where</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td class="key">GET /scenario/products</td><td>New, for any signed-in user: one category's product list under one implementation type, with the fields the picker shows. The list is worked out from the library sleeves, so it follows the library as admins change it.</td></tr>
+        <tr><td class="key">scenarioStore · PUT /scenario/{id}</td><td>New scenario field <code>custom: {category: {name, note, mode, products: [{productId, weight}], from, builtBy}}</code>. A category with a custom sleeve and no library name uses the custom one. The route checks the shared product rules, the category's list, the product limit and who may build; refuses fixed categories; and clears custom sleeves on a type change.</td></tr>
+        <tr><td class="key">rules.applyCustomWeights</td><td>New, step 3 above: after <code>resolveOverlays</code>, sets each % of the portfolio custom category and scales the rest, carrying the scale into each category's assets as overlays do. Mirrored in the page's JavaScript and tested against it.</td></tr>
+        <tr><td class="key">sleeves.resolveChoice</td><td>The one place a category's choice becomes products and weights: the library entry, or the custom sleeve hydrated from the catalogue, with % of the portfolio weights turned into within-sleeve shares once the category's weight is set. <code>buildImplementationRows</code>, the export checks and the register call it.</td></tr>
+        <tr><td class="key">sleeveRepo · products</td><td>The product checks move out of <code>_validate</code> into a shared function. Library behaviour stays exactly as it is.</td></tr>
+        <tr><td class="key">proposalRegister</td><td>Schema 7: <code>kind</code>, <code>mode</code>, <code>products</code> and <code>note</code> on <code>proposalSleeves</code>; strategic and implemented weights per category; the Custom view; CSV; detail.</td></tr>
+        <tr><td class="key">policies kind “customSleeves”</td><td>The per-category switches and the product limit, with history and an Activity area; two admin routes.</td></tr>
+        <tr><td class="key">core.js · implementation.js</td><td><code>state.custom</code>; the drop-down option; the builder (the custom fee panel's Draft and Apply pattern); <code>baseCategories()</code> runs the new step 3, and <code>sleeveFor()</code> answers from the custom sleeve. Totals, minimums, donuts and the export gate then follow without change. The table shows the Custom pill and the struck-through strategic weights.</td></tr>
+        <tr><td class="key">shared picker</td><td>The Repository's “Add a product” dialog moved to code both pages share.</td></tr>
+        <tr><td class="key">repository.js</td><td>The category switch and the summary; the register's chip, view and detail; Make it a library sleeve.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note"><b class="h">Nothing changes in</b><p>pricing and the fee card, the overlays themselves, the private funding split, the workbook and deck layouts, the analytics, editions, the disable switch, or the sleeves database.</p></div>
+
+    <h2 id="edges">Cases worth thinking through</h2>
+    <ul>
+      <li><b>A product leaves the category's list</b> after the sleeve is built (an admin removed it from the library sleeves, or withdrew it). The builder flags it and the export refuses with the product's name. The PWA swaps it out.</li>
+      <li><b>Two custom sleeves</b>, both % of the portfolio, are both fixed. Together they must leave room for the categories that scale.</li>
+      <li><b>Every non-overlay category custom and % of the portfolio</b>: nothing is left to scale, so the typed totals plus the overlays must add to exactly 100%. The builder says so.</li>
+      <li><b>The mandate is cut</b> after building: minimums are re-run in the rail at once, as now.</li>
+      <li><b>Base or currency change</b>: % of the sleeve follows the new strategic weight; % of the portfolio keeps its own and the others re-scale.</li>
+      <li><b>Two people on one proposal</b>: it saves with the rest of the proposal, last save wins, as for other choices.</li>
+    </ul>
+
+    <h2 id="cyrus">Moving Cyrus across</h2>
+    <p>All four stages go as one <code>porting/update.py</code>, the usual single copied file. On Cyrus it adds one route for PWAs, two admin routes and register schema 7 (columns added on first open, so existing proposals are kept), and seeds the custom sleeve settings with every category off. Cyrus's sleeves database needs no change. Nothing changes for PWAs on Cyrus until an admin switches a category on.</p>
+
+    <h2 id="tests">How it gets tested</h2>
+    <ul>
+      <li><b>Same answer both ways.</b> A proposal built from a library sleeve and from a custom sleeve with the same products and weights, in % of the sleeve, produces identical rows, fees, minimums, workbook cells and deck tables.</li>
+      <li><b>The two weightings agree</b> when they mean the same thing: % of the portfolio weights that add to the strategic weight give exactly the % of the sleeve result, and nothing else moves.</li>
+      <li>The scaling: the worked example above to the cent; overlays first; two fixed sleeves; refusal when nothing is left; largest-remainder rounding to 100.00%; private funding split after scaling.</li>
+      <li>Page and server agree on step 3 and on the rows, run through node as the existing mirror tests are.</li>
+      <li>Who may build: admin always; PWA on and off; an existing sleeve kept but frozen when switched off.</li>
+      <li>Register schema 6 to 7 in place; the CSV and the view counts.</li>
+      <li>Clicked through on the sandbox with screenshots before anything reaches your service.</li>
+    </ul>
+
+    <h2 id="open">Still to settle</h2>
+    <p>Five points your answers opened up, each with what I would choose.</p>
+    <div class="tblwrap"><table class="decide">
+      <thead><tr><th></th><th>Question</th><th>My recommendation</th></tr></thead>
+      <tbody>
+        <tr><td>A</td><td>In % of the portfolio, where does the difference go?</td><td><span class="rec">Rec</span>To the other categories in proportion, as described above. The alternative is a single category the person picks in the builder (e.g. “take it from Public Equity”).</td></tr>
+        <tr><td>B</td><td>Offer % of the portfolio for the private assets group?</td><td><span class="rec">Rec</span>Not at first. Its commitment, the $20m private assets minimum and the uncalled capital split all hang off its weight; % of the sleeve works there today without risk.</td></tr>
+        <tr><td>C</td><td>Should the delivered files say the implementation departs from the strategic allocation?</td><td><span class="rec">Rec</span>Yes, one plain line in the workbook's preamble and the deck's notes, e.g. “Implemented weights differ from the strategic allocation: Investment Grade Fixed Income 20.0% (strategic 24.0%).” It does not mention custom sleeves, so answer 5 holds.</td></tr>
+        <tr><td>D</td><td>A category's product list: from the library sleeves under the proposal's implementation type?</td><td><span class="rec">Rec</span>Yes, including disabled sleeves, not archived ones. An admin adds a product to the list by putting it in one of the category's sleeves.</td></tr>
+        <tr><td>E</td><td>Is there a limit on how far % of the portfolio may move a category?</td><td><span class="rec">Rec</span>None at first, but the register records every departure. A limit (e.g. within 5 points of the strategic weight) could be added to the settings later.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small">Once these are settled, the build is the four stages together, then one Cyrus update with D164–D170.</p>
+  </main>
+
+  <nav class="toc" aria-label="Contents">
+    <p>Contents</p>
+    <a href="#summary">In short</a>
+    <a href="#answers">Your answers</a>
+    <a href="#flow">How it works</a>
+    <a class="ind" href="#flow-choose">Choosing it</a>
+    <a class="ind" href="#flow-build">Building it</a>
+    <a class="ind" href="#flow-pick">Adding products</a>
+    <a class="ind" href="#flow-after">Back on the page</a>
+    <a class="ind" href="#flow-change">Changing it</a>
+    <a href="#weights">% of sleeve or portfolio</a>
+    <a href="#rules">The rules it meets</a>
+    <a href="#admin">Switching it on for PWAs</a>
+    <a href="#client">What the client sees</a>
+    <a href="#record">What gets recorded</a>
+    <a href="#tech">What changes underneath</a>
+    <a href="#edges">Cases worth thinking through</a>
+    <a href="#cyrus">Moving Cyrus across</a>
+    <a href="#tests">How it gets tested</a>
+    <a href="#open">Still to settle</a>
+  </nav>
+</div>
+
+<script>
+/* The builder mock-up. A $50m mandate; the example portfolio with the overlays off:
+   Public Equity 46, Investment Grade Fixed Income 24, Other Fixed Income 10, Hedge Funds 10,
+   Private Equity & Other Private Assets 10. Products, costs and minimums from the catalogue. */
+(function () {
+  var MANDATE = 50000000, STRATEGIC = 24, MAX = 10;
+  var OTHERS = [['Public Equity', 46], ['Other Fixed Income', 10], ['Hedge Funds', 10], ['Private Equity & Other Private Assets', 10]];
+  var PRODUCTS = [
+    { name: 'GSAM Intermediate Credit SMA', sub: 'IG Corporate · Active', vehicle: 'SMA', cost: 0.28, min: 5000000 },
+    { name: 'GS Access IG Corporate ETF', sub: 'IG Corporate · Passive', vehicle: 'ETF', cost: 0.14, min: 0 },
+    { name: 'GS Access Treasury 0-1 ETF', sub: 'Government · Passive', vehicle: 'ETF', cost: 0.12, min: 0 },
+    { name: 'GS Sterling Credit Portfolio (UCITS)', sub: 'IG Corporate · Active · added', vehicle: 'UCITS', cost: 0.54, min: 10000 }
+  ];
+  var EXAMPLE = { sleeve: [45, 25, 20, 10], portfolio: [10, 5, 3, 2] };
+  var mode = 'sleeve', rows = [];
+  var $ = function (id) { return document.getElementById(id); };
+  var tbody = document.querySelector('#mkTbl tbody');
+  var money = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
+  var pct = function (n) { return n.toFixed(2) + '%'; };
+  function num(t) { var v = String(t).trim(); return /^\d+(\.\d{0,2})?$/.test(v) ? parseFloat(v) : NaN; }
+  function reset() { rows = PRODUCTS.map(function (p, i) { return Object.assign({}, p, { text: EXAMPLE[mode][i].toFixed(2) }); }); draw(); }
+  function total() { return rows.reduce(function (t, r) { var w = num(r.text); return t + (isNaN(w) ? 0 : w); }, 0); }
+  /* a row's weight as a share of the whole portfolio */
+  function ofPortfolio(w) { return mode === 'sleeve' ? w * STRATEGIC / 100 : w; }
+  function largestRemainder(values, target) {
+    var cents = Math.round(target * 100), floors = values.map(function (v) { return Math.floor(v * 100 + 1e-9); });
+    var left = cents - floors.reduce(function (a, b) { return a + b; }, 0);
+    var order = values.map(function (v, i) { return [v * 100 - floors[i], i]; }).sort(function (a, b) { return b[0] - a[0]; });
+    for (var k = 0; k < left && k < order.length; k++) floors[order[k][1]]++;
+    return floors.map(function (c) { return c / 100; });
+  }
+  function draw() {
+    $('mkWHead').textContent = mode === 'sleeve' ? '% of sleeve' : '% of portfolio';
+    $('mkModeS').setAttribute('aria-pressed', mode === 'sleeve');
+    $('mkModeP').setAttribute('aria-pressed', mode === 'portfolio');
+    $('mkModeHint').textContent = mode === 'sleeve'
+      ? 'Weights add to 100% and are scaled by the category’s strategic 24.00%.'
+      : 'Weights are shares of the whole portfolio. Their total replaces the strategic 24.00%; the other categories make room.';
+    tbody.innerHTML = rows.map(function (r, i) {
+      return '<tr><td><div class="pn">' + r.name + '</div><div class="ps">' + r.sub + '</div></td><td>' + r.vehicle + '</td>'
+        + '<td class="r">' + r.cost.toFixed(2) + '%</td><td class="r">' + (r.min ? money(r.min) : '—') + '</td>'
+        + '<td class="r"><input id="mkW' + i + '" data-i="' + i + '" value="' + r.text + '" inputmode="decimal" aria-label="Weight of ' + r.name + '"></td>'
+        + '<td class="r" data-of="' + i + '"></td><td class="r" data-amt="' + i + '"></td>'
+        + '<td><button class="rm" type="button" data-rm="' + i + '" aria-label="Remove ' + r.name + '">×</button></td></tr>';
+    }).join('');
+    sums();
+  }
+  function sums() {
+    var t = Math.round(total() * 100) / 100, bad = 0, below = 0, cost = 0;
+    rows.forEach(function (r, i) {
+      var w = num(r.text), input = $('mkW' + i);
+      if (input) input.setAttribute('aria-invalid', isNaN(w) || w <= 0 ? 'true' : 'false');
+      var of = tbody.querySelector('[data-of="' + i + '"]'), amt = tbody.querySelector('[data-amt="' + i + '"]');
+      if (isNaN(w) || w <= 0) { bad++; of.textContent = '—'; amt.textContent = '—'; amt.className = 'r'; return; }
+      var p = ofPortfolio(w), dollars = MANDATE * p / 100, b = r.min && dollars < r.min - 0.5;
+      if (b) below++;
+      if (t > 0) cost += (w / t) * r.cost;
+      of.textContent = pct(p);
+      amt.className = 'r' + (b ? ' below' : '');
+      amt.innerHTML = money(dollars) + (b ? '<br><span style="font-size:11px">below minimum</span>' : '');
+    });
+    var room = mode === 'portfolio' ? 100 - t : null;
+    var full = mode === 'sleeve' ? Math.abs(t - 100) < 1e-9 : (t > 0 && room > 0);
+    var tot = $('mkTot');
+    tot.className = 'tot ' + (full ? 'ok' : 'no');
+    if (mode === 'sleeve') {
+      tot.innerHTML = 'Total <b class="t">' + pct(t) + '</b>' + (full ? '' : ' · ' + pct(Math.abs(100 - t)) + ' ' + (t < 100 ? 'still to place' : 'too much'))
+        + ' · cost <b>' + cost.toFixed(2) + '%</b>';
+    } else {
+      tot.innerHTML = 'Category <b class="t">' + pct(t) + '</b> of the portfolio (strategic 24.00%) · cost <b>' + cost.toFixed(2) + '%</b>';
+    }
+    var checks = [];
+    if (mode === 'sleeve') checks.push(full ? '<span class="chip ok">✓ 100%</span>' : '<span class="chip warn">Not yet 100%</span>');
+    else checks.push(full ? '<span class="chip ok">✓ Leaves ' + pct(room) + ' for the rest</span>' : '<span class="chip bad">' + (t <= 0 ? 'Nothing placed' : 'Leaves nothing for the rest') + '</span>');
+    if (bad) checks.push('<span class="chip bad">' + bad + ' weight' + (bad === 1 ? '' : 's') + ' to fix</span>');
+    checks.push(below ? '<span class="chip bad">' + below + ' below minimum</span>' : '<span class="chip ok">✓ Minimums</span>');
+    checks.push(rows.length && rows.length <= MAX ? '<span class="chip ok">✓ ' + rows.length + ' of ' + MAX + ' products</span>' : '<span class="chip bad">' + (rows.length ? 'Too many products' : 'No products') + '</span>');
+    $('mkChecks').innerHTML = checks.join('');
+    $('mkUse').disabled = !(full && !bad && !below && rows.length && rows.length <= MAX);
+    /* the other categories, scaled to fill what the custom sleeve leaves */
+    var show = mode === 'portfolio' && t > 0 && room > 0 && Math.abs(t - STRATEGIC) > 1e-9;
+    $('mkRoom').hidden = !show;
+    if (show) {
+      var scale = room / 76, after = largestRemainder(OTHERS.map(function (o) { return o[1] * scale; }), room);
+      $('mkRoomBody').innerHTML = OTHERS.map(function (o, i) {
+        var d = after[i] - o[1];
+        return '<tr><td>' + o[0] + '</td><td class="r">' + pct(o[1]) + '</td><td class="r"><b class="' + (d > 0 ? 'up' : 'down') + '">' + pct(after[i]) + '</b></td></tr>';
+      }).join('') + '<tr><td><b>Investment Grade Fixed Income</b> <span class="chip cus">Custom</span></td><td class="r">24.00%</td><td class="r"><b>' + pct(t) + '</b></td></tr>'
+        + '<tr><td colspan="3" style="color:var(--tool-ink2);font-size:12px">Each scaled by ' + room.toFixed(2) + ' / 76.00 = ' + scale.toFixed(4) + ', rounded to add to exactly 100.00%.</td></tr>';
+    }
+  }
+  function setMode(m) {
+    if (m === mode) return;
+    var t = total();
+    rows.forEach(function (r) {
+      var w = num(r.text); if (isNaN(w)) return;
+      /* the same sleeve either way: convert rather than reset */
+      r.text = (m === 'portfolio' ? w * STRATEGIC / 100 : (t > 0 ? w / t * 100 : 0)).toFixed(2);
+    });
+    mode = m;
+    if (m === 'sleeve') {
+      var vals = rows.map(function (r) { return num(r.text) || 0; }), fixed = largestRemainder(vals, 100);
+      rows.forEach(function (r, i) { r.text = fixed[i].toFixed(2); });
+    }
+    draw();
+  }
+  tbody.addEventListener('input', function (e) {
+    var i = e.target.dataset && e.target.dataset.i; if (i === undefined) return;
+    rows[+i].text = e.target.value; sums();
+  });
+  tbody.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-rm]'); if (!b) return;
+    rows.splice(+b.dataset.rm, 1); draw();
+  });
+  $('mkSpread').addEventListener('click', function () {
+    var n = rows.length; if (!n) return;
+    var whole = mode === 'sleeve' ? 100 : STRATEGIC, each = largestRemainder(rows.map(function () { return whole / n; }), whole);
+    rows.forEach(function (r, i) { r.text = each[i].toFixed(2); }); draw();
+  });
+  $('mkReset').addEventListener('click', reset);
+  $('mkModeS').addEventListener('click', function () { setMode('sleeve'); });
+  $('mkModeP').addEventListener('click', function () { setMode('portfolio'); });
+  reset();
+})();
+</script>
+</body>
+</html>

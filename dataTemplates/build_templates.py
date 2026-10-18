@@ -92,8 +92,8 @@ SHEETS = [
             ('Style', 'yes', 'text', 'Free text. One of the five composition doughnuts groups by this.'),
             ('Vehicle', 'yes', 'text', 'Free text, e.g. SMA, Mutual Fund, ETF. A doughnut axis.'),
             ('ShareClass', 'optional', 'text',
-             'Dis (distributing) or Acc (accumulating), and nothing else - a typo is refused on '
-             'load. Leave blank, or drop the column, for a product that has no share class.'),
+             'Distributing or Accumulating, and nothing else - a typo is refused on load. Leave '
+             'blank, or drop the column, for a product that has no share class.'),
             ('Source', 'yes', 'text', 'Free text, e.g. Internal, External. A doughnut axis.'),
             ('Liquidity', 'yes', 'text', 'Free text, e.g. Daily, Quarterly. A doughnut axis.'),
             ('ExposureCurrency', 'yes', 'text', 'Free text, e.g. USD. A doughnut axis.'),
@@ -108,7 +108,7 @@ SHEETS = [
              'CURRENCY UNITS: 5000000 means $5m. Blank means no minimum. THIS BLOCKS THE EXPORT: '
              'a position below its product minimum refuses the download, so get these right.'),
         ],
-        validation={'FeeGroup': ('feeGroups', len(fees.FEE_GROUPS)),
+        validation={'FeeGroup': ('feeGroups', len(fees.feeGroups())),
                     'ShareClass': ('shareClasses', len(products.SHARE_CLASSES))},
     ),
     dict(
@@ -192,7 +192,7 @@ SHEETS = [
             ('rate', 'yes', 'number >= 0', 'A PERCENT: 0.45 means 0.45%.'),
         ],
         validation={'schedule': ('schedules', len(fees.SCHEDULES)),
-                    'feeGroup': ('feeGroups', len(fees.FEE_GROUPS)),
+                    'feeGroup': ('feeGroups', len(fees.feeGroups())),
                     'source': ('sources', len(fees.SOURCES)),
                     'point': ('points', len(fees.POINTS))},
     ),
@@ -245,7 +245,7 @@ LISTS = [
      list(sleeveRules.vocabulary()['allocationType'])),
     ('variants', 'Implementation type', list(rules.IMPLEMENTATION_VARIANTS)),
     ('categories', 'Sleeve category', sleeveRepo.categories()),
-    ('feeGroups', 'Fee group', list(fees.FEE_GROUPS)),
+    ('feeGroups', 'Fee group', fees.feeGroups()),
     ('shareClasses', 'Share class', list(products.SHARE_CLASSES)),
     ('schedules', 'Fee schedule', list(fees.SCHEDULES)),
     ('sources', 'Fee source', list(fees.SOURCES)),
@@ -350,6 +350,15 @@ sheet['A4'] = 'Rows tinted like this are examples taken from the stand-in data. 
 sheet['A4'].fill = EXAMPLE_FILL
 sheet['A4'].font = EXAMPLE_FONT
 sheet.merge_cells('A4:F4')
+# the catalogue and the fee card are kept by the tool itself (D165, D166)
+sheet['A5'] = ('The products and feeRates sheets fill the product catalogue and the fee card the first '
+               'time the tool opens after it is installed or upgraded. After that the tool keeps both: '
+               'a new file goes in through Import a file on the Repository\'s Catalogue or Fees tab, '
+               'where what it would change is shown before anything does.')
+sheet['A5'].font = SUB
+sheet['A5'].alignment = WRAP
+sheet.merge_cells('A5:F5')
+sheet.row_dimensions[5].height = 46
 
 head = ['Sheet', 'Save as', 'Environment variable', 'Format', 'Required', 'What it feeds']
 sheet.append([])
@@ -377,7 +386,7 @@ for line in ('python -m cyrus_pmg.pmgService.scenario.bake --census        # the
              'python -m cyrus_pmg.pmgService.scenario.feeTools --census    # the rate card, and whether it is still a placeholder'):
     sheet.append([line])
     sheet[sheet.max_row][0].font = Font(name='Consolas', size=10)
-sheet.freeze_panes = 'A7'
+sheet.freeze_panes = 'A8'
 
 # --------------------------------------------------------- column reference --
 ref = book.create_sheet('Column reference')

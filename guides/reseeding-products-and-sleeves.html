@@ -142,28 +142,30 @@ kbd{font-family:var(--f-mono);font-size:.8em;border:1px solid var(--line-strong)
   <div class="meta">
     <span><b>For</b> whoever looks after the tool's data on Cyrus</span>
     <span><b>Project</b> <code>H:\cyrus-repo\isg-cyrus-pmg</code></span>
-    <span><b>Written</b> 15 October 2026</span>
+    <span><b>Updated</b> 16 October 2026, for the catalogue and fee card kept in the tool</span>
   </div>
 </header>
 
 <main>
 
 <h2 id="map">What lives where</h2>
-<p class="lede">The products and the sleeves are kept in different ways, so they are re-seeded in
-different ways. Products are a <strong>file the tool reads</strong>. Sleeves are rows in a
-<strong>database the tool writes to</strong>, which keeps a full history of every change.</p>
+<p class="lede">The products, the fee card and the sleeves are all kept in the <strong>database the
+tool writes to</strong>, which keeps a full history of every change. The product file and the fee
+card file are read <strong>once</strong>, the first time the tool opens after the update, to fill
+it; after that a new file goes in by <strong>importing</strong> it, and changing a file on disk
+changes nothing.</p>
 
 <div class="tblwrap"><table>
 <thead><tr><th>Data</th><th>Kept in</th><th>Set by</th><th>How you change it</th></tr></thead>
 <tbody>
-<tr><td><strong>Product catalogue</strong></td><td>A CSV or Excel file</td>
-<td class="key">SCENARIO_PRODUCTS_SOURCE</td><td>Swap the file. Read again as soon as it changes, with no restart.</td></tr>
+<tr><td><strong>Product catalogue</strong></td><td><code>src\var\sleeves.db</code></td>
+<td class="key">SCENARIO_PRODUCTS_SOURCE</td><td>Import a product file on the Repository's Catalogue, or with the sleeve tool; edit product by product on the Catalogue. The variable names the file the first fill read.</td></tr>
 <tr><td><strong>Sleeve library</strong></td><td><code>src\var\sleeves.db</code></td>
 <td class="key">SCENARIO_SLEEVES_DB</td><td>Import a file with the sleeve tool, or edit sleeve by sleeve in the console.</td></tr>
 <tr><td>Funding split, overlay rules</td><td>The same <code>sleeves.db</code></td><td>&mdash;</td>
 <td>The console only. A sleeve import does not touch them.</td></tr>
-<tr><td>Fee card</td><td><code>feeRates.csv</code> in the package</td><td class="key">SCENARIO_FEES_SOURCE</td>
-<td>Not covered here; see <a href="#fees">the note on fees</a>.</td></tr>
+<tr><td>Fee card</td><td>The same <code>sleeves.db</code></td><td class="key">SCENARIO_FEES_SOURCE</td>
+<td>The Repository's Fees tab: edit, or import a card file. See <a href="#fees">the fee card</a>.</td></tr>
 <tr><td>Proposals and account requests</td><td><code>src\var\proposals.db</code></td>
 <td class="key">SCENARIO_REGISTER_DB</td><td>Never re-seeded. Nothing below touches it.</td></tr>
 </tbody></table></div>
@@ -181,7 +183,8 @@ up in the project's own folders.</p></div>
 <p>Everything below is done by one small program, the <em>sleeve tool</em>
 (<code>cyrus_pmg.pmgService.scenario.sleeveTools</code>). It must see the same settings as the
 service: the same product file, the same database and the same portfolio extract. The simplest
-way to guarantee that is to copy the service's own run configuration in PyCharm.</p>
+way to guarantee that is to copy the service's own run configuration in PyCharm. The same tool
+loads product files too, so a whole re-seed can be done from here.</p>
 <div class="steps">
 <div class="step"><h3>Copy the service's configuration</h3>
 <p>In PyCharm open <strong>Run &rarr; Edit Configurations&hellip;</strong>, select
@@ -202,10 +205,10 @@ with the service running or not.</p></div>
 everything is:</p>
 <pre class="out">store      H:\cyrus-repo\isg-cyrus-pmg\src\var\sleeves.db
            108 sleeves, seeded 2026-10-15T22:49:31 from &hellip;\sleeves.csv
-           schema v6 &middot; 312 revisions on record &middot; 102 sleeve(s) archived
+           schema v7 &middot; 312 revisions on record &middot; 102 sleeve(s) archived
            4 labelled edition(s) with rules
-catalogue  H:\&hellip;\products.csv
-           73 products, modified 2026-09-27T16:53:51
+catalogue  in the store &middot; version 1 &middot; 73 products
+           last edited 2026-10-16 20:20:59 by seed &middot; loaded 2026-10-16 from products.csv
 types
   PMG Multi-Asset Portfolio     27 sleeves
   PMG ESG                       32 sleeves
@@ -214,8 +217,9 @@ types
 fixed      Asset Allocation Strategies, Hybrid Fixed Income</pre>
 <ul>
 <li><strong>store</strong> is the sleeve database the tool is using. Back up this file.</li>
-<li><strong>catalogue</strong> is the product file the tool is reading. Replace this file to
-re-seed products.</li>
+<li><strong>catalogue</strong> is the product catalogue in that same store: its version (one more
+for every change), how many live products it holds, when it was last edited and by whom, and the
+file it was first filled from. <em>seed</em> means the first fill, not a person.</li>
 <li><strong>sleeves</strong> counts every edition, a sleeve's fallback included. <strong>labelled
 edition(s) with rules</strong> counts only the editions that carry rules.</li>
 <li>Anything wrong is listed underneath, under <strong>BROKEN</strong> or <strong>NOT IN THE
@@ -226,13 +230,19 @@ CATALOGUE</strong>. The run then ends with exit code 1 instead of 0.</li>
 afterwards. Each run does one thing.</p>
 
 <h2 id="products">Re-seeding the product catalogue</h2>
-<p>There is no import for products: the catalogue <em>is</em> the file. Replacing the file is
-the whole re-seed. The tool reads it again the next time it is asked for a product, and refuses
-the whole file if any row is wrong, so a bad file never half-loads.</p>
+<p>The catalogue is kept in the database now, beside the sleeves. The update filled it, once, from
+the product file the service was set to read, and reported it:</p>
+<pre class="out">== The product catalogue: 73 products in the database (first loaded from products.csv)</pre>
+<p>From then on a re-seed is an <strong>import</strong>. The tool compares your file with the
+catalogue, shows you every product it would add, change, bring back or leave out, and changes
+nothing until you apply it. A file with any wrong row is refused whole, so it never half-loads.
+Every product an import changes gets a new version recorded with your name, the time and the file
+name, so the re-seed can be read back product by product.</p>
 
 <h3>The columns</h3>
 <p>Row one holds the headers; the tool finds columns by their names, so the order is free. A row
-whose first cell is empty is skipped.</p>
+whose first cell is empty is skipped. The file you download from the Catalogue has exactly these
+columns, so the easiest file to edit is that one.</p>
 <div class="tblwrap"><table>
 <thead><tr><th>Column</th><th>Required</th><th>What goes in it</th></tr></thead>
 <tbody>
@@ -247,50 +257,82 @@ whose first cell is empty is skipped.</p>
 <tr><td class="key">ExposureCurrency</td><td>Yes</td><td>e.g. <code>USD</code>.</td></tr>
 <tr><td class="key">ProductCost</td><td>Yes</td><td>A percentage written as a number: <code>0.25</code> means 0.25%. Not negative.</td></tr>
 <tr><td class="key">FeeGroup</td><td>Yes</td><td>One of the fee card's groups: <code>Passive</code>, <code>Core Active</code>, <code>Specialist Active</code>, <code>Alternatives</code>, <code>Asset Allocation</code>. The management fee comes from the fee card through this group, not from the product.</td></tr>
-<tr><td class="key">ShareClass</td><td>Optional</td><td><code>Dis</code> or <code>Acc</code>, or blank.</td></tr>
+<tr><td class="key">ShareClass</td><td>Optional</td><td><code>Distributing</code> or <code>Accumulating</code>, or blank.</td></tr>
 <tr><td class="key">DistributionYield</td><td>Optional</td><td>A percentage as a number, e.g. <code>3.20</code>.</td></tr>
 <tr><td class="key">MinimumInvestment</td><td>Optional</td><td>In currency units, e.g. <code>5000000</code>.</td></tr>
 </tbody></table></div>
 <p>An example row, under the headers in the order the current file uses:</p>
 <pre class="out">ProductId,Name,Ticker,AssetClass,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
-gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Active,SMA,Dis,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
+gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Active,SMA,Distributing,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
 
-<h3>Steps</h3>
+<p>On an import, the six describing columns (<code>AssetClass</code> to
+<code>ExposureCurrency</code>) must all be filled, and a <code>ProductCost</code> of 10 or more or a
+<code>DistributionYield</code> of 50 or more is refused as a figure typed in the wrong unit
+(<code>45</code> for <code>0.45</code>).</p>
+
+<h3>Steps, in the Repository</h3>
 <div class="steps">
-<div class="step"><h3>Start from the current file</h3>
-<p>Run the census and note the <strong>catalogue</strong> path. Copy that file to
-<code>H:\pt-seed</code> twice: once as the backup (e.g. <code>products-2026-10-15.csv</code>) and
-once as the file you will edit (<code>products-new.csv</code>).</p></div>
+<div class="step"><h3>Download what is there now</h3>
+<p>Open <strong>Repository &rarr; Catalogue</strong> and press <strong>Download the product
+file</strong>. Save it to <code>H:\pt-seed</code> twice: once as the backup
+(<code>products-2026-10-16.csv</code>) and once as the file you will edit
+(<code>products-new.csv</code>).</p></div>
 <div class="step"><h3>Make your changes in Excel</h3>
 <p>To <strong>add a product</strong>, add a row. To <strong>change</strong> one, edit its cells
-but keep its <code>ProductId</code>. To <strong>remove</strong> one, delete its row, but first
-read the next step, because sleeves that hold it will stop being offered.</p>
+but keep its <code>ProductId</code>. To <strong>take one out</strong>, delete its row; the import
+will ask whether to withdraw it. A product a sleeve holds cannot be withdrawn, so take it out of
+those sleeves first (see <a href="#sleeves">the sleeves</a>), or leave it in.</p>
 <p>Save with <strong>File &rarr; Save As &rarr; CSV UTF-8 (Comma delimited)</strong>. An
-<code>.xlsx</code> also works, provided the catalogue is on the first sheet.</p></div>
-<div class="step"><h3>Check it before it goes live</h3>
-<p>In the <strong>Sleeve tools</strong> configuration, add one environment variable,
-<code>SCENARIO_PRODUCTS_SOURCE</code> = <code>H:\pt-seed\products-new.csv</code>, and run the
-census. The live service is not affected; only this run reads the new file.</p>
-<p>A clean census ends with no <strong>BROKEN</strong> list. If a product your sleeves use is
-missing, the census names it and every sleeve that holds it:</p>
-<pre class="out">BROKEN (6):
-  Irish Onshore / Public Equity / Passive
-      Product 'gs-access-world-equity-ucits' is no longer in the catalogue.
-  &hellip;
-NOT IN THE CATALOGUE (1):
-  gs-access-world-equity-ucits  referenced by Irish Onshore / Public Equity / Passive, &hellip;</pre>
-<p>Either put the product back, or plan to change those sleeves in the same sitting (see
-<a href="#sleeves">the sleeves</a>). If the file itself is wrong, a missing column, a duplicate id, an
-unknown fee group or a bad number, the census says so and nothing is read.</p>
-<p>Remove the environment variable again when you are done.</p></div>
-<div class="step"><h3>Swap it in</h3>
-<p>Copy <code>products-new.csv</code> over the file at the catalogue path, under that file's own
-name. The service picks it up on its next request; press <kbd>Ctrl</kbd>+<kbd>F5</kbd> on any open
-page. Run the census once more: the <strong>catalogue</strong> line should show today's time and
-the new count.</p></div>
+<code>.xlsx</code> also works, provided the products are on its first sheet or on a sheet called
+<code>products</code>.</p></div>
+<div class="step"><h3>Import it and read the preview</h3>
+<p>Back on the Catalogue, press <strong>Import a file</strong> and choose
+<code>products-new.csv</code>. Nothing changes yet. The preview lists what the file would do:</p>
+<pre class="out">products-new.csv &middot; 74 rows: 1 new &middot; 1 changed &middot; 0 back from withdrawn &middot; 72 unchanged &middot; 0 not in the file
+1 new       GS Access India Equity ETF
+1 changed   GSAM Short Duration SMA
+              &middot; Product cost 0.22 &rarr; 0.24</pre>
+<p>A product in the catalogue that the file leaves out is listed under <em>in the catalogue but not
+in the file - kept unless ticked</em>. Tick <strong>Withdraw</strong> beside it to take it out.
+One that a sleeve holds has no tick box and says <em>in 3 sleeves, so it stays</em>.</p></div>
+<div class="step"><h3>Apply it</h3>
+<p>Type a note if you like (where the file came from), and press <strong>Apply the import</strong>.
+The toolbar says what happened, for example <em>Imported products-new.csv: 1 added, 1 changed,
+0 withdrawn &middot; the catalogue is version 2</em>. New products can be placed in sleeves straight
+away, on the Sleeves tab.</p></div>
 </div>
-<div class="note"><b class="h">Undoing it</b><p>Copy the backup back over the catalogue file.
-Nothing else needs to change.</p></div>
+
+<p>If the file itself is wrong, the preview is refused and names the row and the problem:</p>
+<pre class="out">products-bad.csv: row 5 (gs-us-corporate-bond-fund): The fee group 'Core active' is not on the fee card: it is spelled Core Active.</pre>
+<pre class="out">products-new.csv: row 75: the ProductId gs-access-em-equity-etf is already on row 22 - each product appears once.</pre>
+
+<h3>The same, with the sleeve tool</h3>
+<p>With the <strong>Sleeve tools</strong> configuration from the one-time setup, set
+<strong>Parameters</strong> to:</p>
+<pre class="out">--products-import H:\pt-seed\products-new.csv --note "October delivery"</pre>
+<p>It prints the preview and applies it in one run:</p>
+<pre class="out">products-new.csv: 74 row(s)
+  1 new, 1 changed, 0 back from withdrawn, 72 unchanged, 0 not in the file
+  gsam-short-duration-sma  Product cost 0.22 &rarr; 0.24
+imported: 1 added, 1 changed, 0 restored, 0 withdrawn - the catalogue is now version 2</pre>
+<p>Add <code>--withdraw-missing</code> to withdraw the products the file leaves out; if a sleeve
+holds any of them, nothing is written. <code>--products-export FILE</code> writes the catalogue as a
+file, and <code>--product-history ID</code> prints one product's versions:</p>
+<pre class="out">product gsam-short-duration-sma  GSAM Short Duration SMA
+2 version(s), oldest first
+
+  v1   seeded    2026-10-16T20:20:59 seed
+       from products.csv
+  v2   imported  2026-10-16T20:21:19 pmgadmin   &lt;- in force
+       - Product cost 0.22 &rarr; 0.24
+       "October delivery"
+       from products-new.csv</pre>
+
+<div class="note"><b class="h">Undoing it</b><p>Import the backup you downloaded first. Every product
+the re-seed changed goes back to its earlier values as a new version, and the products the re-seed
+added are listed as <em>not in the file</em>: tick them to withdraw them. For one product, open its
+card on the Catalogue, press <strong>Show every version</strong> and <strong>Restore this
+version</strong>.</p></div>
 
 <h2 id="sleeves">Re-seeding the sleeve library</h2>
 <p>A sleeve file is loaded with the sleeve tool's <code>--import</code>. The import checks every
@@ -500,15 +542,20 @@ it. On a working system it costs far more than it saves:</p>
 <li>sleeves get new numbers, so the proposals already on record no longer point at the sleeves they
 were built from;</li>
 <li>if the seed file is missing, the new database starts empty and stays empty: it never tries to
-seed again.</li>
+seed again;</li>
+<li>the product catalogue and the fee card are filled again from their files, losing every edit and
+import since, and their histories.</li>
 </ul>
 <p>An import with <code>--replace</code> gives the same clean library without any of that.</p></div>
 
-<h2 id="fees">A note on the fee card</h2>
-<p>If new products need a fee group the card does not have, the fee card must change first. Its
-tool, <code>feeTools --accept</code>, rewrites a file inside the package as well as the rate file.
-On Cyrus that makes the next tool update refuse to run, because it would overwrite a file changed by
-hand. Send a fee card change to be made with the tool's code instead.</p>
+<h2 id="fees">The fee card</h2>
+<p>The fee card is kept in the database as well, and changed on the Repository's
+<strong>Fees</strong> tab: rates, fee groups and tiers, each change saved as a new version with a
+note. If new products need a fee group the card does not have, add it there first
+(<strong>Edit the card</strong>, then <strong>Add the group</strong> on the new-group card at the
+end, and paste its rates from Excel into its card), then import the products. A fee card file is imported on the same tab with <strong>Import a file</strong>,
+which shows every rate it would move before anything changes; <strong>Download the card</strong>
+writes the card in force as a file.</p>
 
 <h2 id="ref">Quick reference</h2>
 <div class="qr">
@@ -520,17 +567,22 @@ hand. Send a fee card change to be made with the tool's code instead.</p>
 <dt>--import FILE --replace</dt><dd>Archive the library and load FILE as the whole of it.</dd>
 <dt>--archived</dt><dd>List archived sleeves.</dd>
 <dt>--history ID</dt><dd>Every revision of one sleeve (the number in square brackets in a listing).</dd>
-<dt>--activity</dt><dd>The 40 latest changes across the library.</dd>
+<dt>--activity</dt><dd>The 40 latest changes across the repository: sleeves, products, the fee card, overlay rules and the funding split.</dd>
+<dt>--products-export FILE</dt><dd>Write the product catalogue to FILE.</dd>
+<dt>--products-import FILE</dt><dd>Add and update products from FILE; products it leaves out stay.</dd>
+<dt>--products-import FILE --withdraw-missing</dt><dd>And withdraw the products FILE leaves out.</dd>
+<dt>--product-history ID</dt><dd>Every version of one product.</dd>
 </dl>
 </div>
 <div class="qr">
 <h3>A re-seed in order</h3>
 <dl>
-<dt>1. Census</dt><dd>Note the store and catalogue paths.</dd>
-<dt>2. Backups</dt><dd>Product file copy, sleeve export, and <code>sleeves.db</code> copy with the service stopped.</dd>
-<dt>3. Products</dt><dd>Edit, check with the census pointed at the new file, swap.</dd>
-<dt>4. Sleeves</dt><dd>Edit the export, import, census.</dd>
-<dt>5. Start</dt><dd>The three services, then <kbd>Ctrl</kbd>+<kbd>F5</kbd>.</dd>
+<dt>1. Census</dt><dd>Note the store path and the catalogue's version.</dd>
+<dt>2. Backups</dt><dd><code>--products-export</code>, the sleeve <code>--export</code>, and a copy of <code>sleeves.db</code> with the service stopped. That one copy holds the catalogue and the fee card too.</dd>
+<dt>3. Fee groups</dt><dd>Only if new products need one: add it on the Fees tab first.</dd>
+<dt>4. Products</dt><dd><code>--products-import</code> the edited file, or <strong>Import a file</strong> on the Catalogue.</dd>
+<dt>5. Sleeves</dt><dd>Edit the export, import, census.</dd>
+<dt>6. Start</dt><dd>The three services, then <kbd>Ctrl</kbd>+<kbd>F5</kbd>.</dd>
 </dl>
 </div>
 
@@ -554,8 +606,8 @@ hand. Send a fee card change to be made with the tool's code instead.</p>
 </nav>
 
 <footer class="foot">Every example, message and census line above was produced by the tool itself,
-from a copy of the library with the examples loaded through the import, on 15 October 2026. Paths are
-shown as they appear on Cyrus.</footer>
+from a copy of the library with the examples loaded through the import, on 15 and 16 October 2026.
+Paths are shown as they appear on Cyrus.</footer>
 </div>
 
 </body>

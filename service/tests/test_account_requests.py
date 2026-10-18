@@ -56,7 +56,8 @@ def test_the_form_fills_from_the_uid():
     assert p['includeFees'] is True and p['feeSchedule'] and p['feeLevel']
     assert p['tacticalTilt'] is True and p['volPremium'] is True
     assert p['exportedBy'] == 'alice' and p['workbookName'].endswith(uid + '.xlsx')
-    assert p['sleeves'] and all(set(s) == {'category', 'sleeve', 'revision'} for s in p['sleeves'])
+    assert p['sleeves'] and all(set(s) == {'category', 'sleeve', 'revision', 'custom'} for s in p['sleeves'])
+    assert not any(s['custom'] for s in p['sleeves']), 'library sleeves only (D170)'
     assert 'allocation' not in p and 'implemented' not in p, 'parameters, not the pictures'
     assert found['requests'] == []
 
@@ -271,7 +272,9 @@ def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the
         else:
             assert 'requireEditor' not in names and 'requireAdmin' not in names, (route.path, names)
             assert set(names) <= {'requireAuth'}, (route.path, names)
-    assert seen == 42                    # 32, the funding split's five (D148), the overlays' five (D155)
+    # 32, the funding split's five (D148), the overlays' five (D155), the
+    # catalogue's nine (D165), the fee card's seven (D166), the sleeve switch (D169) and custom sleeves' one (D170)
+    assert seen == 64                      # custom portfolios' three (D171), the switch (D172)
 
 
 def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):

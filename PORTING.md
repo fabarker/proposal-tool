@@ -311,10 +311,12 @@ host's `accessControl`, which only the router imports; the analytics library is 
 | `sleeves.py` | Facade: `VARIANTS`, `listSleeves`, `sleeveExists`, `variantExists` | yes |
 | `sleeveRules.py` | The editions' applicability rules: which strategic portfolios each edition of a sleeve is for (D89) | yes |
 | `sleeveRepo.py` | The sleeve library: SQLite at `SCENARIO_SLEEVES_DB`, schema v3 (editions, D89), seeded once from `SCENARIO_SLEEVES_SEED`, append-only history, soft delete, migration | yes |
-| `sleeveTools.py` | CLI: census, export, import, history, archived, activity | operations |
-| `products.py` | The delivered catalogue from `SCENARIO_PRODUCTS_SOURCE`, validated at load, reloaded on mtime | yes |
-| `fees.py` | The rate card from `SCENARIO_FEES_SOURCE` + `fees.json`; tiers, groups, levels, `managementFee`; the custom level and its bounds (D96) | yes |
-| `feeTools.py` | CLI: census, diff, accept | operations |
+| `sleeveTools.py` | CLI: census, export, import, history, archived, activity; the catalogue's export, import and history (D165) | operations |
+| `products.py` | The product catalogue in the repository (schema 7, D165): loaded once from `SCENARIO_PRODUCTS_SOURCE`, then edited in the console or imported; every write a revision; served in memory against the file's stamp | yes |
+| `fees.py` | The fee framework from `fees.json`: tiers, groups, levels, `managementFee`, the custom level and its bounds (D96) - priced from the card in force | yes |
+| `feeCard.py` | The fee card in the repository (D166): loaded once from `SCENARIO_FEES_SOURCE`, edited on the Fees tab or imported; every version kept; checks, history, restore, export | yes |
+| `repositoryFeed.py` | The Activity tab's feed across sleeves, products, the fee card, the overlay rules and the split (D167) | yes |
+| `feeTools.py` | CLI: census, diff, accept (now with `--note`, saving a version), export | operations |
 | `advisors.py` | Primary PWA directory from the packaged `advisors.xlsx` (no override) | yes |
 | `assetEstimates.py` | Per-asset long-term estimates for the assumptions sheet: store copy, else packaged, `SCENARIO_ASSET_ESTIMATES` overrides | yes |
 | `sheetDoc.py` | The report as data (D119): the four sheets built as `SheetDoc`s — values, number formats, neutral styles — plus `renderNumber` and `paginate` (D120), and the house faces (`houseFaces`, D125). Imports no file format | yes |
@@ -1512,10 +1514,11 @@ reachable only by URL, which is a useful soak.
 
 - Daily: back up `$SCENARIO_REGISTER_DB` off the host (`sqlite3 … ".backup …"` or a copy while quiet).
 - Weekly: `sleeveTools --census`; a dated `sleeveTools --export`; glance at the console's Activity tab.
-- On delivery: fee card → `feeTools --diff` then `--accept --version --source --as-of`, restart;
-  products → validate with `SCENARIO_PRODUCTS_SOURCE=<new> sleeveTools --census` first, then swap
-  (no restart); SAA extract → `bake --census`, bake to a new directory, verify the manifest, swap,
-  restart. The dependency order is fee card → products → sleeves; and extract → bake → store.
+- On delivery: fee card → the Fees tab's *Import a file* (or `feeTools --diff`, then `--accept
+  --note`), no restart; products → the Catalogue's *Import a file* (or `sleeveTools
+  --products-import`), previewed first, no restart; SAA extract → `bake --census`, bake to a new
+  directory, verify the manifest, swap, restart. The dependency order is fee card → products →
+  sleeves; and extract → bake → store.
 - On a library `dataversion` change: re-bake.
 
 ---
@@ -1861,6 +1864,71 @@ Since the 10 September port (§0A):
 - **D159** A seed workbook (`sleeveSource/sleeve-seed-template.xlsx`, built by
   `generator/build_sleeve_template.py`); the seed loader reads its Sleeves and Rules sheets by name.
   Copy `sleeveRepo.py`, `sleeveTools.py` and the workbook.
+- **D164** The share class is spelled out: `Distributing` or `Accumulating`; `Dis` and `Acc` are
+  still read and shown in full.
+- **D165** The product catalogue moves into the repository (sleeves schema 7: `products`,
+  `productHistory`), loaded once on the first open from `SCENARIO_PRODUCTS_SOURCE`, then edited in
+  the Catalogue (edit, new, withdraw, restore, history, import, export). Nine admin routes.
+- **D166** The fee card moves into the repository (`policies` kind `feeCard`), loaded once from
+  `SCENARIO_FEES_SOURCE`; a Fees tab edits rates, groups and tiers. Seven admin routes (58 in all);
+  new modules `feeCard.py` and `repositoryFeed.py`, both in the router's `scenario` import. **The
+  update's upgrade step must see the service's `SCENARIO_PRODUCTS_SOURCE` and `SCENARIO_FEES_SOURCE`**
+  - `update.py` reads them from the PyCharm run configurations - or the first load reads the packaged
+  stand-ins. Back up `sleeves.db` and `proposals.db` first, as ever.
+- **D167** The Activity tab reads every area; the register (schema 6) records the catalogue and fee
+  card versions a proposal was priced with.
+- **D168** The Fees tab lays the card out as group cards that take a block pasted from Excel, with
+  a price list (design 2) a switch away. The page only: no route, schema or module changes.
+- **D169** A sleeve can be disabled: kept in the library, left out of the PWAs' picker. Sleeves
+  schema 8 (two columns on `sleeves`, the `sleeveSwitches` table), route
+  `POST /scenario/repository/sleeves/{id}/offered` (59 routes under /scenario), the feed's
+  "Sleeves offered" area.
+- **D170** Custom sleeves: a sleeve built for one proposal on the implementation page, from the
+  products its category's library sleeves hold, weighted as % of the sleeve or % of the portfolio.
+  New module `scenario/customSleeves.py`; scenario field `customSleeves`; routes `GET
+  /scenario/products` (any signed-in user) and `POST /scenario/repository/custom-sleeves` (admin) -
+  61 routes under /scenario; register schema 7 (`proposals.departs`, `proposalSleeves.custom`);
+  a policy kind `customSleeves` (no sleeves schema change); the feed's "Custom sleeves" area. A
+  book whose custom sleeves move a category's weight is delivered without the strategic sheets.
+- **D171** Custom portfolios: "Custom" in the rail's Allocation selector makes the proposal one
+  built product by product on the implementation page, from a blank slate, held to its risk
+  profile's limits and, outside the usual ranges, to an admin's approval. New module
+  `scenario/customPortfolio.py`; scenario field `customPortfolio`; routes `GET
+  /scenario/custom-portfolio`, `POST /scenario/{id}/custom-portfolio/approval` (any signed-in user),
+  `POST /scenario/repository/custom-portfolios` and `GET
+  /scenario/repository/custom-portfolios/awaiting` (admin) - 65 routes under /scenario; register
+  schema 8 (`proposals.customPortfolio`); a policy kind `customPortfolios` (no sleeves schema
+  change); the feed's "Custom portfolios" area; the page's `js/customPortfolio.js`, bundled with
+  the implementation layer. Its files carry a Custom Allocation sheet and slide in place of the
+  strategic ones, and their names read `PMG_Scenario_Custom_...`.
+- **D172** One switch decides whether PWAs may use custom sleeves and custom portfolios; admins
+  always may; off to begin with. New module `scenario/customAccess.py` (policy kind
+  `customAccess`, no schema change); route `POST /scenario/repository/custom-access` (admin) - 66
+  routes under /scenario; the per-category (D170) and per-type (D171) switches are gone; the feed's
+  "Custom workflows for PWAs" area.
+- **D173** The custom workflows have no settings but that switch: a custom sleeve holds any number
+  of its category's products, and a custom portfolio's limits are fixed (`customPortfolio.LIMITS`)
+  under the type's own products. Routes `POST /scenario/repository/custom-sleeves` and
+  `.../custom-portfolios` are removed - 64 routes under /scenario; the feed's "Custom sleeves" and
+  "Custom portfolios" areas are gone.
+- **D174** The deck is built in the template `SCENARIO_DECK_TEMPLATE` names, from its layout
+  `SCENARIO_DECK_LAYOUT` (default *Content*); unset, the deck is drawn as before. New module
+  `scenario/houseTemplate.py` (no schema change, no new route), with a read-only check run as
+  `python -m cyrus_pmg.pmgService.scenario.houseTemplate [template.pptx]`. Cyrus keeps its own house
+  template: the update carries no template, and the setting is set on Cyrus only once the check
+  reads clean. The repo's `deckTemplate/` is a placeholder for building and testing here.
+- **D175** In a template, the strategic slides are Comparing Allocations and Risk and Return
+  Analysis, a slide each (`sheetDoc.buildComparingDoc`, `buildReturnRiskDoc`), their groups the
+  scenario table's categories; their colours are the template's theme colours. Without a template,
+  the deck's strategic slides are as before.
+- **D176** In a template, Portfolio Fee Structure (`sheetDoc.buildFeeStructureDoc`) replaces the
+  initial allocation slide, the Implemented Model has no fee columns, and the fee card's tier table
+  (`sheetDoc.buildFeeLadderDoc`) is drawn into a `tool: fee-ladder` area for CASP pricing; the
+  condition `tool: when casp`.
+- **D177** The other charges: new module `scenario/otherCharges.py`; the scenario's `otherCharges`;
+  `PUT /scenario/{id}` accepts them (no new route - 64 under /scenario); the fee options carry
+  `fees.otherCharges` for the form; the register's schema 9 adds `proposals.otherCharges`, which a
+  register gains when it is next opened; the page's pricing row and its Other charges dialog.
 
 ## Appendix B — where the rest is written down
 
@@ -1950,8 +2018,11 @@ change. **Ship this extract and the bake built from it together** (§11.5).
 
 ### C.2 The product catalogue — `products.csv` (`SCENARIO_PRODUCTS_SOURCE`; `products.py`)
 
-CSV, header row, one row per product. Reloaded when the file's mtime changes. Eleven required
-columns, two optional:
+CSV or XLSX, header row, one row per product. **Since D165 the catalogue lives in the repository**:
+this file is what it is loaded from once, on the first open after the upgrade, and the shape of a
+file an admin imports from the Catalogue's *Import a file* (or `sleeveTools --products-import`) and
+exports with *Download the product file*. Changing it on disk changes nothing. Eleven required
+columns, three optional:
 
 | Column | Type | Rule |
 |---|---|---|
@@ -1961,7 +2032,7 @@ columns, two optional:
 | `AssetClass` | text | Free text; shown in the table. |
 | `Style` | text | Free text; one of the five composition doughnuts (D31, D73) groups by its distinct values. |
 | `Vehicle` | text | Free text; a doughnut axis (e.g. `SMA`, `Mutual Fund`, `ETF`). |
-| `ShareClass` | text, optional | `Dis` (distributing) or `Acc` (accumulating), and nothing else — any other value is refused on load. Blank, or the column absent, means the product has no share class and the cell prints as a dash (D81). |
+| `ShareClass` | text, optional | `Distributing` or `Accumulating`, and nothing else — any other value is refused on load. The short forms `Dis` and `Acc` an older delivery used are read as the words (D164). Blank, or the column absent, means the product has no share class and the cell prints as a dash (D81). |
 | `Source` | text | Free text; a doughnut axis (e.g. `Internal`, `External`). |
 | `Liquidity` | text | Free text; a doughnut axis (e.g. `Daily`, `Quarterly`). |
 | `ExposureCurrency` | text | Free text; a doughnut axis (`USD`, `EUR`, …). |
@@ -1970,9 +2041,11 @@ columns, two optional:
 | `DistributionYield` | number ≥ 0, optional | Percent. Blank or absent → none. |
 | `MinimumInvestment` | number ≥ 0, optional | **Currency units** (`5000000`). Blank or absent → *no minimum*. A position whose notional falls below it **blocks the export** (D70): get these right, or nothing exports. |
 
-Refused as delivered (`BadCatalogue`): a missing required column, a duplicate `ProductId`, an empty
-`Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/`MinimumInvestment`, a
-`FeeGroup` outside the set.
+Refused, whole and naming the row (`BadCatalogue`): a missing required column, a duplicate
+`ProductId`, an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/
+`MinimumInvestment`, a `FeeGroup` outside the set. An import - not the first load - also needs the
+six words (`AssetClass` to `ExposureCurrency`) and refuses a cost of 10 or more or a yield of 50 or
+more as a figure in the wrong unit. A product a live sleeve holds cannot be withdrawn by an import.
 
 ### C.3 The sleeve seed — `sleeves.csv` (`SCENARIO_SLEEVES_SEED`; `sleeveRepo.py`)
 
@@ -2035,9 +2108,11 @@ delivered: a PWA enters them per proposal.
 | `rate` | number ≥ 0 | **Percent** (`0.45` = 0.45%). |
 
 Refused (`BadRateCard`): a missing column, a non-number, a negative rate, tier edges that disagree,
-a duplicate cell. Deliver a real card through `feeTools --diff <csv>` then `--accept`, which records
-`delivery.version` and `asOf` in `fees.json` and clears `placeholder` — the flag the rail, the
-workbook header and the manifest all read.
+a duplicate cell. **Since D166 the card lives in the repository**: this file is what it is loaded
+from once, on the first open after the upgrade, as version 1, and the shape a card file takes on
+the Fees tab's *Import a file* and *Download the card*. A new card goes in there - previewed rate
+by rate, with a note - or through `feeTools --diff <csv>` then `--accept <csv> --note "…"`, which
+saves the same version. A card an admin saves or imports is no longer the placeholder.
 
 ### C.5 The advisor directory — `advisors.xlsx` (packaged beside `advisors.py`; no environment override)
 

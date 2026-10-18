@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ten fee cards</title>
+<style>
+@font-face{font-family:"GS Sans";src:url("../proposalTool/static/fonts/gs-sans-variable.woff2") format("woff2");font-weight:100 900}
+@font-face{font-family:"GS Sans Condensed";src:url("../proposalTool/static/fonts/gs-sans-condensed-variable.woff2") format("woff2");font-weight:100 900}
+:root{
+  --bg:#FBFCFE;--surface:#fff;--s2:#F0F2F5;--ink:#152135;--ink2:#4B5A6A;--ink3:#7C8B9C;
+  --line:#E3E7EC;--line2:#D4DAE2;--line3:#C2CBD6;
+  --accent:#1F5FBF;--accent2:#446cce;--navy:#16243A;
+  --neg:#B42318;--pos:#176A33;--amber:#B45309;--amber-bg:#FEF3C7;
+  --chg:#FFF7E0;--chg-line:#D9A21B;
+  --num:"GS Sans Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"GS Sans","Goldman Sans",Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+a{color:var(--accent)}
+.wrap{max-width:1460px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:190px minmax(0,1fr);gap:40px}
+header.top{background:var(--navy);color:#fff;padding:52px 0 40px;margin-bottom:36px}
+header.top .wrap{display:block}
+.kick{font:700 12px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:#F3C46B;margin:0 0 14px}
+h1{font:400 clamp(30px,5vw,42px)/1.1 var(--body);letter-spacing:-.025em;margin:0 0 14px;text-wrap:balance}
+header.top p{max-width:78ch;color:#B6C2D2;margin:0 0 9px}
+header.top b{color:#fff;font-weight:600}
+nav.toc{position:sticky;top:20px;align-self:start;font-size:13.5px;max-height:calc(100vh - 40px);overflow:auto;padding-bottom:20px}
+nav.toc p{font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--line);color:var(--ink2);text-decoration:none;line-height:1.3}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--accent)}
+nav.toc a.picked{border-left-color:var(--pos);color:var(--pos);font-weight:600}
+nav.toc a b{font-family:var(--num);color:var(--ink3);font-weight:700;margin-right:7px}
+main{min-width:0;padding-bottom:110px}
+h2{font:400 clamp(23px,3.2vw,28px)/1.18 var(--body);letter-spacing:-.02em;margin:52px 0 8px;text-wrap:balance}
+h2:first-child{margin-top:0}
+h2 small{display:block;font:700 11.5px/1 var(--num);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+h3{font:600 17px/1.35 var(--body);margin:0;letter-spacing:-.005em}
+.lede{color:var(--ink2);max-width:74ch;margin:0 0 20px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px;margin:20px 0}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:15px 17px}
+.fact b{display:block;font:700 11px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px}
+.fact p{margin:0;font-size:14.5px;line-height:1.5}
+.scroller{overflow-x:auto;margin:20px 0;background:var(--surface);border:1px solid var(--line);border-radius:9px}
+.scroller table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:760px}
+.scroller th{font:700 11px/1 var(--num);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:11px 14px;background:var(--s2)}
+.scroller td{padding:11px 14px;border-top:1px solid var(--line);vertical-align:top}
+.scroller td.n{font:700 13px var(--num);color:var(--accent);white-space:nowrap}
+.scroller td a{text-decoration:none;color:var(--ink);font-weight:600}
+.hi{color:var(--pos);font-weight:700}.lo{color:var(--amber);font-weight:700}.mid{color:var(--ink2)}
+/* a design */
+.v{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:20px 22px 18px;margin:16px 0;scroll-margin-top:18px}
+.v.picked{border-color:var(--pos);box-shadow:0 0 0 3px rgba(23,106,51,.10)}
+.v-h{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.v-h .no{font:700 13px/1 var(--num);color:#fff;background:var(--navy);border-radius:5px;padding:6px 8px}
+.v.picked .v-h .no{background:var(--pos)}
+.v-h h3{flex:1 1 220px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font:700 10.5px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;padding:5px 7px;border-radius:10px;background:var(--s2);color:var(--ink2);white-space:nowrap}
+.tag.rec{background:#E3EBFA;color:#1E4FA3}
+.pickb{font:700 11px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;padding:8px 12px;border-radius:5px;border:1.5px solid var(--line3);background:#fff;color:var(--ink);cursor:pointer}
+.pickb:hover{border-color:var(--pos);color:var(--pos)}
+.v.picked .pickb{background:var(--pos);border-color:var(--pos);color:#fff}
+.v p.sum{color:var(--ink2);margin:0 0 2px;max-width:76ch;font-size:15.5px}
+.pc{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:10px 24px;margin:13px 0 0}
+.pc h4{font:700 10.5px/1 var(--num);letter-spacing:.13em;text-transform:uppercase;margin:0 0 6px}
+.pc .g h4{color:var(--pos)}.pc .c h4{color:var(--amber)}
+.pc ul{margin:0;padding-left:16px;font-size:14.5px;color:var(--ink2)}
+.pc li{margin:3px 0}
+.demo{border:1px dashed var(--line3);border-radius:10px;overflow:hidden;margin:15px 0 3px;background:#fff}
+.demo-l{font:700 10.5px/1 var(--num);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);
+  padding:9px 13px;background:var(--s2);border-bottom:1px dashed var(--line3);margin:0}
+.demo-x{overflow-x:auto}
+#pickbar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9;display:flex;align-items:center;gap:12px;
+  background:var(--navy);color:#fff;border-radius:999px;padding:10px 12px 10px 20px;font-size:14.5px;box-shadow:0 8px 28px rgba(22,36,58,.28);max-width:calc(100% - 32px)}
+#pickbar[hidden]{display:none}
+#pickbar b{color:#9FE3B5;font-weight:600}
+#pickbar button{font:700 10.5px/1 var(--num);letter-spacing:.09em;text-transform:uppercase;border:0;border-radius:999px;padding:8px 11px;background:#2C3E5C;color:#fff;cursor:pointer}
+@media (max-width:900px){
+  .wrap{grid-template-columns:minmax(0,1fr);gap:0}
+  nav.toc{display:none}
+}
+
+/* ─────────── the repository panel every design is drawn inside ─────────── */
+.rp{min-width:1080px;background:#fff;font:14px/1.45 var(--body);color:var(--ink)}
+.rp-top{display:flex;align-items:center;gap:22px;padding:11px 20px;border-bottom:1px solid var(--line)}
+.rp-w{font:700 12px/1 var(--num);letter-spacing:.22em;text-transform:uppercase}
+.rp-tabs{display:flex;border:1px solid var(--line2);border-radius:4px;overflow:hidden}
+.rp-tabs i{font-style:normal;padding:6px 12px;font-size:13px;color:var(--ink2);border-right:1px solid var(--line2);white-space:nowrap}
+.rp-tabs i:last-child{border-right:0}
+.rp-tabs i.on{background:var(--navy);color:#fff}
+.rp-tabs b{font:700 10px var(--num);background:var(--s2);border-radius:8px;padding:1px 5px;color:var(--ink2);margin-left:3px}
+.rp-b{padding:18px 22px 20px}
+.hd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px}
+.hd h4{font:600 20px/1 var(--body);margin:0}
+.stamp{font:600 12px/1.4 var(--num);color:#176A33;background:#E6F3EC;border-radius:10px;padding:2px 9px;white-space:nowrap}
+.ph{font:700 10px/1.5 var(--num);letter-spacing:.06em;text-transform:uppercase;color:#7A4A0A;background:#FEF3C7;border-radius:10px;padding:2px 8px;white-space:nowrap}
+.sp{flex:1}
+.in{display:inline-block;min-width:52px;text-align:right;font:13.5px/1.4 var(--num);font-variant-numeric:tabular-nums;padding:3px 7px;
+  border:1.5px solid var(--line3);border-radius:4px;background:#fff;color:var(--ink)}
+.in.ch{border-color:var(--chg-line);background:var(--chg);font-weight:700}
+.in.txt{font-family:var(--body);text-align:left}
+.b{display:inline-block;font:700 11px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;padding:9px 13px;border-radius:4px;
+  border:1px solid var(--line2);background:#fff;color:var(--ink);white-space:nowrap}
+.b.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.b.q{border-color:transparent;background:var(--s2)}
+.b.sm{padding:6px 9px;font-size:10.5px}
+.lk{font:700 11px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);white-space:nowrap}
+.num{text-align:right;font-family:var(--num);font-variant-numeric:tabular-nums}
+.savebar{display:flex;align-items:center;gap:10px;margin:18px -22px -20px;padding:12px 22px;background:#F4F6F9;border-top:1px solid var(--line)}
+.savebar .msg{font-size:13px;color:#7A4A0A}
+.savebar .msg b{font-weight:700}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--chg-line);vertical-align:middle}
+.eyebrow{font:700 10.5px/1.2 var(--num);letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)}
+
+/* 1 ─ the ledger */
+.d1 table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13.5px;border:1.5px solid var(--line3)}
+.d1 th,.d1 td{padding:4px 10px;border-bottom:1px solid var(--line)}
+.d1 thead th{font:700 10.5px/1.25 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);background:#F7F8FA;text-align:left;padding:8px 10px}
+.d1 thead th.fam{text-align:center;color:var(--ink);letter-spacing:.16em;border-bottom:1px solid var(--line2)}
+.d1 thead th.num{text-align:right}
+.d1 .gap{border-right:1.5px solid var(--line2)}
+.d1 tbody{border-top:1.5px solid var(--line3)}
+.d1 tbody:nth-of-type(even){background:#FBFCFD}
+.d1 .grp{vertical-align:top;padding:9px 10px;border-right:1px solid var(--line)}
+.d1 .grp b{display:block;font-size:14px}
+.d1 .grp small{display:block;font-size:12px;color:var(--ink3);line-height:1.35}
+.d1 .tier{color:var(--ink2);font-size:13px;white-space:nowrap}
+.d1 td.num .c{display:inline-block;min-width:46px;padding:1px 3px;border-bottom:1.5px dotted var(--line3)}
+.d1 td.tg .c{font-weight:700}
+.d1 td.ch{background:var(--chg)}
+.d1 td.ch .c{border-bottom:2px solid var(--chg-line)}
+.d1 td.ch s{font-size:11px;color:var(--ink3);margin-right:5px}
+.d1 .struct{display:flex;gap:24px;flex-wrap:wrap;align-items:center;margin:12px 0 0;font-size:13px;color:var(--ink2)}
+.d1 .struct b{color:var(--ink)}
+
+/* 2 ─ tiers across, the target first */
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:5px;overflow:hidden}
+.seg i{font-style:normal;padding:6px 14px;font-size:13px;color:var(--ink2);border-right:1px solid var(--line2);white-space:nowrap}
+.seg i:last-child{border-right:0}
+.seg i.on{background:var(--navy);color:#fff}
+.d2 .tools{display:flex;gap:14px;align-items:center;margin:0 0 12px;font-size:13px;color:var(--ink3)}
+.d2 table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;border:1.5px solid var(--line3);border-radius:8px;overflow:hidden}
+.d2 col.g{width:19%}
+.d2 thead th{background:#F7F8FA;padding:10px 10px 9px;text-align:center;border-bottom:1.5px solid var(--line3);border-left:1px solid var(--line);vertical-align:bottom;font-weight:600;font-size:13.5px}
+.d2 thead th:first-child{text-align:left;border-left:0}
+.d2 thead th .edge{display:flex;align-items:center;justify-content:center;gap:3px;font:12px var(--num);color:var(--ink3);margin-top:5px;font-weight:400}
+.d2 thead th .edge .in{min-width:34px;padding:1px 5px;font-size:12px}
+.d2 thead th .menu{float:right;color:var(--ink3);font-weight:700;letter-spacing:.1em}
+.d2 tbody th{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600}
+.d2 tbody th small{display:block;font-weight:400;font-size:12px;color:var(--ink3)}
+.d2 tbody th .pen{color:var(--ink3);font-weight:400;font-size:12px;margin-left:5px}
+.d2 td{text-align:center;padding:9px 6px;border-bottom:1px solid var(--line);border-left:1px solid var(--line)}
+.d2 .t{display:block;font:600 22px/1.1 var(--num);font-variant-numeric:tabular-nums}
+.d2 .r{display:block;font:12px/1.3 var(--num);color:var(--ink3);margin-top:3px}
+.d2 td.open{background:var(--chg);box-shadow:inset 0 0 0 2px var(--chg-line);padding:7px 8px}
+.d2 .ed{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;text-align:left}
+.d2 .ed label{display:block;font:700 9px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin:0 0 3px}
+.d2 .ed .in{min-width:0;width:100%;padding:3px 4px;font-size:13px}
+.d2 .ed .was{grid-column:2;font:11px var(--num);color:var(--ink3);text-align:right}
+.d2 .add td{text-align:left;padding:9px 14px;border-left:0;color:var(--accent);font:700 11px/1 var(--num);letter-spacing:.08em;text-transform:uppercase;border-bottom:0}
+.d2 tr:last-child td,.d2 tr:last-child th{border-bottom:0}
+
+/* 3 ─ bands on a scale */
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips i{font-style:normal;font-size:13px;padding:5px 12px;border:1px solid var(--line2);border-radius:999px;color:var(--ink2);background:#fff;white-space:nowrap}
+.chips i.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.d3 .tools{display:flex;gap:14px;align-items:center;margin:0 0 14px}
+.d3 .key{display:flex;gap:16px;font-size:12.5px;color:var(--ink2);margin-left:auto}
+.d3 .key i{display:inline-block;width:22px;height:8px;border-radius:4px;vertical-align:middle;margin-right:6px}
+.d3 .grid{display:grid;grid-template-columns:200px minmax(0,1fr) 250px;border:1.5px solid var(--line3);border-radius:8px;overflow:hidden}
+.d3 .grid>div{border-bottom:1px solid var(--line);padding:10px 14px;display:flex;flex-direction:column;justify-content:center}
+.d3 .grid>div.h{background:#F7F8FA;padding:8px 14px;border-bottom:1.5px solid var(--line3)}
+.d3 .grid>div.last{border-bottom:0}
+.d3 .nm b{font-weight:600}.d3 .nm small{font-size:12px;color:var(--ink3)}
+.d3 .track{position:relative;height:56px}
+.d3 .gl{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+.d3 .axis{position:relative;height:16px}
+.d3 .axis span{position:absolute;transform:translateX(-50%);font:11px var(--num);color:var(--ink3)}
+.d3 .bar{position:absolute;height:12px;border-radius:6px}
+.d3 .bar.m{top:12px;background:rgba(22,36,58,.20);border:1.5px solid var(--navy)}
+.d3 .bar.p{top:34px;background:rgba(31,95,191,.16);border:1.5px solid var(--accent)}
+.d3 .tick{position:absolute;width:3px;height:20px;border-radius:2px;margin-left:-1.5px}
+.d3 .tick.m{top:8px;background:var(--navy)}.d3 .tick.p{top:30px;background:var(--accent)}
+.d3 .lab{position:absolute;font:11px var(--num);color:var(--ink2);transform:translateX(-50%);white-space:nowrap}
+.d3 .lab.m{top:-3px}.d3 .lab.p{top:47px}
+.d3 .handle{position:absolute;top:28px;width:12px;height:28px;margin-left:-6px;border-radius:4px;background:#fff;border:2px solid var(--chg-line);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.d3 .tip{position:absolute;top:-2px;transform:translate(-50%,-100%);background:var(--navy);color:#fff;font:600 11.5px var(--num);padding:3px 7px;border-radius:4px;white-space:nowrap}
+.d3 .vals{display:grid;grid-template-columns:24px repeat(3,1fr);gap:3px 5px;align-items:center;font:12px var(--num)}
+.d3 .vals em{font-style:normal;font-weight:700;color:var(--ink3);font-size:10.5px}
+.d3 .vals .in{min-width:0;width:100%;padding:1px 4px;font-size:12.5px}
+.d3 .row-ch{background:#FFFCF2}
+.d3 .bad{font-size:12px;color:var(--pos);margin-top:10px}
+
+/* 4 ─ a card per fee group */
+.d4 .tiers{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border:1.5px solid var(--line3);border-radius:8px;margin:0 0 14px;background:#FBFCFD}
+.d4 .tiers .eyebrow{margin-right:6px}
+.d4 .tiers i{font-style:normal;font:600 13px var(--num);padding:4px 10px;border-radius:5px;background:#fff;border:1px solid var(--line2)}
+.d4 .tiers .arr{color:var(--ink3);border:0;background:none;padding:0}
+.d4 .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.d4 .card{border:1.5px solid var(--line3);border-radius:9px;overflow:hidden;background:#fff}
+.d4 .card.ch{border-color:var(--chg-line);box-shadow:0 0 0 3px rgba(217,162,27,.15)}
+.d4 .ch-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);background:#F7F8FA}
+.d4 .ch-h b{font-size:15px}
+.d4 .ch-h .cnt{font:600 11.5px var(--num);color:var(--ink2);background:#fff;border:1px solid var(--line2);border-radius:10px;padding:1px 7px}
+.d4 .ch-h .sch{font:700 10px var(--num);letter-spacing:.1em;color:var(--ink3);text-transform:uppercase}
+.d4 .ch-h .mn{margin-left:auto;color:var(--ink3);font-weight:700;letter-spacing:.1em}
+.d4 table{width:100%;border-collapse:collapse;font:12.5px var(--num);font-variant-numeric:tabular-nums;table-layout:fixed}
+.d4 th{font:700 9.5px/1.2 var(--num);letter-spacing:.07em;text-transform:uppercase;color:var(--ink3);padding:6px 4px;text-align:right}
+.d4 th.l,.d4 td.l{text-align:left;padding-left:12px}
+.d4 thead tr:first-child th{text-align:center;color:var(--ink2);padding-bottom:0}
+.d4 td{padding:4px 4px;text-align:right;border-top:1px solid var(--line)}
+.d4 td.l{color:var(--ink2);white-space:nowrap}
+.d4 td.gap,.d4 th.gap{border-right:1px solid var(--line2);padding-right:7px}
+.d4 td.tg{font-weight:700}
+.d4 td.chc{background:var(--chg);box-shadow:inset 0 0 0 1.5px var(--chg-line)}
+.d4 .foot{display:flex;gap:12px;padding:8px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--ink3)}
+.d4 .foot .lk{font-size:10px}
+.d4 .newg{border:1.5px dashed var(--line3);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--accent);min-height:170px}
+.d4 .newg b{font:700 12px var(--num);letter-spacing:.08em;text-transform:uppercase}
+.d4 .newg small{color:var(--ink3);font-size:12.5px}
+
+/* 5 ─ heat */
+.d5 .tools{display:flex;gap:10px;align-items:center;margin:0 0 14px}
+.d5 .lay{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px}
+.d5 table{width:100%;border-collapse:separate;border-spacing:3px;table-layout:fixed}
+.d5 th{font-weight:600;font-size:13px;text-align:left;padding:4px 8px}
+.d5 thead th{text-align:center;font:600 12.5px var(--num);color:var(--ink2)}
+.d5 th small{display:block;font-weight:400;color:var(--ink3);font-size:11.5px}
+.d5 td{height:52px;text-align:center;font:600 16px var(--num);font-variant-numeric:tabular-nums;border-radius:6px;position:relative}
+.d5 td.sel{outline:3px solid var(--chg-line);outline-offset:1px}
+.d5 td .dot{position:absolute;top:6px;right:6px}
+.d5 .legend{display:flex;align-items:center;gap:8px;font:12px var(--num);color:var(--ink3);margin:10px 3px 0}
+.d5 .legend i{flex:0 0 220px;height:10px;border-radius:5px;background:linear-gradient(90deg,#EEF4FC,#1B3A6B)}
+.d5 .insp{border:1.5px solid var(--line3);border-radius:9px;padding:14px 16px;background:#FBFCFD;align-self:start}
+.d5 .insp h5{margin:2px 0 1px;font-size:16px}
+.d5 .insp .sub{font-size:12.5px;color:var(--ink3);margin:0 0 12px}
+.d5 .fam{margin:0 0 10px}
+.d5 .fam .eyebrow{margin-bottom:5px;display:block}
+.d5 .fam .three{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.d5 .fam label{display:block;font-size:11px;color:var(--ink3);margin-bottom:2px}
+.d5 .fam .in{min-width:0;width:100%}
+.d5 .fam .was{display:block;font:11px var(--num);color:var(--ink3);text-align:right;margin-top:1px}
+.d5 .ok{font-size:12.5px;color:var(--pos);margin:4px 0 10px}
+.d5 .hist{font-size:12.5px;color:var(--ink2);border-top:1px solid var(--line);padding-top:9px}
+.d5 .nav{display:flex;justify-content:space-between;margin-top:10px}
+
+/* 6 ─ list and detail */
+.d6 .lay{display:grid;grid-template-columns:250px minmax(0,1fr);border:1.5px solid var(--line3);border-radius:9px;overflow:hidden;min-height:470px}
+.d6 .rail{background:#F7F8FA;border-right:1px solid var(--line2);padding:12px 0}
+.d6 .rail .eyebrow{padding:10px 16px 6px;display:block}
+.d6 .rail a{display:flex;align-items:center;gap:8px;padding:8px 16px;color:var(--ink);text-decoration:none;font-size:14px;border-left:3px solid transparent}
+.d6 .rail a small{margin-left:auto;font:12px var(--num);color:var(--ink3)}
+.d6 .rail a.on{background:#fff;border-left-color:var(--accent);font-weight:600}
+.d6 .rail a.add{color:var(--accent);font:700 11px var(--num);letter-spacing:.08em;text-transform:uppercase}
+.d6 .det{padding:16px 20px}
+.d6 .det .nm{display:flex;align-items:center;gap:10px;margin:0 0 4px}
+.d6 .det .nm .in{font:600 19px var(--body);min-width:220px;text-align:left;padding:3px 9px}
+.d6 .det .meta{font-size:13px;color:var(--ink3);margin:0 0 14px}
+.d6 table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:13.5px;border:1.5px solid var(--line3)}
+.d6 th,.d6 td{padding:6px 10px;border-bottom:1px solid var(--line)}
+.d6 thead th{font:700 10.5px/1.2 var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);background:#F7F8FA;text-align:right}
+.d6 thead th:first-child{text-align:left}
+.d6 thead tr:first-child th{text-align:center;color:var(--ink);letter-spacing:.16em}
+.d6 tbody th{text-align:left;font-weight:600}
+.d6 td{text-align:right}
+.d6 .gap{border-right:1.5px solid var(--line2)}
+.d6 td .was{display:block;font:10.5px var(--num);color:var(--ink3)}
+.d6 .prods{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0}
+.d6 .prods i{font-style:normal;font-size:12.5px;padding:3px 9px;border-radius:999px;background:var(--s2);color:var(--ink2)}
+.d6 .two{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:22px;margin-top:16px}
+.d6 .two p{margin:4px 0 0;font-size:13px;color:var(--ink2)}
+
+/* 7 ─ the account-size axis */
+.d7 .tools{display:flex;gap:14px;align-items:center;margin:0 0 6px}
+.d7 .key{display:flex;gap:16px;font-size:12.5px;color:var(--ink2);margin-left:auto}
+.d7 .key i{display:inline-block;width:22px;height:9px;vertical-align:middle;margin-right:6px;border-radius:2px}
+.d7 .chart{position:relative;border:1.5px solid var(--line3);border-radius:9px;padding:12px 16px 0;background:#fff}
+.d7 svg{display:block;width:100%;height:auto}
+.d7 .vals{position:relative;height:96px;margin:0 0 4px;border-top:1px solid var(--line)}
+.d7 .seg7{position:absolute;top:0;bottom:0;padding:8px 6px 0;border-left:1px dashed var(--line2);font:12px var(--num)}
+.d7 .seg7:first-child{border-left:0}
+.d7 .seg7 .row{display:grid;grid-template-columns:16px repeat(3,minmax(0,1fr));gap:3px;align-items:center;margin-bottom:5px}
+.d7 .seg7 em{font-style:normal;font-weight:700;color:var(--ink3);font-size:10.5px}
+.d7 .seg7 .in{min-width:0;width:100%;padding:1px 3px;font-size:12px}
+.d7 .seg7 .tl{font:600 12px var(--num);color:var(--ink);margin:0 0 6px;white-space:nowrap}
+.d7 .hint{font-size:12.5px;color:var(--ink3);margin:8px 0 0}
+
+/* 8 ─ the rate sheet */
+.d8 .lay{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:18px;background:#EEF1F5;margin:-18px -22px -20px;padding:24px 26px 28px}
+.d8 .top8{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:0 0 -6px}
+.d8 .paper{position:relative;background:#fff;box-shadow:0 1px 3px rgba(22,36,58,.12),0 8px 26px rgba(22,36,58,.08);padding:34px 42px 30px;overflow:hidden}
+.d8 .wm{position:absolute;top:48%;left:50%;transform:translate(-50%,-50%) rotate(-24deg);font:800 96px/1 var(--num);letter-spacing:.1em;color:rgba(180,83,9,.07);white-space:nowrap;pointer-events:none}
+.d8 .paper h5{font:400 30px/1.1 var(--body);letter-spacing:-.02em;margin:0 0 6px}
+.d8 .paper .meta{font:13px var(--num);color:var(--ink3);margin:0 0 20px;padding-bottom:12px;border-bottom:2px solid var(--navy)}
+.d8 .paper h6{font:700 12px var(--num);letter-spacing:.14em;text-transform:uppercase;margin:22px 0 8px;color:var(--navy)}
+.d8 .paper h6 span{color:var(--ink3);font-weight:400;letter-spacing:0;text-transform:none;font-family:var(--body);font-size:12.5px;margin-left:6px}
+.d8 table{width:100%;border-collapse:collapse;font:13px var(--num);font-variant-numeric:tabular-nums;table-layout:fixed}
+.d8 th{font:600 11.5px var(--num);color:var(--ink2);text-align:right;padding:5px 8px;border-bottom:1.5px solid var(--ink)}
+.d8 th:first-child,.d8 td:first-child{text-align:left}
+.d8 td{padding:5px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.d8 td.tc{font-size:12.5px}
+.d8 td:first-child{font-family:var(--body);font-size:13px}
+.d8 td b{font-weight:700}
+.d8 td span{color:var(--ink3)}
+.d8 td.e{text-decoration:underline dotted var(--line3);text-underline-offset:3px}
+.d8 del{color:var(--neg);text-decoration-thickness:1.5px}
+.d8 ins{color:var(--pos);text-decoration:none;background:#E6F3EC;font-weight:700;padding:0 2px}
+.d8 td.tc{background:#FFFCF2}
+.d8 .fn{font-size:11.5px;color:var(--ink3);margin:16px 0 0;line-height:1.5}
+.d8 .margin{position:relative}
+.d8 .cmt{position:absolute;left:0;right:0;background:#fff;border:1px solid var(--line2);border-left:3px solid var(--chg-line);border-radius:6px;padding:9px 11px;font-size:12.5px;box-shadow:0 2px 8px rgba(22,36,58,.08)}
+.d8 .cmt b{display:block;font-size:12px}
+.d8 .cmt small{color:var(--ink3);font-size:11.5px}
+.d8 .cmt .acts{display:flex;gap:10px;margin-top:6px}
+.d8 .cmt .acts .lk{font-size:10px}
+.d8 .side{font-size:12.5px;color:var(--ink2)}
+
+/* 9 ─ the spreadsheet */
+.d9 .fx{display:flex;align-items:stretch;border:1.5px solid var(--line3);border-bottom:0;border-radius:6px 6px 0 0;font:13px var(--num)}
+.d9 .fx .nb{width:330px;padding:6px 10px;border-right:1px solid var(--line2);color:var(--ink2);background:#F7F8FA}
+.d9 .fx .fxi{padding:6px 10px;border-right:1px solid var(--line2);color:var(--ink3);font-style:italic}
+.d9 .fx .val{padding:6px 10px;font-weight:700;flex:1}
+.d9 .fx .val s{font-weight:400;color:var(--ink3);margin-left:10px}
+.d9 .sheet{border:1.5px solid var(--line3);overflow:hidden}
+.d9 table{border-collapse:collapse;width:100%;table-layout:fixed;font:13px var(--num);font-variant-numeric:tabular-nums}
+.d9 col.rn{width:34px}.d9 col.gn{width:170px}
+.d9 th{background:#F1F3F6;color:var(--ink3);font-weight:600;font-size:11.5px;border:1px solid var(--line2);padding:3px 4px;text-align:center}
+.d9 th.tl{color:var(--ink);font-size:12px}
+.d9 td{border:1px solid var(--line);padding:5px 7px;text-align:right;height:30px;position:relative}
+.d9 td.g{text-align:left;font-family:var(--body);font-size:13px;font-weight:600}
+.d9 td.g small{font-weight:400;color:var(--ink3);font-size:11.5px;margin-left:4px}
+.d9 td.tg{font-weight:700}
+.d9 td.t0{border-left:1.5px solid var(--line3)}
+.d9 td.sel{outline:2.5px solid var(--accent);outline-offset:-2px;background:#F2F6FD}
+.d9 td.chc::after{content:"";position:absolute;top:0;right:0;border-style:solid;border-width:0 9px 9px 0;border-color:transparent var(--chg-line) transparent transparent}
+.d9 td.rng{background:#EEF3FB}
+.d9 .tabs{display:flex;align-items:stretch;border:1.5px solid var(--line3);border-top:0;border-radius:0 0 6px 6px;background:#F7F8FA;font-size:13px}
+.d9 .tabs i{font-style:normal;padding:6px 16px;border-right:1px solid var(--line2);color:var(--ink2)}
+.d9 .tabs i.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:inset 0 2px 0 var(--accent)}
+.d9 .tabs .st{margin-left:auto;padding:6px 14px;color:var(--ink3);font:12.5px var(--num)}
+.d9 .keys{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink3);margin:10px 0 0}
+.d9 .keys kbd{font:600 11px var(--num);background:#fff;border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--ink2)}
+
+/* 10 ─ the change set */
+.d10 .tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:0 0 14px}
+.d10 .tile{border:1.5px solid var(--line3);border-radius:8px;padding:10px 12px}
+.d10 .tile b{display:block;font:600 22px/1.15 var(--num)}
+.d10 .tile span{font-size:12.5px;color:var(--ink3)}
+.d10 .tile.phd{background:#FFFBEB;border-color:#F3D27A}
+.d10 .tile.phd b{color:#7A4A0A}
+.d10 .shape{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:0 0 6px}
+.d10 .sh{border:1px solid var(--line);border-radius:8px;padding:8px 10px 6px}
+.d10 .sh b{font-size:13px;font-weight:600}
+.d10 .sh small{display:block;font:11.5px var(--num);color:var(--ink3)}
+.d10 .sh svg{display:block;width:100%;height:auto;margin-top:2px}
+.d10 .every{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed var(--line3);border-radius:8px;margin:10px 0 16px;font-size:13px;color:var(--ink2)}
+.d10 .cs{border:1.5px solid var(--chg-line);border-radius:9px;overflow:hidden}
+.d10 .cs-h{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--chg);border-bottom:1px solid #F0D58C}
+.d10 .cs-h b{font-size:14.5px}
+.d10 .cs ol{margin:0;padding:0;list-style:none}
+.d10 .cs li{display:grid;grid-template-columns:28px minmax(0,1fr) 170px 60px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+.d10 .cs li .n{font:700 12px var(--num);color:var(--ink3)}
+.d10 .cs li .eff{font:12.5px var(--num);color:var(--ink3);text-align:right}
+.d10 .cs li .x{font:700 10px var(--num);letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);text-align:right}
+.d10 .cs li q{quotes:none;font-weight:600}
+.d10 .comp{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:11px 14px;background:#FBFCFD;font-size:13.5px;color:var(--ink2)}
+.d10 .comp .sel{display:inline-block;padding:4px 26px 4px 9px;border:1.5px solid var(--line3);border-radius:4px;background:#fff linear-gradient(45deg,transparent 50%,var(--ink3) 50%) no-repeat right 11px top 50%/5px 5px;color:var(--ink);font-size:13px;position:relative}
+.d10 .impact{display:flex;gap:22px;padding:10px 14px;border-top:1px solid var(--line);font:13px var(--num);color:var(--ink2)}
+.d10 .impact b{color:var(--ink);font-size:15px}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap">
+  <p class="kick">Proposal Tool · design options</p>
+  <h1>Ten fee cards</h1>
+  <p>The Repository’s Fees tab, taken ten ways. The card underneath does not change: <b>2 schedules, 5 fee groups, 5 account-size tiers, 6 levels — 180 rates</b>, edited all at once, saved with a note as a new version, and refused if someone else saved first.</p>
+  <p>Every design is drawn with the live numbers from your card (version 1, the placeholder) and caught mid-edit with the same change pending, so they compare like for like: <b>RDR · Core Active · $10m – $25m · PMG Target 0.44 → 0.46</b>.</p>
+  <p>Press <b>Pick this one</b> on the design you want; the choice sticks at the foot of the page. Tell me the number, or a mix (“2, with 9’s paste”).</p>
+</div></header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <a href="#fixed"><b>·</b>What every design keeps</a>
+  <a href="#compare"><b>·</b>The ten, compared</a>
+  <a href="#d1" data-toc="1"><b>1</b>The ledger</a>
+  <a href="#d2" data-toc="2"><b>2</b>Tiers across</a>
+  <a href="#d3" data-toc="3"><b>3</b>Bands on a scale</a>
+  <a href="#d4" data-toc="4"><b>4</b>A card per group</a>
+  <a href="#d5" data-toc="5"><b>5</b>Heat map</a>
+  <a href="#d6" data-toc="6"><b>6</b>List and detail</a>
+  <a href="#d7" data-toc="7"><b>7</b>The size axis</a>
+  <a href="#d8" data-toc="8"><b>8</b>The rate sheet</a>
+  <a href="#d9" data-toc="9"><b>9</b>The spreadsheet</a>
+  <a href="#d10" data-toc="10"><b>10</b>The change set</a>
+  <a href="#rec"><b>·</b>What I would build</a>
+</nav>
+
+<main>
+
+<h2 id="fixed"><small>First</small>What every design keeps</h2>
+<p class="lede">These are ten layouts of one card and one set of rules. What varies is how much of the card you see at once, where you type, and how groups and tiers are changed.</p>
+<div class="grid3">
+  <div class="fact"><b>The same card</b><p>CASP prices every product with one blended rate; RDR prices each product by its fee group. Each has six levels — Management and PMG at Floor, Target and Ceiling — in each of five tiers.</p></div>
+  <div class="fact"><b>The same save</b><p>Edits gather in a draft. Review lists every change; a note is required; the save is a new version in the history, and a stale draft is refused rather than overwriting.</p></div>
+  <div class="fact"><b>The same checks</b><p>Floor ≤ Target ≤ Ceiling on every band, every rate filled, tiers that join up, and no removing a group that still prices products — whichever layout the message lands in.</p></div>
+  <div class="fact"><b>The same door</b><p>Admins only, on the Repository’s Fees tab, with Import a file, Download the card and the history alongside. Step 2’s fee viewer stays read only.</p></div>
+</div>
+
+<h2 id="compare"><small>Second</small>The ten, compared</h2>
+<div class="scroller"><table>
+  <thead><tr><th>#</th><th>Design</th><th>Rates in view</th><th>Changing a rate</th><th>Groups and tiers</th><th>Best at</th><th>To build</th></tr></thead>
+  <tbody>
+    <tr><td class="n">Today</td><td>Pivot and picker</td><td class="mid">36 of 180</td><td class="mid">Type in a box</td><td class="mid">Panels below</td><td class="mid">—</td><td class="mid">—</td></tr>
+    <tr><td class="n">1</td><td><a href="#d1">The ledger</a></td><td class="hi">All 180</td><td class="hi">Type in place</td><td class="mid">Folded line below</td><td>Seeing and checking everything</td><td class="hi">Small</td></tr>
+    <tr><td class="n">2</td><td><a href="#d2">Tiers across, target first</a></td><td class="hi">90, one family</td><td class="mid">Click a cell, three boxes</td><td class="hi">In the table’s edges</td><td>Reading the card as a price list</td><td class="mid">Medium</td></tr>
+    <tr><td class="n">3</td><td><a href="#d3">Bands on a scale</a></td><td class="mid">36, one tier</td><td class="mid">Drag, or type</td><td class="lo">Separate</td><td>Spotting bands out of shape</td><td class="mid">Medium</td></tr>
+    <tr><td class="n">4</td><td><a href="#d4">A card per group</a></td><td class="hi">All 180</td><td class="hi">Type in place</td><td class="hi">On each card</td><td>Managing groups</td><td class="mid">Medium</td></tr>
+    <tr><td class="n">5</td><td><a href="#d5">Heat map</a></td><td class="mid">30, one level</td><td class="mid">Inspector, six boxes</td><td class="lo">Separate</td><td>Seeing the card’s shape</td><td class="mid">Medium</td></tr>
+    <tr><td class="n">6</td><td><a href="#d6">List and detail</a></td><td class="mid">30, one group</td><td class="hi">Type in place</td><td class="hi">In the list</td><td>One group, with its products</td><td class="mid">Medium</td></tr>
+    <tr><td class="n">7</td><td><a href="#d7">The size axis</a></td><td class="mid">30, one group</td><td class="mid">Type under the chart</td><td class="hi">Drag the tier edges</td><td>Changing tiers</td><td class="lo">Large</td></tr>
+    <tr><td class="n">8</td><td><a href="#d8">The rate sheet</a></td><td class="hi">All 180</td><td class="mid">Click a figure; tracked</td><td class="lo">Separate</td><td>Sign-off and printing</td><td class="lo">Large</td></tr>
+    <tr><td class="n">9</td><td><a href="#d9">The spreadsheet</a></td><td class="hi">90, one family</td><td class="hi">Keys, and paste a block</td><td class="mid">Their own sheets</td><td>Loading rates from Excel</td><td class="lo">Large</td></tr>
+    <tr><td class="n">10</td><td><a href="#d10">The change set</a></td><td class="lo">None until asked</td><td class="mid">Write the change as a line</td><td class="hi">Lines in the set</td><td>Rises across a whole group</td><td class="lo">Large</td></tr>
+  </tbody>
+</table></div>
+
+<!-- the ten are drawn by the script at the foot from the card's own numbers -->
+<div id="designs"></div>
+
+<h2 id="rec"><small>Finally</small>What I would build</h2>
+<p class="lede"><b>Design 2</b>, with design 9’s paste as a later addition if real rates arrive as a spreadsheet. It is the only one that shows a whole family — every group, every tier — on one screen without shrinking the numbers, and it puts the tier edges and group names where they act, in the table’s own headers, so the two panels below the grid go away. The target leads because it is the rate a proposal is priced at; floor and ceiling sit beneath it, one click from editing. If seeing all 180 at once matters more than the reading order, <b>design 1</b> is the cheapest to build and nothing on it is ever hidden.</p>
+
+</main>
+</div>
+
+<div id="pickbar" hidden><span>Picked: <b id="pickname"></b> — tell me the number in the chat</span><button type="button" id="unpick">Clear</button></div>
+
+<script>
+(function () {
+'use strict';
+
+/* ── the card, as the service serves it today (version 1, the placeholder) ── */
+var L = ['Management Floor', 'Management Target', 'Management Ceiling', 'PMG Floor', 'PMG Target', 'PMG Ceiling'];
+var SHORT = ['Floor', 'Target', 'Ceiling', 'Floor', 'Target', 'Ceiling'];
+var T = [
+  { label: 'Under $10m', short: 'Under $10m', min: 0, max: 10 },
+  { label: '$10m – $25m', short: '$10–25m', min: 10, max: 25 },
+  { label: '$25m – $50m', short: '$25–50m', min: 25, max: 50 },
+  { label: '$50m – $100m', short: '$50–100m', min: 50, max: 100 },
+  { label: '$100m and up', short: '$100m +', min: 100, max: null }
+];
+var R = [
+  { sch: 'CASP', name: 'CASP', n: 73, r: [[0.45,0.6,0.75,0.47,0.56,0.65],[0.37,0.52,0.67,0.39,0.48,0.57],[0.3,0.45,0.6,0.32,0.41,0.5],[0.23,0.38,0.53,0.25,0.34,0.43],[0.17,0.32,0.47,0.19,0.28,0.37]] },
+  { sch: 'RDR', name: 'Passive', n: 13, r: [[0.15,0.3,0.45,0.17,0.26,0.35],[0.11,0.26,0.41,0.13,0.22,0.31],[0.07,0.22,0.37,0.09,0.18,0.27],[0.03,0.18,0.33,0.05,0.14,0.23],[0,0.15,0.3,0.02,0.11,0.2]] },
+  { sch: 'RDR', name: 'Core Active', n: 19, r: [[0.4,0.55,0.7,0.42,0.51,0.6],[0.33,0.48,0.63,0.35,0.44,0.53],[0.27,0.42,0.57,0.29,0.38,0.47],[0.21,0.36,0.51,0.23,0.32,0.41],[0.15,0.3,0.45,0.17,0.26,0.35]] },
+  { sch: 'RDR', name: 'Specialist Active', n: 15, r: [[0.6,0.75,0.9,0.62,0.71,0.8],[0.53,0.68,0.83,0.55,0.64,0.73],[0.45,0.6,0.75,0.47,0.56,0.65],[0.37,0.52,0.67,0.39,0.48,0.57],[0.3,0.45,0.6,0.32,0.41,0.5]] },
+  { sch: 'RDR', name: 'Alternatives', n: 23, r: [[0.8,0.95,1.1,0.82,0.91,1],[0.73,0.88,1.03,0.75,0.84,0.93],[0.65,0.8,0.95,0.67,0.76,0.85],[0.57,0.72,0.87,0.59,0.68,0.77],[0.5,0.65,0.8,0.52,0.61,0.7]] },
+  { sch: 'RDR', name: 'Asset Allocation', n: 3, r: [[0.25,0.4,0.55,0.27,0.36,0.45],[0.2,0.35,0.5,0.22,0.31,0.4],[0.15,0.3,0.45,0.17,0.26,0.35],[0.11,0.26,0.41,0.13,0.22,0.31],[0.07,0.22,0.37,0.09,0.18,0.27]] }
+];
+/* the one change every design is caught holding */
+var CH = { row: 2, tier: 1, level: 4, was: 0.44, now: 0.46 };
+var CH_TEXT = 'RDR · Core Active · $10m – $25m · PMG Target 0.44 → 0.46';
+
+function val(ri, ti, li) { return isCh(ri, ti, li) ? CH.now : R[ri].r[ti][li]; }
+function isCh(ri, ti, li) { return ri === CH.row && ti === CH.tier && li === CH.level; }
+function f(x) { return x.toFixed(2); }
+function full(r) { return r.sch === 'CASP' ? 'CASP' : 'RDR · ' + r.name; }
+function who(r) { return r.sch === 'CASP' ? 'Blended · every product' : 'RDR · ' + r.n + ' products'; }
+function seq(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); return a; }
+
+function frame(inner) {
+  var tabs = ['Sleeves', 'Catalogue', 'Fees', 'Archive', 'Activity', 'Proposals<b>41</b>', 'Uncalled Capital Allocation', 'Overlay Funding'];
+  return '<div class="rp"><div class="rp-top"><span class="rp-w">Repository</span><span class="rp-tabs">'
+    + tabs.map(function (t) { return '<i' + (t === 'Fees' ? ' class="on"' : '') + '>' + t + '</i>'; }).join('')
+    + '</span></div><div class="rp-b">' + inner + '</div></div>';
+}
+function stamp() {
+  return '<span class="stamp">Last edited 16 Oct 2026, 21:12 · loaded from the fee card file · version 1</span><span class="ph">Placeholder card</span>';
+}
+function head(right) {
+  return '<div class="hd"><h4>Fees</h4>' + stamp() + '<span class="sp"></span>' + (right || '<span class="lk">History</span><span class="lk">Import a file</span><span class="lk">Download the card</span>') + '</div>';
+}
+function saveBar(msg) {
+  return '<div class="savebar"><span class="msg">' + (msg || '<b>1 change</b> · ' + CH_TEXT) + '</span><span class="sp"></span>'
+    + '<span class="b q">Discard changes</span><span class="b pri">Review and save</span></div>';
+}
+
+/* 1 ─ the ledger: every rate, one long table */
+function d1() {
+  var h = head() + '<div class="d1"><table><colgroup><col style="width:16%"><col style="width:12%">' + seq(6).map(function () { return '<col>'; }).join('') + '</colgroup>'
+    + '<thead><tr><th rowspan="2">Schedule · fee group</th><th rowspan="2">Account size</th><th colspan="3" class="fam gap">Management</th><th colspan="3" class="fam">PMG</th></tr><tr>'
+    + SHORT.map(function (s, li) { return '<th class="num' + (li === 2 ? ' gap' : '') + '">' + s + '</th>'; }).join('') + '</tr></thead>';
+  R.forEach(function (r, ri) {
+    h += '<tbody>';
+    T.forEach(function (t, ti) {
+      h += '<tr>' + (ti === 0 ? '<th rowspan="5" class="grp"><b>' + (r.sch === 'CASP' ? 'CASP' : r.name) + '</b><small>' + who(r) + '</small></th>' : '')
+        + '<td class="tier">' + t.label + '</td>'
+        + L.map(function (l, li) {
+          var c = isCh(ri, ti, li);
+          return '<td class="num' + (li === 2 ? ' gap' : '') + (li % 3 === 1 ? ' tg' : '') + (c ? ' ch' : '') + '">'
+            + (c ? '<s>' + f(CH.was) + '</s>' : '') + '<span class="c">' + f(val(ri, ti, li)) + '</span></td>';
+        }).join('') + '</tr>';
+    });
+    h += '</tbody>';
+  });
+  h += '</table><div class="struct"><span><b>5 fee groups</b> · Passive, Core Active, Specialist Active, Alternatives, Asset Allocation</span>'
+    + '<span><b>5 tiers</b> · edges at $10m, $25m, $50m and $100m</span><span class="lk">Change groups and tiers ▸</span></div></div>';
+  return h + saveBar();
+}
+
+/* 2 ─ tiers across, the target first */
+function d2() {
+  var fam = 1; /* PMG is showing, since that is where the change is */
+  var h = head() + '<div class="d2"><div class="tools"><span class="seg"><i>Management</i><i class="on">PMG</i></span>'
+    + '<span>The big figure is the target; floor – ceiling beneath. Click a figure to change any of the three.</span></div>'
+    + '<table><colgroup><col class="g">' + T.map(function () { return '<col>'; }).join('') + '</colgroup><thead><tr><th>Fee group</th>'
+    + T.map(function (t, ti) {
+      return '<th><span class="menu">···</span>' + t.label + '<span class="edge">' + (t.max === null ? 'and up' : 'up to $<span class="in">' + t.max + '</span>m') + '</span></th>';
+    }).join('') + '</tr></thead><tbody>';
+  R.forEach(function (r, ri) {
+    h += '<tr><th>' + (r.sch === 'CASP' ? 'CASP' : r.name) + (r.sch === 'CASP' ? '' : '<span class="pen">✎</span>') + '<small>' + who(r) + '</small></th>'
+      + T.map(function (t, ti) {
+        var b = fam * 3;
+        if (ri === CH.row && ti === CH.tier) {
+          return '<td class="open"><div class="ed">' + ['Floor', 'Target', 'Ceiling'].map(function (s, k) {
+            var c = isCh(ri, ti, b + k);
+            return '<div><label>' + s + '</label><span class="in' + (c ? ' ch' : '') + '">' + f(val(ri, ti, b + k)) + '</span></div>';
+          }).join('') + '<span class="was">was ' + f(CH.was) + '</span></div></td>';
+        }
+        return '<td><span class="t">' + f(val(ri, ti, b + 1)) + '</span><span class="r">' + f(val(ri, ti, b)) + ' – ' + f(val(ri, ti, b + 2)) + '</span></td>';
+      }).join('') + '</tr>';
+  });
+  h += '<tr class="add"><td colspan="6">+ Add a fee group</td></tr></tbody></table></div>';
+  return h + saveBar();
+}
+
+/* 3 ─ bands on a scale, one tier at a time */
+function d3() {
+  var ti = 1, MAX = 1.2;
+  function x(v) { return (v / MAX * 100).toFixed(2) + '%'; }
+  var h = head() + '<div class="d3"><div class="tools"><span class="chips">' + T.map(function (t, i) { return '<i' + (i === ti ? ' class="on"' : '') + '>' + t.label + '</i>'; }).join('')
+    + '</span><span class="key"><span><i style="background:rgba(22,36,58,.2);border:1.5px solid #16243A"></i>Management</span><span><i style="background:rgba(31,95,191,.16);border:1.5px solid #1F5FBF"></i>PMG</span><span>bar = floor to ceiling · tick = target</span></span></div>'
+    + '<div class="grid"><div class="h eyebrow">Schedule · fee group</div><div class="h"><div class="axis">'
+    + seq(7).map(function (i) { var v = i * 0.2; return '<span style="left:' + x(v) + '">' + v.toFixed(1) + '%</span>'; }).join('')
+    + '</div></div><div class="h eyebrow">Floor · Target · Ceiling</div>';
+  R.forEach(function (r, ri) {
+    var last = ri === R.length - 1 ? ' last' : '', chRow = ri === CH.row;
+    var g = seq(7).map(function (i) { return '<i class="gl" style="left:' + x(i * 0.2) + '"></i>'; }).join('');
+    var bars = '';
+    [0, 1].forEach(function (fam) {
+      var k = fam ? 'p' : 'm', b = fam * 3, lo = val(ri, ti, b), tg = val(ri, ti, b + 1), hi = val(ri, ti, b + 2);
+      bars += '<i class="bar ' + k + '" style="left:' + x(lo) + ';width:calc(' + x(hi) + ' - ' + x(lo) + ')"></i>'
+        + '<i class="tick ' + k + '" style="left:' + x(tg) + '"></i>'
+        + (chRow && fam === 1 ? '' : '<span class="lab ' + k + '" style="left:' + x(tg) + '">' + f(tg) + '</span>');
+      if (chRow && fam === 1) bars += '<i class="handle" style="left:' + x(tg) + '"></i><span class="tip" style="left:' + x(tg) + '">PMG Target 0.46 · was 0.44</span>';
+    });
+    h += '<div class="nm' + last + (chRow ? ' row-ch' : '') + '"><b>' + (r.sch === 'CASP' ? 'CASP' : r.name) + '</b><small>' + who(r) + '</small></div>'
+      + '<div class="' + last.trim() + (chRow ? ' row-ch' : '') + '"><div class="track">' + g + bars + '</div></div>'
+      + '<div class="' + last.trim() + (chRow ? ' row-ch' : '') + '"><div class="vals">'
+      + [0, 1].map(function (fam) {
+        return '<em>' + (fam ? 'PMG' : 'MGT') + '</em>' + [0, 1, 2].map(function (k) {
+          var li = fam * 3 + k; return '<span class="in' + (isCh(ri, ti, li) ? ' ch' : '') + '">' + f(val(ri, ti, li)) + '</span>';
+        }).join('');
+      }).join('') + '</div></div>';
+  });
+  h += '</div><p class="bad">✓ Every band in order on this tier: floor ≤ target ≤ ceiling. A band out of order draws in red here before the check refuses it.</p></div>';
+  return h + saveBar();
+}
+
+/* 4 ─ a card per fee group */
+function d4() {
+  var h = head() + '<div class="d4"><div class="tiers"><span class="eyebrow">Account-size tiers</span>'
+    + T.map(function (t, i) { return (i ? '<i class="arr">›</i>' : '') + '<i>' + t.label + '</i>'; }).join('')
+    + '<span class="sp"></span><span class="lk">Change the tiers</span></div><div class="cards">';
+  R.forEach(function (r, ri) {
+    var ch = ri === CH.row;
+    h += '<div class="card' + (ch ? ' ch' : '') + '"><div class="ch-h">' + (r.sch === 'CASP' ? '<span class="sch">CASP</span><b>Every product</b>' : '<span class="sch">RDR</span><b>' + r.name + '</b><span class="cnt">' + r.n + ' products</span>')
+      + (ch ? '<span class="dot" title="1 change"></span>' : '') + '<span class="mn">···</span></div>'
+      + '<table><colgroup><col style="width:23%">' + seq(6).map(function () { return '<col>'; }).join('') + '</colgroup><thead><tr><th class="l"></th><th colspan="3" class="gap">Management</th><th colspan="3">PMG</th></tr>'
+      + '<tr><th class="l">Tier</th>' + ['F', 'T', 'C', 'F', 'T', 'C'].map(function (s, li) { return '<th' + (li === 2 ? ' class="gap"' : '') + '>' + s + '</th>'; }).join('') + '</tr></thead><tbody>'
+      + T.map(function (t, ti) {
+        return '<tr><td class="l">' + t.short + '</td>' + L.map(function (l, li) {
+          return '<td class="' + (li === 2 ? 'gap ' : '') + (li % 3 === 1 ? 'tg ' : '') + (isCh(ri, ti, li) ? 'chc' : '') + '">' + f(val(ri, ti, li)) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table>'
+      + '<div class="foot">' + (r.sch === 'CASP' ? 'Marginal: each band pays its own tier, then one blended rate' : (ch ? '<span style="color:#7A4A0A">1 change · PMG Target $10–25m</span>' : 'Every rate filled') + '<span class="sp"></span><span class="lk">Rename</span><span class="lk">Remove</span>') + '</div></div>';
+  });
+  h += '</div><div class="newg" style="margin-top:14px;min-height:64px;flex-direction:row;gap:12px"><b>+ New fee group</b><small>starts as a copy of another group’s rates, or blank</small></div></div>';
+  return h + saveBar();
+}
+
+/* 5 ─ heat map, one level at a time, with an inspector */
+function d5() {
+  var li = 4, lo = 1, hi = 0;
+  R.forEach(function (r, ri) { T.forEach(function (t, ti) { var v = val(ri, ti, li); lo = Math.min(lo, v); hi = Math.max(hi, v); }); });
+  function heat(v) {
+    var k = (v - lo) / (hi - lo || 1), a = [238, 244, 252], b = [27, 58, 107];
+    return { bg: 'rgb(' + a.map(function (c, i) { return Math.round(c + (b[i] - c) * k); }).join(',') + ')', fg: k > 0.5 ? '#fff' : '#152135' };
+  }
+  var h = head() + '<div class="d5"><div class="tools"><span class="eyebrow">Showing</span><span class="chips">' + L.map(function (l, i) { return '<i' + (i === li ? ' class="on"' : '') + '>' + l + '</i>'; }).join('')
+    + '</span></div><div class="lay"><div><table><colgroup><col style="width:22%">' + T.map(function () { return '<col>'; }).join('') + '</colgroup><thead><tr><th></th>'
+    + T.map(function (t) { return '<th>' + t.label + '</th>'; }).join('') + '</tr></thead><tbody>';
+  R.forEach(function (r, ri) {
+    h += '<tr><th>' + (r.sch === 'CASP' ? 'CASP' : r.name) + '<small>' + who(r) + '</small></th>' + T.map(function (t, ti) {
+      var v = val(ri, ti, li), c = heat(v), sel = ri === CH.row && ti === CH.tier;
+      return '<td' + (sel ? ' class="sel"' : '') + ' style="background:' + c.bg + ';color:' + c.fg + '">' + f(v) + (isCh(ri, ti, li) ? '<span class="dot"></span>' : '') + '</td>';
+    }).join('') + '</tr>';
+  });
+  h += '</tbody></table><div class="legend">' + f(lo) + '<i></i>' + f(hi) + ' · PMG Target, every group and tier</div></div>'
+    + '<div class="insp"><span class="eyebrow">Selected</span><h5>RDR · Core Active</h5><p class="sub">$10m – $25m · prices 19 products</p>'
+    + [0, 1].map(function (fam) {
+      return '<div class="fam"><span class="eyebrow">' + (fam ? 'PMG' : 'Management') + '</span><div class="three">' + [0, 1, 2].map(function (k) {
+        var i = fam * 3 + k, c = isCh(CH.row, CH.tier, i);
+        return '<div><label>' + SHORT[i] + '</label><span class="in' + (c ? ' ch' : '') + '">' + f(val(CH.row, CH.tier, i)) + '</span>' + (c ? '<span class="was">was ' + f(CH.was) + '</span>' : '') + '</div>';
+      }).join('') + '</div></div>';
+    }).join('')
+    + '<p class="ok">✓ Both bands in order</p><div class="hist">This rate: <b>0.44</b> since version 1, loaded 16 Oct 2026</div>'
+    + '<div class="nav"><span class="lk">‹ Under $10m</span><span class="lk">$25m – $50m ›</span></div></div></div></div>';
+  return h + saveBar();
+}
+
+/* 6 ─ list and detail */
+function d6() {
+  var r = R[CH.row];
+  var h = head() + '<div class="d6"><div class="lay"><div class="rail"><span class="eyebrow">CASP</span><a>Every product<small>blended</small></a><span class="eyebrow">RDR · fee groups</span>'
+    + R.slice(1).map(function (g, i) { return '<a' + (i + 1 === CH.row ? ' class="on"' : '') + '>' + g.name + (i + 1 === CH.row ? ' <span class="dot"></span>' : '') + '<small>' + g.n + '</small></a>'; }).join('')
+    + '<a class="add">+ Add a fee group</a><span class="eyebrow">Structure</span><a>Account-size tiers<small>5</small></a></div>'
+    + '<div class="det"><div class="nm"><span class="in txt">' + r.name + '</span><span class="sp"></span><span class="b sm" style="opacity:.55" title="19 products are priced by it">Remove</span></div>'
+    + '<p class="meta">RDR · prices 19 products · every rate filled · 1 change in the draft</p>'
+    + '<table><colgroup><col style="width:22%">' + seq(6).map(function () { return '<col>'; }).join('') + '</colgroup><thead><tr><th></th><th colspan="3" class="gap">Management</th><th colspan="3">PMG</th></tr><tr><th>Account size</th>'
+    + SHORT.map(function (s, li) { return '<th' + (li === 2 ? ' class="gap"' : '') + '>' + s + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + T.map(function (t, ti) {
+      return '<tr><th>' + t.label + '</th>' + L.map(function (l, li) {
+        var c = isCh(CH.row, ti, li);
+        return '<td' + (li === 2 ? ' class="gap"' : '') + '><span class="in' + (c ? ' ch' : '') + '">' + f(val(CH.row, ti, li)) + '</span>' + (c ? '<span class="was">was ' + f(CH.was) + '</span>' : '') + '</td>';
+      }).join('') + '</tr>';
+    }).join('') + '</tbody></table>'
+    + '<div class="two"><div><span class="eyebrow">Products it prices · 19</span><div class="prods">'
+    + ['GSAM Core Municipal SMA', 'GS US Corporate Bond Fund', 'Ashfield Global Credit Fund', 'GS Core Fixed Income Fund', 'GS US Equity Insights Fund', 'Northbrook Intl Equity', 'GS Concentrated Growth SMA'].map(function (p) { return '<i>' + p + '</i>'; }).join('')
+    + '<i>+ 12 more</i></div></div><div><span class="eyebrow">This group’s history</span><p><b>v1</b> · loaded from the fee card file · 16 Oct 2026</p><p>Renames and removals of the group show here too.</p></div></div>'
+    + '</div></div></div>';
+  return h + saveBar();
+}
+
+/* 7 ─ the account-size axis: the tiers drawn to scale, edges you can drag */
+function d7() {
+  var ri = CH.row, W = 1000, H = 250, P = { l: 44, r: 10, t: 14, b: 34 }, END = 150, MAX = 1.2;
+  var iw = W - P.l - P.r, ih = H - P.t - P.b;
+  function X(m) { return P.l + Math.sqrt(Math.min(m, END)) / Math.sqrt(END) * iw; }
+  function Y(v) { return P.t + ih - v / MAX * ih; }
+  var edges = T.map(function (t) { return t.min; }).concat([END]);
+  var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Core Active rates across account size">';
+  seq(7).forEach(function (i) { var v = i * 0.2; s += '<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="#E3E7EC"/><text x="' + (P.l - 8) + '" y="' + (Y(v) + 4) + '" text-anchor="end" font-size="11" fill="#7C8B9C" font-family="GS Sans Condensed,Roboto Condensed,sans-serif">' + v.toFixed(1) + '</text>'; });
+  [0, 1].forEach(function (fam) {
+    var b = fam * 3, fill = fam ? 'rgba(31,95,191,.16)' : 'rgba(22,36,58,.13)', line = fam ? '#1F5FBF' : '#16243A', d = '';
+    T.forEach(function (t, ti) {
+      var x0 = X(edges[ti]), x1 = X(edges[ti + 1]);
+      s += '<rect x="' + x0 + '" width="' + (x1 - x0) + '" y="' + Y(val(ri, ti, b + 2)) + '" height="' + (Y(val(ri, ti, b)) - Y(val(ri, ti, b + 2))) + '" fill="' + fill + '"/>';
+      d += (ti ? 'L' : 'M') + x0 + ' ' + Y(val(ri, ti, b + 1)) + 'L' + x1 + ' ' + Y(val(ri, ti, b + 1));
+    });
+    s += '<path d="' + d + '" fill="none" stroke="' + line + '" stroke-width="2.5"' + (fam ? ' stroke-dasharray="7 4"' : '') + '/>';
+  });
+  /* the changed target */
+  var cx = (X(edges[CH.tier]) + X(edges[CH.tier + 1])) / 2, cy = Y(CH.now);
+  s += '<circle cx="' + cx + '" cy="' + cy + '" r="6" fill="#FFF7E0" stroke="#D9A21B" stroke-width="2.5"/>'
+    + '<rect x="' + (cx - 78) + '" y="' + (cy - 36) + '" width="156" height="22" rx="4" fill="#16243A"/><text x="' + cx + '" y="' + (cy - 21) + '" text-anchor="middle" font-size="12" fill="#fff" font-weight="600" font-family="GS Sans Condensed,Roboto Condensed,sans-serif">PMG Target 0.46 · was 0.44</text>';
+  /* the tier edges, each a handle */
+  edges.slice(1, 5).forEach(function (m) {
+    var xx = X(m);
+    s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="#7C8B9C" stroke-dasharray="3 3"/>'
+      + '<rect x="' + (xx - 22) + '" y="' + (H - P.b + 6) + '" width="44" height="20" rx="10" fill="#fff" stroke="#16243A" stroke-width="1.5"/>'
+      + '<text x="' + xx + '" y="' + (H - P.b + 20) + '" text-anchor="middle" font-size="11.5" font-weight="700" fill="#16243A" font-family="GS Sans Condensed,Roboto Condensed,sans-serif">$' + m + 'm</text>';
+  });
+  s += '<text x="' + (W - P.r) + '" y="' + (H - P.b + 20) + '" text-anchor="end" font-size="11" fill="#7C8B9C" font-family="GS Sans Condensed,Roboto Condensed,sans-serif">and up →</text></svg>';
+  var vals = '<div class="vals">' + T.map(function (t, ti) {
+    var l = (X(edges[ti]) / W * 100), w = ((X(edges[ti + 1]) - X(edges[ti])) / W * 100);
+    return '<div class="seg7" style="left:' + l + '%;width:' + w + '%"><div class="tl">' + t.label + '</div>' + [0, 1].map(function (fam) {
+      return '<div class="row"><em>' + (fam ? 'P' : 'M') + '</em>' + [0, 1, 2].map(function (k) { var li = fam * 3 + k; return '<span class="in' + (isCh(ri, ti, li) ? ' ch' : '') + '">' + f(val(ri, ti, li)) + '</span>'; }).join('') + '</div>';
+    }).join('') + '</div>';
+  }).join('') + '</div>';
+  var h = head() + '<div class="d7"><div class="tools"><span class="chips">' + R.map(function (r, i) { return '<i' + (i === ri ? ' class="on"' : '') + '>' + (r.sch === 'CASP' ? 'CASP' : r.name) + '</i>'; }).join('')
+    + '</span><span class="key"><span><i style="background:rgba(22,36,58,.25)"></i>Management band, solid target</span><span><i style="background:rgba(31,95,191,.25)"></i>PMG band, dashed target</span></span></div>'
+    + '<div class="chart">' + s + vals + '</div><p class="hint">Drag an edge to move a tier boundary; click inside a tier to split it there; drag an edge onto its neighbour to merge. Account size runs on a square-root scale so the small tiers stay wide enough to read.</p></div>';
+  return h + saveBar();
+}
+
+/* 8 ─ the rate sheet, edited with tracked changes */
+function d8() {
+  function trio(ri, ti, b) {
+    return [0, 1, 2].map(function (k) {
+      var li = b + k, v = f(val(ri, ti, li));
+      if (isCh(ri, ti, li)) return '<del>' + f(CH.was) + '</del> <ins>' + v + '</ins>';
+      return k === 1 ? '<b>' + v + '</b>' : '<span>' + v + '</span>';
+    }).join(' <span>/</span> ');
+  }
+  var h = '<div class="d8"><div class="lay"><div class="top8"><span class="seg"><i>Read</i><i class="on">Edit · tracked</i></span><span class="sp"></span><span class="lk">History</span><span class="lk">Import a file</span><span class="lk">Download the card</span></div>'
+    + '<div class="paper"><div class="wm">PLACEHOLDER</div><h5>Fee card</h5><p class="meta">Version 1 · last edited 16 Oct 2026, 21:12 · loaded from the fee card file · rates in % a year</p>'
+    + '<h6>1 · CASP <span>one blended rate prices every product¹</span></h6><table><colgroup><col style="width:24%">' + T.map(function () { return '<col>'; }).join('') + '</colgroup><thead><tr><th>Level</th>' + T.map(function (t) { return '<th>' + t.label + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + L.map(function (l, li) { return '<tr><td>' + l + '</td>' + T.map(function (t, ti) { return '<td class="e">' + (li % 3 === 1 ? '<b>' + f(val(0, ti, li)) + '</b>' : f(val(0, ti, li))) + '</td>'; }).join('') + '</tr>'; }).join('')
+    + '</tbody></table>';
+  [0, 1].forEach(function (fam) {
+    h += '<h6>2' + (fam ? 'b' : 'a') + ' · RDR, ' + (fam ? 'PMG' : 'Management') + ' <span>by fee group, at the tier of the top account size · floor / <b>target</b> / ceiling</span></h6><table><colgroup><col style="width:24%">' + T.map(function () { return '<col>'; }).join('') + '</colgroup><thead><tr><th>Fee group</th>'
+      + T.map(function (t) { return '<th>' + t.label + '</th>'; }).join('') + '</tr></thead><tbody>'
+      + R.slice(1).map(function (r, i) {
+        var ri = i + 1;
+        return '<tr><td>' + r.name + '</td>' + T.map(function (t, ti) { return '<td class="e' + (ri === CH.row && ti === CH.tier && fam === 1 ? ' tc' : '') + '">' + trio(ri, ti, fam * 3) + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table>';
+  });
+  h += '<p class="fn">¹ Marginal: the mandate fills the tiers in turn and each band pays its own tier rate; the blend then prices every product.<br>Tiers: under $10m, $10m – $25m, $25m – $50m, $50m – $100m, $100m and up. Fee groups: 5, pricing 73 products.</p></div>'
+    + '<div class="margin"><div class="side"><span class="eyebrow">Changes in this draft</span></div>'
+    + '<div class="cmt" style="top:640px"><b>fbarker · just now</b>Core Active, $10m – $25m, PMG Target<br><del style="color:#B42318">0.44</del> → <ins style="color:#176A33;text-decoration:none;font-weight:700">0.46</ins><div class="acts"><span class="lk">Undo</span><span class="lk">Comment</span></div></div>'
+    + '</div></div></div>';
+  return h + saveBar('<b>1 tracked change</b> · the review shows the sheet with every change marked');
+}
+
+/* 9 ─ the spreadsheet: one family a sheet, keys and paste */
+function d9() {
+  var fam = 1, col = 'BCDEFGHIJKLMNOP';
+  var h = head('<span class="lk">History</span><span class="lk">Import a file</span><span class="lk">Download the card</span>') + '<div class="d9">'
+    + '<div class="fx"><span class="nb">F3 · Core Active · $10m – $25m · PMG Target</span><span class="fxi">fx</span><span class="val">0.46<s>was 0.44</s></span></div>'
+    + '<div class="sheet"><table><colgroup><col class="rn"><col class="gn">' + seq(15).map(function () { return '<col>'; }).join('') + '</colgroup><thead>'
+    + '<tr><th></th><th>A</th>' + seq(15).map(function (i) { return '<th>' + col[i] + '</th>'; }).join('') + '</tr>'
+    + '<tr><th></th><th class="tl" style="text-align:left">PMG</th>' + T.map(function (t) { return '<th colspan="3" class="tl">' + t.label + '</th>'; }).join('') + '</tr>'
+    + '<tr><th></th><th style="text-align:left">Fee group</th>' + seq(15).map(function (i) { return '<th>' + ['Floor', 'Target', 'Ceiling'][i % 3] + '</th>'; }).join('') + '</tr></thead><tbody>';
+  R.forEach(function (r, ri) {
+    h += '<tr><th>' + (ri + 1) + '</th><td class="g">' + (r.sch === 'CASP' ? 'CASP<small>blended</small>' : r.name + '<small>' + r.n + '</small>') + '</td>'
+      + T.map(function (t, ti) {
+        return [0, 1, 2].map(function (k) {
+          var li = fam * 3 + k, c = isCh(ri, ti, li), cls = (k === 0 ? 't0 ' : '') + (k === 1 ? 'tg ' : '') + (c ? 'sel chc ' : '');
+          return '<td class="' + cls.trim() + '">' + f(val(ri, ti, li)) + '</td>';
+        }).join('');
+      }).join('') + '</tr>';
+  });
+  h += '</tbody></table></div><div class="tabs"><i>Management</i><i class="on">PMG</i><i>Tiers</i><i>Fee groups</i><span class="st">1 change · Core Active $10–25m PMG Target</span></div>'
+    + '<div class="keys"><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move</span><span>type to replace</span><span><kbd>Enter</kbd> down</span><span><kbd>⌘ V</kbd> pastes a block copied from Excel</span><span><kbd>⌘ Z</kbd> undoes</span><span>changed cells carry a corner mark</span></div></div>';
+  return h + saveBar();
+}
+
+/* 10 ─ the change set: the card summarised, changes written as lines */
+function d10() {
+  function spark(r) {
+    var W = 160, H = 54, p = 5, ri0 = R.indexOf(r), lo = 9, hi = 0;
+    [1, 4].forEach(function (li) { T.forEach(function (t, ti) { var v = val(ri0, ti, li); lo = Math.min(lo, v); hi = Math.max(hi, v); }); });
+    function x(i) { return p + i * (W - 2 * p) / 4; }
+    function y(v) { return H - p - (v - lo) / (hi - lo || 1) * (H - 2 * p); }
+    var out = '<svg viewBox="0 0 ' + W + ' ' + H + '">';
+    [1, 4].forEach(function (li, j) {
+      out += '<polyline fill="none" stroke="' + (j ? '#1F5FBF' : '#16243A') + '" stroke-width="2"' + (j ? ' stroke-dasharray="4 3"' : '') + ' points="' + T.map(function (t, ti) { return x(ti) + ',' + y(val(R.indexOf(r), ti, li)); }).join(' ') + '"/>';
+    });
+    return out + '</svg>';
+  }
+  var h = head() + '<div class="d10"><div class="tiles">'
+    + '<div class="tile"><b>Version 1</b><span>16 Oct 2026 · loaded</span></div>'
+    + '<div class="tile"><b>180 rates</b><span>2 schedules · 6 levels</span></div>'
+    + '<div class="tile"><b>5 fee groups</b><span>pricing 73 products</span></div>'
+    + '<div class="tile"><b>5 tiers</b><span>edges $10m · $25m · $50m · $100m</span></div>'
+    + '<div class="tile phd"><b>Placeholder</b><span>not yet the agreed card</span></div></div>'
+    + '<span class="eyebrow">Targets across the tiers · Management solid, PMG dashed</span><div class="shape">'
+    + R.map(function (r, ri) { return '<div class="sh"><b>' + (r.sch === 'CASP' ? 'CASP' : r.name) + '</b><small>' + f(val(ri, 0, 1)) + ' → ' + f(val(ri, 4, 1)) + ' · PMG ' + f(val(ri, 0, 4)) + ' → ' + f(val(ri, 4, 4)) + '</small>' + spark(r) + '</div>'; }).join('')
+    + '</div><div class="every"><span>Every rate, as a table</span><span class="sp"></span><span class="lk">Show all 180 ▸</span></div>'
+    + '<div class="cs"><div class="cs-h"><b>Change set</b><span style="font-size:13px;color:#7A4A0A">3 changes · not saved</span></div><ol>'
+    + '<li><span class="n">1</span><span>Set <q>RDR · Core Active · $10m – $25m · PMG Target</q> to <b>0.46</b> <span style="color:#7C8B9C">(was 0.44)</span></span><span class="eff">1 rate · 19 products</span><span class="x">Remove</span></li>'
+    + '<li><span class="n">2</span><span>Add <b>0.02</b> to <q>every PMG rate in Alternatives</q></span><span class="eff">15 rates · 23 products</span><span class="x">Remove</span></li>'
+    + '<li><span class="n">3</span><span>Rename <q>Asset Allocation</q> to <b>Multi-Asset</b></span><span class="eff">moves 3 products</span><span class="x">Remove</span></li>'
+    + '</ol><div class="comp">Add a change: <span class="sel">Add to</span><span class="sel">every Management rate</span>in<span class="sel">Specialist Active</span>by<span class="in">0.01</span><span class="b sm">Add</span></div>'
+    + '<div class="impact"><span><b>16</b> rates change</span><span><b>1</b> group renamed</span><span><b>42</b> products repriced</span><span>✓ every band still in order</span></div></div></div>';
+  return h + saveBar('<b>3 changes</b> · the review lists each line, then every rate it moved');
+}
+
+var DESIGNS = [
+  { n: 1, id: 'd1', title: 'The ledger', h3: 'Every rate on one page, one long table', tags: ['All 180 in view', 'Smallest build'], fn: d1,
+    sum: 'The card as a single ledger: a block per schedule and fee group, a row per tier, Management and PMG side by side. Nothing to pick, nothing hidden — the draft is typed straight into the figures, which look like text until touched. Groups and tiers fold into one line beneath, opened when the structure changes.',
+    g: ['Any two rates can be compared without a click.', 'The same shape as the fee card file, so an import and the screen read alike.', 'Least new code: one table, the editing already built.'],
+    c: ['Thirty rows; the bottom of the card is a scroll away.', '180 figures at one weight make the targets easy to lose.'] },
+  { n: 2, id: 'd2', title: 'Tiers across, target first', h3: 'A price list: groups down, tiers across, the target large', tags: ['Recommended', 'Structure in the table'], rec: true, fn: d2,
+    sum: 'Groups down the side, tiers across the top in account-size order, and one family at a time. Each cell leads with the target in large figures, floor – ceiling small beneath. Clicking a cell opens its three boxes in place. The tier edges are edited in the column headers, the group names in the row headers, so the two panels below today’s grid disappear.',
+    g: ['A whole family — 90 rates — readable at a glance, with the priced rate leading.', 'Fees falling with account size, and which groups cost most, show without reading.', 'Groups and tiers are changed where they show, not in a panel elsewhere.'],
+    c: ['Floor and ceiling are small until a cell is opened.', 'Management and PMG are one switch apart.'] },
+  { n: 3, id: 'd3', title: 'Bands on a scale', h3: 'Each band drawn as a bar on one shared scale', tags: ['Visual', 'One tier at a time'], fn: d3,
+    sum: 'For the tier chosen, every group gets two bars on a shared 0 – 1.2% scale: Management and PMG, floor to ceiling, the target as a tick. A target can be dragged along its bar; the figures to the right stay typeable for the exact value. A band out of order shows as a broken bar before the check refuses it.',
+    g: ['The checks the card enforces become something you can see.', 'Where PMG sits against Management is obvious in every group.', 'Good for a sense of the whole tier before typing.'],
+    c: ['Dragging is coarse for two-decimal rates; the boxes still do the work.', 'Five tiers means five screens; groups and tiers live elsewhere.'] },
+  { n: 4, id: 'd4', title: 'A card per group', h3: 'Each fee group its own card, with its products and its rates', tags: ['All 180 in view', 'Group-led'], fn: d4,
+    sum: 'Six cards — CASP and the five RDR groups — each carrying the group’s product count, a compact tier-by-level table and its own Rename and Remove. The tiers sit once along the top. A new group is a new card, started as a copy of another. The card with a change in it is outlined until saved.',
+    g: ['Everything about a group — name, products, rates — in one place.', 'Adding or renaming a group feels like what it is.', 'All rates visible, in six readable pieces.'],
+    c: ['Comparing one rate across groups means reading across cards.', 'Small figures; six tables to scan.'] },
+  { n: 5, id: 'd5', title: 'Heat map', h3: 'One level at a time, coloured by rate, with an inspector', tags: ['Shape of the card', 'Inspector'], fn: d5,
+    sum: 'Pick a level — say PMG Target — and every group and tier shows as a coloured square, darker as the rate rises. The card’s shape is plain: cheaper with size, dearer with complexity, and an outlier stands out. Selecting a square opens an inspector with all six levels for that group and tier, the band check and that rate’s history.',
+    g: ['The best overview of the pricing shape of any design.', 'The inspector gives one rate its full context.', 'A mistyped 4.6 for 0.46 glows immediately.'],
+    c: ['Six maps for six levels; colour is no substitute for figures.', 'Editing is one cell at a time through the inspector.'] },
+  { n: 6, id: 'd6', title: 'List and detail', h3: 'A list of groups on the left, the chosen group in full on the right', tags: ['Calm', 'Scales to many groups'], fn: d6,
+    sum: 'A settings-page layout. The left list holds CASP, the fee groups with their product counts, Add a fee group and the tiers. The right shows one group at a time: its name to rename, its 30 rates to type into, the products it prices and its own history. A dot in the list marks a group with unsaved changes.',
+    g: ['One thing at a time; nothing crowds.', 'The group’s products and history sit beside its rates.', 'Copes with twenty groups as easily as five.'],
+    c: ['Comparing groups means clicking between them.', 'The whole card is never on screen.'] },
+  { n: 7, id: 'd7', title: 'The size axis', h3: 'Account size drawn to scale, tier edges you drag', tags: ['Tiers made visible', 'Chart'], fn: d7,
+    sum: 'One group at a time, drawn along account size: Management and PMG bands shaded floor to ceiling, the targets as steps. The tier edges are handles — drag one to move a boundary, click inside a tier to split it, drag an edge onto its neighbour to merge. The six figures for each tier sit beneath its stretch of axis.',
+    g: ['Tiers stop being a list of numbers and become a picture of the mandate.', 'The step down at each edge — what a client gains by size — is visible.', 'Split and merge are direct.'],
+    c: ['The most to build: a drawn chart with handles, kept accessible.', 'One group at a time; tall.'] },
+  { n: 8, id: 'd8', title: 'The rate sheet', h3: 'The card as a document, edited with tracked changes', tags: ['Sign-off', 'Printable'], fn: d8,
+    sum: 'The card set out as the sheet a committee would sign: CASP by level and tier, then RDR Management and PMG by group, each figure as floor / target / ceiling. Editing marks changes the way a document does — the old figure struck, the new one inserted, a note in the margin with who and when. The placeholder carries a watermark until the real card replaces it.',
+    g: ['Reads like the agreed document, and prints as one.', 'Tracked changes make the review step almost unnecessary.', 'The placeholder is impossible to miss.'],
+    c: ['Clicking figures in a document is slower than a grid.', 'Groups and tiers still need their own controls.'] },
+  { n: 9, id: 'd9', title: 'The spreadsheet', h3: 'A grid that behaves like Excel: keys, a formula bar, paste a block', tags: ['Fastest to edit', 'Excel-like'], fn: d9,
+    sum: 'One family per sheet — Management, PMG — with tiers and fee groups on sheets of their own. All five tiers across, three columns each, a formula bar naming the selected rate in words. Arrow keys move, typing replaces, and a block copied from the committee’s spreadsheet pastes into place in one go. Changed cells carry a corner mark.',
+    g: ['The quickest way to enter a whole new card by hand or by paste.', '90 rates of a family at once.', 'A model every admin already knows.'],
+    c: ['Fifteen narrow columns; looks unlike the rest of the tool.', 'Keyboard handling and paste are real work to build and to test.'] },
+  { n: 10, id: 'd10', title: 'The change set', h3: 'The card summarised; changes written as lines, including whole-group rises', tags: ['New: bulk changes', 'Intent-led'], fn: d10,
+    sum: 'At rest the card is a summary: version, counts, and a small chart per group of targets across the tiers. Changes are composed as lines — set one rate, add 0.02 to every PMG rate in a group, rename a group — and the set shows what each line moves before review. The full table is one click away for anyone who wants it.',
+    g: ['Changes read the way they are agreed: “PMG up 0.02 across Alternatives”.', 'A rise across a group is one line, not fifteen edits.', 'The note on save writes itself from the lines.'],
+    c: ['New operations to build and explain.', 'A single tweak is slower than typing in a grid.'] }
+];
+
+var host = document.getElementById('designs');
+host.innerHTML = DESIGNS.map(function (d) {
+  return '<h2 id="' + d.id + '"><small>Design ' + d.n + '</small>' + d.title + '</h2>'
+    + '<section class="v" data-v="' + d.n + '"><div class="v-h"><span class="no">' + d.n + '</span><h3>' + d.h3 + '</h3><div class="tags">'
+    + d.tags.map(function (t) { return '<span class="tag' + (t === 'Recommended' ? ' rec' : '') + '">' + t + '</span>'; }).join('')
+    + '</div><button type="button" class="pickb" data-pick="' + d.n + '">Pick this one</button></div>'
+    + '<p class="sum">' + d.sum + '</p>'
+    + '<div class="demo"><p class="demo-l">Drawn · editing, one change pending</p><div class="demo-x">' + frame(d.fn()) + '</div></div>'
+    + '<div class="pc"><div class="g"><h4>Gains</h4><ul>' + d.g.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div>'
+    + '<div class="c"><h4>Costs</h4><ul>' + d.c.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ul></div></div></section>';
+}).join('');
+
+/* ── picking ── */
+var KEY = 'feeCardDesigns.pick';
+function show(n) {
+  document.querySelectorAll('.v').forEach(function (v) { v.classList.toggle('picked', String(v.dataset.v) === String(n)); });
+  document.querySelectorAll('.pickb').forEach(function (b) { b.textContent = String(b.dataset.pick) === String(n) ? '✓ Picked' : 'Pick this one'; });
+  document.querySelectorAll('nav.toc a[data-toc]').forEach(function (a) { a.classList.toggle('picked', a.dataset.toc === String(n)); });
+  var bar = document.getElementById('pickbar'), d = DESIGNS.filter(function (x) { return String(x.n) === String(n); })[0];
+  if (d) { document.getElementById('pickname').textContent = 'Design ' + d.n + ' · ' + d.title; bar.hidden = false; } else bar.hidden = true;
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-pick]');
+  if (b) { var n = b.dataset.pick; try { localStorage.setItem(KEY, n); } catch (err) {} show(n); return; }
+  if (e.target.id === 'unpick') { try { localStorage.removeItem(KEY); } catch (err) {} show(null); }
+});
+var saved = null; try { saved = localStorage.getItem(KEY); } catch (err) {}
+show(saved);
+})();
+</script>
+</body>
+</html>

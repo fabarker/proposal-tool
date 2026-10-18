@@ -51,8 +51,10 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 5          # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
-                            # 5: the overlay rules (D155)
+SCHEMA_VERSION = 9          # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+                            # 5: the overlay rules (D155); 6: the catalogue and fee card versions (D165, D166);
+                            # 7: custom sleeves, and whether the strategic allocation was left out (D170);
+                            # 8: custom portfolios (D171); 9: the other charges (D177)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -91,6 +93,11 @@ CREATE TABLE IF NOT EXISTS proposals (
     deckBytes      INTEGER,
     fundingSplit   TEXT,
     overlays       TEXT,
+    catalogueRevision INTEGER,
+    feeCardRevision   INTEGER,
+    departs           INTEGER,
+    customPortfolio   TEXT,
+    otherCharges      TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -99,6 +106,7 @@ CREATE TABLE IF NOT EXISTS proposalSleeves (
     sleeveId   INTEGER,
     revision   INTEGER,
     sleeveName TEXT NOT NULL,
+    custom     TEXT,
     PRIMARY KEY (proposalId, category)
 );
 CREATE TABLE IF NOT EXISTS meta (
@@ -119,7 +127,8 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'primaryPwa, topAccountSize, mandateSize, currency, hedging, variant, '
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
-                 'deckName, deckBytes, deckSha, fundingSplit, overlays')
+                 'deckName, deckBytes, deckSha, fundingSplit, overlays, catalogueRevision, '
+                 'feeCardRevision, departs, customPortfolio')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -171,6 +180,30 @@ def _connect() -> sqlite3.Connection:
         # and the premium were the code's, as the two flags record
         if 'overlays' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN overlays TEXT')
+        # and the versions of the product catalogue and of the fee card it
+        # was priced with (D165, D166) - the fee card's only when fees priced
+        # it; NULL for anything delivered before, when both were files
+        for column in ('catalogueRevision', 'feeCardRevision'):
+            if column not in held:
+                conn.execute('ALTER TABLE proposals ADD COLUMN {} INTEGER'.format(column))
+        # and whether its custom sleeves moved a category's weight and so left
+        # the strategic allocation out of the files, and each custom sleeve's
+        # products and weights (D170); NULL for anything delivered before
+        # custom sleeves existed
+        if 'departs' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN departs INTEGER')
+        # a proposal built product by product: its profile, who built and
+        # who approved it, its limits and figures (D171); NULL for every
+        # strategic proposal
+        if 'customPortfolio' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN customPortfolio TEXT')
+        # the charges the PWA quoted beside the fees (D177); NULL for an
+        # unpriced proposal and for anything delivered before
+        if 'otherCharges' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN otherCharges TEXT')
+        pins = {row[1] for row in conn.execute('PRAGMA table_info(proposalSleeves)')}
+        if 'custom' not in pins:
+            conn.execute('ALTER TABLE proposalSleeves ADD COLUMN custom TEXT')
         conn.execute("INSERT OR IGNORE INTO meta VALUES ('schemaVersion', ?)",
                      (str(SCHEMA_VERSION),))
         conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
@@ -204,6 +237,23 @@ def allocationPicture(results) -> dict:
     }
 
 
+def customAllocationPicture(model) -> dict:
+    """Picture one for a custom portfolio (D171): its own allocation, by
+    category, each category's asset classes as its products carry them, in
+    the shape a strategic allocation is kept in."""
+    from .sheetDoc import customLines
+    custom = model['customPortfolio']
+    return {
+        'keyStr': None, 'kind': 'custom',
+        'name': 'Custom portfolio ({} risk profile)'.format(custom['profileLabel']),
+        'header': 'Custom portfolio',
+        'categories': [
+            {'name': name, 'weightPct': weight,
+             'assets': [{'reportingName': a, 'weightPct': w} for a, w in classes]}
+            for name, weight, classes in customLines(model)],
+    }
+
+
 def _pinSleeve(category: str, sleeveName, variant: str, key=None):
     """The (sleeveId, revision) a sleeve name resolves to right now, for the
     portfolio being implemented - the edition and version this proposal is
@@ -218,19 +268,34 @@ def _pinSleeve(category: str, sleeveName, variant: str, key=None):
     return None, None
 
 
-def implementedPicture(model: dict, variant: str, key=None) -> list:
+def implementedPicture(model: dict, variant: str, key=None, customSleeves=None) -> list:
     """Picture two: the implemented model, sleeves pinned to their revision,
-    products carried by name, and no fee field anywhere."""
+    products carried by name, and no fee field anywhere. A custom sleeve
+    (D170) pins to nothing - it was never in the library - and carries its
+    products and weights as built, and who built it, instead; every line
+    carries the strategic weight it began from beside the one implemented."""
     out = []
+    builtByHand = bool(model.get('customPortfolio'))
     for group in model.get('groups', []):
-        sleeveId, revision = _pinSleeve(group['category'], group.get('sleeve'), variant, key)
+        custom = group.get('custom')
+        if builtByHand:
+            # a custom portfolio has no sleeves to pin (D171)
+            sleeveId = revision = None
+        elif custom:
+            sleeveId = revision = None
+            built = (customSleeves or {}).get(rules.sleeveCategory(group['category'])) or {}
+            custom = dict(custom, builtBy=built.get('builtBy') or '')
+        else:
+            sleeveId, revision = _pinSleeve(group['category'], group.get('sleeve'), variant, key)
         out.append({
             'category': group['category'],
             'weightPct': group['weightPct'],
+            'strategicWeightPct': group.get('strategicWeightPct', group['weightPct']),
             'auto': bool(group.get('auto')),
             'sleeve': group.get('sleeve'),
             'sleeveId': sleeveId,
             'revision': revision,
+            'custom': custom,
             'items': [{field: item.get(field) for field in _ITEM_FIELDS}
                       for item in group.get('items', [])],
         })
@@ -302,10 +367,17 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
         raise ValidationError(
             'proposalId', 'The deck name {!r} does not carry the Proposal UID {}.'.format(
                 deckName, proposalId))
-    allocation = allocationPicture(results)
+    builtByHand = model.get('customPortfolio')
+    allocation = customAllocationPicture(model) if builtByHand else allocationPicture(results)
     baseKey = (PortfolioKey.fromStr(results[0]['keyStr'])
-               if results and results[0].get('keyStr') else None)
-    implemented = implementedPicture(model, implementation.get('variant'), baseKey)
+               if results and results[0].get('keyStr') and not builtByHand else None)
+    implemented = implementedPicture(model, implementation.get('variant'), baseKey,
+                                     implementation.get('customSleeves'))
+    # the versions it was priced with (D165, D166): a delivered proposal says
+    # which catalogue and which fee card, now that both change in the console
+    from . import products
+    catalogueRevision = products.describeSource()['revision']
+    feeCardRevision = fees.deliveryInfo()['revision'] if implementation.get('includeFees') else None
     stamp = _now()
     sha = hashlib.sha256(workbook).hexdigest()
     deckSha = hashlib.sha256(deck).hexdigest()
@@ -321,7 +393,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'baseKey, tacticalTilt, volPremium, includeFees, feeSchedule, '
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
                 'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
-                'overlays) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'overlays, catalogueRevision, feeCardRevision, departs, customPortfolio, '
+                'otherCharges) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -342,12 +416,22 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                  (json.dumps((model.get('initial') or {}).get('split'))
                   if (model.get('initial') or {}).get('split') else None),
                  # the overlay rules in force and what each did (D155)
-                 json.dumps(model['overlays']) if model.get('overlays') else None))
+                 json.dumps(model['overlays']) if model.get('overlays') else None,
+                 catalogueRevision, feeCardRevision,
+                 # the strategic allocation left out of the files (D170)
+                 1 if model.get('departs') else 0,
+                 # a portfolio built product by product (D171)
+                 json.dumps(builtByHand) if builtByHand else None,
+                 # the charges quoted beside the fees, when fees priced it (D177)
+                 (json.dumps(implementation.get('otherCharges'))
+                  if implementation.get('includeFees') and implementation.get('otherCharges')
+                  else None)))
             conn.executemany(
-                'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName) '
-                'VALUES (?,?,?,?,?)',
-                [(proposalId, g['category'], g['sleeveId'], g['revision'], g['sleeve'] or '')
-                 for g in implemented if g.get('sleeve')])
+                'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName, '
+                'custom) VALUES (?,?,?,?,?,?)',
+                [(proposalId, g['category'], g['sleeveId'], g['revision'], g['sleeve'] or '',
+                  json.dumps(g['custom']) if g.get('custom') else None)
+                 for g in implemented if g.get('sleeve') and not builtByHand])
         return getProposal(proposalId, conn=conn)
     finally:
         conn.close()
@@ -359,31 +443,36 @@ def _rowToEntry(row) -> dict:
     entry = {key: row[key] for key in row.keys() if key not in ('allocation', 'implemented')}
     for flag in ('tacticalTilt', 'volPremium', 'includeFees'):
         entry[flag] = bool(entry[flag])
+    if 'departs' in entry:
+        entry['departs'] = bool(entry['departs'])
     if 'fundingSplit' in entry:
         entry['fundingSplit'] = json.loads(entry['fundingSplit']) if entry['fundingSplit'] else None
     if 'overlays' in entry:
         entry['overlays'] = json.loads(entry['overlays']) if entry['overlays'] else None
+    if 'customPortfolio' in entry:
+        entry['customPortfolio'] = (json.loads(entry['customPortfolio'])
+                                    if entry['customPortfolio'] else None)
     return entry
 
 
 def fundingSplitText(split) -> str:
-    """A recorded split in one line: ``r2 (house) Investment Grade Fixed
+    """A recorded split in one line: ``r2 (default) Investment Grade Fixed
     Income 33.3333% · Public Equity 66.6667%``. Blank for none."""
     if not split:
         return ''
     return 'r{} ({}) {}'.format(
-        split.get('revision'), 'house' if split.get('scope') == '*' else split.get('scope'),
+        split.get('revision'), 'default' if split.get('scope') == '*' else split.get('scope'),
         ' · '.join('{} {:g}%'.format(d['category'], d['weightPct'])
                    for d in split.get('destinations') or []))
 
 
 def overlaysText(overlays) -> str:
-    """A recorded overlay list in one line: ``r1 (house) 1 Tactical Tilts
+    """A recorded overlay list in one line: ``r1 (default) 1 Tactical Tilts
     applied 8% · 2 Strategic Volatility Premium off``. Blank for none."""
     if not overlays:
         return ''
     return 'r{} ({}) {}'.format(
-        overlays.get('revision'), 'house' if overlays.get('scope') == '*' else overlays.get('scope'),
+        overlays.get('revision'), 'default' if overlays.get('scope') == '*' else overlays.get('scope'),
         ' · '.join('{} {} {}{}'.format(i, r.get('name'), r.get('status') or '',
                                          ' {:.4g}%'.format(r['amount'])
                                          if r.get('status') == 'applied' and r.get('amount') is not None
@@ -395,10 +484,12 @@ def _sleevesFor(conn, proposalId) -> list:
     """The pinned sleeves, each carrying where the library is NOW - which is
     the one thing the register computes rather than stores."""
     out = []
-    for row in conn.execute('SELECT category, sleeveId, revision, sleeveName FROM proposalSleeves '
-                            'WHERE proposalId = ? ORDER BY rowid', (proposalId,)):
+    for row in conn.execute('SELECT category, sleeveId, revision, sleeveName, custom '
+                            'FROM proposalSleeves WHERE proposalId = ? ORDER BY rowid',
+                            (proposalId,)):
         entry = {'category': row['category'], 'sleeveId': row['sleeveId'],
                  'revision': row['revision'], 'sleeve': row['sleeveName'],
+                 'custom': json.loads(row['custom']) if row['custom'] else None,
                  'nowRevision': None, 'archived': None, 'moved': False}
         if row['sleeveId'] is not None:
             current = sleeveRepo.getSleeve(row['sleeveId'])
@@ -478,24 +569,55 @@ def _where(exportedBy=None, primaryPwa=None, currency=None, variant=None,
         like = '%' + query + '%'
         clauses.append('(p.primaryPwa LIKE ? OR p.exportedBy LIKE ? OR p.createdBy LIKE ? '
                        'OR p.baseKey LIKE ? OR p.variant LIKE ? OR p.proposalId LIKE ? '
+                       'OR p.customPortfolio LIKE ? '
                        'OR EXISTS (SELECT 1 FROM proposalSleeves s WHERE s.proposalId = p.proposalId '
                        'AND s.sleeveName LIKE ?))')
-        args.extend([like] * 7)
+        args.extend([like] * 8)
     return (' AND '.join(clauses) or '1 = 1'), args
 
 
-def _computed(conn, movedOnly=False, noAccountOnly=False):
+def customIds(conn=None) -> set:
+    """The proposals delivered with a custom sleeve (D170)."""
+    own = conn is None
+    conn = conn or _connect()
+    try:
+        return {r[0] for r in conn.execute(
+            'SELECT DISTINCT proposalId FROM proposalSleeves WHERE custom IS NOT NULL')}
+    finally:
+        if own:
+            conn.close()
+
+
+def portfolioIds(conn=None) -> set:
+    """The proposals delivered as a custom portfolio (D171)."""
+    own = conn is None
+    conn = conn or _connect()
+    try:
+        return {r[0] for r in conn.execute(
+            'SELECT proposalId FROM proposals WHERE customPortfolio IS NOT NULL')}
+    finally:
+        if own:
+            conn.close()
+
+
+def _computed(conn, movedOnly=False, noAccountOnly=False, customOnly=False, portfolioOnly=False):
     """The two views that cannot be a WHERE on a column (D116): sleeves the
     library has moved past, and proposals with no account opening request.
     Both resolve to a set of ids, so they become one IN clause that every
     part of the answer - the page, the total, the facets, the summary and the
     CSV - is built with, rather than a filter applied to the page alone."""
-    if not movedOnly and not noAccountOnly:
+    if not movedOnly and not noAccountOnly and not customOnly and not portfolioOnly:
         return '', []
     ids = set(movedCounts(conn)) if movedOnly else None
     if noAccountOnly:
         without = {r[0] for r in conn.execute('SELECT proposalId FROM proposals')} - requestedIds(conn)
         ids = without if ids is None else (ids & without)
+    if customOnly:
+        held = customIds(conn)
+        ids = held if ids is None else (ids & held)
+    if portfolioOnly:
+        held = portfolioIds(conn)
+        ids = held if ids is None else (ids & held)
     if not ids:
         return ' AND 0 = 1', []
     return ' AND p.proposalId IN ({})'.format(','.join('?' * len(ids))), sorted(ids)
@@ -512,7 +634,7 @@ def _cursorClause(before):
 #: Each is a predicate over the register as a whole, not another filter on
 #: the one in force - pressing one replaces the filters rather than adding to
 #: them, which is what makes the counts readable.
-VIEW_KEYS = ('recent', 'week', 'mine', 'moved', 'noAccount', 'all')
+VIEW_KEYS = ('recent', 'week', 'mine', 'moved', 'noAccount', 'custom', 'portfolios', 'all')
 
 
 def movedCounts(conn=None) -> dict:
@@ -591,6 +713,8 @@ def viewCounts(user: str = '') -> dict:
                                  (user,)).fetchone()[0] if user else 0,
             'moved': len(movedCounts(conn)),
             'noAccount': len(ids - requestedIds(conn)),
+            'custom': len(customIds(conn)),
+            'portfolios': len(portfolioIds(conn)),
             'all': total,
         }
     finally:
@@ -599,7 +723,8 @@ def viewCounts(user: str = '') -> dict:
 
 def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
                   since=None, until=None, query='', limit=100, before=None,
-                  movedOnly=False, noAccountOnly=False) -> dict:
+                  movedOnly=False, noAccountOnly=False, customOnly=False,
+                  portfolioOnly=False) -> dict:
     """A page of the register, newest first, with the counts that frame it.
     Facets count over the rows that pass every OTHER filter (D63)."""
     limit = max(1, min(int(limit or 100), LIST_LIMIT_MAX))
@@ -608,7 +733,7 @@ def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
     cursorSql, cursorArgs = _cursorClause(before)
     conn = _connect()
     try:
-        extra, extraArgs = _computed(conn, movedOnly, noAccountOnly)
+        extra, extraArgs = _computed(conn, movedOnly, noAccountOnly, customOnly, portfolioOnly)
         where, args = where + extra, args + extraArgs
         rows = conn.execute(
             'SELECT {} FROM proposals p WHERE {} AND {} ORDER BY p.exportedAt DESC, '
@@ -619,9 +744,11 @@ def listProposals(exportedBy=None, primaryPwa=None, currency=None, variant=None,
         for entry in entries:
             entry['cursor'] = '{}|{}'.format(entry['exportedAt'], entry['proposalId'])
             entry['sleeves'] = [
-                {'category': s['category'], 'sleeve': s['sleeveName'], 'revision': s['revision']}
-                for s in conn.execute('SELECT category, sleeveName, revision FROM proposalSleeves '
-                                      'WHERE proposalId = ? ORDER BY rowid', (entry['proposalId'],))]
+                {'category': s['category'], 'sleeve': s['sleeveName'], 'revision': s['revision'],
+                 'custom': json.loads(s['custom']) if s['custom'] else None}
+                for s in conn.execute('SELECT category, sleeveName, revision, custom '
+                                      'FROM proposalSleeves WHERE proposalId = ? ORDER BY rowid',
+                                      (entry['proposalId'],))]
         # what has happened since delivery, for the whole page at once: which
         # pins the library has moved past, and which proposals have an account
         # opening request. Both were readable only inside one record (D116).
@@ -668,7 +795,31 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'PrimaryPwa', 'TopAccountSize', 'MandateSize', 'Currency', 'Hedging', 'Variant',
                   'BasePortfolio', 'TacticalTilt', 'VolPremium', 'IncludeFees',
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
-                  'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays']
+                  'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays',
+                  'CatalogueVersion', 'FeeCardVersion', 'CustomSleeves', 'StrategicAllocation',
+                  'CustomPortfolio']
+
+
+def customPortfolioText(custom) -> str:
+    """A custom portfolio in one line (D171): ``Moderate risk profile -
+    built by jtaylor - approved by fbarker``. Blank for a strategic one."""
+    if not custom:
+        return ''
+    return ' - '.join(x for x in (
+        '{} risk profile'.format(custom.get('profileLabel') or custom.get('profile')),
+        'built by ' + custom['builtBy'] if custom.get('builtBy') else '',
+        'approved by ' + custom['approvedBy'] if custom.get('approvedBy') else '') if x)
+
+
+def customText(category, custom) -> str:
+    """A custom sleeve in one line: ``Investment Grade Fixed Income: 50% of the
+    portfolio - GSAM Intermediate Credit SMA 30% · ...``."""
+    if custom.get('mode') == 'portfolio':
+        how = '{:g}% of the portfolio'.format(round(float(custom.get('totalPct') or 0.0), 4))
+    else:
+        how = '% of the sleeve'
+    return '{}: {} - {}'.format(category, how, ' · '.join(
+        '{} {:g}%'.format(p['productId'], p['weightPct']) for p in custom.get('products') or []))
 
 
 def exportRows(**filters) -> list:
@@ -677,17 +828,25 @@ def exportRows(**filters) -> list:
     while True:
         page = listProposals(limit=LIST_LIMIT_MAX, before=before, **filters)
         for e in page['entries']:
-            pins = '; '.join('{}={}@r{}'.format(s['category'], s['sleeve'], s['revision'])
+            pins = '; '.join('{}={}{}'.format(s['category'], s['sleeve'],
+                                              ' (custom)' if s.get('custom')
+                                              else '@r{}'.format(s['revision']))
                              for s in e['sleeves'])
+            built = '; '.join(customText(s['category'], s['custom'])
+                              for s in e['sleeves'] if s.get('custom'))
             out.append((e['proposalId'], e['scenarioId'], e['sequence'], e['exportedAt'],
                         e['exportedBy'], e['createdBy'], e['primaryPwa'], e['topAccountSize'],
-                        e['mandateSize'], e['currency'], e['hedging'], e['variant'], e['baseKey'],
+                        e['mandateSize'], e['currency'], e['hedging'], e['variant'],
+                        'Custom' if e.get('customPortfolio') else e['baseKey'],
                         int(e['tacticalTilt']), int(e['volPremium']),
                         int(e['includeFees']), e['feeSchedule'] or '', e['feeLevel'] or '',
                         e.get('customFees') or '', pins,
                         e['workbookName'], e['workbookBytes'], e['workbookSha'],
                         fundingSplitText(e.get('fundingSplit')),
-                        overlaysText(e.get('overlays'))))
+                        overlaysText(e.get('overlays')),
+                        e.get('catalogueRevision') or '', e.get('feeCardRevision') or '',
+                        built, 'Left out' if e.get('departs') or e.get('customPortfolio')
+                        else 'Included', customPortfolioText(e.get('customPortfolio'))))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

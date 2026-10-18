@@ -418,6 +418,169 @@ def buildPortfoliosDoc(results, engineParity: bool = False) -> SheetDoc:
     return doc
 
 
+# --------------------------------------------------------------------- #
+# a custom portfolio's allocation (D171)
+# --------------------------------------------------------------------- #
+
+#: what a custom portfolio's column is headed
+CUSTOM_COLUMN = 'Custom portfolio'
+
+
+def customLines(model) -> list:
+    """The custom portfolio's lines as delivered: ``[(line, weightPct,
+    [(assetClass, weightPct)])]``, from the printed weights, each line's
+    asset classes in the order its products first carry them."""
+    out = []
+    for group in model['groups']:
+        classes, order = {}, []
+        for item in group['items']:
+            name = item.get('assetClass') or ''
+            if name not in classes:
+                classes[name] = 0.0
+                order.append(name)
+            classes[name] += float(item.get('printedPct') or 0.0)
+        weight = sum(float(item.get('printedPct') or 0.0) for item in group['items'])
+        if weight:
+            out.append((group['category'], weight, [(n, classes[n]) for n in order]))
+    return out
+
+
+def customNotes(model) -> list:
+    """What the files say of a custom portfolio, beneath its allocation: how
+    it was built, what its figures are and are not, and who approved it."""
+    custom = model['customPortfolio']
+    figures = custom.get('figures') or {}
+    notes = ['Built product by product with the {} risk profile{}.'.format(
+        custom['profileLabel'], ' by ' + custom['builtBy'] if custom.get('builtBy') else '')]
+    if custom.get('approvedBy'):
+        notes.append('Approved by {}{}, outside the profile\'s usual range.'.format(
+            custom['approvedBy'], ' on ' + custom['approvedAt'][:10] if custom.get('approvedAt') else ''))
+    if figures.get('estimatedReturnPct') is not None:
+        notes.append('Nobody analysed this mix. Its mean return is the long-term estimates weighted '
+                     'by its categories; its volatility is indicative, {} analysed figure scaled, '
+                     'and at most {:.1f}%. It has no Sharpe ratio, stress tests or risk '
+                     'dashboard.'.format(
+                         (custom.get('anchorName') + '\'s') if custom.get('anchorName') else 'the profile\'s',
+                         figures.get('volatilityLimitPct') or 0.0))
+    return notes
+
+
+def buildCustomAllocationDoc(model, results, notes: bool = False) -> SheetDoc:
+    """A custom portfolio's allocation (D171), dressed as the strategic one
+    is (D127): its own column first, by category, each category's asset
+    classes beneath it as its products carry them; then each strategic
+    portfolio set beside it on the allocation step, by category, with its
+    analysed figures. The comparisons' asset rows are another taxonomy, so
+    they print no figure against the custom portfolio's asset classes.
+
+    Named ``portfolios`` so the deck dresses it as it dresses that table.
+    The comparisons' weights by line and the lines' order come with the
+    model (``customPortfolio.compared`` and ``order``), worked out where the
+    rules are. *notes* puts ``customNotes`` beneath the table, as the sheet
+    has them; the deck carries them as the slide's footnotes instead."""
+    doc = SheetDoc('portfolios')
+    custom = model['customPortfolio']
+    figures = custom.get('figures') or {}
+    lines = customLines(model)
+    columns = 1 + len(results)
+    plain = dict(ALLOCATION_FONT, color=BLACK)
+    header = dict(plain, bold=True)
+    heading = dict(ALLOCATION_FONT, bold=True, color=NAVY)
+    metric = dict(ALLOCATION_FONT, color=WHITE)
+
+    def style(row, font, fill=WHITE, fmt=None, rule=None, vertical='center'):
+        doc.row(row).height = 16
+        for index in range(1, columns + 2):
+            cell = doc.cell(row, index)
+            cell.font = font
+            cell.fill = fill
+            if rule is not None:
+                cell.border = rule
+            if index == 1:
+                cell.align = {'horizontal': 'left', 'vertical': vertical}
+            else:
+                cell.align = {'horizontal': 'right', 'vertical': vertical, 'indent': 4}
+                if fmt:
+                    cell.fmt = fmt
+
+    others = list(custom.get('compared') or [{} for _ in results])
+    order = [name for name, _, _ in lines]
+    for weights in others:
+        for name in weights:
+            if name not in order and weights[name]:
+                order.append(name)
+    rank = {name: i for i, name in enumerate(custom.get('order') or [])}
+    order.sort(key=lambda name: rank.get(name, len(rank)))
+    byLine = {name: (weight, classes) for name, weight, classes in lines}
+
+    doc.cell(1, 2).value = '{} ({} risk profile)'.format(CUSTOM_COLUMN, custom['profileLabel'])
+    for index, result in enumerate(results, start=3):
+        doc.cell(1, index).value = result['name']
+    style(1, header, rule={'bottom': BLACK_THICK})
+    doc.row(1).height = 37
+    doc.cell(1, 1).align = {'vertical': 'center'}
+    for index in range(2, columns + 2):
+        doc.cell(1, index).align = {'horizontal': 'center', 'vertical': 'center', 'wrap': True}
+
+    row = 1
+    for position, name in enumerate(order):
+        row += 1
+        doc.sections.add(row)
+        doc.cell(row, 1).value = name
+        doc.cell(row, 2).value = byLine.get(name, (0.0, []))[0] / 100.0
+        for index, weights in enumerate(others, start=3):
+            doc.cell(row, index).value = weights.get(name, 0.0) / 100.0
+        style(row, heading, BAND, '0.0%', rule={'top': BLACK_THIN} if position else None)
+        for assetName, weight in byLine.get(name, (0.0, []))[1]:
+            row += 1
+            doc.cell(row, 1).value = '  ' + assetName
+            doc.cell(row, 2).value = weight
+            style(row, plain, fmt='0.0')
+
+    row += 1
+    doc.cell(row, 1).value = 'TOTAL'
+    for index in range(2, columns + 2):
+        doc.cell(row, index).value = 1.0
+    style(row, heading, fmt='0.0%', rule={'top': BLACK_THICK}, vertical='bottom')
+    doc.cell(row, 1).align = {'vertical': 'bottom'}
+
+    # the custom column's figures are estimates and say so in their label;
+    # it has no Sharpe ratio to give
+    estimate = figures.get('estimatedReturnPct')
+    volatility = figures.get('volatilityPct')
+    for label, field, mine, fmt, rule in (
+            ('Estimated Mean Return', None, None, '0.0%', None),
+            (RISK_FREE_LINE, 'estimatedReturnPct', estimate, '0.0%', None),
+            ('Sharpe Ratio', 'sharpe', None, '0.00', {'top': WHITE_THICK}),
+            ('Volatility (custom: indicative)', 'volatilityPct', volatility, '0.0%',
+             {'top': WHITE_THICK})):
+        row += 1
+        doc.cell(row, 1).value = label
+        if field:
+            scale = 100.0 if fmt == '0.0%' else 1.0
+            doc.cell(row, 2).value = None if mine is None else mine / scale
+            for index, r in enumerate(results, start=3):
+                doc.cell(row, index).value = r['metrics'][field] / scale
+        style(row, metric, NAVY, fmt, rule=rule)
+        if label == RISK_FREE_LINE:
+            doc.cell(row, 1).align['indent'] = 1
+
+    # the label column fits the table's labels; the notes, set after it is
+    # measured, run on across the columns beside them
+    doc.widths['A'] = excelLabelWidth(doc, 34)
+    for index in range(2, columns + 2):
+        doc.widths[columnLetter(index)] = 19 if index > 2 else 24
+    doc.freeze = 'B2'
+    if notes:
+        row += 1
+        for note in customNotes(model):
+            row += 1
+            doc.cell(row, 1).value = note
+            doc.cell(row, 1).font = dict(ALLOCATION_FONT, size=10, italic=True, color=BLACK)
+            doc.cell(row, 1).align = {'horizontal': 'left', 'vertical': 'center'}
+    return doc
+
+
 def _libraryPortfoliosDoc(results) -> SheetDoc:
     """The strategic allocation as the analytics library laid it out: blue
     bands, dotted rules and hairline spacers between the metric bands, in its
@@ -886,6 +1049,415 @@ def buildAssumptionsDoc(assets, results=None, engineParity: bool = False) -> She
 
 
 # --------------------------------------------------------------------- #
+# the strategic slides in a template (D174)
+# --------------------------------------------------------------------- #
+#
+# Two deck-only tables, laid out as the reference slides lay them out: the
+# allocation by the scenario's own groups - the categories and assets the
+# allocation table on the page shows, in its order (``_categoryOrder``) -
+# and the risk and return of the same portfolios. Their colours are the
+# template's: each names a theme colour ("scheme:<slot>", or
+# "scheme:<slot>:<lighter by>"), so a house template's theme dresses them.
+# The workbook never reads them.
+
+#: theme colours, by what they do on the strategic slides
+DECK_TEXT = 'scheme:tx1'
+DECK_NAMES = 'scheme:tx2'
+DECK_RULE = ('thin', 'scheme:tx1')
+DECK_HAIR = ('hair', 'scheme:tx1:0.75')
+DECK_TINT = 'scheme:accent1:0.8'          # the proposed portfolio's column
+DECK_FONT = {'name': SANS, 'size': 11}
+#: the stress periods' dates, as the reference prints them; a period without
+#: one prints its name alone
+STRESS_DATES = {'Oil Embargo': 'Jan 73 – Sep 74',
+                'US Inflation / Iranian Revolution': 'Nov 78 – Mar 80',
+                'US Stagflation': 'Nov 80 – Jul 82',
+                'Black Monday': 'Sep 87 – Oct 87',
+                'Tech Meltdown': 'Mar 00 – Sep 02',
+                'Financial Crisis': 'Oct 07 – Feb 09',
+                'Covid-19': 'Jan 20 – Mar 20'}
+MEAN_RETURN_LABEL = 'Estimated Mean Return (2.5% Risk-Free Rate)'
+VAR_YEAR_LABEL = 'Value at risk with 99% confidence over 1 year'
+VAR_HORIZONS = ('Over 1 Month', 'Over 1 Year', 'Over 3 Years')
+
+
+def portfolioLines(result):
+    """A portfolio's name on two lines, as the page splits it: the risk
+    level, then the allocation type."""
+    key = result.get('key') or {}
+    header = str(result.get('header') or result.get('name') or '')
+    kind = key.get('allocationType') or ''
+    if kind and key.get('excludeRealAssets'):
+        kind += ' ex-RAs'
+    if kind and header.endswith(' ' + kind):
+        return header[:-len(kind) - 1], kind
+    return header, ''
+
+
+def _varOf(result, horizon):
+    """The nominal value at risk over *horizon*, as a loss's size."""
+    for premium in result.get('premia') or []:
+        if str(premium.get('group', '')).startswith('Value at Risk') \
+                and premium.get('horizon') == horizon:
+            return abs(premium['nominalPct']) / 100.0
+    return None
+
+
+def _roundedTo(values, total, places=1):
+    """*values* rounded to *places* so they add to *total* exactly: the
+    largest remainders take the last units (each group's lines add to the
+    group as printed, which plain rounding does not promise)."""
+    scale = 10 ** places
+    target = int(round(total * scale))
+    floors = [int(v * scale // 1) for v in values]
+    order = sorted(range(len(values)), key=lambda i: -(values[i] * scale - floors[i]))
+    for i in order[:max(0, target - sum(floors))]:
+        floors[i] += 1
+    return [f / float(scale) for f in floors]
+
+
+def _deckRow(doc, row, columns, font, fill=None, fmt=None, border=None, label=None,
+             tintFrom=2, tintTo=2):
+    """One row of a strategic table: its label left, its figures centred, the
+    proposed portfolio's columns tinted."""
+    for index in range(1, columns + 1):
+        cell = doc.cell(row, index)
+        cell.font = font
+        cell.border = dict(border) if border else None
+        if index == 1:
+            cell.align = {'horizontal': 'left', 'vertical': 'center'}
+            if label is not None:
+                cell.value = label
+        else:
+            cell.align = {'horizontal': 'center', 'vertical': 'center'}
+            if fmt:
+                cell.fmt = fmt
+            cell.fill = DECK_TINT if tintFrom <= index <= tintTo else fill
+
+
+def _deckHeader(doc, results, span):
+    """The three header rows both strategic tables share: the band, Proposed
+    Allocation over the first portfolio and For Comparison over the rest; the
+    risk levels; the allocation types. *span* columns to a portfolio."""
+    columns = 1 + span * len(results)
+    band = dict(DECK_FONT, bold=True, color=DECK_TEXT)
+    names = dict(DECK_FONT, bold=True, color=DECK_NAMES)
+    kinds = dict(DECK_FONT, size=9, color=DECK_NAMES)
+    for row, font in ((1, band), (2, names), (3, kinds)):
+        _deckRow(doc, row, columns, font, tintTo=1 + span if row > 1 else 1)
+    doc.cell(1, 2).value = 'Proposed Allocation'
+    if span > 1:
+        doc.merges.append((1, 2, 1, 1 + span))
+    if len(results) > 1:
+        doc.cell(1, 2 + span).value = 'For Comparison'
+        if columns > 2 + span:
+            doc.merges.append((1, 2 + span, 1, columns))
+        for index in range(2 + span, columns + 1):
+            doc.cell(1, index).border = {'bottom': DECK_RULE}
+    for position, result in enumerate(results):
+        first = 2 + span * position
+        level, kind = portfolioLines(result)
+        doc.cell(2, first).value = level
+        doc.cell(3, first).value = kind
+        if span > 1:
+            doc.merges.append((2, first, 2, first + span - 1))
+            doc.merges.append((3, first, 3, first + span - 1))
+    for index in range(1, columns + 1):
+        doc.cell(3, index).border = {'bottom': DECK_RULE}
+    return columns
+
+
+def buildComparingDoc(results) -> SheetDoc:
+    """Strategic Asset Allocation · Comparing Allocations (D174): each of the
+    scenario's groups - a category of the page's allocation table - bold
+    with its share of the portfolio, its assets beneath, each group's lines
+    rounded together so they add to it as printed; the total; then the mean
+    return, volatility, Sharpe ratio and one-year value at risk. A group
+    whose one line carries its own name prints once. Weights to one place;
+    a column without a group or asset prints 0.0%, so the columns compare
+    row for row (D13)."""
+    doc = SheetDoc('comparing')
+    columns = _deckHeader(doc, results, 1)
+    plain = dict(DECK_FONT, color=DECK_TEXT)
+    bold = dict(plain, bold=True)
+    row = 3
+    order, assets = _categoryOrder(results)
+    for name in order:
+        row += 1
+        doc.sections.add(row)
+        shown = [round(_weight(r, name) or 0.0, 1) for r in results]
+        _deckRow(doc, row, columns, bold, fmt='0.0%', border={'bottom': DECK_HAIR}, label=name)
+        for index, value in enumerate(shown, start=2):
+            doc.cell(row, index).value = value / 100.0
+        lines = assets[name]
+        if lines == [name]:
+            continue
+        rounded = [_roundedTo([_weight(r, name, a) or 0.0 for a in lines], shown[i])
+                   for i, r in enumerate(results)]
+        for position, asset in enumerate(lines):
+            row += 1
+            _deckRow(doc, row, columns, plain, fmt='0.0%', border={'bottom': DECK_HAIR},
+                     label='  ' + asset)
+            for index in range(len(results)):
+                doc.cell(row, index + 2).value = rounded[index][position] / 100.0
+    row += 1
+    _deckRow(doc, row, columns, bold, fmt='0%', border={'top': DECK_RULE, 'bottom': DECK_RULE},
+             label='Total')
+    for index in range(2, columns + 1):
+        doc.cell(row, index).value = 1.0
+    row += 1
+    doc.row(row).height = 3                                       # a spacer
+    doc.sections.add(row + 1)
+    for label, value, font, fmt in (
+            (MEAN_RETURN_LABEL, lambda r: r['metrics']['estimatedReturnPct'] / 100.0, bold, '0.0%'),
+            ('Volatility', lambda r: r['metrics']['volatilityPct'] / 100.0, bold, '0.0%'),
+            ('Sharpe Ratio', lambda r: r['metrics']['sharpe'], plain, '0.00'),
+            (VAR_YEAR_LABEL, lambda r: _varOf(r, 'Over 1 Year'), plain, '0.0%')):
+        row += 1
+        _deckRow(doc, row, columns, font, fmt=fmt, border={'bottom': DECK_HAIR}, label=label)
+        for index, result in enumerate(results, start=2):
+            doc.cell(row, index).value = value(result)
+    return doc
+
+
+def buildReturnRiskDoc(results) -> SheetDoc:
+    """Strategic Asset Allocation · Risk and Return Analysis (D174): the same
+    portfolios and groups, each group's weight only; the mean return,
+    volatility and Sharpe ratio; the predicted performance over every stress
+    period the analytics deliver, nominal and real, losses red and gains
+    green, each period with its dates where they are known; and the value at
+    risk with 99% confidence over one month, one year and three years, as
+    the size of the loss, nominal."""
+    doc = SheetDoc('return_risk')
+    columns = _deckHeader(doc, results, 2)
+    plain = dict(DECK_FONT, color=DECK_TEXT)
+    bold = dict(plain, bold=True)
+    head = dict(DECK_FONT, size=9, bold=True, color=DECK_TEXT)
+
+    def merged(row, values, fmt, font):
+        _deckRow(doc, row, columns, font, fmt=fmt, border={'bottom': DECK_HAIR}, tintTo=3)
+        for position, value in enumerate(values):
+            first = 2 + 2 * position
+            doc.cell(row, first).value = value
+            doc.merges.append((row, first, row, first + 1))
+
+    row = 3
+    order, _ = _categoryOrder(results)
+    doc.sections.add(row + 1)
+    for name in order:
+        row += 1
+        merged(row, [round(_weight(r, name) or 0.0, 1) / 100.0 for r in results], '0.0%', plain)
+        doc.cell(row, 1).value = name
+    for label, field, font, fmt, scale in (
+            (MEAN_RETURN_LABEL, 'estimatedReturnPct', bold, '0.0%', 100.0),
+            ('Volatility', 'volatilityPct', bold, '0.0%', 100.0),
+            ('Sharpe Ratio', 'sharpe', plain, '0.00', 1.0)):
+        row += 1
+        merged(row, [r['metrics'][field] / scale for r in results], fmt, font)
+        doc.cell(row, 1).value = label
+    row += 1
+    doc.row(row).height = 3
+    row += 1
+    doc.sections.add(row)
+    _deckRow(doc, row, columns, head, border={'bottom': DECK_RULE}, tintTo=3,
+             label='Predicted Performance over Stress Periods')
+    doc.cell(row, 1).font = bold
+    for position in range(len(results)):
+        doc.cell(row, 2 + 2 * position).value = 'Nominal'
+        doc.cell(row, 3 + 2 * position).value = 'Real'
+    first = row + 1
+    periods = [s['period'] for s in results[0].get('stress') or []] if results else []
+    for period in periods:
+        row += 1
+        dates = STRESS_DATES.get(period)
+        _deckRow(doc, row, columns, plain, fmt='0.0%', border={'bottom': DECK_HAIR}, tintTo=3,
+                 label='  ' + period + (' ({})'.format(dates) if dates else ''))
+        for position, result in enumerate(results):
+            found = next((s for s in result.get('stress') or [] if s['period'] == period), None)
+            if found is not None:
+                doc.cell(row, 2 + 2 * position).value = found['nominalPct'] / 100.0
+                doc.cell(row, 3 + 2 * position).value = found['realPct'] / 100.0
+    if periods:
+        doc.signRules.append((2, first, columns, row, STRESS_NEG, STRESS_POS))
+    row += 1
+    doc.row(row).height = 3
+    row += 1
+    doc.sections.add(row)
+    _deckRow(doc, row, columns, bold, border={'bottom': DECK_RULE}, tintTo=3,
+             label='Value at Risk with 99% Confidence')
+    for horizon in VAR_HORIZONS:
+        row += 1
+        merged(row, [_varOf(r, horizon) for r in results], '0.0%', plain)
+        doc.cell(row, 1).value = '  ' + horizon
+    return doc
+
+
+# --------------------------------------------------------------------- #
+# the fee slides in a template (D176)
+# --------------------------------------------------------------------- #
+
+FEE_STRUCTURE_NOTE = '¹ Each weight times the product cost plus the management fee.'
+
+
+def _oneTo100(values):
+    """Weights to one place, the whole column together, so it closes on
+    100.0% exactly (the reference prints one place)."""
+    return _roundedTo(values, round(sum(values), 1))
+
+
+def buildFeeStructureDoc(model: dict, includeFees: bool = True) -> SheetDoc:
+    """Portfolio Fee Structure (D176): every product under its category, with
+    the catalogue's asset class, its weights - initial and target for a
+    private-markets book, one otherwise - its product cost and management
+    fee, and what each weight costs (weight times product cost plus fee),
+    two places, in percent. Weights to one place, each column rounded
+    together so it closes on 100.0%. Unpriced, it is the weights alone,
+    which only a private-markets book needs: the Implemented Model already
+    prints a book's one weight, so None is returned for the rest."""
+    initial = model.get('initial')
+    priced = includeFees and (model.get('total') or {}).get('wtdFeeBp') is not None
+    if not priced and not initial:
+        return None
+    doc = SheetDoc('fee_structure')
+    weights = [('Initial Allocation', 'initialPct'), ('Target Allocation', 'printedPct')] \
+        if initial else [('Allocation', 'printedPct')]
+    costs = ([('Initial Allocation', 'initialWtdFeeBp'), ('Target Allocation', 'wtdFeeBp')]
+             if initial else [(None, 'wtdFeeBp')]) if priced else []
+    heads = ([''] * 2 + [w for w, _ in weights]
+             + (['Product Cost', 'Portfolio Management Fee'] if priced else [])
+             + ['Weighted Average Cost¹'] * len(costs))
+    columns = len(heads)
+    plain = dict(DECK_FONT, color=DECK_TEXT)
+    bold = dict(plain, bold=True)
+    head = dict(DECK_FONT, size=10, bold=True, color=DECK_NAMES)
+    firstCost = columns - len(costs) + 1
+
+    def dress(row, font, border=None):
+        for index in range(1, columns + 1):
+            cell = doc.cell(row, index)
+            cell.font = font
+            cell.border = dict(border) if border else None
+            cell.align = {'horizontal': 'left' if index <= 2 else 'center',
+                          'vertical': 'center', 'wrap': True}
+
+    row = 0
+    if len(costs) > 1:
+        row += 1
+        dress(row, head)
+        for offset, (label, _) in enumerate(costs):
+            doc.cell(row, firstCost + offset).value = label
+    row += 1
+    dress(row, head, {'bottom': DECK_RULE})
+    for index, text in enumerate(heads, start=1):
+        doc.cell(row, index).value = text or None
+
+    items = [item for group in model['groups'] for item in group['items']]
+    shown = {field: dict(zip(map(id, items), _oneTo100([i.get(field) or 0.0 for i in items])))
+             for _, field in weights}
+    for group in model['groups']:
+        if not group['items']:
+            continue
+        row += 1
+        doc.sections.add(row)
+        dress(row, bold, {'bottom': DECK_HAIR})
+        doc.cell(row, 1).value = group['category']
+        doc.merges.append((row, 1, row, 2))
+        for offset, (_, field) in enumerate(weights):
+            total = round(sum(shown[field][id(i)] for i in group['items']), 1)
+            if total:
+                cell = doc.cell(row, 3 + offset)
+                cell.value, cell.fmt = total / 100.0, '0.0%'
+        for item in group['items']:
+            row += 1
+            dress(row, plain, {'bottom': DECK_HAIR})
+            doc.cell(row, 1).value = '  ' + str(item.get('assetClass') or '')
+            doc.cell(row, 2).value = item['name']
+            for offset, (_, field) in enumerate(weights):
+                if item.get(field):
+                    cell = doc.cell(row, 3 + offset)
+                    cell.value, cell.fmt = shown[field][id(item)] / 100.0, '0.0%'
+            if priced:
+                at = 3 + len(weights)
+                for offset, value in enumerate((float(item['productCost']), item.get('managementFee'))):
+                    if value is not None:
+                        cell = doc.cell(row, at + offset)
+                        cell.value, cell.fmt = value / 100.0, '0.00%'
+                for offset, (_, field) in enumerate(costs):
+                    weightField = weights[offset][1] if len(weights) > 1 else 'printedPct'
+                    if item.get(field) is not None and item.get(weightField):
+                        cell = doc.cell(row, firstCost + offset)
+                        cell.value, cell.fmt = item[field] / 100.0 / 100.0, '0.00%'
+    row += 1
+    dress(row, bold, {'top': DECK_RULE, 'bottom': DECK_RULE})
+    doc.cell(row, 1).value = 'Total Portfolio'
+    doc.merges.append((row, 1, row, 2))
+    for offset in range(len(weights)):
+        cell = doc.cell(row, 3 + offset)
+        cell.value, cell.fmt = 1.0, '0.0%'
+    totals = ([(initial or {}).get('total', {}).get('wtdFeeBp'), model['total'].get('wtdFeeBp')]
+              if initial else [model['total'].get('wtdFeeBp')])
+    for offset, value in enumerate(totals[:len(costs)]):
+        if value is not None:
+            cell = doc.cell(row, firstCost + offset)
+            cell.value, cell.fmt = value / 100.0 / 100.0, '0.00%'
+    return doc
+
+
+def _millionsWords(amount) -> str:
+    return '${:g} million'.format(amount / 1e6)
+
+
+def ladderLabels(tierList) -> list:
+    """The tiers as the reference words them: First $10 million, Next $15
+    million, ..., >$100 million."""
+    out = []
+    for position, tier in enumerate(tierList):
+        low, high = tier['min'], tier['max']
+        if high is None:
+            out.append('>' + _millionsWords(low))
+        elif position == 0:
+            out.append('First ' + _millionsWords(high))
+        else:
+            out.append('Next ' + _millionsWords(high - low))
+    return out
+
+
+def buildFeeLadderDoc(model: dict, feeSchedule: str, feeLevel: str) -> SheetDoc:
+    """The fee by asset tier for Advisory Fee Schedule (D176): under CASP,
+    each of the fee card's tiers, worded as the reference words them, at
+    the rate the card gives the proposal's level; at the custom level, the
+    one rate agreed for the proposal, on every dollar. None where the
+    proposal is not priced by CASP."""
+    if feeSchedule is None or not fees.isMarginal(feeSchedule):
+        return None
+    doc = SheetDoc('fee_ladder')
+    plain = dict(DECK_FONT, color=DECK_TEXT)
+    head = dict(DECK_FONT, bold=True, color=DECK_NAMES)
+    if fees.isCustom(feeLevel):
+        rate = next((i.get('managementFee') for g in model.get('groups', []) for i in g['items']
+                     if i.get('managementFee') is not None), None)
+        rows = [('Every dollar', rate)]
+    else:
+        source, point = fees.splitLevel(feeLevel or fees.DEFAULT_LEVEL)
+        tierList = fees.tiers()
+        rows = list(zip(ladderLabels(tierList),
+                        [fees._rate(feeSchedule, None, t['id'], source, point) for t in tierList]))
+    doc.cell(1, 1).value, doc.cell(1, 2).value = 'Asset Tier', '{} Fee'.format(feeSchedule)
+    for index in (1, 2):
+        cell = doc.cell(1, index)
+        cell.font, cell.border = head, {'bottom': DECK_RULE}
+        cell.align = {'horizontal': 'left' if index == 1 else 'center', 'vertical': 'center'}
+    for row, (label, rate) in enumerate(rows, start=2):
+        for index, value in ((1, label), (2, None if rate is None else rate / 100.0)):
+            cell = doc.cell(row, index)
+            cell.value, cell.font, cell.border = value, plain, {'bottom': DECK_HAIR}
+            cell.align = {'horizontal': 'left' if index == 1 else 'center', 'vertical': 'center'}
+            if index == 2:
+                cell.fmt = '0.00%'
+    return doc
+
+
+# --------------------------------------------------------------------- #
 # Implementation
 # --------------------------------------------------------------------- #
 
@@ -915,6 +1487,10 @@ def buildImplementationDoc(model: dict, columns, widths,
         preamble.append(['Proposal UID', proposalId])
     if variant:
         preamble.append(['Implementation Type', variant])
+    if model.get('customPortfolio'):
+        # a portfolio built product by product names its kind (D171)
+        preamble.append(['Portfolio', 'Custom, {} risk profile'.format(
+            model['customPortfolio']['profileLabel'])])
     if model['priced']:
         preamble.append(['Fee Schedule', feeSchedule])
         preamble.append(['Fee Level', feeLevel or fees.DEFAULT_LEVEL])
@@ -935,11 +1511,20 @@ def buildImplementationDoc(model: dict, columns, widths,
         elif model.get('tier'):
             preamble.append(['Account Size Tier',
                              '{} ({})'.format(model['tier']['id'], model['tier']['label'])])
-        # which card priced it (D55)
+        # which card priced it (D55): its version and when it was last edited
+        # (D166), so the register and the sheet name the same card
         card = fees.deliveryInfo()
-        preamble.append(['Fee Card', '{}{}'.format(
+        edited = ''
+        if card.get('lastEditedAt'):
+            try:
+                edited = datetime.datetime.strptime(card['lastEditedAt'][:10], '%Y-%m-%d') \
+                    .strftime('%d %b %Y').lstrip('0')
+            except ValueError:
+                edited = card['lastEditedAt'][:10]
+        preamble.append(['Fee Card', ' · '.join(x for x in (
             card.get('version') or 'unversioned',
-            ' · placeholder' if card.get('placeholder') else '')])
+            'last edited ' + edited if edited else '',
+            'placeholder' if card.get('placeholder') else '') if x)])
     for line in preamble:
         row += 1
         doc.cell(row, 1).value = line[0]

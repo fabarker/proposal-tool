@@ -60,8 +60,21 @@ var state = {
   feeSchedule: null,                /* 'CASP' | 'RDR' | null */
   feeLevel: null,                   /* e.g. 'PMG Target', or the custom level */
   customFees: {},                   /* the PWA's rates by schedule, under it (D96) */
+  otherCharges: {},                 /* the charges quoted beside the fees (D177) */
   sleeves: {},                      /* category -> sleeve name (pickable categories only) */
   sleeveLib: {},                    /* category -> {status, sleeves, error} */
+  /* the proposal's own sleeves (D170): category -> {name, note, mode,
+     products: [{productId, weightPct}]}, in force where no library name is
+     chosen; and the products each category may hold, fetched on demand */
+  customSleeves: {},
+  customLib: {},                    /* category -> {status, products, mayBuild, error} */
+  /* a proposal built product by product (D171): {active, profile, products:
+     [{productId, weightPct, category}], builtBy, approval, notice} or null;
+     what one is built from under the type and basis in force; and the
+     rail's pending switch between the two kinds of proposal */
+  customPortfolio: null,
+  cpLib: { key: null, status: 'idle', data: null, error: null },
+  cpConfirm: null,
   exporting: { status: 'idle', error: null },
   basisDraft: null,                 /* pending basis change awaiting confirmation */
   /* The base tier's unfinished answer. The key is built from these three the
@@ -904,11 +917,18 @@ function ensureSleeveLib(category, onReady) {
 async function setVariant(name) {
   if (!canEdit()) return;
   if (!name || name === state.variant) return;
-  var had = Object.keys(state.sleeves).length;
+  var had = Object.keys(state.sleeves).length + Object.keys(state.customSleeves).length;
   var hadBase = state.columns[0] || null;
   state.variant = name;
   state.sleeveLib = {};
   state.sleeves = {};
+  /* a custom sleeve holds the old type's products: it goes with the rest (D170) */
+  state.customSleeves = {};
+  state.customLib = {};
+  /* a custom portfolio is kept through a new type (D171); what it is built
+     from is the new type's */
+  state.cpLib = { key: null, status: 'idle', data: null, error: null };
+  state.cpConfirm = null;
   /* The base draft was assembled against the previous variant's allocations,
      so a half-made selection is discarded rather than silently carried into a
      variant that may not offer it. */
@@ -925,7 +945,10 @@ async function setVariant(name) {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ variant: name })
-    })).catch(function (err) { showAlert('error', err.message || String(err)); });
+    })).then(function (body) {
+      /* an approval of a custom portfolio was of the old type (D171) */
+      if (body && 'customPortfolio' in body) state.customPortfolio = body.customPortfolio;
+    }).catch(function (err) { showAlert('error', err.message || String(err)); });
     await variantPending;
     variantPending = null;
   }
@@ -1003,6 +1026,16 @@ function setCustomFees(map) {
   state.customFees = map || {};
   pushFee({ customFees: state.customFees });
   announce('polite', 'Custom fee rates applied.');
+  refresh();
+}
+
+/* The charges the Fees Summary slide quotes beside the fees (D177): the PWA's
+   for this proposal, saved with the scenario like the custom rates. */
+function setOtherCharges(map) {
+  if (!canEdit()) return;
+  state.otherCharges = map || {};
+  pushFee({ otherCharges: state.otherCharges });
+  announce('polite', 'Other charges applied.');
   refresh();
 }
 
@@ -1117,6 +1150,250 @@ function pushSleeves() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sleeves: state.sleeves })
   })).catch(function (err) { showAlert('error', err.message || String(err)); });
+}
+
+/* ---- custom sleeves (D170) -----------------------------------------------
+   A custom sleeve is in force for a category when no library sleeve is
+   chosen there. Choosing a library sleeve keeps the custom one, unused, so
+   choosing it again brings it back as it was. */
+function ensureCustomLib(category, onReady) {
+  if (!state.variant) return;
+  var entry = state.customLib[category];
+  if (entry) {
+    if (entry.status === 'ready' && onReady) onReady(entry);
+    return;
+  }
+  state.customLib[category] = { status: 'loading', products: [], mayBuild: false, error: null };
+  apiFetch('/scenario/products?category=' + encodeURIComponent(category)
+      + '&variant=' + encodeURIComponent(state.variant))
+    .then(function (body) {
+      state.customLib[category] = { status: 'ready', products: body.products || [],
+                                    mayBuild: !!body.mayBuild, error: null };
+      if (onReady) onReady(state.customLib[category]);
+      refresh();
+    })
+    .catch(function (err) {
+      state.customLib[category] = { status: 'error', products: [], mayBuild: false,
+                                    error: (err && err.message) || 'Could not load the products' };
+      refresh();
+    });
+}
+
+/* Save the custom sleeves and the choices together, in one write; the
+   server's answer - each sleeve as it checked and keeps it - replaces ours.
+   Resolves to null, or to the server's refusal as a message. */
+function pushCustomSleeves() {
+  if (!state.scenarioId) return Promise.resolve(null);
+  return trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sleeves: state.sleeves, customSleeves: state.customSleeves })
+  })).then(function (body) {
+    if (body && body.customSleeves) state.customSleeves = body.customSleeves;
+    refresh();
+    return null;
+  }, function (err) { return (err && err.message) || String(err); });
+}
+
+/* *definition* null discards the category's custom sleeve. Given, it is put
+   in force: the library choice there is cleared. On a refusal nothing
+   changes here and the message comes back. */
+async function setCustomSleeve(category, definition) {
+  if (!canEdit()) return 'Your role cannot change this proposal.';
+  var before = { sleeves: Object.assign({}, state.sleeves),
+                 custom: Object.assign({}, state.customSleeves) };
+  if (definition) {
+    state.customSleeves[category] = definition;
+    delete state.sleeves[category];
+  } else {
+    delete state.customSleeves[category];
+  }
+  var refused = await pushCustomSleeves();
+  if (refused) {
+    state.sleeves = before.sleeves; state.customSleeves = before.custom;
+    refresh();
+  }
+  return refused;
+}
+
+/* Put a held custom sleeve back in force, in place of the library's. */
+function useCustomSleeve(category) {
+  if (!canEdit() || !state.customSleeves[category]) return;
+  delete state.sleeves[category];
+  pushSleeves();
+  refresh();
+}
+
+/* ---- custom portfolios (D171) --------------------------------------------
+   A proposal is strategic or custom. A custom one is chosen as "Custom" in
+   the Allocation selector and built on step 2 from products and weights. The
+   strategic base and its sleeves are kept while it is, unused, and the base
+   follows the custom portfolio's risk profile: it becomes the profile's
+   anchor, the book the limits are read from and the first comparison beside
+   the custom column on step 1. */
+function cpActive() { return !!(state.customPortfolio && state.customPortfolio.active); }
+
+function mayBuildPortfolio() {
+  return canEdit() && !!state.variant
+    && (opt('customPortfolio.mayBuild', []) || []).indexOf(state.variant) !== -1;
+}
+
+function ensureCpLib() {
+  if (!state.variant || !state.basisChosen) return;
+  var key = [state.variant, state.basis.currency, state.basis.hedging].join('|');
+  if (state.cpLib.key === key && state.cpLib.status !== 'idle') return;
+  state.cpLib = { key: key, status: 'loading', data: null, error: null };
+  apiFetch('/scenario/custom-portfolio?variant=' + encodeURIComponent(state.variant)
+      + '&currency=' + encodeURIComponent(state.basis.currency)
+      + '&hedging=' + encodeURIComponent(state.basis.hedging))
+    .then(function (body) {
+      if (state.cpLib.key !== key) return;
+      state.cpLib = { key: key, status: 'ready', data: body, error: null };
+      refresh();
+    })
+    .catch(function (err) {
+      if (state.cpLib.key !== key) return;
+      state.cpLib = { key: key, status: 'error', data: null,
+                      error: (err && err.message) || 'Could not load the products' };
+      refresh();
+    });
+}
+
+/* Save the build - its kind, profile and products - in one write. The
+   server's answer, as it checked and keeps it, replaces ours unless a later
+   save has gone since. Resolves to null, or to the refusal as a message,
+   having put back what was there. */
+var cpSeq = 0;
+function pushCustomPortfolio(change) {
+  if (!state.scenarioId) return Promise.resolve(null);
+  var before = state.customPortfolio;
+  var next = Object.assign({ active: false, profile: null, products: [] }, before || {}, change || {});
+  state.customPortfolio = next;
+  var seq = ++cpSeq;
+  refresh();
+  return trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customPortfolio: { active: !!next.active, profile: next.profile,
+                                              products: next.products || [] } })
+  })).then(function (body) {
+    if (seq === cpSeq && body && body.customPortfolio) state.customPortfolio = body.customPortfolio;
+    refresh();
+    return null;
+  }, function (err) {
+    if (seq === cpSeq) state.customPortfolio = before;
+    refresh();
+    return (err && err.message) || String(err);
+  });
+}
+
+/* Submit, withdraw, approve or send back (D171), once every save has
+   landed; the answer replaces ours. */
+function cpApproval(action, note) {
+  if (!state.scenarioId) return Promise.resolve(null);
+  return writesSettled().then(function () {
+    return trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId)
+        + '/custom-portfolio/approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: action, note: note || '' })
+    }));
+  }).then(function (body) {
+    if (body && 'customPortfolio' in body) state.customPortfolio = body.customPortfolio;
+    refresh();
+    return null;
+  }, function (err) { refresh(); return (err && err.message) || String(err); });
+}
+
+/* the risk level the rail stands on: the custom portfolio's profile, the
+   built base's, or the draft's */
+function railRisk() {
+  if (cpActive() && state.customPortfolio.profile) return state.customPortfolio.profile;
+  var base = state.columns[0] || null;
+  var drafting = !!(state.baseDraft.allocationType || state.baseDraft.riskLevel);
+  return (base && !drafting) ? base.key.riskLevel : state.baseDraft.riskLevel;
+}
+
+function keyFromStr(text) {
+  var p = String(text || '').split('|');
+  if (p.length !== 4) return null;
+  return { currency: p[0], riskLevel: p[1], allocationType: p[2] === 'NA' ? null : p[2],
+           excludeRealAssets: p[3] === 'NA' ? null : p[3] === '1' };
+}
+
+/* The base follows a custom portfolio's profile to its anchor. Tried once
+   per anchor, so a book the availability set refuses is not chased. */
+var anchorTried = null;
+function syncAnchorBase() {
+  if (!cpActive() || state.cpLib.status !== 'ready' || !canEdit()) return;
+  var profile = ((state.cpLib.data || {}).profiles || {})[state.customPortfolio.profile];
+  if (!profile || anchorTried === profile.key) return;
+  anchorTried = profile.key;
+  var key = keyFromStr(profile.key), base = state.columns[0] || null;
+  if (key && !(base && keyEq(base.key, key))) setBase(key);
+}
+
+async function becomeCustom() {
+  var risk = railRisk();
+  state.cpConfirm = null;
+  if (!risk || !mayBuildPortfolio()) { refresh(); return; }
+  var held = state.customPortfolio || {};
+  var refused = await pushCustomPortfolio({ active: true, profile: risk, products: held.products || [] });
+  if (refused) { showAlert('error', refused); return; }
+  state.baseDraft = { allocationType: '', excludeRealAssets: false, riskLevel: '' };
+  anchorTried = null;
+  ensureCpLib();
+  announce('assertive', (held.products || []).length
+    ? 'A custom portfolio: the build as it was left, on the Implementation step.'
+    : 'A custom portfolio: Implementation opens on a blank slate.');
+  App.setStep('impl');
+}
+
+async function becomeStrategic(allocationType) {
+  var risk = railRisk();
+  state.cpConfirm = null;
+  var refused = await pushCustomPortfolio({ active: false });
+  if (refused) { showAlert('error', refused); return; }
+  var exRA = !!(allocationType && reAllowed(allocationType) && variantForcesExcludeRE(state.variant));
+  var key = buildKey(allocationType, exRA, risk);
+  var base = state.columns[0] || null;
+  if (key && !(base && keyEq(base.key, key))) setBase(key);
+  announce('assertive', 'A strategic proposal again. The custom build is kept: choosing Custom brings it back.');
+  refresh();
+}
+
+function setCpProfile(risk) {
+  if (!cpActive() || !risk || risk === state.customPortfolio.profile) return;
+  anchorTried = null;
+  pushCustomPortfolio({ profile: risk }).then(function (refused) {
+    if (refused) showAlert('error', refused);
+    else announce('polite', 'Risk profile ' + riskLabel(risk) + ': the limits changed; the build did not.');
+  });
+}
+
+function cpConfirmHtml() {
+  var pend = state.cpConfirm;
+  if (!pend) return '';
+  if (pend.to === 'custom') {
+    var n = ((state.customPortfolio || {}).products || []).length;
+    return '<div class="cp-confirm" role="group" aria-labelledby="cpconfirmh">'
+      + '<b id="cpconfirmh">A custom portfolio</b>'
+      + '<p>The proposal becomes a custom one, built product by product, with '
+      + esc(riskLabel(railRisk())) + ' as its risk profile. The sleeves chosen are kept, unused: '
+      + 'choosing a strategic allocation again brings them back. '
+      + (n ? 'The custom build of ' + n + ' product' + (n === 1 ? '' : 's') + ' comes back as it was left.'
+           : 'Implementation opens on a blank slate.') + '</p>'
+      + '<div class="cp-confirm-btns"><button type="button" class="btn btn-ghost" data-cpconfirm="no">Cancel</button>'
+      + '<button type="button" class="btn btn-primary" data-cpconfirm="yes" id="cpconfirmyes">'
+      + (n ? 'Make it custom' : 'Start building') + '</button></div></div>';
+  }
+  return '<div class="cp-confirm" role="group" aria-labelledby="cpconfirmh">'
+    + '<b id="cpconfirmh">Back to a strategic allocation</b>'
+    + '<p>The proposal becomes ' + esc(riskLabel(railRisk())) + ' ' + esc(pend.allocationType || '')
+    + ' again, with the sleeves chosen for it. The custom build is kept: choosing Custom brings it back as it is.</p>'
+    + '<div class="cp-confirm-btns"><button type="button" class="btn btn-ghost" data-cpconfirm="no">Keep it custom</button>'
+    + '<button type="button" class="btn btn-primary" data-cpconfirm="yes" id="cpconfirmyes">Use '
+    + esc(pend.allocationType || 'it') + '</button></div></div>';
 }
 
 /* =============================================================================
@@ -1235,6 +1512,7 @@ async function commitMandate() {
       state.feeSchedule = (created.scenario && created.scenario.feeSchedule) || null;
       state.feeLevel = (created.scenario && created.scenario.feeLevel) || null;
       state.customFees = (created.scenario && created.scenario.customFees) || {};
+      state.otherCharges = (created.scenario && created.scenario.otherCharges) || {};
       try {
         history.replaceState(null, '', '?scenario=' + encodeURIComponent(created.id));
       } catch (e) { /* file:// review mode */ }
@@ -1314,6 +1592,7 @@ async function boot() {
       state.feeSchedule = stored.feeSchedule || null;
       state.feeLevel = stored.feeLevel || null;
       state.customFees = stored.customFees || {};
+      state.otherCharges = stored.otherCharges || {};
       /* A scenario stored before the toggle existed has no includeFees, and
          the server fills it from whether a schedule was ever chosen: a
          proposal already priced keeps showing its fees (D52). */
@@ -1321,6 +1600,8 @@ async function boot() {
       /* a scenario with columns has already been through the basis step */
       state.basisChosen = !!(stored.base || (stored.comparisons || []).length);
       state.sleeves = stored.sleeves || {};
+      state.customSleeves = stored.customSleeves || {};
+      state.customPortfolio = stored.customPortfolio || null;
       state.phase = 'workspace';
       await fetchSchema();                /* now with the mandate size */
       var keys = [];
@@ -1506,19 +1787,32 @@ function renderBase() {
         return '<option' + (v === variant ? ' selected' : '') + '>' + esc(v) + '</option>';
       }).join('');
 
-  var allocationOptions = allEquity
-    ? '<option value="" selected>—</option>'
-    : (allocationType ? '' : '<option value="" selected>Select…</option>')
+  /* A custom portfolio (D171) is an allocation choice: "Custom", under the
+     strategic ones, for whoever may build one under this type. While one is
+     in force the risk level is its profile, the exclusion is not asked, and
+     a pending switch either way shows its choice until it is confirmed. */
+  var custom = cpActive(), pend = state.cpConfirm;
+  var showCustom = custom ? !(pend && pend.to === 'strategic') : !!(pend && pend.to === 'custom');
+  var offerCustom = custom || mayBuildPortfolio();
+  if (custom) risk = state.customPortfolio.profile || risk;
+  var shownAllocation = pend && pend.to === 'strategic' ? pend.allocationType : allocationType;
+  var allocationOptions = (allEquity
+    ? '<option value=""' + (showCustom ? '' : ' selected') + '>—</option>'
+    : (shownAllocation || showCustom ? '' : '<option value="" selected>Select…</option>')
       + allocationChoices(risk).map(function (a) {
-          return '<option' + (a === allocationType ? ' selected' : '') + '>' + esc(a) + '</option>';
-        }).join('');
+          return '<option' + (a === shownAllocation && !showCustom ? ' selected' : '') + '>' + esc(a) + '</option>';
+        }).join(''))
+    + (offerCustom ? '<optgroup label="Build it yourself"><option value="__custom__"'
+        + (showCustom ? ' selected' : '') + (risk ? '' : ' disabled') + '>Custom'
+        + (risk ? '' : ' — choose a risk level first') + '</option></optgroup>' : '');
   /* Every level is offered; a level the current allocation cannot reach is
      shown disabled, and an all-equity level is reachable with no allocation
      at all - so the risk select is live as soon as the variant is. */
   var riskOptions = (risk ? '' : '<option value="" selected>Select…</option>')
     + opt('options.riskLevels', []).map(function (r) {
         var probe = buildKey(allocationType, exRA, r);
-        var ok = probe ? available(probe) : true;
+        /* a custom portfolio's profile is any level the type anchors (D171) */
+        var ok = custom ? true : (probe ? available(probe) : true);
         return '<option value="' + esc(r) + '"'
           + (r === risk ? ' selected' : '') + (ok ? '' : ' disabled') + '>'
           + esc(riskLabel(r)) + (ok ? '' : ' — ' + esc(whyUnavailable(allocationType, exRA, r))) + '</option>';
@@ -1560,16 +1854,25 @@ function renderBase() {
     + (variantLocked && !locked
         ? '<p class="chk-note" style="margin-left:0">Choose an implementation '
           + 'type first — it decides which portfolios are available.</p>' : '')
-    + '<div class="field"><label for="bpr">Risk Level</label><select id="bpr"'
-    + afterVariant + '>' + riskOptions + '</select></div>'
+    + '<div class="field"><label for="bpr">' + (showCustom ? 'Risk profile' : 'Risk Level')
+    + '</label><select id="bpr"'
+    + (afterVariant || (custom && !mayBuildPortfolio() ? ' disabled' : '')) + '>' + riskOptions + '</select></div>'
     + '<div class="field"><label for="bpa">Allocation</label><select id="bpa"'
-    + (afterVariant || (allEquity ? ' disabled' : '')) + '>' + allocationOptions + '</select></div>'
-    + '<div class="chk"><input type="checkbox" id="bpre"'
-    + (exRA && canRA && !allEquity ? ' checked' : '')
-    + (raEnabled ? '' : ' disabled')
-    + (raNote ? ' aria-describedby="bprenote"' : '') + '>'
-    + '<label for="bpre">Exclude Real Assets</label></div>'
-    + (raNote ? '<p class="chk-note" id="bprenote">' + raNote + '</p>' : '')
+    + (afterVariant || (allEquity && !offerCustom ? ' disabled' : '')
+       || (custom && !mayBuildPortfolio() ? ' disabled' : '')) + '>' + allocationOptions + '</select></div>'
+    + (showCustom ? '' : '<div class="chk"><input type="checkbox" id="bpre"'
+      + (exRA && canRA && !allEquity ? ' checked' : '')
+      + (raEnabled ? '' : ' disabled')
+      + (raNote ? ' aria-describedby="bprenote"' : '') + '>'
+      + '<label for="bpre">Exclude Real Assets</label></div>'
+      + (raNote ? '<p class="chk-note" id="bprenote">' + raNote + '</p>' : ''))
+    + (custom && !(pend && pend.to === 'strategic')
+        ? '<p class="chk-note" style="margin-left:0">' + (mayBuildPortfolio()
+            ? 'Built product by product. The risk profile sets the limits; nothing is filled in from it.'
+            : 'Built product by product' + (state.customPortfolio.builtBy ? ' by ' + esc(state.customPortfolio.builtBy) : '')
+              + '. Only an admin changes a custom portfolio.')
+          + '</p>' : '')
+    + cpConfirmHtml()
     + '</div></div>';
   applyBaseRoll();
 }
@@ -1921,6 +2224,14 @@ function renderAlloc() {
   /* The wrapper carries the accent rule, so an empty table must take it
      with it - otherwise the rule sits alone above the empty state. */
   var frame = el.closest('.tblwrap');
+  /* a custom portfolio's own column first, the strategic ones beside it
+     (D171) - customPortfolio.js lays that table out */
+  if (state.phase === 'workspace' && cpActive() && App.cpAllocHtml) {
+    if (wrap) wrap.hidden = true;
+    if (frame) frame.hidden = false;
+    el.innerHTML = App.cpAllocHtml();
+    return;
+  }
   if (state.phase === 'workspace' && !state.columns.length) {
     if (wrap) wrap.hidden = false;
     if (frame) frame.hidden = true;
@@ -3648,7 +3959,10 @@ function saveSnapshot() {
       tacticalTilt: state.tacticalTilt, volPremium: state.volPremium,
       includeFees: state.includeFees, feeSchedule: state.feeSchedule, feeLevel: state.feeLevel,
       customFees: state.customFees,
+      otherCharges: state.otherCharges,
       sleeves: state.sleeves,
+      customSleeves: state.customSleeves,
+      customPortfolio: state.customPortfolio,
       columns: state.columns.filter(function (c) { return c.status === 'ready'; })
     }));
   } catch (e) { /* private mode, or full: the page simply has no fallback */ }
@@ -3677,7 +3991,10 @@ function restoreSnapshot(snap) {
   state.includeFees = !!snap.includeFees;
   state.feeSchedule = snap.feeSchedule || null; state.feeLevel = snap.feeLevel || null;
   state.customFees = snap.customFees || {};
+  state.otherCharges = snap.otherCharges || {};
   state.sleeves = snap.sleeves || {};
+  state.customSleeves = snap.customSleeves || {};
+  state.customPortfolio = snap.customPortfolio || null;
   state.columns = snap.columns || [];
   state.phase = 'workspace';
   state.fromCache = true;
@@ -3724,6 +4041,17 @@ function renderService() {
 function renderNext() {
   var el = document.getElementById('aa-next'); if (!el) return;
   var base = state.columns[0] || null;
+  if (state.phase === 'workspace' && cpActive()) {
+    var held = (state.customPortfolio.products || []).length, others = state.columns.length;
+    el.hidden = false;
+    el.innerHTML = '<p class="aa-next-txt"><span>Proposing</span> <b>a custom portfolio, '
+      + esc(riskLabel(state.customPortfolio.profile)) + ' risk profile</b>'
+      + '<span> · ' + (held ? held + ' product' + (held === 1 ? '' : 's') : 'nothing built yet')
+      + ' · ' + (others ? others + ' comparison' + (others === 1 ? '' : 's') : 'no comparisons') + '</span></p>'
+      + '<button type="button" class="btn btn-primary" id="aa-go">'
+      + (held ? 'Continue to Implementation →' : 'Build it on Implementation →') + '</button>';
+    return;
+  }
   if (state.phase !== 'workspace' || !base) { el.hidden = true; el.innerHTML = ''; return; }
   var busy = state.columns.some(function (c) { return c.status === 'loading'; });
   var ready = base.status === 'ready';
@@ -3750,7 +4078,9 @@ function renderRailSummary() {
   document.body.classList.toggle('rail-summary', on);
   document.body.classList.toggle('rail-editing', on && railEditing);
   if (!on) { el.innerHTML = ''; railEditing = false; return; }
-  el.innerHTML = '<span class="rail-sum-txt"><b>' + esc(fullName(base.key)) + '</b>'
+  el.innerHTML = '<span class="rail-sum-txt"><b>' + (cpActive()
+      ? 'Custom · ' + esc(riskLabel(state.customPortfolio.profile)) + ' risk profile'
+      : esc(fullName(base.key))) + '</b>'
     + '<span> · ' + esc(state.basis.hedging) + (state.variant ? ' · ' + esc(state.variant) : '') + '</span></span>'
     + '<button type="button" class="tier-edit" id="railsum-edit" aria-expanded="' + railEditing + '"'
     + ' aria-controls="rail-tiers">' + (railEditing ? 'Done' : 'Edit') + '</button>';
@@ -3962,6 +4292,17 @@ document.addEventListener('click', function (e) {
   if (toggle) { toggleRail(); return; }
   var roll = e.target.closest ? e.target.closest('#baseroll') : null;
   if (roll) { setBaseCollapsed(!state.baseCollapsed, false); refresh(); return; }
+  var cpButton = e.target.closest ? e.target.closest('[data-cpconfirm]') : null;
+  if (cpButton) {
+    var pendingSwitch = state.cpConfirm;
+    if (cpButton.dataset.cpconfirm !== 'yes' || !pendingSwitch) {
+      state.cpConfirm = null; refresh();
+      var select = document.getElementById('bpa'); if (select) select.focus();
+      return;
+    }
+    if (pendingSwitch.to === 'custom') becomeCustom(); else becomeStrategic(pendingSwitch.allocationType);
+    return;
+  }
   var columnRemove = e.target.closest ? e.target.closest('.col-rm') : null;
   if (columnRemove) { removeComparison(+columnRemove.dataset.remove); return; }
   var retry = e.target.closest ? e.target.closest('.col-retry') : null;
@@ -4123,7 +4464,24 @@ document.addEventListener('change', function (e) {
     return;
   }
 
+  /* Custom (D171): choosing it, or a strategic allocation while it is in
+     force, asks first in the rail; the risk level while it is in force is
+     its profile, and moves the limits rather than the build. */
+  if (e.target.id === 'bpa' && e.target.value === '__custom__') {
+    state.cpConfirm = cpActive() ? null : { to: 'custom' };
+    refresh();
+    var yes = document.getElementById('cpconfirmyes'); if (yes) yes.focus();
+    return;
+  }
+  if (cpActive() && e.target.id === 'bpa') {
+    state.cpConfirm = e.target.value ? { to: 'strategic', allocationType: e.target.value } : null;
+    refresh();
+    var back = document.getElementById('cpconfirmyes'); if (back) back.focus();
+    return;
+  }
+  if (cpActive() && e.target.id === 'bpr') { setCpProfile(e.target.value); return; }
   if (e.target.id === 'bpa' || e.target.id === 'bpre' || e.target.id === 'bpr') {
+    state.cpConfirm = null;
     var forced = variantForcesExcludeRE(state.variant);
     var base = state.columns[0] || null;
     var pending = state.baseDraft;
@@ -4156,6 +4514,16 @@ document.addEventListener('change', function (e) {
     }
     return;
   }
+});
+
+/* Escape in the rail puts back a pending switch between the two kinds (D171). */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || !state.cpConfirm) return;
+  if (!e.target.closest || !e.target.closest('#tier-base')) return;
+  e.preventDefault();
+  state.cpConfirm = null;
+  refresh();
+  var select = document.getElementById('bpa'); if (select) select.focus();
 });
 
 /* ---- public surface ----------------------------------------------------- */
@@ -4236,6 +4604,27 @@ return {
   sleeveLib: function () { return state.sleeveLib; },
   ensureSleeveLib: ensureSleeveLib,
   chooseSleeve: chooseSleeve,
+  /* custom sleeves (D170) */
+  customSleeves: function () { return state.customSleeves; },
+  customLib: function () { return state.customLib; },
+  ensureCustomLib: ensureCustomLib,
+  setCustomSleeve: setCustomSleeve,
+  useCustomSleeve: useCustomSleeve,
+  mayBuildCustom: function (category) {
+    return canEdit() && (opt('customSleeves.mayBuild', []) || []).indexOf(category) !== -1;
+  },
+  /* custom portfolios (D171) */
+  customPortfolio: function () { return state.customPortfolio; },
+  cpActive: cpActive,
+  cpLib: function () { return state.cpLib; },
+  ensureCpLib: ensureCpLib,
+  pushCustomPortfolio: pushCustomPortfolio,
+  cpApproval: cpApproval,
+  mayBuildPortfolio: mayBuildPortfolio,
+  syncAnchorBase: syncAnchorBase,
+  catColor: catColor,
+  riskLabel: riskLabel,
+  removeComparison: removeComparison,
   variant: function () { return state.variant; },
   tacticalTilt: function () { return state.tacticalTilt; },
   volPremium: function () { return state.volPremium && canHoldVolPremium(); },
@@ -4249,6 +4638,8 @@ return {
   customLevel: customLevel,
   customFees: function () { return state.customFees || {}; },
   setCustomFees: setCustomFees,
+  otherCharges: function () { return state.otherCharges || {}; },
+  setOtherCharges: setOtherCharges,
   setFeeSchedule: setFeeSchedule,
   setFeeLevel: setFeeLevel,
   setVariant: setVariant,

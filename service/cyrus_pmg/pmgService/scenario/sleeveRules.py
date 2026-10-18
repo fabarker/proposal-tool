@@ -83,7 +83,7 @@ def portfolioKeys() -> list:
 
 def valueLabels() -> dict:
     """The words a rule's values are shown in (D158): risk levels by the
-    house's names, and the all-equity "allocation" as what it is. Cosmetic -
+    firm's names, and the all-equity "allocation" as what it is. Cosmetic -
     a rule still names the value."""
     from .rules import RISK_LEVEL_LABELS
     return {'riskLevel': dict(RISK_LEVEL_LABELS), 'allocationType': {NA: 'All equity'}}

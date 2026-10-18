@@ -49,6 +49,7 @@ from openpyxl.drawing.text import (CharacterProperties, Font as DrawingFont,
                                    Paragraph, ParagraphProperties)
 from openpyxl.formatting.rule import CellIsRule
 
+from . import customSleeves as _custom
 from . import fees, fundingSplit, overlayRules, rules
 from . import portfolio_weights as pw
 from .payloads import roundWeightsLargestRemainder
@@ -60,7 +61,7 @@ from .sleeves import listSleeves
 # sheetDoc (D119): this module is the Excel RENDERER. The aliases keep every
 # name the tests and older callers reach for.
 from . import sheetDoc
-from .sheetDoc import (buildAssumptionsDoc, buildImplementationDoc,
+from .sheetDoc import (buildAssumptionsDoc, buildCustomAllocationDoc, buildImplementationDoc,
                        buildInitialAllocationDoc, buildPortfoliosDoc, buildRiskDoc,
                        _asDate, _categoryOrder, _weight)
 
@@ -144,7 +145,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                             volPremium: bool = False,
                             currency: str = None,
                             customFees: dict = None,
-                            overlayEntry: dict = None) -> dict:
+                            overlayEntry: dict = None,
+                            customSleeves: dict = None) -> dict:
     """The implementation model's numbers, derived per spec 8.4.
 
     Returns {'groups': [...], 'total': {...}, 'complete': bool, 'priced': bool,
@@ -161,6 +163,13 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     ``wtdFeeBp`` are None on every item and in the total. The level defaults
     to the framework's prescribed one, as the store does; the schedule never
     defaults.
+
+    *customSleeves* holds the proposal's custom sleeves by the name they are
+    chosen under (D170). One is in force where no library sleeve is chosen;
+    weighted as a percentage of the portfolio, its total replaces the
+    category's weight, and nothing else moves. ``balanced`` says whether the
+    implemented portfolio still adds to 100%, and ``departs`` whether a custom
+    sleeve has changed a category's weight from the strategic one.
     """
     autoCategories = set(autoCategories or [])
     groups = []
@@ -219,8 +228,10 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     for category in categories:
         name = category['name']
         catWeight = float(category['weightPct'])
+        strategicWeight = catWeight
         # grouped categories share one choice, stored under the group (D60)
         pickedUnder = sleeveCategory(name)
+        customDef = None
         if name in autoCategories:
             library = listSleeves(pickedUnder, variant, baseKey)
             sleeve = library[0] if library else None
@@ -231,6 +242,14 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             if chosen:
                 sleeve = next((s for s in listSleeves(pickedUnder, variant, baseKey)
                                if s['name'] == chosen), None)
+            else:
+                # a custom sleeve (D170): products as the library serves them,
+                # each with its share of the sleeve; weighted as a share of the
+                # portfolio, its total is the category's weight
+                customDef = _custom.activeFor(pickedUnder, sleevesMap, customSleeves)
+                sleeve = _custom.hydrate(customDef) if customDef else None
+                if sleeve and sleeve['mode'] == 'portfolio':
+                    catWeight = sleeve['totalPct']
             auto = False
         items = []
         if sleeve:
@@ -239,18 +258,31 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                 item['exactPct'] = catWeight * float(product['weight'])
                 items.append(item)
                 lineItems.append(item)
-        groups.append({
+        group = {
             'category': name,
             'weightPct': catWeight,
+            'strategicWeightPct': strategicWeight,
             'sleeve': sleeve['name'] if sleeve else None,
             'auto': auto,
             'items': items,
-        })
+        }
+        if sleeve and sleeve.get('custom'):
+            group['custom'] = dict(sleeve['definition'], totalPct=sleeve['totalPct'])
+        groups.append(group)
 
     complete = all(group['sleeve'] for group in groups) and bool(groups)
+    # A custom sleeve weighted against the portfolio sets its category's
+    # weight and nothing makes room for it: the person decides where any
+    # difference goes, and until the book adds to 100% again it is neither
+    # rounded closed nor delivered (D170).
+    implementedPct = sum(group['weightPct'] for group in groups)
+    balanced = abs(implementedPct - 100.0) < _custom.BALANCE_TOLERANCE
+    departs = any(group.get('custom') and group['custom']['mode'] == 'portfolio'
+                  and abs(group['weightPct'] - group['strategicWeightPct']) >= 0.005
+                  for group in groups)
 
     if lineItems:
-        if complete:
+        if complete and balanced:
             printed = roundWeightsLargestRemainder([i['exactPct'] for i in lineItems])
         else:
             printed = [round(i['exactPct'], 2) for i in lineItems]
@@ -298,7 +330,7 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             for item in group['items']:
                 item['initialExactPct'] = group['initialWeightPct'] * float(item['weight'])
         exact = [i['initialExactPct'] for i in lineItems]
-        printed = (roundWeightsLargestRemainder(exact) if complete
+        printed = (roundWeightsLargestRemainder(exact) if complete and balanced
                    else [round(w, 2) for w in exact])
         for item, weight in zip(lineItems, printed):
             item['initialPct'] = weight
@@ -393,6 +425,10 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                        for row in fees.customRows(feeSchedule)]
 
     return {'groups': groups, 'total': total, 'complete': complete,
+            # the custom sleeves (D170): whether the book adds to 100%, what it
+            # adds to, and whether it departs from the strategic allocation -
+            # which takes the strategic allocation out of the delivered files
+            'balanced': balanced, 'implementedPct': implementedPct, 'departs': departs,
             'priced': priced, 'tier': tier, 'marginal': marginal,
             'effectiveRate': effectiveRate, 'breaches': breaches,
             'custom': custom, 'customRates': customRates,
@@ -693,6 +729,18 @@ def writeAssumptionsSheet(book, assets, results=None, engineParity: bool = False
     return sheet
 
 
+CUSTOM_SHEET = 'Custom Allocation'
+
+
+def writeCustomAllocationSheet(book, model, results):
+    """A custom portfolio's allocation and what is said of it (D171) -
+    decided by ``sheetDoc.buildCustomAllocationDoc``, rendered here, its
+    notes beneath the table."""
+    sheet = book.create_sheet(CUSTOM_SHEET)
+    _renderDoc(sheet, buildCustomAllocationDoc(model, results, notes=True))
+    return sheet
+
+
 def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
                   variant: str = None, tacticalTilt: bool = False,
                   feeSchedule: str = None, feeLevel: str = None,
@@ -718,14 +766,27 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
     where a printed page shows it (every sheet's header) and where a program
     reads it (``dc:identifier``, see ``stampedProposalId``). Absent for a
     workbook that is not a delivery - the golden test, a unit test.
+
+    A *model* whose custom sleeves move a category's weight away from the
+    strategic allocation (``departs``, D170) is delivered WITHOUT it: the
+    portfolios, the risk dashboard and the assumptions describe the strategic
+    allocation, which this proposal no longer implements, so the workbook is
+    the implementation alone.
     """
     book = Workbook()
     book.remove(book.active)                      # the writers name their own
 
-    writePortfoliosSheet(book, results, engineParity)
-    writeRiskDashboardSheet(book, results, engineParity)
-    writeAssumptionsSheet(book, assets, results, engineParity)
-    writeImplementationSheet(book, results[0], sleevesMap, autoCategories,
+    # A custom portfolio (D171) leads with its own allocation, its
+    # comparisons beside it; there is no strategic allocation to describe.
+    custom = bool(model and model.get('customPortfolio'))
+    strategic = not (model and model.get('departs')) and not custom
+    if custom:
+        writeCustomAllocationSheet(book, model, results)
+    if strategic:
+        writePortfoliosSheet(book, results, engineParity)
+        writeRiskDashboardSheet(book, results, engineParity)
+        writeAssumptionsSheet(book, assets, results, engineParity)
+    writeImplementationSheet(book, results[0] if results else None, sleevesMap, autoCategories,
                              mandate.mandateSize, variant, tacticalTilt,
                              feeSchedule, feeLevel, mandate.topAccountSize,
                              includeFees, volPremium, basis.currency,
@@ -754,7 +815,9 @@ def writeWorkbook(basis, mandate, results, sleevesMap, autoCategories,
     book.properties.creator = 'PMG Proposal Tool'
     book.properties.description = (
         'Strategic allocation, risk dashboard, long-term estimates and the '
-        'implemented model.')
+        'implemented model.' if strategic
+        else 'A custom portfolio\'s allocation and the implemented model.' if custom
+        else 'The implemented model.')
     if proposalId:
         book.properties.title = 'PMG Proposal {} - {} {}'.format(
             proposalId, basis.currency, basis.hedging)
