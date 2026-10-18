@@ -73,6 +73,7 @@ def test_the_first_open_loads_the_file_once_and_serves_what_the_file_served(stor
     for p in served:
         record = dict(byId[p['productId']])
         record['ticker'] = record['ticker'] or products.NO_TICKER
+        record.pop('category')                   # the console's, not served (D178)
         assert p == record
     info = products.describeSource()
     assert info['products'] == 73 and info['withdrawn'] == 0 and info['revision'] == 1
@@ -245,8 +246,8 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
     keptHeld = next(r for r in body if r[0] in held)[0]
     changed = next(r for r in body if r[0] not in (dropped, keptHeld))
     changed[at['ProductCost']] = '0.99'
-    newRow = ['probe-etf', 'Probe Global Equity ETF', 'PRB', 'Global Equity', 'Passive', 'ETF',
-              'Accumulating', 'External', 'Daily', 'USD', '0.12', 'Passive', '', '']
+    newRow = ['probe-etf', 'Probe Global Equity ETF', 'PRB', 'Global Equity', 'Public Equity',
+              'Passive', 'ETF', 'Accumulating', 'External', 'Daily', 'USD', '0.12', 'Passive', '', '']
     out = [head] + [r for r in body if r[0] not in (dropped, keptHeld)] + [newRow]
     path = _fileWith(tmp_path, out, name='delivery.csv')
     untouched = products.entry(body[-1][0])
@@ -316,6 +317,82 @@ def test_an_export_reads_back_as_the_catalogue_and_a_workbook_imports_too(store,
     book.save(str(xlsx))
     preview = products.importPreview('products.xlsx', _upload(str(xlsx)))
     assert [c['productId'] for c in preview['changed']] == [rows[2][0]]
+
+
+# ------------------------------------------------------- the category (D178) ---
+
+def test_a_product_has_a_category_of_its_own_from_the_file_under_any_of_its_headings(store,
+                                                                                  tmp_path):
+    """The column the catalogue bands by: read under Category, Catagory or
+    Group; previewed and imported field by field like any other; kept by the
+    console's products and the export, not served beside a sleeve product."""
+    rows = products.exportRows()
+    head = rows[0]
+    at = head.index('Category')
+    assert head[at - 1] == 'AssetClass', 'the export writes it after the asset class'
+    pid = rows[1][0]
+    assert products.entry(pid)['category'] == rows[1][at] == 'Investment Grade Fixed Income'
+    assert 'category' not in products.get(pid), 'a sleeve product takes its sleeve\'s'
+    for heading in ('Catagory', 'Group'):
+        out = [list(r) for r in rows]
+        out[0][at] = heading
+        out[1][at] = 'Hedge Funds'
+        path = _fileWith(tmp_path, out, name='delivery.csv')
+        preview = products.importPreview('delivery.csv', _upload(path))
+        assert [c['productId'] for c in preview['changed']] == [pid], heading
+        assert preview['changed'][0]['changeWords'] == [
+            'Category Investment Grade Fixed Income → Hedge Funds']
+    products.importFile('delivery.csv', _upload(path), user='alice', base=preview['revision'])
+    assert products.entry(pid)['category'] == 'Hedge Funds'
+    assert products.history(pid)[0]['changeWords'] == [
+        'Category Investment Grade Fixed Income → Hedge Funds']
+    # a file without the column at all still imports, and blanks every category
+    plain = [[v for i, v in enumerate(r) if i != at] for r in products.exportRows()]
+    path = _fileWith(tmp_path, plain, name='plain.csv')
+    preview = products.importPreview('plain.csv', _upload(path))
+    assert len(preview['changed']) == len(plain) - 1
+    assert preview['changed'][0]['changeWords'][0].startswith('Category ')
+
+
+@pytest.mark.parametrize('typed, words', [
+    ('public equity', "is spelled Public Equity"),
+    ('Equities', "is not one the sleeves are built for: Investment Grade Fixed Income"),
+])
+def test_a_category_must_be_one_the_library_knows(store, tmp_path, typed, words):
+    with pytest.raises(ValidationError) as caught:
+        products.create(_new(category=typed), user='alice')
+    assert caught.value.field == 'category' and words in caught.value.message
+    rows = products.exportRows()
+    rows[3][rows[0].index('Category')] = typed
+    path = _fileWith(tmp_path, rows, name='typo.csv')
+    with pytest.raises(products.BadCatalogue) as caught:
+        products.importPreview('typo.csv', _upload(path))
+    assert 'row 4' in str(caught.value) and words in str(caught.value)
+
+
+def test_a_category_is_given_and_changed_in_the_form_and_blank_is_none(store):
+    made = products.create(_new(category='Public Equity'), user='alice')
+    assert made['category'] == 'Public Equity'
+    moved = products.update('probe-etf', _new(category=''), user='alice', base=made['revision'])
+    assert moved['category'] == ''
+    assert products.history('probe-etf')[0]['changeWords'] == ['Category Public Equity → —']
+
+
+def test_a_catalogue_from_before_the_category_gains_the_column_blank(store):
+    """8 -> 9: the column is added to the products already there, each blank,
+    and nothing else about them moves."""
+    before = products.entries()
+    conn = sleeveRepo.connection()
+    conn.execute('ALTER TABLE products DROP COLUMN category')
+    conn.execute("UPDATE meta SET value = '8' WHERE key = 'schemaVersion'")
+    conn.commit()
+    conn.close()
+    products.reload()
+    assert sleeveRepo.describe()['schemaVersion'] == 9
+    after = products.entries()
+    assert [p['category'] for p in after] == [''] * len(before)
+    strip = lambda ps: [{k: v for k, v in p.items() if k != 'category'} for p in ps]
+    assert strip(after) == strip(before)
 
 
 # ---------------------------------------------------------- the console's API ---

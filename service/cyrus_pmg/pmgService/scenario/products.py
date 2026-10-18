@@ -4,12 +4,12 @@ the repository's own database and maintained from the console (D165).
 It used to be read, read only, from a delivered extract (D56): a CSV or XLSX
 named by SCENARIO_PRODUCTS_SOURCE, one row per product, one column per field -
 
-    ProductId  Name  Ticker  AssetClass  Style  Vehicle  ShareClass  Source
-    Liquidity  ExposureCurrency  ProductCost  FeeGroup
+    ProductId  Name  Ticker  AssetClass  Category  Style  Vehicle  ShareClass
+    Source  Liquidity  ExposureCurrency  ProductCost  FeeGroup
     DistributionYield  MinimumInvestment
 
-- ShareClass and the last two optional in the file and None when absent
-(D63, D81). The catalogue now lives in the repository's file beside the
+- Category, ShareClass and the last two optional in the file and blank or None
+when absent (D63, D81, D178). The catalogue now lives in the repository's file beside the
 sleeves (sleeveRepo, schema 7). That extract is read twice in its life: once,
 on the first open after the upgrade, to fill the catalogue (``seed``); and
 whenever an admin imports a file from the console or the command line, which
@@ -68,7 +68,10 @@ COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Style', 'Vehicle', 'Sou
 # served as None when it is absent, so an older extract still loads (D63, D81).
 # Of these, the last two are figures the catalogue view compares on and must
 # parse as numbers; the first is a word from a closed pair.
-OPTIONAL = ['ShareClass', 'DistributionYield', 'MinimumInvestment']
+OPTIONAL = ['Category', 'ShareClass', 'DistributionYield', 'MinimumInvestment']
+#: The product's own category (D178), the sleeve category the catalogue bands
+#: it under: a file may head the column with any of these.
+CATEGORY_HEADERS = ('Category', 'Catagory', 'Group')
 
 #: What a share class can be: distributing, or accumulating (D81). Two values
 #: and a blank, checked on load - a typo is refused rather than printed.
@@ -91,6 +94,7 @@ _FIELDS = [
     ('name', 'Name', 'Name'),
     ('ticker', 'Ticker', 'Ticker'),
     ('assetClass', 'AssetClass', 'Asset class'),
+    ('category', 'Category', 'Category'),
     ('style', 'Style', 'Style'),
     ('vehicle', 'Vehicle', 'Vehicle'),
     ('shareClass', 'ShareClass', 'Share class'),
@@ -184,12 +188,13 @@ def _readRows(path: str, data: bytes = None):
             yield ['' if v is None else v for v in row]
 
 
-def _load(path: str, feeGroups=None, strict=False, data: bytes = None):
+def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categories=None):
     """The extract at *path* (or the upload *data* named *path*) as
     ({id: record}, [ids in file order]). Refuses the whole file with
     BadCatalogue at the first bad row, naming the row and the product: a
     file is loaded whole or not at all. *feeGroups*, when given, is the set
-    a product's group must belong to. *strict* is the check a save gets
+    a product's group must belong to, and *categories* the list its category
+    must be one of. *strict* is the check a save gets
     (``clean``); without it, what the tool has always accepted from a file."""
     rows = _readRows(path, data)
     head = next(rows)
@@ -201,6 +206,10 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None):
     for c in OPTIONAL:
         if c in head:
             index[c] = head.index(c)
+    for c in CATEGORY_HEADERS:
+        if c in head:
+            index['Category'] = head.index(c)
+            break
     byId, order, rowOf = {}, [], {}
     for n, row in enumerate(rows, start=2):
         fields = {}
@@ -215,7 +224,7 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None):
             raise BadCatalogue('{}: row {}: the ProductId {} is already on row {} - each product '
                                'appears once.'.format(name, n, pid, rowOf[pid]))
         try:
-            record = clean(fields, feeGroups, strict=strict)
+            record = clean(fields, feeGroups, strict=strict, categories=categories)
         except ValidationError as exc:
             raise BadCatalogue('{}: row {} ({}): {}'.format(name, n, pid or 'no ProductId',
                                                             exc.message))
@@ -227,9 +236,10 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None):
 
 def readFile(path: str, strict=True):
     """The products in a file, checked as an import checks them against the
-    fee card in force. ({id: record}, [ids in file order])."""
+    fee card in force and the library's categories. ({id: record}, [ids in
+    file order])."""
     from . import fees
-    return _load(path, set(fees.feeGroups()), strict=strict)
+    return _load(path, set(fees.feeGroups()), strict=strict, categories=knownCategories())
 
 
 # ------------------------------------------------------------ the checks ---
@@ -282,11 +292,19 @@ def _figure(value, key, required=False, strict=True):
     return number
 
 
-def clean(fields, feeGroups=None, strict=True) -> dict:
+def knownCategories() -> list:
+    """The categories a product's own may be: the ones the library's sleeves
+    are built for, in the implementation table's order (D178)."""
+    from . import sleeveRepo
+    return sleeveRepo.categories()
+
+
+def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
     """A product as the catalogue stores it, from what was typed or read, or
     a ValidationError naming the first field that is wrong. *feeGroups*, when
-    given, is the set the fee group must belong to. A ticker is '' when there
-    is none and a share class None."""
+    given, is the set the fee group must belong to, and *categories* the list
+    a category must be one of. A ticker is '' when there is none, and so is a
+    category, and a share class None."""
     fields = fields or {}
     pid = _text(fields.get('productId'), keepSpaces=True)
     if not pid:
@@ -315,6 +333,18 @@ def clean(fields, feeGroups=None, strict=True) -> dict:
             raise ValidationError(key, 'Keep the {} to {} characters.'.format(
                 LABELS[key].lower(), WORD_MAX))
         record[key] = word
+    # the sleeve category the catalogue bands the product under (D178): blank
+    # for none, else one the library knows, spelled as it spells it
+    category = _text(fields.get('category'))
+    if category and categories is not None and category not in categories:
+        same = [c for c in categories if c.lower() == category.lower()]
+        if same:
+            raise ValidationError('category', 'The category {!r} is spelled {}.'.format(
+                category, same[0]))
+        raise ValidationError('category', 'The category {!r} is not one the sleeves are built '
+                                          'for: {}, or blank for none.'.format(
+                                              category, ', '.join(categories)))
+    record['category'] = category
     shareClass = _text(fields.get('shareClass'))
     shareClass = SHARE_CLASS_SHORT.get(shareClass, shareClass)
     if shareClass and shareClass not in SHARE_CLASSES:
@@ -396,8 +426,8 @@ def _record(row) -> dict:
     """A stored row as the record ``clean`` returns."""
     return {
         'productId': row['productId'], 'name': row['name'], 'ticker': row['ticker'] or '',
-        'assetClass': row['assetClass'], 'style': row['style'], 'vehicle': row['vehicle'],
-        'shareClass': row['shareClass'] or None, 'source': row['source'],
+        'assetClass': row['assetClass'], 'category': row['category'] or '',
+        'style': row['style'], 'vehicle': row['vehicle'], 'shareClass': row['shareClass'] or None, 'source': row['source'],
         'liquidity': row['liquidity'], 'exposureCurrency': row['exposureCurrency'],
         'productCost': float(row['productCost']), 'feeGroup': row['feeGroup'],
         'distributionYield': None if row['distributionYield'] is None else float(row['distributionYield']),
@@ -406,16 +436,20 @@ def _record(row) -> dict:
 
 
 def _served(record) -> dict:
-    """A record in the shape every consumer has always read."""
+    """A record in the shape every consumer has always read. The product's
+    own category is the catalogue's (D178): a sleeve product's category is
+    its sleeve's, so it is not served beside it."""
     out = dict(record)
     out['ticker'] = record['ticker'] or NO_TICKER
+    out.pop('category', None)
     return out
 
 
 def _entry(row) -> dict:
-    """A product as the console reads it: served fields and its stamps."""
+    """A product as the console reads it: served fields, its category and
+    its stamps."""
     out = _served(_record(row))
-    out.update(revision=row['revision'], createdBy=row['createdBy'], createdAt=row['createdAt'],
+    out.update(category=row['category'] or '', revision=row['revision'], createdBy=row['createdBy'], createdAt=row['createdAt'],
                lastEditedBy=row['updatedBy'], lastEditedAt=row['updatedAt'],
                withdrawn=bool(row['withdrawnAt']), withdrawnBy=row['withdrawnBy'],
                withdrawnAt=row['withdrawnAt'])
@@ -667,12 +701,12 @@ def seed(conn, feeGroups) -> None:
 
 def _insert(conn, record, position, user, stamp) -> None:
     conn.execute(
-        'INSERT INTO products (productId, position, name, ticker, assetClass, style, vehicle, '
-        'shareClass, source, liquidity, exposureCurrency, productCost, feeGroup, '
+        'INSERT INTO products (productId, position, name, ticker, assetClass, category, style, '
+        'vehicle, shareClass, source, liquidity, exposureCurrency, productCost, feeGroup, '
         'distributionYield, minimumInvestment, revision, createdBy, createdAt, updatedBy, '
-        'updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)',
+        'updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)',
         (record['productId'], position, record['name'], record['ticker'], record['assetClass'],
-         record['style'], record['vehicle'], record['shareClass'] or '', record['source'],
+         record.get('category') or '', record['style'], record['vehicle'], record['shareClass'] or '', record['source'],
          record['liquidity'], record['exposureCurrency'], record['productCost'],
          record['feeGroup'], record['distributionYield'], record['minimumInvestment'],
          user, stamp, user, stamp))
@@ -680,11 +714,12 @@ def _insert(conn, record, position, user, stamp) -> None:
 
 def _update(conn, record, revision, user, stamp) -> None:
     conn.execute(
-        'UPDATE products SET name = ?, ticker = ?, assetClass = ?, style = ?, vehicle = ?, '
-        'shareClass = ?, source = ?, liquidity = ?, exposureCurrency = ?, productCost = ?, '
-        'feeGroup = ?, distributionYield = ?, minimumInvestment = ?, revision = ?, '
-        'updatedBy = ?, updatedAt = ? WHERE productId = ?',
-        (record['name'], record['ticker'], record['assetClass'], record['style'],
+        'UPDATE products SET name = ?, ticker = ?, assetClass = ?, category = ?, style = ?, '
+        'vehicle = ?, shareClass = ?, source = ?, liquidity = ?, exposureCurrency = ?, '
+        'productCost = ?, feeGroup = ?, distributionYield = ?, minimumInvestment = ?, '
+        'revision = ?, updatedBy = ?, updatedAt = ? WHERE productId = ?',
+        (record['name'], record['ticker'], record['assetClass'], record.get('category') or '',
+         record['style'],
          record['vehicle'], record['shareClass'] or '', record['source'], record['liquidity'],
          record['exposureCurrency'], record['productCost'], record['feeGroup'],
          record['distributionYield'], record['minimumInvestment'], revision, user, stamp,
@@ -780,9 +815,10 @@ def create(fields, user='', note='') -> dict:
     not a product the catalogue can hold or its id is taken - by a live
     product or a withdrawn one, since an id is never reused."""
     note = _note(note)
+    known = knownCategories()
 
     def work(conn):
-        record = clean(fields, _groupsOn(conn), strict=True)
+        record = clean(fields, _groupsOn(conn), strict=True, categories=known)
         taken = _row(conn, record['productId'])
         if taken is not None:
             if taken['withdrawnAt']:
@@ -814,11 +850,12 @@ def update(productId, fields, user='', note='', base=None) -> dict:
         raise ValidationError('productId', 'A product ID cannot be changed: sleeves refer to the '
                                            'product by it. Add a new product instead.')
     fields['productId'] = productId
+    known = knownCategories()
 
     def work(conn):
         row = _live(conn, productId)
         _refuseStale(row, base)
-        record = clean(fields, _groupsOn(conn), strict=True)
+        record = clean(fields, _groupsOn(conn), strict=True, categories=known)
         if not changes(_record(row), record):
             raise ValidationError('product', 'Nothing has changed: these are the values in force.')
         revision = row['revision'] + 1
@@ -1009,10 +1046,11 @@ def importPreview(name, content) -> dict:
     from . import sleeveRepo
     name = _fileName(name)
     data = _decode(content)
+    known = knownCategories()
     conn = sleeveRepo.connection()
     try:
         groups = _groupsOn(conn)
-        byId, order = _load(name, groups, strict=True, data=data)
+        byId, order = _load(name, groups, strict=True, data=data, categories=known)
         out = _compare(conn, byId, order)
         out.update(file=name, rows=len(order),
                    revision=int(_meta(conn, 'catalogueRevision', '0') or 0))
@@ -1033,6 +1071,7 @@ def importFile(name, content, user='', withdraw=None, note='', base=None) -> dic
     note = _note(note)
     base = _base(base)
     withdraw = [str(p) for p in (withdraw or [])]
+    known = knownCategories()
 
     def work(conn):
         now = int(_meta(conn, 'catalogueRevision', '0') or 0)
@@ -1044,7 +1083,7 @@ def importFile(name, content, user='', withdraw=None, note='', base=None) -> dic
                                  ' - {} at {}'.format(last['actor'] or 'someone',
                                                       last['at'].replace('T', ' ')[:16]) if last else '',
                                  now))
-        byId, order = _load(name, _groupsOn(conn), strict=True, data=data)
+        byId, order = _load(name, _groupsOn(conn), strict=True, data=data, categories=known)
         plan = _compare(conn, byId, order)
         missing = {m['productId']: m for m in plan['missing']}
         for pid in withdraw:
@@ -1103,7 +1142,7 @@ def exportRows() -> list:
     """The live catalogue as the file it can be loaded from again: the header
     and one row per product, in catalogue order."""
     out = [list(FILE_COLUMNS)]
-    for p in all():
+    for p in entries():
         out.append([_cell('' if key == 'ticker' and p[key] == NO_TICKER else p[key])
                     for key in KEYS])
     return out

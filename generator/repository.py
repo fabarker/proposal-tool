@@ -550,7 +550,11 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .cat-menu .cat-clear{margin:6px 12px 2px;justify-self:start}
 .cat-count{margin-left:auto;font-family:var(--f-num);font-size:12px;color:var(--ink-3);white-space:nowrap}
 .cat-orphans{gap:6px 14px}
-.cat-orphan{font-size:12.5px}
+.cat-orphans>.cat-clear{color:inherit}
+.cat-orphan-list{flex:1 0 100%;max-height:200px;overflow:auto;display:grid;gap:4px;padding-top:4px;
+  border-top:1px solid #F3D48A}
+.cat-orphan{display:grid;grid-template-columns:minmax(180px,max-content) minmax(0,1fr);gap:12px;font-size:12.5px}
+.cat-orphan>span{min-width:0}
 /* the body: rail, table (or comparison), and the panel over the right edge */
 .cat-b{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:0;position:relative}
 .cat-facets{border-right:1px solid var(--line);overflow:auto;min-height:0;padding:6px 0 12px;background:var(--surface)}

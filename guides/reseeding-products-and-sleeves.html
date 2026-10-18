@@ -250,6 +250,7 @@ columns, so the easiest file to edit is that one.</p>
 <tr><td class="key">Name</td><td>Yes</td><td>What the PWA sees. Cannot be empty.</td></tr>
 <tr><td class="key">Ticker</td><td>Column yes, value no</td><td>May be blank, e.g. for an SMA.</td></tr>
 <tr><td class="key">AssetClass</td><td>Yes</td><td>e.g. <code>Emerging Markets</code>, <code>IG Corporate</code>.</td></tr>
+<tr><td class="key">Category</td><td>Optional</td><td>The category the Catalogue groups the product under. It must be one of the library's own, spelled the same way: <code>Investment Grade Fixed Income</code>, <code>Hybrid Fixed Income</code>, <code>Other Fixed Income</code>, <code>Public Equity</code>, <code>Hedge Funds</code>, <code>Private Equity &amp; Other Private Assets</code>, <code>Asset Allocation Strategies</code>. The header may also be <code>Catagory</code> or <code>Group</code>. Leave it blank for none. See <a href="#category">Adding the categories</a>.</td></tr>
 <tr><td class="key">Style</td><td>Yes</td><td><code>Active</code> or <code>Passive</code>.</td></tr>
 <tr><td class="key">Vehicle</td><td>Yes</td><td>e.g. <code>ETF</code>, <code>Mutual Fund</code>, <code>SMA</code>, <code>UCITS</code>.</td></tr>
 <tr><td class="key">Source</td><td>Yes</td><td>e.g. <code>Internal</code>.</td></tr>
@@ -262,11 +263,12 @@ columns, so the easiest file to edit is that one.</p>
 <tr><td class="key">MinimumInvestment</td><td>Optional</td><td>In currency units, e.g. <code>5000000</code>.</td></tr>
 </tbody></table></div>
 <p>An example row, under the headers in the order the current file uses:</p>
-<pre class="out">ProductId,Name,Ticker,AssetClass,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
-gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Active,SMA,Distributing,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
+<pre class="out">ProductId,Name,Ticker,AssetClass,Category,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
+gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Investment Grade Fixed Income,Active,SMA,Distributing,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
 
 <p>On an import, the six describing columns (<code>AssetClass</code> to
-<code>ExposureCurrency</code>) must all be filled, and a <code>ProductCost</code> of 10 or more or a
+<code>ExposureCurrency</code>) must all be filled, a <code>Category</code> the library does not know is
+refused, and a <code>ProductCost</code> of 10 or more or a
 <code>DistributionYield</code> of 50 or more is refused as a figure typed in the wrong unit
 (<code>45</code> for <code>0.45</code>).</p>
 
@@ -333,6 +335,43 @@ the re-seed changed goes back to its earlier values as a new version, and the pr
 added are listed as <em>not in the file</em>: tick them to withdraw them. For one product, open its
 card on the Catalogue, press <strong>Show every version</strong> and <strong>Restore this
 version</strong>.</p></div>
+
+<h3 id="category">Adding the categories</h3>
+<p>A product has had a <code>Category</code> of its own since the update that brought it (the sleeve
+database's schema 9). The Catalogue groups products by it. That update adds the column with every
+product's category blank, and until a product has one the Catalogue groups it by the sleeves that
+hold it, as before, or under <em>No category</em> if no sleeve does. Nothing a PWA sees or a proposal
+prints depends on it.</p>
+<div class="steps">
+<div class="step"><h3>Run the update first</h3>
+<p>The census should say <code>schema v9</code>. A file imported before the update loads its other
+columns but drops the categories without saying so.</p></div>
+<div class="step"><h3>Add the column to your product file</h3>
+<p>Put a column headed <code>Category</code> (or <code>Catagory</code>, or <code>Group</code>)
+anywhere in the file and give every product its category, spelled as in the table above. A product
+can have one category only. Keep each <code>ProductId</code> as it is.</p></div>
+<div class="step"><h3>Import it and read the preview</h3>
+<p>Use <strong>Import a file</strong> on the Catalogue, or the sleeve tool's
+<code>--products-import</code>. The preview shows each product's category as a change:</p>
+<pre class="out">products-new.csv: 73 row(s)
+  0 new, 73 changed, 0 back from withdrawn, 0 unchanged, 0 not in the file
+  gsam-core-municipal-sma  Category &mdash; &rarr; Investment Grade Fixed Income
+  gs-high-yield-fund  Category &mdash; &rarr; Other Fixed Income
+  &hellip;
+imported: 0 added, 73 changed, 0 restored, 0 withdrawn - the catalogue is now version 2</pre>
+<p>If a row has any other change you didn't intend, stop and fix the file before you apply it.</p></div>
+<div class="step"><h3>If it refuses</h3>
+<p>A category that is not the library's is refused, with the row and nothing written:</p>
+<pre class="out">REFUSED: products-bad.csv: row 26 (gs-hedgeworks-multi-strategy): The category 'Hedge funds' is spelled Hedge Funds.
+nothing was written</pre>
+<pre class="out">REFUSED: products-bad2.csv: row 26 (gs-hedgeworks-multi-strategy): The category 'Alternatives' is not one the sleeves are built for: Investment Grade Fixed Income, Hybrid Fixed Income, Other Fixed Income, Public Equity, Hedge Funds, Private Equity &amp; Other Private Assets, Asset Allocation Strategies, or blank for none.
+nothing was written</pre></div>
+<div class="step"><h3>Check the Catalogue</h3>
+<p>Press <kbd>Ctrl</kbd>+<kbd>F5</kbd> and open <strong>Repository &rarr; Catalogue</strong>.
+Every product sits in its own category's band, and <em>No category</em> holds only the products you
+left blank. One product can also be given or changed a category on its own: open its card, press
+<strong>Edit</strong> and choose from <strong>Category</strong>.</p></div>
+</div>
 
 <h2 id="sleeves">Re-seeding the sleeve library</h2>
 <p>A sleeve file is loaded with the sleeve tool's <code>--import</code>. The import checks every
@@ -593,6 +632,7 @@ writes the card in force as a file.</p>
   <a href="#map">What lives where</a>
   <a href="#setup">One-time setup</a>
   <a href="#products">Products</a>
+  <a class="ind" href="#category">Adding the categories</a>
   <a href="#sleeves">Sleeves</a>
   <a href="#editions">Editions, rules, types</a>
   <a class="ind" href="#editions">How a rule reads</a>
@@ -606,7 +646,7 @@ writes the card in force as a file.</p>
 </nav>
 
 <footer class="foot">Every example, message and census line above was produced by the tool itself,
-from a copy of the library with the examples loaded through the import, on 15 and 16 October 2026.
+from a copy of the library with the examples loaded through the import, on 15, 16 and 18 October 2026.
 Paths are shown as they appear on Cyrus.</footer>
 </div>
 

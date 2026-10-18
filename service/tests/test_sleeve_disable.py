@@ -160,7 +160,7 @@ def test_a_version_seven_store_gains_the_switch_in_place(store):
     conn.commit()
     conn.close()
     count = len(sleeveRepo.listAll())
-    assert sleeveRepo.describe()['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 8
+    assert sleeveRepo.describe()['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 9
     assert len(sleeveRepo.listAll()) == count and not any(e['disabled'] for e in sleeveRepo.listAll())
     sleeveRepo.setOffered(_sleeve('ETFs Only')['id'], False, user='alice')
     assert 'ETFs Only' not in _names()

@@ -154,7 +154,7 @@ def test_a_schema_5_file_is_brought_to_6_and_seeded(store):
     raw = sqlite3.connect(str(path))
     version = raw.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     raw.close()
-    assert int(version) == sleeveRepo.SCHEMA_VERSION == 8          # the catalogue's (D165), the switch (D169)
+    assert int(version) == sleeveRepo.SCHEMA_VERSION == 9          # the catalogue's (D165), the switch (D169), the product's category (D178)
 
 
 # ------------------------------------------------------------ the engine ---

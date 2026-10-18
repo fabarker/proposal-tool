@@ -632,7 +632,8 @@ def report(path: str = None, layoutName: str = None) -> dict:
     slides = [{'number': s.number, 'marker': s.marker, 'templateOnly': s.templateOnly,
                'conditions': list(s.conditions), 'areas': [n for _, n in s.areas],
                'fields': list(s.fields)} for s in template.slides]
-    missing = [name for name in SLIDES if name not in template.markers]
+    # without a cover marker the template's own cover stands: nothing is added
+    missing = [name for name in SLIDES if name != 'cover' and name not in template.markers]
     return {'path': path, 'layout': template.layoutName,
             'layouts': [layout.name for layout in template.layouts],
             'size': template.size, 'box': template.box, 'roles': roles,
@@ -697,6 +698,8 @@ def _printReport(found: dict) -> int:
         marks += ['area: ' + a for a in s['areas']]
         marks += ['{{' + f + '}}' for f in s['fields']]
         out('  {:>3}  {}\n'.format(s['number'], '; '.join(marks) if marks else 'left as it is'))
+    if not any(s['marker'] == 'cover' for s in found['slides']):
+        out('\nCover     the template\'s own: no tool: cover marker, so the tool adds none\n')
     if found['unmarked']:
         out('\nNo marker yet, so at the end of the deck: {}\n'.format(', '.join(found['unmarked'])))
     if found['problems']:

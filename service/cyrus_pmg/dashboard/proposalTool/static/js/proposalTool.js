@@ -9904,7 +9904,8 @@ var cat = {
   compare: false,                    /* the pinned products, lined up */
   openChip: null,                    /* 'cols' while the column picker is open */
   withdrawn: false,                  /* the withdrawn products shown instead (D165) */
-  importSaid: ''                     /* what the last import did */
+  importSaid: '',                    /* what the last import did */
+  orphansOpen: false                 /* the missing products listed, not just counted */
 };
 
 /* The archive (D66, option A): the sleeves taken out of the library, as a
@@ -9971,8 +9972,9 @@ var ACT_RANGES = [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 
 var actTimer = null;
 
 /* The facet rail, in order. A facet is a field of the product, or one of the
-   two joins the repository already gives: which categories' sleeves hold it,
-   and which books offer it. Both of those are many-valued. */
+   two joins the repository already gives: which books offer it, and - for a
+   product with no category of its own (D178) - which categories' sleeves
+   hold it. Both joins are many-valued. */
 var CAT_FACETS = [
   { key: 'category', label: 'Category' },
   { key: 'vehicle', label: 'Vehicle' },
@@ -10062,6 +10064,8 @@ function esc(s) { return App.esc(s == null ? '' : String(s)); }
    through node against fixture data the way it runs the rounding and tilt
    mirrors. A "row" here is a product enriched with its joins and its
    figures: { p, used, categories, books, net, tooBig }. */
+/* the band of a product with no category of its own and no sleeve (D178) */
+var NO_CATEGORY = 'No category';
 function catJoin(sleeves) {
   /* productId -> { used, categories, books } from the sleeves that hold it */
   var map = {};
@@ -10091,14 +10095,16 @@ function catEnrich(products, sleeves, mandateSize) {
   });
 }
 function catValuesOf(row, field) {
-  if (field === 'category') return row.categories.length ? row.categories : ['Not yet placed'];
+  /* the product's own category (D178); without one, the categories of the
+     sleeves that hold it, as before the products had their own */
+  if (field === 'category') return row.p.category ? [row.p.category] : row.categories.length ? row.categories : [NO_CATEGORY];
   if (field === 'book') return row.books.length ? row.books : ['Not yet placed'];
   if (field === 'edited') return [catEditedBucket(row.p.lastEditedAt, Date.now())];
   return [row.p[field] || ''];
 }
 function catMatches(p, q) {
   if (!q) return true;
-  return [p.name, p.ticker, p.assetClass, p.vehicle, p.source]
+  return [p.name, p.ticker, p.assetClass, p.category, p.vehicle, p.source]
     .join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catPasses(row, state, except) {
@@ -10179,12 +10185,14 @@ function catBest(pinned) {
   return best;
 }
 function catGroups(rows, order, chosen) {
-  /* the rows banded by sleeve category (D100), the bands in the order given
+  /* the rows banded by category (D100), the bands in the order given
      and each saying what it holds: how many, the product-cost range, how many are
      not dealt daily. The rows keep the order they came in, so a sort applies
-     within a band. Category is a join: a product two categories hold stands
-     in both bands, and with a category filter in force only the chosen
-     categories make bands - a band the filter did not ask for would be noise. */
+     within a band. A product with a category of its own stands in that band
+     (D178); one without is banded by the sleeves that hold it, a join, so it
+     stands in each of their categories. With a category filter in force only
+     the chosen categories make bands - a band the filter did not ask for
+     would be noise. */
   var at = function (key) { var i = (order || []).indexOf(key); return i === -1 ? 1e9 : i; };
   var index = {}, out = [];
   (rows || []).forEach(function (row) {
@@ -10219,6 +10227,7 @@ var PRD_FIELDS = [
   { key: 'name', label: 'Name', kind: 'text', wide: true },
   { key: 'ticker', label: 'Ticker', kind: 'text', optional: true },
   { key: 'assetClass', label: 'Asset class', kind: 'word' },
+  { key: 'category', label: 'Category', kind: 'category', optional: true },
   { key: 'style', label: 'Style', kind: 'word' },
   { key: 'vehicle', label: 'Vehicle', kind: 'word' },
   { key: 'shareClass', label: 'Share class', kind: 'share', optional: true },
@@ -10274,8 +10283,8 @@ function prdFigureProblem(d, key, label, required) {
   }
   return '';
 }
-/* {field: message} for a draft. ctx: { isNew, feeGroups: [], takenIds:
-   {id: name}, withdrawnIds: {id: name} } */
+/* {field: message} for a draft. ctx: { isNew, feeGroups: [], categories: [],
+   takenIds: {id: name}, withdrawnIds: {id: name} } */
 function prdProblems(d, ctx) {
   var out = {};
   var id = String(d.productId || '').trim();
@@ -10299,6 +10308,9 @@ function prdProblems(d, ctx) {
     if (!w) out[f.key] = f.label + ' is needed.';
     else if (w.length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.toLowerCase() + ' to ' + PRD_MAX.word + ' characters.';
   });
+  if (d.category && ctx.categories && ctx.categories.indexOf(d.category) === -1) {
+    out.category = 'The category ' + d.category + ' is not one the sleeves are built for.';
+  }
   if (d.shareClass && PRD_SHARE_CLASSES.indexOf(d.shareClass) === -1) {
     out.shareClass = 'The share class must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or none.';
   }
@@ -15544,7 +15556,7 @@ function catColumns() {
 }
 /* Banded (D100): the visible rows under their sleeve categories, in the
    repository's own order, the unplaced last. */
-function catBandOrder() { return repo.data.categories.concat([UNPLACED]); }
+function catBandOrder() { return repo.data.categories.concat([NO_CATEGORY]); }
 function catBands() { return catGroups(catVisible(), catBandOrder(), cat.filters.category); }
 function catShut(key) { return cat.folded.indexOf(key) !== -1; }
 /* every row the table holds, in the order it holds them, each with the band
@@ -15731,7 +15743,7 @@ function catColumnLabel(key) {
 }
 
 function catFacetsHtml() {
-  var orders = { category: repo.data.categories.concat([UNPLACED]), book: repo.data.variants.concat([UNPLACED]) };
+  var orders = { category: repo.data.categories.concat([NO_CATEGORY]), book: repo.data.variants.concat([UNPLACED]) };
   var facets = catFacets(catRows(), CAT_FACETS, cat, orders);
   return '<div class="cat-facets" id="catFacets">'
     + CAT_FACETS.map(function (f) {
@@ -15869,6 +15881,7 @@ function catCompareHtml() {
     + '</tr></thead><tbody>'
     + section('Terms')
     + line('Asset class', function (r) { return esc(r.p.assetClass); })
+    + line('Category', function (r) { return esc(r.p.category || '—'); })
     + line('Vehicle · style', function (r) { return esc(r.p.vehicle) + ' · ' + esc(r.p.style); })
     + line('Source', function (r) { return esc(r.p.source); })
     + line('Exposure', function (r) { return esc(r.p.exposureCurrency); })
@@ -15940,7 +15953,8 @@ function prdCtx(isNew) {
   var taken = {}, gone = {};
   prdLive().forEach(function (p) { taken[p.productId] = p.name; });
   prdWithdrawn().forEach(function (p) { gone[p.productId] = p.name; });
-  return { isNew: isNew, feeGroups: (repo.data && repo.data.feeGroups) || [], takenIds: taken, withdrawnIds: gone };
+  return { isNew: isNew, feeGroups: (repo.data && repo.data.feeGroups) || [],
+           categories: (repo.data && repo.data.categories) || [], takenIds: taken, withdrawnIds: gone };
 }
 function prdProblemsNow() { return prd.draft ? prdProblems(prd.draft, prdCtx(prd.mode === 'new')) : {}; }
 function prdDirty() {
@@ -16169,6 +16183,7 @@ function prdViewHtml(row) {
     + '<div class="m"><small>Net</small><b>' + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</b></div>'
     + '</div>'
     + '<dl class="cat-dl">'
+    + '<dt>Category</dt><dd>' + esc(p.category || '—') + '</dd>'
     + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
     + '<dt>Share class</dt><dd>' + esc(p.shareClass || '—') + '</dd>'
     + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
@@ -16211,6 +16226,16 @@ function prdFieldHtml(f, d, probs) {
       + [['', 'None']].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, s]; })).map(function (o) {
           return '<option value="' + esc(o[0]) + '"' + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
         }).join('') + '</select>';
+  } else if (f.kind === 'category') {
+    /* the library's categories (D178); one the library no longer has stays
+       offered while the product holds it, so opening the form changes nothing */
+    var cats = ((repo.data && repo.data.categories) || []).slice();
+    if (d[f.key] && cats.indexOf(d[f.key]) === -1) cats.push(d[f.key]);
+    input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
+      + '<option value=""' + (d[f.key] ? '' : ' selected') + '>None</option>'
+      + cats.map(function (c) { return '<option value="' + esc(c) + '"' + (d[f.key] === c ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('')
+      + '</select>';
+    hint = '<small class="prd-hint">The band the catalogue shows it under.</small>';
   } else if (f.kind === 'group') {
     var groups = (repo.data && repo.data.feeGroups) || [];
     input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
@@ -16515,15 +16540,23 @@ function impClick(el) {
 function catOrphansHtml() {
   var orphans = repo.data.orphans || [];
   if (!orphans.length) return '';
+  /* one line, the list folded: a new product file can leave most of the
+     library pointing at products it no longer has */
+  var sleeves = {};
+  orphans.forEach(function (o) { o.sleeves.forEach(function (s) { sleeves[s.id] = true; }); });
+  var nSleeves = Object.keys(sleeves).length;
   return '<div class="repo-notice cat-orphans" role="status">'
     + '<span>' + orphans.length + ' product' + (orphans.length === 1 ? '' : 's') + ' referenced by sleeves '
-    + (orphans.length === 1 ? 'is' : 'are') + ' not in this catalogue; those sleeves are withheld from the pickers.</span>'
-    + orphans.map(function (o) {
-        return '<span class="cat-orphan"><b>' + esc(o.productId) + '</b> in '
+    + (orphans.length === 1 ? 'is' : 'are') + ' not in this catalogue, so ' + nSleeves + ' sleeve'
+    + (nSleeves === 1 ? ' is' : 's are') + ' withheld from the pickers.</span>'
+    + '<button type="button" class="cat-clear" data-catorphans aria-expanded="' + (cat.orphansOpen ? 'true' : 'false') + '">'
+    + (cat.orphansOpen ? 'Hide the list' : 'Show the list') + '</button>'
+    + (cat.orphansOpen ? '<div class="cat-orphan-list">' + orphans.map(function (o) {
+        return '<div class="cat-orphan"><b>' + esc(o.productId) + '</b><span>'
           + o.sleeves.map(function (s) {
               return '<button type="button" class="cat-link" data-catopen="' + s.id + '">' + esc(s.name) + ' (' + esc(s.variant) + ')</button>';
-            }).join(', ') + '</span>';
-      }).join('')
+            }).join(', ') + '</span></div>';
+      }).join('') + '</div>' : '')
     + '</div>';
 }
 
@@ -19030,7 +19063,7 @@ document.addEventListener('click', function (e) {
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
-    + '[data-catrow],[data-catopen],[data-catgroup],[data-catfold],[data-catfoldall],'
+    + '[data-catrow],[data-catopen],[data-catorphans],[data-catgroup],[data-catfold],[data-catfoldall],'
     + '[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
@@ -19342,6 +19375,7 @@ document.addEventListener('click', function (e) {
   if (ds.catclearpins !== undefined) { cat.pins = []; cat.compare = false; render(); return; }
   if (ds.catcompare !== undefined) { if (cat.pins.length || cat.compare) { cat.compare = !cat.compare; cat.detail = null; render(); } return; }
   if (ds.catdetailclose !== undefined) { cat.detail = null; prd.confirm = null; prd.flash = ''; render(); catFocusCursor(); return; }
+  if (ds.catorphans !== undefined) { cat.orphansOpen = !cat.orphansOpen; render(); return; }
   if (ds.catopen !== undefined) {
     var used = sleeveById(parseInt(ds.catopen, 10));
     if (used) {

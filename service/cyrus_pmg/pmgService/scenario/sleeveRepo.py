@@ -139,8 +139,10 @@ WEIGHT_TOLERANCE = 1e-6
 #: 7 the product catalogue and its history (D165) and the fee card, a policy
 #: kind (D166) - each loaded once from the file it used to be read from;
 #: 8 a sleeve can be disabled - kept in the library, not offered to PWAs - and
-#: every disable and enable is on the record in sleeveSwitches (D169).
-SCHEMA_VERSION = 8
+#: every disable and enable is on the record in sleeveSwitches (D169);
+#: 9 a product has a category of its own, the one the catalogue bands it under
+#: (D178).
+SCHEMA_VERSION = 9
 
 #: what a history row's action can say. baseline is the one nobody performed:
 #: it is the state a sleeve was in when history started being kept.
@@ -245,6 +247,7 @@ CREATE TABLE IF NOT EXISTS products (
     name              TEXT NOT NULL,
     ticker            TEXT NOT NULL DEFAULT '',
     assetClass        TEXT NOT NULL DEFAULT '',
+    category          TEXT NOT NULL DEFAULT '',
     style             TEXT NOT NULL DEFAULT '',
     vehicle           TEXT NOT NULL DEFAULT '',
     shareClass        TEXT NOT NULL DEFAULT '',
@@ -570,6 +573,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute("ALTER TABLE sleeves ADD COLUMN disabledBy TEXT NOT NULL DEFAULT ''")
             conn.execute("ALTER TABLE sleeves ADD COLUMN disabledAt TEXT NOT NULL DEFAULT ''")
+
+    # 8 -> 9 (D178): a product's own category. Additive and blank for every
+    # product already here, which the catalogue bands by its sleeves as before
+    # until a file or the form gives it one.
+    productColumns = {r['name'] for r in conn.execute('PRAGMA table_info(products)')}
+    if productColumns and 'category' not in productColumns:
+        with conn:
+            conn.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT ''")
 
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.

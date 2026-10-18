@@ -581,6 +581,10 @@ const sleeves2 = sleeves.concat([{ id: 3, variant: 'T1', category: 'Equity', nam
                                   products: [{ productId: 'a', weight: 1.0 }] }]);
 const rows2 = catEnrich(products, sleeves2, 2000000);
 const onlyEquity = { query: '', filters: { category: ['Equity'] } };
+// D178: a product's own category bands it, whatever its sleeves' are
+const own = products.map(p => p.productId === 'c' ? Object.assign({}, p, { category: 'Hedge Funds' })
+                             : p.productId === 'a' ? Object.assign({}, p, { category: 'Equity' }) : p);
+const rows3 = catEnrich(own, sleeves2, 2000000);
 const bands = (rs, order, chosen) => catGroups(rs, order, chosen).map(g => ({
   key: g.key, ids: ids(g.rows), lo: +g.lo.toFixed(2), hi: +g.hi.toFixed(2), notDaily: g.notDaily }));
 process.stdout.write(JSON.stringify({
@@ -592,18 +596,21 @@ process.stdout.write(JSON.stringify({
   facetsOtherFilters: catFacets(rows, facets, { query: '', filters: { vehicle: ['ETF'] } }, {}),
   byVehicle: run({ query: '', filters: { vehicle: ['SMA', 'ETF'] } }, null),
   byBook: run({ query: '', filters: { book: ['T2'] } }, null),
-  unplaced: run({ query: '', filters: { category: ['Not yet placed'] } }, null),
+  unplaced: run({ query: '', filters: { category: ['No category'] } }, null),
   bySearch: run({ query: 'gam', filters: {} }, null),
   costAsc: run(none, { key: 'productCost', dir: 'asc' }),
   yieldDesc: run(none, { key: 'distributionYield', dir: 'desc' }),
   yieldAsc: run(none, { key: 'distributionYield', dir: 'asc' }),
   minAsc: run(none, { key: 'minimumInvestment', dir: 'asc' }),
   best: catBest(rows),
-  banded: bands(catSort(rows, { key: 'productCost', dir: 'desc' }), ['Fixed Income', 'Not yet placed']),
-  bandOrder: bands(rows, ['Not yet placed', 'Fixed Income']).map(g => g.key),
-  twice: bands(rows2, ['Equity', 'Fixed Income', 'Not yet placed']),
-  chosen: bands(catFilter(rows2, onlyEquity), ['Equity', 'Fixed Income', 'Not yet placed'], ['Equity']),
-  unlisted: bands(rows2, ['Not yet placed']).map(g => g.key),
+  banded: bands(catSort(rows, { key: 'productCost', dir: 'desc' }), ['Fixed Income', 'No category']),
+  bandOrder: bands(rows, ['No category', 'Fixed Income']).map(g => g.key),
+  twice: bands(rows2, ['Equity', 'Fixed Income', 'No category']),
+  chosen: bands(catFilter(rows2, onlyEquity), ['Equity', 'Fixed Income', 'No category'], ['Equity']),
+  unlisted: bands(rows2, ['No category']).map(g => g.key),
+  ownBands: bands(rows3, ['Equity', 'Fixed Income', 'Hedge Funds', 'No category']).map(g => [g.key, g.ids]),
+  ownFacet: catFacets(rows3, [{ key: 'category' }], none, {}).category,
+  ownSearch: ids(catFilter(rows3, { query: 'hedge', filters: {} })),
   nothing: catGroups([], ['Fixed Income']),
 }));
 ''' % (json.dumps(productsFx), json.dumps(sleevesFx), json.dumps(facets))
@@ -620,7 +627,7 @@ process.stdout.write(JSON.stringify({
     assert (c['net'], c['used'], c['cats'], c['books']) == (None, 0, [], []), 'no yield means no net; unplaced means empty joins'
     assert got['noMandate'] == [False, False, False], 'no mandate open: nothing flagged'
     f = got['facets']
-    assert f['category'] == [{'value': 'Fixed Income', 'count': 2}, {'value': 'Not yet placed', 'count': 1}]
+    assert f['category'] == [{'value': 'Fixed Income', 'count': 2}, {'value': 'No category', 'count': 1}]
     assert f['book'] == [{'value': 'T1', 'count': 2}, {'value': 'T2', 'count': 1}, {'value': 'Not yet placed', 'count': 1}]
     assert f['liquidity'] == [{'value': 'Daily', 'count': 2}, {'value': 'Quarterly', 'count': 1}]
     # with Vehicle = ETF in force, every OTHER facet counts only the ETF, and
@@ -639,14 +646,21 @@ process.stdout.write(JSON.stringify({
     # its count, its product-cost range and how many of its products are not daily
     assert got['banded'] == [
         {'key': 'Fixed Income', 'ids': ['b', 'a'], 'lo': 0.14, 'hi': 0.28, 'notDaily': 0},
-        {'key': 'Not yet placed', 'ids': ['c'], 'lo': 0.90, 'hi': 0.90, 'notDaily': 1}]
-    assert got['bandOrder'] == ['Not yet placed', 'Fixed Income'], 'the order is the one handed in, not first come'
+        {'key': 'No category', 'ids': ['c'], 'lo': 0.90, 'hi': 0.90, 'notDaily': 1}]
+    assert got['bandOrder'] == ['No category', 'Fixed Income'], 'the order is the one handed in, not first come'
     # category is a join: a product two categories hold stands in both bands ...
     assert [(g['key'], g['ids']) for g in got['twice']] == [
-        ('Equity', ['a']), ('Fixed Income', ['a', 'b']), ('Not yet placed', ['c'])]
+        ('Equity', ['a']), ('Fixed Income', ['a', 'b']), ('No category', ['c'])]
     # ... and with a category filter in force, only the chosen categories make bands
     assert [(g['key'], g['ids']) for g in got['chosen']] == [('Equity', ['a'])]
-    assert got['unlisted'] == ['Not yet placed', 'Equity', 'Fixed Income'], 'a category the order does not name comes after, by name'
+    assert got['unlisted'] == ['No category', 'Equity', 'Fixed Income'], 'a category the order does not name comes after, by name'
+    # D178: a product's own category is its one band - a, held by Equity and
+    # Fixed Income sleeves, stands only under its own; c, in no sleeve, under
+    # its own; b, with none of its own, still by its sleeves
+    assert got['ownBands'] == [['Equity', ['a']], ['Fixed Income', ['b']], ['Hedge Funds', ['c']]]
+    assert got['ownFacet'] == [{'value': 'Equity', 'count': 1}, {'value': 'Fixed Income', 'count': 1},
+                               {'value': 'Hedge Funds', 'count': 1}]
+    assert got['ownSearch'] == ['c'], 'the search reads the category too'
     assert got['nothing'] == []
 
 

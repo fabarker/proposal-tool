@@ -865,3 +865,8 @@ def test_the_charges_go_from_the_scenario_to_the_deck_and_the_register(monkeypat
     finally:
         conn.close()
     assert json.loads(held)['custodyFee'] == 5000
+
+
+def test_the_check_takes_a_template_without_a_cover_marker_to_have_its_own(tmp_path):
+    _template(tmp_path, lambda prs: _dropMarker(prs, 'cover'))
+    assert houseTemplate.report(str(tmp_path / 'template.pptx'))['unmarked'] == []

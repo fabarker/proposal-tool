@@ -2030,6 +2030,7 @@ columns, three optional:
 | `Name` | text | Non-empty. |
 | `Ticker` | text | May be blank (shown as `—`). |
 | `AssetClass` | text | Free text; shown in the table. |
+| `Category` | text, optional | The sleeve category the catalogue groups the product under (D178): one of the library's categories (`Investment Grade Fixed Income`, `Public Equity`, `Hedge Funds`, …), spelled as the library spells it - an import refuses any other. The column may also be headed `Catagory` or `Group`. Blank, or the column absent, means none: the catalogue then bands the product by the sleeves that hold it, or under *No category*. |
 | `Style` | text | Free text; one of the five composition doughnuts (D31, D73) groups by its distinct values. |
 | `Vehicle` | text | Free text; a doughnut axis (e.g. `SMA`, `Mutual Fund`, `ETF`). |
 | `ShareClass` | text, optional | `Distributing` or `Accumulating`, and nothing else — any other value is refused on load. The short forms `Dis` and `Acc` an older delivery used are read as the words (D164). Blank, or the column absent, means the product has no share class and the cell prints as a dash (D81). |
@@ -2044,8 +2045,8 @@ columns, three optional:
 Refused, whole and naming the row (`BadCatalogue`): a missing required column, a duplicate
 `ProductId`, an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/
 `MinimumInvestment`, a `FeeGroup` outside the set. An import - not the first load - also needs the
-six words (`AssetClass` to `ExposureCurrency`) and refuses a cost of 10 or more or a yield of 50 or
-more as a figure in the wrong unit. A product a live sleeve holds cannot be withdrawn by an import.
+six words (`AssetClass` to `ExposureCurrency`), refuses a `Category` the library does not know, and
+refuses a cost of 10 or more or a yield of 50 or more as a figure in the wrong unit. A product a live sleeve holds cannot be withdrawn by an import.
 
 ### C.3 The sleeve seed — `sleeves.csv` (`SCENARIO_SLEEVES_SEED`; `sleeveRepo.py`)
 

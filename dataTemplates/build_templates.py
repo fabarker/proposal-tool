@@ -89,6 +89,10 @@ SHEETS = [
             ('Name', 'yes', 'text', 'Non-empty. What the proposal prints.'),
             ('Ticker', 'no', 'text', 'May be blank; blank shows as an em dash on screen.'),
             ('AssetClass', 'yes', 'text', 'Free text. Printed as the row label under its category.'),
+            ('Category', 'optional', 'text',
+             'The sleeve category the catalogue groups the product under: one the library knows, '
+             'spelled as it spells it, e.g. Public Equity - a typo is refused on import. The '
+             'column may also be headed Catagory or Group. Blank for none.'),
             ('Style', 'yes', 'text', 'Free text. One of the five composition doughnuts groups by this.'),
             ('Vehicle', 'yes', 'text', 'Free text, e.g. SMA, Mutual Fund, ETF. A doughnut axis.'),
             ('ShareClass', 'optional', 'text',

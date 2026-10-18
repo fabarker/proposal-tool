@@ -5,9 +5,12 @@ This is the *product database* the Proposal Tool's sleeve repository selects
 from, expressed as the one-table extract that database would hand over - one
 row per product, one column per field:
 
-    ProductId  Name  Ticker  AssetClass  Style  Vehicle  Source
-    Liquidity  ExposureCurrency  ProductCost  FeeGroup
+    ProductId  Name  Ticker  AssetClass  Category  Style  Vehicle  ShareClass
+    Source  Liquidity  ExposureCurrency  ProductCost  FeeGroup
     DistributionYield  MinimumInvestment
+
+Category is the sleeve category the catalogue bands the product under (D178),
+one of the library's categories or blank.
 
 The last two are the catalogue's only figures beyond cost (D63): the
 distribution yield, percent per annum as delivered, and the minimum
@@ -40,9 +43,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(HERE, 'products.csv')
 XLSX_PATH = os.path.join(HERE, 'products.xlsx')
 
-COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Style', 'Vehicle', 'Source',
-           'Liquidity', 'ExposureCurrency', 'ProductCost', 'FeeGroup',
+COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Category', 'Style', 'Vehicle',
+           'ShareClass', 'Source', 'Liquidity', 'ExposureCurrency', 'ProductCost', 'FeeGroup',
            'DistributionYield', 'MinimumInvestment']
+COST, GROUP, YIELD, MINIMUM = (COLUMNS.index(c) for c in
+                               ('ProductCost', 'FeeGroup', 'DistributionYield', 'MinimumInvestment'))
 
 
 def readCsv():
@@ -63,12 +68,12 @@ def validate(rows):
         if not row[1].strip():
             sys.exit('{}: empty Name'.format(row[0]))
         try:
-            float(row[9])
+            float(row[COST])
         except ValueError:
-            sys.exit('{}: ProductCost {!r} is not a number'.format(row[0], row[9]))
-        if not row[10].strip():
+            sys.exit('{}: ProductCost {!r} is not a number'.format(row[0], row[COST]))
+        if not row[GROUP].strip():
             sys.exit('{}: empty FeeGroup'.format(row[0]))
-        for i, label in ((11, 'DistributionYield'), (12, 'MinimumInvestment')):
+        for i, label in ((YIELD, 'DistributionYield'), (MINIMUM, 'MinimumInvestment')):
             if row[i].strip():
                 try:
                     if float(row[i]) < 0:
@@ -85,9 +90,9 @@ def writeXlsx(rows):
     sheet.append(COLUMNS)
     for row in rows:
         out = list(row)
-        out[9] = float(out[9])
-        out[11] = float(out[11]) if out[11].strip() else None
-        out[12] = float(out[12]) if out[12].strip() else None
+        out[COST] = float(out[COST])
+        out[YIELD] = float(out[YIELD]) if out[YIELD].strip() else None
+        out[MINIMUM] = float(out[MINIMUM]) if out[MINIMUM].strip() else None
         sheet.append(out)
     book.save(XLSX_PATH)
 
@@ -96,7 +101,7 @@ def main():
     rows = readCsv()
     validate(rows)
     writeXlsx(rows)
-    groups = sorted({row[10] for row in rows})
+    groups = sorted({row[GROUP] for row in rows})
     print('products.csv  {} products'.format(len(rows)))
     print('products.xlsx written')
     print('fee groups    {}'.format(', '.join(groups)))
