@@ -93,8 +93,8 @@ def categoryProductIds(category, variant) -> list:
     try:
         held = {r['productId'] for r in conn.execute(
             'SELECT DISTINCT p.productId FROM sleeveProducts p JOIN sleeves s ON s.id = p.sleeveId '
-            "WHERE s.deletedAt = '' AND s.variant = ? AND s.category = ?",
-            (variant, category))}
+            "WHERE s.deletedAt = '' AND {} AND s.category = ?".format(sleeveRepo.underType('s.variant')),
+            (sleeveRepo.typeArg(variant), category))}
     finally:
         conn.close()
     return [p['productId'] for p in products.all() if p['productId'] in held]

@@ -732,3 +732,34 @@ def test_the_new_edition_forms_review_wiring():
     assert 'svKeptGoneText' in _body(src, 'svKeptOfferHtml')
     revive = _body(src, 'ncRevive')
     assert 'neBlankRule()' in revive and 'edProductsSig' in revive
+
+
+def test_a_shared_sleeve_is_in_every_one_of_its_types_views():
+    """A sleeve shared by several types (D179) names them in variants; its
+    variant is the words for them. The filters, the new-sleeve checks and
+    the sources list ask each type, never the words."""
+    lib = SLEEVES + [
+        {'id': 9, 'variant': 'T1, T2', 'variants': ['T1', 'T2'], 'shared': True, 'category': 'Bonds',
+         'name': 'Core', 'label': '', 'createdAt': None, 'problems': [],
+         'products': [{'weight': 1.0, 'productId': 'x', 'product': {'name': 'Core SMA', 'vehicle': 'SMA', 'productCost': 0.2}}]}]
+    got = _node(_helpers(_source()) + '''
+const lib = %s;
+const ids = rows => rows.map(r => r.id);
+process.stdout.write(JSON.stringify({
+  types: [svTypes(lib[4]), svTypes(lib[0]), svUnder(lib[4], 'T2'), svUnder(lib[0], 'T2'), svShares(lib[4], lib[1])],
+  t2Bonds: ids(svFilter(lib, { variant: 'T2', category: 'Bonds', query: '' })),
+  t1Bonds: ids(svFilter(lib, { variant: 'T1', category: 'Bonds', query: '' })),
+  taken: svAvail(lib, [], 'T2', 'Bonds', 'core').kind,
+  free: svAvail(lib, [], 'T3', 'Bonds', 'core').ok,
+  elsewhere: svNameElsewhere(lib, ['T1', 'T2', 'T3'], ['T3'], 'Bonds', 'Core').map(h => h.variant),
+  sources: svSources(lib, { category: 'Bonds', variants: ['T2'], order: ['T1', 'T2'] }).map(e => [e.s.id, e.types]),
+  follow: svFollow({ fv: 'T3', fc: '' }, lib[4]).fv,
+  stay: svFollow({ fv: 'T2', fc: '' }, lib[4]).fv,
+}));
+''' % json.dumps(lib))
+    assert got['types'] == [['T1', 'T2'], ['T1'], True, False, True]
+    assert got['t2Bonds'] == [9] and got['t1Bonds'] == [3, 9]
+    assert got['taken'] == 'taken' and got['free'] is True
+    assert got['elsewhere'] == ['T1', 'T2']
+    assert got['sources'] == [[9, ['T1', 'T2']]]
+    assert got['follow'] == 'T1' and got['stay'] == 'T2'

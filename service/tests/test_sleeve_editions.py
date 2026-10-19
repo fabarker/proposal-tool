@@ -273,7 +273,7 @@ def test_an_overlap_that_arrives_after_the_fact_withholds_the_name_and_flags_bot
 
 def test_the_old_seed_loads_unchanged_as_fallbacks():
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 9      # D152, D155, D165, D169, D178
+    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 10     # D152, D155, D165, D169, D178, D179
     entries = sleeveRepo.listAll()
     assert len(entries) == 102 and all(e['fallback'] for e in entries)
     assert sleeveRepo.census()['editions'] == 0
@@ -391,7 +391,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
 
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == 9 and store['sleeves'] == 1       # to 9 in one open (D152, D155, D165, D169, D178)
+    assert store['schemaVersion'] == 10 and store['sleeves'] == 1      # to 10 in one open (D152, D155, D165, D169, D178, D179)
     conn = sqlite3.connect(str(path))
     columns = {r[1] for r in conn.execute('PRAGMA table_info(sleeves)')}
     history = {r[1] for r in conn.execute('PRAGMA table_info(sleeveHistory)')}
@@ -408,7 +408,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     # and the migrated store takes an edition like any other
     made = sleeveRepo.addEdition(7, 'GBP', [{'currency': 'GBP'}], _products(), user='desk')
     assert made['applies'] == 43
-    assert sleeveRepo.describe()['schemaVersion'] == 9, 'opening again is a no-op'
+    assert sleeveRepo.describe()['schemaVersion'] == 10, 'opening again is a no-op'
 
 
 # ---- the endpoints ---------------------------------------------------------------
@@ -487,8 +487,9 @@ def test_the_new_routes_are_admin_only_and_the_count_is_thirty_seven():
                 d.call.__name__ for d in route.dependant.dependencies]
     # 32, the funding split's five (D148), the overlays' five (D155), the
     # catalogue's nine (D165), the fee card's seven (D166), the sleeve switch (D169), custom sleeves' one (D170)
-    # custom portfolios' three (D171) and the custom workflows' switch (D172); no settings routes (D173)
-    assert len(found) == 64
+    # custom portfolios' three (D171) and the custom workflows' switch (D172); no settings routes (D173);
+    # where a sleeve is offered (D179)
+    assert len(found) == 65
     assert 'requireAdmin' in found[('/scenario/repository/sleeves/{sleeveId}/editions', ('POST',))]
     assert 'requireAdmin' in found[('/scenario/repository/applicability', ('POST',))]
 

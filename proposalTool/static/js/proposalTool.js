@@ -9934,7 +9934,8 @@ var act = {
   entries: [], next: null, total: 0, facets: null, earliest: '',
   busy: false, loaded: false, error: null
 };
-var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'withdrawn', 'restored', 'imported', 'disabled', 'enabled'];
+var ACT_ACTIONS = ['created', 'updated', 'reverted', 'deleted', 'withdrawn', 'restored', 'imported', 'disabled', 'enabled',
+                   'shared', 'unshared', 'split'];
 
 /* The proposal register (D69): every delivered proposal, for ever. The page
    holds what the server handed back; a filter change is a fresh read. The
@@ -10015,9 +10016,12 @@ var UNPLACED = 'Not yet placed';
 function canAdmin() { return !!App.opt('capabilities.canAdmin', false); }
 
 /* ---- data helpers ------------------------------------------------------- */
+/* the type to open a sleeve under: the one in view, when it is offered
+   there (svTypes and svUnder are with the view's pure helpers, D179) */
+function svHome(s) { return svUnder(s, repo.variant) ? repo.variant : (svTypes(s)[0] || repo.variant); }
 function sleevesIn(variant, category) {
   return (repo.data && repo.data.sleeves || []).filter(function (s) {
-    return s.variant === variant && s.category === category;
+    return svUnder(s, variant) && s.category === category;
   });
 }
 function archivedSleeves() { return (repo.data && repo.data.archived) || []; }
@@ -10074,7 +10078,7 @@ function catJoin(sleeves) {
       var j = map[r.productId] = map[r.productId] || { used: 0, categories: [], books: [] };
       j.used += 1;
       if (j.categories.indexOf(s.category) === -1) j.categories.push(s.category);
-      if (j.books.indexOf(s.variant) === -1) j.books.push(s.variant);
+      (s.variants || [s.variant]).forEach(function (v) { if (j.books.indexOf(v) === -1) j.books.push(v); });
     });
   });
   return map;
@@ -10734,7 +10738,7 @@ function usedIn(productId) {
   var out = [];
   (repo.data.sleeves || []).forEach(function (s) {
     (s.products || []).forEach(function (r) {
-      if (r.productId === productId) out.push({ id: s.id, variant: s.variant, category: s.category, name: s.name, weight: r.weight });
+      if (r.productId === productId) out.push({ id: s.id, variant: s.variant, variants: svTypes(s), category: s.category, name: s.name, weight: r.weight });
     });
   });
   return out;
@@ -10771,7 +10775,9 @@ function newDraft(create, edition) {
   var draft = { id: null, name: '', note: '', label: '', rules: [], products: [] };
   if (edition) {
     var from = sleeveById(edition.ofId);
-    draft.edition = { ofId: edition.ofId, variant: from ? from.variant : repo.variant,
+    /* under the types the name's edition is offered under (D179) */
+    draft.edition = { ofId: edition.ofId, variant: from ? svHome(from) : repo.variant,
+                      variants: from ? svTypes(from) : [repo.variant],
                       category: from ? from.category : repo.category };
     draft.name = from ? from.name : edition.name;
     /* the note is the edition's own, shown on its form - never copied unseen */
@@ -10817,7 +10823,16 @@ function draftVariant(d) {
   if (d.edition) return d.edition.variant;
   if (d.create) return (d.variants || [])[0] || repo.variant;
   var e = d.id ? sleeveById(d.id) : null;
-  return e ? e.variant : repo.variant;
+  return e ? svHome(e) : repo.variant;
+}
+/* every type it is offered under (D179): a shared sleeve meets the sleeves
+   of each of them */
+function draftVariants(d) {
+  if (!d) return [repo.variant];
+  if (d.edition) return d.edition.variants || [d.edition.variant];
+  if (d.create) return (d.variants || []).length ? d.variants : [repo.variant];
+  var e = d.id ? sleeveById(d.id) : null;
+  return e ? svTypes(e) : [repo.variant];
 }
 function draftCategory(d) {
   if (!d) return repo.category;
@@ -10833,15 +10848,16 @@ function markDirty() {
        product - choosing where it goes is not yet work to lose (D157) */
     && (!repo.draft.create || !!(repo.draft.name.trim() || repo.draft.note.trim() || repo.draft.products.length));
 }
-/* Renaming a sleeve renames it under this implementation type only; the
-   sleeves of the old name under the others keep it, and are no longer the
-   same sleeve (D156 QA 15). Said before the save, not discovered after. */
+/* Renaming a sleeve renames it under its own types only - every type a
+   shared one is offered under (D179); the sleeves of the old name under the
+   others keep it, and are no longer the same sleeve (D156 QA 15). Said
+   before the save, not discovered after. */
 function renameWarning() {
   var d = repo.draft; if (!d || !d.id) return '';
   var e = sleeveById(d.id); if (!e || d.name.trim() === e.name) return '';
-  var others = (e.offeredUnder || []).filter(function (v) { return v !== e.variant; });
+  var others = (e.offeredUnder || []).filter(function (v) { return !svUnder(e, v); });
   if (!others.length) return '';
-  return 'Renaming changes the name under ' + e.variant + ' only. The sleeves called ' + e.name + ' under '
+  return 'Renaming changes the name under ' + svJoinAnd(svTypes(e)) + ' only. The sleeves called ' + e.name + ' under '
     + others.join(', ') + ' keep their name and stop being offered as the same sleeve.';
 }
 /* the rules as the server takes them: only the fields with something ticked */
@@ -10864,10 +10880,11 @@ function describeRules(rules) {
 /* the live editions of one name in one book and category, the draft's own
    siblings: what its label and rules must not collide with */
 function siblingsOf(d) {
-  var variant = draftVariant(d);
+  var variants = draftVariants(d);
   var category = draftCategory(d);
-  return sleevesIn(variant, category).filter(function (s) {
-    return s.name.trim().toLowerCase() === (d.name || '').trim().toLowerCase() && s.id !== d.id;
+  return (repo.data && repo.data.sleeves || []).filter(function (s) {
+    return s.category === category && variants.some(function (v) { return svUnder(s, v); })
+      && s.name.trim().toLowerCase() === (d.name || '').trim().toLowerCase() && s.id !== d.id;
   });
 }
 function total() {
@@ -11172,6 +11189,14 @@ function closeRepository(force) {
 }
 
 /* ---- moving between sleeves with unsaved changes ------------------------ */
+/* A target's type: one the console knows, or - where it was read from a
+   shared sleeve, whose variant is the words for its types (D179) - the
+   sleeve's own home among them. */
+function svTargetType(t) {
+  if (!repo.data || repo.data.variants.indexOf(t.variant) !== -1) return t.variant;
+  var s = t.to != null ? sleeveById(t.to) : (t.edition ? sleeveById(t.edition.ofId) : null);
+  return s ? svHome(s) : repo.variant;
+}
 function goTo(target) {
   /* target: { to, variant, category, fresh } - the destination, applied at
      once when there is nothing unsaved, otherwise held until the admin says */
@@ -11215,7 +11240,7 @@ function applyTarget(t) {
     if (t.fresh) sv.focus = '#repoName||#repoLabel||#repoNote';
     else if (t.to != null) sv.focus = sv.mode === 'table' ? '#svDrawerTitle' : '#svTitle';
   }
-  if (t.variant) repo.variant = t.variant;
+  if (t.variant) repo.variant = svTargetType(t);
   if (t.category) repo.category = t.category;
   repo.view = 'sleeves';
   /* the history belongs to the sleeve that was open, not to the next one */
@@ -11246,7 +11271,7 @@ function openRevisionFrom(sleeveId, revisionNumber, archived) {
     arc.detail = sleeveId; switchView('archive'); land(); return;
   }
   var entry = sleeveById(sleeveId); if (!entry) return;
-  goTo({ variant: entry.variant, category: entry.category, to: sleeveId, then: land });
+  goTo({ variant: svHome(entry), category: entry.category, to: sleeveId, then: land });
 }
 
 function resolveLeaving(discard) {
@@ -11329,11 +11354,11 @@ async function saveDraft() {
         if (!d.id) repo.data.store.sleeves = (repo.data.store.sleeves || 0) + madeAll.length;
       }
       /* land on the one in the book being looked at, if it is among them */
-      var here = madeAll.filter(function (m) { return m.variant === repo.variant; })[0] || madeAll[0];
+      var here = madeAll.filter(function (m) { return svUnder(m, repo.variant); })[0] || madeAll[0];
       /* a new sleeve copied from another says so on its page, for this visit:
          it is a separate sleeve from now on (D157) */
       var from = d.create ? ncSource(d) : null;
-      repo.category = here.category; repo.variant = here.variant;
+      repo.category = here.category; repo.variant = svHome(here);
       var trailOpen = repo.historyOpen && repo.history && repo.history.sleeveId === here.id;
       loadDraft(here.id);
       /* a new edition says so on its page, for this visit (D158) */
@@ -11343,7 +11368,7 @@ async function saveDraft() {
                               keeps: covAt ? edKeepsWords(covAt.fallback, covAt.keeps.filter(function (k) { return k.n; }), !!neFallbackOf(last)) : '' };
       }
       if (d.create) sv.createdFrom = { ids: madeAll.map(function (m) { return m.id; }), made: last.name,
-                                       under: madeAll.map(function (m) { return m.variant; }),
+                                       under: svTypes(last), shared: !!last.shared,
                                        name: from ? from.name : (d.sourceName || null), variant: from ? from.variant : null };
       forgetLibrary(last.category);
       /* a trail left open across a save would be one revision behind, which is
@@ -11365,7 +11390,8 @@ async function saveDraft() {
       App.announce('polite', d.edition
         ? 'Created the ' + last.label + ' edition of ' + last.name + ' for ' + svPlural(last.applies || 0, 'portfolio') + '. You are on its page.'
         : d.create
-        ? 'Created ' + last.name + ' under ' + svJoinAnd(madeAll.map(function (m) { return m.variant; }))
+        ? 'Created ' + last.name + ' under ' + svJoinAnd(svTypes(last))
+          + (last.shared ? ', one sleeve shared by them' : '')
           + (from ? ', from a copy of ' + from.name : '') + '. You are on its page.'
         : madeAll.length > 1
         ? 'Saved ' + last.name + ' under ' + madeAll.length + ' implementation types, revision '
@@ -11421,40 +11447,43 @@ async function deleteCurrent() {
   repo.saving = false; repo.confirmDelete = false; render();
 }
 
-/* Take a sleeve as defined in one book and offer it in another: the same
-   name, the same products, created there. It is the create call with the
-   source's own contents, so it meets exactly the rules a hand-built sleeve
-   meets - the name must be free in the target, and a fixed category that
-   already holds its one sleeve refuses (D61). */
-async function copyToVariant(sleeveId, variant) {
-  var entry = sleeveById(sleeveId); if (!entry) return;
+/* Where a sleeve is offered (D179): 'share' offers it under one more type -
+   the same sleeve, so an edit under either changes both; 'split' gives one
+   of its types a copy of its own, separate from then on; 'unshare' stops
+   offering it under one of its types. The server moves the name's other
+   editions under the same types with it, and none of it is a new version,
+   so an open draft and its base are undisturbed. */
+async function svTypeAction(sleeveId, action, variant) {
+  var entry = sleeveById(sleeveId); if (!entry || repo.saving || !variant) return;
   repo.menu = null; repo.saving = true; repo.error = null; render();
   try {
-    var r = await api('POST', '/scenario/repository/sleeves', {
-      category: entry.category, name: entry.name, note: entry.note,
-      label: entry.label || '', rules: cleanRules(entry.rules),
-      variants: [variant],
-      products: entry.products.map(function (p) {
-        return { productId: p.productId, weight: p.weight };
-      })
-    });
+    var r = await api('POST', '/scenario/repository/sleeves/' + sleeveId + '/types', { action: action, variant: variant });
     if (!r) return;
     if (!r.ok) {
-      repo.error = r.body.error || ('Could not add it to ' + variant + ' (' + r.status + ')');
+      repo.error = r.body.error || ('Could not change where ' + entry.name + ' is offered (' + r.status + ')');
     } else {
-      var made = (r.body.sleeves || [r.body.sleeve])[0];
-      repo.data.sleeves.push(made);
-      if (repo.data.store) {
-        repo.data.store.sleeves = (repo.data.store.sleeves || 0) + 1;
-        repo.data.store.revisions = (repo.data.store.revisions || 0) + 1;
-      }
-      repo.data.sleeves.forEach(function (x) {
-        if (x.category === made.category && x.name === made.name) x.offeredUnder = made.offeredUnder;
+      var touched = r.body.sleeves || [], list = repo.data.sleeves, added = 0;
+      touched.forEach(function (t) {
+        var at = list.findIndex(function (x) { return x.id === t.id; });
+        if (at === -1) { list.push(t); added += 1; } else list[at] = t;
       });
+      var last = touched[touched.length - 1];
+      if (last) list.forEach(function (x) {   /* offeredUnder is shared by name; refresh it */
+        if (x.category === last.category && x.name === last.name) x.offeredUnder = last.offeredUnder;
+      });
+      if (repo.data.store && added) repo.data.store.sleeves = (repo.data.store.sleeves || 0) + added;
       catRowCache = null;
-      forgetLibrary(made.category);
-      sv.focus = '.sv-offer:not([disabled])||#svOffers';
-      App.announce('polite', made.name + ' is now offered under ' + variant + '.');
+      forgetLibrary(entry.category);
+      if (act.loaded) act.loaded = false;
+      /* the type in view stays where it is, unless the sleeve has left it */
+      var now = sleeveById(sleeveId);
+      if (now && !svUnder(now, repo.variant)) repo.variant = svHome(now);
+      sv.focus = '#svOffers';
+      App.announce('polite', action === 'share'
+        ? entry.name + ' is now offered under ' + variant + ' too: one sleeve, shared.'
+        : action === 'split'
+        ? variant + ' now has its own copy of ' + entry.name + '; the rest still share this one.'
+        : entry.name + ' is no longer offered under ' + variant + '.');
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -11553,7 +11582,7 @@ async function runPreview() {
   repo.preview = { busy: true }; updateApplies();
   try {
     var r = await api('POST', '/scenario/repository/applicability', {
-      variant: draftVariant(d),
+      variant: draftVariant(d), variants: draftVariants(d),
       category: draftCategory(d),
       name: d.name.trim(), label: d.label.trim(), rules: rules, sleeveId: d.id || null
     });
@@ -11780,14 +11809,15 @@ function editorHtml() {
       + (entry.firstCreatedAt && entry.firstCreatedAt !== entry.createdAt
           ? ' · sleeve first created ' + esc(shortDate(entry.firstCreatedAt)) : '')
       + ' · saving a change puts this version in the Archive';
-    var elsewhere = (entry.offeredUnder || []).filter(function (v) { return v !== entry.variant; });
-    if (elsewhere.length) prov += ' · the same name is offered under ' + esc(elsewhere.join(', '));
+    if (entry.shared) prov += ' · one sleeve shared by ' + esc(svJoinAnd(svTypes(entry))) + ': a change here changes it under each';
+    var elsewhere = (entry.offeredUnder || []).filter(function (v) { return !svUnder(entry, v); });
+    if (elsewhere.length) prov += ' · the same name is offered under ' + esc(elsewhere.join(', ')) + ' as a separate sleeve';
   } else {
-    prov = 'New sleeve · ' + esc(draftCategory(d)) + ' under ' + esc(draftVariant(d));
+    prov = 'New sleeve · ' + esc(draftCategory(d)) + ' under ' + esc(svJoinAnd(draftVariants(d)));
   }
   if (d.edition) {
     var of = sleeveById(d.edition.ofId);
-    prov = 'New edition of ' + esc(d.name) + ' · ' + esc(draftCategory(d)) + ' under ' + esc(d.edition.variant)
+    prov = 'New edition of ' + esc(d.name) + ' · ' + esc(draftCategory(d)) + ' under ' + esc(svJoinAnd(draftVariants(d)))
       + (of ? ' · starts as a copy of the ' + (of.label ? esc(of.label) + ' edition' : 'fallback') : '');
   }
   var serverProblems = entry && entry.problems && entry.problems.length
@@ -11853,12 +11883,15 @@ var ACTION_WORDS = {
   restored: 'restored to the library', imported: 'loaded from a file',
   seeded: 'loaded with the library', withdrawn: 'withdrawn from the catalogue',
   removed: 'put back on the default',
-  disabled: 'no longer offered to PWAs', enabled: 'offered to PWAs again'
+  disabled: 'no longer offered to PWAs', enabled: 'offered to PWAs again',
+  /* where a sleeve is offered (D179) */
+  shared: 'shared with another type', unshared: 'taken from a type', split: 'a type given its own copy'
 };
 var ACTION_LABELS = {
   created: 'Created', updated: 'Edited', reverted: 'Reverted', deleted: 'Archived',
   restored: 'Restored', imported: 'Imported', seeded: 'Loaded', baseline: 'Baseline',
-  withdrawn: 'Withdrawn', removed: 'Removed', disabled: 'Disabled', enabled: 'Enabled'
+  withdrawn: 'Withdrawn', removed: 'Removed', disabled: 'Disabled', enabled: 'Enabled',
+  shared: 'Shared', unshared: 'Unshared', split: 'Own copy'
 };
 
 function revisionHtml(entry) {
@@ -12031,14 +12064,14 @@ function sleeveMenuHtml() {
   var full = entry.fixed;
   var adds = elsewhere.map(function (v) {
     var blocked = full && sleevesIn(v, entry.category).some(function (x) { return x.name !== entry.name; });
-    return '<button type="button" class="repo-mi" data-repocopy="' + v + '"'
+    return '<button type="button" class="repo-mi" data-repocopy="' + esc(v) + '"'
       + (blocked ? ' disabled title="' + esc(entry.category + ' already holds its one sleeve under ' + v) + '"' : '')
       + '>' + esc(v) + '</button>';
   }).join('');
   return '<div class="repo-ctx" style="left:' + repo.menu.x + 'px;top:' + repo.menu.y + 'px"'
     + ' role="menu" aria-label="' + esc(entry.name) + '">'
     + '<p class="h">' + esc(entry.name) + '<small>' + esc(entry.category) + ' · ' + esc(entry.variant) + '</small></p>'
-    + '<p class="lbl">Add to implementation type</p>'
+    + '<p class="lbl">Share with implementation type</p>'
     + (adds || '<p class="none">Offered under every implementation type.</p>')
     + '<p class="sep"></p>'
     + '<button type="button" class="repo-mi" data-repoedition="' + entry.id + '">Add an edition for particular portfolios…</button>'
@@ -12085,7 +12118,7 @@ function sleeveHits() {
      does not sit below twenty that are not */
   var order = repo.data.categories;
   return out.sort(function (a, b) {
-    var av = a.s.variant === repo.variant ? 0 : 1, bv = b.s.variant === repo.variant ? 0 : 1;
+    var av = svUnder(a.s, repo.variant) ? 0 : 1, bv = svUnder(b.s, repo.variant) ? 0 : 1;
     if (av !== bv) return av - bv;
     var ac = order.indexOf(a.s.category), bc = order.indexOf(b.s.category);
     if (ac !== bc) return ac - bc;
@@ -12141,6 +12174,11 @@ try { if (window.localStorage.getItem(SV_VIEW_KEY) === 'table') sv.mode = 'table
    in node against fixture data (D156). A sleeve is the repository's own
    record: { id, variant, category, name, label, products: [{ weight,
    product: { name, vehicle, productCost } }], problems, createdAt }. */
+/* The types a sleeve is offered under (D179). A shared sleeve names several:
+   its variant is then the words for them, and variants the list. */
+function svTypes(s) { return s ? (s.variants || (s.variant ? [s.variant] : [])) : []; }
+function svUnder(s, variant) { return svTypes(s).indexOf(variant) !== -1; }
+function svShares(a, b) { return svTypes(a).some(function (v) { return svUnder(b, v); }); }
 function svPlural(n, word, many) { return n + ' ' + (n === 1 ? word : (many || word + 's')); }
 function svCost(s) {
   /* the weighted product cost, in percent, of the products the catalogue
@@ -12191,7 +12229,7 @@ function svMatches(s, query) {
 function svFilter(sleeves, f) {
   /* f: { variant, category, query } - an empty variant or category is every one */
   return (sleeves || []).filter(function (s) {
-    if (f.variant && s.variant !== f.variant) return false;
+    if (f.variant && !svUnder(s, f.variant)) return false;
     if (f.category && s.category !== f.category) return false;
     return svMatches(s, f.query);
   });
@@ -12216,7 +12254,7 @@ function svSort(rows, sort, order) {
   var library = function (a, b) {
     var an = svSortValue(a, 'name'), bn = svSortValue(b, 'name');
     return (at(order.categories, a.category) - at(order.categories, b.category))
-      || (at(order.variants, a.variant) - at(order.variants, b.variant))
+      || (at(order.variants, svTypes(a)[0]) - at(order.variants, svTypes(b)[0]))
       || (an < bn ? -1 : an > bn ? 1 : 0)
       /* a name's fallback first, then its editions by label (D158 review) */
       || ((a.label ? 1 : 0) - (b.label ? 1 : 0))
@@ -12272,7 +12310,7 @@ function svToTable(c) {
 function svToCards(t, open) {
   /* the table's place as the cards': the sleeve in the drawer opens on its
      page; otherwise the filters choose the type and the category */
-  if (t.drawer && open) return { variant: open.variant, category: open.category, level: 2 };
+  if (t.drawer && open) return { variant: open.variants ? svHome(open) : open.variant, category: open.category, level: 2 };
   var out = { level: t.fc ? 1 : 0 };
   if (t.fv) out.variant = t.fv;
   if (t.fc) out.category = t.fc;
@@ -12281,7 +12319,7 @@ function svToCards(t, open) {
 function svFollow(f, s) {
   /* the table's filters, moved to include a sleeve arriving from elsewhere,
      so its row is there and the line above it names the right place */
-  return { fv: f.fv && f.fv !== s.variant ? s.variant : f.fv,
+  return { fv: f.fv && !svUnder(s, f.fv) ? (svTypes(s)[0] || f.fv) : f.fv,
            fc: f.fc && f.fc !== s.category ? s.category : f.fc };
 }
 var SV_NUMBER = /^\s*(\d+(\.\d*)?|\.\d+)\s*%?\s*$/;
@@ -12359,7 +12397,7 @@ function svNameElsewhere(lib, variants, chosen, category, name) {
   var out = [];
   (variants || []).forEach(function (v) {
     if ((chosen || []).indexOf(v) !== -1) return;
-    var hit = (lib || []).filter(function (s) { return s.variant === v && s.category === category && svSameName(s.name, name); })[0];
+    var hit = (lib || []).filter(function (s) { return svUnder(s, v) && s.category === category && svSameName(s.name, name); })[0];
     if (hit) out.push({ variant: v, name: hit.name, kind: hit.name === svNormName(name) ? 'same' : 'case' });
   });
   return out;
@@ -12369,7 +12407,7 @@ function svAvail(lib, fixed, variant, category, name) {
      already holding its sleeve cannot take another, and a name the type
      already has there is that sleeve - never quietly a new edition of it */
   if (!category) return { ok: true };
-  var here = (lib || []).filter(function (s) { return s.variant === variant && s.category === category; });
+  var here = (lib || []).filter(function (s) { return svUnder(s, variant) && s.category === category; });
   if ((fixed || []).indexOf(category) !== -1 && here.length) {
     return { ok: false, kind: 'full', reason: category + ' holds one sleeve per implementation type, and '
       + variant + ' already has ' + here[0].name + '.', short: 'Full: already holds ' + here[0].name };
@@ -12405,13 +12443,17 @@ function svSources(lib, f) {
   var order = f.order || [];
   var pos = function (v) { var i = order.indexOf(v); return i === -1 ? 1e9 : i; };
   (lib || []).filter(function (s) {
-    return s.category === f.category && (f.allV || !(f.variants || []).length || f.variants.indexOf(s.variant) !== -1);
+    return s.category === f.category && (f.allV || !(f.variants || []).length
+      || svTypes(s).some(function (v) { return f.variants.indexOf(v) !== -1; }));
   }).sort(function (a, b) {
-    return (pos(a.variant) - pos(b.variant)) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || ((a.id || 0) - (b.id || 0));
+    return (pos(svTypes(a)[0]) - pos(svTypes(b)[0])) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || ((a.id || 0) - (b.id || 0));
   }).forEach(function (s) {
     var k = svSourceKey(s);
-    if (at[k]) { at[k].types.push(s.variant); at[k].ids.push(s.id); return; }
-    at[k] = { s: s, types: [s.variant], ids: [s.id] }; out.push(at[k]);
+    if (at[k]) {
+      svTypes(s).forEach(function (v) { if (at[k].types.indexOf(v) === -1) at[k].types.push(v); });
+      at[k].ids.push(s.id); return;
+    }
+    at[k] = { s: s, types: svTypes(s).slice(), ids: [s.id] }; out.push(at[k]);
   });
   return out.filter(function (e) {
     if (!q) return true;
@@ -12760,8 +12802,10 @@ function svSw(category) { return '<i class="sv-sw" aria-hidden="true" style="bac
 function svPct(n) { return (typeof n === 'number' && isFinite(n)) ? money2(n) + '%' : '—'; }
 function svOrder() { return { categories: repo.data.categories, variants: repo.data.variants }; }
 function svSiblings(s) {
-  return sleevesIn(s.variant, s.category).filter(function (x) {
-    return x.id !== s.id && x.name.trim().toLowerCase() === s.name.trim().toLowerCase();
+  /* the other editions of its name under any type it is offered under (D179) */
+  return (repo.data.sleeves || []).filter(function (x) {
+    return x.id !== s.id && x.category === s.category && svShares(x, s)
+      && x.name.trim().toLowerCase() === s.name.trim().toLowerCase();
   });
 }
 function svStatusChip(s) {
@@ -12787,6 +12831,13 @@ function svEditionChip(s) {
 }
 function svFixedChip(category) {
   return isFixed(category) ? '<span class="sv-chip mute">Fixed \u00b7 one per type</span>' : '';
+}
+/* one sleeve shared by several types (D179): an edit changes it under each */
+function svSharedChip(s) {
+  if (!s.shared) return '';
+  var t = svTypes(s), all = t.length === repo.data.variants.length;
+  return '<span class="sv-chip info" title="' + esc('One sleeve shared by ' + svJoinAnd(t) + ': a change made under any of them changes it under each') + '">'
+    + 'Shared \u00b7 ' + (all ? 'all types' : svPlural(t.length, 'type')) + '</span>';
 }
 /* The custom workflows (D172): one switch decides whether PWAs may enter
    them at all - custom sleeves and custom portfolios alike. Admins always
@@ -12961,7 +13012,7 @@ function svCardHtml(s, why) {
   }).join('');
   return '<div class="sv-cardw' + (s.disabled ? ' off' : '') + '">'
     + '<button type="button" class="sv-card" data-svcard="' + s.id + '" data-svmenu="' + s.id + '">'
-    + '<span class="sv-card-h"><b>' + esc(s.name) + '</b>' + svEditionChip(s) + '</span>'
+    + '<span class="sv-card-h"><b>' + esc(s.name) + '</b>' + svEditionChip(s) + svSharedChip(s) + '</span>'
     + (why !== undefined ? '<span class="sv-card-w">' + svWhere(s.variant, s.category) + '</span>'
         + (why ? '<span class="sv-card-why">' + esc(why.charAt(0).toUpperCase() + why.slice(1)) + '</span>' : '') : '')
     + '<span class="sv-card-p">' + rows + '</span>'
@@ -13062,19 +13113,49 @@ function svWhoHtml(entry) {
   return '<p class="sv-p">' + text + '</p>'
     + '<button type="button" class="btn" data-repoedition="' + entry.id + '"' + (repo.saving ? ' disabled' : '') + '>+ Add an edition for particular portfolios</button>';
 }
+/* Where it is offered (D179): the types it is shared by; a type with a
+   sleeve of the name of its own, which is a separate sleeve; and the types
+   it can be shared with. Sharing it is the same sleeve under one more type;
+   a shared one can give a type a copy of its own, or stop being offered
+   there. None of it is a new version. */
+function svOfferedHtml(entry, fixed) {
+  var mine = svTypes(entry);
+  var separate = (entry.offeredUnder || []).filter(function (v) { return mine.indexOf(v) === -1; });
+  var more = repo.data.variants.filter(function (v) { return mine.indexOf(v) === -1 && separate.indexOf(v) === -1; });
+  var sameTypes = svSiblings(entry).filter(function (x) { return svTypes(x).join('|') === mine.join('|'); }).length;
+  var out = mine.map(function (v) { return '<span class="sv-chip info">' + esc(v) + '</span>'; }).join(' ')
+    + separate.map(function (v) {
+        return ' <span class="sv-chip mute" title="' + esc(v + ' has a sleeve of this name of its own: a separate sleeve, which an edit here does not change') + '">'
+          + esc(v) + ' \u00b7 its own</span>';
+      }).join('')
+    + more.map(function (v) {
+        var blocked = fixed && sleevesIn(v, entry.category).some(function (x) { return x.name !== entry.name; });
+        return ' <button type="button" class="btn sv-offer" data-svshare="' + esc(v) + '"'
+          + (blocked || repo.saving ? ' disabled' : '')
+          + ' title="' + esc(blocked ? entry.category + ' already holds its one sleeve under ' + v
+                                     : 'The same sleeve, offered under ' + v + ' too: an edit made under either changes both') + '">'
+          + '+ Share with ' + esc(v) + '</button>';
+      }).join('');
+  if (mine.length > 1) {
+    out += '<p class="sv-hint sv-shared-note">One sleeve shared by ' + svPlural(mine.length, 'type')
+      + ': a change made under any of them changes it under each'
+      + (sameTypes ? ', and its ' + svPlural(sameTypes, 'other edition') + ' move with it' : '') + '.</p>'
+      + '<div class="sv-split"><label for="svSplitType">Make one differ</label>'
+      + '<select id="svSplitType" data-svsplittype>' + mine.map(function (v) {
+          var pick = mine.indexOf(sv.splitType) !== -1 ? sv.splitType : repo.variant;
+          return '<option value="' + esc(v) + '"' + (v === pick ? ' selected' : '') + '>' + esc(v) + '</option>';
+        }).join('') + '</select>'
+      + '<button type="button" class="btn" data-svsplit' + (repo.saving ? ' disabled' : '')
+      + ' title="That type gets a copy of its own, separate from then on; the rest still share this one">Give it its own copy</button>'
+      + (fixed ? '' : '<button type="button" class="btn btn-ghost" data-svunshare' + (repo.saving ? ' disabled' : '')
+          + ' title="Stop offering it under that type; the rest still share it">Stop offering it there</button>')
+      + '</div>';
+  }
+  return out;
+}
 function svDetailsHtml(entry) {
   var fixed = isFixed(entry.category);
-  var offered = entry.offeredUnder || [entry.variant];
-  var more = repo.data.variants.filter(function (v) { return offered.indexOf(v) === -1; });
-  var offer = offered.map(function (v) {
-    return '<span class="sv-chip ' + (v === entry.variant ? 'info' : 'mute') + '">' + esc(v) + '</span>';
-  }).join(' ') + more.map(function (v) {
-    var blocked = fixed && sleevesIn(v, entry.category).some(function (x) { return x.name !== entry.name; });
-    return ' <button type="button" class="btn sv-offer" data-svcopy="' + esc(v) + '"'
-      + (blocked || repo.saving ? ' disabled' : '')
-      + (blocked ? ' title="' + esc(entry.category + ' already holds its one sleeve under ' + v) + '"' : '')
-      + '>+ Offer under ' + esc(v) + '</button>';
-  }).join('');
+  var offer = svOfferedHtml(entry, fixed);
   var archive;
   if (fixed) {
     archive = '<p class="sv-hint">' + esc(entry.category) + ' is fixed: it always holds exactly one sleeve per implementation type, so this one cannot be archived.</p>';
@@ -13109,7 +13190,7 @@ function svReadHtml(entry, inDrawer) {
   return '<div class="sv-head"><div class="sv-head-t">'
     + (inDrawer ? '' : '<h3 id="svTitle" tabindex="-1">' + esc(entry.name) + '</h3>')
     + '<p class="sv-where">' + svWhere(entry.variant, entry.category) + '</p>'
-    + '<p class="sv-chips">' + svStatusChip(entry) + svEditionChip(entry) + svFixedChip(entry.category) + '</p></div>'
+    + '<p class="sv-chips">' + svStatusChip(entry) + svEditionChip(entry) + svSharedChip(entry) + svFixedChip(entry.category) + '</p></div>'
     + '<button type="button" class="btn btn-primary sv-edit-btn" data-svedit' + (repo.saving ? ' disabled' : '') + '>Edit sleeve</button></div>'
     + keptNoticeHtml() + serverProblems
     + (sv.createdEdition && sv.createdEdition.id === entry.id
@@ -13325,7 +13406,7 @@ function ncErrs(d, f) {
 function ncCreateLabel(d) {
   var n = (d.variants || []).length;
   if (repo.saving) return 'Creating…';
-  return n > 1 ? 'Create in ' + n + ' implementation types' : n === 1 ? 'Create sleeve in ' + d.variants[0] : 'Create sleeve';
+  return n > 1 ? 'Create one sleeve, shared by ' + n + ' types' : n === 1 ? 'Create sleeve in ' + d.variants[0] : 'Create sleeve';
 }
 
 function ncStartHtml(d) {
@@ -13416,7 +13497,8 @@ function ncNameNote(d) {
   if (same.length) {
     out += esc(svJoinAnd(same.map(function (h) { return h.variant; }))) + (same.length === 1 ? ' already has' : ' already have')
       + ' a sleeve called ' + esc(same[0].name) + ' in ' + esc(d.category)
-      + '. PWAs see these as one sleeve, offered under every implementation type that has it; each keeps its own products.';
+      + ', a separate sleeve: this one will be separate from it, and a change to either leaves the other as it is.'
+      + ' To offer that one under these types too, open it and use Share with.';
   }
   if (cased.length) {
     out += (out ? ' ' : '') + esc(svJoinAnd(cased.map(function (h) { return h.variant; }))) + (cased.length === 1 ? ' has' : ' have')
@@ -13496,7 +13578,9 @@ function ncSideHtml(d) {
     }
     return '<li class="yes"><span class="ic" aria-hidden="true">✓</span><span><b>' + esc(o.variant) + '</b><small>'
       + esc(d.name.trim() || 'The new sleeve') + ' in ' + esc(d.category || 'the category you choose') + '</small></span></li>';
-  }).join('') + '</ul>';
+  }).join('') + '</ul>'
+    + ((d.variants || []).length > 1 ? '<p class="sv-hint">One sleeve, shared by the ' + d.variants.length
+        + ' types ticked: a change made under one changes it under each.</p>' : '');
   var src = ncSource(d), products = ncProducts();
   var changes = svSourceChanges(src, d.products);
   var based = src ? '<p class="nc-based">Based on <b>' + esc(src.name) + '</b> (' + esc(src.variant) + ') · '
@@ -13549,7 +13633,7 @@ function svCreateHtml() {
   return keptNoticeHtml()
     + '<div class="nc"><div class="nc-form">'
     + ncStartHtml(d)
-    + svSection('Where it goes', 'one sleeve is created under each implementation type you tick',
+    + svSection('Where it goes', 'tick several types and it is one sleeve shared by them: a change made under one changes it under each',
         '<p class="nc-lab">Category</p>' + ncCatsHtml(d) + '<div id="ncCatsErr">' + ncErrs(d, 'cat') + '</div>'
         + '<p class="nc-lab">Implementation types</p><div id="ncTypesWrap">' + ncTypesHtml(d) + '</div><div id="ncTypesErr">' + ncErrs(d, 'vars') + '</div>')
     + ncPickerHtml(d)
@@ -13677,8 +13761,9 @@ function ncToggleType(v, on) {
   /* a source the ticked types no longer show stops being compared, the way
      moving category does; a copy under a type still ticked takes its place */
   var src = ncSource(d);
-  if (src && !nc.allV && d.variants.length && d.variants.indexOf(src.variant) === -1) {
-    var still = (d.sourceIds || [src.id]).map(sleeveById).filter(function (x) { return x && d.variants.indexOf(x.variant) !== -1; })[0];
+  var ticked = function (x) { return svTypes(x).some(function (t) { return d.variants.indexOf(t) !== -1; }); };
+  if (src && !nc.allV && d.variants.length && !ticked(src)) {
+    var still = (d.sourceIds || [src.id]).map(sleeveById).filter(function (x) { return x && ticked(x); })[0];
     if (still) d.sourceId = still.id;
     else {
       nc.lost = src.name + ' is offered under ' + src.variant + ', which is no longer ticked. Your ' + svPlural(d.products.length, 'product')
@@ -13885,7 +13970,7 @@ function neSibs(d) {
 }
 function neFallbackOf(s) {
   return (repo.data.sleeves || []).filter(function (x) {
-    return x.variant === s.variant && x.category === s.category && svSameName(x.name, s.name) && x.fallback && x.id !== s.id;
+    return svShares(x, s) && x.category === s.category && svSameName(x.name, s.name) && x.fallback && x.id !== s.id;
   })[0] || null;
 }
 function neFallback(d) { return siblingsOf(d).filter(function (s) { return s.fallback; })[0] || null; }
@@ -14506,12 +14591,12 @@ function svOpen(id) {
   if (table) { var f = svFollow({ fv: sv.fv, fc: sv.fc }, s); place.fv = f.fv; place.fc = f.fc; }
   sv.focus = table ? '#svDrawerTitle' : '#svTitle';
   if (repo.draft && repo.draft.id === id && !repo.draft.create && !repo.draft.edition) {
-    repo.variant = s.variant; repo.category = s.category;
+    repo.variant = svHome(s); repo.category = s.category;
     Object.keys(place).forEach(function (k) { sv[k] = place[k]; });
     if (!table) repo.query = '';
     render(); return;
   }
-  var go = { to: id, variant: s.variant, category: s.category, sv: place };
+  var go = { to: id, variant: svHome(s), category: s.category, sv: place };
   if (!table) go.then = function () { repo.query = ''; };
   goTo(go);
 }
@@ -14700,7 +14785,7 @@ function svOpenKept() {
    it held, its history, and the way back. */
 function arcRows() {
   return archivedSleeves().map(function (s) {
-    var live = (s.offeredUnder || []).filter(function (v) { return v !== s.variant; });
+    var live = (s.offeredUnder || []).filter(function (v) { return !svUnder(s, v); });
     return { s: s, held: s.products.length, liveElsewhere: live,
              hay: (s.name + ' ' + s.category + ' ' + s.variant + ' ' + (s.archivedBy || '') + ' '
                + s.products.map(function (r) { return r.product ? r.product.name : r.productId; }).join(' ')).toLowerCase() };
@@ -14816,10 +14901,11 @@ function arcBodyHtml() {
 function arcDetailHtml() {
   var entry = arc.detail != null ? archivedById(arc.detail) : null;
   if (!entry) return '';
-  var blocked = sleevesIn(entry.variant, entry.category).some(function (x) {
+  var under = function (x) { return x.category === entry.category && svShares(x, entry); };
+  var blocked = (repo.data.sleeves || []).filter(under).some(function (x) {
     return x.name.trim().toLowerCase() === entry.name.trim().toLowerCase();
   });
-  var full = entry.fixed && sleevesIn(entry.variant, entry.category).length >= 1;
+  var full = entry.fixed && (repo.data.sleeves || []).filter(under).length >= 1;
   var why = blocked ? 'A sleeve of that name is in the library again — rename or archive it first.'
     : (full ? entry.category + ' already holds its one sleeve here.' : '');
   var products = entry.products.map(function (row) {
@@ -15975,7 +16061,7 @@ function prdWho(name) { return name === 'seed' ? 'loaded from the product file' 
 /* the sleeves a product is in, and the implementation types they are under */
 function prdReach(productId) {
   var uses = usedIn(productId), types = [];
-  uses.forEach(function (u) { if (types.indexOf(u.variant) === -1) types.push(u.variant); });
+  uses.forEach(function (u) { (u.variants || [u.variant]).forEach(function (v) { if (types.indexOf(v) === -1) types.push(v); }); });
   return { sleeves: uses.length, types: types.length };
 }
 
@@ -19053,7 +19139,7 @@ document.addEventListener('click', function (e) {
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
-    + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svcopy],[data-svopen],'
+    + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svshare],[data-svsplit],[data-svunshare],[data-svopen],'
     + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-ncstart],[data-nccat],[data-ncsrc],[data-nckeepmine],[data-ncreplace],[data-ncadd],[data-ncspread],[data-nccreate],[data-nccancel],'
@@ -19150,7 +19236,13 @@ document.addEventListener('click', function (e) {
   /* the custom workflows (D172): opened to PWAs or closed */
   if (ds.svaccess !== undefined) { setCustomAccess(ds.to === '1'); return; }
   if (ds.svopen !== undefined) { sv.compare = false; svOpen(parseInt(ds.svopen, 10)); return; }
-  if (ds.svcopy !== undefined) { copyToVariant(repo.draft && repo.draft.id, ds.svcopy); return; }
+  /* where it is offered (D179): shared with a type, a type given a copy of its own, or left out */
+  if (ds.svshare !== undefined) { svTypeAction(repo.draft && repo.draft.id, 'share', ds.svshare); return; }
+  if (ds.svsplit !== undefined || ds.svunshare !== undefined) {
+    var pick = document.getElementById('svSplitType');
+    if (pick) svTypeAction(repo.draft && repo.draft.id, ds.svsplit !== undefined ? 'split' : 'unshare', pick.value);
+    return;
+  }
   /* One create path (B2), from wherever the admin is standing: the cards'
      type and category, or the table's filters, fill the form in (D156) */
   if (ds.reponew !== undefined) {
@@ -19220,7 +19312,7 @@ document.addEventListener('click', function (e) {
   if (ds.newhich !== undefined) { nc.which = !nc.which; sv.focus = '[data-newhich]'; render(); return; }
   if (ds.necreate !== undefined) { neCreate(); return; }
   if (ds.necancel !== undefined) { neCancel(); return; }
-  if (ds.repocopy !== undefined) { copyToVariant(repo.menu && repo.menu.id, ds.repocopy); return; }
+  if (ds.repocopy !== undefined) { svTypeAction(repo.menu && repo.menu.id, 'share', ds.repocopy); return; }
   /* editions (D89) */
   if (ds.repoedition !== undefined) {
     var ofId = parseInt(ds.repoedition, 10); var of = sleeveById(ofId); repo.menu = null;
@@ -19422,6 +19514,7 @@ document.addEventListener('change', function (e) {
     sv.focus = '[data-svtick="' + tid + '"]'; render(); return;
   }
   if (ds.svfv !== undefined) { sv.fv = e.target.value; sv.focus = '[data-svfv]'; render(); return; }
+  if (ds.svsplittype !== undefined) { sv.splitType = e.target.value; return; }
   if (ds.svfc !== undefined) { sv.fc = e.target.value; sv.focus = '[data-svfc]'; render(); return; }
   /* the archive's filters and tick boxes (D66) */
   if (ds.arcfilter !== undefined) { arc.filters[ds.arcfilter] = e.target.value; render(); return; }

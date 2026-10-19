@@ -42,7 +42,7 @@ AREA_LABELS = {'sleeves': 'Sleeves', 'products': 'Products', 'fees': 'Fee card',
 _RANK = {a: i for i, a in enumerate(AREAS)}
 #: every action any area records, in the order the feed's chips offer them
 ACTIONS = ['created', 'updated', 'imported', 'reverted', 'deleted', 'withdrawn', 'removed',
-           'restored', 'disabled', 'enabled', 'seeded', 'baseline']
+           'restored', 'disabled', 'enabled', 'shared', 'unshared', 'split', 'seeded', 'baseline']
 FEED_LIMIT_MAX = sleeveRepo.FEED_LIMIT_MAX
 #: products listed by name in a file's entry before the rest are counted
 _BATCH_NAMES = 12
@@ -195,19 +195,31 @@ def _fundingEntries(conn) -> list:
     return out
 
 
+#: what each switch did, in the feed's words; the type a sharing switch
+#: acted on fills the gap (D179)
+_SWITCH_WORDS = {'disabled': 'Not offered to PWAs', 'enabled': 'Offered to PWAs again',
+                 'shared': 'Now offered under {} too, the same sleeve',
+                 'unshared': 'No longer offered under {}',
+                 'split': '{} given a copy of its own; the rest still share this one'}
+
+
 def _switchEntries(conn) -> list:
-    """Every sleeve disabled or enabled again (D169). Not revisions of the
-    sleeve, so an area of their own rather than the sleeves' feed."""
+    """Every sleeve disabled or enabled again (D169), and every type a
+    sleeve was shared with, taken from or given a copy for (D179). Not
+    revisions of the sleeve, so an area of their own rather than the
+    sleeves' feed."""
     live = {r['id']: not r['deletedAt'] for r in conn.execute('SELECT id, deletedAt FROM sleeves')}
     out = []
     for r in sleeveRepo.switches(conn):
+        words = _SWITCH_WORDS.get(r['action'], r['action'])
         out.append({'area': 'availability', 'feedId': r['id'], 'at': r['at'],
                     'action': r['action'], 'actor': r['actor'], 'name': r['name'],
-                    'variant': r['variant'], 'category': r['category'], 'label': r['label'],
+                    'variant': sleeveRepo.typesLabel(r['variant']),
+                    'variants': sleeveRepo.typesOf(r['variant']),
+                    'category': r['category'], 'label': r['label'],
                     'sleeveId': r['sleeveId'], 'live': live.get(r['sleeveId'], False),
                     'revision': None, 'note': '',
-                    'changes': ['Not offered to PWAs' if r['action'] == 'disabled'
-                                else 'Offered to PWAs again']})
+                    'changes': [words.format(r['detail'] if 'detail' in r.keys() else '')]})
     return out
 
 
@@ -235,7 +247,7 @@ def _passes(entry, f, exclude=None) -> bool:
         return False
     if f['actor'] and exclude != 'actor' and entry['actor'] != f['actor']:
         return False
-    if f['variant'] and exclude != 'variant' and entry.get('variant') != f['variant']:
+    if f['variant'] and exclude != 'variant' and f['variant'] not in _types(entry):
         return False
     if f['category'] and exclude != 'category' and entry.get('category') != f['category']:
         return False                # only sleeves and their switches have a category
@@ -244,6 +256,13 @@ def _passes(entry, f, exclude=None) -> bool:
     if f['until'] and entry['at'] >= f['until']:
         return False
     return True
+
+
+def _types(entry) -> list:
+    """The types an entry is about: a shared sleeve's are several (D179)."""
+    if entry.get('variants') is not None:
+        return entry['variants']
+    return [entry['variant']] if entry.get('variant') else []
 
 
 def _matches(entry, query) -> bool:
@@ -339,9 +358,13 @@ def activity(areas=None, actions=None, variant=None, category=None, actor=None, 
                 out[k] = out.get(k, 0) + n
         for e in others:
             if _passes(e, f, exclude=dimension):
-                value = e.get(dimension) if dimension != 'action' else e['action']
-                if value:
-                    out[value] = out.get(value, 0) + 1
+                if dimension == 'variant':
+                    values = _types(e)
+                else:
+                    values = [e.get(dimension) if dimension != 'action' else e['action']]
+                for value in values:
+                    if value:
+                        out[value] = out.get(value, 0) + 1
         return dict(sorted(out.items(), key=lambda kv: (-kv[1], kv[0])))
 
     total = (page['total'] if page is not None else 0) + sum(1 for e in others if _passes(e, f))

@@ -2059,7 +2059,7 @@ load). Read together with `sleeveRules.csv` (C.3b) when that file exists.
 
 | Column | Type | Rule |
 |---|---|---|
-| `Variant` | text | One of the four implementation types: `PMG Multi-Asset Portfolio`, `PMG ESG`, `US Onshore`, `Irish Onshore` (`sleeves.VARIANTS`). |
+| `Variant` | text | The implementation types the edition is offered under: one of `PMG Multi-Asset Portfolio`, `PMG ESG`, `US Onshore`, `Irish Onshore` (`sleeves.VARIANTS`), several separated by `\|`, or `All` for every type (D179). Several types make **one sleeve shared by them**: an edit under any of them is what each serves. An export writes them the same way, and re-importing an edition replaces the live one offered under exactly the same types. |
 | `Category` | text | One of the seven sleeve categories: `Investment Grade Fixed Income`, `Hybrid Fixed Income`, `Other Fixed Income`, `Public Equity`, `Hedge Funds`, `Private Equity & Other Private Assets`, `Asset Allocation Strategies`. `Private Equity` and `Other Private Assets` share the one combined sleeve (D60). `Hybrid Fixed Income` and `Asset Allocation Strategies` are attached automatically and need exactly one sleeve each per variant. |
 | `Sleeve` | text ≤ 80 chars | The sleeve's name; unique within (variant, category). |
 | `Edition` | text ≤ 80, optional | **Blank for the fallback** edition, which applies wherever no other edition of the name does; or the desk's short label for an edition that is only for particular strategic portfolios (`GBP`, `GBP ex-Alts`). A labelled edition must have rules in `sleeveRules.csv`; a fallback must not. At most one fallback per name; labels unique within a name. Weights sum to 1 **per edition** (D89). |

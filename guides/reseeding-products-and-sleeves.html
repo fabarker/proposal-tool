@@ -344,7 +344,7 @@ hold it, as before, or under <em>No category</em> if no sleeve does. Nothing a P
 prints depends on it.</p>
 <div class="steps">
 <div class="step"><h3>Run the update first</h3>
-<p>The census should say <code>schema v9</code>. A file imported before the update loads its other
+<p>The census should say <code>schema v9</code> or later. A file imported before the update loads its other
 columns but drops the categories without saying so.</p></div>
 <div class="step"><h3>Add the column to your product file</h3>
 <p>Put a column headed <code>Category</code> (or <code>Catagory</code>, or <code>Group</code>)
@@ -383,7 +383,7 @@ and nothing is destroyed.</p>
 <div class="tblwrap"><table>
 <thead><tr><th>Word</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td><strong>Variant</strong></td><td>The implementation type the sleeve belongs to: <code>PMG Multi-Asset Portfolio</code>, <code>PMG ESG</code>, <code>US Onshore</code> or <code>Irish Onshore</code>. The PWA chooses this in step 2.</td></tr>
+<tr><td><strong>Variant</strong></td><td>The implementation types the sleeve is offered under: <code>PMG Multi-Asset Portfolio</code>, <code>PMG ESG</code>, <code>US Onshore</code> or <code>Irish Onshore</code>; several separated by <code>|</code>; or <code>All</code> for every type. Several make <a href="#shared">one shared sleeve</a>. The PWA chooses the type in step 2.</td></tr>
 <tr><td><strong>Category</strong></td><td>One of the seven: <code>Investment Grade Fixed Income</code>, <code>Hybrid Fixed Income</code>, <code>Other Fixed Income</code>, <code>Public Equity</code>, <code>Hedge Funds</code>, <code>Private Equity &amp; Other Private Assets</code>, <code>Asset Allocation Strategies</code>.</td></tr>
 <tr><td><strong>Sleeve</strong></td><td>The name the PWA picks, e.g. <code>Global Equity Core</code>.</td></tr>
 <tr><td><strong>Edition</strong></td><td>A version of the same sleeve for particular portfolios. Left <strong>blank</strong> it is the <span class="pill fb">fallback</span>, the version everyone gets unless a labelled edition claims their portfolio. Filled in, e.g. <code>GBP</code>, it is a <span class="pill ed">labelled edition</span> and needs at least one rule.</td></tr>
@@ -515,10 +515,10 @@ that edition's rules match; here, GBP portfolios.</p>
 <pre class="out">PMG Multi-Asset Portfolio,Public Equity,UK Equity Income,GBP only,gs-access-world-equity-ucits,1</pre>
 <pre class="out">PMG Multi-Asset Portfolio,Public Equity,UK Equity Income,GBP only,GBP,,</pre>
 
-<h3>6. The same sleeve under another implementation type</h3>
-<p>A sleeve belongs to one variant per set of rows. To offer <em>Global Equity Core</em> to ESG
-proposals too, repeat it under <code>PMG ESG</code>, with that type's own products. Its editions
-and rules are separate from the Multi-Asset ones.</p>
+<h3>6. The same name under another type, with its own products</h3>
+<p>To offer <em>Global Equity Core</em> to ESG proposals with different products, give it rows
+under <code>PMG ESG</code> alone. That is a <strong>separate sleeve</strong> with the same name:
+its editions and rules are its own, and an edit to the Multi-Asset one leaves it as it is.</p>
 <pre class="out">PMG ESG,Public Equity,Global Equity Core,,gs-access-esg-us-equity-etf,0.5
 PMG ESG,Public Equity,Global Equity Core,,gs-esg-international-equity,0.5</pre>
 <div class="note"><b class="h">The four types are fixed in the tool</b><p>A file can use only
@@ -526,10 +526,53 @@ PMG ESG,Public Equity,Global Equity Core,,gs-esg-international-equity,0.5</pre>
 <code>Irish Onshore</code>. A new implementation type is a change to the tool itself, not to the
 data.</p></div>
 
-<h3>7. The two fixed categories</h3>
+<h3 id="shared">7. One sleeve shared by several types</h3>
+<p>A sleeve that is the same everywhere is written <strong>once</strong>, with every type it is for
+in <code>Variant</code>: <code>All</code>, or the types separated by <code>|</code>. It is then
+<strong>one sleeve</strong>: one set of products and one history, so an edit made in the console
+under any of its types is what all of them get.</p>
+<pre class="out">All,Public Equity,Global Equity Passive,,gs-access-intl-equity-etf,0.6
+All,Public Equity,Global Equity Passive,,gs-access-em-equity-etf,0.4
+PMG Multi-Asset Portfolio|PMG ESG,Public Equity,Developed Equity Core,,gs-us-equity-insights-fund,1</pre>
+<p>Each type still has its own list: a type may not have a sleeve of the same name of its own as
+well. Adding one is refused, and nothing is written:</p>
+<pre class="out">REFUSED (name): A sleeve named Global Equity Passive already exists in Public Equity under PMG ESG. To offer it for particular portfolios, add an edition to it instead.
+nothing was written</pre>
+<p>An export writes a shared sleeve the same way (<code>All</code>, or the types with
+<code>|</code>), and importing it again changes that same sleeve. The census counts it under each of
+its types and says how many there are:</p>
+<pre class="out">           6 shared by several types, counted under each</pre>
+
+<h3>8. A shared sleeve with an edition per currency</h3>
+<p>One SMA sleeve for every type and every portfolio, holding the SMA in the portfolio's base
+currency: <em>PMG Core Fixed Income (GBP)</em> for a GBP portfolio, and so on. It is four labelled
+editions, one per currency, each shared by every type, and no fallback: every portfolio has one of
+the four currencies, so each gets exactly one edition. The ProductIds are stand-ins; use your
+catalogue's.</p>
+<pre class="out">All,Investment Grade Fixed Income,PMG Core Fixed Income,USD,pmg-core-fixed-income-usd,1
+All,Investment Grade Fixed Income,PMG Core Fixed Income,GBP,pmg-core-fixed-income-gbp,1
+All,Investment Grade Fixed Income,PMG Core Fixed Income,CHF,pmg-core-fixed-income-chf,1
+All,Investment Grade Fixed Income,PMG Core Fixed Income,EUR,pmg-core-fixed-income-eur,1</pre>
+<p>and in the rules file:</p>
+<pre class="out">All,Investment Grade Fixed Income,PMG Core Fixed Income,USD,USD,,
+All,Investment Grade Fixed Income,PMG Core Fixed Income,GBP,GBP,,
+All,Investment Grade Fixed Income,PMG Core Fixed Income,CHF,CHF,,
+All,Investment Grade Fixed Income,PMG Core Fixed Income,EUR,EUR,,</pre>
+<p>Examples 7 and 8 together load as:</p>
+<pre class="out">loaded 6 editions from H:\pt-seed\library.csv (with 4 rule(s))</pre>
+<div class="note"><b class="h">In the console</b><p>A shared sleeve shows a <em>Shared</em> chip, and
+its page lists the types under <em>Offered under</em>. <strong>+ Share with</strong> offers it under
+another type too. When one type needs it to differ, choose the type under <em>Make one differ</em>
+and press <strong>Give it its own copy</strong>: that type gets a separate copy holding the same
+products, and the rest stay shared. <strong>Stop offering it there</strong> takes a type away. None
+of these is a new version of the sleeve, and each is on the Activity tab. <strong>+ New sleeve</strong>
+with several types ticked makes one shared sleeve.</p></div>
+
+<h3>9. The two fixed categories</h3>
 <p><code>Hybrid Fixed Income</code> and <code>Asset Allocation Strategies</code> hold exactly
 <strong>one</strong> sleeve per type, which the overlays attach automatically. Give each type one
-sleeve in each, with no labelled editions. A replace that leaves them out is accepted by the import,
+sleeve in each, with no labelled editions; one sleeve shared by every type (<code>All</code>) does
+for all four. A replace that leaves them out is accepted by the import,
 but the census then reports each missing one and ends with exit code 1, and the overlays have nothing
 to attach. Always keep them in the file.</p>
 
@@ -552,6 +595,7 @@ The word <code>fallback</code> is reserved.</li>
 <tr><td class="key">REFUSED (rules)</td><td><code>Rule 2: 'EURO' is not in the universe. Known values: USD, GBP, CHF, EUR.</code></td><td>Use a value from the table above, spelled exactly.</td></tr>
 <tr><td class="key">REFUSED (rules)</td><td>A labelled edition with no rule, or a rule with every cell blank.</td><td>Give the edition at least one rule with at least one filled cell.</td></tr>
 <tr><td class="key">REFUSED (label)</td><td>Rules given for a fallback (an edition with a blank label).</td><td>Give that edition a label, or remove its rules.</td></tr>
+<tr><td class="key">REFUSED (variant)</td><td><code>'All types' is not an implementation type.</code> A Variant cell names a type the tool does not have.</td><td>Use the four names exactly, separated by <code>|</code>, or <code>All</code>.</td></tr>
 <tr><td class="key">cannot read &hellip;</td><td>The file could not be opened, or its header row is not one of the two the tool knows.</td><td>Check the path, close the file in Excel, and keep the header row exactly as exported.</td></tr>
 </tbody></table></div>
 <div class="note warn"><b class="h">Watch for a stray rules file</b>
@@ -637,7 +681,8 @@ writes the card in force as a file.</p>
   <a href="#editions">Editions, rules, types</a>
   <a class="ind" href="#editions">How a rule reads</a>
   <a class="ind" href="#editions">Which edition is served</a>
-  <a class="ind" href="#editions">Seven worked examples</a>
+  <a class="ind" href="#editions">Nine worked examples</a>
+  <a class="ind" href="#shared">Shared sleeves</a>
   <a href="#refused">Refusals</a>
   <a href="#undo">Undoing</a>
   <a href="#dont">What not to do</a>

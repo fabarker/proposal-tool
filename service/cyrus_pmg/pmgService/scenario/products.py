@@ -598,7 +598,9 @@ def vocabulary() -> dict:
 
 def _holders(conn, productId) -> list:
     """The live sleeves that hold a product."""
-    return [{'id': r['id'], 'variant': r['variant'], 'category': r['category'],
+    from . import sleeveRepo
+    return [{'id': r['id'], 'variant': sleeveRepo.typesLabel(r['variant']),
+             'variants': sleeveRepo.typesOf(r['variant']), 'category': r['category'],
              'name': r['name'], 'label': r['label']}
             for r in conn.execute(
                 "SELECT s.id, s.variant, s.category, s.name, s.label FROM sleeveProducts p "

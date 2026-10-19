@@ -426,6 +426,8 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/sleeves/{sleeveId}', ('PUT',)),
         ('/scenario/repository/sleeves/{sleeveId}', ('DELETE',)),
         ('/scenario/repository/sleeves/{sleeveId}/offered', ('POST',)),
+        # where a sleeve is offered (D179)
+        ('/scenario/repository/sleeves/{sleeveId}/types', ('POST',)),
         # the custom portfolios waiting for approval (D171)
         ('/scenario/repository/custom-portfolios/awaiting', ('GET',)),
         # the one switch for PWAs (D172)
@@ -527,7 +529,8 @@ def test_a_dropped_product_is_reported_by_product_with_the_sleeves_it_breaks(tmp
         orphans = sleeveRepo.orphanProducts()
         assert [o['productId'] for o in orphans] == [dropped]
         breaks = orphans[0]['sleeves']
-        assert breaks and all(set(s) == {'id', 'variant', 'category', 'name'} for s in breaks)
+        assert breaks and all(set(s) == {'id', 'variant', 'variants', 'category', 'name'}
+                              for s in breaks)
         broken = {e['id'] for e in sleeveRepo.census()['broken']}
         assert {s['id'] for s in breaks} == broken, 'the two views of the same failure agree'
         assert sleeveTools.main(['--census']) == 1
@@ -689,19 +692,21 @@ def test_the_catalogue_opens_by_category_and_shows_product_fees_only():
 # ---- creating under several books, and copying between them (D61) ----------------
 
 def test_one_definition_can_be_created_under_several_types_at_once():
-    """The console's Create, and its right-click Add to implementation type,
-    are the same call: a sleeve is defined once and offered wherever it is
-    wanted, rather than typed out per book."""
+    """The console's Create with several types ticked: a sleeve is defined
+    once and offered wherever it is wanted, rather than typed out per book -
+    and since D179 it is ONE sleeve, shared by them, not a copy per type."""
     made = sleeveRepo.createSleeves(
-        ['PMG ESG', 'Irish Onshore'], 'Public Equity', 'Shared Definition',
+        ['Irish Onshore', 'PMG ESG'], 'Public Equity', 'Shared Definition',
         [{'productId': A_PRODUCT, 'weight': 0.6}, {'productId': ANOTHER, 'weight': 0.4}],
         note='one definition', user='alice')
     try:
-        assert [m['variant'] for m in made] == ['PMG ESG', 'Irish Onshore'], 'VARIANTS order'
-        for m in made:
-            assert m['name'] == 'Shared Definition' and m['note'] == 'one definition'
-            assert [p['productId'] for p in m['products']] == [A_PRODUCT, ANOTHER]
-            assert sorted(m['offeredUnder']) == ['Irish Onshore', 'PMG ESG']
+        assert len(made) == 1
+        m = made[0]
+        assert m['variants'] == ['PMG ESG', 'Irish Onshore'], 'VARIANTS order'
+        assert m['shared'] and m['variant'] == 'PMG ESG, Irish Onshore'
+        assert m['name'] == 'Shared Definition' and m['note'] == 'one definition'
+        assert [p['productId'] for p in m['products']] == [A_PRODUCT, ANOTHER]
+        assert m['offeredUnder'] == ['PMG ESG', 'Irish Onshore']
         # and it reaches the pickers of both, but not of the books not asked for
         for variant in ('PMG ESG', 'Irish Onshore'):
             assert sleeves.sleeveExists('Public Equity', 'Shared Definition', variant)
@@ -763,8 +768,8 @@ def test_the_route_takes_a_list_of_types_and_reports_them_all(monkeypatch):
         caller=_caller('alice'))
     made = body['sleeves']
     try:
-        assert len(made) == 2 and body['sleeve'] == made[0]
-        assert {m['variant'] for m in made} == {'US Onshore', 'PMG Multi-Asset Portfolio'}
+        assert len(made) == 1 and body['sleeve'] == made[0]
+        assert made[0]['variants'] == ['PMG Multi-Asset Portfolio', 'US Onshore']
         # the single-type form still works, for callers that send one
         one = dashboardRouter.createRepositorySleeve(
             {'variant': 'PMG ESG', 'category': 'Hedge Funds', 'name': 'Route Shared',

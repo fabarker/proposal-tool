@@ -105,8 +105,8 @@ def _sleeveCategories(variant=None) -> dict:
     try:
         sql = ('SELECT DISTINCT p.productId, s.category FROM sleeveProducts p JOIN sleeves s '
                "ON s.id = p.sleeveId WHERE s.deletedAt = ''")
-        rows = conn.execute(sql + (' AND s.variant = ?' if variant else ''),
-                            (variant,) if variant else ()).fetchall()
+        rows = conn.execute(sql + (' AND ' + sleeveRepo.underType('s.variant') if variant else ''),
+                            (sleeveRepo.typeArg(variant),) if variant else ()).fetchall()
     finally:
         conn.close()
     out = {}

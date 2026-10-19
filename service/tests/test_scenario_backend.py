@@ -1108,7 +1108,7 @@ def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
                           text=True, env=environment)
     assert done.returncode == 0, done.stderr[-600:]
     routes, asked = done.stdout.split()
-    assert int(routes) == 64, 'the whole block registered without the extract'
+    assert int(routes) == 65, 'the whole block registered without the extract'
     assert asked == 'raised', 'and the data is still required when it is wanted'
 
 

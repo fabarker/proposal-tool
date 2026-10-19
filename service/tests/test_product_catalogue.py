@@ -388,7 +388,7 @@ def test_a_catalogue_from_before_the_category_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 9
+    assert sleeveRepo.describe()['schemaVersion'] == 10
     after = products.entries()
     assert [p['category'] for p in after] == [''] * len(before)
     strip = lambda ps: [{k: v for k, v in p.items() if k != 'category'} for p in ps]

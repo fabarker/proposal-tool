@@ -12,7 +12,9 @@ between environments, and reviewing it as a table:
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --export out.csv
         The whole library in the interchange shape, one row per product:
         Variant, Category, Sleeve, Edition, ProductId, Weight - and beside
-        it, as out.rules.csv, every edition's rules (D89).
+        it, as out.rules.csv, every edition's rules (D89). A sleeve shared
+        by several types names them all in Variant, separated by |, or All
+        for every type (D179).
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --import in.csv [--replace]
         Load a library through the same validation a save gets. Editions of
@@ -78,6 +80,8 @@ def _census() -> int:
         store.get('schemaVersion', 1), store.get('revisions', 0), store.get('archived', 0)))
     if c.get('editions'):
         print('           {} labelled edition(s) with rules'.format(c['editions']))
+    if c.get('shared'):
+        print('           {} shared by several types, counted under each'.format(c['shared']))
     print('catalogue  in the store · version {} · {} products{}'.format(
         cat['revision'], cat['products'],
         ' · {} withdrawn'.format(cat['withdrawn']) if cat['withdrawn'] else ''))

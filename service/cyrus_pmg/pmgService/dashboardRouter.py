@@ -383,9 +383,9 @@ def createRepositorySleeve(payload: dict = Body(...), caller=Depends(requireAdmi
     Optionally an edition (D89): {label, rules: [{currency, riskLevel,
     allocationType}]}, each field a list of values or absent for any.
 
-    Several types in one call is how the console both creates a sleeve for a
-    set of books and copies an existing one into another (D61). All or
-    nothing: a name that clashes in any of them writes none of them.
+    Several types make one sleeve shared by them all (D179): an edit under
+    any of them is what each serves. All or nothing: a name that clashes in
+    any of them writes nothing. `sleeves` is a list of the one made.
     """
     try:
         variants = payload.get('variants')
@@ -405,8 +405,9 @@ def createRepositorySleeve(payload: dict = Body(...), caller=Depends(requireAdmi
 @router.put('/scenario/repository/sleeves/{sleeveId}')
 def updateRepositorySleeve(sleeveId: int, payload: dict = Body(...),
                            caller=Depends(requireAdmin)):
-    """Rename, re-note, re-weight or re-scope a sleeve. Its type and category
-    are fixed at creation - a sleeve moved between them is a different sleeve.
+    """Rename, re-note, re-weight or re-scope a sleeve. Its category is fixed
+    at creation - a sleeve moved between them is a different sleeve - and its
+    types move by /types, not here (D179).
     `label` and `rules` absent from the payload leave the edition as it is.
     `base`, the revision count the edit started from, makes a save over
     someone else's newer one a 409 rather than a silent overwrite (D156)."""
@@ -451,7 +452,8 @@ def previewApplicability(payload: dict = Body(...), caller=Depends(requireAdmin)
     same validation a save runs, so the words match."""
     try:
         return sleeveRepo.applicabilityPreview(
-            payload.get('variant'), payload.get('category'), payload.get('name'),
+            payload.get('variants') or payload.get('variant'), payload.get('category'),
+            payload.get('name'),
             payload.get('label', ''), payload.get('rules'), sleeveId=payload.get('sleeveId'))
     except ValidationError as exc:
         return _validationError(exc)
@@ -482,6 +484,27 @@ def offerRepositorySleeve(sleeveId: int, payload: dict = Body(...), caller=Depen
         return _validationError(ValidationError('offered', 'Say whether the sleeve is offered: true or false.'))
     try:
         return {'sleeve': sleeveRepo.setOffered(sleeveId, offered, user=caller.kerberos)}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
+        return JSONResponse(status_code=502, content={'error': str(exc)})
+
+
+@router.post('/scenario/repository/sleeves/{sleeveId}/types')
+def shareRepositorySleeve(sleeveId: int, payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Where a sleeve is offered (D179): {action, variant}. `share` offers
+    it under one more type - the same sleeve, so an edit under either is
+    what both serve; `unshare` stops offering it under one of its types;
+    `split` gives one of its types a copy of its own, separate from then on.
+    Each acts on the sleeve's editions under the same types too, and none is
+    a new version. Returns every sleeve touched, copies last."""
+    actions = {'share': sleeveRepo.offerUnder, 'unshare': sleeveRepo.withdrawFrom,
+               'split': sleeveRepo.splitOff}
+    action = actions.get(payload.get('action'))
+    if action is None:
+        return _validationError(ValidationError('action', 'Say what to do: share, unshare or split.'))
+    try:
+        return {'sleeves': action(sleeveId, payload.get('variant'), user=caller.kerberos)}
     except ValidationError as exc:
         return _validationError(exc)
     except products.BadCatalogue as exc:
