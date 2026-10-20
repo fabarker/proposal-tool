@@ -37,10 +37,10 @@ between environments, and reviewing it as a table:
         funding split - who did what, and what moved. Default 40.
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --products-export out.csv
-        The product catalogue as a product file (D165): one row per live
-        product, the columns the file has always had, then each product's
-        ticker and minimum in each base currency where it has its own -
-        Ticker USD ... MinimumInvestment EUR (D180). Edit it and import it.
+        The product catalogue as a product file (D165): the columns the file
+        has always had, then BaseCurrency - one All row per live product,
+        and a row for each base currency it has values of its own in, or
+        only the currencies it is offered in (D182). Edit it and import it.
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --products-import in.csv [--withdraw-missing] [--note TEXT]
         Load a product file (CSV or XLSX) through the same checks the console
@@ -207,7 +207,7 @@ def _productsImport(path: str, withdrawMissing: bool, note: str) -> int:
         print('REFUSED: {}'.format(getattr(exc, 'message', exc)))
         print('nothing was written')
         return 1
-    print('{}: {} row(s)'.format(preview['file'], preview['rows']))
+    print('{}: {} product(s)'.format(preview['file'], preview['rows']))
     print('  {} new, {} changed, {} back from withdrawn, {} unchanged, {} not in the file'.format(
         len(preview['added']), len(preview['changed']), len(preview['restored']),
         preview['unchanged'], len(preview['missing'])))

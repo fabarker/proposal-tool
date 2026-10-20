@@ -256,18 +256,19 @@ columns, so the easiest file to edit is that one.</p>
 <tr><td class="key">Source</td><td>Yes</td><td>e.g. <code>Internal</code>.</td></tr>
 <tr><td class="key">Liquidity</td><td>Yes</td><td>e.g. <code>Daily</code>.</td></tr>
 <tr><td class="key">ExposureCurrency</td><td>Yes</td><td>e.g. <code>USD</code>.</td></tr>
+<tr><td class="key">IssueCurrency</td><td>Optional</td><td>The currency the product is issued in, e.g. <code>GBP</code>. <code>Issue Currency</code> or <code>IssueCcy</code> as the header are read too. Blank, or the column left out, is none given.</td></tr>
 <tr><td class="key">ProductCost</td><td>Yes</td><td>A percentage written as a number: <code>0.25</code> means 0.25%. Not negative.</td></tr>
 <tr><td class="key">FeeGroup</td><td>Yes</td><td>One of the fee card's groups: <code>Passive</code>, <code>Core Active</code>, <code>Specialist Active</code>, <code>Alternatives</code>, <code>Asset Allocation</code>. The management fee comes from the fee card through this group, not from the product.</td></tr>
 <tr><td class="key">ShareClass</td><td>Optional</td><td><code>Distributing</code> or <code>Accumulating</code>, or blank.</td></tr>
 <tr><td class="key">DistributionYield</td><td>Optional</td><td>A percentage as a number, e.g. <code>3.20</code>.</td></tr>
-<tr><td class="key">MinimumInvestment</td><td>Optional</td><td>In currency units, e.g. <code>5000000</code>.</td></tr>
-<tr><td class="key">Ticker USD &hellip; Ticker EUR</td><td>Optional</td><td>The ticker the product is listed under in a scenario of that base currency, one column a currency: <code>Ticker USD</code>, <code>Ticker GBP</code>, <code>Ticker CHF</code>, <code>Ticker EUR</code>. Blank uses <code>Ticker</code>. See <a href="#currencies">Tickers and minimums by currency</a>.</td></tr>
-<tr><td class="key">MinimumInvestment USD &hellip; EUR</td><td>Optional</td><td>The minimum in a scenario of that currency, in that currency's units. Blank uses <code>MinimumInvestment</code>; <code>0</code> means no minimum there.</td></tr>
+<tr><td class="key">MinimumInvestment</td><td>Optional</td><td>In US dollars whatever the base currency, e.g. <code>5000000</code>.</td></tr>
+<tr><td class="key">BaseCurrency</td><td>Optional</td><td>The base currency the row is for: <code>USD</code>, <code>GBP</code>, <code>CHF</code>, <code>EUR</code>, or <code>All</code> (or blank) for the main row. A product listed differently by currency has one row for each, under the same <code>ProductId</code>. See <a href="#currencies">Products by base currency</a>.</td></tr>
 </tbody></table></div>
 <p>An example row, under the headers in the order the current file uses:</p>
-<pre class="out">ProductId,Name,Ticker,AssetClass,Category,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
-gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Investment Grade Fixed Income,Active,SMA,Distributing,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
-<p>The file you download also ends with the eight per-currency columns, blank until you fill them.</p>
+<pre class="out">ProductId,Name,Ticker,AssetClass,Category,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,IssueCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
+gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Investment Grade Fixed Income,Active,SMA,Distributing,Internal,Daily,USD,USD,0.25,Core Active,3.20,5000000</pre>
+<p>The file you download also ends with <code>BaseCurrency</code>: <code>All</code> on every row
+until a product has values of its own in a currency.</p>
 
 <p>On an import, the six describing columns (<code>AssetClass</code> to
 <code>ExposureCurrency</code>) must all be filled, a <code>Category</code> the library does not know is
@@ -316,7 +317,7 @@ away, on the Sleeves tab.</p></div>
 <strong>Parameters</strong> to:</p>
 <pre class="out">--products-import H:\pt-seed\products-new.csv --note "October delivery"</pre>
 <p>It prints the preview and applies it in one run:</p>
-<pre class="out">products-new.csv: 74 row(s)
+<pre class="out">products-new.csv: 74 product(s)
   1 new, 1 changed, 0 back from withdrawn, 72 unchanged, 0 not in the file
   gsam-short-duration-sma  Product cost 0.22 &rarr; 0.24
 imported: 1 added, 1 changed, 0 restored, 0 withdrawn - the catalogue is now version 2</pre>
@@ -356,7 +357,7 @@ can have one category only. Keep each <code>ProductId</code> as it is.</p></div>
 <div class="step"><h3>Import it and read the preview</h3>
 <p>Use <strong>Import a file</strong> on the Catalogue, or the sleeve tool's
 <code>--products-import</code>. The preview shows each product's category as a change:</p>
-<pre class="out">products-new.csv: 73 row(s)
+<pre class="out">products-new.csv: 73 product(s)
   0 new, 73 changed, 0 back from withdrawn, 0 unchanged, 0 not in the file
   gsam-core-municipal-sma  Category &mdash; &rarr; Investment Grade Fixed Income
   gs-high-yield-fund  Category &mdash; &rarr; Other Fixed Income
@@ -376,40 +377,60 @@ left blank. One product can also be given or changed a category on its own: open
 <strong>Edit</strong> and choose from <strong>Category</strong>.</p></div>
 </div>
 
-<h3 id="currencies">Tickers and minimums by currency</h3>
-<p>A product is one product in every base currency, but it can be listed under a different ticker in
-each, and take a different minimum. The sleeve database's schema 11 holds both, per currency. A
-scenario shows the ticker for its own currency in the implementation table, the custom builders,
-the sheet, the deck and the saved proposal, and checks a position against that currency's minimum.
-A currency left blank uses the main <code>Ticker</code> and <code>MinimumInvestment</code>, so a
-product that is the same everywhere needs nothing new.</p>
+<h3 id="currencies">Products by base currency</h3>
+<p>A product is one product in every base currency, but each currency can list it under its own
+ticker, give it its own minimum, its own exposure currency and its own issue currency: a share
+class hedged to each base currency, say. It can also be left out of a currency altogether. A scenario shows the ticker and
+exposure for its own currency in the implementation table, the custom builders, the sheet, the deck
+and the saved proposal, and checks a position against that currency's minimum.</p>
 <div class="steps">
-<div class="step"><h3>Run the update first</h3>
-<p>The census should say <code>schema v11</code>. Then download the product file: it ends with
-<code>Ticker USD</code>, <code>Ticker GBP</code>, <code>Ticker CHF</code>, <code>Ticker EUR</code>,
-<code>MinimumInvestment USD</code> &hellip; <code>MinimumInvestment EUR</code>. A heading such as
-<code>GBP Ticker</code>, <code>Ticker (GBP)</code> or <code>Minimum GBP</code> is read the same way.</p></div>
-<div class="step"><h3>Fill in what differs</h3>
-<p>Give a currency's ticker or minimum only where it is not the main one. A minimum is in that
-currency's units: <code>250000</code> in <code>MinimumInvestment GBP</code> is a GBP 250,000 minimum.
-<code>0</code> means the product has no minimum in that currency even when the main one has one.</p></div>
+<div class="step"><h3>One row per currency</h3>
+<p>Give the product a row for each base currency it differs in, all with the same
+<code>ProductId</code>, and say which currency each row is for in <code>BaseCurrency</code>. A name
+may end in its row's currency, <code>GS Green Bond Fund (GBP)</code>: the catalogue shows it as
+<code>GS Green Bond Fund</code>. Only <code>Ticker</code>, <code>MinimumInvestment</code>,
+<code>ExposureCurrency</code> and <code>IssueCurrency</code> may differ between a product's rows; everything else must be the
+same on every row.</p>
+<pre class="out">ProductId,Name,Ticker,&hellip;,ExposureCurrency,&hellip;,MinimumInvestment,BaseCurrency
+gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF,GBIL,&hellip;,USD,&hellip;,,All
+gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF (GBP),GBIL LN,&hellip;,GBP,&hellip;,250000,GBP
+gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF (CHF),GBIL SW,&hellip;,CHF,&hellip;,,CHF
+gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF (EUR),GBIL GY,&hellip;,EUR,&hellip;,,EUR
+gs-green-bond-fund,GS Green Bond Fund (USD),GSGBX,&hellip;,USD,&hellip;,1000,USD
+gs-green-bond-fund,GS Green Bond Fund (GBP),GSGBG,&hellip;,GBP,&hellip;,1000,GBP
+gs-green-bond-fund,GS Green Bond Fund (EUR),GSGBE,&hellip;,EUR,&hellip;,1000,EUR</pre></div>
+<div class="step"><h3>All, or the currencies it is offered in</h3>
+<p>With an <code>All</code> row, the product is offered in every currency: <code>All</code> is
+what a currency without a row of its own reads. With <strong>no</strong> <code>All</code> row it
+is offered only in the currencies it has rows for. Above, the green bond fund is not offered in
+CHF. A CHF proposal whose sleeve holds it shows <em>not in CHF</em> on the product's row, and the
+download stays blocked until the sleeve is changed.</p></div>
+<div class="step"><h3>A row is the product whole</h3>
+<p>A currency's row says everything about the product in that currency, so a blank there means
+none: a blank minimum on the GBP row is no minimum in GBP, even when the <code>All</code> row has
+one. A minimum is in US dollars on every row: <code>250000</code> on the GBP row is a $250,000
+minimum for a GBP proposal, which is in dollars too.</p></div>
 <div class="step"><h3>Import it and read the preview</h3>
-<pre class="out">products-ccy.csv: 73 row(s)
+<pre class="out">products-ccy.csv: 73 product(s)
   0 new, 2 changed, 0 back from withdrawn, 71 unchanged, 0 not in the file
-  gsam-core-municipal-sma  Minimum investment in GBP &mdash; &rarr; 3,000,000; Minimum investment in CHF &mdash; &rarr; 0
-  gs-access-treasury-0-1-etf  Ticker in GBP &mdash; &rarr; GBIL LN; Ticker in CHF &mdash; &rarr; GBIL SW; Ticker in EUR &mdash; &rarr; GBIL GY; Minimum investment in GBP &mdash; &rarr; 250,000
+  gs-access-treasury-0-1-etf  Ticker in GBP &mdash; &rarr; GBIL LN; Ticker in CHF &mdash; &rarr; GBIL SW; Ticker in EUR &mdash; &rarr; GBIL GY; Minimum investment in GBP &mdash; &rarr; 250,000; Exposure currency in GBP &mdash; &rarr; GBP; Exposure currency in CHF &mdash; &rarr; CHF; Exposure currency in EUR &mdash; &rarr; EUR
+  gs-green-bond-fund  Ticker in GBP &mdash; &rarr; GSGBG; Ticker in EUR &mdash; &rarr; GSGBE; Exposure currency in GBP &mdash; &rarr; GBP; Exposure currency in EUR &mdash; &rarr; EUR; Offered in CHF yes &rarr; no
 imported: 0 added, 2 changed, 0 restored, 0 withdrawn - the catalogue is now version 2</pre>
-<p>A file is the whole truth for every product in it: a product file <em>without</em> the
-per-currency columns clears them, the way a file without <code>Category</code> clears the
-categories. The preview lists every value that would go, so read it before you apply.</p></div>
+<p>The count is of products, not rows. A file is the whole truth for every product in it: a
+product given only an <code>All</code> row loses the values it had by currency, the way a file
+without <code>Category</code> clears the categories. The preview lists every value that would go,
+so read it before you apply.</p></div>
 <div class="step"><h3>If it refuses</h3>
-<pre class="out">REFUSED: products-bad.csv: row 2 (gsam-core-municipal-sma): Minimum investment in EUR '5m' is not a number: give an amount, such as 5000000.
-nothing was written</pre></div>
+<pre class="out">REFUSED: products-bad.csv: row 50 (gs-green-bond-fund): the GBP row gives product cost 0.55 where row 49 gives 0.48 - only the ticker, the minimum, the exposure currency and the issue currency may differ by base currency.
+nothing was written</pre>
+<p>A product given two rows for the same currency, or two rows in a file with no
+<code>BaseCurrency</code> column, is refused the same way.</p></div>
 <div class="step"><h3>One product at a time</h3>
 <p>Open its card on the Catalogue and press <strong>Edit</strong>. Under <strong>By base
-currency</strong> there is a ticker and a minimum for each currency; an empty box shows the main
-value it falls back to. The card's <em>By currency</em> line lists the ones a product has of its
-own.</p></div>
+currency</strong> each currency has <em>Offered</em> yes or no, and a ticker, a minimum, an
+exposure currency and an issue currency; an empty box shows the main value it falls back to, and a ticker
+of <code>-</code> is none there. The card's <em>By currency</em> line lists what a product has of
+its own. The download writes each product back as the rows above.</p></div>
 </div>
 
 <h2 id="sleeves">Re-seeding the sleeve library</h2>
@@ -716,7 +737,7 @@ writes the card in force as a file.</p>
   <a href="#setup">One-time setup</a>
   <a href="#products">Products</a>
   <a class="ind" href="#category">Adding the categories</a>
-  <a class="ind" href="#currencies">Tickers and minimums by currency</a>
+  <a class="ind" href="#currencies">Products by base currency</a>
   <a href="#sleeves">Sleeves</a>
   <a href="#editions">Editions, rules, types</a>
   <a class="ind" href="#editions">How a rule reads</a>

@@ -1574,12 +1574,16 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .prd-ccy-h b{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
 .prd-ccy-h small{font-size:11.5px;color:var(--ink-3)}
 .prd-ccy table{width:100%;border-collapse:collapse;table-layout:fixed}
-.prd-ccy th{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:0 8px 3px 0}
-.prd-ccy thead th:first-child,.prd-ccy tbody th{width:70px}
+.prd-ccy th{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:0 6px 3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prd-ccy thead th:first-child,.prd-ccy tbody th{width:40px}
 .prd-ccy tbody th{vertical-align:top;padding-top:7px;color:var(--ink)}
-.prd-ccy td{padding:0 8px 0 0;vertical-align:top}
+.prd-ccy td{padding:0 6px 0 0;vertical-align:top}
 .prd-ccy input{width:100%;box-sizing:border-box;font:inherit;font-size:13.5px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink)}
 .prd-ccy input[aria-invalid="true"]{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+.prd-ccy select{width:100%;box-sizing:border-box;font:inherit;font-size:13.5px;padding:5px 4px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink)}
+.prd-ccy thead th:nth-child(2){width:64px}
+.prd-ccy thead th:nth-child(4){width:25%}
+.prd-ccy tr.off input{background:var(--surface-2);color:var(--ink-3);border-style:dashed}
 .prd-ccyl{display:grid;gap:2px}
 .prd-ccyl b{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;margin-right:4px}
 .prd-note{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;
@@ -1732,7 +1736,8 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 /* the dialog's own boxes are full width at 15.5px (pickers.py); these are
    form fields set in a row, so they say their own size, at the dialog's
    specificity */
-.dialog .prd-f input[type=text],.dialog .prd-f select,.dialog .prd-ccy input[type=text]{font-family:var(--f-body);font-size:13.5px;padding:5px 8px}
+.dialog .prd-f input[type=text],.dialog .prd-f select{font-family:var(--f-body);font-size:13.5px;padding:5px 8px}
+.dialog .prd-ccy input[type=text],.dialog .prd-ccy select{font-family:var(--f-body);font-size:13.5px;padding:5px 6px}
 .dialog .prd-f select{padding-right:26px}
 .dialog .prd-start select{font-size:13px;padding:5px 26px 5px 8px}
 .dialog input[type=text].prd-note{font-family:var(--f-body);font-size:13px;padding:5px 8px}

@@ -169,7 +169,11 @@ def readProducts(path):
             continue
         ids.append(cell['id'])
         tickers = [v for f, v in cell.items() if f.startswith('ticker')]
-        for text in [cell['id'], cell['name']] + tickers:
+        # a product on a row per base currency may carry it in its name:
+        # 'Green Bond ETF (GBP)' is the Green Bond ETF too
+        bare = re.sub(r'\s*\((?:{})\)$'.format('|'.join(CURRENCIES)), '', cell['name'],
+                      flags=re.IGNORECASE)
+        for text in [cell['id'], cell['name'], bare] + tickers:
             k = text.casefold()
             if not k or k == '\u2014':
                 continue

@@ -71,7 +71,7 @@ def test_a_rate_changed_in_the_console_prices_at_once_and_is_on_the_record(store
     saved = feeCard.save(card, 'Pricing round', user='alice', base=1)
     assert saved['revision'] == 2
     assert fees.managementFee('RDR', 15e6, 'PMG Target', 'Core Active') == 0.46 != before
-    assert saved['changes'] == ['RDR · Core Active · 10m – 25m · PMG Target 0.44 → 0.46']
+    assert saved['changes'] == ['RDR · Core Active · $10m – $25m · PMG Target 0.44 → 0.46']
     info = fees.deliveryInfo()
     assert info['version'] == 'Version 2' and not info['placeholder'] and info['lastEditedBy'] == 'alice'
     top = feeCard.history()[0]
@@ -112,7 +112,7 @@ def test_a_card_the_framework_cannot_price_from_is_refused_naming_where(store, c
     with pytest.raises(ValidationError) as caught:
         feeCard.save(card, 'n', user='alice', base=1)
     assert caught.value.field == 'rates' and words in caught.value.message
-    assert 'RDR · Passive · Under 10m' in caught.value.message
+    assert 'RDR · Passive · Under $10m' in caught.value.message
     assert fees.deliveryInfo()['revision'] == 1
 
 
@@ -175,10 +175,10 @@ def test_a_tier_is_split_and_merged_and_its_range_follows_its_rates(store):
         for group, byTier in byRow.items():
             byTier['new-1'] = copy.deepcopy(byTier['T2'])
     saved = feeCard.save(card, 'Split the second tier', user='alice', base=1)
-    assert saved['changes'][0].startswith('Tiers: Under 10m · 10m – 25m')
-    assert '10m – 15m · 15m – 25m' in saved['changes'][0]
+    assert saved['changes'][0].startswith('Tiers: Under $10m · $10m – $25m')
+    assert '$10m – $15m · $15m – $25m' in saved['changes'][0]
     assert [t['id'] for t in fees.tiers()] == ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
-    assert fees.tierFor(12e6)['label'] == '10m – 15m' and fees.tierFor(20e6)['label'] == '15m – 25m'
+    assert fees.tierFor(12e6)['label'] == '$10m – $15m' and fees.tierFor(20e6)['label'] == '$15m – $25m'
     assert fees.tierFor(20e6)['id'] == 'T3'
     # a tier split with its rates copied blends a mandate exactly as before
     assert fees.effectiveRate('CASP', 26e6, 'PMG Target') == pytest.approx(original)
@@ -190,13 +190,13 @@ def test_a_tier_is_split_and_merged_and_its_range_follows_its_rates(store):
         for byTier in byRow.values():
             del byTier['T3']
     feeCard.save(merged, 'Back to five', user='alice', base=2)
-    assert [t['label'] for t in fees.tiers()][:2] == ['Under 10m', '10m – 25m']
+    assert [t['label'] for t in fees.tiers()][:2] == ['Under $10m', '$10m – $25m']
     assert len(fees.tiers()) == 5
     assert fees.effectiveRate('CASP', 26e6, 'PMG Target') == pytest.approx(original)
 
 
 @pytest.mark.parametrize('shape, words', [
-    (lambda t: t[0].update({'min': 1000}), 'start at 0'),
+    (lambda t: t[0].update({'min': 1000}), 'start at $0'),
     (lambda t: t[-1].update({'max': 900000000}), 'no upper edge'),
     (lambda t: t[1].update({'max': 20000000}), 'edge to edge'),
     (lambda t: t[1].update({'max': 10000000}), 'no room'),
@@ -240,7 +240,7 @@ def test_a_file_is_previewed_rate_by_rate_and_put_in_force_with_its_name(store, 
     content = base64.b64encode('\n'.join(lines).encode()).decode()
     preview = feeCard.importPreview('october.csv', content)
     assert preview['rates'] == 1 and not preview['same'] and preview['blocked'] == []
-    assert preview['changes'][0].startswith('RDR · Alternatives · 25m – 50m · PMG Target')
+    assert preview['changes'][0].startswith('RDR · Alternatives · $25m – $50m · PMG Target')
     with pytest.raises(ValidationError) as caught:
         feeCard.importFile('october.csv', content, '', user='alice')
     assert caught.value.field == 'note'

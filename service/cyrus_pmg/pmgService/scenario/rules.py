@@ -17,7 +17,7 @@ from numbers import Real
 from . import fees
 from . import otherCharges as _otherCharges
 from . import portfolio_weights as pw
-from . import money, saaKeys, universe
+from . import saaKeys, universe
 from .sleeves import VARIANTS as IMPLEMENTATION_VARIANTS, variantExists
 from .types import BasisInput, MandateInput, PortfolioKey, ValidationError
 
@@ -877,7 +877,7 @@ def keysInvalidForVariant(keyStrs, variant, mandateSize=None) -> list:
     return invalid
 
 
-def validateMandate(mandate: MandateInput, advisorExists, currency=None) -> None:
+def validateMandate(mandate: MandateInput, advisorExists) -> None:
     """The server-authoritative mandate rules (spec 2.4).
 
     *advisorExists* is a callable so the directory stays the adapter's
@@ -888,7 +888,7 @@ def validateMandate(mandate: MandateInput, advisorExists, currency=None) -> None
     if not mandate.mandateSize or mandate.mandateSize < MANDATE_FLOOR:
         raise ValidationError(
             'mandateSize',
-            'Mandate size must be at least {}.'.format(money.amount(MANDATE_FLOOR, currency)))
+            'Mandate size must be at least ${:,.0f}.'.format(MANDATE_FLOOR))
     if mandate.mandateSize > mandate.topAccountSize:
         raise ValidationError(
             'mandateSize', 'Mandate size cannot exceed the top account size.')

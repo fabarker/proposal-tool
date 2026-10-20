@@ -157,8 +157,9 @@ WEIGHT_TOLERANCE = 1e-6
 #: 9 a product has a category of its own, the one the catalogue bands it under
 #: (D178); 10 a sleeve may be offered under several types, and a switch names
 #: the type it added, took away or gave a copy of its own (D179); 11 a product
-#: has a ticker and a minimum of its own in each base currency (D180).
-SCHEMA_VERSION = 11
+#: has a ticker and a minimum of its own in each base currency (D180); 12 a
+#: product has the currency it is issued in (D184).
+SCHEMA_VERSION = 12
 
 #: how a sleeve offered under several types stores them (D179), and the word
 #: a file may use for every type
@@ -275,6 +276,7 @@ CREATE TABLE IF NOT EXISTS products (
     source            TEXT NOT NULL DEFAULT '',
     liquidity         TEXT NOT NULL DEFAULT '',
     exposureCurrency  TEXT NOT NULL DEFAULT '',
+    issueCurrency     TEXT NOT NULL DEFAULT '',
     productCost       REAL NOT NULL,
     feeGroup          TEXT NOT NULL,
     distributionYield REAL,
@@ -682,6 +684,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if productColumns and 'currencies' not in productColumns:
         with conn:
             conn.execute("ALTER TABLE products ADD COLUMN currencies TEXT NOT NULL DEFAULT ''")
+
+    # 11 -> 12 (D184): the currency a product is issued in, blank for every
+    # product already here until a file gives it
+    if productColumns and 'issueCurrency' not in productColumns:
+        with conn:
+            conn.execute("ALTER TABLE products ADD COLUMN issueCurrency TEXT NOT NULL DEFAULT ''")
 
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.

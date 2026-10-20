@@ -57,11 +57,10 @@ class ScenarioPort(Protocol):
         """Typeahead over the Primary PWA directory. The reference adapter reads
         an Excel file; production reads a database table."""
 
-    def validate_mandate(self, mandate: "MandateInput", currency: str = None) -> None:
+    def validate_mandate(self, mandate: "MandateInput") -> None:
         """Raise ValidationError with a field name and message if invalid. The UI
         enforces the same rules client-side for immediacy; the server is
-        authoritative. *currency*, when known, is what a message's amounts
-        are written in."""
+        authoritative."""
 
     def resolve_portfolio(
         self, basis: "BasisInput", key: "PortfolioKey"

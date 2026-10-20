@@ -190,17 +190,12 @@ var variantPending = null;
 function esc(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
-/* An amount in a base currency, with its mark (D181): the scenario's own
-   unless one is named - a saved proposal's, say. None until the PWA has
-   chosen the currency, since the amount is in whichever they choose. */
-var CURRENCY_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
-function moneyMark(currency) {
-  if (currency === undefined) currency = state.basisChosen ? state.basis.currency : null;
-  return CURRENCY_MARKS[currency] || '';
-}
-function money(n, currency) {
+/* An amount, in dollars whatever the proposal's base currency: the PWA
+   enters the mandate and the top account size in dollars, and every
+   product's minimum is in dollars (D183). */
+function money(n) {
   return (n === null || n === undefined || isNaN(n))
-    ? '—' : moneyMark(currency) + Math.round(n).toLocaleString('en-US');
+    ? '—' : '$' + Math.round(n).toLocaleString('en-US');
 }
 function parseMoney(v) { return Math.round(Number(String(v).replace(/[^0-9.]/g, '')) || 0); }
 
@@ -3381,7 +3376,7 @@ function renderDialog() {
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
-    + '<div class="field"><label for="mdtop">Top Account Size (AUS)</label>'
+    + '<div class="field"><label for="mdtop">Top Account Size ($AUS)</label>'
     + '<input type="text" id="mdtop" inputmode="numeric" autocomplete="off" value="'
     + (draft.top ? esc(money(draft.top)) : '') + '"' + invalid('mdtop')
     + (draft.saving ? ' disabled' : '') + '></div>'
@@ -3563,7 +3558,7 @@ async function lookupProposal(uid, seq) {
         + account.requests[0].requestId + '.');
     } else {
       announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
-        + money(found.proposal.mandateSize, found.proposal.currency) + '.');
+        + money(found.proposal.mandateSize) + '.');
     }
   } catch (err) {
     if (!account || account.seq !== seq) return;
@@ -3610,7 +3605,7 @@ function accountStatusText() {
      proposal's one request is spent is the thing the user would check (D111). */
   var p = a.proposal;
   return 'Ready. Submitting records the request against ' + p.proposalId
-    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize, p.currency) + ').';
+    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize) + ').';
 }
 
 /* The card opens on the UID alone and grows into the request only when the
@@ -3792,8 +3787,8 @@ function accountProposalMarkup(busy) {
   var terms = [
     ['Primary PWA', p.primaryPwa],
     ['Basis', p.currency + ' · ' + p.hedging],
-    ['Mandate size', money(p.mandateSize, p.currency)],
-    ['Top account size', money(p.topAccountSize, p.currency)],
+    ['Mandate size', money(p.mandateSize)],
+    ['Top account size', money(p.topAccountSize)],
     ['Implementation', p.variant],
     ['Risk · allocation', riskAllocationText(p)],
     ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
@@ -4758,7 +4753,6 @@ return {
   exporting: function () { return state.exporting; },
   announce: announce,
   money: money,
-  moneyMark: moneyMark,
   esc: esc,
   num: num,
   refresh: refresh,
@@ -4989,8 +4983,10 @@ function roundWeights(exact) {
   return units.map(function (u) { return u / 100; });
 }
 
-/* an amount in the scenario's currency (D181) */
-function money(v) { return App.money(v); }
+function money(v) {
+  return (v === null || v === undefined || isNaN(v))
+    ? '—' : '$' + Math.round(v).toLocaleString('en-US');
+}
 
 function pillFor(v) {
   var map = { Active: 'p-act', Passive: 'p-pas', SMA: 'p-sma', ETF: 'p-etf',
@@ -5520,6 +5516,9 @@ function rows() {
           liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
           cost: product.productCost, feeGroup: product.feeGroup,
           minimumInvestment: product.minimumInvestment,
+          /* not offered in the portfolio's currency (D182): the library
+             serves each product as that currency reads it */
+          notOffered: product.offered === false,
           mgmt: managementFee(product.feeGroup),
           share: product.weight,
           exact: category.weightPct * product.weight
@@ -5642,6 +5641,21 @@ function breaches(groups) {
       if (item.belowMinimum) {
         out.push({ category: group.category, name: item.name,
                    notional: item.notional, minimum: item.minimumInvestment });
+      }
+    });
+  });
+  return out;
+}
+
+/* Every product held that is not offered in the portfolio's currency
+   (D182). The export is refused while this is non-empty, on the page and on
+   the server. Mirrors model['unavailable']. */
+function unavailable(groups) {
+  var out = [];
+  groups.forEach(function (group) {
+    group.items.forEach(function (item) {
+      if (item.notOffered && (item.weight || item.initialWeight)) {
+        out.push({ category: group.category, name: item.name });
       }
     });
   });
@@ -6052,13 +6066,12 @@ function chargeText(field, value) {
   return field.unit === 'bps' ? String(value) : value.toLocaleString('en-US');
 }
 
-/* an amount as 5,000,000, 5m or 500k, its currency's mark or not; basis
-   points as 10 or 10bps */
+/* dollars as 5,000,000, 5m or 500k; basis points as 10 or 10bps */
 function parseCharge(field, text) {
-  var t = String(text || '').trim().toLowerCase().replace(/chf|[$\u00a3\u20ac,\s]/g, '');
+  var t = String(text || '').trim().toLowerCase().replace(/[$,\s]/g, '');
   if (!t) return { empty: true };
   var usd = field.unit === 'usd';
-  var hint = usd ? 'Enter an amount, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
+  var hint = usd ? 'Enter an amount in dollars, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
   var m = t.match(/^(\d*\.?\d+)(k|m|bn|bps|bp)?$/);
   if (!m) return { bad: hint };
   var v = parseFloat(m[1]), suffix = m[2] || '';
@@ -6074,7 +6087,7 @@ function parseCharge(field, text) {
   }
   if (v > field.max) {
     return { bad: field.label + ' can be at most '
-      + (usd ? App.money(field.max) : field.max + ' bps') + '.' };
+      + (usd ? '$' + field.max.toLocaleString('en-US') : field.max + ' bps') + '.' };
   }
   return { v: v };
 }
@@ -6192,7 +6205,7 @@ function renderChargesPanel() {
           var row = '<div class="oc-row' + (bad ? ' bad' : '') + (fixed ? ' fixed' : '') + '">'
             + '<label for="' + id + '">' + App.esc(f.label)
             + (fixed ? ' <span class="oc-fixed">Fixed</span>' : '') + '</label>'
-            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? App.esc(App.moneyMark()) : '') + '</span>'
+            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? '$' : '') + '</span>'
             + '<input type="text" inputmode="decimal" autocomplete="off" id="' + id + '"'
             + ' data-charge="' + App.esc(f.id) + '"'
             + ' value="' + App.esc(chargeText(f, chargesPanel.draft[f.id])) + '"'
@@ -7831,8 +7844,25 @@ function customStuck() {
   });
 }
 
+/* the gate's words for products not offered in the currency (D182): as
+   html, each named product is the way to its row */
+function notOfferedWords(missing, html, cp) {
+  var ccy = App.basis().currency;
+  var names = missing.map(function (m) {
+    return html ? '<button type="button" class="gate-go" data-implgo="'
+      + App.esc(rowAnchor(m.category, m.name)) + '">' + App.esc(m.name) + '</button>' : m.name;
+  });
+  var fix = cp ? 'Take ' + (missing.length === 1 ? 'it' : 'them') + ' out of the portfolio.'
+    : 'Change the sleeve.';
+  return missing.length === 1
+    ? names[0] + ' in ' + (html ? App.esc(missing[0].category) : missing[0].category)
+      + ' is not offered in ' + ccy + '. ' + fix
+    : missing.length + ' products are not offered in ' + ccy + ': ' + names.join(', ') + '. ' + fix;
+}
+
 function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   var breached = breaches(groups);
+  var missing = unavailable(groups);
   var reason = null, blocking = false;
   /* a custom portfolio is held to its own checks and, outside its usual
      ranges, to an admin's approval (D171) */
@@ -7864,8 +7894,13 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
       + ', not 100%. Change a custom sleeve set as % of the portfolio until it does.';
   }
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
-  /* A hard block: a position below the product's minimum cannot be bought,
-     so the materials cannot be produced. The server refuses it too. */
+  /* A hard block: a product not offered in the portfolio's currency, or a
+     position below the product's minimum, cannot be bought, so the
+     materials cannot be produced. The server refuses both too. */
+  else if (missing.length) {
+    blocking = true;
+    reason = notOfferedWords(missing, false, cp);
+  }
   else if (breached.length) {
     blocking = true;
     reason = breached.length === 1
@@ -7885,6 +7920,10 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   } else if (exporting.status === 'error') {
     tone = 'error'; headline = 'Export failed';
     html = App.esc(exporting.error || 'Export failed.');
+  } else if (blocking && missing.length) {
+    tone = 'error';
+    headline = 'Not offered in ' + App.basis().currency;
+    html = notOfferedWords(missing, true, cp);
   } else if (blocking) {
     tone = 'error';
     headline = breached.length + ' below minimum';
@@ -8241,7 +8280,7 @@ function renderView() {
       + '<td class="num"></td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
-        + (item.belowMinimum ? ' below-min' : '') + '"'
+        + (item.belowMinimum || item.notOffered ? ' below-min' : '') + '"'
         + ' data-implrow="' + App.esc(rowAnchor(group.category, item.name)) + '"'
         + '><th scope="row">'
         + App.esc(item.assetClass) + '</th>'
@@ -8249,6 +8288,9 @@ function renderView() {
            row's pink fill was the only carrier of it at rest, and the badge
            that explained it sat 753px to the right. */
         + '<td class="txt prodcol">' + App.esc(item.name)
+        + (item.notOffered
+            ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' is not offered in '
+              + App.esc(App.basis().currency) + '">not in ' + App.esc(App.basis().currency) + '</span>' : '')
         + (item.belowMinimum
             ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
               + App.esc(money(item.notional)) + ', below its '
@@ -8672,10 +8714,7 @@ App.addRenderer(function () {
 var CP_BALANCE = 0.005;                 /* customPortfolio.BALANCE_TOLERANCE */
 
 function cpG(v) { return String(Number(Number(v).toPrecision(6))); }
-/* an amount in the build's currency, ctx.currency (D181), as App.money
-   writes it - here, so the checks run without the page */
-var CP_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
-function cpMoney(v, currency) { return (CP_MARKS[currency] || '') + Math.round(v).toLocaleString('en-US'); }
+function cpMoney(v) { return '$' + Math.round(v).toLocaleString('en-US'); }
 
 /* "12.5", "12.50" or "12.5%": a weight to 2dp from 0 to 100; '' is none yet
    (null); anything else NaN */
@@ -8798,7 +8837,7 @@ function cpCheck(products, ctx) {
   }
   var priv = cpWeightsByLine(products)[ctx.privateLine] || 0;
   if (priv > 0 && ctx.mandateSize != null && ctx.mandateSize < ctx.privateMinimum) {
-    problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum, ctx.currency) + ' or more.');
+    problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum) + ' or more.');
   }
   var lines = {};
   names.forEach(function (n) {
@@ -8902,7 +8941,6 @@ function checkCtx() {
   return { lines: l ? l.lines : [], anchor: anchor ? anchor.lines : {}, limits: limits(),
            countedIn: settings().countedIn || {}, allowed: allowed, liquidity: liquidity, label: label,
            mandateSize: App.mandateSize(), privateMinimum: settings().privateMinimum || 20000000,
-           currency: App.basis().currency,
            privateLine: settings().privateLine || '' };
 }
 
@@ -9096,7 +9134,7 @@ function cpBlankHtml() {
     + '<p class="cp-lim-more">Within the usual ranges it delivers; between them and the limits an admin approves it first; '
     + 'beyond, it cannot be delivered. Also: no product above ' + cpG(lim.concentration) + '% of the portfolio, at most '
     + cpG(lim.illiquid) + '% not daily-dealing, at most ' + lim.maxProducts + ' products, every position at its product’s '
-    + 'minimum, and private markets from a ' + App.money(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
+    + 'minimum, and private markets from a ' + cpMoney(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
     + 'the Strategic Volatility Premium count with the category they are funded from.</p></div>';
   return html;
 }
@@ -9387,7 +9425,9 @@ function addDlg(d) {
             : '<input type="checkbox" data-cptick="' + esc(p.productId) + '"' + (on ? ' checked' : '')
               + (!on && n >= room ? ' disabled' : '') + ' aria-label="Add ' + esc(p.name) + '">') + '</td>'
           + '<td><b>' + esc(p.name) + '</b><small>' + esc(p.ticker && p.ticker !== '—' ? p.ticker + ' · ' : '')
-          + esc(p.style) + ' · ' + esc(p.source) + '</small>' + (isHeld ? '<span class="cp-held">In the portfolio</span>' : '') + '</td>'
+          + esc(p.style) + ' · ' + esc(p.source) + '</small>' + (isHeld ? '<span class="cp-held">In the portfolio</span>' : '')
+          /* not offered in the portfolio's currency (D182): it would stop the download */
+          + (p.offered === false ? '<span class="cp-sug">not offered in ' + esc(App.basis().currency) + '</span>' : '') + '</td>'
           + '<td>' + esc(lineFor(p)) + (p.category ? '' : '<span class="cp-sug">suggested</span>') + '</td>'
           + '<td>' + esc(p.assetClass) + '</td><td>' + esc(p.vehicle) + '</td><td>' + esc(p.liquidity) + '</td>'
           + '<td class="n">' + pct(p.productCost) + '</td><td class="n">'
@@ -10020,6 +10060,7 @@ var CAT_COLUMNS = [
   { key: 'style', label: 'Style' },
   { key: 'source', label: 'Src' },
   { key: 'exposureCurrency', label: 'Ccy' },
+  { key: 'issueCurrency', label: 'Issue' },
   { key: 'liquidity', label: 'Liq' },
   { key: 'productCost', label: 'Cost', num: true },
   { key: 'distributionYield', label: 'Yield', num: true },
@@ -10259,27 +10300,36 @@ var PRD_FIELDS = [
   { key: 'source', label: 'Source', kind: 'word' },
   { key: 'liquidity', label: 'Liquidity', kind: 'word' },
   { key: 'exposureCurrency', label: 'Exposure currency', kind: 'word' },
+  /* the currency it is issued in (D184): optional */
+  { key: 'issueCurrency', label: 'Issue currency', kind: 'text', optional: true },
   { key: 'productCost', label: 'Product cost', kind: 'pct', unit: '%' },
   { key: 'feeGroup', label: 'Fee group', kind: 'group' },
   { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
   { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
 ];
-/* the ticker and minimum a product has in each base currency (D180): flat
-   keys in the draft (tickerGBP, minimumInvestmentGBP), the currencies table
-   on the wire, blank where the main one holds */
+/* the ticker, minimum, exposure and issue currency a product has in each
+   base currency, and whether it is offered there (D180, D182, D184): flat
+   keys in the draft (tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP,
+   issueCurrencyGBP, offeredGBP),
+   the currencies table on the wire, blank where the main one holds */
 var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
-['ticker', 'minimumInvestment'].forEach(function (base) {
+var PRD_CCY_FIELDS = [['ticker', 'Ticker', 'text'], ['minimumInvestment', 'Minimum investment', 'amount'],
+                      ['exposureCurrency', 'Exposure currency', 'text'], ['issueCurrency', 'Issue currency', 'text'],
+                      ['offered', 'Offered', 'offered']];
+PRD_CCY_FIELDS.forEach(function (b) {
   PRD_CURRENCIES.forEach(function (c) {
-    PRD_FIELDS.push({ key: base + c, label: (base === 'ticker' ? 'Ticker' : 'Minimum investment') + ' in ' + c,
-                      kind: base === 'ticker' ? 'text' : 'amount', optional: true, ccy: c, base: base });
+    PRD_FIELDS.push({ key: b[0] + c, label: b[1] + ' in ' + c, kind: b[2], optional: true, ccy: c, base: b[0] });
   });
 });
-/* a field's value on a product as the server serves it */
+/* a field's value on a product as the server serves it: 'no' for a
+   currency it is not offered in, '' for one it is */
 function prdValueOf(p, f) {
   if (!p) return null;
   if (!f.ccy) return p[f.key];
   var own = (p.currencies || {})[f.ccy] || {};
-  return own[f.base] === undefined ? null : own[f.base];
+  if (f.base === 'offered') return own.offered === false ? 'no' : '';
+  if (own.offered === false) return null;
+  return own[f.base] === undefined || own[f.base] === '' ? null : own[f.base];
 }
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
 var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
@@ -10344,6 +10394,7 @@ function prdProblems(d, ctx) {
   if (!name) out.name = 'Give the product a name.';
   else if (name.length > PRD_MAX.name) out.name = 'Keep the name to ' + PRD_MAX.name + ' characters.';
   if (prdText(d.ticker).length > PRD_MAX.ticker) out.ticker = 'Keep the ticker to ' + PRD_MAX.ticker + ' characters.';
+  if (prdText(d.issueCurrency).length > PRD_MAX.word) out.issueCurrency = 'Keep the issue currency to ' + PRD_MAX.word + ' characters.';
   PRD_FIELDS.forEach(function (f) {
     if (f.kind !== 'word') return;
     var w = prdText(d[f.key]);
@@ -10368,8 +10419,11 @@ function prdProblems(d, ctx) {
   if (m) out.minimumInvestment = m;
   PRD_FIELDS.forEach(function (f) {
     if (!f.ccy) return;
+    if (d['offered' + f.ccy] === 'no' || f.base === 'offered') return;
     if (f.base === 'ticker') {
       if (prdText(d[f.key]).length > PRD_MAX.ticker) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.ticker + ' characters.';
+    } else if (f.base === 'exposureCurrency' || f.base === 'issueCurrency') {
+      if (prdText(d[f.key]).length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.word + ' characters.';
     } else {
       var own = prdFigureProblem(d, f.key, f.label, false);
       if (own) out[f.key] = own;
@@ -10381,6 +10435,12 @@ function prdProblems(d, ctx) {
 function prdPayload(d) {
   var out = { currencies: {} };
   PRD_FIELDS.forEach(function (f) {
+    if (f.ccy && d['offered' + f.ccy] === 'no') {
+      /* not offered there: nothing else of its own */
+      if (f.base === 'offered') out.currencies[f.ccy] = { offered: false };
+      return;
+    }
+    if (f.ccy && f.base === 'offered') return;
     if (f.ccy) {
       var v = f.kind === 'amount' ? prdNumber(d[f.key], false) : prdText(d[f.key]);
       if (v === '' || v === null) return;
@@ -10414,6 +10474,10 @@ function prdChanges(before, d) {
       if (a === null && b === null) return;
       if (a !== null && b !== null && Math.abs(a - b) <= 1e-12) return;
     } else if (prdText(was) === prdText(is)) {
+      return;
+    }
+    if (f.base === 'offered') {
+      out.push({ key: f.key, label: f.label, before: was === 'no' ? 'no' : 'yes', after: is === 'no' ? 'no' : 'yes' });
       return;
     }
     out.push({ key: f.key, label: f.label, before: prdShow(f.base || f.key, was), after: prdShow(f.base || f.key, is) });
@@ -10473,10 +10537,8 @@ function feeShow(text) {
   var places = (String(feeG(v)).split('.')[1] || '').length;
   return v.toFixed(Math.max(2, places));
 }
-/* a tier's bounds bare: the card is every currency's, and a proposal's
-   account size is in its own (D181) */
 function feeTierLabel(min, max) {
-  var m = function (v) { return feeG(v / 1e6) + 'm'; };
+  var m = function (v) { return '$' + feeG(v / 1e6) + 'm'; };
   if (!(min > 0)) return max == null ? 'Every account size' : 'Under ' + m(max);
   if (max == null) return m(min) + ' and up';
   return m(min) + ' – ' + m(max);
@@ -10534,8 +10596,8 @@ function feeProblems(d, ctx) {
   var out = [];
   if (!d.tiers.length) out.push({ field: 'tiers', message: 'The card needs at least one account-size tier.' });
   d.tiers.forEach(function (t, i) {
-    var where = 'The tier from ' + (t.min > 0 ? feeG(t.min / 1e6) + 'm' : '0');
-    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at 0, so every account size has a tier.' });
+    var where = 'The tier from ' + (t.min > 0 ? '$' + feeG(t.min / 1e6) + 'm' : '$0');
+    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at $0, so every account size has a tier.' });
     if (t.max !== null && t.max !== undefined) {
       if (typeof t.max !== 'number' || !isFinite(t.max)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has an upper edge that is not an amount.' });
       else if (!(t.max > t.min)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has no room: its upper edge must be above its lower one.' });
@@ -15291,7 +15353,7 @@ function regAwaitingHtml() {
         var mine = a.builtBy === reg.awaitingUser || a.submittedBy === reg.awaitingUser;
         return '<div class="reg-await-row"><span><b>' + esc(a.primaryPwa || a.scenarioId) + '</b> \u00b7 '
           + esc(App.riskLabel ? App.riskLabel(a.profile) : a.profile) + ' risk profile \u00b7 ' + a.products + ' products \u00b7 '
-          + money(a.mandateSize, a.currency) + '<small>Built by ' + esc(a.builtBy) + ' \u00b7 submitted by ' + esc(a.submittedBy)
+          + money(a.mandateSize) + '<small>Built by ' + esc(a.builtBy) + ' \u00b7 submitted by ' + esc(a.submittedBy)
           + ' ' + esc(shortDate(a.at)) + ' ' + esc((a.at || '').slice(11, 16))
           + (a.note ? ' \u00b7 \u201c' + esc(a.note) + '\u201d' : '') + (mine ? ' \u00b7 yours, so another admin approves it' : '') + '</small></span>'
           + '<a class="btn" href="?scenario=' + encodeURIComponent(a.scenarioId) + '" target="_blank" rel="noopener">Open the scenario</a></div>';
@@ -15338,28 +15400,18 @@ function regFacetOptions(facet, chosen, any) {
 function regFiltersInForce() {
   return !!(reg.query.trim() || reg.exportedBy || reg.primaryPwa || reg.currency || reg.variant || reg.range !== '90d');
 }
-/* A figure in the currency it was agreed in (D1). The register is the record
-   of what was delivered to a client, and it printed every proposal in dollars
-   - a GBP mandate as $200.0m, with "GBP" in the next column along. The row
-   carries its currency, so the only thing missing was asking for it.
-
-   A currency with no unambiguous symbol prints its ISO code instead: better a
-   reader who has to think than one who is quietly told the wrong thing. */
-var CURRENCY_MARK = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0', JPY: '\u00a5' };
-function mark(currency) {
-  if (!currency) return '';
-  return CURRENCY_MARK[currency] || (currency + '\u00a0');
-}
-function money(n, currency) {
+/* A figure in dollars, whatever the proposal's base currency: the mandate,
+   the top account size and every minimum are entered in dollars (D183), so
+   a GBP proposal's $200.0m is $200.0m. */
+function money(n) {
   if (typeof n !== 'number') return '\u2014';
-  var m = mark(currency);
   /* There was nothing above m, so a 5e14 mandate - a real row - printed as
      $500000000.0m, wider than its column and read as nothing at all (D116). */
-  if (n >= 1e12) return m + (Math.round(n / 1e11) / 10).toFixed(1) + 'tn';
-  if (n >= 1e9) return m + (Math.round(n / 1e8) / 10).toFixed(1) + 'bn';
-  if (n >= 1e6) return m + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
-  if (n >= 1e3) return m + Math.round(n / 1e3) + 'k';
-  return m + Math.round(n);
+  if (n >= 1e12) return '$' + (Math.round(n / 1e11) / 10).toFixed(1) + 'tn';
+  if (n >= 1e9) return '$' + (Math.round(n / 1e8) / 10).toFixed(1) + 'bn';
+  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toFixed(1) + 'm';
+  if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
+  return '$' + Math.round(n);
 }
 function regViewsHtml() {
   var counts = reg.views || {};
@@ -15375,19 +15427,18 @@ function regViewsHtml() {
 }
 
 /* What the rows in force come to (D116). The register could answer a question
-   about a row and none about a set; this is the set, and mandate is totalled
-   per currency because adding across them would be a lie (D1). */
+   about a row and none about a set; this is the set. Mandates are in dollars
+   whatever the currency, so they make one total (D183). */
 function regSummaryHtml() {
   var sm = reg.summary;
   if (!sm || !reg.loaded) return '';
-  var totals = (sm.totals || []).map(function (t) { return money(t.total, t.currency); }).join(' \u00b7 ');
   var span = sm.earliest
     ? shortDate(sm.earliest) + (sm.latest && sm.latest.slice(0, 10) !== sm.earliest.slice(0, 10)
         ? ' \u2013 ' + shortDate(sm.latest) : '')
     : '\u2014';
   var cells = [
     ['Proposals', String(sm.proposals)],
-    ['Mandate', totals || '\u2014'],
+    ['Mandate', sm.proposals ? money(sm.mandate) : '\u2014'],
     [sm.pwas === 1 ? 'PWA' : 'PWAs', String(sm.pwas)],
     ['Span', span]
   ];
@@ -15476,7 +15527,7 @@ function regBodyHtml() {
       + '<td class="reg-when">' + esc(when) + '<small>' + esc(e.exportedBy) + '</small></td>'
       + '<td class="reg-pwa"><b>' + esc(dash === -1 ? name : name.slice(0, dash).trim()) + '</b>'
       + (dash === -1 ? '' : '<small>' + esc(name.slice(dash + 1).trim()) + '</small>') + '</td>'
-      + '<td class="num reg-size">' + money(e.mandateSize, e.currency)
+      + '<td class="num reg-size">' + money(e.mandateSize)
       + '<small>' + esc(e.currency + ' \u00b7 ' + e.hedging) + '</small></td>'
       /* the id everything else quotes, and one click to have it (D116) */
       + '<td><button type="button" class="reg-uid" data-reguid="' + esc(e.proposalId) + '"'
@@ -15533,7 +15584,6 @@ function regAllocationHtml(record) {
     + '<tbody>' + rows + '</tbody></table>';
 }
 function regImplementedHtml(record) {
-  var ccy = record.currency;                   /* the proposal's own (D1) */
   var groups = record.implemented || [];
   if (!groups.length) return '<p class="repo-none">No implemented model recorded.</p>';
   var pins = {};
@@ -15562,7 +15612,7 @@ function regImplementedHtml(record) {
       rows += '<tr><td class="sub">' + esc(it.name || it.productId) + '</td><td></td>'
         + '<td class="mut">' + esc([it.ticker, it.vehicle].filter(Boolean).join(' · ') || '—') + '</td>'
         + '<td class="num">' + money2(it.printedPct) + '%</td>'
-        + '<td class="num">' + money(it.notional, ccy) + '</td></tr>';
+        + '<td class="num">' + money(it.notional) + '</td></tr>';
     });
   });
   return '<table class="cat-tbl dense reg-pic"><thead><tr><th>Category / product</th><th>Sleeve</th>'
@@ -15612,7 +15662,7 @@ function regDetailHtml() {
   return '<div class="arc-detail reg-detail" id="regDetail">'
     + '<div class="arc-dh"><div>'
     + '<h3>' + esc(r.primaryPwa) + '</h3>'
-    + '<p><b>' + money(r.mandateSize, r.currency) + '</b> · ' + esc(r.currency) + ' · ' + esc(r.hedging)
+    + '<p><b>' + money(r.mandateSize) + '</b> · ' + esc(r.currency) + ' · ' + esc(r.hedging)
     + ' · ' + (r.customPortfolio
         ? 'Custom, ' + esc(r.customPortfolio.profileLabel || r.customPortfolio.profile) + ' risk profile'
         : esc((r.baseKey || '').split('|').slice(1, 3).join(' ')))
@@ -15730,13 +15780,12 @@ function catFiltersInForce() {
   for (var f in cat.filters) if (cat.filters[f] && cat.filters[f].length) n += 1;
   return n;
 }
-/* an amount the catalogue shows bare: a product's main minimum holds in
-   whichever currency a proposal is in (D181) */
+/* a minimum, in dollars whatever the currency (D183) */
 function catMoney(n) {
   if (typeof n !== 'number') return '—';
-  if (n >= 1e6) return (Math.round(n / 1e5) / 10).toString().replace(/\.0$/, '') + 'm';
-  if (n >= 1e3) return (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
-  return String(Math.round(n));
+  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toString().replace(/\.0$/, '') + 'm';
+  if (n >= 1e3) return '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
+  return '$' + Math.round(n);
 }
 function catFigure(v, dp) { return (typeof v === 'number' && isFinite(v)) ? v.toFixed(dp) : '—'; }
 function liqClass(v) {
@@ -15943,6 +15992,7 @@ function catCellHtml(row, c, sorted) {
     case 'minimumInvestment': return td('num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(p.minimumInvestment)));
     case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
     case 'lastEditedAt': return td('mute ed', esc(shortDate(p.lastEditedAt)));
+    case 'issueCurrency': return td('mute', esc(p.issueCurrency || '—'));
     default: return td('mute', esc(p[c.key]));
   }
 }
@@ -16031,6 +16081,7 @@ function catCompareHtml() {
     + line('Vehicle · style', function (r) { return esc(r.p.vehicle) + ' · ' + esc(r.p.style); })
     + line('Source', function (r) { return esc(r.p.source); })
     + line('Exposure', function (r) { return esc(r.p.exposureCurrency); })
+    + line('Issue currency', function (r) { return esc(r.p.issueCurrency || '—'); })
     + line('Liquidity', function (r) { return '<span class="liq' + liqClass(r.p.liquidity) + '">' + esc(r.p.liquidity) + '</span>'; })
     + line('Minimum investment', function (r) { return esc(catMoney(r.p.minimumInvestment)); })
     + section('Cost · % p.a.')
@@ -16332,7 +16383,7 @@ function prdViewHtml(row) {
     + '<dt>Category</dt><dd>' + esc(p.category || '—') + '</dd>'
     + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
     + '<dt>Share class</dt><dd>' + esc(p.shareClass || '—') + '</dd>'
-    + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
+    + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Issue currency</dt><dd>' + esc(p.issueCurrency || '—') + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
     + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
     + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
     + prdByCurrencyHtml(p)
@@ -16397,26 +16448,38 @@ function prdFieldHtml(f, d, probs) {
       + (words ? ' list="prdL-' + f.key + '"' : '')
       + (f.key === 'productId' ? ' placeholder="Suggested from the name"' : '')
       + (f.key === 'minimumInvestment' ? ' placeholder="None"' : '')
-      + (f.key === 'distributionYield' ? ' placeholder="None"' : '') + '>'
+      + (f.key === 'distributionYield' || f.key === 'issueCurrency' ? ' placeholder="None"' : '') + '>'
       + (words ? '<datalist id="prdL-' + f.key + '">' + words.map(function (w) { return '<option value="' + esc(w) + '">'; }).join('') + '</datalist>' : '');
     if (words) hint = '<small class="prd-hint" id="prdH-' + f.key + '">' + prdNewWordHint(f.key) + '</small>';
   }
   return '<div class="prd-f' + (f.wide ? ' wide' : '') + '">' + label + input + hint
     + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></div>';
 }
-/* what a blank currency box reads instead: the main ticker or minimum */
+/* what a blank currency box reads instead: the main value itself, greyed -
+   the table's note says a blank box is the main one */
 function prdMainText(d, base) {
-  if (base === 'ticker') return prdText(d.ticker) ? 'As main: ' + prdText(d.ticker) : 'None';
-  var m = prdNumber(d.minimumInvestment, false);
-  return m === null || isNaN(m) ? 'None' : 'As main: ' + prdShow('minimumInvestment', m);
+  if (base === 'minimumInvestment') {
+    var m = prdNumber(d.minimumInvestment, false);
+    return m === null || isNaN(m) ? 'None' : prdShow('minimumInvestment', m);
+  }
+  return prdText(d[base]) || 'None';
 }
-/* the ticker and minimum by base currency (D180), one row a currency */
+/* the ticker, minimum, exposure and issue currency by base currency, and
+   whether it is offered there (D180, D182, D184), one row a currency */
 function prdCurrencyHtml(d, probs) {
   function cell(c, base) {
     var f = PRD_FIELDS.filter(function (x) { return x.key === base + c; })[0];
     var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
     var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
+    if (base === 'offered') {
+      return '<td><select id="prdF-' + f.key + '" data-prdf="' + f.key + '" aria-label="' + esc(f.label) + '">'
+        + '<option value=""' + (d[f.key] !== 'no' ? ' selected' : '') + '>Yes</option>'
+        + '<option value="no"' + (d[f.key] === 'no' ? ' selected' : '') + '>No</option></select>'
+        + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
+    }
+    var off = d['offered' + c] === 'no';
     return '<td><input id="prdF-' + f.key + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
+      + (off ? ' disabled' : '')
       + ' value="' + esc(d[f.key]) + '" aria-label="' + esc(f.label) + '"'
       + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '')
       + (base === 'minimumInvestment' ? ' inputmode="decimal"' : '')
@@ -16424,10 +16487,14 @@ function prdCurrencyHtml(d, probs) {
       + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
   }
   return '<div class="prd-ccy"><div class="prd-ccy-h"><b>By base currency</b>'
-    + '<small>A scenario in a currency shows its ticker and checks its minimum here. A blank box uses the main one; a minimum of 0 is none.</small></div>'
-    + '<table><thead><tr><th scope="col">Currency</th><th scope="col">Ticker</th><th scope="col">Minimum investment</th></tr></thead><tbody>'
+    + '<small>A scenario in a currency shows its ticker, exposure and issue currency and checks its minimum here. A blank box uses the main value, shown in grey; a minimum of 0 is none, a ticker of - none. A product not offered in a currency stops the download of a proposal there that holds it.</small></div>'
+    + '<table><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Offered</th><th scope="col">Ticker</th>'
+    + '<th scope="col" title="Minimum investment">Minimum</th><th scope="col" title="Exposure currency">Exposure</th>'
+    + '<th scope="col" title="Issue currency">Issue</th></tr></thead><tbody>'
     + PRD_CURRENCIES.map(function (c) {
-        return '<tr><th scope="row">' + c + '</th>' + cell(c, 'ticker') + cell(c, 'minimumInvestment') + '</tr>';
+        return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>' + cell(c, 'offered')
+          + cell(c, 'ticker') + cell(c, 'minimumInvestment') + cell(c, 'exposureCurrency')
+          + cell(c, 'issueCurrency') + '</tr>';
       }).join('')
     + '</tbody></table></div>';
 }
@@ -16438,9 +16505,14 @@ function prdByCurrencyHtml(p) {
   if (!set.length) return '';
   return '<dt>By currency</dt><dd class="prd-ccyl">' + set.map(function (c) {
     var o = own[c], bits = [];
-    if (o.ticker) bits.push(esc(o.ticker));
+    if (o.ticker) bits.push(o.ticker === '—' ? 'no ticker' : esc(o.ticker));
     if (typeof o.minimumInvestment === 'number') {
       bits.push(o.minimumInvestment ? 'min ' + c + ' ' + esc(catMoney(o.minimumInvestment)) : 'no minimum');
+    }
+    if (o.offered === false) bits = ['not offered'];
+    else {
+      if (o.exposureCurrency) bits.push('exposure ' + esc(o.exposureCurrency));
+      if (o.issueCurrency) bits.push('issued in ' + esc(o.issueCurrency));
     }
     return '<span><b>' + c + '</b> ' + bits.join(' · ') + '</span>';
   }).join('') + '</dd>';
@@ -16533,7 +16605,7 @@ function prdUpdate() {
       else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
     }
     var hint = document.getElementById('prdH-' + f.key); if (hint) hint.innerHTML = prdNewWordHint(f.key);
-    if (f.ccy && input) input.placeholder = prdMainText(prd.draft, f.base);
+    if (f.ccy && input && f.base !== 'offered') input.placeholder = prdMainText(prd.draft, f.base);
   });
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);
@@ -16614,7 +16686,8 @@ function impListHtml(title, items, body) {
 }
 function impProductsPreviewHtml(p) {
   var nothing = !p.added.length && !p.changed.length && !p.restored.length && !imp.withdraw.length;
-  return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' row' + (p.rows === 1 ? '' : 's') + ': '
+  /* products, not rows: a product may have a row per base currency (D182) */
+  return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' product' + (p.rows === 1 ? '' : 's') + ': '
     + [p.added.length + ' new', p.changed.length + ' changed', p.restored.length + ' back from withdrawn',
        p.unchanged + ' unchanged', p.missing.length + ' not in the file'].join(' · ') + '</p>'
     + impListHtml('new', p.added, function (a) { return '<li><b>' + esc(a.name) + '</b> <small>' + esc(a.productId) + '</small></li>'; })
@@ -19197,6 +19270,8 @@ document.addEventListener('change', function (e) {
     prd.draft[el.dataset.prdf] = el.value;
     prd.shown[el.dataset.prdf] = true;
     if (prd.serverError && prd.serverError.field === el.dataset.prdf) prd.serverError = null;
+    /* a currency's boxes open or close with whether it is offered there */
+    if (el.dataset.prdf.indexOf('offered') === 0) { render(); return; }
     prdUpdate(); return;
   }
   if (el.id === 'feeAddLike') { fct.addLike = el.value; return; }

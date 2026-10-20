@@ -255,7 +255,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         items = []
         if sleeve:
             for product in sleeve['products']:
-                # the ticker and minimum it has in the portfolio's currency (D180)
+                # the ticker, minimum and exposure it has in the portfolio's
+                # currency (D180, D182), and whether it is offered there
                 item = _products.inCurrency(product, currency)
                 item['exactPct'] = catWeight * float(product['weight'])
                 items.append(item)
@@ -418,6 +419,13 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                  'minimumInvestment': float(item['minimumInvestment'])}
                 for group in groups for item in group['items']
                 if item.get('belowMinimum')]
+    # A product not offered in the portfolio's currency cannot be bought in
+    # it (D182): flagged per line, and the export refuses while any is held.
+    unavailable = [{'category': group['category'], 'name': item.get('name'),
+                    'productId': item.get('productId')}
+                   for group in groups for item in group['items']
+                   if item.get('offered') is False
+                   and (item.get('printedPct') or item.get('initialPct'))]
 
     # what the sheet's header states under the custom level: the row (or
     # rows) and the rate each carries, in the card's own order
@@ -426,17 +434,13 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         customRates = [(row, fees.customRate(customFees, feeSchedule, row))
                        for row in fees.customRows(feeSchedule)]
 
-    if tier:
-        tier['label'] = fees.tierLabel(tier['min'], tier['max'], currency)
     return {'groups': groups, 'total': total, 'complete': complete,
-            # the currency every amount in it is in (D181)
-            'currency': currency,
             # the custom sleeves (D170): whether the book adds to 100%, what it
             # adds to, and whether it departs from the strategic allocation -
             # which takes the strategic allocation out of the delivered files
             'balanced': balanced, 'implementedPct': implementedPct, 'departs': departs,
             'priced': priced, 'tier': tier, 'marginal': marginal,
-            'effectiveRate': effectiveRate, 'breaches': breaches,
+            'effectiveRate': effectiveRate, 'breaches': breaches, 'unavailable': unavailable,
             'custom': custom, 'customRates': customRates,
             'unpricedGroups': unpricedGroups,
             # the initial allocation of a private-markets book, or None (D136)

@@ -817,9 +817,7 @@ def test_workbook_records_the_pricing_it_was_built_from(tmp_path, schedule):
         assert rows[3][:2] == ('Effective Rate', '{:.4f}%'.format(
             fees.effectiveRate(schedule, 26e6, 'PMG Floor')))
     else:
-        # the sheet's bounds are in the proposal's currency (D181)
-        assert rows[3][:2] == ('Account Size Tier', '{} ({})'.format(
-            tier['id'], fees.tierLabel(tier['min'], tier['max'], BASIS.currency)))
+        assert rows[3][:2] == ('Account Size Tier', '{} ({})'.format(tier['id'], tier['label']))
     # and which card priced it (D55): the delivered version, flagged as placeholder
     assert rows[4][0] == 'Fee Card'
     assert fees.deliveryInfo()['version'] in rows[4][1] and 'placeholder' in rows[4][1]
@@ -1181,8 +1179,8 @@ def test_the_card_is_read_from_the_delivery_and_its_shape_is_derived():
     assert fees.ratesPath().endswith('feeRates.csv')
     assert fees.deliveryInfo()['cells'] == 180
     assert [t['id'] for t in fees.tiers()] == ['T1', 'T2', 'T3', 'T4', 'T5']
-    assert fees.tiers()[0]['label'] == 'Under 10m' and fees.tiers()[-1]['label'] == '100m and up'
-    assert fees.tiers()[1]['label'] == '10m – 25m'
+    assert fees.tiers()[0]['label'] == 'Under $10m' and fees.tiers()[-1]['label'] == '$100m and up'
+    assert fees.tiers()[1]['label'] == '$10m – $25m'
     assert fees.feeGroups() == ['Passive', 'Core Active', 'Specialist Active',
                                'Alternatives', 'Asset Allocation']
     assert fees.deliveryInfo()['version'] and fees.PLACEHOLDER
@@ -1283,7 +1281,7 @@ def test_a_redelivery_is_diffed_cell_by_cell(tmp_path, capsys):
     assert feeTools.diff(str(path)) == 0
     out = capsys.readouterr().out
     assert '6 rate(s) moved' in out
-    assert 'RDR · Passive · Under 10m · PMG Target' in out and '→ 0.2' in out
+    assert 'RDR · Passive · Under $10m · PMG Target' in out and '→ 0.2' in out
     short = tmp_path / 'short.csv'; short.write_text('\n'.join(lines[:-1]) + '\n')
     assert feeTools.diff(str(short)) == 1
     out = capsys.readouterr().out
@@ -2753,8 +2751,8 @@ def test_the_top_fee_tier_says_and_up_with_an_empty_cell(tmp_path):
 
     tiers = {t['id']: t for t in card('')['tiers']}
     assert tiers['T2']['max'] is None
-    assert tiers['T2']['label'] == '10m and up'
-    assert tiers['T1']['label'] == 'Under 10m', 'the bounded tiers are unchanged'
+    assert tiers['T2']['label'] == '$10m and up'
+    assert tiers['T1']['label'] == 'Under $10m', 'the bounded tiers are unchanged'
 
     for refused in ('Infinity', 'inf', '-inf', 'nan', '1e999'):
         with pytest.raises(fees.BadRateCard) as caught:

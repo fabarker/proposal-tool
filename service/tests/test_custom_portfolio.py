@@ -401,7 +401,7 @@ def test_the_pages_checks_and_figures_agree_with_the_server(store):
            'liquidity': {p['productId']: p['liquidity'] for p in products.all()},
            'label': {p['productId']: p['name'] for p in products.all()},
            'mandateSize': 1e9, 'privateMinimum': rules.PRIVATE_ASSETS_MINIMUM,
-           'privateLine': rules.PRIVATE_FUNDED_FROM, 'currency': 'GBP'}
+           'privateLine': rules.PRIVATE_FUNDED_FROM}
     stats = customPortfolio.estimates(PORT, BASIS, VARIANT)
     result = customPortfolio.anchorFor(PORT, BASIS, VARIANT, 'Moderate')
     _, helpers = _pageHelpers()
@@ -421,8 +421,7 @@ console.log(JSON.stringify(out));
     assert done.returncode == 0, done.stderr
     got = json.loads(done.stdout)
     for name, build in list(builds.items()) + [('small', good)]:
-        server = customPortfolio.checks(build, VARIANT, 10e6 if name == 'small' else 1e9, anchor,
-                                        currency='GBP')
+        server = customPortfolio.checks(build, VARIANT, 10e6 if name == 'small' else 1e9, anchor)
         page = got[name]
         assert page['status'] == server['status'], name
         assert page['problems'] == server['problems'], name
@@ -431,7 +430,7 @@ console.log(JSON.stringify(out));
         for line, band in server['lines'].items():
             assert page['lines'][line]['soft'] == pytest.approx(band['soft']), (name, line)
             assert page['lines'][line]['weightPct'] == pytest.approx(band['weightPct']), (name, line)
-    assert got['small']['problems'] == ['Private markets need a mandate of \u00a320,000,000 or more.']
+    assert got['small']['problems'] == ['Private markets need a mandate of $20,000,000 or more.']
     assert got['good']['status'] == 'ok' and got['wide']['status'] == 'warn'
     assert got['empty']['lines'], 'a blank slate shows what the profile allows'
     figures = customPortfolio.figures(customPortfolio.weightsByLine(wide), stats, result)

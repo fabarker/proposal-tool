@@ -1010,7 +1010,7 @@ other's gate (D122, D123).
   The page reads only `Content-Disposition`; the host's proxy passes every header through (§4.0).
 - **The register (D116, D123)**: `GET /scenario/repository/proposals` takes the five filters plus
   `moved=1` and `noAccount=1` (two of the saved views) and returns `{entries, next, total, summary,
-  …}`, each entry adding `moved`, `accountRequested`, `deckName`, `deckBytes` and `deckSha`;
+  …}` - `summary.mandate` is the one total of the mandates, all in dollars (D183) -, each entry adding `moved`, `accountRequested`, `deckName`, `deckBytes` and `deckSha`;
   `…/proposals/views` returns `{views: {recent, week, mine, moved, noAccount, all}}` as counts;
   `…/{proposalId}/deck` returns the deck byte for byte with `X-Deck-SHA256`, and 404 for a proposal
   delivered before D123.
@@ -2037,15 +2037,16 @@ columns, three optional:
 | `Source` | text | Free text; a doughnut axis (e.g. `Internal`, `External`). |
 | `Liquidity` | text | Free text; a doughnut axis (e.g. `Daily`, `Quarterly`). |
 | `ExposureCurrency` | text | Free text; a doughnut axis (`USD`, `EUR`, …). |
+| `IssueCurrency` | text, optional | The currency the product is issued in (D184); the header may also be `Issue Currency`, `IssueCcy` or `IssuerCurrency`. Blank or absent → none given. Stored and shown in the console's catalogue; not printed on a proposal. |
 | `ProductCost` | number ≥ 0 | **Percent** (`0.25` = 0.25%). Not a fraction. |
 | `FeeGroup` | text | One of the rate card's fee groups: `Passive`, `Core Active`, `Specialist Active`, `Alternatives`, `Asset Allocation` — the set the delivered card defines (C.4). |
 | `DistributionYield` | number ≥ 0, optional | Percent. Blank or absent → none. |
-| `MinimumInvestment` | number ≥ 0, optional | **Currency units** (`5000000`). Blank or absent → *no minimum*. A position whose notional falls below it **blocks the export** (D70): get these right, or nothing exports. |
-| `Ticker USD` … `Ticker EUR` | text, optional | The ticker in a scenario of that base currency (D180). Blank → `Ticker`. Also read under `GBP Ticker`, `Ticker (GBP)`. |
-| `MinimumInvestment USD` … `MinimumInvestment EUR` | number ≥ 0, optional | The minimum in a scenario of that currency, in its units (D180). Blank → `MinimumInvestment`; `0` → none there. Also read under `Minimum GBP`, `GBP Minimum`. |
+| `MinimumInvestment` | number ≥ 0, optional | **US dollars**, whatever the row's base currency (`5000000`, D183). Blank or absent → *no minimum*. A position whose notional falls below it **blocks the export** (D70): get these right, or nothing exports. |
+| `BaseCurrency` | `USD`, `GBP`, `CHF`, `EUR` or `All`, optional | The base currency the row is for (D182). A product may have one row per base currency under the same `ProductId`; `All` or blank is the main row. The rows may differ only in `Ticker`, `MinimumInvestment` and `ExposureCurrency`, and each is the product whole in its currency (a blank minimum is none there). With no `All` row, the product is offered only in the currencies it has rows for; a scenario elsewhere flags it and the export refuses. A name may end in its row's currency, `(GBP)`. |
 
 Refused, whole and naming the row (`BadCatalogue`): a missing required column, a duplicate
-`ProductId`, an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/
+`ProductId` (without `BaseCurrency`; with it, two rows for one currency, or rows that differ in
+anything but the ticker, the minimum, the exposure currency and the issue currency), an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/
 `MinimumInvestment`, a `FeeGroup` outside the set. An import - not the first load - also needs the
 six words (`AssetClass` to `ExposureCurrency`), refuses a `Category` the library does not know, and
 refuses a cost of 10 or more or a yield of 50 or more as a figure in the wrong unit. A product a live sleeve holds cannot be withdrawn by an import.

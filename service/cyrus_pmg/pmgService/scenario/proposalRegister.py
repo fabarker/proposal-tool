@@ -679,17 +679,15 @@ def requestedIds(conn=None) -> set:
 
 
 def _summarise(conn, where, args) -> dict:
-    """What the rows in force come to: how many, what they are worth in each
-    currency they were agreed in, how many advisors, and the span of dates.
-    Totals are never added across currencies (D1)."""
+    """What the rows in force come to: how many, the mandate they total, how
+    many advisors, and the span of dates. A mandate is in dollars whatever
+    its base currency (D183), so one total adds them all."""
     row = conn.execute(
         'SELECT COUNT(*) AS n, COUNT(DISTINCT p.primaryPwa) AS pwas, '
+        'SUM(p.mandateSize) AS mandate, '
         'MIN(p.exportedAt) AS first, MAX(p.exportedAt) AS last '
         'FROM proposals p WHERE {}'.format(where), args).fetchone()
-    totals = [{'currency': r['currency'], 'total': r['total']} for r in conn.execute(
-        'SELECT p.currency AS currency, SUM(p.mandateSize) AS total FROM proposals p '
-        'WHERE {} GROUP BY p.currency ORDER BY total DESC'.format(where), args)]
-    return {'proposals': row['n'], 'pwas': row['pwas'], 'totals': totals,
+    return {'proposals': row['n'], 'pwas': row['pwas'], 'mandate': row['mandate'],
             'earliest': row['first'] or '', 'latest': row['last'] or ''}
 
 

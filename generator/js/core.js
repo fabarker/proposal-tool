@@ -96,17 +96,12 @@ var variantPending = null;
 function esc(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
-/* An amount in a base currency, with its mark (D181): the scenario's own
-   unless one is named - a saved proposal's, say. None until the PWA has
-   chosen the currency, since the amount is in whichever they choose. */
-var CURRENCY_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
-function moneyMark(currency) {
-  if (currency === undefined) currency = state.basisChosen ? state.basis.currency : null;
-  return CURRENCY_MARKS[currency] || '';
-}
-function money(n, currency) {
+/* An amount, in dollars whatever the proposal's base currency: the PWA
+   enters the mandate and the top account size in dollars, and every
+   product's minimum is in dollars (D183). */
+function money(n) {
   return (n === null || n === undefined || isNaN(n))
-    ? '—' : moneyMark(currency) + Math.round(n).toLocaleString('en-US');
+    ? '—' : '$' + Math.round(n).toLocaleString('en-US');
 }
 function parseMoney(v) { return Math.round(Number(String(v).replace(/[^0-9.]/g, '')) || 0); }
 
@@ -3287,7 +3282,7 @@ function renderDialog() {
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
-    + '<div class="field"><label for="mdtop">Top Account Size (AUS)</label>'
+    + '<div class="field"><label for="mdtop">Top Account Size ($AUS)</label>'
     + '<input type="text" id="mdtop" inputmode="numeric" autocomplete="off" value="'
     + (draft.top ? esc(money(draft.top)) : '') + '"' + invalid('mdtop')
     + (draft.saving ? ' disabled' : '') + '></div>'
@@ -3469,7 +3464,7 @@ async function lookupProposal(uid, seq) {
         + account.requests[0].requestId + '.');
     } else {
       announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
-        + money(found.proposal.mandateSize, found.proposal.currency) + '.');
+        + money(found.proposal.mandateSize) + '.');
     }
   } catch (err) {
     if (!account || account.seq !== seq) return;
@@ -3516,7 +3511,7 @@ function accountStatusText() {
      proposal's one request is spent is the thing the user would check (D111). */
   var p = a.proposal;
   return 'Ready. Submitting records the request against ' + p.proposalId
-    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize, p.currency) + ').';
+    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize) + ').';
 }
 
 /* The card opens on the UID alone and grows into the request only when the
@@ -3698,8 +3693,8 @@ function accountProposalMarkup(busy) {
   var terms = [
     ['Primary PWA', p.primaryPwa],
     ['Basis', p.currency + ' · ' + p.hedging],
-    ['Mandate size', money(p.mandateSize, p.currency)],
-    ['Top account size', money(p.topAccountSize, p.currency)],
+    ['Mandate size', money(p.mandateSize)],
+    ['Top account size', money(p.topAccountSize)],
     ['Implementation', p.variant],
     ['Risk · allocation', riskAllocationText(p)],
     ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
@@ -4664,7 +4659,6 @@ return {
   exporting: function () { return state.exporting; },
   announce: announce,
   money: money,
-  moneyMark: moneyMark,
   esc: esc,
   num: num,
   refresh: refresh,

@@ -100,11 +100,12 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     """One row per product, every field a sleeve product has always carried,
     the fee left out and the group in its place; an empty ticker is the dash
     the table has always shown. Beside them, the ticker and minimum it has in
-    each base currency where they differ (D180)."""
+    each base currency where they differ (D180), and the currency it is
+    issued in (D184)."""
     rows = products.all()
     assert len(rows) == 73
     expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
-                'source', 'liquidity', 'exposureCurrency', 'productCost', 'feeGroup',
+                'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
                 'distributionYield', 'minimumInvestment', 'currencies'}
     for p in rows:
         assert set(p) == expected, p['productId']
@@ -1547,13 +1548,13 @@ def test_step_two_says_its_state_once_and_in_three_places():
     assert 'data-implgo=' in gate, 'each named product is the way to its row'
 
 
-def test_the_register_prints_a_proposal_in_its_own_currency():
-    """The register is the record of what was delivered to a client, and it
-    printed every figure in dollars: a GBP mandate as $200.0m with "GBP" in
-    the next column, and its notionals to match (D105).
+def test_the_register_prints_every_proposal_in_dollars():
+    """The mandate and the top account size are entered in dollars whatever
+    the base currency (D183), so the register prints a GBP mandate as
+    $200.0m, with GBP beside it as its basis - not as £200.0m, which D105
+    had it print when mandates were taken to be in their own currency.
 
-    money() now takes the currency the row already carries. Run in node
-    against the extracted source."""
+    Run in node against the extracted source."""
     import json
     import shutil
     import subprocess
@@ -1563,37 +1564,20 @@ def test_the_register_prints_a_proposal_in_its_own_currency():
     js = os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js')
     with open(js, encoding='utf-8') as fh:
         source = fh.read()
-    start = source.index('var CURRENCY_MARK')
-    fn = source[start:source.index('\n}\n', source.index('function money(', start)) + 3]
+    start = source.index('function money(n) {')
+    fn = source[start:source.index('\n}\n', start) + 3]
     script = fn + '''
 process.stdout.write(JSON.stringify({
-  gbp: [money(200000000, 'GBP'), money(52400000, 'GBP'), money(7700, 'GBP'), money(120, 'GBP')],
-  usd: money(500000000, 'USD'),
-  eur: money(250000, 'EUR'),
-  chf: money(4000000, 'CHF'),
-  unknown: money(1000000, 'SGD'),
-  none: money(1000000),
-  blank: money(null, 'GBP'),
+  m: [money(200000000), money(52400000), money(7700), money(120), money(5e14)],
+  blank: money(null),
 }));
 '''
     got = json.loads(subprocess.run([node, '-e', script], capture_output=True,
                                     text=True, check=True).stdout)
-    assert got['gbp'] == ['£200.0m', '£52.4m', '£8k', '£120']
-    assert got['usd'] == '$500.0m'
-    assert got['eur'] == '€250k'
-    # a currency whose symbol would be ambiguous prints its code instead: better
-    # a reader who has to think than one quietly told the wrong thing
-    assert got['chf'].startswith('CHF') and got['chf'].endswith('4.0m')
-    assert got['unknown'].startswith('SGD') and got['unknown'].endswith('1.0m')
-    assert got['none'] == '1.0m', 'no currency means no mark, never a guessed one'
+    assert got['m'] == ['$200.0m', '$52.4m', '$8k', '$120', '$500.0tn']
     assert got['blank'] == '—'
-
-    # and every caller passes one: a bare money(x) in the register would be the
-    # defect coming back
-    for call in re.findall(r'\bmoney\(([^()]*)\)', source):
-        if call.strip() in ('n, currency', ''):
-            continue
-        assert ',' in call, 'money() called without a currency: ' + call
+    assert 'CURRENCY_MARK' not in source and not re.search(r'\bmoney\([^()]*,', source), \
+        'no figure in the register takes a currency'
 
 
 def test_an_unsaved_sleeve_survives_the_exit_that_was_not_guarded():

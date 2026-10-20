@@ -64,7 +64,7 @@ def withDefaults(charges) -> dict:
     return out
 
 
-def clean(payload, currency=None) -> dict:
+def clean(payload) -> dict:
     """A charges payload checked: every key a charge, every value a number
     from zero to its most, or None for one not set; the lower FX edge under
     the higher; a fixed charge at the house's value whatever was sent.
@@ -85,7 +85,7 @@ def clean(payload, currency=None) -> dict:
         value = float(value)
         if value < 0 or value > field['max']:
             raise ValidationError('otherCharges', '{} must be between 0 and {}.'.format(
-                field['label'], _format(field, field['max'], currency)))
+                field['label'], _format(field, field['max'])))
         out[key] = round(value, 2) if field['unit'] == 'bps' else round(value)
     out = withDefaults(out)
     high, low = out.get('fxHighEdge'), out.get('fxLowEdge')
@@ -100,22 +100,19 @@ def missing(charges) -> list:
     return [f['label'] for f in FIELDS if charges.get(f['id']) is None]
 
 
-def _format(field, value, currency=None) -> str:
-    """A charge as text: an amount in the proposal's currency (D181)."""
-    from .money import mark
+def _format(field, value) -> str:
     if field['unit'] == 'bps':
         return '{:g}'.format(value)
     if value >= 1e6 and value % 1e5 == 0:
-        return '{}{:g}M'.format(mark(currency), value / 1e6)
-    return '{}{:,.0f}'.format(mark(currency), value)
+        return '${:g}M'.format(value / 1e6)
+    return '${:,.0f}'.format(value)
 
 
-def fieldValues(charges, currency=None) -> dict:
+def fieldValues(charges) -> dict:
     """Each charge set, as the template's field prints it: a trade size as
-    $5M, a commission or charge in basis points as 10, a fee as £5,000 - an
-    amount in the proposal's currency."""
+    $5M, a commission or charge in basis points as 10, a fee as $5,000."""
     charges = withDefaults(charges)
-    return {key: _format(_BY_ID[key], value, currency) for key, value in charges.items()
+    return {key: _format(_BY_ID[key], value) for key, value in charges.items()
             if key in _BY_ID and value is not None}
 
 

@@ -28,8 +28,10 @@ function roundWeights(exact) {
   return units.map(function (u) { return u / 100; });
 }
 
-/* an amount in the scenario's currency (D181) */
-function money(v) { return App.money(v); }
+function money(v) {
+  return (v === null || v === undefined || isNaN(v))
+    ? '—' : '$' + Math.round(v).toLocaleString('en-US');
+}
 
 function pillFor(v) {
   var map = { Active: 'p-act', Passive: 'p-pas', SMA: 'p-sma', ETF: 'p-etf',
@@ -559,6 +561,9 @@ function rows() {
           liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
           cost: product.productCost, feeGroup: product.feeGroup,
           minimumInvestment: product.minimumInvestment,
+          /* not offered in the portfolio's currency (D182): the library
+             serves each product as that currency reads it */
+          notOffered: product.offered === false,
           mgmt: managementFee(product.feeGroup),
           share: product.weight,
           exact: category.weightPct * product.weight
@@ -681,6 +686,21 @@ function breaches(groups) {
       if (item.belowMinimum) {
         out.push({ category: group.category, name: item.name,
                    notional: item.notional, minimum: item.minimumInvestment });
+      }
+    });
+  });
+  return out;
+}
+
+/* Every product held that is not offered in the portfolio's currency
+   (D182). The export is refused while this is non-empty, on the page and on
+   the server. Mirrors model['unavailable']. */
+function unavailable(groups) {
+  var out = [];
+  groups.forEach(function (group) {
+    group.items.forEach(function (item) {
+      if (item.notOffered && (item.weight || item.initialWeight)) {
+        out.push({ category: group.category, name: item.name });
       }
     });
   });
@@ -1091,13 +1111,12 @@ function chargeText(field, value) {
   return field.unit === 'bps' ? String(value) : value.toLocaleString('en-US');
 }
 
-/* an amount as 5,000,000, 5m or 500k, its currency's mark or not; basis
-   points as 10 or 10bps */
+/* dollars as 5,000,000, 5m or 500k; basis points as 10 or 10bps */
 function parseCharge(field, text) {
-  var t = String(text || '').trim().toLowerCase().replace(/chf|[$\u00a3\u20ac,\s]/g, '');
+  var t = String(text || '').trim().toLowerCase().replace(/[$,\s]/g, '');
   if (!t) return { empty: true };
   var usd = field.unit === 'usd';
-  var hint = usd ? 'Enter an amount, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
+  var hint = usd ? 'Enter an amount in dollars, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
   var m = t.match(/^(\d*\.?\d+)(k|m|bn|bps|bp)?$/);
   if (!m) return { bad: hint };
   var v = parseFloat(m[1]), suffix = m[2] || '';
@@ -1113,7 +1132,7 @@ function parseCharge(field, text) {
   }
   if (v > field.max) {
     return { bad: field.label + ' can be at most '
-      + (usd ? App.money(field.max) : field.max + ' bps') + '.' };
+      + (usd ? '$' + field.max.toLocaleString('en-US') : field.max + ' bps') + '.' };
   }
   return { v: v };
 }
@@ -1231,7 +1250,7 @@ function renderChargesPanel() {
           var row = '<div class="oc-row' + (bad ? ' bad' : '') + (fixed ? ' fixed' : '') + '">'
             + '<label for="' + id + '">' + App.esc(f.label)
             + (fixed ? ' <span class="oc-fixed">Fixed</span>' : '') + '</label>'
-            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? App.esc(App.moneyMark()) : '') + '</span>'
+            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? '$' : '') + '</span>'
             + '<input type="text" inputmode="decimal" autocomplete="off" id="' + id + '"'
             + ' data-charge="' + App.esc(f.id) + '"'
             + ' value="' + App.esc(chargeText(f, chargesPanel.draft[f.id])) + '"'
@@ -2870,8 +2889,25 @@ function customStuck() {
   });
 }
 
+/* the gate's words for products not offered in the currency (D182): as
+   html, each named product is the way to its row */
+function notOfferedWords(missing, html, cp) {
+  var ccy = App.basis().currency;
+  var names = missing.map(function (m) {
+    return html ? '<button type="button" class="gate-go" data-implgo="'
+      + App.esc(rowAnchor(m.category, m.name)) + '">' + App.esc(m.name) + '</button>' : m.name;
+  });
+  var fix = cp ? 'Take ' + (missing.length === 1 ? 'it' : 'them') + ' out of the portfolio.'
+    : 'Change the sleeve.';
+  return missing.length === 1
+    ? names[0] + ' in ' + (html ? App.esc(missing[0].category) : missing[0].category)
+      + ' is not offered in ' + ccy + '. ' + fix
+    : missing.length + ' products are not offered in ' + ccy + ': ' + names.join(', ') + '. ' + fix;
+}
+
 function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   var breached = breaches(groups);
+  var missing = unavailable(groups);
   var reason = null, blocking = false;
   /* a custom portfolio is held to its own checks and, outside its usual
      ranges, to an admin's approval (D171) */
@@ -2903,8 +2939,13 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
       + ', not 100%. Change a custom sleeve set as % of the portfolio until it does.';
   }
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
-  /* A hard block: a position below the product's minimum cannot be bought,
-     so the materials cannot be produced. The server refuses it too. */
+  /* A hard block: a product not offered in the portfolio's currency, or a
+     position below the product's minimum, cannot be bought, so the
+     materials cannot be produced. The server refuses both too. */
+  else if (missing.length) {
+    blocking = true;
+    reason = notOfferedWords(missing, false, cp);
+  }
   else if (breached.length) {
     blocking = true;
     reason = breached.length === 1
@@ -2924,6 +2965,10 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   } else if (exporting.status === 'error') {
     tone = 'error'; headline = 'Export failed';
     html = App.esc(exporting.error || 'Export failed.');
+  } else if (blocking && missing.length) {
+    tone = 'error';
+    headline = 'Not offered in ' + App.basis().currency;
+    html = notOfferedWords(missing, true, cp);
   } else if (blocking) {
     tone = 'error';
     headline = breached.length + ' below minimum';
@@ -3280,7 +3325,7 @@ function renderView() {
       + '<td class="num"></td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
-        + (item.belowMinimum ? ' below-min' : '') + '"'
+        + (item.belowMinimum || item.notOffered ? ' below-min' : '') + '"'
         + ' data-implrow="' + App.esc(rowAnchor(group.category, item.name)) + '"'
         + '><th scope="row">'
         + App.esc(item.assetClass) + '</th>'
@@ -3288,6 +3333,9 @@ function renderView() {
            row's pink fill was the only carrier of it at rest, and the badge
            that explained it sat 753px to the right. */
         + '<td class="txt prodcol">' + App.esc(item.name)
+        + (item.notOffered
+            ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' is not offered in '
+              + App.esc(App.basis().currency) + '">not in ' + App.esc(App.basis().currency) + '</span>' : '')
         + (item.belowMinimum
             ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
               + App.esc(money(item.notional)) + ', below its '

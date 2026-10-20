@@ -440,10 +440,10 @@ def test_saved_views_count_and_filter_the_whole_register():
     row = [e for e in page['entries'] if e['proposalId'] == proposalId][0]
     assert row['moved'] == 0 and row['accountRequested'] is False
 
-    # the summary totals per currency and never across them
+    # the summary totals the mandates, every one in dollars (D183)
     summary = page['summary']
     assert summary['proposals'] == page['total'] >= 1
-    assert {t['currency'] for t in summary['totals']} <= {e['currency'] for e in page['entries']}
+    assert summary['mandate'] == pytest.approx(sum(e['mandateSize'] for e in page['entries']))
     assert summary['earliest'] <= summary['latest']
 
     # a request moves it out of noAccount, and the row says so

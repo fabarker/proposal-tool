@@ -91,8 +91,6 @@ def test_the_builders_import_no_file_format():
                         'datetime', 'decimal',
                         'decimal.Decimal', 'decimal.ROUND_HALF_UP',
                         '', '.fees', '.portfolio_weights',
-                        # each amount's mark, by the proposal's currency (D181)
-                        '.money',
                         # measured advance widths - data, not a file format - so
                         # column A can be sized to its labels in Excel too (D130)
                         'fontMetrics', 'fontMetrics.METRICS'}, sorted(imported)

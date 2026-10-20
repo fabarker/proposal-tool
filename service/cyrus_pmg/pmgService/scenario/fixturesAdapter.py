@@ -93,8 +93,8 @@ class FixturesScenarioPort:
     def search_advisors(self, query: str, limit: int = 20):
         return advisors.searchAdvisors(query, limit)
 
-    def validate_mandate(self, mandate: MandateInput, currency: str = None) -> None:
-        rules.validateMandate(mandate, advisors.advisorExists, currency)
+    def validate_mandate(self, mandate: MandateInput) -> None:
+        rules.validateMandate(mandate, advisors.advisorExists)
 
     def resolve_portfolio(self, basis: BasisInput, key: PortfolioKey):
         latency = _knob('SCENARIO_FIXTURES_LATENCY_MS')

@@ -65,15 +65,12 @@ def levelId(source: str, point: str) -> str:
     return '{} {}'.format(source, point)
 
 
-def tierLabel(low, high, currency=None) -> str:
-    """'Under $10m', '£10m – £25m', '100m and up' - presentation, derived;
-    a card of one tier covers every account size. The bounds are in the
-    proposal's own currency, which the card does not know: marked when
-    *currency* is given, bare when not (D181)."""
-    from .money import mark
-
+def tierLabel(low, high) -> str:
+    """'Under $10m', '$10m – $25m', '$100m and up' - presentation, derived;
+    a card of one tier covers every account size. Account sizes are in
+    dollars whatever the proposal's currency (D183)."""
     def m(v):
-        return '{}{:g}m'.format(mark(currency), v / 1e6)
+        return '${:g}m'.format(v / 1e6)
     if low <= 0:
         return 'Every account size' if high is None else 'Under {}'.format(m(high))
     if high is None:

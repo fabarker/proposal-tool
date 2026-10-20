@@ -247,7 +247,7 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
     changed = next(r for r in body if r[0] not in (dropped, keptHeld))
     changed[at['ProductCost']] = '0.99'
     newRow = ['probe-etf', 'Probe Global Equity ETF', 'PRB', 'Global Equity', 'Public Equity',
-              'Passive', 'ETF', 'Accumulating', 'External', 'Daily', 'USD', '0.12', 'Passive', '', '']
+              'Passive', 'ETF', 'Accumulating', 'External', 'Daily', 'USD', '', '0.12', 'Passive', '', '']
     out = [head] + [r for r in body if r[0] not in (dropped, keptHeld)] + [newRow]
     path = _fileWith(tmp_path, out, name='delivery.csv')
     untouched = products.entry(body[-1][0])
@@ -388,7 +388,7 @@ def test_a_catalogue_from_before_the_category_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 11
+    assert sleeveRepo.describe()['schemaVersion'] == 12
     after = products.entries()
     assert [p['category'] for p in after] == [''] * len(before)
     strip = lambda ps: [{k: v for k, v in p.items() if k != 'category'} for p in ps]
