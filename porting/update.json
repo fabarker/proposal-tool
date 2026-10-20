@@ -1,20 +1,16 @@
 {
-  "from": "361a3d8",
-  "to": "acbd8df",
+  "from": "acbd8df",
+  "to": "552b01b",
   "write": [
-    "package/customPortfolio.py",
-    "package/customSleeves.py",
+    "package/feeCard.py",
     "package/fees.py",
-    "package/products.py",
-    "package/proposalRegister.py",
-    "package/repositoryFeed.py",
-    "package/sleeveRepo.py",
-    "package/sleeveTools.py",
+    "package/pptWriter.py",
+    "package/sheetDoc.py",
     "package/workbook.py",
     "page/static/css/proposalTool.css",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
   "routerBlock": true,
-  "bytes": 103520
+  "bytes": 83504
 }
