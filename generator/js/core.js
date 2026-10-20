@@ -1047,6 +1047,18 @@ function feeLevel() {
   return state.feeLevel || opt('fees.defaultLevel', null);
 }
 
+/* A level a row of the card does not price is moved to the same point on
+   Management (D185). The implementation layer, which knows the products
+   held, says when; this keeps the scenario saying what priced it. No refresh: the page
+   has already drawn the level in force. */
+function adoptFeeLevel(level, why) {
+  if (!canEdit() || !level || level === feeLevel()) return;
+  if (feeLevelIds().indexOf(level) === -1) return;
+  state.feeLevel = level;
+  pushFee({ feeLevel: level });
+  announce('polite', 'Fee level ' + level + (why ? ': ' + why : '.'));
+}
+
 function pushFee(patch) {
   if (!state.scenarioId) return;
   trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
@@ -4642,6 +4654,7 @@ return {
   setIncludeFees: setIncludeFees,
   feeSchedule: function () { return state.feeSchedule; },
   feeLevel: feeLevel,
+  adoptFeeLevel: adoptFeeLevel,
   customLevel: customLevel,
   customFees: function () { return state.customFees || {}; },
   setCustomFees: setCustomFees,

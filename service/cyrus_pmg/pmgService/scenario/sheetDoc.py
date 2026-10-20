@@ -1430,6 +1430,8 @@ def buildFeeLadderDoc(model: dict, feeSchedule: str, feeLevel: str) -> SheetDoc:
     proposal is not priced by CASP."""
     if feeSchedule is None or not fees.isMarginal(feeSchedule):
         return None
+    # the level the model was priced at, where no caller says (D185)
+    feeLevel = feeLevel or model.get('feeLevel')
     doc = SheetDoc('fee_ladder')
     plain = dict(DECK_FONT, color=DECK_TEXT)
     head = dict(DECK_FONT, bold=True, color=DECK_NAMES)
@@ -1493,7 +1495,7 @@ def buildImplementationDoc(model: dict, columns, widths,
             model['customPortfolio']['profileLabel'])])
     if model['priced']:
         preamble.append(['Fee Schedule', feeSchedule])
-        preamble.append(['Fee Level', feeLevel or fees.DEFAULT_LEVEL])
+        preamble.append(['Fee Level', feeLevel or model.get('feeLevel') or fees.DEFAULT_LEVEL])
         # Under the custom level the rates are the PWA's, one per row (D96).
         # Under a marginal schedule the blended rate is what a reader needs
         # (D83). A flat one names its tier.

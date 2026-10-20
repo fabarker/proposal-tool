@@ -1661,7 +1661,9 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
             feeLine = ' · '.join(part for part in (
                 basisLine,
                 'Fee Schedule ' + feeSchedule if priced and feeSchedule else None,
-                'Fee Level ' + feeLevel if priced and feeLevel else None,
+                # the level the model was priced at (D185)
+                'Fee Level ' + (feeLevel or model.get('feeLevel'))
+                if priced and (feeLevel or model.get('feeLevel')) else None,
                 'Effective Rate {:.4f}%'.format(model['effectiveRate'])
                 if priced and model.get('marginal') and model.get('effectiveRate') is not None
                 else None) if part)

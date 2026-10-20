@@ -1141,6 +1141,18 @@ function feeLevel() {
   return state.feeLevel || opt('fees.defaultLevel', null);
 }
 
+/* A level a row of the card does not price is moved to the same point on
+   Management (D185). The implementation layer, which knows the products
+   held, says when; this keeps the scenario saying what priced it. No refresh: the page
+   has already drawn the level in force. */
+function adoptFeeLevel(level, why) {
+  if (!canEdit() || !level || level === feeLevel()) return;
+  if (feeLevelIds().indexOf(level) === -1) return;
+  state.feeLevel = level;
+  pushFee({ feeLevel: level });
+  announce('polite', 'Fee level ' + level + (why ? ': ' + why : '.'));
+}
+
 function pushFee(patch) {
   if (!state.scenarioId) return;
   trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
@@ -4736,6 +4748,7 @@ return {
   setIncludeFees: setIncludeFees,
   feeSchedule: function () { return state.feeSchedule; },
   feeLevel: feeLevel,
+  adoptFeeLevel: adoptFeeLevel,
   customLevel: customLevel,
   customFees: function () { return state.customFees || {}; },
   setCustomFees: setCustomFees,
@@ -5142,9 +5155,83 @@ function feeScheduleEntry() {
   return feeSchedules().filter(function (s) { return s.id === chosen; })[0] || null;
 }
 
-function managementFee(feeGroup) {
-  return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup,
+/* A product's fee at *level*, or - without one - at the level the
+   portfolio would be priced at with the product held: for a product in the
+   table that is the level in force, and for one the catalogue or a sleeve
+   preview shows, the level it would move the portfolio to (D185). */
+function managementFee(feeGroup, level) {
+  return resolveFee(feeRates(), App.feeSchedule(),
+                    level || levelInForceWith([feeGroup]), feeGroup,
                     { level: customLevel(), map: App.customFees() });
+}
+
+/* ---- a row without a source (D185) ---------------------------------------
+   The card may leave a fee group - or a uniform schedule's one row - without
+   a source's rates: a - in each of its PMG boxes. That source's levels are
+   then not offered to a portfolio holding a product the row prices, and a
+   portfolio on one is priced at the same point on Management. The mirror of
+   fees.levelInForce, against the rows the schema serves as fees.absent. */
+function heldFeeGroups() {
+  var out = [];
+  implementedLines().forEach(function (category) {
+    var sleeve = sleeveFor(category.name);
+    ((sleeve && sleeve.products) || []).forEach(function (product) {
+      if (product.feeGroup && out.indexOf(product.feeGroup) === -1) out.push(product.feeGroup);
+    });
+  });
+  return out;
+}
+
+/* the rows among *groups* that leave *source* out under *schedule*: fee
+   groups under a grouped schedule, '' for a uniform one's row */
+function rowsLacking(schedule, source, groups) {
+  var absent = (App.opt('fees.absent', null) || {})[schedule];
+  if (!absent || !source) return [];
+  var rowsHeld = scheduleByGroup(schedule) ? groups : [''];
+  return rowsHeld.filter(function (g) { return (absent[g] || []).indexOf(source) !== -1; });
+}
+
+function levelEntry(id) {
+  return App.opt('fees.levels', []).filter(function (l) { return l.id === id; })[0] || null;
+}
+
+/* the level the portfolio is priced at, holding *extra* fee groups as well
+   as its own */
+function levelInForceWith(extra) {
+  var level = App.feeLevel(), schedule = App.feeSchedule();
+  var entry = levelEntry(level);
+  if (!schedule || !entry) return level;            /* none yet, or custom */
+  var groups = heldFeeGroups();
+  (extra || []).forEach(function (g) { if (g && groups.indexOf(g) === -1) groups.push(g); });
+  if (!rowsLacking(schedule, entry.source, groups).length) return level;
+  var moved = App.opt('fees.levels', []).filter(function (l) {
+    return l.source === App.opt('fees.requiredSource', null) && l.point === entry.point;
+  })[0];
+  return moved ? moved.id : level;
+}
+
+function feeLevelInForce() { return levelInForceWith([]); }
+
+/* why a source is not offered to this portfolio, or '' when it is */
+function sourceLackingNote(source) {
+  var schedule = App.feeSchedule();
+  var lacking = rowsLacking(schedule, source, heldFeeGroups());
+  if (!lacking.length) return '';
+  return scheduleByGroup(schedule)
+    ? 'The fee card has no ' + source + ' rates for ' + lacking.join(', ')
+      + ', which ' + (lacking.length === 1 ? 'a product here is in' : 'products here are in') + '.'
+    : 'The fee card has no ' + source + ' rates for ' + schedule + '.';
+}
+
+/* A portfolio on a level it can no longer be priced at keeps the point and
+   moves to Management, and the scenario is told, so the files and the
+   register say the same (D185). Never moved back: a PWA chooses PMG again. */
+function syncFeeLevel() {
+  if (!App.includeFees() || !App.feeSchedule()) return;
+  var inForce = feeLevelInForce();
+  if (inForce === App.feeLevel()) return;
+  var was = levelEntry(App.feeLevel());
+  App.adoptFeeLevel(inForce, was ? sourceLackingNote(was.source) : '');
 }
 
 /* ---- the custom level (D96) ---------------------------------------------
@@ -5503,6 +5590,7 @@ function rows() {
      Mirrors buildImplementationRows. */
   var combined = implementedLines();
   var closed = complete() && balanceOf(combined).balanced;
+  var level = feeLevelInForce();          /* once for the table (D185) */
   combined.forEach(function (category) {
     var sleeve = sleeveFor(category.name);
     var items = [];
@@ -5519,7 +5607,7 @@ function rows() {
           /* not offered in the portfolio's currency (D182): the library
              serves each product as that currency reads it */
           notOffered: product.offered === false,
-          mgmt: managementFee(product.feeGroup),
+          mgmt: managementFee(product.feeGroup, level),
           share: product.weight,
           exact: category.weightPct * product.weight
         };
@@ -5898,7 +5986,7 @@ function feeFields() {
   var schedules = feeSchedules();
   if (!schedules.length) return '';
   var chosen = App.feeSchedule();
-  var level = App.feeLevel();
+  var level = feeLevelInForce();
   var tier = App.opt('fees.tier', null);
   var editable = App.canEdit();
   var entry = feeScheduleEntry();
@@ -5964,6 +6052,8 @@ function feeFields() {
   var curSource = onCustom ? custom : (chosenLevel ? chosenLevel.source : (sources[0] || null));
   var curPoint = chosenLevel ? chosenLevel.point : (points[0] || null);
   var sourceValues = custom ? sources.concat([custom]) : sources;
+  /* a source a row held here leaves out is not offered, and says why (D185) */
+  var lackingNotes = sources.map(sourceLackingNote).filter(Boolean);
 
   /* Both controls are sized from the schema's own lists, not from a count
      written here: a framework that priced four points would still lay out. */
@@ -5983,11 +6073,15 @@ function feeFields() {
   html += '<div class="fee-field done">'
     + '<span class="fee-label" id="feelevellabel">Fee Level</span>'
     + segment(sourceValues, curSource, curPoint, 'data-feesource',
-              function (source, point) { return source === custom ? custom : idFor(source, point); },
+              function (source, point) {
+                if (source === custom) return custom;
+                return sourceLackingNote(source) ? null : idFor(source, point);
+              },
               'Fee source')
     + (onCustom ? '' : segment(points, curPoint, curSource, 'data-feepoint',
               function (point, source) { return idFor(source, point); }, 'Fee Level point'))
     + '<p class="vr-note">' + feePricingNote(tier) + '</p>'
+    + lackingNotes.map(function (n) { return '<p class="vr-note">' + App.esc(n) + '</p>'; }).join('')
     + feeOutcomeLine()
     + (onCustom ? customRailBlock() : '')
     + feeCardLine()
@@ -6499,7 +6593,7 @@ function renderFeePanel() {
   /* The level this mandate prices at - the scenario's own, or the framework's
      default when none is chosen yet. It is one column of the grid, and the
      one a reader is looking for. */
-  var levelId = (App.feeLevel && App.feeLevel()) || null;
+  var levelId = feeLevelInForce() || null;
   var byGroupPivot = feePanel.pivot === 'group';
   var mandateTier = feePanel.mandateTier;
   var tierLabel = function (id) {
@@ -6678,7 +6772,7 @@ function renderPricePanel() {
   App.setBackgroundInert(true);
 
   var build = marginalBuildUp();
-  var level = (App.feeLevel && App.feeLevel()) || App.opt('fees.defaultLevel', null);
+  var level = feeLevelInForce() || App.opt('fees.defaultLevel', null);
   var sums = priceBuildUp(build, level);
   var delivery = App.opt('fees.delivery', {}) || {};
   var schedule = (build && build.schedule) || (App.feeSchedule && App.feeSchedule()) || '';
@@ -7517,8 +7611,10 @@ function sleeveShape(sleeve, weightPct) {
   var priced = App.includeFees() && !!App.feeSchedule();
   var cost = 0, known = true, below = 0;
   var mandate = App.mandateSize();
+  /* at the level the portfolio would be on with this sleeve in it (D185) */
+  var level = priced ? levelInForceWith(products.map(function (p) { return p.feeGroup; })) : null;
   products.forEach(function (product) {
-    var mgmt = priced ? managementFee(product.feeGroup) : 0;
+    var mgmt = priced ? managementFee(product.feeGroup, level) : 0;
     if (mgmt === null) known = false; else cost += product.weight * (product.productCost + mgmt);
     if (typeof mandate === 'number' && product.minimumInvestment) {
       var notional = mandate * (weightPct / 100) * product.weight;
@@ -8592,7 +8688,9 @@ document.addEventListener('click', function (e) {
     else if (d.cfill !== undefined) {
       var fillId = customPanel.fillSrc + ' ' + customPanel.fillPt;
       customRowsFor(schedNow).forEach(function (r) {
-        var rate = (customReference(schedNow, r.group) || {})[fillId];
+        var ref = customReference(schedNow, r.group) || {}, rate = ref[fillId];
+        /* a row without the source fills from Management at the point (D185) */
+        if (typeof rate !== 'number') rate = ref[App.opt('fees.requiredSource', '') + ' ' + customPanel.fillPt];
         if (typeof rate === 'number') setDraftRate(schedNow, r.group, Math.round(rate * 100) / 100);
       });
       customPanel.bad = {};
@@ -8645,7 +8743,7 @@ document.addEventListener('click', function (e) {
       return;
     }
     var levels = App.opt('fees.levels', []);
-    var inForce = levels.filter(function (l) { return l.id === App.feeLevel(); })[0];
+    var inForce = levels.filter(function (l) { return l.id === feeLevelInForce(); })[0];
     /* leaving the custom level, the point comes back from the default */
     var dflt = levels.filter(function (l) { return l.id === App.opt('fees.defaultLevel', null); })[0];
     var source = half.dataset.feesource
@@ -8676,6 +8774,7 @@ App.managementFee = managementFee;    /* the catalogue's Mgmt column prices from
 
 App.addRenderer(function () {
   ensureLibraries();
+  syncFeeLevel();
   renderRail();
   renderView();
   renderGreetPanel();
@@ -10543,6 +10642,20 @@ function feeTierLabel(min, max) {
   if (max == null) return m(min) + ' and up';
   return m(min) + ' – ' + m(max);
 }
+/* a box left without a rate: a - (D185), where the row does not price the
+   source */
+function feeNone(text) { return /^[-\u2013\u2014]$/.test(String(text == null ? '' : text).trim()); }
+/* a rate as it was, for the struck-out figure beside a changed box */
+function feeOldText(old) { return old === null ? '-' : feeShow(old); }
+/* whether a box moved from the rate it had on the card in force: *old* a
+   rate, null for a box that had none, undefined for a box that is new */
+function feeCellMoved(old, text) {
+  if (old === undefined) return false;
+  if (feeNone(text)) return old !== null;
+  var v = feeNum(text);
+  if (v === null || isNaN(v)) return false;
+  return old === null || Math.abs(v - old) > 1e-9;
+}
 /* a rate as typed, null when blank, NaN when it is not a number */
 function feeNum(text) {
   var t = String(text == null ? '' : text).trim();
@@ -10552,8 +10665,9 @@ function feeNum(text) {
   return parseFloat(t);
 }
 function feeClone(x) { return JSON.parse(JSON.stringify(x)); }
-/* the stored card as the editor holds it */
-function feeDraftFrom(card) {
+/* the stored card as the editor holds it; a level a row leaves out is a -
+   in its box (D185) */
+function feeDraftFrom(card, levels) {
   var d = { tiers: [], feeGroups: [], rates: {}, seq: 0 };
   card.tiers.forEach(function (t) { d.tiers.push({ key: t.id, min: t.min, max: t.max }); });
   card.feeGroups.forEach(function (g) { d.feeGroups.push({ key: 'g:' + g, name: g, from: g }); });
@@ -10562,8 +10676,10 @@ function feeDraftFrom(card) {
     Object.keys(card.rates[schedule]).forEach(function (row) {
       var key = row === '' ? '' : 'g:' + row, byTier = {};
       Object.keys(card.rates[schedule][row]).forEach(function (tier) {
-        var levels = card.rates[schedule][row][tier], out = {};
-        Object.keys(levels).forEach(function (l) { out[l] = feeG(levels[l]); });
+        var held = card.rates[schedule][row][tier], out = {};
+        (levels || Object.keys(held)).forEach(function (l) {
+          out[l] = typeof held[l] === 'number' ? feeG(held[l]) : '-';
+        });
         byTier[tier] = out;
       });
       d.rates[schedule][key] = byTier;
@@ -10591,7 +10707,8 @@ function feeRateText(d, schedule, rowKey, tierKey, level) {
 /* every problem with a draft: [{field, key?, message}], the key naming a
    cell ('schedule|row|tier|level'), a tier ('tier|key') or a group
    ('group|key'). ctx: { schedules, sources, points, levels, rateMax,
-   groupMax } */
+   groupMax, requiredSource }. A row may leave out every rate of a source
+   but the required one - a - in each box - and none of one it gives (D185). */
 function feeProblems(d, ctx) {
   var out = [];
   if (!d.tiers.length) out.push({ field: 'tiers', message: 'The card needs at least one account-size tier.' });
@@ -10616,11 +10733,26 @@ function feeProblems(d, ctx) {
     seen[n.toLowerCase()] = true;
   });
   feeRowsOf(d, ctx.schedules).forEach(function (row) {
+    var left = {};
+    ctx.sources.forEach(function (source) {
+      if (source === ctx.requiredSource) return;
+      left[source] = d.tiers.every(function (t) {
+        return ctx.points.every(function (p) { return feeNone(feeRateText(d, row.schedule, row.key, t.key, source + ' ' + p)); });
+      });
+    });
     d.tiers.forEach(function (t) {
       var where = row.label + ' · ' + feeTierLabel(t.min, t.max), values = {};
       ctx.levels.forEach(function (level) {
         var key = feeCellKey(row.schedule, row.key, t.key, level);
-        var v = feeNum(feeRateText(d, row.schedule, row.key, t.key, level));
+        var source = level.slice(0, level.length - (level.split(' ').pop().length + 1));
+        if (left[source]) return;
+        var text = feeRateText(d, row.schedule, row.key, t.key, level), v = feeNum(text);
+        if (feeNone(text)) {
+          out.push({ field: 'rates', key: key, message: where + ' · ' + level + ' has no rate. '
+            + (source === ctx.requiredSource ? 'Every row has its ' + source + ' rates.'
+               : 'Give every ' + source + ' rate on the row, or none: a - in each ' + source + ' box.') });
+          return;
+        }
         if (v === null || isNaN(v)) { out.push({ field: 'rates', key: key, message: where + ' · ' + level + ' has no rate.' }); return; }
         if (v < 0 || v >= ctx.rateMax) {
           out.push({ field: 'rates', key: key, message: where + ' · ' + level + ': ' + feeShow(v) + ' is not a rate. A rate is a percentage from 0 up to '
@@ -10671,13 +10803,13 @@ function feeChanges(card, d, ctx) {
         if (!oldId) return;
         ctx.levels.forEach(function (level) {
           var held = ((card.rates[s.id] || {})[row.old] || {})[oldId];
-          var a = held ? held[level] : undefined;
-          var b = feeNum(feeRateText(d, s.id, row.key, t.key, level));
-          if (a === undefined || b === null || isNaN(b)) return;
-          if (Math.abs(a - b) > 1e-9) {
-            moved.push([s.id].concat(row.name ? [row.name] : []).concat([label, level]).join(' · ')
-              + ' ' + feeShow(a) + ' → ' + feeShow(b));
-          }
+          if (!held) return;
+          /* a rate given or taken away reads from or to a - (D185) */
+          var a = typeof held[level] === 'number' ? held[level] : null;
+          var text = feeRateText(d, s.id, row.key, t.key, level);
+          if (!feeCellMoved(a, text)) return;
+          moved.push([s.id].concat(row.name ? [row.name] : []).concat([label, level]).join(' · ')
+            + ' ' + feeOldText(a) + ' → ' + (feeNone(text) ? '-' : feeShow(text)));
         });
       });
     });
@@ -10699,7 +10831,8 @@ function feeOldRate(card, d, schedule, rowKey, tierKey, level) {
     row = g.from;
   }
   var held = ((card.rates[schedule] || {})[row] || {})[oldId];
-  return held ? held[level] : undefined;
+  /* null for a box the row had no rate in (D185) */
+  return held ? (typeof held[level] === 'number' ? held[level] : null) : undefined;
 }
 /* split a tier at a round amount inside it; the new half copies its rates */
 function feeSplitTier(d, i) {
@@ -10766,7 +10899,10 @@ function feePayload(d, schedules, levels) {
       var byTier = {};
       d.tiers.forEach(function (t) {
         var out = {};
-        levels.forEach(function (l) { out[l] = feeNum(feeRateText(d, s.id, row.key, t.key, l)); });
+        levels.forEach(function (l) {
+          var text = feeRateText(d, s.id, row.key, t.key, l);
+          out[l] = feeNone(text) ? null : feeNum(text);
+        });
         byTier[t.key] = out;
       });
       card.rates[s.id][row.name] = byTier;
@@ -10784,7 +10920,8 @@ function feeReadBlock(text) {
   var lines = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
   while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
   var rows = lines.map(function (l) { return l.split('\t').map(function (c) { return c.trim(); }); });
-  var isRate = function (c) { var v = feeNum(c); return v !== null && !isNaN(v); };
+  /* a - is a box the row leaves without a rate (D185), and pastes as one */
+  var isRate = function (c) { var v = feeNum(c); return feeNone(c) || (v !== null && !isNaN(v)); };
   while (rows.length && !rows[0].some(isRate)) rows.shift();
   var width = 0;
   rows.forEach(function (r) { width = Math.max(width, r.length); });
@@ -10798,6 +10935,7 @@ function feeReadBlock(text) {
   if (!rows.length || !width) return { error: 'The clipboard holds no rates. Copy the block of rates in Excel, then paste.' };
   for (var i = 0; i < rows.length; i += 1) {
     for (var j = 0; j < width; j += 1) {
+      if (feeNone(rows[i][j])) { rows[i][j] = '-'; continue; }
       var v = feeNum(rows[i][j]);
       var where = 'Row ' + (i + 1) + ', column ' + (j + 1) + ' of the block';
       if (v === null) return { error: where + ' is empty. Nothing was pasted.' };
@@ -10830,7 +10968,9 @@ function feePasteBlock(d, schedule, rowKey, levels, cells, at) {
     var t = d.tiers[t0 + i], out = byTier[t.key] = byTier[t.key] || {};
     r.forEach(function (text, j) {
       var level = levels[l0 + j], was = feeNum(out[level]);
-      if (was === null || isNaN(was) || Math.abs(was - feeNum(text)) > 1e-9) changed += 1;
+      var same = feeNone(text) ? feeNone(out[level])
+        : (was !== null && !isNaN(was) && Math.abs(was - feeNum(text)) <= 1e-9);
+      if (!same) changed += 1;
       out[level] = text;
     });
   });
@@ -17010,6 +17150,63 @@ window.addEventListener('beforeunload', function (e) {
   return '';
 });
 
+/* ---- the dialog's size ----------------------------------------------------
+   Dragged from the grip in its bottom-right corner, wider and taller or
+   narrower and shorter; kept for every view and remembered in this browser.
+   The dialog stays centred, so it grows by twice the drag and the corner
+   stays under the pointer. Double-clicking the grip gives the usual size. */
+var REPO_SIZE_KEY = 'proposalTool.repoSize';
+var repoSize = (function () {
+  try {
+    var held = JSON.parse(window.localStorage.getItem(REPO_SIZE_KEY) || 'null');
+    return held && typeof held.w === 'number' && typeof held.h === 'number' ? held : null;
+  } catch (e) { return null; }
+})();
+function repoSizeClamped(w, h) {
+  return { w: Math.round(Math.max(Math.min(720, window.innerWidth - 16), Math.min(w, window.innerWidth - 16))),
+           h: Math.round(Math.max(Math.min(480, window.innerHeight - 16), Math.min(h, window.innerHeight - 16))) };
+}
+function applyRepoSize() {
+  var dialog = document.querySelector('#repoDialog .dialog.repo'); if (!dialog) return;
+  if (!repoSize) { dialog.style.width = ''; dialog.style.height = ''; return; }
+  var size = repoSizeClamped(repoSize.w, repoSize.h);
+  dialog.style.width = size.w + 'px'; dialog.style.height = size.h + 'px';
+}
+function keepRepoSize() {
+  try {
+    if (repoSize) window.localStorage.setItem(REPO_SIZE_KEY, JSON.stringify(repoSize));
+    else window.localStorage.removeItem(REPO_SIZE_KEY);
+  } catch (e) { /* the size is kept for this page only */ }
+}
+document.addEventListener('pointerdown', function (e) {
+  var grip = e.target.closest ? e.target.closest('[data-repogrip]') : null;
+  if (!grip || e.button !== 0) return;
+  var dialog = grip.closest('.dialog.repo'); if (!dialog) return;
+  e.preventDefault();
+  var box = dialog.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
+  dialog.classList.add('sizing');
+  try { grip.setPointerCapture(e.pointerId); } catch (err) { /* moves still arrive on the document */ }
+  function move(ev) {
+    repoSize = repoSizeClamped(box.width + 2 * (ev.clientX - x0), box.height + 2 * (ev.clientY - y0));
+    applyRepoSize();
+  }
+  function done() {
+    dialog.classList.remove('sizing');
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', done);
+    document.removeEventListener('pointercancel', done);
+    keepRepoSize();
+  }
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', done);
+  document.addEventListener('pointercancel', done);
+});
+document.addEventListener('dblclick', function (e) {
+  if (!(e.target.closest && e.target.closest('[data-repogrip]'))) return;
+  repoSize = null; applyRepoSize(); keepRepoSize();
+});
+window.addEventListener('resize', applyRepoSize);
+
 function render() {
   var host = document.getElementById('repoDialog'); if (!host) return;
   if (!repo.open) {
@@ -17129,7 +17326,9 @@ function render() {
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
     + '<div class="dialog repo' + (onCatalogue ? ' catalogue' : '') + (onArchive ? ' archive' : '') + (onActivity ? ' activity' : '') + (onRegister ? ' register' : '')
     + (onUncalled ? ' uncalled' : '') + (onOverlays ? ' uncalled overlays' : '') + (onFees ? ' uncalled fees' : '') + (onSleeves ? ' sleeves' : '') + '" role="dialog" aria-modal="true" aria-labelledby="repoTitle">'
-    + header + leaving + body + footer + '</div>';
+    + header + leaving + body + footer
+    + '<div class="repo-grip" data-repogrip title="Drag to resize. Double-click for the usual size." aria-hidden="true"></div></div>';
+  applyRepoSize();
   syncHash();
   if (onOverlays) ovlAfterRender();
   keepDraft();                  /* the local copy follows the draft (F1) */
@@ -18608,9 +18807,9 @@ async function loadFeeHistory() {
 function feeCtx() {
   var d = fct.data;
   return { schedules: d.schedules, sources: d.sources, points: d.points, levels: d.levels,
-           rateMax: d.rateMax, groupMax: d.groupMax };
+           rateMax: d.rateMax, groupMax: d.groupMax, requiredSource: d.requiredSource };
 }
-function feeDraftNow() { return fct.draft || feeDraftFrom(fct.data.card); }
+function feeDraftNow() { return fct.draft || feeDraftFrom(fct.data.card, fct.data.levels); }
 function feeDirty() {
   /* a change to save, or something typed that could not be saved */
   if (!fct.draft) return false;
@@ -18652,9 +18851,8 @@ function feeTargetIdx() {
   return i >= 0 ? i : Math.floor(points.length / 2);
 }
 function feeChanged(d, schedule, rowKey, tierKey, level) {
-  var old = feeOldRate(fct.data.card, d, schedule, rowKey, tierKey, level);
-  var v = feeNum(feeRateText(d, schedule, rowKey, tierKey, level));
-  return old !== undefined && v !== null && !isNaN(v) && Math.abs(v - old) > 1e-9;
+  return feeCellMoved(feeOldRate(fct.data.card, d, schedule, rowKey, tierKey, level),
+                      feeRateText(d, schedule, rowKey, tierKey, level));
 }
 function feeCellHtml(d, schedule, rowKey, tierKey, level, editing, bad, cls) {
   var key = feeCellKey(schedule, rowKey, tierKey, level);
@@ -18666,7 +18864,7 @@ function feeCellHtml(d, schedule, rowKey, tierKey, level, editing, bad, cls) {
   if (!editing) return '<td class="' + c + '">' + esc(text === undefined ? '—' : feeShow(text)) + '</td>';
   return '<td class="' + c + '" data-feecellbox="' + esc(key) + '"><input class="fee-in" inputmode="decimal" autocomplete="off" data-feecell="' + esc(key) + '"'
     + ' value="' + esc(text === undefined ? '' : feeShow(text)) + '" aria-label="' + esc(level + ', ' + feeTierText(d, tierKey)) + '"' + (bad[key] ? ' aria-invalid="true"' : '') + '>'
-    + (changed ? '<s>' + esc(feeShow(old)) + '</s>' : '') + '</td>';
+    + (changed ? '<s>' + esc(feeOldText(old)) + '</s>' : '') + '</td>';
 }
 /* a row's changes and problems: its card's foot, and its mark in the list */
 function feeRowStat(d, row, probs) {
@@ -18834,7 +19032,7 @@ function feeListCellHtml(d, row, t, lv, editing, bad) {
         + '<label for="feeO' + k + '">' + esc(points[k]) + '</label>'
         + '<input id="feeO' + k + '" class="fee-in" inputmode="decimal" autocomplete="off" data-feecell="' + esc(keys[k]) + '"'
         + ' value="' + esc(texts[k] === undefined ? '' : feeShow(texts[k])) + '"' + (bad[keys[k]] ? ' aria-invalid="true"' : '') + '>'
-        + (c ? '<s>' + esc(feeShow(old)) + '</s>' : '') + '</span>';
+        + (c ? '<s>' + esc(feeOldText(old)) + '</s>' : '') + '</span>';
     }).join('') + '</div></td>';
   }
   var show = function (x) { return x === undefined || x === '' ? '—' : feeShow(x); };
@@ -18975,16 +19173,15 @@ function feeUpdate() {
     var schedule = parts[0], level = parts[parts.length - 1], tierKey = parts[parts.length - 2];
     var rowKey = parts.slice(1, parts.length - 2).join('|');
     var old = feeOldRate(fct.data.card, d, schedule, rowKey, tierKey, level);
-    var v = feeNum(feeRateText(d, schedule, rowKey, tierKey, level));
-    var changed = old !== undefined && v !== null && !isNaN(v) && Math.abs(v - old) > 1e-9;
+    var changed = feeCellMoved(old, feeRateText(d, schedule, rowKey, tierKey, level));
     td.classList.toggle('chg', changed);
     td.classList.toggle('bad', !!bad[key]);
     var input = td.querySelector('input');
     if (input) { if (bad[key]) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid'); }
     var s = td.querySelector('s');
-    if (changed && !s) td.insertAdjacentHTML('beforeend', '<s>' + esc(feeShow(old)) + '</s>');
+    if (changed && !s) td.insertAdjacentHTML('beforeend', '<s>' + esc(feeOldText(old)) + '</s>');
     if (!changed && s) s.remove();
-    if (changed && s) s.textContent = feeShow(old);
+    if (changed && s) s.textContent = feeOldText(old);
   });
   var shown = fct.touched ? probs : probs.filter(function (p) { return p.field !== 'rates' || !/has no rate/.test(p.message); });
   var list = document.getElementById('feeProblems');
@@ -19045,7 +19242,7 @@ function feeRevert(revision) {
 
 /* the draft's own copy of the card, begun by Edit the card or by a paste */
 function feeBegin() {
-  fct.draft = feeDraftFrom(fct.data.card); fct.flash = ''; fct.error = null; fct.touched = false;
+  fct.draft = feeDraftFrom(fct.data.card, fct.data.levels); fct.flash = ''; fct.error = null; fct.touched = false;
   fct.pasted = null; fct.pasteError = null; fct.pasteAt = null;
 }
 /* a block pasted into a box: into that box's row of the card */
@@ -19349,7 +19546,9 @@ document.addEventListener('click', function (e) {
     return;
   }
   var ds = el.dataset;
-  if (ds.repoclose !== undefined || ds.reposcrim !== undefined) { if (!repo.saving) closeRepository(false); return; }
+  /* only the close button closes it: a click beside the dialog does nothing */
+  if (ds.reposcrim !== undefined) return;
+  if (ds.repoclose !== undefined) { if (!repo.saving) closeRepository(false); return; }
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
   if (fundClick(ds)) return;
   if (ovlClick(el)) return;

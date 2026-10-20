@@ -1587,6 +1587,11 @@ def _assembleExport(scenarioId: str, port):
         mandate.topAccountSize, implementation['volPremium'], basis.currency,
         customFees=implementation['customFees'], overlayEntry=overlayEntry,
         customSleeves=customs)
+    # the level the book is priced at: a fee group the card leaves without
+    # the chosen source moves it to Management (D185), and the files and
+    # the register say what priced it
+    if model.get('feeLevel'):
+        feeLevel = implementation['feeLevel'] = model['feeLevel']
     # A custom sleeve weighted against the portfolio sets its category's
     # weight and nothing else moves (D170): the person decides where the
     # difference goes, and a book that does not add to 100% is not delivered.
@@ -1681,6 +1686,9 @@ def _assembleCustomExport(state, port):
     model = customPortfolio.buildModel(
         built, mandate.mandateSize, variant, feeSchedule if includeFees else None, feeLevel,
         mandate.topAccountSize, basis.currency, customFees=customFees)
+    # the level the book is priced at (D185)
+    if model.get('feeLevel'):
+        feeLevel = model['feeLevel']
     if model.get('unpricedGroups'):
         raise ValidationError(
             'customFees',

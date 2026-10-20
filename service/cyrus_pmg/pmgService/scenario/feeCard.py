@@ -96,6 +96,11 @@ def _number(value):
     return None if math.isnan(number) or math.isinf(number) else number
 
 
+def _noRate(value) -> bool:
+    """Whether a box was left without a rate: nothing, blank, or a - (D185)."""
+    return value is None or (isinstance(value, str) and fees.isNoRate(value))
+
+
 def _amount(value):
     if isinstance(value, bool):
         return None
@@ -113,7 +118,10 @@ def _amount(value):
 
 def _rateText(value) -> str:
     """A rate as the card reads: two places at least, as the viewers print
-    it, and a third or fourth when the rate has one."""
+    it, and a third or fourth when the rate has one; a cell without one is
+    a - (D185)."""
+    if value is None:
+        return fees.NO_RATE
     short = '{:g}'.format(value)
     places = len(short.split('.')[1]) if '.' in short and 'e' not in short else 0
     return '{:.{}f}'.format(value, max(2, places))
@@ -314,6 +322,8 @@ def describe() -> dict:
                        'note': fees.SCHEDULE_NOTES[s]} for s in fees.SCHEDULES],
         'sources': list(fees.SOURCES), 'points': list(fees.POINTS),
         'levels': list(fees.LEVELS),
+        # the source no row may leave out (D185)
+        'requiredSource': fees.REQUIRED_SOURCE,
         'usage': usage,
         'rateMax': RATE_MAX, 'groupMax': GROUP_MAX, 'noteMax': NOTE_MAX,
     }
@@ -396,23 +406,41 @@ def normalise(card, current=None) -> dict:
             byRow = bySchedule.get(originals.get(group, group), bySchedule.get(group))
             byRow = byRow if isinstance(byRow, dict) else {}
             rates[schedule][group] = {}
+            # A row may leave out every rate of a source but the required
+            # one - a - in each box - and none of a source it gives (D185).
+            boxes = {}
+            for t in tierList:
+                byLevel = byRow.get(t['key'])
+                boxes[t['key']] = byLevel if isinstance(byLevel, dict) else {}
+            left = set()
+            for source in fees.SOURCES:
+                values = [boxes[t['key']].get(fees.levelId(source, point))
+                          for t in tierList for point in fees.POINTS]
+                if source != fees.REQUIRED_SOURCE and all(_noRate(v) for v in values):
+                    left.add(source)
             for t, tierId in zip(tierList, ids):
                 label = fees.tierLabel(t['min'], t['max'])
-                byLevel = byRow.get(t['key'])
-                byLevel = byLevel if isinstance(byLevel, dict) else {}
+                byLevel = boxes[t['key']]
                 out = {}
                 for level in fees.LEVELS:
+                    source = fees.splitLevel(level)[0]
+                    if source in left:
+                        continue
                     value = _number(byLevel.get(level))
                     if value is None:
-                        raise ValidationError('rates', '{} has no rate.'.format(
-                            _where(schedule, group, label, level)))
+                        raise ValidationError('rates', '{} has no rate. {}'.format(
+                            _where(schedule, group, label, level),
+                            'Every row has its {} rates.'.format(source)
+                            if source == fees.REQUIRED_SOURCE else
+                            'Give every {0} rate on the row, or none: a - in each {0} box.'.format(
+                                source)))
                     if value < 0 or value >= RATE_MAX:
                         raise ValidationError('rates', '{}: {} is not a rate. A rate is a '
                                               'percentage from 0 up to {:g}: 0.45 means 0.45%.'.format(
                                                   _where(schedule, group, label, level),
                                                   _rateText(value), RATE_MAX))
                     out[level] = round(value, 6)
-                for source in fees.SOURCES:
+                for source in [x for x in fees.SOURCES if x not in left]:
                     band = [(point, out[fees.levelId(source, point)]) for point in fees.POINTS]
                     for (pa, a), (pb, b) in zip(band, band[1:]):
                         if a > b:
@@ -524,10 +552,14 @@ def _rateMoveLines(before, after) -> list:
                 a = before['rates'].get(schedule, {}).get(group, {}).get(oldTiers[label], {})
                 b = after['rates'].get(schedule, {}).get(target, {}).get(newTiers[label], {})
                 for level in fees.LEVELS:
-                    if level in a and level in b and abs(float(a[level]) - float(b[level])) > 1e-9:
+                    # a rate given or taken away reads from or to a - (D185)
+                    was, now = a.get(level), b.get(level)
+                    if was is None and now is None:
+                        continue
+                    if was is None or now is None or abs(float(was) - float(now)) > 1e-9:
                         moved.append('{} {} → {}'.format(
-                            _where(schedule, target, label, level), _rateText(a[level]),
-                            _rateText(b[level])))
+                            _where(schedule, target, label, level), _rateText(was),
+                            _rateText(now)))
     return moved
 
 
@@ -806,9 +838,11 @@ def exportRows() -> list:
             for tier in held['tiers']:
                 for source in fees.SOURCES:
                     for point in fees.POINTS:
-                        rate = held['cells'][(schedule, group, tier['id'], source, point)]
+                        # a - where the row leaves the source out (D185)
+                        rate = held['cells'].get((schedule, group, tier['id'], source, point))
                         out.append([schedule, group or '', tier['id'], edge(tier['min']),
-                                    edge(tier['max']), source, point, '{:g}'.format(rate)])
+                                    edge(tier['max']), source, point,
+                                    fees.NO_RATE if rate is None else '{:g}'.format(rate)])
     return out
 
 

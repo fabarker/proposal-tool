@@ -12,6 +12,14 @@ from four inputs at pricing time:
                    e.g. 'PMG Target'.
   fee group        the product's group under RDR; ignored under CASP.
 
+A ROW WITHOUT A SOURCE (D185). A row of the card - CASP's one, or a fee
+group's under RDR - may leave out every rate of a source other than
+Management: a fee group the PMG schedule does not price carries a - in each
+of its PMG boxes. That source's levels are then not offered to a portfolio
+the row prices, and a portfolio on one is priced at the same point on
+Management instead (levelInForce). Management is never left out: it is what
+such a portfolio falls back to, and what bounds a custom rate.
+
 WHERE THE DATA LIVES (D55, D166). The rate card - every rate, at every
 tier, for every schedule and, under RDR, every fee group - is kept in the
 repository's own database and maintained from the console's Fees tab
@@ -82,10 +90,20 @@ class BadRateCard(ValueError):
     """The delivered card is not one this framework can price from."""
 
 
+#: how a file or a box says a cell has no rate: the row does not price that
+#: source (D185); a blank says the same in a file
+NO_RATE = '-'
+
+
+def isNoRate(text) -> bool:
+    """Whether *text* is a cell left without a rate: '-', a dash, or blank."""
+    return str(text if text is not None else '').strip() in ('', '-', '\u2013', '\u2014')
+
+
 def _readDelivery(path: str, text: str = None) -> dict:
     """The delivered rows -> cells, tiers, fee groups. Rejects, never guesses.
     *text*, when given, is the file's content (an upload named *path*)."""
-    cells, tiers, groups = {}, {}, []
+    cells, tiers, groups, empty = {}, {}, [], set()
     # utf-8-sig transparently drops a BOM if the delivery was saved from Excel
     # or similar; without it the first field name is '\ufeffschedule' and the
     # column check below rejects a card whose header actually reads 'schedule'.
@@ -105,7 +123,8 @@ def _readDelivery(path: str, text: str = None) -> dict:
                 # A BLANK tierMax is how the top tier says "and up": it becomes
                 # None, and tierLabel reads it back as "$100m and up".
                 high = float(row['tierMax']) if row['tierMax'].strip() else None
-                rate = float(row['rate'])
+                # a - is a cell the row does not price (D185)
+                rate = None if isNoRate(row['rate']) else float(row['rate'])
             except ValueError:
                 raise BadRateCard('{} row {}: a number is not a number'.format(path, n))
             # Infinity is NOT the way to say "and up". float() takes 'inf' and a
@@ -119,7 +138,7 @@ def _readDelivery(path: str, text: str = None) -> dict:
                     raise BadRateCard(
                         '{} row {}: {} is {!r}. Leave tierMax EMPTY for the top tier - that '
                         'is how a tier says "and up".'.format(path, n, edge, row[edge]))
-            if rate < 0:
+            if rate is not None and rate < 0:
                 raise BadRateCard('{} row {}: negative rate'.format(path, n))
             edges = (low, high)
             if tier in tiers and tiers[tier] != edges:
@@ -129,9 +148,12 @@ def _readDelivery(path: str, text: str = None) -> dict:
             if group and group not in groups:
                 groups.append(group)
             key = (schedule, group, tier, row['source'].strip(), row['point'].strip())
-            if key in cells:
+            if key in cells or key in empty:
                 raise BadRateCard('{} row {}: duplicate cell {}'.format(path, n, key))
-            cells[key] = rate
+            if rate is None:
+                empty.add(key)
+            else:
+                cells[key] = rate
     ordered = sorted(tiers.items(), key=lambda kv: kv[1][0])
     return {
         'cells': cells,
@@ -164,6 +186,9 @@ DEFAULT_LEVEL = _CONFIG['defaultLevel']
 _CUSTOM = dict(_CONFIG.get('custom') or {})
 CUSTOM_LEVEL = str(_CUSTOM.get('level') or 'Custom')
 CUSTOM_BOUNDS_SOURCE = str(_CUSTOM.get('boundsSource') or SOURCES[0])
+#: the source every row must price (D185): what a portfolio falls back to
+#: when a row leaves another out, and what bounds a custom rate
+REQUIRED_SOURCE = CUSTOM_BOUNDS_SOURCE
 
 
 def _card(card=None) -> dict:
@@ -234,6 +259,61 @@ def isMarginal(schedule: str) -> bool:
     return _MARGINAL[schedule]
 
 
+# ------------------------------------------- a row without a source (D185) -
+
+def rowSources(schedule: str, feeGroup=None, card=None) -> list:
+    """The sources a row of the card prices, in the vocabulary's order: all
+    of them, or fewer where the row leaves one out. *feeGroup* is ignored
+    under a uniform schedule."""
+    cells = _card(card)['cells']
+    group = feeGroup if byGroup(schedule) else None
+    held = {k[3] for k in cells if k[0] == schedule and k[1] == group}
+    return [s for s in SOURCES if s in held]
+
+
+def rowLevels(schedule: str, feeGroup=None, card=None) -> list:
+    """The levels a row prices: every level of each source it has."""
+    return [levelId(s, p) for s in rowSources(schedule, feeGroup, card) for p in POINTS]
+
+
+def absent(card=None) -> dict:
+    """{schedule: {row: [sources]}} for every row that leaves a source out,
+    the row '' for a uniform schedule's one; {} for a whole card. What the
+    page reads to offer a portfolio only the levels its rows price."""
+    card = _card(card)
+    out = {}
+    for schedule in SCHEDULES:
+        for group in ([None] if not byGroup(schedule) else card['feeGroups']):
+            missing = [s for s in SOURCES if s not in rowSources(schedule, group, card)]
+            if missing:
+                out.setdefault(schedule, {})[group or ''] = missing
+    return out
+
+
+def levelInForce(schedule: str, level: str, feeGroups=(), card=None) -> tuple:
+    """(the level a portfolio is priced at, the rows that moved it there).
+
+    A level is offered to a portfolio only where every row pricing it has
+    the level's source: under a grouped schedule, the fee group of every
+    product held; under a uniform one, the schedule's one row. Where one
+    does not, the portfolio is priced at the same point on Management, and
+    the rows that lack the source come back - the fee groups, or [None] for
+    a uniform schedule - so the page can say why. The custom level, an
+    unknown one or no schedule pass through as they are."""
+    if not schedule or isCustom(level) or level not in LEVELS:
+        return level, []
+    card = _card(card)
+    source, point = splitLevel(level)
+    if byGroup(schedule):
+        rows = [g for g in dict.fromkeys(feeGroups or []) if g in card['feeGroups']]
+    else:
+        rows = [None]
+    lacking = [g for g in rows if source not in rowSources(schedule, g, card)]
+    if not lacking:
+        return level, []
+    return levelId(REQUIRED_SOURCE, point), lacking
+
+
 # ------------------------------------------- marginal pricing (D83) --------
 
 def marginalBands(amount, card=None) -> list:
@@ -292,17 +372,20 @@ def marginalPayload(schedule: str, amount, feeGroup: str = None, card=None) -> d
     against."""
     card = _card(card)
     bands = marginalBands(amount, card)
+    group = feeGroup if byGroup(schedule) else None
+    # a source the row leaves out has no rate to show (D185)
+    levels = rowLevels(schedule, group, card)
     source = {}
     for band in bands:
-        source[band['tier']] = {level: _rate(schedule, None if not byGroup(schedule) else feeGroup,
-                                             band['tier'], *splitLevel(level), card=card)
-                                for level in LEVELS}
+        source[band['tier']] = {level: _rate(schedule, group, band['tier'], *splitLevel(level),
+                                             card=card)
+                                for level in levels}
     return {
         'schedule': schedule,
         'amount': float(amount),
         'bands': [dict(band, rates=source[band['tier']]) for band in bands],
         'effective': {level: effectiveRate(schedule, amount, level, feeGroup, card)
-                      for level in LEVELS},
+                      for level in levels},
     }
 
 
@@ -412,9 +495,10 @@ def ratesAtTier(tierId: str, card=None) -> dict:
     """
     card = _card(card)
 
+    # only the levels the row prices: a source it leaves out is absent (D185)
     def flatten(group):
-        return {levelId(s, p): _rate(schedule, group, tierId, s, p, card)
-                for s in SOURCES for p in POINTS}
+        return {level: _rate(schedule, group, tierId, *splitLevel(level), card=card)
+                for level in rowLevels(schedule, group, card)}
 
     out = {}
     for schedule in SCHEDULES:
@@ -457,11 +541,11 @@ def ratesFor(topAccountSize=None, mandateSize=None, card=None) -> dict:
             if byGroup(schedule):
                 out[schedule] = {'byGroup': True, 'marginal': True, 'groups': {
                     g: {level: effectiveRate(schedule, mandateSize, level, g, card)
-                        for level in LEVELS} for g in card['feeGroups']}}
+                        for level in rowLevels(schedule, g, card)} for g in card['feeGroups']}}
             else:
                 out[schedule] = {'byGroup': False, 'marginal': True, 'levels': {
                     level: effectiveRate(schedule, mandateSize, level, card=card)
-                    for level in LEVELS}}
+                    for level in rowLevels(schedule, None, card)}}
         elif tier is not None:
             out[schedule] = dict(ratesAtTier(tier['id'], card)[schedule], marginal=False)
     return out or None
@@ -488,6 +572,9 @@ def feePayload(topAccountSize=None, mandateSize=None) -> dict:
         'points': POINTS,
         'levels': [{'id': levelId(s, p), 'source': s, 'point': p} for s in SOURCES for p in POINTS],
         'defaultLevel': DEFAULT_LEVEL,
+        # the rows that leave a source out, and the one every row has (D185)
+        'absent': absent(card),
+        'requiredSource': REQUIRED_SOURCE,
         'customLevel': CUSTOM_LEVEL,
         'customBounds': {'source': CUSTOM_BOUNDS_SOURCE,
                          'floor': levelId(CUSTOM_BOUNDS_SOURCE, POINTS[0]),
@@ -527,8 +614,9 @@ def grid(tierId: str) -> dict:
     rows = []
     for schedule in SCHEDULES:
         for group in ([None] if not byGroup(schedule) else held['feeGroups']):
+            # None where the row leaves the source out (D185)
             rows.append({'schedule': schedule, 'feeGroup': group,
-                         'cells': {levelId(s, p): _rate(schedule, group, tierId, s, p, held)
+                         'cells': {levelId(s, p): held['cells'].get((schedule, group, tierId, s, p))
                                    for s in SOURCES for p in POINTS}})
     return {'tier': dict(next(t for t in held['tiers'] if t['id'] == tierId)),
             'levels': list(LEVELS), 'sources': SOURCES, 'points': POINTS,
@@ -557,13 +645,17 @@ def checkConfig() -> None:
         raise BadRateCard('defaultLevel {!r} is not a level'.format(DEFAULT_LEVEL))
     if {'Floor', 'Target', 'Ceiling'} - set(POINTS):
         raise BadRateCard('points must include Floor, Target and Ceiling')
+    if REQUIRED_SOURCE not in SOURCES:
+        raise BadRateCard('custom.boundsSource {!r} is not a source'.format(REQUIRED_SOURCE))
 
 
 def checkCard(tierList, groups, cells) -> None:
     """Refuse a card the framework cannot price from - the check a delivery
     always had, now made of every version before it is stored: tiers
     contiguous from zero and open at the top; at least one fee group; every
-    cell the framework will ever ask for present; at every cell floor <=
+    cell the framework will ever ask for present - a row may leave out every
+    rate of a source but Management, and none of one it has (D185); at
+    every cell floor <=
     target <= ceiling, since a level is a point on a band and a band that
     crosses itself is a data error; and nothing outside the vocabulary."""
     if not tierList or tierList[0]['min'] != 0 or tierList[-1]['max'] is not None:
@@ -577,12 +669,17 @@ def checkCard(tierList, groups, cells) -> None:
         raise BadRateCard('the card names no fee group')
     for schedule in SCHEDULES:
         for group in ([None] if not byGroup(schedule) else groups):
-            for tier in tierList:
-                for source in SOURCES:
-                    for point in POINTS:
-                        if (schedule, group, tier['id'], source, point) not in cells:
-                            raise BadRateCard('no rate for {} {} {} {} {}'.format(
-                                schedule, group or '', tier['id'], source, point))
+            for source in SOURCES:
+                wanted = [(schedule, group, tier['id'], source, point)
+                          for tier in tierList for point in POINTS]
+                gaps = [k for k in wanted if k not in cells]
+                if not gaps or (len(gaps) == len(wanted) and source != REQUIRED_SOURCE):
+                    continue
+                k = gaps[0]
+                raise BadRateCard('no rate for {} {} {} {} {}: {}'.format(
+                    schedule, group or '', k[2], source, k[4],
+                    'every row prices {}'.format(REQUIRED_SOURCE) if source == REQUIRED_SOURCE
+                    else 'a row gives every {} rate or none'.format(source)))
     _checkBands(cells, set(cells))
     stray = {k for k in cells if k[3] not in SOURCES or k[4] not in POINTS
              or k[0] not in SCHEDULES}

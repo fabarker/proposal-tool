@@ -187,9 +187,83 @@ function feeScheduleEntry() {
   return feeSchedules().filter(function (s) { return s.id === chosen; })[0] || null;
 }
 
-function managementFee(feeGroup) {
-  return resolveFee(feeRates(), App.feeSchedule(), App.feeLevel(), feeGroup,
+/* A product's fee at *level*, or - without one - at the level the
+   portfolio would be priced at with the product held: for a product in the
+   table that is the level in force, and for one the catalogue or a sleeve
+   preview shows, the level it would move the portfolio to (D185). */
+function managementFee(feeGroup, level) {
+  return resolveFee(feeRates(), App.feeSchedule(),
+                    level || levelInForceWith([feeGroup]), feeGroup,
                     { level: customLevel(), map: App.customFees() });
+}
+
+/* ---- a row without a source (D185) ---------------------------------------
+   The card may leave a fee group - or a uniform schedule's one row - without
+   a source's rates: a - in each of its PMG boxes. That source's levels are
+   then not offered to a portfolio holding a product the row prices, and a
+   portfolio on one is priced at the same point on Management. The mirror of
+   fees.levelInForce, against the rows the schema serves as fees.absent. */
+function heldFeeGroups() {
+  var out = [];
+  implementedLines().forEach(function (category) {
+    var sleeve = sleeveFor(category.name);
+    ((sleeve && sleeve.products) || []).forEach(function (product) {
+      if (product.feeGroup && out.indexOf(product.feeGroup) === -1) out.push(product.feeGroup);
+    });
+  });
+  return out;
+}
+
+/* the rows among *groups* that leave *source* out under *schedule*: fee
+   groups under a grouped schedule, '' for a uniform one's row */
+function rowsLacking(schedule, source, groups) {
+  var absent = (App.opt('fees.absent', null) || {})[schedule];
+  if (!absent || !source) return [];
+  var rowsHeld = scheduleByGroup(schedule) ? groups : [''];
+  return rowsHeld.filter(function (g) { return (absent[g] || []).indexOf(source) !== -1; });
+}
+
+function levelEntry(id) {
+  return App.opt('fees.levels', []).filter(function (l) { return l.id === id; })[0] || null;
+}
+
+/* the level the portfolio is priced at, holding *extra* fee groups as well
+   as its own */
+function levelInForceWith(extra) {
+  var level = App.feeLevel(), schedule = App.feeSchedule();
+  var entry = levelEntry(level);
+  if (!schedule || !entry) return level;            /* none yet, or custom */
+  var groups = heldFeeGroups();
+  (extra || []).forEach(function (g) { if (g && groups.indexOf(g) === -1) groups.push(g); });
+  if (!rowsLacking(schedule, entry.source, groups).length) return level;
+  var moved = App.opt('fees.levels', []).filter(function (l) {
+    return l.source === App.opt('fees.requiredSource', null) && l.point === entry.point;
+  })[0];
+  return moved ? moved.id : level;
+}
+
+function feeLevelInForce() { return levelInForceWith([]); }
+
+/* why a source is not offered to this portfolio, or '' when it is */
+function sourceLackingNote(source) {
+  var schedule = App.feeSchedule();
+  var lacking = rowsLacking(schedule, source, heldFeeGroups());
+  if (!lacking.length) return '';
+  return scheduleByGroup(schedule)
+    ? 'The fee card has no ' + source + ' rates for ' + lacking.join(', ')
+      + ', which ' + (lacking.length === 1 ? 'a product here is in' : 'products here are in') + '.'
+    : 'The fee card has no ' + source + ' rates for ' + schedule + '.';
+}
+
+/* A portfolio on a level it can no longer be priced at keeps the point and
+   moves to Management, and the scenario is told, so the files and the
+   register say the same (D185). Never moved back: a PWA chooses PMG again. */
+function syncFeeLevel() {
+  if (!App.includeFees() || !App.feeSchedule()) return;
+  var inForce = feeLevelInForce();
+  if (inForce === App.feeLevel()) return;
+  var was = levelEntry(App.feeLevel());
+  App.adoptFeeLevel(inForce, was ? sourceLackingNote(was.source) : '');
 }
 
 /* ---- the custom level (D96) ---------------------------------------------
@@ -548,6 +622,7 @@ function rows() {
      Mirrors buildImplementationRows. */
   var combined = implementedLines();
   var closed = complete() && balanceOf(combined).balanced;
+  var level = feeLevelInForce();          /* once for the table (D185) */
   combined.forEach(function (category) {
     var sleeve = sleeveFor(category.name);
     var items = [];
@@ -564,7 +639,7 @@ function rows() {
           /* not offered in the portfolio's currency (D182): the library
              serves each product as that currency reads it */
           notOffered: product.offered === false,
-          mgmt: managementFee(product.feeGroup),
+          mgmt: managementFee(product.feeGroup, level),
           share: product.weight,
           exact: category.weightPct * product.weight
         };
@@ -943,7 +1018,7 @@ function feeFields() {
   var schedules = feeSchedules();
   if (!schedules.length) return '';
   var chosen = App.feeSchedule();
-  var level = App.feeLevel();
+  var level = feeLevelInForce();
   var tier = App.opt('fees.tier', null);
   var editable = App.canEdit();
   var entry = feeScheduleEntry();
@@ -1009,6 +1084,8 @@ function feeFields() {
   var curSource = onCustom ? custom : (chosenLevel ? chosenLevel.source : (sources[0] || null));
   var curPoint = chosenLevel ? chosenLevel.point : (points[0] || null);
   var sourceValues = custom ? sources.concat([custom]) : sources;
+  /* a source a row held here leaves out is not offered, and says why (D185) */
+  var lackingNotes = sources.map(sourceLackingNote).filter(Boolean);
 
   /* Both controls are sized from the schema's own lists, not from a count
      written here: a framework that priced four points would still lay out. */
@@ -1028,11 +1105,15 @@ function feeFields() {
   html += '<div class="fee-field done">'
     + '<span class="fee-label" id="feelevellabel">Fee Level</span>'
     + segment(sourceValues, curSource, curPoint, 'data-feesource',
-              function (source, point) { return source === custom ? custom : idFor(source, point); },
+              function (source, point) {
+                if (source === custom) return custom;
+                return sourceLackingNote(source) ? null : idFor(source, point);
+              },
               'Fee source')
     + (onCustom ? '' : segment(points, curPoint, curSource, 'data-feepoint',
               function (point, source) { return idFor(source, point); }, 'Fee Level point'))
     + '<p class="vr-note">' + feePricingNote(tier) + '</p>'
+    + lackingNotes.map(function (n) { return '<p class="vr-note">' + App.esc(n) + '</p>'; }).join('')
     + feeOutcomeLine()
     + (onCustom ? customRailBlock() : '')
     + feeCardLine()
@@ -1544,7 +1625,7 @@ function renderFeePanel() {
   /* The level this mandate prices at - the scenario's own, or the framework's
      default when none is chosen yet. It is one column of the grid, and the
      one a reader is looking for. */
-  var levelId = (App.feeLevel && App.feeLevel()) || null;
+  var levelId = feeLevelInForce() || null;
   var byGroupPivot = feePanel.pivot === 'group';
   var mandateTier = feePanel.mandateTier;
   var tierLabel = function (id) {
@@ -1723,7 +1804,7 @@ function renderPricePanel() {
   App.setBackgroundInert(true);
 
   var build = marginalBuildUp();
-  var level = (App.feeLevel && App.feeLevel()) || App.opt('fees.defaultLevel', null);
+  var level = feeLevelInForce() || App.opt('fees.defaultLevel', null);
   var sums = priceBuildUp(build, level);
   var delivery = App.opt('fees.delivery', {}) || {};
   var schedule = (build && build.schedule) || (App.feeSchedule && App.feeSchedule()) || '';
@@ -2562,8 +2643,10 @@ function sleeveShape(sleeve, weightPct) {
   var priced = App.includeFees() && !!App.feeSchedule();
   var cost = 0, known = true, below = 0;
   var mandate = App.mandateSize();
+  /* at the level the portfolio would be on with this sleeve in it (D185) */
+  var level = priced ? levelInForceWith(products.map(function (p) { return p.feeGroup; })) : null;
   products.forEach(function (product) {
-    var mgmt = priced ? managementFee(product.feeGroup) : 0;
+    var mgmt = priced ? managementFee(product.feeGroup, level) : 0;
     if (mgmt === null) known = false; else cost += product.weight * (product.productCost + mgmt);
     if (typeof mandate === 'number' && product.minimumInvestment) {
       var notional = mandate * (weightPct / 100) * product.weight;
@@ -3637,7 +3720,9 @@ document.addEventListener('click', function (e) {
     else if (d.cfill !== undefined) {
       var fillId = customPanel.fillSrc + ' ' + customPanel.fillPt;
       customRowsFor(schedNow).forEach(function (r) {
-        var rate = (customReference(schedNow, r.group) || {})[fillId];
+        var ref = customReference(schedNow, r.group) || {}, rate = ref[fillId];
+        /* a row without the source fills from Management at the point (D185) */
+        if (typeof rate !== 'number') rate = ref[App.opt('fees.requiredSource', '') + ' ' + customPanel.fillPt];
         if (typeof rate === 'number') setDraftRate(schedNow, r.group, Math.round(rate * 100) / 100);
       });
       customPanel.bad = {};
@@ -3690,7 +3775,7 @@ document.addEventListener('click', function (e) {
       return;
     }
     var levels = App.opt('fees.levels', []);
-    var inForce = levels.filter(function (l) { return l.id === App.feeLevel(); })[0];
+    var inForce = levels.filter(function (l) { return l.id === feeLevelInForce(); })[0];
     /* leaving the custom level, the point comes back from the default */
     var dflt = levels.filter(function (l) { return l.id === App.opt('fees.defaultLevel', null); })[0];
     var source = half.dataset.feesource
@@ -3721,6 +3806,7 @@ App.managementFee = managementFee;    /* the catalogue's Mgmt column prices from
 
 App.addRenderer(function () {
   ensureLibraries();
+  syncFeeLevel();
   renderRail();
   renderView();
   renderGreetPanel();

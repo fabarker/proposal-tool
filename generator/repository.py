@@ -21,6 +21,13 @@ REPO_CSS = r"""
    the orphans notice - are only sometimes there, and a row template that
    counts children hands the wrong track to the wrong band when one is missing. */
 .dialog.repo>.repo-h,.dialog.repo>.repo-f,.dialog.repo>.repo-notice{flex:0 0 auto}
+/* the grip in the bottom-right corner the dialog is resized from */
+.dialog.repo>.repo-grip{position:absolute;right:0;bottom:0;width:18px;height:18px;z-index:5;
+  cursor:nwse-resize;touch-action:none;
+  background:linear-gradient(135deg,transparent 0 50%,var(--line-strong,#B8C2CE) 50% 56%,transparent 56% 66%,
+    var(--line-strong,#B8C2CE) 66% 72%,transparent 72% 82%,var(--line-strong,#B8C2CE) 82% 88%,transparent 88%)}
+.dialog.repo.sizing{user-select:none}
+.dialog.repo.sizing *:not(.repo-grip){pointer-events:none}
 /* The views sit inside the panel the tabs name (G1), so the band that takes
    the remaining height is that panel - and it passes the height on, because
    the panes inside it are what actually scroll. */

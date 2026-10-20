@@ -1495,6 +1495,7 @@ def test_a_sleeve_says_what_it_holds_and_costs_before_it_is_chosen():
     script = fn + '''
 const MGMT = { Passive: 0.09, 'Core Active': 0.38, Alternatives: 0.76 };
 function managementFee(group) { return group in MGMT ? MGMT[group] : null; }
+function levelInForceWith() { return null; }
 const SLEEVE = %s;
 let priced = true, schedule = 'RDR';
 var App = { includeFees: () => priced, feeSchedule: () => schedule, mandateSize: () => 10000000 };

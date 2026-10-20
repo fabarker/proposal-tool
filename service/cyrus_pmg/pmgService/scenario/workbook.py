@@ -182,15 +182,7 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     marginal = priced and fees.isMarginal(feeSchedule)
     tier = fees.tierFor(topAccountSize) if priced and not marginal else None
     feeLevel = feeLevel or fees.DEFAULT_LEVEL
-    # Under the custom level the ladder is not read at all: the one rate a
-    # uniform schedule carries is the PWA's (D96), so that is the "blend".
     custom = priced and fees.isCustom(feeLevel)
-    if marginal and custom:
-        effectiveRate = fees.customRate(customFees, feeSchedule)
-    elif marginal:
-        effectiveRate = fees.effectiveRate(feeSchedule, mandateSize, feeLevel)
-    else:
-        effectiveRate = None
 
     # The implemented book, not the strategic one: the overlay rules in force
     # for this type, top to bottom (D155) - with the seeded list, the tilt
@@ -274,6 +266,21 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         groups.append(group)
 
     complete = all(group['sleeve'] for group in groups) and bool(groups)
+    # A level is offered only where every row pricing the book has its
+    # source: a product whose fee group the card leaves without PMG rates
+    # prices the book at the same point on Management (D185).
+    levelMovedBy = []
+    if priced:
+        feeLevel, levelMovedBy = fees.levelInForce(feeSchedule, feeLevel,
+                                                   [i['feeGroup'] for i in lineItems])
+    # Under the custom level the ladder is not read at all: the one rate a
+    # uniform schedule carries is the PWA's (D96), so that is the "blend".
+    if marginal and custom:
+        effectiveRate = fees.customRate(customFees, feeSchedule)
+    elif marginal:
+        effectiveRate = fees.effectiveRate(feeSchedule, mandateSize, feeLevel)
+    else:
+        effectiveRate = None
     # A custom sleeve weighted against the portfolio sets its category's
     # weight and nothing makes room for it: the person decides where any
     # difference goes, and until the book adds to 100% again it is neither
@@ -440,6 +447,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             # which takes the strategic allocation out of the delivered files
             'balanced': balanced, 'implementedPct': implementedPct, 'departs': departs,
             'priced': priced, 'tier': tier, 'marginal': marginal,
+            # the level it is priced at, and the rows that moved it there (D185)
+            'feeLevel': feeLevel if priced else None, 'feeLevelMovedBy': levelMovedBy,
             'effectiveRate': effectiveRate, 'breaches': breaches, 'unavailable': unavailable,
             'custom': custom, 'customRates': customRates,
             'unpricedGroups': unpricedGroups,

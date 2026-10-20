@@ -699,6 +699,10 @@ note. If new products need a fee group the card does not have, add it there firs
 end, and paste its rates from Excel into its card), then import the products. A fee card file is imported on the same tab with <strong>Import a file</strong>,
 which shows every rate it would move before anything changes; <strong>Download the card</strong>
 writes the card in force as a file.</p>
+<p>A fee group with no PMG schedule has a <code>-</code> in each of its PMG rates: in the file's
+<code>rate</code> column, or typed or pasted into its PMG boxes on the Fees tab. Its Management rates
+are always given, and a group gives all its PMG rates or none. A proposal holding a product of that
+group is not offered the PMG levels: it is priced at Management, at the same point.</p>
 
 <h2 id="ref">Quick reference</h2>
 <div class="qr">
