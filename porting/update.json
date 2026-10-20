@@ -1,9 +1,10 @@
 {
   "from": "552b01b",
-  "to": "ca869e5",
+  "to": "51cbcb1",
   "write": [
     "package/feeCard.py",
     "package/fees.py",
+    "package/products.py",
     "package/rules.py",
     "package/workbook.py",
     "page/static/css/proposalTool.css",
@@ -11,5 +12,5 @@
   ],
   "delete": [],
   "routerBlock": true,
-  "bytes": 75897
+  "bytes": 78998
 }
