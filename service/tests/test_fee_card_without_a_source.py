@@ -128,7 +128,7 @@ def _packagedCard():
      'Give every PMG rate on the row, or none'),
     (lambda c: [b.update({fees.levelId('Management', p): '-' for p in fees.POINTS})
                 for b in c['rates']['RDR']['Passive'].values()],
-     'Every row has its Management rates'),
+     'Give its Management rates, or none of its rates yet'),
 ])
 def test_the_console_refuses_part_of_a_source_or_management_left_out(store, change, words):
     card = copy.deepcopy(feeCard.describe()['card'])
@@ -284,8 +284,8 @@ process.stdout.write(JSON.stringify(out));
     assert got['givenOk'] == []
     assert 'RDR · Passive · Under $10m · PMG Floor 0.20 → -' in got['taken'] and len(got['taken']) == 6
     assert got['payload']['PMG Target'] is None and got['payload']['Management Target'] == 0.2
-    assert ('CASP · Under $10m · Management Floor has no rate. Every row has its Management rates.'
-            in got['management'])
+    assert ('CASP · Under $10m · Management Floor has no rate. Every product is priced by this row: '
+            'it has its Management rates.' in got['management'])
     assert got['block'] == {'cells': [['0.1', '0.2', '0.3', '-', '-', '-']]}
     assert got['moved'] == [False, True, True, False]
 

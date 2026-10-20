@@ -184,8 +184,8 @@ var CAT_FACETS = [
    schedule, tier and level, and the catalogue describes products, not a
    proposal - so no management, all-in or fee-group figure appears here. */
 var CAT_COLUMNS = [
-  { key: 'ticker', label: 'Ticker' },
   { key: 'name', label: 'Product', fixed: true },
+  { key: 'ticker', label: 'Ticker' },
   { key: 'assetClass', label: 'Class' },
   { key: 'vehicle', label: 'Veh' },
   { key: 'shareClass', label: 'Share' },
@@ -741,7 +741,8 @@ function feeRateText(d, schedule, rowKey, tierKey, level) {
    cell ('schedule|row|tier|level'), a tier ('tier|key') or a group
    ('group|key'). ctx: { schedules, sources, points, levels, rateMax,
    groupMax, requiredSource }. A row may leave out every rate of a source
-   but the required one - a - in each box - and none of one it gives (D185). */
+   but the required one - a - in each box - and none of one it gives (D185);
+   a fee group may have no rates yet, a - in every box (D187). */
 function feeProblems(d, ctx) {
   var out = [];
   if (!d.tiers.length) out.push({ field: 'tiers', message: 'The card needs at least one account-size tier.' });
@@ -766,12 +767,15 @@ function feeProblems(d, ctx) {
     seen[n.toLowerCase()] = true;
   });
   feeRowsOf(d, ctx.schedules).forEach(function (row) {
-    var left = {};
+    var left = {}, dashed = {};
     ctx.sources.forEach(function (source) {
-      if (source === ctx.requiredSource) return;
-      left[source] = d.tiers.every(function (t) {
+      dashed[source] = d.tiers.every(function (t) {
         return ctx.points.every(function (p) { return feeNone(feeRateText(d, row.schedule, row.key, t.key, source + ' ' + p)); });
       });
+    });
+    var unrated = !!row.key && ctx.sources.every(function (source) { return dashed[source]; });
+    ctx.sources.forEach(function (source) {
+      left[source] = dashed[source] && (unrated || source !== ctx.requiredSource);
     });
     d.tiers.forEach(function (t) {
       var where = row.label + ' · ' + feeTierLabel(t.min, t.max), values = {};
@@ -782,7 +786,9 @@ function feeProblems(d, ctx) {
         var text = feeRateText(d, row.schedule, row.key, t.key, level), v = feeNum(text);
         if (feeNone(text)) {
           out.push({ field: 'rates', key: key, message: where + ' · ' + level + ' has no rate. '
-            + (source === ctx.requiredSource ? 'Every row has its ' + source + ' rates.'
+            + (source === ctx.requiredSource
+               ? (row.key ? 'Give its ' + source + ' rates, or none of its rates yet: a - in every box.'
+                  : 'Every product is priced by this row: it has its ' + source + ' rates.')
                : 'Give every ' + source + ' rate on the row, or none: a - in each ' + source + ' box.') });
           return;
         }
@@ -909,7 +915,8 @@ function feeAddGroup(d, name, likeKey, schedules, levels) {
     var like = likeKey ? d.rates[s.id][likeKey] : null, byTier = {};
     d.tiers.forEach(function (t) {
       var out = {};
-      levels.forEach(function (l) { out[l] = like && like[t.key] ? like[t.key][l] : ''; });
+      /* without a group to copy, it starts with no rates yet: a - in every box (D187) */
+      levels.forEach(function (l) { out[l] = like && like[t.key] ? like[t.key][l] : '-'; });
       byTier[t.key] = out;
     });
     d.rates[s.id][key] = byTier;
@@ -8948,7 +8955,7 @@ function feeAddHtml(d) {
     return '<option value="' + esc(g.key) + '"' + (fct.addLike === g.key ? ' selected' : '') + '>' + esc(feeName(g.name) || 'new group') + '</option>';
   }).join('');
   return '<div class="fee-add"><input type="text" id="feeAddName" maxlength="' + fct.data.groupMax + '" placeholder="New group name" value="' + esc(fct.addName) + '" autocomplete="off" aria-label="New group name">'
-    + '<label for="feeAddLike">with the rates of</label><select id="feeAddLike"><option value="">no group: blank rates</option>' + likes + '</select>'
+    + '<label for="feeAddLike">with the rates of</label><select id="feeAddLike"><option value="">no group: no rates yet (-)</option>' + likes + '</select>'
     + '<button type="button" class="btn" data-fee="addgroup">Add the group</button></div>';
 }
 function feeEdgeInputHtml(t, i) {
@@ -9045,7 +9052,7 @@ function feeCardsHtml(d, editing, bad, probs) {
       + '</div></section>';
   }).join('')
     + (editing ? '<section class="fee-card fee-newg" aria-labelledby="feeNewG"><h4 id="feeNewG">A new fee group</h4>'
-        + '<p class="fee-help">Start it from another group’s rates, or blank and paste its rates in.</p>' + feeAddHtml(d) + '</section>' : '')
+        + '<p class="fee-help">Start it from another group’s rates, or with no rates yet - a - in every box - and paste them in when you have them.</p>' + feeAddHtml(d) + '</section>' : '')
     + '</div>';
 }
 /* Price list: one source at a time, the groups down and the tiers across,

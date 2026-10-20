@@ -1614,6 +1614,8 @@ def _assembleExport(scenarioId: str, port):
             'exporting.'.format(' or '.join(bare), variant))
     # Under the custom level a row without a rate leaves its products
     # unpriced, and an unpriced product cannot go on a priced sheet (D96).
+    if model.get('unratedGroups'):
+        raise ValidationError('feeCard', _unratedText(model['unratedGroups']))
     if model.get('unpricedGroups'):
         raise ValidationError(
             'customFees',
@@ -1645,6 +1647,13 @@ def _assembleExport(scenarioId: str, port):
     # as Download opens their card (D177)
     _otherCharges.required(implementation['otherCharges'], includeFees)
     return state, basis, mandate, results, implementation, model
+
+
+def _unratedText(groups) -> str:
+    """Why a priced proposal holding a fee group with no rates yet is not
+    delivered (D187)."""
+    return ('The fee card has no rates yet for {}, which the model holds. Add them on the '
+            'Fees tab, or untick Include Fees, before exporting.'.format(', '.join(groups)))
 
 
 def _unavailableText(unavailable, currency, fix) -> str:
@@ -1689,6 +1698,8 @@ def _assembleCustomExport(state, port):
     # the level the book is priced at (D185)
     if model.get('feeLevel'):
         feeLevel = model['feeLevel']
+    if model.get('unratedGroups'):
+        raise ValidationError('feeCard', _unratedText(model['unratedGroups']))
     if model.get('unpricedGroups'):
         raise ValidationError(
             'customFees',

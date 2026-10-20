@@ -2653,7 +2653,9 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
   padding:0;white-space:nowrap;z-index:2;text-align:left}
 .cat-tbl th.num,.cat-tbl td.num{text-align:right}
 .cat-tbl th.num .cat-sort{justify-content:flex-end}
-.cat-tbl th.pinc,.cat-tbl td.pinc{width:30px;padding:0 0 0 10px;position:sticky;left:0;z-index:3;background:var(--surface-2)}
+/* exactly 40px, the left the product name sticks at beside it */
+.cat-tbl th.pinc,.cat-tbl td.pinc{width:40px;min-width:40px;max-width:40px;box-sizing:border-box;padding:0 0 0 10px;
+  position:sticky;left:0;z-index:3;background:var(--surface-2)}
 .cat-tbl td.pinc{background:var(--surface);z-index:1}
 .cat-sort{appearance:none;background:none;border:0;width:100%;display:flex;align-items:baseline;gap:4px;font-family:var(--f-num);
   font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:8px 10px;

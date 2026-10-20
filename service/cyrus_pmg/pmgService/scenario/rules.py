@@ -817,6 +817,9 @@ def validateCustomFees(customFees, mandate: MandateInput = None) -> None:
             label = _customRowLabel(schedule, group)
             if group is not None and group not in fees.feeGroups():
                 raise ValidationError('customFees', 'Unknown fee group {!r}.'.format(group))
+            if group is not None and fees.unrated(schedule, group):
+                raise ValidationError('customFees', '{}: the fee card has no rates for it '
+                                      'yet.'.format(label))
             if (isinstance(value, bool) or not isinstance(value, Real)
                     or value != value or value in (float('inf'), float('-inf'))):
                 raise ValidationError(

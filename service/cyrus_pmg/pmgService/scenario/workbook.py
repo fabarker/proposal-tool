@@ -354,6 +354,9 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
 
     # the rows the custom level has not priced, named so the export can say
     # which - one unpriced product makes the total unpriced, never smaller
+    # the fee groups held that the card has no rates for yet (D187)
+    unratedGroups = sorted({i['feeGroup'] for i in lineItems
+                            if priced and fees.unrated(feeSchedule, i['feeGroup'])})
     unpricedGroups = sorted({
         i['feeGroup'] if fees.byGroup(feeSchedule) else feeSchedule
         for i in lineItems if priced and i.get('managementFee') is None})
@@ -451,7 +454,7 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             'feeLevel': feeLevel if priced else None, 'feeLevelMovedBy': levelMovedBy,
             'effectiveRate': effectiveRate, 'breaches': breaches, 'unavailable': unavailable,
             'custom': custom, 'customRates': customRates,
-            'unpricedGroups': unpricedGroups,
+            'unpricedGroups': unpricedGroups, 'unratedGroups': unratedGroups,
             # the initial allocation of a private-markets book, or None (D136)
             'initial': initialModel,
             # which overlay rules made it, and what each did: what the

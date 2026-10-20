@@ -2109,7 +2109,7 @@ delivered: a PWA enters them per proposal.
 | `tierMin`, `tierMax` | number | Top-account-size edges in **currency units**. **Leave `tierMax` empty on the top tier** — an empty cell is how a tier says *and up*, and it reads back as "$100m and up". `Infinity`, `inf` and a very large number are all refused on load (D82). |
 | `source` | text | `Management` or `PMG`. |
 | `point` | text | `Floor`, `Target` or `Ceiling`. The fee *level* a proposal prices at is `<source> <point>`, e.g. `PMG Floor`. |
-| `rate` | number ≥ 0, or `-` | **Percent** (`0.45` = 0.45%). A `-` (or a blank) is a cell the row does not price (D185): a fee group - or CASP's row - may leave out **every** `PMG` rate, and that row then offers no PMG level. A row never leaves out a `Management` rate, nor some of a source and not the rest. |
+| `rate` | number ≥ 0, or `-` | **Percent** (`0.45` = 0.45%). A `-` (or a blank) is a cell the row does not price (D185): a fee group - or CASP's row - may leave out **every** `PMG` rate, and that row then offers no PMG level. A row never leaves out a `Management` rate, nor some of a source and not the rest, except that a fee group may have a `-` in **every** cell while its rates are not known (D187): products may be put in it, nothing prices it, and a priced proposal holding one is not delivered. |
 
 Refused (`BadRateCard`): a missing column, a non-number, a negative rate, tier edges that disagree,
 a duplicate cell, part of a source left out, any Management rate left out. **Since D166 the card lives in the repository**: this file is what it is loaded

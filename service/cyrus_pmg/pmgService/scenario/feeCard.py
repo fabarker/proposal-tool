@@ -412,12 +412,14 @@ def normalise(card, current=None) -> dict:
             for t in tierList:
                 byLevel = byRow.get(t['key'])
                 boxes[t['key']] = byLevel if isinstance(byLevel, dict) else {}
-            left = set()
-            for source in fees.SOURCES:
-                values = [boxes[t['key']].get(fees.levelId(source, point))
-                          for t in tierList for point in fees.POINTS]
-                if source != fees.REQUIRED_SOURCE and all(_noRate(v) for v in values):
-                    left.add(source)
+            dashed = {source: all(_noRate(boxes[t['key']].get(fees.levelId(source, point)))
+                                  for t in tierList for point in fees.POINTS)
+                      for source in fees.SOURCES}
+            # a fee group may have no rates yet: a - in every box (D187)
+            if fees.byGroup(schedule) and all(dashed.values()):
+                left = set(fees.SOURCES)
+            else:
+                left = {s for s, d in dashed.items() if d and s != fees.REQUIRED_SOURCE}
             for t, tierId in zip(tierList, ids):
                 label = fees.tierLabel(t['min'], t['max'])
                 byLevel = boxes[t['key']]
@@ -430,7 +432,10 @@ def normalise(card, current=None) -> dict:
                     if value is None:
                         raise ValidationError('rates', '{} has no rate. {}'.format(
                             _where(schedule, group, label, level),
-                            'Every row has its {} rates.'.format(source)
+                            ('Give its {} rates, or none of its rates yet: a - in every '
+                             'box.'.format(source) if fees.byGroup(schedule) else
+                             'Every product is priced by this row: it has its {} '
+                             'rates.'.format(source))
                             if source == fees.REQUIRED_SOURCE else
                             'Give every {0} rate on the row, or none: a - in each {0} box.'.format(
                                 source)))
