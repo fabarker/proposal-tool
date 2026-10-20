@@ -52,7 +52,7 @@ from pptx.oxml import parse_xml
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
-from . import fees, houseFonts, houseTemplate, sheetDoc
+from . import fees, houseFonts, houseTemplate, money, sheetDoc
 from . import otherCharges as _charges
 from .fontMetrics import METRICS as _METRICS
 from .sheetDoc import SheetDoc, paginate, renderNumber
@@ -1440,8 +1440,9 @@ def _initialSlide(model: dict, includeFees: bool, proposalId: str = None, box=No
     plans = planTable(view, _dropped(box or FULL_BOX), [1.0] * count,
                       header=(headerRow - 1, headerRow), natural=True, hold=(0, 1))
     openRows(plans)
-    sub = ('Until capital is called, the {:.2f}% (${:,.0f}) committed to private markets is '
-           'held {}'.format(committed['weightPct'], committed['notional'], ' and '.join(
+    sub = ('Until capital is called, the {:.2f}% ({}) committed to private markets is '
+           'held {}'.format(committed['weightPct'],
+                            money.amount(committed['notional'], model.get('currency')), ' and '.join(
                '{} in {}'.format(_shareWords(h['share']), h['category'])
                for h in committed['held'])))
     notes = ['Long-term is the target once the private-markets commitment is fully called; '
@@ -1520,7 +1521,7 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
 
     basisLine = '{} · {}'.format(basis.currency, basis.hedging)
     names = ' against '.join(str(r['name']) for r in results)
-    money = renderNumber(mandate.mandateSize, '$#,##0')
+    mandateText = renderNumber(mandate.mandateSize, money.numberFormat(basis.currency))
     preamble = _preamblePairs(implDoc, headerRow)
     count = len(results)
     portShares = _shares(_PORT_LABEL.get(count, 30.0), _docColumns(portDoc)) if strategic else None
@@ -1617,7 +1618,7 @@ def planDeck(basis, mandate, results, model, assets=None, includeFees: bool = Tr
     implView = _tableSlice(implDoc, headerRow)
     implNotes = ['Weights are rounded to 2dp by largest remainder across the whole table, '
                  'so the column closes on exactly 100.00%; notionals derive from the '
-                 'printed weight on the {} mandate.'.format(money),
+                 'printed weight on the {} mandate.'.format(mandateText),
                  (('Management fees resolve from the schedule and level named above.'
                    if implFees else '')
                   + (' This is the long-term target; the initial allocation, held while '
@@ -1797,11 +1798,11 @@ def _footer(proposalId) -> str:
 def _coverLines(basis, mandate, model, variant):
     """The cover's lines: the basis and type, a custom portfolio's profile,
     the mandate and the PWA, and the date."""
-    money = renderNumber(mandate.mandateSize, '$#,##0')
+    mandateText = renderNumber(mandate.mandateSize, money.numberFormat(basis.currency))
     return ([u'{} · {}'.format(basis.currency, basis.hedging) + (' · ' + variant if variant else '')]
             + ([u'Custom portfolio · {} risk profile'.format(
                 model['customPortfolio']['profileLabel'])] if model.get('customPortfolio') else [])
-            + [u'Mandate {} · {}'.format(money, mandate.primaryPwa),
+            + [u'Mandate {} · {}'.format(mandateText, mandate.primaryPwa),
                datetime.date.today().strftime('%d %B %Y')])
 
 
@@ -1828,9 +1829,10 @@ def _percent(value: float) -> str:
     return '{:.2f}%'.format(value)
 
 
-def _millions(amount: float) -> str:
-    """A mandate in millions as the reference writes it: $25m, $12.5m."""
-    return '${}m'.format('{:,.2f}'.format(amount / 1e6).rstrip('0').rstrip('.'))
+def _millions(amount: float, currency=None) -> str:
+    """A mandate in millions as the reference writes it: $25m, £12.5m."""
+    return '{}{}m'.format(money.mark(currency),
+                          '{:,.2f}'.format(amount / 1e6).rstrip('0').rstrip('.'))
 
 
 def fieldValues(model: dict, mandate, proposalId: str = None, priced: bool = True,
@@ -1846,7 +1848,7 @@ def fieldValues(model: dict, mandate, proposalId: str = None, priced: bool = Tru
     added. A private-markets book's initial cost is its initial total. The
     charges the PWA quotes beside the fees fill their fields when the
     proposal is priced (``otherCharges``, D177)."""
-    values = {'mandateSize': _millions(mandate.mandateSize),
+    values = {'mandateSize': _millions(mandate.mandateSize, model.get('currency')),
               'date': datetime.date.today().strftime('%d %B %Y')}
     if getattr(mandate, 'primaryPwa', None):
         values['primaryPwa'] = mandate.primaryPwa
@@ -1863,7 +1865,7 @@ def fieldValues(model: dict, mandate, proposalId: str = None, priced: bool = Tru
         if initial.get('wtdFeeBp') is not None:
             values['initialCost'] = _percent(initial['wtdFeeBp'] / 100.0)
     if priced:
-        values.update(_charges.fieldValues(charges))
+        values.update(_charges.fieldValues(charges, model.get('currency')))
     return values
 
 

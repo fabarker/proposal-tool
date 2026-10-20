@@ -45,7 +45,7 @@ import hashlib
 import json
 import math
 
-from . import assetEstimates, customAccess, products, rules, sleeveRepo
+from . import assetEstimates, customAccess, money, products, rules, sleeveRepo
 from .types import PortfolioKey, ValidationError
 
 #: the implemented portfolio adds to 100 within half a hundredth of a point
@@ -415,7 +415,7 @@ def weightsByLine(definition) -> dict:
     return out
 
 
-def checks(definition, variant, mandateSize, anchor: dict, entry=None) -> dict:
+def checks(definition, variant, mandateSize, anchor: dict, entry=None, currency=None) -> dict:
     """The build against its limits: ``{status, problems, wide, lines}``.
     *status* is ``bad`` while anything stops it being delivered, ``warn``
     while it delivers only with an admin's approval, ``ok`` otherwise.
@@ -475,8 +475,8 @@ def checks(definition, variant, mandateSize, anchor: dict, entry=None) -> dict:
             illiquid, entry['illiquid']))
     private = weights.get(rules.PRIVATE_FUNDED_FROM, 0.0)
     if private > 0 and mandateSize is not None and mandateSize < rules.PRIVATE_ASSETS_MINIMUM:
-        problems.append('Private markets need a mandate of ${:,.0f} or more.'.format(
-            rules.PRIVATE_ASSETS_MINIMUM))
+        problems.append('Private markets need a mandate of {} or more.'.format(
+            money.amount(rules.PRIVATE_ASSETS_MINIMUM, currency)))
     status = 'bad' if problems else 'warn' if wide else 'ok'
     return {'status': status, 'problems': problems, 'wide': wide,
             'lines': {n: dict(bands[n], weightPct=held.get(n, 0.0)) for n in names}}

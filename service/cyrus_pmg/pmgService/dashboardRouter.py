@@ -30,7 +30,7 @@ from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
 from cyrus_pmg.pmgService.scenario import (accountRequests, customAccess, customPortfolio,
                                            customSleeves, feeCard, fees,
-                                           fundingSplit, overlayRules, products,
+                                           fundingSplit, money as _money, overlayRules, products,
                                            otherCharges as _otherCharges,
                                            proposalRegister, repositoryFeed, scenarioStore,
                                            sleeveRepo, sleeveRules)
@@ -201,17 +201,20 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
 
 
 @router.get('/scenario/products')
-def listCategoryProducts(category: str, variant: str = None, caller=Depends(requireAuth)):
+def listCategoryProducts(category: str, variant: str = None, currency: str = None,
+                         caller=Depends(requireAuth)):
     """The products a custom sleeve in *category* may hold under *variant*
     (D170): those the category's library sleeves hold under the type, whole
-    as the catalogue has them. Any signed-in user may read it; whether they
-    may build is ``mayBuild``."""
+    as the catalogue has them, with the ticker and minimum each has in
+    *currency* (D180). Any signed-in user may read it; whether they may
+    build is ``mayBuild``."""
     try:
         validateVariant(variant)
         if category not in sleeveRepo.categories():
             raise ValidationError('category', 'There is no category {!r}.'.format(category))
         return {'category': category, 'variant': variant,
-                'products': customSleeves.categoryProducts(category, variant),
+                'products': [products.inCurrency(p, currency)
+                             for p in customSleeves.categoryProducts(category, variant)],
                 'mayBuild': customSleeves.mayBuild(category, isAdmin(caller))}
     except ValidationError as exc:
         return _validationError(exc)
@@ -237,6 +240,8 @@ def getCustomPortfolioCatalogue(variant: str = None, currency: str = 'USD',
         basis = BasisInput(currency=currency, hedging=hedging)
         validateBasis(basis)
         body = customPortfolio.catalogue(variant)
+        # each product's ticker and minimum in the portfolio's currency (D180)
+        body['products'] = [products.inCurrency(p, basis.currency) for p in body['products']]
         body.update(customPortfolio.profiles(getScenarioPort(), basis, variant))
         body['library'] = customPortfolio.library(variant)
         body['mayBuild'] = customPortfolio.mayBuild(variant, isAdmin(caller))
@@ -306,15 +311,18 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
     *key* is the base column's key string. A name that has an edition for
     that portfolio is served as that edition, and nothing in the response
     says so - the PWA sees names. Without a key only fallback editions are
-    offered.
+    offered. Each product carries the ticker and the minimum it has in
+    *currency* (D180).
     """
     basis = BasisInput(currency=currency, hedging=hedging)
     try:
         validateVariant(variant)
         baseKey = _baseKeyFrom(key)
-        return {'category': category, 'variant': variant,
-                'sleeves': list(getScenarioPort().list_sleeves(
-                    category, basis, variant, baseKey))}
+        served = list(getScenarioPort().list_sleeves(category, basis, variant, baseKey))
+        for sleeve in served:
+            sleeve['products'] = [products.inCurrency(p, basis.currency)
+                                  for p in sleeve.get('products') or []]
+        return {'category': category, 'variant': variant, 'sleeves': served}
     except ValidationError as exc:
         return _validationError(exc)
     except AnalyticsError as exc:
@@ -1136,7 +1144,7 @@ def createScenario(payload: dict = Body(...), caller=Depends(requireAuth)):
         mandate = MandateInput.fromDict(payload.get('mandate') or {})
         basis = BasisInput.fromDict(payload.get('basis') or {})
         validateBasis(basis)
-        port.validate_mandate(mandate)
+        port.validate_mandate(mandate, basis.currency)
         state = scenarioStore.createScenario(mandate, basis, createdBy=caller.kerberos)
         return {'id': state['id'], 'scenario': _scenarioPayload(state)}
     except ValidationError as exc:
@@ -1166,9 +1174,13 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         mandate = basis = sleeves = variant = None
         tacticalTilt = feeSchedule = feeLevel = includeFees = None
         volPremium = customFees = customs = built = charges = None
+        # the currency the scenario will be in after this write: what a
+        # message's amounts are written in (D181)
+        currency = ((payload.get('basis') or {}).get('currency')
+                    or (current.get('basis') or {}).get('currency'))
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
-            port.validate_mandate(mandate)
+            port.validate_mandate(mandate, currency)
         if 'basis' in payload:
             basis = BasisInput.fromDict(payload['basis'] or {})
             validateBasis(basis)
@@ -1192,7 +1204,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             customFees = payload['customFees'] or {}
             validateCustomFees(customFees, mandate or MandateInput.fromDict(current['mandate']))
         if 'otherCharges' in payload:
-            charges = _otherCharges.clean(payload['otherCharges'])
+            charges = _otherCharges.clean(payload['otherCharges'], currency)
         if 'sleeves' in payload:
             from cyrus_pmg.pmgService.scenario.rules import autoSleeveCategories
             automatic = autoSleeveCategories()
@@ -1344,7 +1356,8 @@ def _customCheck(state, port):
     anchorResult = customPortfolio.anchorFor(port, basis, variant, built.get('profile'))
     anchor = customPortfolio.anchorLines(anchorResult) if anchorResult else {}
     mandateSize = (state.get('mandate') or {}).get('mandateSize')
-    return customPortfolio.checks(built, variant, mandateSize, anchor), anchorResult
+    return (customPortfolio.checks(built, variant, mandateSize, anchor, currency=basis.currency),
+            anchorResult)
 
 
 @router.post('/scenario/{scenarioId}/custom-portfolio/approval')
@@ -1614,9 +1627,11 @@ def _assembleExport(scenarioId: str, port):
         raise ValidationError('minimumInvestment',
                               'Below mandate minimum: {}. Raise the mandate, change the '
                               'sleeve, or drop the product before exporting.'.format(
-                                  ', '.join('{} in {} (${:,.0f} against a ${:,.0f} minimum)'.format(
-                                      b['name'], b['category'], b['notional'],
-                                      b['minimumInvestment']) for b in model['breaches'][:4])
+                                  ', '.join('{} in {} ({} against a {} minimum)'.format(
+                                      b['name'], b['category'],
+                                      _money.amount(b['notional'], model.get('currency')),
+                                      _money.amount(b['minimumInvestment'], model.get('currency')))
+                                      for b in model['breaches'][:4])
                                   + ('' if len(model['breaches']) <= 4
                                      else ', and {} more'.format(len(model['breaches']) - 4))))
     # every other check first: the charges are what the page asks for last,
@@ -1625,10 +1640,11 @@ def _assembleExport(scenarioId: str, port):
     return state, basis, mandate, results, implementation, model
 
 
-def _breachText(breaches) -> str:
+def _breachText(breaches, currency=None) -> str:
     return 'Below mandate minimum: {}. Raise the mandate or change the weights before exporting.'.format(
-        ', '.join('{} in {} (${:,.0f} against a ${:,.0f} minimum)'.format(
-            b['name'], b['category'], b['notional'], b['minimumInvestment']) for b in breaches[:4])
+        ', '.join('{} in {} ({} against a {} minimum)'.format(
+            b['name'], b['category'], _money.amount(b['notional'], currency),
+            _money.amount(b['minimumInvestment'], currency)) for b in breaches[:4])
         + ('' if len(breaches) <= 4 else ', and {} more'.format(len(breaches) - 4)))
 
 
@@ -1665,7 +1681,7 @@ def _assembleCustomExport(state, port):
     if includeFees and fees.isCustom(feeLevel):
         validateCustomFees(customFees, mandate)
     if model['breaches']:
-        raise ValidationError('minimumInvestment', _breachText(model['breaches']))
+        raise ValidationError('minimumInvestment', _breachText(model['breaches'], model.get('currency')))
     profileLabel = customPortfolio.profileLabel(built['profile'])
     approval = built.get('approval') or {}
     if check['status'] == 'warn' and not customPortfolio.approved(built, variant):

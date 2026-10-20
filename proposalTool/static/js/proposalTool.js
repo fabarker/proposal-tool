@@ -190,9 +190,17 @@ var variantPending = null;
 function esc(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
-function money(n) {
+/* An amount in a base currency, with its mark (D181): the scenario's own
+   unless one is named - a saved proposal's, say. None until the PWA has
+   chosen the currency, since the amount is in whichever they choose. */
+var CURRENCY_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
+function moneyMark(currency) {
+  if (currency === undefined) currency = state.basisChosen ? state.basis.currency : null;
+  return CURRENCY_MARKS[currency] || '';
+}
+function money(n, currency) {
   return (n === null || n === undefined || isNaN(n))
-    ? '—' : '$' + Math.round(n).toLocaleString('en-US');
+    ? '—' : moneyMark(currency) + Math.round(n).toLocaleString('en-US');
 }
 function parseMoney(v) { return Math.round(Number(String(v).replace(/[^0-9.]/g, '')) || 0); }
 
@@ -906,6 +914,7 @@ async function confirmBasisChange() {
   state.columns.forEach(function (col) { startResolve(col); });
   settleRebuilding();                /* nothing survived: the spinner stops here */
   state.sleeveLib = {};              /* the library may differ under the new basis */
+  state.customLib = {};              /* and a product's ticker and minimum (D180) */
   revalidateSleeves();
   refresh();
 }
@@ -1258,8 +1267,11 @@ function ensureCustomLib(category, onReady) {
     return;
   }
   state.customLib[category] = { status: 'loading', products: [], mayBuild: false, error: null };
+  /* the currency goes too: a product's ticker and minimum are its own in
+     each (D180) */
   apiFetch('/scenario/products?category=' + encodeURIComponent(category)
-      + '&variant=' + encodeURIComponent(state.variant))
+      + '&variant=' + encodeURIComponent(state.variant)
+      + '&currency=' + encodeURIComponent(state.basis.currency))
     .then(function (body) {
       state.customLib[category] = { status: 'ready', products: body.products || [],
                                     mayBuild: !!body.mayBuild, error: null };
@@ -3369,7 +3381,7 @@ function renderDialog() {
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
-    + '<div class="field"><label for="mdtop">Top Account Size ($AUS)</label>'
+    + '<div class="field"><label for="mdtop">Top Account Size (AUS)</label>'
     + '<input type="text" id="mdtop" inputmode="numeric" autocomplete="off" value="'
     + (draft.top ? esc(money(draft.top)) : '') + '"' + invalid('mdtop')
     + (draft.saving ? ' disabled' : '') + '></div>'
@@ -3551,7 +3563,7 @@ async function lookupProposal(uid, seq) {
         + account.requests[0].requestId + '.');
     } else {
       announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
-        + money(found.proposal.mandateSize) + '.');
+        + money(found.proposal.mandateSize, found.proposal.currency) + '.');
     }
   } catch (err) {
     if (!account || account.seq !== seq) return;
@@ -3598,7 +3610,7 @@ function accountStatusText() {
      proposal's one request is spent is the thing the user would check (D111). */
   var p = a.proposal;
   return 'Ready. Submitting records the request against ' + p.proposalId
-    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize) + ').';
+    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize, p.currency) + ').';
 }
 
 /* The card opens on the UID alone and grows into the request only when the
@@ -3780,8 +3792,8 @@ function accountProposalMarkup(busy) {
   var terms = [
     ['Primary PWA', p.primaryPwa],
     ['Basis', p.currency + ' · ' + p.hedging],
-    ['Mandate size', money(p.mandateSize)],
-    ['Top account size', money(p.topAccountSize)],
+    ['Mandate size', money(p.mandateSize, p.currency)],
+    ['Top account size', money(p.topAccountSize, p.currency)],
     ['Implementation', p.variant],
     ['Risk · allocation', riskAllocationText(p)],
     ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
@@ -4746,6 +4758,7 @@ return {
   exporting: function () { return state.exporting; },
   announce: announce,
   money: money,
+  moneyMark: moneyMark,
   esc: esc,
   num: num,
   refresh: refresh,
@@ -4976,10 +4989,8 @@ function roundWeights(exact) {
   return units.map(function (u) { return u / 100; });
 }
 
-function money(v) {
-  return (v === null || v === undefined || isNaN(v))
-    ? '—' : '$' + Math.round(v).toLocaleString('en-US');
-}
+/* an amount in the scenario's currency (D181) */
+function money(v) { return App.money(v); }
 
 function pillFor(v) {
   var map = { Active: 'p-act', Passive: 'p-pas', SMA: 'p-sma', ETF: 'p-etf',
@@ -6041,12 +6052,13 @@ function chargeText(field, value) {
   return field.unit === 'bps' ? String(value) : value.toLocaleString('en-US');
 }
 
-/* dollars as 5,000,000, 5m or 500k; basis points as 10 or 10bps */
+/* an amount as 5,000,000, 5m or 500k, its currency's mark or not; basis
+   points as 10 or 10bps */
 function parseCharge(field, text) {
-  var t = String(text || '').trim().toLowerCase().replace(/[$,\s]/g, '');
+  var t = String(text || '').trim().toLowerCase().replace(/chf|[$\u00a3\u20ac,\s]/g, '');
   if (!t) return { empty: true };
   var usd = field.unit === 'usd';
-  var hint = usd ? 'Enter an amount in dollars, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
+  var hint = usd ? 'Enter an amount, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
   var m = t.match(/^(\d*\.?\d+)(k|m|bn|bps|bp)?$/);
   if (!m) return { bad: hint };
   var v = parseFloat(m[1]), suffix = m[2] || '';
@@ -6062,7 +6074,7 @@ function parseCharge(field, text) {
   }
   if (v > field.max) {
     return { bad: field.label + ' can be at most '
-      + (usd ? '$' + field.max.toLocaleString('en-US') : field.max + ' bps') + '.' };
+      + (usd ? App.money(field.max) : field.max + ' bps') + '.' };
   }
   return { v: v };
 }
@@ -6180,7 +6192,7 @@ function renderChargesPanel() {
           var row = '<div class="oc-row' + (bad ? ' bad' : '') + (fixed ? ' fixed' : '') + '">'
             + '<label for="' + id + '">' + App.esc(f.label)
             + (fixed ? ' <span class="oc-fixed">Fixed</span>' : '') + '</label>'
-            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? '$' : '') + '</span>'
+            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? App.esc(App.moneyMark()) : '') + '</span>'
             + '<input type="text" inputmode="decimal" autocomplete="off" id="' + id + '"'
             + ' data-charge="' + App.esc(f.id) + '"'
             + ' value="' + App.esc(chargeText(f, chargesPanel.draft[f.id])) + '"'
@@ -8269,7 +8281,9 @@ function renderView() {
             ? feeCell('num', feeText(item.mgmt)) + feeCell('num', bpText(item.wtdBp))
             : '')
         + (ini ? iniFeeCell('num', bpText(item.initialWtdBp)) : '')
-        + '<td class="num">' + (typeof item.minimumInvestment === 'number'
+        /* a minimum of 0 is one too small to be worth showing: a dash, as
+           for none */
+        + '<td class="num">' + (typeof item.minimumInvestment === 'number' && item.minimumInvestment > 0
             ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>')
         + '</td></tr>';
     });
@@ -8658,7 +8672,10 @@ App.addRenderer(function () {
 var CP_BALANCE = 0.005;                 /* customPortfolio.BALANCE_TOLERANCE */
 
 function cpG(v) { return String(Number(Number(v).toPrecision(6))); }
-function cpMoney(v) { return '$' + Math.round(v).toLocaleString('en-US'); }
+/* an amount in the build's currency, ctx.currency (D181), as App.money
+   writes it - here, so the checks run without the page */
+var CP_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
+function cpMoney(v, currency) { return (CP_MARKS[currency] || '') + Math.round(v).toLocaleString('en-US'); }
 
 /* "12.5", "12.50" or "12.5%": a weight to 2dp from 0 to 100; '' is none yet
    (null); anything else NaN */
@@ -8781,7 +8798,7 @@ function cpCheck(products, ctx) {
   }
   var priv = cpWeightsByLine(products)[ctx.privateLine] || 0;
   if (priv > 0 && ctx.mandateSize != null && ctx.mandateSize < ctx.privateMinimum) {
-    problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum) + ' or more.');
+    problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum, ctx.currency) + ' or more.');
   }
   var lines = {};
   names.forEach(function (n) {
@@ -8885,6 +8902,7 @@ function checkCtx() {
   return { lines: l ? l.lines : [], anchor: anchor ? anchor.lines : {}, limits: limits(),
            countedIn: settings().countedIn || {}, allowed: allowed, liquidity: liquidity, label: label,
            mandateSize: App.mandateSize(), privateMinimum: settings().privateMinimum || 20000000,
+           currency: App.basis().currency,
            privateLine: settings().privateLine || '' };
 }
 
@@ -9078,7 +9096,7 @@ function cpBlankHtml() {
     + '<p class="cp-lim-more">Within the usual ranges it delivers; between them and the limits an admin approves it first; '
     + 'beyond, it cannot be delivered. Also: no product above ' + cpG(lim.concentration) + '% of the portfolio, at most '
     + cpG(lim.illiquid) + '% not daily-dealing, at most ' + lim.maxProducts + ' products, every position at its product’s '
-    + 'minimum, and private markets from a ' + cpMoney(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
+    + 'minimum, and private markets from a ' + App.money(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
     + 'the Strategic Volatility Premium count with the category they are funded from.</p></div>';
   return html;
 }
@@ -10108,7 +10126,10 @@ function catValuesOf(row, field) {
 }
 function catMatches(p, q) {
   if (!q) return true;
+  /* any ticker it is listed under, its own in a currency included (D180) */
+  var own = p.currencies || {};
   return [p.name, p.ticker, p.assetClass, p.category, p.vehicle, p.source]
+    .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
     .join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catPasses(row, state, except) {
@@ -10243,6 +10264,23 @@ var PRD_FIELDS = [
   { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
   { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
 ];
+/* the ticker and minimum a product has in each base currency (D180): flat
+   keys in the draft (tickerGBP, minimumInvestmentGBP), the currencies table
+   on the wire, blank where the main one holds */
+var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
+['ticker', 'minimumInvestment'].forEach(function (base) {
+  PRD_CURRENCIES.forEach(function (c) {
+    PRD_FIELDS.push({ key: base + c, label: (base === 'ticker' ? 'Ticker' : 'Minimum investment') + ' in ' + c,
+                      kind: base === 'ticker' ? 'text' : 'amount', optional: true, ccy: c, base: base });
+  });
+});
+/* a field's value on a product as the server serves it */
+function prdValueOf(p, f) {
+  if (!p) return null;
+  if (!f.ccy) return p[f.key];
+  var own = (p.currencies || {})[f.ccy] || {};
+  return own[f.base] === undefined ? null : own[f.base];
+}
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
 var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
 var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240,
@@ -10267,7 +10305,7 @@ function prdSlug(name) {
 function prdDraftFrom(p) {
   var d = {};
   PRD_FIELDS.forEach(function (f) {
-    var v = p ? p[f.key] : '';
+    var v = p ? prdValueOf(p, f) : '';
     if (f.key === 'ticker' && v === '—') v = '';
     d[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
@@ -10278,7 +10316,7 @@ function prdExample(key) {
     : key === 'distributionYield' ? 'a percentage, such as 3.2' : 'an amount, such as 5000000';
 }
 function prdFigureProblem(d, key, label, required) {
-  var v = prdNumber(d[key], key !== 'minimumInvestment');
+  var v = prdNumber(d[key], key.indexOf('minimumInvestment') !== 0);
   if (v === null) return required ? label + ' is needed: ' + prdExample(key) + '.' : '';
   if (isNaN(v)) return label + ' ' + JSON.stringify(String(d[key]).trim()) + ' is not a number: give ' + prdExample(key) + '.';
   if (v < 0) return label + ' cannot be negative.';
@@ -10328,12 +10366,27 @@ function prdProblems(d, ctx) {
   if (y) out.distributionYield = y;
   var m = prdFigureProblem(d, 'minimumInvestment', 'Minimum investment', false);
   if (m) out.minimumInvestment = m;
+  PRD_FIELDS.forEach(function (f) {
+    if (!f.ccy) return;
+    if (f.base === 'ticker') {
+      if (prdText(d[f.key]).length > PRD_MAX.ticker) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.ticker + ' characters.';
+    } else {
+      var own = prdFigureProblem(d, f.key, f.label, false);
+      if (own) out[f.key] = own;
+    }
+  });
   return out;
 }
 /* the draft as the server reads it: words as words, figures as numbers */
 function prdPayload(d) {
-  var out = {};
+  var out = { currencies: {} };
   PRD_FIELDS.forEach(function (f) {
+    if (f.ccy) {
+      var v = f.kind === 'amount' ? prdNumber(d[f.key], false) : prdText(d[f.key]);
+      if (v === '' || v === null) return;
+      (out.currencies[f.ccy] = out.currencies[f.ccy] || {})[f.base] = v;
+      return;
+    }
     if (f.kind === 'pct') out[f.key] = prdNumber(d[f.key], true);
     else if (f.kind === 'amount') out[f.key] = prdNumber(d[f.key], false);
     else if (f.key === 'productId') out[f.key] = String(d[f.key] || '').trim();
@@ -10353,7 +10406,7 @@ function prdChanges(before, d) {
   var now = prdPayload(d), out = [];
   PRD_FIELDS.forEach(function (f) {
     if (f.key === 'productId') return;
-    var was = before ? before[f.key] : null, is = now[f.key];
+    var was = before ? prdValueOf(before, f) : null, is = prdValueOf(now, f);
     if (f.key === 'ticker' && was === '—') was = '';
     if (f.kind === 'pct' || f.kind === 'amount') {
       var a = (was === null || was === undefined || was === '') ? null : Number(was);
@@ -10363,7 +10416,7 @@ function prdChanges(before, d) {
     } else if (prdText(was) === prdText(is)) {
       return;
     }
-    out.push({ key: f.key, label: f.label, before: prdShow(f.key, was), after: prdShow(f.key, is) });
+    out.push({ key: f.key, label: f.label, before: prdShow(f.base || f.key, was), after: prdShow(f.base || f.key, is) });
   });
   return out;
 }
@@ -10420,8 +10473,10 @@ function feeShow(text) {
   var places = (String(feeG(v)).split('.')[1] || '').length;
   return v.toFixed(Math.max(2, places));
 }
+/* a tier's bounds bare: the card is every currency's, and a proposal's
+   account size is in its own (D181) */
 function feeTierLabel(min, max) {
-  var m = function (v) { return '$' + feeG(v / 1e6) + 'm'; };
+  var m = function (v) { return feeG(v / 1e6) + 'm'; };
   if (!(min > 0)) return max == null ? 'Every account size' : 'Under ' + m(max);
   if (max == null) return m(min) + ' and up';
   return m(min) + ' – ' + m(max);
@@ -10479,8 +10534,8 @@ function feeProblems(d, ctx) {
   var out = [];
   if (!d.tiers.length) out.push({ field: 'tiers', message: 'The card needs at least one account-size tier.' });
   d.tiers.forEach(function (t, i) {
-    var where = 'The tier from ' + (t.min > 0 ? '$' + feeG(t.min / 1e6) + 'm' : '$0');
-    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at $0, so every account size has a tier.' });
+    var where = 'The tier from ' + (t.min > 0 ? feeG(t.min / 1e6) + 'm' : '0');
+    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at 0, so every account size has a tier.' });
     if (t.max !== null && t.max !== undefined) {
       if (typeof t.max !== 'number' || !isFinite(t.max)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has an upper edge that is not an amount.' });
       else if (!(t.max > t.min)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has no room: its upper edge must be above its lower one.' });
@@ -12535,7 +12590,10 @@ function svAddHits(products, f) {
     if (f.style && p.style !== f.style) return false;
     if (f.source && p.source !== f.source) return false;
     if (!q) return true;
-    return [p.name, p.assetClass, p.vehicle, p.productId, p.ticker].join(' ').toLowerCase().indexOf(q) !== -1;
+    var own = p.currencies || {};
+    return [p.name, p.assetClass, p.vehicle, p.productId, p.ticker]
+      .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
+      .join(' ').toLowerCase().indexOf(q) !== -1;
   });
   var key = f.sort || 'cost', dir = f.dir === 'desc' ? -1 : 1;
   var val = function (p) {
@@ -15672,11 +15730,13 @@ function catFiltersInForce() {
   for (var f in cat.filters) if (cat.filters[f] && cat.filters[f].length) n += 1;
   return n;
 }
+/* an amount the catalogue shows bare: a product's main minimum holds in
+   whichever currency a proposal is in (D181) */
 function catMoney(n) {
   if (typeof n !== 'number') return '—';
-  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toString().replace(/\.0$/, '') + 'm';
-  if (n >= 1e3) return '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
-  return '$' + Math.round(n);
+  if (n >= 1e6) return (Math.round(n / 1e5) / 10).toString().replace(/\.0$/, '') + 'm';
+  if (n >= 1e3) return (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
+  return String(Math.round(n));
 }
 function catFigure(v, dp) { return (typeof v === 'number' && isFinite(v)) ? v.toFixed(dp) : '—'; }
 function liqClass(v) {
@@ -16275,6 +16335,7 @@ function prdViewHtml(row) {
     + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
     + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
     + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
+    + prdByCurrencyHtml(p)
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
     + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
@@ -16343,6 +16404,47 @@ function prdFieldHtml(f, d, probs) {
   return '<div class="prd-f' + (f.wide ? ' wide' : '') + '">' + label + input + hint
     + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></div>';
 }
+/* what a blank currency box reads instead: the main ticker or minimum */
+function prdMainText(d, base) {
+  if (base === 'ticker') return prdText(d.ticker) ? 'As main: ' + prdText(d.ticker) : 'None';
+  var m = prdNumber(d.minimumInvestment, false);
+  return m === null || isNaN(m) ? 'None' : 'As main: ' + prdShow('minimumInvestment', m);
+}
+/* the ticker and minimum by base currency (D180), one row a currency */
+function prdCurrencyHtml(d, probs) {
+  function cell(c, base) {
+    var f = PRD_FIELDS.filter(function (x) { return x.key === base + c; })[0];
+    var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
+    var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
+    return '<td><input id="prdF-' + f.key + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
+      + ' value="' + esc(d[f.key]) + '" aria-label="' + esc(f.label) + '"'
+      + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '')
+      + (base === 'minimumInvestment' ? ' inputmode="decimal"' : '')
+      + ' placeholder="' + esc(prdMainText(d, base)) + '">'
+      + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
+  }
+  return '<div class="prd-ccy"><div class="prd-ccy-h"><b>By base currency</b>'
+    + '<small>A scenario in a currency shows its ticker and checks its minimum here. A blank box uses the main one; a minimum of 0 is none.</small></div>'
+    + '<table><thead><tr><th scope="col">Currency</th><th scope="col">Ticker</th><th scope="col">Minimum investment</th></tr></thead><tbody>'
+    + PRD_CURRENCIES.map(function (c) {
+        return '<tr><th scope="row">' + c + '</th>' + cell(c, 'ticker') + cell(c, 'minimumInvestment') + '</tr>';
+      }).join('')
+    + '</tbody></table></div>';
+}
+/* the detail's line for them: only the currencies with a value of their own */
+function prdByCurrencyHtml(p) {
+  var own = p.currencies || {};
+  var set = PRD_CURRENCIES.filter(function (c) { return own[c]; });
+  if (!set.length) return '';
+  return '<dt>By currency</dt><dd class="prd-ccyl">' + set.map(function (c) {
+    var o = own[c], bits = [];
+    if (o.ticker) bits.push(esc(o.ticker));
+    if (typeof o.minimumInvestment === 'number') {
+      bits.push(o.minimumInvestment ? 'min ' + c + ' ' + esc(catMoney(o.minimumInvestment)) : 'no minimum');
+    }
+    return '<span><b>' + c + '</b> ' + bits.join(' · ') + '</span>';
+  }).join('') + '</dd>';
+}
 /* a word nobody uses yet is said to be new, so a typo reads as one */
 function prdNewWordHint(key) {
   var v = prdText(prd.draft && prd.draft[key]);
@@ -16393,7 +16495,9 @@ function prdFormHtml() {
     + '<span class="eyeb">' + (isNew ? 'New product' : 'Editing · version ' + prd.base) + '</span>'
     + '<h4 id="prdTitle">' + esc(title) + '</h4>'
     + start
-    + '<div class="prd-grid">' + PRD_FIELDS.map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
+    + '<div class="prd-grid">' + PRD_FIELDS.filter(function (f) { return !f.ccy; })
+        .map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
+    + prdCurrencyHtml(d, probs)
     + prdReachHtml()
     + '<div class="prd-f wide"><label for="prdNote">Note <small>optional</small></label>'
     + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '"'
@@ -16429,6 +16533,7 @@ function prdUpdate() {
       else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
     }
     var hint = document.getElementById('prdH-' + f.key); if (hint) hint.innerHTML = prdNewWordHint(f.key);
+    if (f.ccy && input) input.placeholder = prdMainText(prd.draft, f.base);
   });
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);

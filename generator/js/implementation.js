@@ -28,10 +28,8 @@ function roundWeights(exact) {
   return units.map(function (u) { return u / 100; });
 }
 
-function money(v) {
-  return (v === null || v === undefined || isNaN(v))
-    ? '—' : '$' + Math.round(v).toLocaleString('en-US');
-}
+/* an amount in the scenario's currency (D181) */
+function money(v) { return App.money(v); }
 
 function pillFor(v) {
   var map = { Active: 'p-act', Passive: 'p-pas', SMA: 'p-sma', ETF: 'p-etf',
@@ -1093,12 +1091,13 @@ function chargeText(field, value) {
   return field.unit === 'bps' ? String(value) : value.toLocaleString('en-US');
 }
 
-/* dollars as 5,000,000, 5m or 500k; basis points as 10 or 10bps */
+/* an amount as 5,000,000, 5m or 500k, its currency's mark or not; basis
+   points as 10 or 10bps */
 function parseCharge(field, text) {
-  var t = String(text || '').trim().toLowerCase().replace(/[$,\s]/g, '');
+  var t = String(text || '').trim().toLowerCase().replace(/chf|[$\u00a3\u20ac,\s]/g, '');
   if (!t) return { empty: true };
   var usd = field.unit === 'usd';
-  var hint = usd ? 'Enter an amount in dollars, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
+  var hint = usd ? 'Enter an amount, like 5,000,000 or 5m.' : 'Enter basis points, like 10.';
   var m = t.match(/^(\d*\.?\d+)(k|m|bn|bps|bp)?$/);
   if (!m) return { bad: hint };
   var v = parseFloat(m[1]), suffix = m[2] || '';
@@ -1114,7 +1113,7 @@ function parseCharge(field, text) {
   }
   if (v > field.max) {
     return { bad: field.label + ' can be at most '
-      + (usd ? '$' + field.max.toLocaleString('en-US') : field.max + ' bps') + '.' };
+      + (usd ? App.money(field.max) : field.max + ' bps') + '.' };
   }
   return { v: v };
 }
@@ -1232,7 +1231,7 @@ function renderChargesPanel() {
           var row = '<div class="oc-row' + (bad ? ' bad' : '') + (fixed ? ' fixed' : '') + '">'
             + '<label for="' + id + '">' + App.esc(f.label)
             + (fixed ? ' <span class="oc-fixed">Fixed</span>' : '') + '</label>'
-            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? '$' : '') + '</span>'
+            + '<span class="oc-in"><span class="oc-unit pre">' + (f.unit === 'usd' ? App.esc(App.moneyMark()) : '') + '</span>'
             + '<input type="text" inputmode="decimal" autocomplete="off" id="' + id + '"'
             + ' data-charge="' + App.esc(f.id) + '"'
             + ' value="' + App.esc(chargeText(f, chargesPanel.draft[f.id])) + '"'
@@ -3321,7 +3320,9 @@ function renderView() {
             ? feeCell('num', feeText(item.mgmt)) + feeCell('num', bpText(item.wtdBp))
             : '')
         + (ini ? iniFeeCell('num', bpText(item.initialWtdBp)) : '')
-        + '<td class="num">' + (typeof item.minimumInvestment === 'number'
+        /* a minimum of 0 is one too small to be worth showing: a dash, as
+           for none */
+        + '<td class="num">' + (typeof item.minimumInvestment === 'number' && item.minimumInvestment > 0
             ? money(item.minimumInvestment) : '<span class="mut">&mdash;</span>')
         + '</td></tr>';
     });

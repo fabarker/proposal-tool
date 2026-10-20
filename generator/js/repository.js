@@ -298,7 +298,10 @@ function catValuesOf(row, field) {
 }
 function catMatches(p, q) {
   if (!q) return true;
+  /* any ticker it is listed under, its own in a currency included (D180) */
+  var own = p.currencies || {};
   return [p.name, p.ticker, p.assetClass, p.category, p.vehicle, p.source]
+    .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
     .join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catPasses(row, state, except) {
@@ -433,6 +436,23 @@ var PRD_FIELDS = [
   { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
   { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
 ];
+/* the ticker and minimum a product has in each base currency (D180): flat
+   keys in the draft (tickerGBP, minimumInvestmentGBP), the currencies table
+   on the wire, blank where the main one holds */
+var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
+['ticker', 'minimumInvestment'].forEach(function (base) {
+  PRD_CURRENCIES.forEach(function (c) {
+    PRD_FIELDS.push({ key: base + c, label: (base === 'ticker' ? 'Ticker' : 'Minimum investment') + ' in ' + c,
+                      kind: base === 'ticker' ? 'text' : 'amount', optional: true, ccy: c, base: base });
+  });
+});
+/* a field's value on a product as the server serves it */
+function prdValueOf(p, f) {
+  if (!p) return null;
+  if (!f.ccy) return p[f.key];
+  var own = (p.currencies || {})[f.ccy] || {};
+  return own[f.base] === undefined ? null : own[f.base];
+}
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
 var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
 var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240,
@@ -457,7 +477,7 @@ function prdSlug(name) {
 function prdDraftFrom(p) {
   var d = {};
   PRD_FIELDS.forEach(function (f) {
-    var v = p ? p[f.key] : '';
+    var v = p ? prdValueOf(p, f) : '';
     if (f.key === 'ticker' && v === '—') v = '';
     d[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
@@ -468,7 +488,7 @@ function prdExample(key) {
     : key === 'distributionYield' ? 'a percentage, such as 3.2' : 'an amount, such as 5000000';
 }
 function prdFigureProblem(d, key, label, required) {
-  var v = prdNumber(d[key], key !== 'minimumInvestment');
+  var v = prdNumber(d[key], key.indexOf('minimumInvestment') !== 0);
   if (v === null) return required ? label + ' is needed: ' + prdExample(key) + '.' : '';
   if (isNaN(v)) return label + ' ' + JSON.stringify(String(d[key]).trim()) + ' is not a number: give ' + prdExample(key) + '.';
   if (v < 0) return label + ' cannot be negative.';
@@ -518,12 +538,27 @@ function prdProblems(d, ctx) {
   if (y) out.distributionYield = y;
   var m = prdFigureProblem(d, 'minimumInvestment', 'Minimum investment', false);
   if (m) out.minimumInvestment = m;
+  PRD_FIELDS.forEach(function (f) {
+    if (!f.ccy) return;
+    if (f.base === 'ticker') {
+      if (prdText(d[f.key]).length > PRD_MAX.ticker) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.ticker + ' characters.';
+    } else {
+      var own = prdFigureProblem(d, f.key, f.label, false);
+      if (own) out[f.key] = own;
+    }
+  });
   return out;
 }
 /* the draft as the server reads it: words as words, figures as numbers */
 function prdPayload(d) {
-  var out = {};
+  var out = { currencies: {} };
   PRD_FIELDS.forEach(function (f) {
+    if (f.ccy) {
+      var v = f.kind === 'amount' ? prdNumber(d[f.key], false) : prdText(d[f.key]);
+      if (v === '' || v === null) return;
+      (out.currencies[f.ccy] = out.currencies[f.ccy] || {})[f.base] = v;
+      return;
+    }
     if (f.kind === 'pct') out[f.key] = prdNumber(d[f.key], true);
     else if (f.kind === 'amount') out[f.key] = prdNumber(d[f.key], false);
     else if (f.key === 'productId') out[f.key] = String(d[f.key] || '').trim();
@@ -543,7 +578,7 @@ function prdChanges(before, d) {
   var now = prdPayload(d), out = [];
   PRD_FIELDS.forEach(function (f) {
     if (f.key === 'productId') return;
-    var was = before ? before[f.key] : null, is = now[f.key];
+    var was = before ? prdValueOf(before, f) : null, is = prdValueOf(now, f);
     if (f.key === 'ticker' && was === '—') was = '';
     if (f.kind === 'pct' || f.kind === 'amount') {
       var a = (was === null || was === undefined || was === '') ? null : Number(was);
@@ -553,7 +588,7 @@ function prdChanges(before, d) {
     } else if (prdText(was) === prdText(is)) {
       return;
     }
-    out.push({ key: f.key, label: f.label, before: prdShow(f.key, was), after: prdShow(f.key, is) });
+    out.push({ key: f.key, label: f.label, before: prdShow(f.base || f.key, was), after: prdShow(f.base || f.key, is) });
   });
   return out;
 }
@@ -610,8 +645,10 @@ function feeShow(text) {
   var places = (String(feeG(v)).split('.')[1] || '').length;
   return v.toFixed(Math.max(2, places));
 }
+/* a tier's bounds bare: the card is every currency's, and a proposal's
+   account size is in its own (D181) */
 function feeTierLabel(min, max) {
-  var m = function (v) { return '$' + feeG(v / 1e6) + 'm'; };
+  var m = function (v) { return feeG(v / 1e6) + 'm'; };
   if (!(min > 0)) return max == null ? 'Every account size' : 'Under ' + m(max);
   if (max == null) return m(min) + ' and up';
   return m(min) + ' – ' + m(max);
@@ -669,8 +706,8 @@ function feeProblems(d, ctx) {
   var out = [];
   if (!d.tiers.length) out.push({ field: 'tiers', message: 'The card needs at least one account-size tier.' });
   d.tiers.forEach(function (t, i) {
-    var where = 'The tier from ' + (t.min > 0 ? '$' + feeG(t.min / 1e6) + 'm' : '$0');
-    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at $0, so every account size has a tier.' });
+    var where = 'The tier from ' + (t.min > 0 ? feeG(t.min / 1e6) + 'm' : '0');
+    if (i === 0 && t.min !== 0) out.push({ field: 'tiers', key: 'tier|' + t.key, message: 'The lowest tier must start at 0, so every account size has a tier.' });
     if (t.max !== null && t.max !== undefined) {
       if (typeof t.max !== 'number' || !isFinite(t.max)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has an upper edge that is not an amount.' });
       else if (!(t.max > t.min)) out.push({ field: 'tiers', key: 'tier|' + t.key, message: where + ' has no room: its upper edge must be above its lower one.' });
@@ -2725,7 +2762,10 @@ function svAddHits(products, f) {
     if (f.style && p.style !== f.style) return false;
     if (f.source && p.source !== f.source) return false;
     if (!q) return true;
-    return [p.name, p.assetClass, p.vehicle, p.productId, p.ticker].join(' ').toLowerCase().indexOf(q) !== -1;
+    var own = p.currencies || {};
+    return [p.name, p.assetClass, p.vehicle, p.productId, p.ticker]
+      .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
+      .join(' ').toLowerCase().indexOf(q) !== -1;
   });
   var key = f.sort || 'cost', dir = f.dir === 'desc' ? -1 : 1;
   var val = function (p) {
@@ -5862,11 +5902,13 @@ function catFiltersInForce() {
   for (var f in cat.filters) if (cat.filters[f] && cat.filters[f].length) n += 1;
   return n;
 }
+/* an amount the catalogue shows bare: a product's main minimum holds in
+   whichever currency a proposal is in (D181) */
 function catMoney(n) {
   if (typeof n !== 'number') return '—';
-  if (n >= 1e6) return '$' + (Math.round(n / 1e5) / 10).toString().replace(/\.0$/, '') + 'm';
-  if (n >= 1e3) return '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
-  return '$' + Math.round(n);
+  if (n >= 1e6) return (Math.round(n / 1e5) / 10).toString().replace(/\.0$/, '') + 'm';
+  if (n >= 1e3) return (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
+  return String(Math.round(n));
 }
 function catFigure(v, dp) { return (typeof v === 'number' && isFinite(v)) ? v.toFixed(dp) : '—'; }
 function liqClass(v) {
@@ -6465,6 +6507,7 @@ function prdViewHtml(row) {
     + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
     + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
     + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
+    + prdByCurrencyHtml(p)
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
     + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
@@ -6533,6 +6576,47 @@ function prdFieldHtml(f, d, probs) {
   return '<div class="prd-f' + (f.wide ? ' wide' : '') + '">' + label + input + hint
     + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></div>';
 }
+/* what a blank currency box reads instead: the main ticker or minimum */
+function prdMainText(d, base) {
+  if (base === 'ticker') return prdText(d.ticker) ? 'As main: ' + prdText(d.ticker) : 'None';
+  var m = prdNumber(d.minimumInvestment, false);
+  return m === null || isNaN(m) ? 'None' : 'As main: ' + prdShow('minimumInvestment', m);
+}
+/* the ticker and minimum by base currency (D180), one row a currency */
+function prdCurrencyHtml(d, probs) {
+  function cell(c, base) {
+    var f = PRD_FIELDS.filter(function (x) { return x.key === base + c; })[0];
+    var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
+    var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
+    return '<td><input id="prdF-' + f.key + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
+      + ' value="' + esc(d[f.key]) + '" aria-label="' + esc(f.label) + '"'
+      + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '')
+      + (base === 'minimumInvestment' ? ' inputmode="decimal"' : '')
+      + ' placeholder="' + esc(prdMainText(d, base)) + '">'
+      + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
+  }
+  return '<div class="prd-ccy"><div class="prd-ccy-h"><b>By base currency</b>'
+    + '<small>A scenario in a currency shows its ticker and checks its minimum here. A blank box uses the main one; a minimum of 0 is none.</small></div>'
+    + '<table><thead><tr><th scope="col">Currency</th><th scope="col">Ticker</th><th scope="col">Minimum investment</th></tr></thead><tbody>'
+    + PRD_CURRENCIES.map(function (c) {
+        return '<tr><th scope="row">' + c + '</th>' + cell(c, 'ticker') + cell(c, 'minimumInvestment') + '</tr>';
+      }).join('')
+    + '</tbody></table></div>';
+}
+/* the detail's line for them: only the currencies with a value of their own */
+function prdByCurrencyHtml(p) {
+  var own = p.currencies || {};
+  var set = PRD_CURRENCIES.filter(function (c) { return own[c]; });
+  if (!set.length) return '';
+  return '<dt>By currency</dt><dd class="prd-ccyl">' + set.map(function (c) {
+    var o = own[c], bits = [];
+    if (o.ticker) bits.push(esc(o.ticker));
+    if (typeof o.minimumInvestment === 'number') {
+      bits.push(o.minimumInvestment ? 'min ' + c + ' ' + esc(catMoney(o.minimumInvestment)) : 'no minimum');
+    }
+    return '<span><b>' + c + '</b> ' + bits.join(' · ') + '</span>';
+  }).join('') + '</dd>';
+}
 /* a word nobody uses yet is said to be new, so a typo reads as one */
 function prdNewWordHint(key) {
   var v = prdText(prd.draft && prd.draft[key]);
@@ -6583,7 +6667,9 @@ function prdFormHtml() {
     + '<span class="eyeb">' + (isNew ? 'New product' : 'Editing · version ' + prd.base) + '</span>'
     + '<h4 id="prdTitle">' + esc(title) + '</h4>'
     + start
-    + '<div class="prd-grid">' + PRD_FIELDS.map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
+    + '<div class="prd-grid">' + PRD_FIELDS.filter(function (f) { return !f.ccy; })
+        .map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
+    + prdCurrencyHtml(d, probs)
     + prdReachHtml()
     + '<div class="prd-f wide"><label for="prdNote">Note <small>optional</small></label>'
     + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '"'
@@ -6619,6 +6705,7 @@ function prdUpdate() {
       else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
     }
     var hint = document.getElementById('prdH-' + f.key); if (hint) hint.innerHTML = prdNewWordHint(f.key);
+    if (f.ccy && input) input.placeholder = prdMainText(prd.draft, f.base);
   });
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);

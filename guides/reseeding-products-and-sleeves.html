@@ -261,10 +261,13 @@ columns, so the easiest file to edit is that one.</p>
 <tr><td class="key">ShareClass</td><td>Optional</td><td><code>Distributing</code> or <code>Accumulating</code>, or blank.</td></tr>
 <tr><td class="key">DistributionYield</td><td>Optional</td><td>A percentage as a number, e.g. <code>3.20</code>.</td></tr>
 <tr><td class="key">MinimumInvestment</td><td>Optional</td><td>In currency units, e.g. <code>5000000</code>.</td></tr>
+<tr><td class="key">Ticker USD &hellip; Ticker EUR</td><td>Optional</td><td>The ticker the product is listed under in a scenario of that base currency, one column a currency: <code>Ticker USD</code>, <code>Ticker GBP</code>, <code>Ticker CHF</code>, <code>Ticker EUR</code>. Blank uses <code>Ticker</code>. See <a href="#currencies">Tickers and minimums by currency</a>.</td></tr>
+<tr><td class="key">MinimumInvestment USD &hellip; EUR</td><td>Optional</td><td>The minimum in a scenario of that currency, in that currency's units. Blank uses <code>MinimumInvestment</code>; <code>0</code> means no minimum there.</td></tr>
 </tbody></table></div>
 <p>An example row, under the headers in the order the current file uses:</p>
 <pre class="out">ProductId,Name,Ticker,AssetClass,Category,Style,Vehicle,ShareClass,Source,Liquidity,ExposureCurrency,ProductCost,FeeGroup,DistributionYield,MinimumInvestment
 gsam-core-municipal-sma,GSAM Core Municipal SMA,,Municipals,Investment Grade Fixed Income,Active,SMA,Distributing,Internal,Daily,USD,0.25,Core Active,3.20,5000000</pre>
+<p>The file you download also ends with the eight per-currency columns, blank until you fill them.</p>
 
 <p>On an import, the six describing columns (<code>AssetClass</code> to
 <code>ExposureCurrency</code>) must all be filled, a <code>Category</code> the library does not know is
@@ -371,6 +374,42 @@ nothing was written</pre></div>
 Every product sits in its own category's band, and <em>No category</em> holds only the products you
 left blank. One product can also be given or changed a category on its own: open its card, press
 <strong>Edit</strong> and choose from <strong>Category</strong>.</p></div>
+</div>
+
+<h3 id="currencies">Tickers and minimums by currency</h3>
+<p>A product is one product in every base currency, but it can be listed under a different ticker in
+each, and take a different minimum. The sleeve database's schema 11 holds both, per currency. A
+scenario shows the ticker for its own currency in the implementation table, the custom builders,
+the sheet, the deck and the saved proposal, and checks a position against that currency's minimum.
+A currency left blank uses the main <code>Ticker</code> and <code>MinimumInvestment</code>, so a
+product that is the same everywhere needs nothing new.</p>
+<div class="steps">
+<div class="step"><h3>Run the update first</h3>
+<p>The census should say <code>schema v11</code>. Then download the product file: it ends with
+<code>Ticker USD</code>, <code>Ticker GBP</code>, <code>Ticker CHF</code>, <code>Ticker EUR</code>,
+<code>MinimumInvestment USD</code> &hellip; <code>MinimumInvestment EUR</code>. A heading such as
+<code>GBP Ticker</code>, <code>Ticker (GBP)</code> or <code>Minimum GBP</code> is read the same way.</p></div>
+<div class="step"><h3>Fill in what differs</h3>
+<p>Give a currency's ticker or minimum only where it is not the main one. A minimum is in that
+currency's units: <code>250000</code> in <code>MinimumInvestment GBP</code> is a GBP 250,000 minimum.
+<code>0</code> means the product has no minimum in that currency even when the main one has one.</p></div>
+<div class="step"><h3>Import it and read the preview</h3>
+<pre class="out">products-ccy.csv: 73 row(s)
+  0 new, 2 changed, 0 back from withdrawn, 71 unchanged, 0 not in the file
+  gsam-core-municipal-sma  Minimum investment in GBP &mdash; &rarr; 3,000,000; Minimum investment in CHF &mdash; &rarr; 0
+  gs-access-treasury-0-1-etf  Ticker in GBP &mdash; &rarr; GBIL LN; Ticker in CHF &mdash; &rarr; GBIL SW; Ticker in EUR &mdash; &rarr; GBIL GY; Minimum investment in GBP &mdash; &rarr; 250,000
+imported: 0 added, 2 changed, 0 restored, 0 withdrawn - the catalogue is now version 2</pre>
+<p>A file is the whole truth for every product in it: a product file <em>without</em> the
+per-currency columns clears them, the way a file without <code>Category</code> clears the
+categories. The preview lists every value that would go, so read it before you apply.</p></div>
+<div class="step"><h3>If it refuses</h3>
+<pre class="out">REFUSED: products-bad.csv: row 2 (gsam-core-municipal-sma): Minimum investment in EUR '5m' is not a number: give an amount, such as 5000000.
+nothing was written</pre></div>
+<div class="step"><h3>One product at a time</h3>
+<p>Open its card on the Catalogue and press <strong>Edit</strong>. Under <strong>By base
+currency</strong> there is a ticker and a minimum for each currency; an empty box shows the main
+value it falls back to. The card's <em>By currency</em> line lists the ones a product has of its
+own.</p></div>
 </div>
 
 <h2 id="sleeves">Re-seeding the sleeve library</h2>
@@ -677,6 +716,7 @@ writes the card in force as a file.</p>
   <a href="#setup">One-time setup</a>
   <a href="#products">Products</a>
   <a class="ind" href="#category">Adding the categories</a>
+  <a class="ind" href="#currencies">Tickers and minimums by currency</a>
   <a href="#sleeves">Sleeves</a>
   <a href="#editions">Editions, rules, types</a>
   <a class="ind" href="#editions">How a rule reads</a>

@@ -38,7 +38,9 @@ between environments, and reviewing it as a table:
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --products-export out.csv
         The product catalogue as a product file (D165): one row per live
-        product, the columns the file has always had. Edit it and import it.
+        product, the columns the file has always had, then each product's
+        ticker and minimum in each base currency where it has its own -
+        Ticker USD ... MinimumInvestment EUR (D180). Edit it and import it.
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --products-import in.csv [--withdraw-missing] [--note TEXT]
         Load a product file (CSV or XLSX) through the same checks the console

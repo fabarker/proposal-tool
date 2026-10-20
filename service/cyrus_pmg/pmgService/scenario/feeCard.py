@@ -343,7 +343,7 @@ def normalise(card, current=None) -> dict:
         tierList.append({'key': str(t.get('id') or ''), 'min': low, 'max': high})
     tierList.sort(key=lambda t: t['min'])
     if tierList[0]['min'] != 0:
-        raise ValidationError('tiers', 'The lowest tier must start at $0, so every account '
+        raise ValidationError('tiers', 'The lowest tier must start at 0, so every account '
                                        'size has a tier.')
     if tierList[-1]['max'] is not None:
         raise ValidationError('tiers', 'The highest tier must have no upper edge: it is the one '

@@ -388,7 +388,7 @@ def test_a_catalogue_from_before_the_category_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 10
+    assert sleeveRepo.describe()['schemaVersion'] == 11
     after = products.entries()
     assert [p['category'] for p in after] == [''] * len(before)
     strip = lambda ps: [{k: v for k, v in p.items() if k != 'category'} for p in ps]
@@ -423,7 +423,7 @@ def test_the_endpoints_write_as_the_signed_in_admin_and_refuse_as_the_page_expec
     back = dashboardRouter.restoreRepositoryProduct({'productId': 'probe-etf'}, caller=alice)
     assert not back['product']['withdrawn']
     csvBody = dashboardRouter.exportProducts(caller=alice).body.decode('utf-8')
-    assert csvBody.splitlines()[0] == ','.join(products.FILE_COLUMNS)
+    assert csvBody.splitlines()[0] == ','.join(products.EXPORT_COLUMNS)
     assert len(csvBody.strip().splitlines()) == 75
     bad = dashboardRouter.previewProductImport({'name': 'x.txt', 'content': 'eA=='}, caller=alice)
     assert bad.status_code == 422 and json.loads(bad.body)['field'] == 'file'
@@ -435,7 +435,7 @@ def test_the_command_line_exports_imports_and_reads_a_history(store, tmp_path, c
     out = tmp_path / 'out.csv'
     assert sleeveTools.main(['--products-export', str(out)]) == 0
     rows = list(csv.reader(open(str(out), encoding='utf-8')))
-    assert rows[0] == products.FILE_COLUMNS and len(rows) == 74
+    assert rows[0] == products.EXPORT_COLUMNS and len(rows) == 74
     pid = rows[3][0]
     rows[3][rows[0].index('Liquidity')] = 'Weekly'
     with open(str(out), 'w', newline='', encoding='utf-8') as fh:

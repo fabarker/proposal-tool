@@ -701,7 +701,7 @@ def test_the_fee_ladder_is_the_cards_tiers_at_the_proposals_level():
     source, point = fees.splitLevel(level)
     labels = [doc.rows[r].cells[1].value for r in sorted(doc.rows)][1:]
     rates = [doc.rows[r].cells[2].value for r in sorted(doc.rows)][1:]
-    assert labels == sheetDoc.ladderLabels(tiers)
+    assert labels == sheetDoc.ladderLabels(tiers, model['currency'])
     assert labels[0].startswith('First $') and labels[-1].startswith('>$')
     assert rates == [pytest.approx(fees._rate('CASP', None, t['id'], source, point) / 100.0)
                      for t in tiers]

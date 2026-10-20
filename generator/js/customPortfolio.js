@@ -22,7 +22,10 @@
 var CP_BALANCE = 0.005;                 /* customPortfolio.BALANCE_TOLERANCE */
 
 function cpG(v) { return String(Number(Number(v).toPrecision(6))); }
-function cpMoney(v) { return '$' + Math.round(v).toLocaleString('en-US'); }
+/* an amount in the build's currency, ctx.currency (D181), as App.money
+   writes it - here, so the checks run without the page */
+var CP_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
+function cpMoney(v, currency) { return (CP_MARKS[currency] || '') + Math.round(v).toLocaleString('en-US'); }
 
 /* "12.5", "12.50" or "12.5%": a weight to 2dp from 0 to 100; '' is none yet
    (null); anything else NaN */
@@ -145,7 +148,7 @@ function cpCheck(products, ctx) {
   }
   var priv = cpWeightsByLine(products)[ctx.privateLine] || 0;
   if (priv > 0 && ctx.mandateSize != null && ctx.mandateSize < ctx.privateMinimum) {
-    problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum) + ' or more.');
+    problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum, ctx.currency) + ' or more.');
   }
   var lines = {};
   names.forEach(function (n) {
@@ -249,6 +252,7 @@ function checkCtx() {
   return { lines: l ? l.lines : [], anchor: anchor ? anchor.lines : {}, limits: limits(),
            countedIn: settings().countedIn || {}, allowed: allowed, liquidity: liquidity, label: label,
            mandateSize: App.mandateSize(), privateMinimum: settings().privateMinimum || 20000000,
+           currency: App.basis().currency,
            privateLine: settings().privateLine || '' };
 }
 
@@ -442,7 +446,7 @@ function cpBlankHtml() {
     + '<p class="cp-lim-more">Within the usual ranges it delivers; between them and the limits an admin approves it first; '
     + 'beyond, it cannot be delivered. Also: no product above ' + cpG(lim.concentration) + '% of the portfolio, at most '
     + cpG(lim.illiquid) + '% not daily-dealing, at most ' + lim.maxProducts + ' products, every position at its product’s '
-    + 'minimum, and private markets from a ' + cpMoney(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
+    + 'minimum, and private markets from a ' + App.money(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
     + 'the Strategic Volatility Premium count with the category they are funded from.</p></div>';
   return html;
 }

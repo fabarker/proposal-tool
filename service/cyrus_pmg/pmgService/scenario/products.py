@@ -9,7 +9,10 @@ named by SCENARIO_PRODUCTS_SOURCE, one row per product, one column per field -
     DistributionYield  MinimumInvestment
 
 - Category, ShareClass and the last two optional in the file and blank or None
-when absent (D63, D81, D178). The catalogue now lives in the repository's file beside the
+when absent (D63, D81, D178). A product is listed under a ticker of its own in
+each base currency, and may have a minimum of its own in each: the optional
+columns Ticker USD ... Ticker EUR and MinimumInvestment USD ... MinimumInvestment
+EUR, blank where the main Ticker or MinimumInvestment holds (D180). The catalogue now lives in the repository's file beside the
 sleeves (sleeveRepo, schema 7). That extract is read twice in its life: once,
 on the first open after the upgrade, to fill the catalogue (``seed``); and
 whenever an admin imports a file from the console or the command line, which
@@ -57,6 +60,7 @@ import os
 import threading
 
 from .csvText import unwrapRows
+from .saaKeys import CURRENCIES
 from .types import ValidationError
 
 _DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -111,6 +115,27 @@ KEYS = [k for k, _, _ in _FIELDS]
 #: file's own order
 FILE_COLUMNS = [c for _, c, _ in _FIELDS]
 LABELS = {k: label for k, _, label in _FIELDS}
+
+#: What may differ with a scenario's base currency (D180): the ticker a
+#: product is listed under there, and the minimum it takes there. Each is kept
+#: per currency only where it differs from the main one, so a blank is the
+#: main value - and a minimum of 0 is none, in a currency that has none.
+CURRENCY_FIELDS = ('ticker', 'minimumInvestment')
+_CURRENCY_COLUMN = {'ticker': 'Ticker', 'minimumInvestment': 'MinimumInvestment'}
+#: what a file may head a per-currency column with, once lower-cased and
+#: stripped of everything but letters and digits: Ticker GBP, GBP Ticker,
+#: Ticker (GBP), Minimum GBP ...
+_CURRENCY_WORDS = {'ticker': ('ticker',),
+                   'minimumInvestment': ('minimuminvestment', 'mininvestment', 'minimum')}
+#: the flat key the console and a refusal name one currency's field by:
+#: tickerGBP, minimumInvestmentGBP
+CURRENCY_KEYS = [f + c for f in CURRENCY_FIELDS for c in CURRENCIES]
+CURRENCY_COLUMNS = ['{} {}'.format(_CURRENCY_COLUMN[f], c) for f in CURRENCY_FIELDS
+                    for c in CURRENCIES]
+#: what an export writes: the file's columns, then the per-currency ones
+EXPORT_COLUMNS = FILE_COLUMNS + CURRENCY_COLUMNS
+LABELS.update({f + c: '{} in {}'.format(LABELS[f], c) for f in CURRENCY_FIELDS
+               for c in CURRENCIES})
 _COLUMN_OF = {k: c for k, c, _ in _FIELDS}
 #: the six words a product is described by: free values, which the console
 #: keeps consistent by offering the ones already in use
@@ -210,6 +235,11 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
         if c in head:
             index['Category'] = head.index(c)
             break
+    perCurrency = {}
+    for at, column in enumerate(head):
+        found = _currencyColumn(column)
+        if found:
+            perCurrency[found] = at
     byId, order, rowOf = {}, [], {}
     for n, row in enumerate(rows, start=2):
         fields = {}
@@ -219,6 +249,9 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
                 continue
             at = index[column]
             fields[key] = row[at] if at < len(row) else ''
+        fields['currencies'] = {}
+        for (field, currency), at in perCurrency.items():
+            fields['currencies'].setdefault(currency, {})[field] = row[at] if at < len(row) else ''
         pid = _text(fields['productId'], keepSpaces=True)
         if pid in byId:
             raise BadCatalogue('{}: row {}: the ProductId {} is already on row {} - each product '
@@ -232,6 +265,17 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
         rowOf[pid] = n
         order.append(pid)
     return byId, order
+
+
+def _currencyColumn(column):
+    """(field, currency) for a per-currency column's heading, else None."""
+    key = ''.join(ch for ch in str(column or '').lower() if ch.isalnum())
+    for currency in CURRENCIES:
+        c = currency.lower()
+        for field, words in _CURRENCY_WORDS.items():
+            if any(key in (w + c, c + w) for w in words):
+                return field, currency
+    return None
 
 
 def readFile(path: str, strict=True):
@@ -319,11 +363,7 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
         raise ValidationError('name', 'Give the product a name.')
     if strict and len(name) > NAME_MAX:
         raise ValidationError('name', 'Keep the name to {} characters.'.format(NAME_MAX))
-    ticker = _text(fields.get('ticker'))
-    if ticker in (NO_TICKER, '-', '–'):
-        ticker = ''
-    if strict and len(ticker) > TICKER_MAX:
-        raise ValidationError('ticker', 'Keep the ticker to {} characters.'.format(TICKER_MAX))
+    ticker = _ticker(fields.get('ticker'), 'ticker', strict)
     record = {'productId': pid, 'name': name, 'ticker': ticker}
     for key in WORDS:
         word = _text(fields.get(key))
@@ -369,7 +409,68 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
                                           strict=strict)
     record['minimumInvestment'] = _figure(fields.get('minimumInvestment'), 'minimumInvestment',
                                           strict=strict)
-    return {k: record[k] for k in KEYS}
+    out = {k: record[k] for k in KEYS}
+    out['currencies'] = _currencies(fields.get('currencies'), strict)
+    return out
+
+
+def _ticker(value, key, strict=True) -> str:
+    """A ticker as stored: '' for none, however a file wrote none."""
+    ticker = _text(value)
+    if ticker in (NO_TICKER, '-', '–'):
+        ticker = ''
+    if strict and len(ticker) > TICKER_MAX:
+        raise ValidationError(key, 'Keep the {} to {} characters.'.format(
+            LABELS[key][0].lower() + LABELS[key][1:], TICKER_MAX))
+    return ticker
+
+
+def _currencies(value, strict=True) -> dict:
+    """The per-currency ticker and minimum (D180) as stored:
+    {currency: {'ticker', 'minimumInvestment'}} for each currency that sets
+    either, in the vocabulary's order. A refusal names the one field."""
+    if value is None or value == '' or value == {}:
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise ValidationError('currencies', 'The values by currency could not be read.')
+    if not isinstance(value, dict):
+        raise ValidationError('currencies', 'The values by currency are a table, one per currency.')
+    for currency in value:
+        if currency not in CURRENCIES:
+            raise ValidationError('currencies', '{!r} is not a base currency: {}.'.format(
+                currency, ', '.join(CURRENCIES)))
+    out = {}
+    for currency in CURRENCIES:
+        given = value.get(currency) or {}
+        if not isinstance(given, dict):
+            raise ValidationError('currencies', 'The {} values are a ticker and a minimum.'.format(currency))
+        ticker = _ticker(given.get('ticker'), 'ticker' + currency, strict)
+        try:
+            minimum = _figure(given.get('minimumInvestment'), 'minimumInvestment', strict=strict)
+        except ValidationError as exc:
+            raise ValidationError('minimumInvestment' + currency, exc.message.replace(
+                LABELS['minimumInvestment'], LABELS['minimumInvestment' + currency], 1))
+        if ticker or minimum is not None:
+            out[currency] = {'ticker': ticker, 'minimumInvestment': minimum}
+    return out
+
+
+def inCurrency(product, currency):
+    """*product* as a scenario in *currency* reads it (D180): the ticker and
+    the minimum it has there, where it has its own, else its main ones. Any
+    other currency, or none, reads the main ones."""
+    if not product:
+        return product
+    out = dict(product)
+    own = (product.get('currencies') or {}).get(currency) or {}
+    if own.get('ticker'):
+        out['ticker'] = own['ticker']
+    if own.get('minimumInvestment') is not None:
+        out['minimumInvestment'] = own['minimumInvestment']
+    return out
 
 
 def _note(note) -> str:
@@ -407,6 +508,20 @@ def changes(before, after) -> list:
             continue
         out.append({'field': key, 'label': LABELS[key], 'before': show(key, was),
                     'after': show(key, now)})
+    for field in CURRENCY_FIELDS:
+        for currency in CURRENCIES:
+            was = ((before.get('currencies') or {}).get(currency) or {}).get(field)
+            now = ((after.get('currencies') or {}).get(currency) or {}).get(field)
+            if was in (None, '') and now in (None, ''):
+                continue
+            if was is not None and now is not None and field == 'minimumInvestment' \
+                    and abs(float(was) - float(now)) <= 1e-12:
+                continue
+            if was == now:
+                continue
+            key = field + currency
+            out.append({'field': key, 'label': LABELS[key], 'before': show(field, was),
+                        'after': show(field, now)})
     return out
 
 
@@ -432,7 +547,17 @@ def _record(row) -> dict:
         'productCost': float(row['productCost']), 'feeGroup': row['feeGroup'],
         'distributionYield': None if row['distributionYield'] is None else float(row['distributionYield']),
         'minimumInvestment': None if row['minimumInvestment'] is None else float(row['minimumInvestment']),
+        'currencies': _storedCurrencies(row),
     }
+
+
+def _storedCurrencies(row) -> dict:
+    text = row['currencies'] if 'currencies' in row.keys() else ''
+    return json.loads(text) if text else {}
+
+
+def _currencyText(record) -> str:
+    return json.dumps(record.get('currencies') or {}, sort_keys=True) if record.get('currencies') else ''
 
 
 def _served(record) -> dict:
@@ -441,6 +566,7 @@ def _served(record) -> dict:
     its sleeve's, so it is not served beside it."""
     out = dict(record)
     out['ticker'] = record['ticker'] or NO_TICKER
+    out['currencies'] = {c: dict(v) for c, v in (record.get('currencies') or {}).items()}
     out.pop('category', None)
     return out
 
@@ -705,13 +831,14 @@ def _insert(conn, record, position, user, stamp) -> None:
     conn.execute(
         'INSERT INTO products (productId, position, name, ticker, assetClass, category, style, '
         'vehicle, shareClass, source, liquidity, exposureCurrency, productCost, feeGroup, '
-        'distributionYield, minimumInvestment, revision, createdBy, createdAt, updatedBy, '
-        'updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)',
+        'distributionYield, minimumInvestment, currencies, revision, createdBy, createdAt, '
+        'updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, '
+        '?, ?)',
         (record['productId'], position, record['name'], record['ticker'], record['assetClass'],
          record.get('category') or '', record['style'], record['vehicle'], record['shareClass'] or '', record['source'],
          record['liquidity'], record['exposureCurrency'], record['productCost'],
          record['feeGroup'], record['distributionYield'], record['minimumInvestment'],
-         user, stamp, user, stamp))
+         _currencyText(record), user, stamp, user, stamp))
 
 
 def _update(conn, record, revision, user, stamp) -> None:
@@ -719,13 +846,13 @@ def _update(conn, record, revision, user, stamp) -> None:
         'UPDATE products SET name = ?, ticker = ?, assetClass = ?, category = ?, style = ?, '
         'vehicle = ?, shareClass = ?, source = ?, liquidity = ?, exposureCurrency = ?, '
         'productCost = ?, feeGroup = ?, distributionYield = ?, minimumInvestment = ?, '
-        'revision = ?, updatedBy = ?, updatedAt = ? WHERE productId = ?',
+        'currencies = ?, revision = ?, updatedBy = ?, updatedAt = ? WHERE productId = ?',
         (record['name'], record['ticker'], record['assetClass'], record.get('category') or '',
          record['style'],
          record['vehicle'], record['shareClass'] or '', record['source'], record['liquidity'],
          record['exposureCurrency'], record['productCost'], record['feeGroup'],
-         record['distributionYield'], record['minimumInvestment'], revision, user, stamp,
-         record['productId']))
+         record['distributionYield'], record['minimumInvestment'], _currencyText(record),
+         revision, user, stamp, record['productId']))
 
 
 def _history(conn, productId, revision, action, record, user, stamp, note='', source='') -> None:
@@ -1143,10 +1270,13 @@ def _cell(value):
 def exportRows() -> list:
     """The live catalogue as the file it can be loaded from again: the header
     and one row per product, in catalogue order."""
-    out = [list(FILE_COLUMNS)]
+    out = [list(EXPORT_COLUMNS)]
     for p in entries():
+        own = p.get('currencies') or {}
         out.append([_cell('' if key == 'ticker' and p[key] == NO_TICKER else p[key])
-                    for key in KEYS])
+                    for key in KEYS]
+                   + [_cell((own.get(c) or {}).get(f)) for f in CURRENCY_FIELDS
+                      for c in CURRENCIES])
     return out
 
 

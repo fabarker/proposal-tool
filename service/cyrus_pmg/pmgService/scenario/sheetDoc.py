@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
-from . import fees
+from . import fees, money
 from . import portfolio_weights as pw
 from .fontMetrics import METRICS as _METRICS
 
@@ -1403,22 +1403,22 @@ def buildFeeStructureDoc(model: dict, includeFees: bool = True) -> SheetDoc:
     return doc
 
 
-def _millionsWords(amount) -> str:
-    return '${:g} million'.format(amount / 1e6)
+def _millionsWords(amount, currency=None) -> str:
+    return '{}{:g} million'.format(money.mark(currency), amount / 1e6)
 
 
-def ladderLabels(tierList) -> list:
+def ladderLabels(tierList, currency=None) -> list:
     """The tiers as the reference words them: First $10 million, Next $15
-    million, ..., >$100 million."""
+    million, ..., >$100 million - in the proposal's currency (D181)."""
     out = []
     for position, tier in enumerate(tierList):
         low, high = tier['min'], tier['max']
         if high is None:
-            out.append('>' + _millionsWords(low))
+            out.append('>' + _millionsWords(low, currency))
         elif position == 0:
-            out.append('First ' + _millionsWords(high))
+            out.append('First ' + _millionsWords(high, currency))
         else:
-            out.append('Next ' + _millionsWords(high - low))
+            out.append('Next ' + _millionsWords(high - low, currency))
     return out
 
 
@@ -1436,11 +1436,11 @@ def buildFeeLadderDoc(model: dict, feeSchedule: str, feeLevel: str) -> SheetDoc:
     if fees.isCustom(feeLevel):
         rate = next((i.get('managementFee') for g in model.get('groups', []) for i in g['items']
                      if i.get('managementFee') is not None), None)
-        rows = [('Every dollar', rate)]
+        rows = [('Every {}'.format(money.UNITS.get(model.get('currency'), 'unit')), rate)]
     else:
         source, point = fees.splitLevel(feeLevel or fees.DEFAULT_LEVEL)
         tierList = fees.tiers()
-        rows = list(zip(ladderLabels(tierList),
+        rows = list(zip(ladderLabels(tierList, model.get('currency')),
                         [fees._rate(feeSchedule, None, t['id'], source, point) for t in tierList]))
     doc.cell(1, 1).value, doc.cell(1, 2).value = 'Asset Tier', '{} Fee'.format(feeSchedule)
     for index in (1, 2):
@@ -1599,7 +1599,7 @@ def buildImplementationDoc(model: dict, columns, widths,
             costAt(row, sum(itemCost(i) for i in group['items']))
             notional = doc.cell(row, at['Notional'])
             notional.value = sum(i['notional'] for i in group['items'])
-            notional.fmt = '$#,##0'
+            notional.fmt = money.numberFormat(model.get('currency'))
         for item in group['items']:
             row += 1
             # by column name, so the order of the columns is theirs alone
@@ -1627,7 +1627,7 @@ def buildImplementationDoc(model: dict, columns, widths,
             costAt(row, itemCost(item))
             notional = doc.cell(row, at['Notional'])
             notional.value = item['notional']
-            notional.fmt = '$#,##0'
+            notional.fmt = money.numberFormat(model.get('currency'))
             if item.get('belowMinimum'):
                 # the sheet says so too: a workbook read away from the page
                 # must not look clean when the page refused to export it (D78)
@@ -1652,7 +1652,7 @@ def buildImplementationDoc(model: dict, columns, widths,
     costAt(row, sum(itemCost(i) for g in model['groups'] for i in g['items']))
     notional = doc.cell(row, at['Notional'])
     notional.value = model['total']['notional']
-    notional.fmt = '$#,##0'
+    notional.fmt = money.numberFormat(model.get('currency'))
     totalRow = row
 
 
@@ -1727,7 +1727,8 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
     initialBold = ({'name': SANS, 'size': 12, 'bold': True} if deck
                    else {'name': SANS, 'size': 12, 'bold': True, 'color': INITIAL_HEAD})
     breachFont = {'name': SANS, 'size': 11, 'bold': True, 'color': BREACH_INK}
-    formats = {'pct': '0.00%', 'notional': '$#,##0', 'fee': '0.0', 'cost': '0.0'}
+    currency = model.get('currency')
+    formats = {'pct': '0.00%', 'notional': money.numberFormat(currency), 'fee': '0.0', 'cost': '0.0'}
     # the slide gives each measure a third column, the change from long-term
     # to initial, in place of the green (D152, style 3 of
     # proposals/initial-allocation-slide-styles.html)
@@ -1738,10 +1739,10 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
     if proposalId:
         preamble.append(['Proposal UID', proposalId])
     preamble.append(['Private Markets Commitment',
-                     '${:,.0f} ({:.2f}%), invested as capital is called'.format(
-                         committed['notional'], committed['weightPct'])])
+                     '{} ({:.2f}%), invested as capital is called'.format(
+                         money.amount(committed['notional'], currency), committed['weightPct'])])
     preamble.append(['Held Until Called', ' · '.join(
-        '{:.2f}% {} (${:,.0f})'.format(h['weightPct'], h['category'], h['notional'])
+        '{:.2f}% {} ({})'.format(h['weightPct'], h['category'], money.amount(h['notional'], currency))
         for h in committed['held'])])
     row = 0
     for label, value in preamble:
@@ -1792,7 +1793,7 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
             return
         d = now - target
         sign = '+' if d > 0 else '−'
-        magnitude = ('${:,.0f}'.format(abs(d)) if key == 'notional'
+        magnitude = (money.amount(abs(d), currency) if key == 'notional'
                      else '{:.2f}'.format(abs(d)) if key == 'pct' else '{:.1f}'.format(abs(d)))
         cell.value = sign + magnitude
         cell.font = {'name': SANS, 'size': 12, 'bold': True,
@@ -1915,7 +1916,7 @@ def buildInitialAllocationDoc(model: dict, includeFees: bool = True, proposalId=
 #: exactly this set and refuses anything else, so a new format cannot slip
 #: into the report without the deck learning to display it.
 NUMBER_FORMATS = ('General', '0.00%', '0.0%', '0%', '0.0', '0.00',
-                  '$#,##0', 'mmm-yy')
+                  'mmm-yy') + money.FORMATS
 
 #: English month abbreviations, spelt out so 'mmm-yy' cannot drift with the
 #: server's locale the way strftime('%b') would.
@@ -1967,10 +1968,11 @@ def renderNumber(value, fmt) -> str:
         return str(scaled.quantize(quantum, rounding=ROUND_HALF_UP)) + '%'
     if fmt in ('0.0', '0.00'):
         return _fixed(value, len(fmt) - 2)
-    if fmt == '$#,##0':
+    mark = money.formatMark(fmt)
+    if mark is not None:
         magnitude = Decimal(repr(abs(float(value)))).quantize(
             Decimal(1), rounding=ROUND_HALF_UP)
-        return ('-' if float(value) < 0 else '') + '$' + '{:,}'.format(int(magnitude))
+        return ('-' if float(value) < 0 else '') + mark + '{:,}'.format(int(magnitude))
     raise ValueError('renderNumber does not know the format {!r}'.format(fmt))
 
 

@@ -178,14 +178,14 @@ process.stdout.write(JSON.stringify({ untouched: untouched, bad: bad, after: aft
 ''' % (json.dumps(CARD), json.dumps(FEECTX)))
     assert got['untouched'] == {'problems': [], 'changes': {'lines': [], 'rates': 0, 'structure': 0}}
     messages = [p['message'] for p in got['bad']]
-    assert 'RDR · Passive · $10m and up · Management: Floor 0.30 is above Target 0.15.' in messages
-    assert any(m.startswith('CASP · Under $10m · Management Ceiling: 45.00 is not a rate') for m in messages)
+    assert 'RDR · Passive · 10m and up · Management: Floor 0.30 is above Target 0.15.' in messages
+    assert any(m.startswith('CASP · Under 10m · Management Ceiling: 45.00 is not a rate') for m in messages)
     after = got['after']
     assert after['problems'] == []
     lines = after['changes']['lines']
-    assert lines[0] == 'Tiers: Under $10m · $10m and up → Under $10m · $10m – $20m · $20m and up'
+    assert lines[0] == 'Tiers: Under 10m · 10m and up → Under 10m · 10m – 20m · 20m and up'
     assert 'Renamed fee group Passive to Index' in lines and 'Added fee group Thematic' in lines
-    assert 'RDR · Core Active · Under $10m · Management Target 0.40 → 0.45' in lines
+    assert 'RDR · Core Active · Under 10m · Management Target 0.40 → 0.45' in lines
     assert after['changes']['rates'] == 1 and after['changes']['structure'] == 3
     card = after['payload']['card']
     assert card['feeGroups'] == ['Index', 'Core Active', 'Thematic']
@@ -193,13 +193,13 @@ process.stdout.write(JSON.stringify({ untouched: untouched, bad: bad, after: aft
     assert card['rates']['RDR']['Thematic']['T1']['Management Target'] == 0.45, 'copied from Core Active as typed'
     assert [t['id'] for t in card['tiers']] == ['T1', 'T2', 'n2'] and card['tiers'][1]['max'] == 20000000
     assert after['payload']['renames'] == [['Passive', 'Index']]
-    assert after['tiers'] == ['Under $10m', '$10m – $20m', '$20m and up']
+    assert after['tiers'] == ['Under 10m', '10m – 20m', '20m and up']
     assert after['old'] == 0.2 and after['fresh']
-    assert after['merged'] == ['Under $10m', '$10m and up']
-    assert after['moved'] == ['Tiers: Under $10m · $10m and up → Under $12m · $12m and up']
+    assert after['merged'] == ['Under 10m', '10m and up']
+    assert after['moved'] == ['Tiers: Under 10m · 10m and up → Under 12m · 12m and up']
     assert 'There are two fee groups called index.' in after['twice']
     assert after['removed'] == ['g:Passive', 'g:Core Active']
-    assert got['labels'] == ['Under $10m', '$10m – $25m', '$100m and up', 'Every account size', '$17.5m – $25m']
+    assert got['labels'] == ['Under 10m', '10m – 25m', '100m and up', 'Every account size', '17.5m – 25m']
     assert got['nums'] == [0.45, 0.5, 'blank', 'nan', 'nan']
 
 
@@ -230,7 +230,7 @@ process.stdout.write(JSON.stringify(out));
     assert got['cells'] == [['0.35', '0.45', '0.55'], ['0.2', '0.3', '0.4']], 'headings, tier names and % taken off'
     assert got['whole'] == {'count': 6, 'changed': 3, 'whole': True}, 'the card shape fills the card wherever it lands'
     assert got['after']['T1'] == {'Management Floor': '0.35', 'Management Target': '0.45', 'Management Ceiling': '0.55'}
-    assert 'RDR · Core Active · Under $10m · Management Floor 0.30 → 0.35' in got['changes']
+    assert 'RDR · Core Active · Under 10m · Management Floor 0.30 → 0.35' in got['changes']
     assert got['part'] == {'count': 2, 'changed': 2, 'whole': False}
     assert got['passive'] == {'Management Floor': '0.1', 'Management Target': '0.25', 'Management Ceiling': '0.35'}, 'from the box on'
     assert got['big'] == 'The block is 4 rows by 2 columns; from that box the card has room for 1 by 3. Nothing was pasted.'
@@ -269,3 +269,34 @@ def test_an_open_form_or_card_is_not_lost_to_a_stray_move():
     # the new dialogs hear Escape before the console's own handler
     assert source.index("if (repo.view === 'catalogue' && prd.mode) {") < source.index('/* ---- events ----')
     assert 'e.stopImmediatePropagation()' in source
+
+
+def test_the_form_holds_a_ticker_and_a_minimum_per_currency_as_the_server_does():
+    """D180: the boxes by base currency are flat in the draft, a table by
+    currency on the wire with only what was typed, checked as the server
+    checks them and named in what moved by their currency."""
+    got = _node(_products() + '''
+var p = { productId: 'x', name: 'Probe', ticker: 'MAIN', assetClass: 'Equity', style: 'Active',
+          vehicle: 'SMA', shareClass: null, source: 'Internal', liquidity: 'Daily',
+          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
+          distributionYield: null, minimumInvestment: 5000000,
+          currencies: { GBP: { ticker: 'GBX1', minimumInvestment: 250000 } } };
+var d = prdDraftFrom(p), ctx = %s;
+var before = { payload: prdPayload(d), same: prdChanges(p, d), draft: [d.tickerGBP, d.minimumInvestmentGBP, d.tickerUSD] };
+d.tickerEUR = 'E1'; d.minimumInvestmentGBP = ''; d.minimumInvestmentCHF = '0';
+var moved = prdChanges(p, d), payload = prdPayload(d);
+var bad = prdProblems(Object.assign({}, d, { minimumInvestmentUSD: 'lots', tickerCHF: 'X'.repeat(30) }), ctx);
+process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload, bad: bad }));
+''' % json.dumps(dict(CTX, isNew=False)))
+    assert got['before']['draft'] == ['GBX1', '250000', '']
+    assert got['before']['same'] == []
+    assert got['before']['payload']['currencies'] == {'GBP': {'ticker': 'GBX1', 'minimumInvestment': 250000}}
+    assert [(c['key'], c['label'], c['before'], c['after']) for c in got['moved']] == [
+        ('tickerEUR', 'Ticker in EUR', '—', 'E1'),
+        ('minimumInvestmentGBP', 'Minimum investment in GBP', '250,000', '—'),
+        ('minimumInvestmentCHF', 'Minimum investment in CHF', '—', '0')]
+    assert got['payload']['currencies'] == {'GBP': {'ticker': 'GBX1'}, 'EUR': {'ticker': 'E1'},
+                                            'CHF': {'minimumInvestment': 0}}
+    assert sorted(got['bad']) == ['minimumInvestmentUSD', 'tickerCHF']
+    assert got['bad']['minimumInvestmentUSD'].startswith('Minimum investment in USD')
+    assert 'ticker in CHF' in got['bad']['tickerCHF']

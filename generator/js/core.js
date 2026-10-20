@@ -96,9 +96,17 @@ var variantPending = null;
 function esc(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
-function money(n) {
+/* An amount in a base currency, with its mark (D181): the scenario's own
+   unless one is named - a saved proposal's, say. None until the PWA has
+   chosen the currency, since the amount is in whichever they choose. */
+var CURRENCY_MARKS = { USD: '$', GBP: '\u00a3', EUR: '\u20ac', CHF: 'CHF\u00a0' };
+function moneyMark(currency) {
+  if (currency === undefined) currency = state.basisChosen ? state.basis.currency : null;
+  return CURRENCY_MARKS[currency] || '';
+}
+function money(n, currency) {
   return (n === null || n === undefined || isNaN(n))
-    ? '—' : '$' + Math.round(n).toLocaleString('en-US');
+    ? '—' : moneyMark(currency) + Math.round(n).toLocaleString('en-US');
 }
 function parseMoney(v) { return Math.round(Number(String(v).replace(/[^0-9.]/g, '')) || 0); }
 
@@ -812,6 +820,7 @@ async function confirmBasisChange() {
   state.columns.forEach(function (col) { startResolve(col); });
   settleRebuilding();                /* nothing survived: the spinner stops here */
   state.sleeveLib = {};              /* the library may differ under the new basis */
+  state.customLib = {};              /* and a product's ticker and minimum (D180) */
   revalidateSleeves();
   refresh();
 }
@@ -1164,8 +1173,11 @@ function ensureCustomLib(category, onReady) {
     return;
   }
   state.customLib[category] = { status: 'loading', products: [], mayBuild: false, error: null };
+  /* the currency goes too: a product's ticker and minimum are its own in
+     each (D180) */
   apiFetch('/scenario/products?category=' + encodeURIComponent(category)
-      + '&variant=' + encodeURIComponent(state.variant))
+      + '&variant=' + encodeURIComponent(state.variant)
+      + '&currency=' + encodeURIComponent(state.basis.currency))
     .then(function (body) {
       state.customLib[category] = { status: 'ready', products: body.products || [],
                                     mayBuild: !!body.mayBuild, error: null };
@@ -3275,7 +3287,7 @@ function renderDialog() {
     + '<button type="button" class="dlg-close" id="dlgclose" aria-label="Close">×</button>'
     + '<h2 id="dlgTitle"' + (first ? ' class="dlg-shout"' : '') + '>'
     + (first ? 'Start a proposal' : 'Edit mandate') + '</h2>'
-    + '<div class="field"><label for="mdtop">Top Account Size ($AUS)</label>'
+    + '<div class="field"><label for="mdtop">Top Account Size (AUS)</label>'
     + '<input type="text" id="mdtop" inputmode="numeric" autocomplete="off" value="'
     + (draft.top ? esc(money(draft.top)) : '') + '"' + invalid('mdtop')
     + (draft.saving ? ' disabled' : '') + '></div>'
@@ -3457,7 +3469,7 @@ async function lookupProposal(uid, seq) {
         + account.requests[0].requestId + '.');
     } else {
       announce('polite', 'Proposal found: ' + found.proposal.primaryPwa + ', '
-        + money(found.proposal.mandateSize) + '.');
+        + money(found.proposal.mandateSize, found.proposal.currency) + '.');
     }
   } catch (err) {
     if (!account || account.seq !== seq) return;
@@ -3504,7 +3516,7 @@ function accountStatusText() {
      proposal's one request is spent is the thing the user would check (D111). */
   var p = a.proposal;
   return 'Ready. Submitting records the request against ' + p.proposalId
-    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize) + ').';
+    + ' (' + p.primaryPwa + ', ' + money(p.mandateSize, p.currency) + ').';
 }
 
 /* The card opens on the UID alone and grows into the request only when the
@@ -3686,8 +3698,8 @@ function accountProposalMarkup(busy) {
   var terms = [
     ['Primary PWA', p.primaryPwa],
     ['Basis', p.currency + ' · ' + p.hedging],
-    ['Mandate size', money(p.mandateSize)],
-    ['Top account size', money(p.topAccountSize)],
+    ['Mandate size', money(p.mandateSize, p.currency)],
+    ['Top account size', money(p.topAccountSize, p.currency)],
     ['Implementation', p.variant],
     ['Risk · allocation', riskAllocationText(p)],
     ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
@@ -4652,6 +4664,7 @@ return {
   exporting: function () { return state.exporting; },
   announce: announce,
   money: money,
+  moneyMark: moneyMark,
   esc: esc,
   num: num,
   refresh: refresh,

@@ -2041,6 +2041,8 @@ columns, three optional:
 | `FeeGroup` | text | One of the rate card's fee groups: `Passive`, `Core Active`, `Specialist Active`, `Alternatives`, `Asset Allocation` — the set the delivered card defines (C.4). |
 | `DistributionYield` | number ≥ 0, optional | Percent. Blank or absent → none. |
 | `MinimumInvestment` | number ≥ 0, optional | **Currency units** (`5000000`). Blank or absent → *no minimum*. A position whose notional falls below it **blocks the export** (D70): get these right, or nothing exports. |
+| `Ticker USD` … `Ticker EUR` | text, optional | The ticker in a scenario of that base currency (D180). Blank → `Ticker`. Also read under `GBP Ticker`, `Ticker (GBP)`. |
+| `MinimumInvestment USD` … `MinimumInvestment EUR` | number ≥ 0, optional | The minimum in a scenario of that currency, in its units (D180). Blank → `MinimumInvestment`; `0` → none there. Also read under `Minimum GBP`, `GBP Minimum`. |
 
 Refused, whole and naming the row (`BadCatalogue`): a missing required column, a duplicate
 `ProductId`, an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/

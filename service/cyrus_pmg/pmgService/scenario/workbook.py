@@ -50,6 +50,7 @@ from openpyxl.drawing.text import (CharacterProperties, Font as DrawingFont,
 from openpyxl.formatting.rule import CellIsRule
 
 from . import customSleeves as _custom
+from . import products as _products
 from . import fees, fundingSplit, overlayRules, rules
 from . import portfolio_weights as pw
 from .payloads import roundWeightsLargestRemainder
@@ -254,7 +255,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         items = []
         if sleeve:
             for product in sleeve['products']:
-                item = dict(product)
+                # the ticker and minimum it has in the portfolio's currency (D180)
+                item = _products.inCurrency(product, currency)
                 item['exactPct'] = catWeight * float(product['weight'])
                 items.append(item)
                 lineItems.append(item)
@@ -424,7 +426,11 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         customRates = [(row, fees.customRate(customFees, feeSchedule, row))
                        for row in fees.customRows(feeSchedule)]
 
+    if tier:
+        tier['label'] = fees.tierLabel(tier['min'], tier['max'], currency)
     return {'groups': groups, 'total': total, 'complete': complete,
+            # the currency every amount in it is in (D181)
+            'currency': currency,
             # the custom sleeves (D170): whether the book adds to 100%, what it
             # adds to, and whether it departs from the strategic allocation -
             # which takes the strategic allocation out of the delivered files
