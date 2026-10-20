@@ -439,15 +439,15 @@ var PRD_FIELDS = [
   { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
   { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
 ];
-/* the ticker, minimum, exposure and issue currency a product has in each
-   base currency, and whether it is offered there (D180, D182, D184): flat
-   keys in the draft (tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP,
-   issueCurrencyGBP, offeredGBP),
+/* the ticker, minimum, exposure and issue currency and share class a
+   product has in each base currency, and whether it is offered there (D180,
+   D182, D184, D189): flat keys in the draft (tickerGBP, minimumInvestmentGBP,
+   exposureCurrencyGBP, issueCurrencyGBP, shareClassGBP, offeredGBP),
    the currencies table on the wire, blank where the main one holds */
 var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
 var PRD_CCY_FIELDS = [['ticker', 'Ticker', 'text'], ['minimumInvestment', 'Minimum investment', 'amount'],
                       ['exposureCurrency', 'Exposure currency', 'text'], ['issueCurrency', 'Issue currency', 'text'],
-                      ['offered', 'Offered', 'offered']];
+                      ['shareClass', 'Share class', 'share'], ['offered', 'Offered', 'offered']];
 PRD_CCY_FIELDS.forEach(function (b) {
   PRD_CURRENCIES.forEach(function (c) {
     PRD_FIELDS.push({ key: b[0] + c, label: b[1] + ' in ' + c, kind: b[2], optional: true, ccy: c, base: b[0] });
@@ -556,6 +556,10 @@ function prdProblems(d, ctx) {
       if (prdText(d[f.key]).length > PRD_MAX.ticker) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.ticker + ' characters.';
     } else if (f.base === 'exposureCurrency' || f.base === 'issueCurrency') {
       if (prdText(d[f.key]).length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.word + ' characters.';
+    } else if (f.base === 'shareClass') {
+      if (d[f.key] && PRD_SHARE_CLASSES.indexOf(d[f.key]) === -1) {
+        out[f.key] = 'The ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or the main one.';
+      }
     } else {
       var own = prdFigureProblem(d, f.key, f.label, false);
       if (own) out[f.key] = own;
@@ -6644,8 +6648,15 @@ function prdMainText(d, base) {
   }
   return prdText(d[base]) || 'None';
 }
-/* the ticker, minimum, exposure and issue currency by base currency, and
-   whether it is offered there (D180, D182, D184), one row a currency */
+/* a currency's share class choice is in the short forms the file also
+   takes, which the column has room for; the first option is the main one */
+var PRD_SHARE_SHORT = { Distributing: 'Dis', Accumulating: 'Acc' };
+function prdMainChoice(d) {
+  return 'Main (' + (PRD_SHARE_SHORT[d.shareClass] || d.shareClass || 'none') + ')';
+}
+/* the ticker, minimum, exposure and issue currency and share class by base
+   currency, and whether it is offered there (D180, D182, D184, D189), one
+   row a currency */
 function prdCurrencyHtml(d, probs) {
   function cell(c, base) {
     var f = PRD_FIELDS.filter(function (x) { return x.key === base + c; })[0];
@@ -6658,6 +6669,16 @@ function prdCurrencyHtml(d, probs) {
         + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
     }
     var off = d['offered' + c] === 'no';
+    if (base === 'shareClass') {
+      /* a choice, not a box: blank is the main one, named as the box's grey is */
+      return '<td><select id="prdF-' + f.key + '" data-prdf="' + f.key + '" aria-label="' + esc(f.label) + '"'
+        + (off ? ' disabled' : '') + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '') + '>'
+        + [['', prdMainChoice(d)]].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, PRD_SHARE_SHORT[s]]; })).map(function (o) {
+            return '<option value="' + esc(o[0]) + '"' + (o[0] ? ' title="' + esc(o[0]) + '"' : '')
+              + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+          }).join('') + '</select>'
+        + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
+    }
     return '<td><input id="prdF-' + f.key + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
       + (off ? ' disabled' : '')
       + ' value="' + esc(d[f.key]) + '" aria-label="' + esc(f.label) + '"'
@@ -6667,14 +6688,14 @@ function prdCurrencyHtml(d, probs) {
       + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
   }
   return '<div class="prd-ccy"><div class="prd-ccy-h"><b>By base currency</b>'
-    + '<small>A scenario in a currency shows its ticker, exposure and issue currency and checks its minimum here. A blank box uses the main value, shown in grey; a minimum of 0 is none, a ticker of - none. A product not offered in a currency stops the download of a proposal there that holds it.</small></div>'
+    + '<small>A scenario in a currency shows its ticker, exposure and issue currency and share class and checks its minimum here. A blank box uses the main value, shown in grey; a minimum of 0 is none, a ticker of - none. A product not offered in a currency stops the download of a proposal there that holds it.</small></div>'
     + '<table><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Offered</th><th scope="col">Ticker</th>'
     + '<th scope="col" title="Minimum investment">Minimum</th><th scope="col" title="Exposure currency">Exposure</th>'
-    + '<th scope="col" title="Issue currency">Issue</th></tr></thead><tbody>'
+    + '<th scope="col" title="Issue currency">Issue</th><th scope="col" title="Share class">Share class</th></tr></thead><tbody>'
     + PRD_CURRENCIES.map(function (c) {
         return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>' + cell(c, 'offered')
           + cell(c, 'ticker') + cell(c, 'minimumInvestment') + cell(c, 'exposureCurrency')
-          + cell(c, 'issueCurrency') + '</tr>';
+          + cell(c, 'issueCurrency') + cell(c, 'shareClass') + '</tr>';
       }).join('')
     + '</tbody></table></div>';
 }
@@ -6693,6 +6714,7 @@ function prdByCurrencyHtml(p) {
     else {
       if (o.exposureCurrency) bits.push('exposure ' + esc(o.exposureCurrency));
       if (o.issueCurrency) bits.push('issued in ' + esc(o.issueCurrency));
+      if (o.shareClass) bits.push(esc(o.shareClass.toLowerCase()));
     }
     return '<span><b>' + c + '</b> ' + bits.join(' · ') + '</span>';
   }).join('') + '</dd>';
@@ -6785,7 +6807,8 @@ function prdUpdate() {
       else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
     }
     var hint = document.getElementById('prdH-' + f.key); if (hint) hint.innerHTML = prdNewWordHint(f.key);
-    if (f.ccy && input && f.base !== 'offered') input.placeholder = prdMainText(prd.draft, f.base);
+    if (f.ccy && input && input.tagName === 'INPUT') input.placeholder = prdMainText(prd.draft, f.base);
+    if (f.ccy && input && f.base === 'shareClass') input.options[0].textContent = prdMainChoice(prd.draft);
   });
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);

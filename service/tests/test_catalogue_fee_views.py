@@ -359,3 +359,30 @@ process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: pay
     assert got['payload']['currencies'] == {'GBP': {'issueCurrency': 'GBP'}, 'EUR': {'issueCurrency': 'EUR'}}
     assert sorted(got['bad']) == ['issueCurrency', 'issueCurrencyCHF']
     assert 'issueCurrency' not in got['blank'], 'it is optional'
+
+
+def test_the_form_gives_each_currency_a_share_class_of_its_own():
+    """D189: a currency's share class is a choice, blank for the main one,
+    checked as the server checks it and sent in the currencies table."""
+    got = _node(_products() + '''
+var p = { productId: 'x', name: 'Probe', ticker: 'PRB', assetClass: 'Equity', style: 'Active',
+          vehicle: 'SMA', shareClass: 'Distributing', source: 'Internal', liquidity: 'Daily',
+          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
+          distributionYield: null, minimumInvestment: null,
+          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '', issueCurrency: '',
+                               shareClass: 'Accumulating', offered: true } } };
+var d = prdDraftFrom(p);
+var out = { gbp: d.shareClassGBP, eur: d.shareClassEUR, same: prdChanges(p, d) };
+d.shareClassEUR = 'Accumulating'; d.shareClassGBP = '';
+out.payload = prdPayload(d).currencies;
+out.moved = prdChanges(p, d).map(function (c) { return [c.key, c.label, c.before, c.after]; });
+d.shareClassCHF = 'Income';
+out.problems = prdProblems(d, { isNew: false, feeGroups: ['Passive'] });
+process.stdout.write(JSON.stringify(out));
+''')
+    assert got['gbp'] == 'Accumulating' and got['eur'] == '' and got['same'] == []
+    assert got['payload'] == {'EUR': {'shareClass': 'Accumulating'}}
+    assert got['moved'] == [['shareClassGBP', 'Share class in GBP', 'Accumulating', '—'],
+                            ['shareClassEUR', 'Share class in EUR', '—', 'Accumulating']]
+    assert got['problems'] == {'shareClassCHF': 'The share class in CHF must be Distributing or '
+                                                'Accumulating, or the main one.'}

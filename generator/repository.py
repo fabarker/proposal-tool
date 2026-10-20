@@ -1591,8 +1591,10 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .prd-ccy input[aria-invalid="true"]{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
 .prd-ccy select{width:100%;box-sizing:border-box;font:inherit;font-size:13.5px;padding:5px 4px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface);color:var(--ink)}
 .prd-ccy thead th:nth-child(2){width:64px}
-.prd-ccy thead th:nth-child(4){width:25%}
-.prd-ccy tr.off input{background:var(--surface-2);color:var(--ink-3);border-style:dashed}
+.prd-ccy thead th:nth-child(4){width:19%}
+.prd-ccy thead th:nth-child(5),.prd-ccy thead th:nth-child(6){width:50px}
+.prd-ccy thead th:nth-child(7){width:21%}
+.prd-ccy tr.off input,.prd-ccy tr.off td:last-child select{background:var(--surface-2);color:var(--ink-3);border-style:dashed}
 .prd-ccyl{display:grid;gap:2px}
 .prd-ccyl b{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;margin-right:4px}
 .prd-note{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;

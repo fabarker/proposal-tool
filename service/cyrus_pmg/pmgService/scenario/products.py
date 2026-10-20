@@ -124,19 +124,22 @@ KEYS = [k for k, _, _ in _FIELDS]
 FILE_COLUMNS = [c for _, c, _ in _FIELDS]
 LABELS = {k: label for k, _, label in _FIELDS}
 
-#: What may differ with a scenario's base currency (D180, D182, D184): the
-#: ticker a product is listed under there, the minimum it takes there, the
-#: currency it exposes a holder to there and the currency that listing is
-#: issued in - a share class hedged to each base currency is one product. Each is kept per currency only where it differs
-#: from the main one, so a blank is the main value - and a minimum of 0 is
-#: none, in a currency that has none.
-CURRENCY_FIELDS = ('ticker', 'minimumInvestment', 'exposureCurrency', 'issueCurrency')
+#: What may differ with a scenario's base currency (D180, D182, D184, D189):
+#: the ticker a product is listed under there, the minimum it takes there,
+#: the currency it exposes a holder to there, the currency that listing is
+#: issued in and its share class - a share class hedged to each base currency
+#: is one product. Each is kept per currency only where it differs from the
+#: main one, so a blank is the main value - and a minimum of 0 is none, in a
+#: currency that has none.
+CURRENCY_FIELDS = ('ticker', 'minimumInvestment', 'exposureCurrency', 'issueCurrency', 'shareClass')
+#: the ones of those that are words: a blank is the main one
+CURRENCY_WORDS = ('exposureCurrency', 'issueCurrency', 'shareClass')
 #: A product may also not be offered at all in a base currency (D182): a
 #: scenario there flags it in the implementation table, and the export
 #: refuses while a sleeve holds it.
 OFFERED = 'offered'
 #: the flat key the console and a refusal name one currency's field by:
-#: tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP, issueCurrencyGBP, offeredGBP
+#: tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP, issueCurrencyGBP, shareClassGBP, offeredGBP
 CURRENCY_KEYS = [f + c for f in CURRENCY_FIELDS + (OFFERED,) for c in CURRENCIES]
 #: A file gives a product's values in a currency as a row of their own
 #: (D182): the same ProductId on one row per base currency, named in the
@@ -313,8 +316,8 @@ def _fold(fileName, pid, rows, feeGroups, strict, categories):
     """One product from its rows in a file, one a base currency (D182): the
     All row is the main one, else the row of the first currency it is
     offered in; each other row gives the values it has in its currency,
-    which may differ only in the ticker, the minimum, the exposure currency
-    and the issue currency (D184). A row is the product whole, so a blank there is none: a
+    which may differ only in the ticker, the minimum, the exposure currency,
+    the issue currency (D184) and the share class (D189). A row is the product whole, so a blank there is none: a
     minimum of 0, a ticker of none. With no All row, a currency without a
     row of its own is not offered."""
     if len(rows) == 1 and rows[0][1] == ALL:
@@ -330,8 +333,8 @@ def _fold(fileName, pid, rows, feeGroups, strict, categories):
                 continue
             raise BadCatalogue(
                 '{}: row {} ({}): the {} row gives {} {} where row {} gives {} - only the ticker, the '
-                'minimum, the exposure currency and the issue currency may differ by base '
-                'currency.'.format(
+                'minimum, the exposure currency, the issue currency and the share class may '
+                'differ by base currency.'.format(
                     fileName, n, pid, currency, LABELS[key].lower(), show(key, record[key]),
                     mainRow, show(key, main[key])))
     currencies = {}
@@ -348,8 +351,8 @@ def _fold(fileName, pid, rows, feeGroups, strict, categories):
             own['ticker'] = record['ticker'] or NO_TICKER
         if not _same(record['minimumInvestment'], main['minimumInvestment']):
             own['minimumInvestment'] = record['minimumInvestment'] or 0.0
-        for word in ('exposureCurrency', 'issueCurrency'):
-            if record[word] != main[word]:
+        for word in CURRENCY_WORDS:
+            if not _same(record[word], main[word]):
                 own[word] = record[word]
         if own:
             currencies[currency] = own
@@ -473,12 +476,7 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
                                           'for: {}, or blank for none.'.format(
                                               category, ', '.join(categories)))
     record['category'] = category
-    shareClass = _text(fields.get('shareClass'))
-    shareClass = SHARE_CLASS_SHORT.get(shareClass, shareClass)
-    if shareClass and shareClass not in SHARE_CLASSES:
-        raise ValidationError('shareClass', 'The share class {!r} is not one of {}, or blank for '
-                                            'none.'.format(shareClass, ', '.join(SHARE_CLASSES)))
-    record['shareClass'] = shareClass or None
+    record['shareClass'] = _shareClass(_text(fields.get('shareClass')), 'shareClass') or None
     # the currency it is issued in (D184): optional, blank for not given
     issue = _text(fields.get('issueCurrency'))
     if strict and len(issue) > WORD_MAX:
@@ -525,7 +523,7 @@ def _canonical(record):
             record['ticker'] = '' if first['ticker'] == NO_TICKER else first['ticker']
         if first['minimumInvestment'] is not None:
             record['minimumInvestment'] = first['minimumInvestment']
-        for word in ('exposureCurrency', 'issueCurrency'):
+        for word in CURRENCY_WORDS:
             if first[word]:
                 record[word] = first[word]
     # a value a currency has of its own that is the main one is no value of
@@ -537,12 +535,26 @@ def _canonical(record):
         if entry['minimumInvestment'] is not None and _same(
                 entry['minimumInvestment'], record['minimumInvestment'] or 0.0):
             entry['minimumInvestment'] = None
-        for word in ('exposureCurrency', 'issueCurrency'):
-            if entry[word] == record[word]:
+        for word in CURRENCY_WORDS:
+            if entry[word] == (record[word] or ''):
                 entry[word] = ''
         if not entry['ticker'] and entry['minimumInvestment'] is None \
-                and not entry['exposureCurrency'] and not entry['issueCurrency'] and entry[OFFERED]:
+                and not any(entry[word] for word in CURRENCY_WORDS) and entry[OFFERED]:
             del own[currency]
+
+
+def _shareClass(text, key) -> str:
+    """A share class as stored: one of the two words, its short form read as
+    the word, or '' for none - in a currency, a blank is the main one."""
+    shareClass = SHARE_CLASS_SHORT.get(text, text)
+    if shareClass and shareClass not in SHARE_CLASSES:
+        if key == 'shareClass':
+            raise ValidationError(key, 'The share class {!r} is not one of {}, or blank for '
+                                       'none.'.format(shareClass, ', '.join(SHARE_CLASSES)))
+        raise ValidationError(key, 'The {} {!r} is not one of {}, or blank for the main '
+                                   'one.'.format(LABELS[key][0].lower() + LABELS[key][1:],
+                                                 shareClass, ', '.join(SHARE_CLASSES)))
+    return shareClass
 
 
 def _ticker(value, key, strict=True) -> str:
@@ -557,8 +569,8 @@ def _ticker(value, key, strict=True) -> str:
 
 
 def _currencies(value, strict=True) -> dict:
-    """The values by currency (D180, D182, D184) as stored: {currency: {'ticker',
-    'minimumInvestment', 'exposureCurrency', 'issueCurrency', 'offered'}} for each currency
+    """The values by currency (D180, D182, D184, D189) as stored: {currency: {'ticker',
+    'minimumInvestment', 'exposureCurrency', 'issueCurrency', 'shareClass', 'offered'}} for each currency
     that sets one or is not offered, in the vocabulary's order. A ticker of
     a dash is none there, whatever the main one; a currency not offered
     keeps no values. A refusal names the one field."""
@@ -580,15 +592,15 @@ def _currencies(value, strict=True) -> dict:
         given = value.get(currency) or {}
         if not isinstance(given, dict):
             raise ValidationError('currencies', 'The {} values are a ticker, a minimum, an exposure '
-                                                'currency, an issue currency and whether it is '
-                                                'offered.'.format(currency))
+                                                'currency, an issue currency, a share class and '
+                                                'whether it is offered.'.format(currency))
         offered = given.get(OFFERED, True)
         if not isinstance(offered, bool):
             raise ValidationError(OFFERED + currency, 'Whether it is offered in {} is yes or '
                                                       'no.'.format(currency))
         if not offered:
-            out[currency] = {'ticker': '', 'minimumInvestment': None, 'exposureCurrency': '',
-                             'issueCurrency': '', OFFERED: False}
+            out[currency] = dict({'ticker': '', 'minimumInvestment': None, OFFERED: False},
+                                 **{word: '' for word in CURRENCY_WORDS})
             continue
         none = _text(given.get('ticker')) in (NO_TICKER, '-', '–')
         ticker = NO_TICKER if none else _ticker(given.get('ticker'), 'ticker' + currency, strict)
@@ -598,9 +610,11 @@ def _currencies(value, strict=True) -> dict:
             raise ValidationError('minimumInvestment' + currency, exc.message.replace(
                 LABELS['minimumInvestment'], LABELS['minimumInvestment' + currency], 1))
         words = {}
-        for word in ('exposureCurrency', 'issueCurrency'):
+        for word in CURRENCY_WORDS:
             words[word] = _text(given.get(word))
-            if strict and len(words[word]) > WORD_MAX:
+            if word == 'shareClass':
+                words[word] = _shareClass(words[word], word + currency)
+            elif strict and len(words[word]) > WORD_MAX:
                 raise ValidationError(word + currency, 'Keep the {} to {} characters.'.format(
                     LABELS[word + currency][0].lower() + LABELS[word + currency][1:], WORD_MAX))
         if ticker or minimum is not None or any(words.values()):
@@ -610,9 +624,9 @@ def _currencies(value, strict=True) -> dict:
 
 
 def inCurrency(product, currency):
-    """*product* as a scenario in *currency* reads it (D180, D182, D184): the
-    ticker, the minimum, the exposure currency and the issue currency it has
-    there, where it has its own, else its main ones; and whether it is offered there at all. Any
+    """*product* as a scenario in *currency* reads it (D180, D182, D184, D189):
+    the ticker, the minimum, the exposure currency, the issue currency and
+    the share class it has there, where it has its own, else its main ones; and whether it is offered there at all. Any
     other currency, or none, reads the main ones, offered."""
     if not product:
         return product
@@ -622,7 +636,7 @@ def inCurrency(product, currency):
         out['ticker'] = own['ticker']
     if own.get('minimumInvestment') is not None:
         out['minimumInvestment'] = own['minimumInvestment']
-    for word in ('exposureCurrency', 'issueCurrency'):
+    for word in CURRENCY_WORDS:
         if own.get(word):
             out[word] = own[word]
     out[OFFERED] = own.get(OFFERED, True)

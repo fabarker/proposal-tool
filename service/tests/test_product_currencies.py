@@ -49,11 +49,12 @@ def _held():
     raise AssertionError('no sleeve holds a product')
 
 
-def _own(ticker='', minimumInvestment=None, exposureCurrency='', offered=True, issueCurrency=''):
+def _own(ticker='', minimumInvestment=None, exposureCurrency='', offered=True, issueCurrency='',
+         shareClass=''):
     """One currency's values as the catalogue stores them."""
     return {'ticker': ticker, 'minimumInvestment': minimumInvestment,
             'exposureCurrency': exposureCurrency, 'issueCurrency': issueCurrency,
-            'offered': offered}
+            'shareClass': shareClass, 'offered': offered}
 
 
 NOT_OFFERED = _own(offered=False)
@@ -146,7 +147,8 @@ def test_a_product_with_no_all_row_is_offered_only_where_it_has_rows(store, tmp_
 
 @pytest.mark.parametrize('extra, words', [
     ({'All': {}, 'GBP': {'ProductCost': '0.9'}}, 'only the ticker, the minimum, the exposure '
-                                                  'currency and the issue currency may differ'),
+                                                  'currency, the issue currency and the share '
+                                                  'class may differ'),
     ({'All': {}, 'GBP': {'Name': 'Something else (GBP)'}}, 'the GBP row gives name Something else'),
     ({'GBP': {}, 'gbp': {}}, 'already has a row for GBP'),
     ({'All': {}, '': {}}, 'already has a row for All'),
@@ -434,3 +436,66 @@ def test_a_product_not_offered_in_the_currency_is_flagged_and_stops_the_export(s
     error = json.loads(refused.body.decode('utf-8'))
     assert error['field'] == 'offered'
     assert error['error'].startswith('Not offered in CHF: ') and category in error['error']
+
+
+def test_the_share_class_is_kept_by_base_currency_and_round_trips(store, tmp_path):
+    """D189: a currency's row may give the product a share class of its own,
+    as it may an issue currency; a blank there is the main one."""
+    rows, listed = _listed()
+    pid = listed[0]
+    rows = _rowsFor(pid, {'All': {'ShareClass': 'Distributing'},
+                          'GBP': {'Ticker': 'GB1', 'ShareClass': 'Acc'},
+                          'EUR': {'Ticker': 'EU1', 'ShareClass': ''}})
+    product = products.readFile(_file(tmp_path, rows))[0][pid]
+    assert product['shareClass'] == 'Distributing'
+    assert product['currencies'] == {'GBP': _own('GB1', shareClass='Accumulating'), 'EUR': _own('EU1')}
+    assert products.inCurrency(product, 'GBP')['shareClass'] == 'Accumulating'
+    assert products.inCurrency(product, 'EUR')['shareClass'] == 'Distributing'
+    assert products.inCurrency(product, 'CHF')['shareClass'] == 'Distributing'
+    # put in force, it is named in the preview and exported back the same
+    content = _upload(_file(tmp_path, rows, 'p.csv'))
+    preview = products.importPreview('p.csv', content)
+    words = next(c['changeWords'] for c in preview['changed'] if c['productId'] == pid)
+    assert 'Share class in GBP — → Accumulating' in words
+    products.importFile('p.csv', content, user='alice', base=preview['revision'])
+    back = products.exportRows()
+    mine = {r[back[0].index('BaseCurrency')]: r[back[0].index('ShareClass')]
+            for r in back[1:] if r[0] == pid}
+    assert mine == {'All': 'Distributing', 'GBP': 'Accumulating', 'EUR': 'Distributing'}
+    again = products.importPreview('again.csv', _upload(_file(tmp_path, back, 'again.csv')))
+    assert not again['changed'] and not again['added']
+
+
+def test_a_share_class_only_one_currency_has_is_its_own_there(store, tmp_path):
+    rows, listed = _listed()
+    pid = listed[0]
+    rows = _rowsFor(pid, {'All': {'ShareClass': ''}, 'GBP': {'ShareClass': 'Accumulating'}})
+    product = products.readFile(_file(tmp_path, rows))[0][pid]
+    assert product['shareClass'] is None
+    assert product['currencies']['GBP']['shareClass'] == 'Accumulating'
+    assert products.inCurrency(product, 'USD')['shareClass'] is None
+
+
+def test_a_wrong_share_class_in_a_currency_is_refused_naming_that_box(store, tmp_path):
+    pid, _, _ = _held()
+    with pytest.raises(ValidationError) as caught:
+        _set(pid, {'GBP': {'shareClass': 'Income'}})
+    assert caught.value.field == 'shareClassGBP'
+    assert caught.value.message == ("The share class in GBP 'Income' is not one of Distributing, "
+                                    "Accumulating, or blank for the main one.")
+    rows = _rowsFor(_listed()[1][0], {'All': {}, 'GBP': {'ShareClass': 'Income'}})
+    with pytest.raises(products.BadCatalogue) as refused:
+        products.readFile(_file(tmp_path, rows))
+    assert "share class 'Income' is not one of" in str(refused.value)
+
+
+def test_the_model_an_export_is_built_from_reads_the_share_class_of_its_currency(store):
+    port = FixturesScenarioPort()
+    pid, category, name = _held()
+    _set(pid, {'GBP': {'shareClass': 'Accumulating'}}, shareClass='Distributing')
+
+    def line(currency):
+        model = _modelIn(port, currency, category, name)[2]
+        return next(i for g in model['groups'] for i in g['items'] if i['productId'] == pid)
+    assert line('GBP')['shareClass'] == 'Accumulating'
+    assert line('USD')['shareClass'] == 'Distributing'
