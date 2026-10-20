@@ -1,21 +1,13 @@
 {
   "from": "361a3d8",
-  "to": "ef54637",
+  "to": "acbd8df",
   "write": [
-    "package/bakedAdapter.py",
     "package/customPortfolio.py",
     "package/customSleeves.py",
-    "package/feeCard.py",
     "package/fees.py",
-    "package/fixturesAdapter.py",
-    "package/money.py",
-    "package/otherCharges.py",
-    "package/pptWriter.py",
     "package/products.py",
+    "package/proposalRegister.py",
     "package/repositoryFeed.py",
-    "package/rules.py",
-    "package/scenarioPort.py",
-    "package/sheetDoc.py",
     "package/sleeveRepo.py",
     "package/sleeveTools.py",
     "package/workbook.py",
@@ -24,5 +16,5 @@
   ],
   "delete": [],
   "routerBlock": true,
-  "bytes": 102264
+  "bytes": 103520
 }
