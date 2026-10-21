@@ -2040,13 +2040,13 @@ columns, three optional:
 | `IssueCurrency` | text, optional | The currency the product is issued in (D184); the header may also be `Issue Currency`, `IssueCcy` or `IssuerCurrency`. Blank or absent → none given. Stored and shown in the console's catalogue; not printed on a proposal. |
 | `ProductCost` | number ≥ 0 | **Percent** (`0.25` = 0.25%). Not a fraction. |
 | `FeeGroup` | text | One of the rate card's fee groups: `Passive`, `Core Active`, `Specialist Active`, `Alternatives`, `Asset Allocation` — the set the delivered card defines (C.4). |
-| `DistributionYield` | number ≥ 0, optional | Percent. Blank or absent → none. |
+| `DistributionYield` | number ≥ 0, optional | Percent. Blank or absent → none. May differ by base currency (D190): an accumulating class's row takes `0`. |
 | `MinimumInvestment` | number ≥ 0, optional | **US dollars**, whatever the row's base currency (`5000000`, D183). Blank or absent → *no minimum*. A position whose notional falls below it **blocks the export** (D70): get these right, or nothing exports. |
-| `BaseCurrency` | `USD`, `GBP`, `CHF`, `EUR` or `All`, optional | The base currency the row is for (D182). A product may have one row per base currency under the same `ProductId`; `All` or blank is the main row. The rows may differ only in `Ticker`, `MinimumInvestment`, `ExposureCurrency`, `IssueCurrency` (D184) and `ShareClass` (D189), and each is the product whole in its currency (a blank minimum is none there; a blank share class is the main row's). With no `All` row, the product is offered only in the currencies it has rows for; a scenario elsewhere flags it and the export refuses. A name may end in its row's currency, `(GBP)`. |
+| `BaseCurrency` | `USD`, `GBP`, `CHF`, `EUR` or `All`, optional | The base currency the row is for (D182). A product may have one row per base currency under the same `ProductId`; `All` or blank is the main row. The rows may differ only in `Ticker`, `MinimumInvestment`, `ExposureCurrency`, `IssueCurrency` (D184), `ShareClass` (D189) and `DistributionYield` (D190), and each is the product whole in its currency (a blank minimum or yield is none there; a blank share class is the main row's). With no `All` row, the product is offered only in the currencies it has rows for; a scenario elsewhere flags it and the export refuses. A name may end in its row's currency, `(GBP)`. |
 
 Refused, whole and naming the row (`BadCatalogue`): a missing required column, a duplicate
 `ProductId` (without `BaseCurrency`; with it, two rows for one currency, or rows that differ in
-anything but the ticker, the minimum, the exposure currency, the issue currency and the share class), an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/
+anything but the ticker, the minimum, the exposure currency, the issue currency, the share class and the distribution yield), an empty `Name`, a non-numeric or negative `ProductCost`/`DistributionYield`/
 `MinimumInvestment`, a `FeeGroup` outside the set. An import - not the first load - also needs the
 six words (`AssetClass` to `ExposureCurrency`), refuses a `Category` the library does not know, and
 refuses a cost of 10 or more or a yield of 50 or more as a figure in the wrong unit. A product a live sleeve holds cannot be withdrawn by an import.

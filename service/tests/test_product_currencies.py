@@ -50,11 +50,11 @@ def _held():
 
 
 def _own(ticker='', minimumInvestment=None, exposureCurrency='', offered=True, issueCurrency='',
-         shareClass=''):
+         shareClass='', distributionYield=None):
     """One currency's values as the catalogue stores them."""
     return {'ticker': ticker, 'minimumInvestment': minimumInvestment,
             'exposureCurrency': exposureCurrency, 'issueCurrency': issueCurrency,
-            'shareClass': shareClass, 'offered': offered}
+            'shareClass': shareClass, 'distributionYield': distributionYield, 'offered': offered}
 
 
 NOT_OFFERED = _own(offered=False)
@@ -147,8 +147,8 @@ def test_a_product_with_no_all_row_is_offered_only_where_it_has_rows(store, tmp_
 
 @pytest.mark.parametrize('extra, words', [
     ({'All': {}, 'GBP': {'ProductCost': '0.9'}}, 'only the ticker, the minimum, the exposure '
-                                                  'currency, the issue currency and the share '
-                                                  'class may differ'),
+                                                  'currency, the issue currency, the share class '
+                                                  'and the distribution yield may differ'),
     ({'All': {}, 'GBP': {'Name': 'Something else (GBP)'}}, 'the GBP row gives name Something else'),
     ({'GBP': {}, 'gbp': {}}, 'already has a row for GBP'),
     ({'All': {}, '': {}}, 'already has a row for All'),
@@ -499,3 +499,61 @@ def test_the_model_an_export_is_built_from_reads_the_share_class_of_its_currency
         return next(i for g in model['groups'] for i in g['items'] if i['productId'] == pid)
     assert line('GBP')['shareClass'] == 'Accumulating'
     assert line('USD')['shareClass'] == 'Distributing'
+
+
+def test_the_distribution_yield_is_kept_by_base_currency_and_round_trips(store, tmp_path):
+    """D190: a currency's row may give the product a distribution yield of its
+    own - an accumulating class there pays none - and, like the minimum, a
+    row is the product whole: a 0 there is none, whatever the main one."""
+    rows, listed = _listed()
+    pid = listed[0]
+    rows = _rowsFor(pid, {'All': {'ShareClass': 'Distributing', 'DistributionYield': '3.2'},
+                          'GBP': {'Ticker': 'GB1', 'ShareClass': 'Accumulating', 'DistributionYield': '0'},
+                          'EUR': {'Ticker': 'EU1', 'DistributionYield': '2.9%'},
+                          'CHF': {'Ticker': 'CH1', 'DistributionYield': '3.2'}})
+    product = products.readFile(_file(tmp_path, rows))[0][pid]
+    assert product['distributionYield'] == 3.2
+    assert product['currencies'] == {
+        'GBP': _own('GB1', shareClass='Accumulating', distributionYield=0.0),
+        'EUR': _own('EU1', distributionYield=2.9),
+        'CHF': _own('CH1')}
+    assert products.inCurrency(product, 'GBP')['distributionYield'] == 0.0
+    assert products.inCurrency(product, 'EUR')['distributionYield'] == 2.9
+    assert products.inCurrency(product, 'CHF')['distributionYield'] == 3.2
+    assert products.inCurrency(product, 'USD')['distributionYield'] == 3.2
+    content = _upload(_file(tmp_path, rows, 'p.csv'))
+    preview = products.importPreview('p.csv', content)
+    words = next(c['changeWords'] for c in preview['changed'] if c['productId'] == pid)
+    assert 'Distribution yield in GBP — → 0' in words and 'Distribution yield in EUR — → 2.9' in words
+    products.importFile('p.csv', content, user='alice', base=preview['revision'])
+    back = products.exportRows()
+    mine = {r[back[0].index('BaseCurrency')]: r[back[0].index('DistributionYield')]
+            for r in back[1:] if r[0] == pid}
+    assert mine == {'All': '3.2', 'GBP': '0', 'EUR': '2.9', 'CHF': '3.2'}
+    again = products.importPreview('again.csv', _upload(_file(tmp_path, back, 'again.csv')))
+    assert not again['changed'] and not again['added']
+
+
+def test_a_yield_only_a_currency_without_an_all_row_has_is_the_main_one(store, tmp_path):
+    rows, listed = _listed()
+    pid = listed[0]
+    rows = _rowsFor(pid, {'USD': {'DistributionYield': '0'}, 'GBP': {'DistributionYield': '4.1'}})
+    product = products.readFile(_file(tmp_path, rows))[0][pid]
+    # no All row: the main values are the first currency's, and a 0 there is none
+    assert product['distributionYield'] == 0.0
+    assert product['currencies']['GBP']['distributionYield'] == 4.1
+    assert products.inCurrency(product, 'CHF')['offered'] is False
+
+
+def test_a_wrong_yield_in_a_currency_is_refused_naming_that_box(store):
+    pid, _, _ = _held()
+    for bad, words in (('x', "Distribution yield in GBP 'x' is not a number"),
+                       ('-1', 'Distribution yield in GBP cannot be negative'),
+                       ('75', 'Distribution yield in GBP of 75% looks wrong')):
+        with pytest.raises(ValidationError) as caught:
+            _set(pid, {'GBP': {'distributionYield': bad}})
+        assert caught.value.field == 'distributionYieldGBP' and words in caught.value.message
+    saved = _set(pid, {'GBP': {'distributionYield': '0'}}, distributionYield='3.5')
+    assert saved['currencies']['GBP']['distributionYield'] == 0.0
+    history = products.changes({**saved, 'currencies': {}}, saved)
+    assert [c['label'] for c in history] == ['Distribution yield in GBP']

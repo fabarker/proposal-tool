@@ -386,3 +386,31 @@ process.stdout.write(JSON.stringify(out));
                             ['shareClassEUR', 'Share class in EUR', '—', 'Accumulating']]
     assert got['problems'] == {'shareClassCHF': 'The share class in CHF must be Distributing or '
                                                 'Accumulating, or the main one.'}
+
+
+def test_the_form_gives_each_currency_a_yield_of_its_own():
+    """D190: a currency's distribution yield is a percentage box, blank for the
+    main one and 0 for none, checked as the main yield is."""
+    got = _node(_products() + '''
+var p = { productId: 'x', name: 'Probe', ticker: 'PRB', assetClass: 'Equity', style: 'Active',
+          vehicle: 'SMA', shareClass: 'Distributing', source: 'Internal', liquidity: 'Daily',
+          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
+          distributionYield: 3.2, minimumInvestment: null,
+          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '', issueCurrency: '',
+                               shareClass: 'Accumulating', distributionYield: 0, offered: true } } };
+var d = prdDraftFrom(p);
+var out = { gbp: d.distributionYieldGBP, eur: d.distributionYieldEUR, same: prdChanges(p, d) };
+d.distributionYieldEUR = '2.9%';
+out.payload = prdPayload(d).currencies;
+out.moved = prdChanges(p, d).map(function (c) { return [c.key, c.before, c.after]; });
+d.distributionYieldCHF = '75'; d.distributionYieldUSD = 'lots';
+out.problems = prdProblems(d, { isNew: false, feeGroups: ['Passive'] });
+process.stdout.write(JSON.stringify(out));
+''')
+    assert got['gbp'] == '0' and got['eur'] == '' and got['same'] == []
+    assert got['payload'] == {'GBP': {'shareClass': 'Accumulating', 'distributionYield': 0},
+                              'EUR': {'distributionYield': 2.9}}
+    assert got['moved'] == [['distributionYieldEUR', '—', '2.9']]
+    assert 'looks wrong' in got['problems']['distributionYieldCHF']
+    assert got['problems']['distributionYieldUSD'] == ('Distribution yield in USD "lots" is not a number: '
+                                                       'give a percentage, such as 3.2.')

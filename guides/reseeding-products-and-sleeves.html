@@ -379,8 +379,9 @@ left blank. One product can also be given or changed a category on its own: open
 
 <h3 id="currencies">Products by base currency</h3>
 <p>A product is one product in every base currency, but each currency can list it under its own
-ticker, give it its own minimum, its own exposure currency, its own issue currency and its own
-share class: a share class hedged to each base currency, say. It can also be left out of a currency altogether. A scenario shows the ticker,
+ticker, give it its own minimum, its own exposure currency, its own issue currency, its own
+share class and its own distribution yield: a share class hedged to each base currency, say, or an
+accumulating class that pays out nothing. It can also be left out of a currency altogether. A scenario shows the ticker,
 exposure and share class for its own currency in the implementation table, the custom builders, the sheet, the deck
 and the saved proposal, and checks a position against that currency's minimum.</p>
 <div class="steps">
@@ -389,8 +390,8 @@ and the saved proposal, and checks a position against that currency's minimum.</
 <code>ProductId</code>, and say which currency each row is for in <code>BaseCurrency</code>. A name
 may end in its row's currency, <code>GS Green Bond Fund (GBP)</code>: the catalogue shows it as
 <code>GS Green Bond Fund</code>. Only <code>Ticker</code>, <code>MinimumInvestment</code>,
-<code>ExposureCurrency</code>, <code>IssueCurrency</code> and <code>ShareClass</code> may differ between a product's
-rows; everything else must be the same on every row.</p>
+<code>ExposureCurrency</code>, <code>IssueCurrency</code>, <code>ShareClass</code> and <code>DistributionYield</code>
+may differ between a product's rows; everything else must be the same on every row.</p>
 <pre class="out">ProductId,Name,Ticker,&hellip;,ExposureCurrency,&hellip;,MinimumInvestment,BaseCurrency
 gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF,GBIL,&hellip;,USD,&hellip;,,All
 gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF (GBP),GBIL LN,&hellip;,GBP,&hellip;,250000,GBP
@@ -408,7 +409,9 @@ download stays blocked until the sleeve is changed.</p></div>
 <div class="step"><h3>A row is the product whole</h3>
 <p>A currency's row says everything about the product in that currency, so a blank there means
 none: a blank minimum on the GBP row is no minimum in GBP, even when the <code>All</code> row has
-one. A minimum is in US dollars on every row: <code>250000</code> on the GBP row is a $250,000
+one, and the same goes for the distribution yield. So an accumulating class in GBP takes
+<code>0</code> (or a blank) in <code>DistributionYield</code> on its GBP row, while the
+<code>All</code> row keeps the distributing class's yield. A minimum is in US dollars on every row: <code>250000</code> on the GBP row is a $250,000
 minimum for a GBP proposal, which is in dollars too. The share class is the exception: a blank
 <code>ShareClass</code> on a currency's row is the main row's share class, so a product that is
 <code>Distributing</code> on its <code>All</code> row and <code>Accumulating</code> in GBP has
@@ -424,15 +427,15 @@ product given only an <code>All</code> row loses the values it had by currency, 
 without <code>Category</code> clears the categories. The preview lists every value that would go,
 so read it before you apply.</p></div>
 <div class="step"><h3>If it refuses</h3>
-<pre class="out">REFUSED: products-bad.csv: row 50 (gs-green-bond-fund): the GBP row gives product cost 0.55 where row 49 gives 0.48 - only the ticker, the minimum, the exposure currency, the issue currency and the share class may differ by base currency.
+<pre class="out">REFUSED: products-bad.csv: row 50 (gs-green-bond-fund): the GBP row gives product cost 0.55 where row 49 gives 0.48 - only the ticker, the minimum, the exposure currency, the issue currency, the share class and the distribution yield may differ by base currency.
 nothing was written</pre>
 <p>A product given two rows for the same currency, or two rows in a file with no
 <code>BaseCurrency</code> column, is refused the same way.</p></div>
 <div class="step"><h3>One product at a time</h3>
 <p>Open its card on the Catalogue and press <strong>Edit</strong>. Under <strong>By base
 currency</strong> each currency has <em>Offered</em> yes or no, and a ticker, a minimum, an
-exposure currency, an issue currency and a share class; an empty box shows the main value it falls
-back to, as does the share class's <em>Main</em> choice, and a ticker of <code>-</code> is none there. The card's <em>By currency</em> line lists what a product has of
+exposure currency and an issue currency; under them each currency has a share class and a
+distribution yield. An empty box shows the main value it falls back to, as does the share class's <em>Main</em> choice, a yield of <code>0</code> is none, and a ticker of <code>-</code> is none there. The card's <em>By currency</em> line lists what a product has of
 its own. The download writes each product back as the rows above.</p></div>
 </div>
 

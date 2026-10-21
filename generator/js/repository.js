@@ -439,15 +439,17 @@ var PRD_FIELDS = [
   { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
   { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
 ];
-/* the ticker, minimum, exposure and issue currency and share class a
-   product has in each base currency, and whether it is offered there (D180,
-   D182, D184, D189): flat keys in the draft (tickerGBP, minimumInvestmentGBP,
-   exposureCurrencyGBP, issueCurrencyGBP, shareClassGBP, offeredGBP),
+/* the ticker, minimum, exposure and issue currency, share class and
+   distribution yield a product has in each base currency, and whether it is
+   offered there (D180, D182, D184, D189, D190): flat keys in the draft
+   (tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP, issueCurrencyGBP,
+   shareClassGBP, distributionYieldGBP, offeredGBP),
    the currencies table on the wire, blank where the main one holds */
 var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
 var PRD_CCY_FIELDS = [['ticker', 'Ticker', 'text'], ['minimumInvestment', 'Minimum investment', 'amount'],
                       ['exposureCurrency', 'Exposure currency', 'text'], ['issueCurrency', 'Issue currency', 'text'],
-                      ['shareClass', 'Share class', 'share'], ['offered', 'Offered', 'offered']];
+                      ['shareClass', 'Share class', 'share'], ['distributionYield', 'Distribution yield', 'pct'],
+                      ['offered', 'Offered', 'offered']];
 PRD_CCY_FIELDS.forEach(function (b) {
   PRD_CURRENCIES.forEach(function (c) {
     PRD_FIELDS.push({ key: b[0] + c, label: b[1] + ' in ' + c, kind: b[2], optional: true, ccy: c, base: b[0] });
@@ -498,11 +500,13 @@ function prdExample(key) {
     : key === 'distributionYield' ? 'a percentage, such as 3.2' : 'an amount, such as 5000000';
 }
 function prdFigureProblem(d, key, label, required) {
-  var v = prdNumber(d[key], key.indexOf('minimumInvestment') !== 0);
-  if (v === null) return required ? label + ' is needed: ' + prdExample(key) + '.' : '';
-  if (isNaN(v)) return label + ' ' + JSON.stringify(String(d[key]).trim()) + ' is not a number: give ' + prdExample(key) + '.';
+  /* a currency's own figure is checked as the main one is (D190) */
+  var base = key.replace(/(USD|GBP|CHF|EUR)$/, '');
+  var v = prdNumber(d[key], base !== 'minimumInvestment');
+  if (v === null) return required ? label + ' is needed: ' + prdExample(base) + '.' : '';
+  if (isNaN(v)) return label + ' ' + JSON.stringify(String(d[key]).trim()) + ' is not a number: give ' + prdExample(base) + '.';
   if (v < 0) return label + ' cannot be negative.';
-  if (PRD_MAX[key] && v >= PRD_MAX[key]) {
+  if (PRD_MAX[base] && v >= PRD_MAX[base]) {
     return label + ' of ' + v + '% looks wrong: it is a percentage, so 0.25 means 0.25%.';
   }
   return '';
@@ -578,7 +582,7 @@ function prdPayload(d) {
     }
     if (f.ccy && f.base === 'offered') return;
     if (f.ccy) {
-      var v = f.kind === 'amount' ? prdNumber(d[f.key], false) : prdText(d[f.key]);
+      var v = f.kind === 'amount' ? prdNumber(d[f.key], false) : f.kind === 'pct' ? prdNumber(d[f.key], true) : prdText(d[f.key]);
       if (v === '' || v === null) return;
       (out.currencies[f.ccy] = out.currencies[f.ccy] || {})[f.base] = v;
       return;
@@ -6642,17 +6646,15 @@ function prdFieldHtml(f, d, probs) {
 /* what a blank currency box reads instead: the main value itself, greyed -
    the table's note says a blank box is the main one */
 function prdMainText(d, base) {
-  if (base === 'minimumInvestment') {
-    var m = prdNumber(d.minimumInvestment, false);
-    return m === null || isNaN(m) ? 'None' : prdShow('minimumInvestment', m);
+  if (base === 'minimumInvestment' || base === 'distributionYield') {
+    var m = prdNumber(d[base], base === 'distributionYield');
+    return m === null || isNaN(m) ? 'None' : prdShow(base, m) + (base === 'distributionYield' ? '%' : '');
   }
   return prdText(d[base]) || 'None';
 }
-/* a currency's share class choice is in the short forms the file also
-   takes, which the column has room for; the first option is the main one */
-var PRD_SHARE_SHORT = { Distributing: 'Dis', Accumulating: 'Acc' };
+/* a currency's share class choice: the first option is the main one */
 function prdMainChoice(d) {
-  return 'Main (' + (PRD_SHARE_SHORT[d.shareClass] || d.shareClass || 'none') + ')';
+  return 'Main (' + (d.shareClass || 'none') + ')';
 }
 /* the ticker, minimum, exposure and issue currency and share class by base
    currency, and whether it is offered there (D180, D182, D184, D189), one
@@ -6673,9 +6675,8 @@ function prdCurrencyHtml(d, probs) {
       /* a choice, not a box: blank is the main one, named as the box's grey is */
       return '<td><select id="prdF-' + f.key + '" data-prdf="' + f.key + '" aria-label="' + esc(f.label) + '"'
         + (off ? ' disabled' : '') + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '') + '>'
-        + [['', prdMainChoice(d)]].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, PRD_SHARE_SHORT[s]]; })).map(function (o) {
-            return '<option value="' + esc(o[0]) + '"' + (o[0] ? ' title="' + esc(o[0]) + '"' : '')
-              + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        + [['', prdMainChoice(d)]].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, s]; })).map(function (o) {
+            return '<option value="' + esc(o[0]) + '"' + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
           }).join('') + '</select>'
         + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
     }
@@ -6683,19 +6684,28 @@ function prdCurrencyHtml(d, probs) {
       + (off ? ' disabled' : '')
       + ' value="' + esc(d[f.key]) + '" aria-label="' + esc(f.label) + '"'
       + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '')
-      + (base === 'minimumInvestment' ? ' inputmode="decimal"' : '')
+      + (base === 'minimumInvestment' || base === 'distributionYield' ? ' inputmode="decimal"' : '')
       + ' placeholder="' + esc(prdMainText(d, base)) + '">'
       + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
   }
   return '<div class="prd-ccy"><div class="prd-ccy-h"><b>By base currency</b>'
-    + '<small>A scenario in a currency shows its ticker, exposure and issue currency and share class and checks its minimum here. A blank box uses the main value, shown in grey; a minimum of 0 is none, a ticker of - none. A product not offered in a currency stops the download of a proposal there that holds it.</small></div>'
-    + '<table><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Offered</th><th scope="col">Ticker</th>'
+    + '<small>A scenario in a currency shows its ticker, exposure and issue currency and share class and checks its minimum here. A blank box uses the main value, shown in grey; a minimum or a yield of 0 is none, a ticker of - none. A product not offered in a currency stops the download of a proposal there that holds it.</small></div>'
+    + '<table class="prd-ccy-list"><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Offered</th><th scope="col">Ticker</th>'
     + '<th scope="col" title="Minimum investment">Minimum</th><th scope="col" title="Exposure currency">Exposure</th>'
-    + '<th scope="col" title="Issue currency">Issue</th><th scope="col" title="Share class">Share class</th></tr></thead><tbody>'
+    + '<th scope="col" title="Issue currency">Issue</th></tr></thead><tbody>'
     + PRD_CURRENCIES.map(function (c) {
         return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>' + cell(c, 'offered')
           + cell(c, 'ticker') + cell(c, 'minimumInvestment') + cell(c, 'exposureCurrency')
-          + cell(c, 'issueCurrency') + cell(c, 'shareClass') + '</tr>';
+          + cell(c, 'issueCurrency') + '</tr>';
+      }).join('')
+    + '</tbody></table>'
+    /* the share class and what it pays out, side by side (D189, D190): an
+       accumulating class pays nothing, so its yield is 0 */
+    + '<table class="prd-ccy-cls"><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Share class</th>'
+    + '<th scope="col" title="Distribution yield, a percentage">Distribution yield %</th></tr></thead><tbody>'
+    + PRD_CURRENCIES.map(function (c) {
+        return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>'
+          + cell(c, 'shareClass') + cell(c, 'distributionYield') + '</tr>';
       }).join('')
     + '</tbody></table></div>';
 }
@@ -6715,6 +6725,9 @@ function prdByCurrencyHtml(p) {
       if (o.exposureCurrency) bits.push('exposure ' + esc(o.exposureCurrency));
       if (o.issueCurrency) bits.push('issued in ' + esc(o.issueCurrency));
       if (o.shareClass) bits.push(esc(o.shareClass.toLowerCase()));
+      if (typeof o.distributionYield === 'number') {
+        bits.push(o.distributionYield ? 'yield ' + esc(prdShow('distributionYield', o.distributionYield)) + '%' : 'no distribution');
+      }
     }
     return '<span><b>' + c + '</b> ' + bits.join(' · ') + '</span>';
   }).join('') + '</dd>';
