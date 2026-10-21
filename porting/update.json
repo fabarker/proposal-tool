@@ -1,6 +1,6 @@
 {
-  "from": "ca869e5",
-  "to": "88246bb",
+  "from": "88246bb",
+  "to": "9d52e89",
   "write": [
     "package/products.py",
     "page/static/css/proposalTool.css",
@@ -8,5 +8,5 @@
   ],
   "delete": [],
   "routerBlock": false,
-  "bytes": 47678
+  "bytes": 47816
 }
