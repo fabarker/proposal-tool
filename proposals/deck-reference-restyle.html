@@ -236,7 +236,7 @@ from, how each slide would look built from a proposal, where every highlighted f
 tool does not hold yet, and the order to build it in.</p>
 <div class="meta"><span><b>Reference</b> pages 17, 18, 22, 23, 25 and 26</span>
 <span><b>Sample</b> USD hedged · Moderate-Aggressive Full against Moderate and Aggressive · $25m · CASP at PMG Target · tilt and premium on</span>
-<span><b>Status</b> a placeholder template here; Cyrus keeps its own; the deck not yet built</span></div>
+<span><b>Status</b> a placeholder template here; Poros keeps its own; the deck not yet built</span></div>
 </header>
 
 <nav class="toc" aria-label="Contents"><p>Contents</p>
@@ -386,19 +386,19 @@ apply; keep the template’s fonts rather than adding a second copy; lock the de
 <li><b>In PowerPoint.</b> Move or restyle the placeholders in Slide Master view, change the theme’s colours or
 fonts, restyle a sample. Keep the layout’s name, the placeholders’ indices and the samples’ names, and every deck
 follows.</li>
-<li><b>With the house template.</b> Cyrus uses its own as it is; the deck maps to it as described below, and the check
+<li><b>With the house template.</b> Poros uses its own as it is; the deck maps to it as described below, and the check
 says how before anything is installed.</li>
 <li><b>From scratch.</b> The builder made the first version. Once the file is edited by hand, the file is the source;
 running the builder again starts it over.</li>
 </ul>
 
-<h3>Where it lives, and Cyrus</h3>
-<div class="note warn"><p><b>The file in this project is a placeholder.</b> Cyrus already has the house template, with
-the right title and subtitle formats in GS Sans, and keeps it. The placeholder never goes there: the Cyrus update carries
+<h3>Where it lives, and Poros</h3>
+<div class="note warn"><p><b>The file in this project is a placeholder.</b> Poros already has the house template, with
+the right title and subtitle formats in GS Sans, and keeps it. The placeholder never goes there: the Poros update carries
 the service package, the page and the router block, and <code>deckTemplate/</code> is outside all three.</p></div>
 <p>The deck reads whichever template the setting <code>SCENARIO_DECK_TEMPLATE</code> names: here the placeholder, on
-Cyrus the house template. There is no copy in the package, so an update can never carry a template over or replace the
-one Cyrus has.</p>
+Poros the house template. There is no copy in the package, so an update can never carry a template over or replace the
+one Poros has.</p>
 
 <h3>How the deck uses whichever template it is given</h3>
 <ol>
@@ -406,7 +406,7 @@ one Cyrus has.</p>
 take their face, size, colour and place from the template, so the house template’s formats are what a delivered deck
 shows.</li>
 <li><b>What the deck draws names the template’s fonts and colours, not its own.</b> Tables, boxes and rules ask for the
-theme’s body or heading font and for a theme colour, never for a face by name or a colour by value; on Cyrus they come
+theme’s body or heading font and for a theme colour, never for a face by name or a colour by value; on Poros they come
 out in the house template’s.</li>
 <li><b>The canvas and the content box are the template’s.</b> Slide size and margins are read from the file, and every
 table is fitted into the box it finds.</li>
@@ -415,7 +415,7 @@ copies of the faces; given a template, it does neither.</li>
 <li><b>Roles are found, not assumed.</b> The deck finds the layout named in a second setting (<i>Content</i> unless told
 otherwise), and its placeholders by what they are: title, subtitle, body, footer, page number. A role the template does not
 have is left out rather than drawn by hand.</li>
-<li><b>A check before the update goes in.</b> A read-only script, run on Cyrus against the house template, lists what the
+<li><b>A check before the update goes in.</b> A read-only script, run on Poros against the house template, lists what the
 deck will use: the layout, each role and the placeholder it maps to, the canvas, the theme’s fonts and colours, and
 anything missing. Nothing is installed until it reads clean.</li>
 </ol>
@@ -505,7 +505,7 @@ the person chose.</p>
 <li><b>The scenario’s own groups.</b> Each group is a category of the scenario’s allocation table, with its
 assets beneath, in the table’s order and under the table’s names, so the slide reads as the screen does. They are the
 rows the workbook and today’s deck already take from the table: no grouping is kept in the package, and a category the
-Cyrus universe adds appears with no change. The sample below has six groups.</li>
+Poros universe adds appears with no change. The sample below has six groups.</li>
 <li><b>One line, not two:</b> a group whose only line carries the group’s own name prints once.</li>
 <li><b>No overlays.</b> The scenario’s table shows the strategic portfolios as they are, so Hybrid Fixed Income
 and Asset Allocation Strategies, which the implementation adds, are not groups here: they show on the Implemented
@@ -656,8 +656,8 @@ per proposal, with the other charges, so every charge the deck quotes comes from
 
 <h2 id="inputs">What I need from you</h2>
 <ul>
-<li><b>What the house template calls its layout</b> and its placeholders, or the check’s output from Cyrus, so the
-mapping is right the first time. The template itself stays on Cyrus.</li>
+<li><b>What the house template calls its layout</b> and its placeholders, or the check’s output from Poros, so the
+mapping is right the first time. The template itself stays on Poros.</li>
 <li><b>Where the tool’s slides go</b>, when it is decided: marked in the house template, or as slide numbers I can turn
 into marks on this project’s placeholder to test against.</li>
 <li><b>An approved logo file</b> for the footer, or a decision to leave the footer without one.</li>
@@ -666,13 +666,13 @@ into marks on this project’s placeholder to test against.</li>
 </ul>
 
 <h2 id="build">How I would build it</h2>
-<p>In five steps, each tested and recorded on its own, so any step can go to Cyrus by itself or together with the rest.</p>
+<p>In five steps, each tested and recorded on its own, so any step can go to Poros by itself or together with the rest.</p>
 <div class="tblwrap"><table class="doc"><thead><tr><th>Step</th><th>What</th><th>Where</th></tr></thead><tbody>
-<tr><td><b>1</b> The template <span class="pill agreed">Built</span></td><td>The deck opens the template <code>SCENARIO_DECK_TEMPLATE</code> names and adds every slide from its layout (<code>SCENARIO_DECK_LAYOUT</code>, <i>Content</i> unless told otherwise); the roles are found by what each placeholder is; tables and charts fit the content box in the theme’s body face; each slide has a short subtitle and its long line opens the footnotes; marker slides, fields, areas and conditions; the template’s sections and custom properties kept; the read-only check. Without the setting the deck is drawn as before, so nothing changes on Cyrus until the house template is named and checked. The cover is made only at a <code>tool: cover</code> marker. No template in the package (D174).</td><td><code>houseTemplate.py</code> (new; the check runs as <code>python -m …scenario.houseTemplate</code>, so it reaches Cyrus with the package), <code>pptWriter.py</code>; <code>deckTemplate/</code> stays here</td></tr>
+<tr><td><b>1</b> The template <span class="pill agreed">Built</span></td><td>The deck opens the template <code>SCENARIO_DECK_TEMPLATE</code> names and adds every slide from its layout (<code>SCENARIO_DECK_LAYOUT</code>, <i>Content</i> unless told otherwise); the roles are found by what each placeholder is; tables and charts fit the content box in the theme’s body face; each slide has a short subtitle and its long line opens the footnotes; marker slides, fields, areas and conditions; the template’s sections and custom properties kept; the read-only check. Without the setting the deck is drawn as before, so nothing changes on Poros until the house template is named and checked. The cover is made only at a <code>tool: cover</code> marker. No template in the package (D174).</td><td><code>houseTemplate.py</code> (new; the check runs as <code>python -m …scenario.houseTemplate</code>, so it reaches Poros with the package), <code>pptWriter.py</code>; <code>deckTemplate/</code> stays here</td></tr>
 <tr><td><b>2</b> The strategic slides <span class="pill agreed">Built</span></td><td>Comparing Allocations and Risk and Return Analysis as new deck tables, a slide each, their groups the scenario table’s; the proposed column tinted in the template’s theme colour; stress dates where known (two still to come); the combined slide not made in a template; either table can be an area on the template’s own slide (D175)</td><td><code>sheetDoc.py</code> (<code>buildComparingDoc</code>, <code>buildReturnRiskDoc</code>), <code>pptWriter.planDeck</code></td></tr>
 <tr><td><b>3</b> The fee slides from what the tool holds <span class="pill agreed">Built</span></td><td>Portfolio Fee Structure in place of the initial allocation slide; the Implemented Model without its fee columns; Fee Summary and Advisory Fee Schedule as the template’s own slides, filled by fields and the tier table drawn into its area, for CASP only (<code>tool: when casp</code>) (D176)</td><td><code>sheetDoc.py</code> (<code>buildFeeStructureDoc</code>, <code>buildFeeLadderDoc</code>), <code>pptWriter.py</code>, <code>houseTemplate.py</code></td></tr>
 <tr><td><b>4</b> The other charges <span class="pill agreed">Built</span></td><td>Other Charges in the pricing row and its dialog; saved with the scenario, checked, carried into the export and recorded in the register (schema 9); the Fees Summary slide’s fields (D177)</td><td><code>otherCharges.py</code> (new), <code>scenarioStore.py</code>, the router, <code>proposalRegister.py</code>, the page (<code>core.js</code>, <code>implementation.js</code>)</td></tr>
-<tr><td><b>5</b> Records</td><td>The deviation rows, the porting notes, and one update for Cyrus</td><td><code>DEVIATIONS.md</code>, <code>PORTING.md</code>, <code>porting/update.py</code></td></tr>
+<tr><td><b>5</b> Records</td><td>The deviation rows, the porting notes, and one update for Poros</td><td><code>DEVIATIONS.md</code>, <code>PORTING.md</code>, <code>porting/update.py</code></td></tr>
 </tbody></table></div>
 <p>The deck is planned before it is drawn, so the tests read every slide’s heading, figures and notes without opening
 PowerPoint, as they do today; each new slide gets its own. The template gets its own too: every slide the tool does not

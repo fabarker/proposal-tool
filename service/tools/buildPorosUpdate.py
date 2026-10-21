@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Build porting/update.py: one file that brings Cyrus from the commit it has to HEAD.
+"""Build porting/update.py: one file that brings Poros from the commit it has to HEAD.
 
-Cyrus reads GitHub only in a browser and its terminal takes no paste, so an
+Poros reads GitHub only in a browser and its terminal takes no paste, so an
 update reaches it as one file copied from GitHub's page and run there. This
-builds that file from cyrusUpdateTemplate.py: the package and page files that
-changed since the commit Cyrus has (porting/cyrus.json), as a zip written in
+builds that file from porosUpdateTemplate.py: the package and page files that
+changed since the commit Poros has (porting/poros.json), as a zip written in
 base 64, with the content hash of every file as it stands at that commit, so
-the file refuses to overwrite anything edited on Cyrus, the new endpoint block
+the file refuses to overwrite anything edited on Poros, the new endpoint block
 when it changed, and the imports it may need. Nothing in it names a commit, a
-date or this repository, and it writes nothing on Cyrus but the code.
+date or this repository, and it writes nothing on Poros but the code.
 
-What it ships is the copy cyrusClean.py makes: comments without the references
+What it ships is the copy porosClean.py makes: comments without the references
 to what only this repository has, the code untouched. It will not build while
-the copy of HEAD carries a trace; the copy Cyrus already holds is rebuilt with
-the cleaner as it stood at the commit Cyrus is at.
+the copy of HEAD carries a trace; the copy Poros already holds is rebuilt with
+the cleaner as it stood at the commit Poros is at.
 
-    python3 service/tools/buildCyrusUpdate.py            build porting/update.py
-    python3 service/tools/buildCyrusUpdate.py --confirm  Cyrus has it: record that
+    python3 service/tools/buildPorosUpdate.py            build porting/update.py
+    python3 service/tools/buildPorosUpdate.py --confirm  Poros has it: record that
 
-The shipped paths must be committed first. --confirm moves porting/cyrus.json
+The shipped paths must be committed first. --confirm moves porting/poros.json
 to the commit the last build was made from (porting/update.json), so the next
 update starts there. Python 3.8 or later; standard library only.
 """
@@ -38,12 +38,12 @@ import types
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-STATE = os.path.join(ROOT, 'porting', 'cyrus.json')
+STATE = os.path.join(ROOT, 'porting', 'poros.json')
 OUT = os.path.join(ROOT, 'porting', 'update.py')
 BUILT = os.path.join(ROOT, 'porting', 'update.json')
 AREAS = {'package': 'service/cyrus_pmg/pmgService/scenario/', 'page': 'proposalTool/'}
 ROUTER = 'service/cyrus_pmg/pmgService/dashboardRouter.py'
-CLEANER = 'service/tools/cyrusClean.py'
+CLEANER = 'service/tools/porosClean.py'
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 #: GitHub's file view and a clipboard both carry a few hundred KB comfortably
 WARN_BYTES = 450000
@@ -87,20 +87,31 @@ def _whole(lines):
     return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()[:16]
 
 
+def _cleanerPath(commit):
+    """Where the cleaner was at *commit*: its path now, or the one git sees
+    it renamed from since."""
+    for line in _git('diff', '--name-status', '-M', commit, 'HEAD').split('\n'):
+        parts = line.split('\t')
+        if len(parts) == 3 and parts[0].startswith('R') and parts[2] == CLEANER:
+            return parts[1]
+    return CLEANER
+
+
 def _cleaner(commit):
-    """cyrusClean as it stood at *commit*, or None before there was one: the
-    copy Cyrus holds of a commit is the one that commit's cleaner made."""
+    """porosClean as it stood at *commit*, or None before there was one: the
+    copy Poros holds of a commit is the one that commit's cleaner made."""
+    path = _cleanerPath(commit)
     try:
-        source = _git('show', commit + ':' + CLEANER)
+        source = _git('show', commit + ':' + path)
     except subprocess.CalledProcessError:
         return None
-    module = types.ModuleType('cyrusClean_' + commit)
-    exec(compile(source, CLEANER + '@' + commit, 'exec'), module.__dict__)
+    module = types.ModuleType('porosClean_' + commit)
+    exec(compile(source, path + '@' + commit, 'exec'), module.__dict__)
     return module
 
 
 def _tree(commit, cleaner=None):
-    """{key: bytes} for the package and the page at *commit*, as Cyrus gets them."""
+    """{key: bytes} for the package and the page at *commit*, as Poros gets them."""
     out = {}
     for area, prefix in AREAS.items():
         for path in _git('ls-tree', '-r', '--name-only', commit, prefix).split('\n'):
@@ -160,7 +171,7 @@ def build():
     problems += ['the endpoint block: ' + p
                  for p in headCleaner.check('block.py', rawBlock, headCleaner.cleanText('block.py', rawBlock))]
     if problems:
-        sys.exit('the copy for Cyrus is not clean - reword these in cyrusClean.REWRITES, or here:\n  '
+        sys.exit('the copy for Poros is not clean - reword these in porosClean.REWRITES, or here:\n  '
                  + '\n  '.join(problems))
     then, now = _tree(base, baseCleaner), _tree(head, headCleaner)
     write = sorted(k for k in now if then.get(k) is None or _hash(then[k]) != _hash(now[k]))
@@ -171,7 +182,7 @@ def build():
     changed = oldBlock != newBlock
     routes = sum(1 for l in newBlock if re.match(r"@router\.\w+\('/scenario", l))
 
-    # a text file Cyrus has is sent as the lines that changed - the update
+    # a text file Poros has is sent as the lines that changed - the update
     # checks the file is exactly the base before it applies them, and the
     # result against the target after - and anything else whole
     patches, whole = {}, []
@@ -211,7 +222,7 @@ def build():
         'NEEDS': _needs(newRouter, (newRange[0], newRange[1])),
         'NOTES': state.get('notes', []),
     }
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cyrusUpdateTemplate.py'),
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'porosUpdateTemplate.py'),
               encoding='utf-8') as fh:
         script = fh.read()
     for name, value in fill.items():
@@ -232,7 +243,7 @@ def build():
           '{:,} bytes{}'.format(
         base, head, len(write), len(patches), len(delete), ', the endpoint block' if changed else '',
         len(script), ' - LARGE for one copy' if len(script) > WARN_BYTES else ''))
-    print('on Cyrus: ' + ('stop isgPMGService, run it with go, start isgPMGService, Ctrl+F5'
+    print('on Poros: ' + ('stop isgPMGService, run it with go, start isgPMGService, Ctrl+F5'
                           if code else 'run it with go, then Ctrl+F5 (the service can stay up)'))
     return 0
 
@@ -243,14 +254,14 @@ def confirm():
     with open(STATE, encoding='utf-8') as fh:
         state = json.load(fh)
     if _git('rev-parse', '--short', state['commit']).strip() != built['from']:
-        sys.exit('porting/update.json was built from {}, but Cyrus is recorded at {}'.format(
+        sys.exit('porting/update.json was built from {}, but Poros is recorded at {}'.format(
             built['from'], state['commit']))
     state['commit'] = built['to']
     state['routerDrop'], state['routerDropAfterBlank'], state['notes'] = [], [], []
     with open(STATE, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(state, fh, indent=2, ensure_ascii=False)
         fh.write('\n')
-    print('porting/cyrus.json: Cyrus now at {}'.format(built['to']))
+    print('porting/poros.json: Poros now at {}'.format(built['to']))
     return 0
 
 

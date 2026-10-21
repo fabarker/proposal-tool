@@ -1,4 +1,4 @@
-"""Fixes found on the Cyrus host and carried into the repository (csvText.py,
+"""Fixes found on the Poros host and carried into the repository (csvText.py,
 fees.py, sheetDoc.py), so that a port keeps them instead of overwriting them.
 
 The host's extracts had been saved from Excel - a byte-order mark at the

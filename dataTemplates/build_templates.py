@@ -1,4 +1,4 @@
-"""Build the data-delivery template workbook for the Cyrus side.
+"""Build the data-delivery template workbook for the Poros side.
 
 One sheet per file the host must supply, each a literal table to fill in, plus
 a read me, a column reference, the closed vocabularies, and one sheet for the

@@ -100,7 +100,7 @@ table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;whit
 
 <p class="eyebrow">Proposal Tool · porting plan</p>
 <h1>Cutting <code style="font-size:.72em">epsilonPhi</code> out of the Excel export</h1>
-<p class="lede">A plan to remove <code>Reporting</code> and <code>SAAPortfolio</code> from workbook generation so the service can be ported into cyrus, while the output stays exactly what it is today. Written after tracing the export end to end and comparing both writers cell by cell against a real two-column proposal.</p>
+<p class="lede">A plan to remove <code>Reporting</code> and <code>SAAPortfolio</code> from workbook generation so the service can be ported into poros, while the output stays exactly what it is today. Written after tracing the export end to end and comparing both writers cell by cell against a real two-column proposal.</p>
 <div class="meta">
   <span><b>Written</b> 3 September 2026</span>
   <span><b>Companion to</b> exportTrace.html</span>
@@ -229,7 +229,7 @@ table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;whit
 <div class="phase crit">
   <div class="phase-h"><span class="num">Phase 0</span><h3>Capture golden files while epsilonPhi is still reachable</h3><span class="cost">~half a day · do this first</span></div>
   <div class="phase-b">
-    <p><b>This is the phase that makes the rest safe, and the only one with a deadline.</b> Once the package is in cyrus, the reference output can never be regenerated. Capture it now, commit it, and every later change is checkable against it.</p>
+    <p><b>This is the phase that makes the rest safe, and the only one with a deadline.</b> Once the package is in poros, the reference output can never be regenerated. Capture it now, commit it, and every later change is checkable against it.</p>
     <ol>
       <li>Pick a matrix of scenarios that exercises the shape of the workbook, not the space of the analytics: <b>1 / 2 / 4 columns</b>; fees on and off; tactical tilt on and off; volatility premium on and off; a currency with a substitution (GBP) and one without (USD); an all-equity book (no allocation type) and a book with an excluded category. Roughly <b>16 cases</b>.</li>
       <li>Generate each through <code>LiveScenarioPort.build_export</code> and commit the <code>.xlsx</code> files alongside the resolved payloads that produced them.</li>
@@ -265,11 +265,11 @@ table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;whit
 <div class="phase">
   <div class="phase-h"><span class="num">Phase 3</span><h3>Close the remaining runtime paths to the engine</h3><span class="cost">~1–2 days</span></div>
   <div class="phase-b">
-    <p>The export is only one of two doors. <code>resolve_portfolio</code> is the other, and the baked adapter still falls through to the live one on a miss. For a cyrus deployment that fallback cannot exist, so it must become impossible rather than merely switched off:</p>
+    <p>The export is only one of two doors. <code>resolve_portfolio</code> is the other, and the baked adapter still falls through to the live one on a miss. For a poros deployment that fallback cannot exist, so it must become impossible rather than merely switched off:</p>
     <ul>
       <li>Add an explicit <b>engine-free mode</b> — a single setting under which <code>registry.py</code> never constructs a <code>LiveScenarioPort</code> at all, so nothing can lazily resolve an engine symbol.</li>
       <li>Make an unbaked key a clear, actionable error rather than a silent fallback. It already is when the fallback is off; keep that message and make sure the UI shows it well.</li>
-      <li>Move <code>bake.py</code>, <code>liveAdapter.py</code>, <code>engine.py</code> and the engine-touching parts of <code>portfolio_weights.py</code> behind a boundary that the cyrus port simply does not carry — <b>a build-time package, not a runtime one</b>.</li>
+      <li>Move <code>bake.py</code>, <code>liveAdapter.py</code>, <code>engine.py</code> and the engine-touching parts of <code>portfolio_weights.py</code> behind a boundary that the poros port simply does not carry — <b>a build-time package, not a runtime one</b>.</li>
     </ul>
     <div class="gate"><b>Gate:</b> a test that imports the whole service in engine-free mode, exercises schema, resolve, sleeves and export, and asserts no module beginning <code>epsilonPhi</code> was ever imported.</div>
   </div>
@@ -279,7 +279,7 @@ table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;whit
 <div class="callout bad">
   <h4>The dependency moves; it does not vanish</h4>
   <p>Removing <code>Reporting</code> and <code>SAAPortfolio</code> from the service is achievable and the output can be identical. But <b>the numbers in the baked store were computed by <code>epsilonPhi</code></b>, and refreshing them still needs it.</p>
-  <p>So the shape after this work is: <b>cyrus runs a service with no analytics library at all</b>, serving a baked store; and the bake is produced <em>here</em>, on a machine that has <code>epsilonPhi</code>, and shipped to cyrus as data. The dependency moves from <b>runtime</b> to <b>build time</b> — which is exactly what makes the port possible, but it is a supply chain, not an elimination.</p>
+  <p>So the shape after this work is: <b>poros runs a service with no analytics library at all</b>, serving a baked store; and the bake is produced <em>here</em>, on a machine that has <code>epsilonPhi</code>, and shipped to poros as data. The dependency moves from <b>runtime</b> to <b>build time</b> — which is exactly what makes the port possible, but it is a supply chain, not an elimination.</p>
 </div>
 <p>Two consequences worth deciding on now:</p>
 <div class="grid2">
@@ -297,7 +297,7 @@ table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;whit
 <tr><td>A scenario shape nobody thought of renders differently</td><td><span class="pill p-warn">medium</span></td><td>The 16-case matrix is chosen for workbook <em>shape</em> — column count, fee state, tilt, premium, all-equity, excluded categories — rather than for analytic variety.</td></tr>
 <tr><td>The sign flip or the scale asymmetry is applied wrongly</td><td><span class="pill p-warn">medium</span></td><td>Both are named explicitly in section 2 and both are caught by an exact-value comparison against golden files.</td></tr>
 <tr><td><code>Reporting</code> changes upstream and the golden files go stale</td><td><span class="pill p-mute">low</span></td><td>Accepted. After this work the tool's output is defined by the tool, not by the library — which is the point of doing it.</td></tr>
-<tr><td>A user selects an unbaked portfolio in cyrus</td><td><span class="pill p-mute">low today</span></td><td>Complete coverage today; the start-up staleness check (G1) and a clear error keep it that way.</td></tr>
+<tr><td>A user selects an unbaked portfolio in poros</td><td><span class="pill p-mute">low today</span></td><td>Complete coverage today; the start-up staleness check (G1) and a clear error keep it that way.</td></tr>
 </tbody>
 </table>
 </div>
@@ -316,13 +316,13 @@ table.doc td.num,table.doc td.mono{font-family:var(--f-mono);font-size:12px;whit
 </tbody>
 </table>
 </div>
-<p><b>Total: roughly four to six days</b>, and phases 0–2 deliver the speed improvement and the test harness whether or not the cyrus port ever happens. Phase 3 is the part that is specifically about porting.</p>
+<p><b>Total: roughly four to six days</b>, and phases 0–2 deliver the speed improvement and the test harness whether or not the poros port ever happens. Phase 3 is the part that is specifically about porting.</p>
 
 <h2><span class="n">8</span>What I would want from you before starting</h2>
 <div class="grid3">
   <div class="card"><p class="hd">Decision 1</p><h4>Is "exactly" exact?</h4><p>The plan assumes cell-for-cell and style-for-style identity, including reproducing the empty <code>Portfolio Risk Premia</code> header and the lowercase sheet names. If some of that is incidental rather than required, the comparator can be relaxed and Phase 1 gets shorter.</p></div>
-  <div class="card"><p class="hd">Decision 2</p><h4>Who owns the bake after the port?</h4><p>It becomes a delivery into cyrus. Someone has to produce it, version it and hand it over on a cadence — and that is a different job from running the service.</p></div>
-  <div class="card"><p class="hd">Decision 3</p><h4>Does the live adapter survive at all?</h4><p>It could stay here as the bake's engine and never ship to cyrus, or be retired entirely in favour of the bake being the only way analytics ever enter. The first is less disruptive; the second is a cleaner boundary.</p></div>
+  <div class="card"><p class="hd">Decision 2</p><h4>Who owns the bake after the port?</h4><p>It becomes a delivery into poros. Someone has to produce it, version it and hand it over on a cadence — and that is a different job from running the service.</p></div>
+  <div class="card"><p class="hd">Decision 3</p><h4>Does the live adapter survive at all?</h4><p>It could stay here as the bake's engine and never ship to poros, or be retired entirely in favour of the bake being the only way analytics ever enter. The first is less disruptive; the second is a cleaner boundary.</p></div>
 </div>
 
 <p class="foot">Evidence gathered by building the same two-column export (USD Moderate Full and USD Conservative Full, $50m, five sleeves, fees on) through both paths and comparing them programmatically: 90 of 90 risk-dashboard cells and 48 of 48 portfolio weight cells matched the baked payloads exactly; the workbook was confirmed to contain no charts, images, pivot tables or formulas; and the eleven presentation differences in section 3 were enumerated from the two files directly.</p>

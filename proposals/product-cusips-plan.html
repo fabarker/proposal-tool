@@ -229,7 +229,7 @@ tool knows about. They are kept and shown on the card under their own headings.<
 <thead><tr><th>Column</th><th>Kind</th><th>Checked on import</th></tr></thead>
 <tbody>
 <tr><td class="key">ProductId</td><td>required</td><td>Must be a product in the catalogue. A CUSIP for a product not there yet is refused, naming the row.</td></tr>
-<tr><td class="key">CUSIP</td><td>required, the key</td><td>Nine characters with a valid check digit when it looks like a CUSIP. Unique across the catalogue: one CUSIP can't belong to two products. (If Cyrus's key is an internal security id rather than a true CUSIP, it is taken as given; question 2.)</td></tr>
+<tr><td class="key">CUSIP</td><td>required, the key</td><td>Nine characters with a valid check digit when it looks like a CUSIP. Unique across the catalogue: one CUSIP can't belong to two products. (If Poros's key is an internal security id rather than a true CUSIP, it is taken as given; question 2.)</td></tr>
 <tr><td class="key">ISIN, SEDOL</td><td>optional</td><td>Check digits, when given.</td></tr>
 <tr><td class="key">Ticker, TradingCurrency, Venue, ListingCountry, Domicile, UKReporting, IssuerCountry, IssueCurrency, IssueCountry</td><td>core, optional</td><td>Currencies and countries as codes. UK reporting is Yes, No or blank. These are the fields the catalogue can filter on, so they are fixed and spelt the same way every time.</td></tr>
 <tr><td class="key">PrimaryFor</td><td>optional</td><td>The base currencies this CUSIP is <em>the</em> one for, e.g. <code>GBP</code> or <code>USD|EUR</code>. There is at most one per product per currency, and only in a currency the product is offered in.</td></tr>
@@ -255,7 +255,7 @@ heading–value pairs in the file's order.</p>
 <thead><tr><th>Part</th><th>Holds</th><th>Why</th></tr></thead>
 <tbody>
 <tr><td class="lvl">Core columns</td><td>ISIN, SEDOL, ticker, trading currency, venue, listing country, domicile, UK reporting, issuer and issue country, issue currency, primary-for</td><td>These can be checked, filtered and linked to a base currency. A field the catalogue filters on has to mean the same thing on every row.</td></tr>
-<tr><td class="lvl">Attributes</td><td>Every other column, under its own heading</td><td>Cyrus's list of fields will grow. A new column in the extract then appears on the card with no code change and no update to Cyrus.</td></tr>
+<tr><td class="lvl">Attributes</td><td>Every other column, under its own heading</td><td>Poros's list of fields will grow. A new column in the extract then appears on the card with no code change and no update to Poros.</td></tr>
 <tr><td class="lvl">History</td><td>Each change to a product's CUSIPs, as an entry in that product's history</td><td>You already read a product's story on its card. "CUSIPs updated from cusips.csv: added 1, changed 1" belongs there, not in a log of its own.</td></tr>
 </tbody></table></div>
 <p>The product row itself does not change, so nothing that reads products today needs to know
@@ -371,7 +371,7 @@ existing path alone. These are the alternatives, and why each loses:</p>
   <div><b>One free-form block of text per product</b><p>Easy to load, but it can't be checked or
   filtered, and it can't say which CUSIP a GBP proposal uses. The plan keeps the free-form part for
   the extra fields only, where those limits don't matter.</p></div>
-  <div><b>Typing CUSIPs in on the console</b><p>The security master in Cyrus owns this data, and
+  <div><b>Typing CUSIPs in on the console</b><p>The security master in Poros owns this data, and
   hand-kept copies drift from it. Loading from a file keeps the tool a faithful copy. The card shows
   the data but doesn't edit it, at least at first (question 7).</p></div>
   <div><b>Making the CUSIP the product's key</b><p>CUSIPs come and go as listings are added and
@@ -380,7 +380,7 @@ existing path alone. These are the alternatives, and why each loses:</p>
 </div>
 <p>Three smaller choices follow the same reasoning:</p>
 <ul>
-<li><strong>A file of its own.</strong> The CUSIP data has a different owner and a different rhythm from the product file. PMG curates the product file. The CUSIP file can be an extract straight from Cyrus with nothing reshaped. Keeping them apart means neither has to repeat the other.</li>
+<li><strong>A file of its own.</strong> The CUSIP data has a different owner and a different rhythm from the product file. PMG curates the product file. The CUSIP file can be an extract straight from Poros with nothing reshaped. Keeping them apart means neither has to repeat the other.</li>
 <li><strong>Filters matched on one CUSIP.</strong> Two filters are answered by a single CUSIP that meets both, because the question being asked is always about one security you could actually buy.</li>
 <li><strong>Shared fields shown once.</strong> CUSIPs of one product agree on most things. Showing every field for every CUSIP would hide the two or three that differ, which are the ones you open the card to see.</li>
 </ul>
@@ -388,7 +388,7 @@ existing path alone. These are the alternatives, and why each loses:</p>
 
 <section id="phases">
 <h2><span class="n">09</span>In phases</h2>
-<p>Each phase is one update for Cyrus and leaves the tool complete and working. Proposals don't change
+<p>Each phase is one update for Poros and leaves the tool complete and working. Proposals don't change
 until phase 4.</p>
 <div class="phase"><div class="num">1</div><div>
   <h3>Store, import and show</h3>
@@ -398,7 +398,7 @@ until phase 4.</p>
     <li>The CUSIPs section on the product card, and search by any identifier.</li>
     <li>History entries on the product.</li>
   </ul>
-  <p class="cy">On Cyrus: one update and a schema move. Nothing shows until a CUSIP file is imported.</p>
+  <p class="cy">On Poros: one update and a schema move. Nothing shows until a CUSIP file is imported.</p>
 </div></div>
 <div class="phase"><div class="num">2</div><div>
   <h3>Find by CUSIP</h3>
@@ -407,7 +407,7 @@ until phase 4.</p>
     <li>The CUSIPs count column.</li>
     <li>The compare view's CUSIP row.</li>
   </ul>
-  <p class="cy">On Cyrus: page files only.</p>
+  <p class="cy">On Poros: page files only.</p>
 </div></div>
 <div class="phase"><div class="num">3</div><div>
   <h3>Primary by base currency</h3>
@@ -416,7 +416,7 @@ until phase 4.</p>
     <li>Warnings where a primary CUSIP and the product file disagree.</li>
     <li>Optionally, the primary CUSIP supplies the ticker and issue currency for its currency.</li>
   </ul>
-  <p class="cy">On Cyrus: one update. The optional step changes what the product file must carry, so it waits for your yes.</p>
+  <p class="cy">On Poros: one update. The optional step changes what the product file must carry, so it waits for your yes.</p>
 </div></div>
 <div class="phase"><div class="num">4</div><div>
   <h3>CUSIPs in proposals</h3>
@@ -425,15 +425,15 @@ until phase 4.</p>
     <li>The CUSIP recorded in the register.</li>
     <li>Rules for choosing a CUSIP, if you want them.</li>
   </ul>
-  <p class="cy">On Cyrus: one update and a register schema move.</p>
+  <p class="cy">On Poros: one update and a register schema move.</p>
 </div></div>
 </section>
 
 <section id="questions">
 <h2><span class="n">10</span>What I need from you</h2>
 <ol class="qs">
-  <li><b>Where does the CUSIP data come from?</b><span>A Cyrus security-master extract, a spreadsheet, or something else? Does it already carry the ProductId, or only a ticker or name to match it by? If it's an extract, a sample row with its real headings would settle the column names.</span></li>
-  <li><b>Is the key always a true CUSIP?</b><span>Or sometimes a CINS, an ISIN or an internal Cyrus security id? The plan takes the key as given and checks a CUSIP's check digit only when it looks like one.</span></li>
+  <li><b>Where does the CUSIP data come from?</b><span>A Poros security-master extract, a spreadsheet, or something else? Does it already carry the ProductId, or only a ticker or name to match it by? If it's an extract, a sample row with its real headings would settle the column names.</span></li>
+  <li><b>Is the key always a true CUSIP?</b><span>Or sometimes a CINS, an ISIN or an internal Poros security id? The plan takes the key as given and checks a CUSIP's check digit only when it looks like one.</span></li>
   <li><b>Which fields should be filterable?</b><span>The plan's core list is ISIN, SEDOL, ticker, trading currency, venue, listing country, domicile, UK reporting, issuer and issue country, and issue currency. Anything else would be shown and searchable, but not filterable.</span></li>
   <li><b>Do share class or hedging vary between one product's CUSIPs?</b><span>If they do, and the cost differs, those CUSIPs are probably separate products.</span></li>
   <li><b>Should the primary CUSIP eventually supply each currency's ticker and issue currency?</b><span>That keeps them in one place, but it changes what the product file has to carry.</span></li>

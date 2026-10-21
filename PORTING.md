@@ -2,7 +2,7 @@
 
 **Written against commit `9f4dc50` (2026-09-03); brought up to date on 2026-09-27 with everything
 since the last port (`718d750`, 2026-09-10, D89) up to D159** — the PowerPoint deck, custom fees,
-the register's saved views, a private-markets book's initial allocation and the page work in between. **If Cyrus already carries the
+the register's saved views, a private-markets book's initial allocation and the page work in between. **If Poros already carries the
 10 September port, start at §0A: it is the update.** This document is the single porting guide.
 `service/TRANSPLANT.md` is now a pointer to it; do not maintain two lists. The evidence behind
 every statement here is in `PORTING_GUIDE_AUDIT.md`.
@@ -18,16 +18,16 @@ about the host carries one of three tags:
 
 - **Verified** — checked against this repository's code, tests or a running instance.
 - **Audit** — stated by `HOST_AUDIT.md` (2026-08-30) and not independently re-checked.
-- **Unverifiable** — needs the live Cyrus codebase; listed again in §18.
+- **Unverifiable** — needs the live Poros codebase; listed again in §18.
 
-Sources, newest first: the real host files at `cyrus-files/` (2026-09-05, §4.0), then
+Sources, newest first: the real host files at `poros-files/` (2026-09-05, §4.0), then
 `HOST_AUDIT.md` (2026-08-30). Where they differ the files win.
 
 ---
 
 ## 0. Read this first — what you get on day one
 
-Following this guide end to end gets you a Proposal Tool that **appears in the Cyrus nav,
+Following this guide end to end gets you a Proposal Tool that **appears in the Poros nav,
 authenticates, resolves portfolios in milliseconds, attaches sleeves and drives the whole flow.**
 It does not get you something a PWA can put in front of a client, and the gap is data rather than
 code. This section is the honest summary; §17 carries the detail.
@@ -64,7 +64,7 @@ workbook and the PowerPoint deck together (D123) — with one exception below.
 | Strategic weights being real | Real tickers, invented allocations | The supplying database's extract, then a re-bake |
 | The advisor typeahead | A 24-row stub with no environment override | A code change in `advisors.py` (§6) |
 | GBP / CHF / EUR analytics | Baked in a USD context; honest and stamped, but not native | Currency configs in the library, then a re-bake |
-| Looking like Cyrus | Self-contained stylesheet, not OneGS | The retheme (§10.5) — a measured piece of work, not a token swap |
+| Looking like Poros | Self-contained stylesheet, not OneGS | The retheme (§10.5) — a measured piece of work, not a token swap |
 | The workbook in the house faces on every desk | An `.xlsx` cannot carry a font, so Excel substitutes wherever GS Sans is not installed (D125). The deck embeds its faces and is unaffected | GS Sans on the desktop image, or the five files in `scenario/fonts/` installed per machine. No code change |
 | The account opening request going anywhere | Submit records the request in the register file and says *recorded*; the option lists (account types, booking centres, funding sources) are placeholders flagged on the schema (D76) | Operations' lists in `accountRequests.py`; a destination for Submit — a code change once one is named |
 
@@ -101,9 +101,9 @@ checkout.
 
 ---
 
-## 0A. Already ported? Bringing Cyrus up to date
+## 0A. Already ported? Bringing Poros up to date
 
-Cyrus was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
+Poros was ported and verified on 10 September 2026 at `718d750` (D89). Everything since — D90 to
 D159 in `service/DEVIATIONS.md` — lives in the same three places a first port copies: the package,
 the router block and the page folder. So the update is mostly re-copying. The table says what is
 **not** a plain copy; the steps follow it.
@@ -123,12 +123,12 @@ the router block and the page folder. So the update is mostly re-copying. The ta
 | The proposal register goes from schema 1 to 5: `customFees` (D96); `deck`, `deckName`, `deckSha`, `deckBytes` (D123); `fundingSplit` (D148); `overlays` (D155) | `SCENARIO_REGISTER_DB` | Nothing to run — the columns are added on first open. **Back the file up first.** Rows delivered earlier keep NULLs and have no deck |
 | Configuration | — | **None to add.** D126 removed `SCENARIO_BAKED_FALLBACK`; a host that still exports it is harmless, since nothing reads it. The password that locks the workbook and the deck is a constant in source (`workbook.SHEET_PASSWORD`, §13.5) |
 | Auth, the Flask route, the nav link | — | **None.** The new routes use the existing `requireAdmin`; `capabilities.user` is the `caller.kerberos` the block already reads (D106) |
-| The proxy | — | **None.** It forwards the zip body and every response header bar the hop-by-hop ones, so `Content-Disposition`, `X-Proposal-Id` and `X-Deck-SHA256` arrive intact (Verified: `cyrus-files/dashboardFrontend.py:409–415`) |
+| The proxy | — | **None.** It forwards the zip body and every response header bar the hop-by-hop ones, so `Content-Disposition`, `X-Proposal-Id` and `X-Deck-SHA256` arrive intact (Verified: `poros-files/dashboardFrontend.py:409–415`) |
 | The bake, the extracts, the sleeve seed | — | **None** — no payload, extract or seed column changed. The initial allocation (D136) is computed from the resolved book and its sleeves; the schema serves the rule as `rules.privateFunding` |
 
 ### 0A.2 The update, step by step
 
-On the Cyrus machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
+On the Poros machine. `<ep>` is this repository's checkout (`proposal-tool`); the host
 is `H:\cyrus-repo\isg-cyrus-pmg`.
 
 1. **Gate on this side.** §5's checks at the commit you are shipping — 556 passed, none skipped, at D159.
@@ -173,7 +173,7 @@ version, so it writes around the new columns, and a later re-upgrade finds them 
 ## 1. Purpose, scope and non-goals
 
 **Purpose.** Move the Proposal Tool — one page folder, one Python package, one block of router
-endpoints — into the Cyrus PMG dashboard so that it runs behind the host's Flask gate and
+endpoints — into the Poros PMG dashboard so that it runs behind the host's Flask gate and
 FastAPI service, with no analytics library and no database on the request path.
 
 **Scope.**
@@ -403,11 +403,11 @@ without them — `universe.py` raises on a missing extract, `products.py` raises
 
 ---
 
-## 4. The Cyrus integration point
+## 4. The Poros integration point
 
 ### 4.0 What the real host files settle
 
-Six actual Cyrus files are in the repository at `cyrus-files/`, supplied 2026-09-05:
+Six actual Poros files are in the repository at `poros-files/`, supplied 2026-09-05:
 `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`, `exceptionHandlers.py`,
 `config.py`, `dashboard.env.defaults`. They are transcriptions with marked gaps, but they are
 source rather than description, and they **replace `HOST_AUDIT.md` wherever the two differ**.
@@ -438,7 +438,7 @@ two:
 | `requireAuth`, `requireEditor`, `requirePoster`, `can`, `hasRole`, `PmgEntitlement` | `pmgService/core/pmgEntitlement.py` | exists |
 | `requireAdmin`, `isAdmin` | **neither** | must be written — §9.2 |
 
-**Cyrus has a three-role entitlement model**, not the one role the mirror stubs. Roles `ISGAdmin`,
+**Poros has a three-role entitlement model**, not the one role the mirror stubs. Roles `ISGAdmin`,
 `PMGEditor`, `PMGViewer`; resources `pmgui`, `pmgapi`, `optimizationapi`; actions `view`, `modify`,
 `post`. `requireAuth` is `pmgapi:view` (all three roles), `requireEditor` is `pmgapi:modify`
 (ISGAdmin and PMGEditor). Two consequences:
@@ -449,7 +449,7 @@ two:
 - **In PROD the allowlist alone grants only `view`** — and that is all the proposal flow asks (D77).
   Every `/scenario` route outside the repository inherits the router-level `requireAuth`; nothing
   a PWA does needs `modify`. Enrolling PWAs in `PMGEditor` would have been wrong anyway: that role
-  carries `modify` and `post` on every Cyrus resource, not just this tool. The repository is
+  carries `modify` and `post` on every Poros resource, not just this tool. The repository is
   `ISGAdmin` membership, resolved by `pmgEntitlement` (§9.2).
 
 **Two incompatibilities were found and fixed on this side** (§9.2, §13.3): the host's auth
@@ -503,7 +503,7 @@ Audit, unless marked otherwise:
   `buildLoginUrl`, `requireAuth`, `requireEditor` (§9, §11) and the allowlist in
   `PMG_ALLOWED_KERBEROS` (Audit §5.5).
 - Ports: `FRONTEND_PORT` 8001, `PMG_SVC_PORT` **8002**, `OPT_SVC_PORT` 8003 (Verified:
-  `cyrus-files/dashboard.env.defaults`). `PMG_SVC_WORKERS` defaults to **2** in that file, though
+  `poros-files/dashboard.env.defaults`). `PMG_SVC_WORKERS` defaults to **2** in that file, though
   `config.py`'s own fallback is 4 — so at least two workers, four if the env file is not sourced.
 - Dependencies named: Flask 2.2.5, requests, FastAPI, uvicorn, pydantic-settings, sqlalchemy, the
   Sybase driver (Audit §5.1). **openpyxl and pandas are not named** (this guide, §12).
@@ -728,7 +728,7 @@ Append to the host's `pmgService/dashboardRouter.py`:
    `_baseKeyFrom`, `_UID_HINT`, `_assembleExport`)
    collide with nothing in the host file you supplied (it owns `logger`, `router`, `publicRouter`,
    `service`, `_errorResponse`, `_applyNoCacheHeaders`) — re-check against the full file, since
-   the copy in `cyrus-files/` is an excerpt.
+   the copy in `poros-files/` is an excerpt.
 
 Route-level gates are already correct: the whole proposal flow inherits the router's `requireAuth`
 — an allowlisted PWA runs it end to end with no PERMIT role (D77) — and the fifteen
@@ -798,7 +798,7 @@ python -c "from cyrus_pmg.pmgService.core.pmgEntitlement import (
 #### Why the block speaks `UserData`
 
 The handlers bind what the dependency returns, and the two sides once disagreed: the host's
-returns an object, the mirror's returned a bare kerberos. Nothing in Cyrus had noticed, because
+returns an object, the mirror's returned a bare kerberos. Nothing in Poros had noticed, because
 its own routers use these purely as gates — `dependencies=[Depends(requireEditor)]` — and never
 bind the value. Measured against the host's shape before the mirror was aligned: a `UserData`
 reaching the scenario store raised `TypeError: Object of type UserData is not JSON serializable`
@@ -1119,13 +1119,13 @@ means the host must set it; "own" means the host already has its own value.
 | `SCENARIO_ASSET_ESTIMATES` | `assetEstimates.py` | the bake store's copy, else `<pkg>/assetEstimates.json` | optional |
 | `PMG_ALLOWED_KERBEROS` | `accessControl.py` | `fbarker` in the mirror | own (Audit §5.5) |
 | `PMG_ADMIN_KERBEROS` | `accessControl.py` (mirror only) | `fbarker` | not needed — on the host `isAdmin` is membership of `ISGAdmin` (§9.2); nothing in the package reads it |
-| `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are **8002 / 0.0.0.0**, under its `PMG_SVC_` pydantic-settings prefix (Verified: `cyrus-files/config.py`, `dashboard.env.defaults`) |
+| `PMG_SVC_PORT`, `PMG_SVC_HOST` | `config.py` (mirror) | 8002 / 127.0.0.1 | own — the host's are **8002 / 0.0.0.0**, under its `PMG_SVC_` pydantic-settings prefix (Verified: `poros-files/config.py`, `dashboard.env.defaults`) |
 | `FRONTEND_PORT`, `DASHBOARD_HOST` | `dashboardConfig.py` (mirror) | 8001 / 127.0.0.1 | own |
 | `PMG_SVC_WORKERS` | `start_dashboard.sh` (mirror) | 1 | own (the host runs 2) |
 | `SCENARIO_FIXTURES_LATENCY_MS`, `SCENARIO_FIXTURES_FAIL`, `SCENARIO_FIXTURES_FAIL_SCHEMA`, `SCENARIO_FIXTURES_FAIL_SLEEVES`, `SCENARIO_FIXTURES_FAIL_EXPORT` | `fixturesAdapter.py` | unset | never in production |
 
 Reference block for the host's `dashboard.env.defaults`, in that file's own idiom — a
-`: "${VAR:=default}"` line per setting, then one `export` (Verified: `cyrus-files/dashboard.env.defaults`).
+`: "${VAR:=default}"` line per setting, then one `export` (Verified: `poros-files/dashboard.env.defaults`).
 Adjust the paths:
 
 ```bash
@@ -1247,7 +1247,7 @@ router (§9.2).
 
 ### 13.3 The error contract — two shapes, both handled
 
-Settled by `cyrus-files/exceptionHandlers.py`. The host wraps its own failures as
+Settled by `poros-files/exceptionHandlers.py`. The host wraps its own failures as
 `PmgAppException`, whose handler emits:
 
 ```python
@@ -1549,7 +1549,7 @@ reachable only by URL, which is a useful soak.
 | An update re-pastes the block but not the imports above its markers | medium — a `NameError` on the first export or custom-fee save | §0A.2 step 5; §9.1 lists the full import set. |
 | Re-copying the package overwrites a host-accepted `fees.json` or a replaced `advisors.xlsx` | medium — the rail and workbook would claim the placeholder card again | Keep the host's copies (§0A.2 steps 3–4); the new `custom` block is optional. |
 | GS Sans not installed on the desks that open workbooks | cosmetic | Excel substitutes; the deck carries its faces. Install from `scenario/fonts/` or the desktop image (D125). |
-| ~~The host's `accessControl` names or signatures differ~~ | **closed** | Settled by `cyrus-files/`: `requireAuth`/`requireEditor` are `pmgEntitlement` shims returning a `UserData`, which the block now expects (§9.2). Only `requireAdmin`/`isAdmin` remain to be written, and Step 2's import check proves it. |
+| ~~The host's `accessControl` names or signatures differ~~ | **closed** | Settled by `poros-files/`: `requireAuth`/`requireEditor` are `pmgEntitlement` shims returning a `UserData`, which the block now expects (§9.2). Only `requireAdmin`/`isAdmin` remain to be written, and Step 2's import check proves it. |
 | The host's error contract passes `{"detail": …}` through | medium — the page shows "Request failed (401)" instead of redirecting | §13.3 check; a test request without identity must return `{loginUrl}`. |
 | The stores land inside `src/` and get zipped or wiped by deployment | medium | Durable paths outside the tree; the reference block in §11.4. |
 | The extract and the bake drift apart (no staleness check at request time, finding F3) | medium | Deliver them together; compare `manifest.source.modified` to the extract on disk at each rollout. |
@@ -1584,7 +1584,7 @@ reachable only by URL, which is a useful soak.
 
 ---
 
-## 18. Verify against the live Cyrus codebase
+## 18. Verify against the live Poros codebase
 
 Everything below is asserted by `HOST_AUDIT.md` or assumed here, and cannot be proved from this
 repository. Tick each before Step 1.
@@ -1625,7 +1625,7 @@ repository. Tick each before Step 1.
 - [ ] `python -c "import sqlite3; print(sqlite3.sqlite_version)"` is ≥ 3.8.0 (§11.3.2).
 - [ ] **Whether the durable storage path is local disk or a network mount** (§11.3.2). If NFS,
       decide where the proposal register lives before go-live.
-- [x] ~~`pmgService/core/` — the real auth module~~ — **answered** by `cyrus-files/pmgEntitlement.py`:
+- [x] ~~`pmgService/core/` — the real auth module~~ — **answered** by `poros-files/pmgEntitlement.py`:
       two modules, `requireAuth` present (`requireEditor` no longer needed, D77), `requireAdmin`/`isAdmin` to be written (§9.2).
 - [x] ~~`exceptionHandlers.py` / `PmgAppException` body shape~~ — **answered**; handled in `apiFetch` (§13.3).
 - [x] ~~`dashboardRouter.py` exposes a module-level `router`~~ — **confirmed**, byte-identical to this mirror's.
@@ -1785,7 +1785,7 @@ Since the 10 September port (§0A):
   `portfolio_weights.py`, the live bake, `SCENARIO_BAKED_FALLBACK`, `SAA_ENGINE_PACKAGE` and
   `SAA_ENGINE_LIVE` are gone; the registry offers `fixtures` and `baked` only; a miss is an error,
   never a computation. The bake is produced in epsilon-phi and delivered (§11.5, C.6).
-  `cyrus-files/` moved in beside this guide.
+  `poros-files/` moved in beside this guide.
 - **D127** The allocation table to the house table spec: classes bold navy on the blue band,
   thin rules between, TOTAL under a thick rule, the metrics one navy block with the risk-free line;
   GS Sans 11. The deck's rules are drawn: each is stated on both cells that share it.
@@ -1845,7 +1845,7 @@ Since the 10 September port (§0A):
   router's `scenario` import.
   The overlay writes take SQLite's write lock (`BEGIN IMMEDIATE`) and may answer **409** to a stale
   write; the proxy passes the status through. The read cache keys on SQLite's own file change counter
-  as well as the file's stat, so it holds on the Windows/SMB share Cyrus runs from.
+  as well as the file's stat, so it holds on the Windows/SMB share Poros runs from.
 - **D156** The Sleeves view as cards and a table behind a switch (`generator/js/repository.js`,
   `generator/repository.py`, re-copied with the page folder), and one server change: the sleeve save
   and revert routes take an optional `base` and answer **409** to a stale one (`sleeveRepo.StaleError`,
@@ -1914,8 +1914,8 @@ Since the 10 September port (§0A):
 - **D174** The deck is built in the template `SCENARIO_DECK_TEMPLATE` names, from its layout
   `SCENARIO_DECK_LAYOUT` (default *Content*); unset, the deck is drawn as before. New module
   `scenario/houseTemplate.py` (no schema change, no new route), with a read-only check run as
-  `python -m cyrus_pmg.pmgService.scenario.houseTemplate [template.pptx]`. Cyrus keeps its own house
-  template: the update carries no template, and the setting is set on Cyrus only once the check
+  `python -m cyrus_pmg.pmgService.scenario.houseTemplate [template.pptx]`. Poros keeps its own house
+  template: the update carries no template, and the setting is set on Poros only once the check
   reads clean. The repo's `deckTemplate/` is a placeholder for building and testing here.
 - **D175** In a template, the strategic slides are Comparing Allocations and Risk and Return
   Analysis, a slide each (`sheetDoc.buildComparingDoc`, `buildReturnRiskDoc`), their groups the
@@ -1941,7 +1941,7 @@ Since the 10 September port (§0A):
 | `service/tools/` | `buildOfficeFonts.py` and `buildFontMetrics.py` (D125), dev side only. |
 | `../proposalToolv2/README.md` | A separate, standalone front end for the same API, with its own folder and route. |
 | `service/PERFORMANCE.md` | The analytics profile and the Tier 0 / bake measurements — from before the library left (D126); the bake it argues for is what is delivered. |
-| `cyrus-files/` | The six real Cyrus host files (2026-09-05) this guide is verified against. |
+| `poros-files/` | The six real Poros host files (2026-09-05) this guide is verified against. |
 | `archive/dataSources.html`, `archive/dataOperations.html` | The data estate and its operating model (classes A–D, runbooks, rollback). Their test counts predate D69. |
 | `archive/exportPortingPlan.html`, `archive/exportTrace.html` | Why and how the export was cut loose from the library (D67). |
 | `spec.html` | Revision 6 of the build specification; §16 lists the open items. |

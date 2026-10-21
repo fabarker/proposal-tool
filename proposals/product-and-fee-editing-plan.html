@@ -187,7 +187,7 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <p class="eyebrow">Plan for review · no code changed</p>
 <h1>Editing products and fees in the Repository</h1>
 <p class="sub">Add and change products from the product card, add and change fees from a new Fees tab, and keep a full record of who changed what and when.</p>
-<div class="meta"><span><b>Status</b> proposal, awaiting your decisions</span><span><b>Prepared</b> 16 October 2026</span><span><b>Covers</b> products · fees · the change log · moving Cyrus across</span></div>
+<div class="meta"><span><b>Status</b> proposal, awaiting your decisions</span><span><b>Prepared</b> 16 October 2026</span><span><b>Covers</b> products · fees · the change log · moving Poros across</span></div>
 </header>
 
 <main>
@@ -317,7 +317,7 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <li>Read the preview. Products in the catalogue but missing from the file are <em>kept</em> unless you tick them to be withdrawn, and the same rule as above applies to those that are in sleeves.</li>
 <li>Click <strong>Apply import</strong>. Each new or changed product gets a revision marked <em>imported</em> with your name, the file's name and the time. Unchanged products aren't touched, so their As of dates stay true.</li>
 </ol>
-<div class="note good"><p>This is the route for the Cyrus re-seed you're planning: import the new file and review the preview, and the log then records the re-seed as one dated event. The re-seeding guide would be rewritten around it.</p></div>
+<div class="note good"><p>This is the route for the Poros re-seed you're planning: import the new file and review the preview, and the log then records the re-seed as one dated event. The re-seeding guide would be rewritten around it.</p></div>
 
 <h2 id="fees">Fees</h2>
 
@@ -408,17 +408,17 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <li><strong>Templates.</strong> The data template's products and feeRates sheets stay as the format for the first load and for imports.</li>
 </ul>
 
-<h2 id="cyrus">Moving Cyrus across</h2>
+<h2 id="poros">Moving Poros across</h2>
 <ol>
-<li><strong>First, the share class update on its own.</strong> Cyrus's product file already uses the full words, which Cyrus's current code refuses. That change is ready and waiting, so it should go to Cyrus before any of this starts.</li>
+<li><strong>First, the share class update on its own.</strong> Poros's product file already uses the full words, which Poros's current code refuses. That change is ready and waiting, so it should go to Poros before any of this starts.</li>
 <li><strong>The update that brings this work</strong> runs like the account card one: stop isgPMGService, copy the file, run <code>go</code>, start the services. During <code>go</code>, after the usual backup, the database is upgraded:
 <ul>
-<li>the products are loaded once from the file Cyrus uses today, each marked <em>seeded from file</em> with the file's name;</li>
-<li>the fee card is loaded once from Cyrus's fee file, as version 1 marked <em>seeded</em>;</li>
+<li>the products are loaded once from the file Poros uses today, each marked <em>seeded from file</em> with the file's name;</li>
+<li>the fee card is loaded once from Poros's fee file, as version 1 marked <em>seeded</em>;</li>
 <li>nothing else changes: the sleeves, the register and the overlay rules are kept as they are.</li>
 </ul></li>
-<li><strong>After the update,</strong> changing the product file on Cyrus does nothing by itself. A new file goes in through <em>Import file</em>, so that's the moment to do your re-seed, and the log records it.</li>
-<li><strong>Undo</strong> restores the database exactly as it was before, as with every update so far. That gets tested on the fake Cyrus before you're given the update.</li>
+<li><strong>After the update,</strong> changing the product file on Poros does nothing by itself. A new file goes in through <em>Import file</em>, so that's the moment to do your re-seed, and the log records it.</li>
+<li><strong>Undo</strong> restores the database exactly as it was before, as with every update so far. That gets tested on the fake Poros before you're given the update.</li>
 </ol>
 
 <h2 id="stages">Building it in stages</h2>
@@ -429,9 +429,9 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <tr><td class="num">2</td><td>Edit, New product, withdraw and restore, product history, Import file</td><td>The product card features above</td></tr>
 <tr><td class="num">3</td><td>The fee card moves into the database; the Fees tab with rate editing, add and remove fee group, history, restore, import</td><td>The Fees tab above, and the step 2 fee card showing its version</td></tr>
 <tr><td class="num">4</td><td>One Activity tab across every area; the register recording versions; the workbook's Fee Card line</td><td>The Area filter, and the two new facts on a delivered proposal</td></tr>
-<tr><td class="num">5</td><td>Re-seeding guide and admin manual updated; the Cyrus update built, tried on the fake Cyrus with undo</td><td>The update for Cyrus</td></tr>
+<tr><td class="num">5</td><td>Re-seeding guide and admin manual updated; the Poros update built, tried on the fake Poros with undo</td><td>The update for Poros</td></tr>
 </tbody></table></div>
-<p>Each stage ends with the full test suite passing and the live databases untouched. Stages 1 and 2 could go to Cyrus as one update and stages 3 and 4 as a second, or everything at the end as one (decision 9).</p>
+<p>Each stage ends with the full test suite passing and the live databases untouched. Stages 1 and 2 could go to Poros as one update and stages 3 and 4 as a second, or everything at the end as one (decision 9).</p>
 
 <h2 id="tests">How it gets tested</h2>
 <ul>
@@ -440,7 +440,7 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <li><strong>The first load:</strong> a database of today's shape upgrades, and the products and fees it serves afterwards are identical, field for field and rate for rate, to what the files served before. Every existing workbook and deck test passes unchanged.</li>
 <li><strong>The log:</strong> every action appearing in Activity under the right area, admin and time, and in the CSV download.</li>
 <li><strong>Access:</strong> every new service call refused for anyone who isn't an admin.</li>
-<li><strong>Cyrus:</strong> the update on the fake Cyrus with its current files, then undo restoring the database exactly.</li>
+<li><strong>Poros:</strong> the update on the fake Poros with its current files, then undo restoring the database exactly.</li>
 </ul>
 
 <h2 id="decisions">Decisions for you</h2>
@@ -449,13 +449,13 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <div><b>1 · Which is the master for products?</b><p><strong>The database (recommended),</strong> with the file as an import. Or: keep the file as the master and store the edits made in the tool as overrides on top of it. Overrides are harder to explain, and harder to reason about when the next file arrives.</p></div>
 <div><b>2 · The As of date</b><p><strong>The automatic stamp only (recommended to start):</strong> when the values took effect and who saved them. Or add a typed <em>Data as of</em> date for when the figures were sourced.</p></div>
 <div><b>3 · How much of the fee card can be edited at first?</b><p><strong>Rates, and adding and removing fee groups (recommended);</strong> renaming groups and editing tiers in a second release. Or all of it at once.</p></div>
-<div><b>4 · Who may change fees?</b><p><strong>The same admins as the rest of the Repository (recommended to start),</strong> with every change logged. Or a separate, shorter list of fee admins, which would need a new setting on Cyrus.</p></div>
+<div><b>4 · Who may change fees?</b><p><strong>The same admins as the rest of the Repository (recommended to start),</strong> with every change logged. Or a separate, shorter list of fee admins, which would need a new setting on Poros.</p></div>
 <div><b>5 · Notes on saving</b><p><strong>Required for fee changes, optional for products (recommended).</strong> Or optional everywhere, or required everywhere.</p></div>
 <div><b>6 · Withdrawing a product that's in a sleeve</b><p><strong>Refused, listing the sleeves (recommended).</strong> Or allowed, which leaves those sleeves broken and held back from proposals until fixed, as happens today when a product goes missing from the file.</p></div>
 <div><b>7 · Should the As of date appear in the workbook or deck?</b><p><strong>No: on screen only (recommended);</strong> the register records the versions. Or add a product As of column to the workbook's Implementation sheet.</p></div>
 <div><b>8 · What the Activity tab covers</b><p><strong>Everything, including overlay rules and the funding split (recommended),</strong> so there's one log. Or only products and fees beside sleeves; the other two already have histories in their own tabs.</p></div>
-<div><b>9 · Updates to Cyrus</b><p><strong>Two (recommended):</strong> products after stage 2, fees and the log after stage 4. Or one at the end.</p></div>
-<div><b>10 · The share class change</b><p><strong>Push it and send it to Cyrus now, on its own (recommended),</strong> because Cyrus's product file already needs it.</p></div>
+<div><b>9 · Updates to Poros</b><p><strong>Two (recommended):</strong> products after stage 2, fees and the log after stage 4. Or one at the end.</p></div>
+<div><b>10 · The share class change</b><p><strong>Push it and send it to Poros now, on its own (recommended),</strong> because Poros's product file already needs it.</p></div>
 </div>
 
 <h2 id="risks">Things to be aware of</h2>
@@ -487,7 +487,7 @@ table.mk-grid td s{display:block;font-weight:400;font-size:10.5px;color:var(--in
 <a class="ind" href="#f-reach">What it reaches</a>
 <a href="#log">The change log</a>
 <a href="#tech">Underneath</a>
-<a href="#cyrus">Moving Cyrus across</a>
+<a href="#poros">Moving Poros across</a>
 <a href="#stages">Stages</a>
 <a href="#tests">Testing</a>
 <a href="#decisions">Decisions for you</a>

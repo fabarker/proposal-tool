@@ -1597,7 +1597,7 @@ def test_js_price_build_up_mirror_agrees_with_python():
 def test_the_page_resolves_the_api_base_however_the_host_declares_it():
     """D87. Every call reads window.API_BASE, so it must be set whichever way
     the host's globals.js declares its own. This repo's stand-in assigns
-    `window.API_BASE = ...`; Cyrus writes `const API_BASE = ...`, which is a
+    `window.API_BASE = ...`; Poros writes `const API_BASE = ...`, which is a
     SCRIPT-SCOPED binding and no window property. The old guard tested the
     bare name and so skipped, leaving window.API_BASE undefined and every
     request built as "undefined/scenario/..." against the page's own path -

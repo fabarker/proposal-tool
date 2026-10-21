@@ -372,7 +372,7 @@ weighted fee (bp) = (product cost % + management fee %) × printed %</pre>
     <tr><td>The model</td><td><code>buildImplementationRows</code> returns <code>model['initial']</code> beside today's groups and total — <code>groups</code>, <code>total</code> (weight, notional, weighted fee) and <code>commitment</code> (weight, notional, the two held amounts) — or <code>None</code> for a book without private assets. Built once, in the same call, from the same rates (D69).</td></tr>
     <tr><td>Export</td><td>No new route and no new argument: the workbook and deck writers add their sheet and slide when <code>model['initial']</code> is present. One export, one UID, both files (D123).</td></tr>
     <tr><td>Register</td><td>The implemented picture it already stores as JSON gains an <code>initial</code> key: per product the initial weight and notional, plus the commitment. <b>No schema change</b>; proposals delivered before carry none, which is the truth about them.</td></tr>
-    <tr><td>Cyrus</td><td>Re-copy the package and the page folder (PORTING.md §0A). No dependency, setting, route or register migration.</td></tr>
+    <tr><td>Poros</td><td>Re-copy the package and the page folder (PORTING.md §0A). No dependency, setting, route or register migration.</td></tr>
   </table>
 
   <h2 id="edges">08 · Edge cases, from the data</h2>

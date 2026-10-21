@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""What a Cyrus host carries of the Proposal Tool, measured against this checkout.
+"""What a Poros host carries of the Proposal Tool, measured against this checkout.
 
 Read only. Nothing on the host is written, and its databases are opened
-read-only. Run it on the Cyrus machine with the service's own environment
+read-only. Run it on the Poros machine with the service's own environment
 set, so the SCENARIO_* variables point where the service points, and with
 the service's virtualenv active, so the dependency check is about that
 interpreter:
 
     python <ep>\\service\\tools\\portCheck.py --src H:\\cyrus-repo\\isg-cyrus-pmg\\src
 
-<ep> is a copy of this repository's layout: on the Cyrus machine, the folder
+<ep> is a copy of this repository's layout: on the Poros machine, the folder
 porting/bundle/unbundle.py unpacks (PORTING_UPDATE.md step 1), since that
 machine reaches GitHub only through a browser; anywhere else, a checkout.
 --src is the directory that holds the host's cyrus_pmg package. It reports, for the package, the router block and

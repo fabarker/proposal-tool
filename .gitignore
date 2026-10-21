@@ -19,7 +19,7 @@ __pycache__/
 #
 # var/baked IS tracked, and deliberately. It is a DELIVERY, not a cache: the
 # host computes no analytics, so those 16 slices and their manifest are the
-# figures every proposal is made of, and the Cyrus checkout is on another
+# figures every proposal is made of, and the Poros checkout is on another
 # machine with git as the way across. It is PRODUCED in epsilon-phi and
 # delivered here (D126): this repository cannot rebuild it. A store for tests,
 # with synthetic analytics:

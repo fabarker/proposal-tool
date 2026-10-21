@@ -1,28 +1,28 @@
-# Bringing Cyrus up to date with the Proposal Tool
+# Bringing Poros up to date with the Proposal Tool
 
-> **Superseded for routine updates (D162).** Cyrus is current to the D161 port; each later change
+> **Superseded for routine updates (D162).** Poros is current to the D161 port; each later change
 > reaches it as one file, `porting/update.py` - see `porting/README.md`. This guide and the paste
 > bundle it describes are history.
 
-This guide updates a Cyrus host that already runs the Proposal Tool. It replaces the update notes
+This guide updates a Poros host that already runs the Proposal Tool. It replaces the update notes
 in `PORTING.md` §0A, which it was checked against and corrects in three places (see the end).
 `PORTING.md` remains the reference for a **first** port and for everything this guide cites by
 section number.
 
-- **Host checkout:** `H:\cyrus-repo\isg-cyrus-pmg`, on the Cyrus machine.
+- **Host checkout:** `H:\cyrus-repo\isg-cyrus-pmg`, on the Poros machine.
 - **No clone on that machine.** It reaches GitHub only through a browser; the firewall stops
   `git clone`. So the update crosses by **copy and paste**: step 1 pastes a small set of text
   files from the repository's `porting/bundle` folder and unpacks them.
 - **`<ep>`:** the folder step 1 unpacks, `H:\pt-update\proposal-tool`. It has this repository's
   layout, holding everything the update copies.
 
-Every command is for the Cyrus machine, written for **Command Prompt**. In PowerShell (PyCharm's
+Every command is for the Poros machine, written for **Command Prompt**. In PowerShell (PyCharm's
 terminal shows `PS` before the prompt), `robocopy`, `copy` and `del` work as written; write
 `$BK = "H:\pt-backup-before-update"` for `set BK=...`, and `$BK` for `%BK%`.
 
 ---
 
-## 1. Where Cyrus stands
+## 1. Where Poros stands
 
 The last port was made on **10 September 2026**, at the change numbered **D89** (sleeve editions).
 It was verified end to end on the host: the page served through the Flask route, and the schema
@@ -92,7 +92,7 @@ The 12 new routes:
   the old service, or the reverse, fails in ways nobody will enjoy reading about.
 - **Every proposal exported is kept for ever** in the register. That is the point of the register.
   The test export in step 11 will stay on the record, so make it under a mandate you'll recognise.
-- **The gate runs on the development machine, not on Cyrus.** Before a bundle is built, the suite
+- **The gate runs on the development machine, not on Poros.** Before a bundle is built, the suite
   must pass there (`cd service`, then `PYTHONPATH=. python3 -m pytest tests -q`). It printed
   **562 passed** on 13 October 2026, at D160, in about 5 minutes. Don't port a bundle built from a commit
   that fails it.
@@ -189,10 +189,10 @@ the settings were moved to durable storage after the first port, they are the pa
 under `H:\cyrus-repo\isg-cyrus-pmg\src\var\`.
 
 **Then look for edits made on the host itself.** An update copies files over the host's, so an edit
-made on Cyrus since the last port would be lost. Copy `porting/edits-check.py` from GitHub into
+made on Poros since the last port would be lost. Copy `porting/edits-check.py` from GitHub into
 `H:\pt-update` the same way as the bundle, and run `python H:\pt-update\edits-check.py`. It
-compares Cyrus's package, router block and page with the commit Cyrus was ported from, and lists
-every line Cyrus added or changed (saved to `H:\pt-update\edits-report.txt`). A file flagged only at
+compares Poros's package, router block and page with the commit Poros was ported from, and lists
+every line Poros added or changed (saved to `H:\pt-update\edits-report.txt`). A file flagged only at
 *original line N* where N is its last line plus one has merely lost its final newline: harmless. At
 the 9 September port it found four real fixes; three are now in the repository (D160), and the
 fourth is the `bake.py` line in step 6.
@@ -247,11 +247,11 @@ del H:\cyrus-repo\isg-cyrus-pmg\src\cyrus_pmg\pmgService\scenario\liveAdapter.py
 
 Then put back what is the host's own:
 
-- **`advisors.xlsx`**: Cyrus holds its own advisor directory (34 KB against the repository's 5 KB
+- **`advisors.xlsx`**: Poros holds its own advisor directory (34 KB against the repository's 5 KB
   stand-in). Copy it back from `%BK%\scenario`.
-- **`fees.json`**: take the new one unless `feeTools --accept` has been run on Cyrus; at the
+- **`fees.json`**: take the new one unless `feeTools --accept` has been run on Poros; at the
   9 September port it had not, and the only difference was the new `custom` block.
-- **`bake.py`, one line**: Cyrus keeps the bake one folder higher than the repository does, in
+- **`bake.py`, one line**: Poros keeps the bake one folder higher than the repository does, in
   `H:\cyrus-repo\isg-cyrus-pmg\var\baked`. In the new `bake.py`, find `DEFAULT_STORE` and give
   its path one more `'..',`, so it reads
   `os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..', 'var', 'baked')`.
@@ -422,7 +422,7 @@ owners:
   or a `.gs.com` hostname alias works.
 
 **Next time.** The same steps carry any later update. The bundle is rebuilt and committed before
-each port. On Cyrus, delete `H:\pt-update` and paste the new bundle into a fresh one. Step 2's
+each port. On Poros, delete `H:\pt-update` and paste the new bundle into a fresh one. Step 2's
 check then says what has changed since this update.
 
 ---

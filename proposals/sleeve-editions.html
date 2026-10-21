@@ -406,7 +406,7 @@ tr.total td{font-weight:700;border-top:2px solid var(--line-strong)}
   <li class="same"><b>Export.</b> The gate requires every category to have a sleeve that resolves under the base portfolio. The workbook's Implementation preamble names the edition; the rows print the products it holds.</li>
 </ol>
 
-<h3>Data delivery, on the Cyrus side</h3>
+<h3>Data delivery, on the Poros side</h3>
 <ol class="wf">
   <li><b><code>sleeves.csv</code> gains one column, <code>Edition</code></b>, the label. Blank means the fallback. Today's 260 rows have it blank and load as fallbacks.<span class="ui">Variant, Category, Sleeve, Edition, ProductId, Weight</span></li>
   <li><b><code>sleeveRules.csv</code> is new</b>: one row per rule. Blank cell means any; several values in a cell are separated by <code>|</code>. Several rows for one edition are an OR.</li>

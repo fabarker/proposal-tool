@@ -1,7 +1,7 @@
 # Data delivery templates
 
 `ProposalTool_DataTemplates.xlsx` is the workbook to hand to whoever supplies the
-Proposal Tool's data on the Cyrus side. One sheet per file the service reads,
+Proposal Tool's data on the Poros side. One sheet per file the service reads,
 each a literal table to fill in:
 
 | Sheet | Becomes | Pointed at by |

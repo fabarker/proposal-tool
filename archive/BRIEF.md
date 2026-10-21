@@ -18,7 +18,7 @@ data, a PWA can complete the whole flow and download a workbook.
 
 But build the back end **exactly as it would have to be built inside
 `isg-cyrus-pmg/src/cyrus_pmg`**, following that codebase's design, because **this is going to be
-transplanted into Cyrus.** `epsilon-phi` is where you develop it. Cyrus is what you are writing it
+transplanted into Poros.** `epsilon-phi` is where you develop it. Poros is what you are writing it
 for.
 
 ---
@@ -45,7 +45,7 @@ is not optional. Budget real time for it.
 
 | Order | Read | What you are extracting |
 |---|---|---|
-| 1 | **`../HOST_AUDIT.md`** §11 Conventions, §12 Recipe, §13 Gotchas | How Cyrus does it. §12 is a literal add-a-page recipe — your work is that recipe, at scale. |
+| 1 | **`../HOST_AUDIT.md`** §11 Conventions, §12 Recipe, §13 Gotchas | How Poros does it. §12 is a literal add-a-page recipe — your work is that recipe, at scale. |
 | 2 | **`../spec.html`** §1–§5 | What you are building and the architecture it must have. §4.3 is the sharpest page in the document: it draws the line between what must be server-supplied and what may be hardcoded. |
 | 3 | **`../proposalTool/proposalTool.html`** | Open it. Click every control, resize it, tab through it. It is the behavioural reference — faster than reading §7–§9 cold. |
 | 4 | **`../spec.html`** §6–§14 | The detail. §10 is exhaustive on states; §13 is the accessibility standard. |
@@ -56,7 +56,7 @@ is not optional. Budget real time for it.
 
 ## Mirror the host topology in `epsilon-phi`
 
-Do not invent a development architecture. Reproduce Cyrus's, so the code is already in its final
+Do not invent a development architecture. Reproduce Poros's, so the code is already in its final
 shape. From `../HOST_AUDIT.md` §4 and spec §3.1, that is:
 
 **A Flask static server** in the shape of `dashboardFrontend.py` — one hand-written `@app.route`
@@ -86,11 +86,11 @@ guarded with `if (typeof X === 'undefined')`, bootstrap on `DOMContentLoaded`, e
 ## What to stub, and how to stub it
 
 Some things cannot exist in `epsilon-phi`. Stub the *implementation*; keep the *seam* exactly where
-Cyrus needs it.
+Poros needs it.
 
 | Thing | Stub it as | Keep exactly |
 |---|---|---|
-| Kerberos allowlist | An env-var list, as local Cyrus dev already does (`PMG_ALLOWED_KERBEROS`) | The `before_request` gate, its position in the stack, the 403 card, the `/api/whoami` probe |
+| Kerberos allowlist | An env-var list, as local Poros dev already does (`PMG_ALLOWED_KERBEROS`) | The `before_request` gate, its position in the stack, the 403 card, the `/api/whoami` probe |
 | GitLab CI / `gns` distribution | Nothing. Out of scope | — |
 | Stored model allocations | **Nothing — these are supplied.** `../backend/portfolio_weights.py`, 272 portfolios, spec §4.5 | Drive `get_schema`'s availability from its `ui_available` column, not a second list |
 | PMG sleeve library | Same | Same |
@@ -110,7 +110,7 @@ debugs this without a database, and it is how you will demo before the analytics
 Flask static server, proxy route, FastAPI service, router, auth gate. Page served from its folder.
 Data still generated client-side.
 
-**Done when:** the page loads through the Flask server at a Cyrus-shaped URL, the auth gate rejects
+**Done when:** the page loads through the Flask server at a Poros-shaped URL, the auth gate rejects
 an unlisted user with the right card, and `/api/…` returns a well-formed 502 when the FastAPI
 service is down. That last one matters — it proves the proxy is right before anything depends on it.
 

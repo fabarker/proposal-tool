@@ -1,9 +1,9 @@
-"""D163: the copy Cyrus gets reads as Cyrus's own.
+"""D163: the copy Poros gets reads as Poros's own.
 
-Every shipped file goes through tools/cyrusClean.py on its way: its comments
+Every shipped file goes through tools/porosClean.py on its way: its comments
 lose the decision numbers, the spec's sections and the other references to
 what is only here, and its code is untouched. These tests fail as soon as
-something written here would reach Cyrus with a trace - a new reference the
+something written here would reach Poros with a trace - a new reference the
 cleaner does not take out, or one in the code itself - so it is reworded when
 it is written, not when an update is built.
 """
@@ -20,29 +20,29 @@ SERVICE = os.path.abspath(os.path.join(HERE, '..'))
 ROOT = os.path.dirname(SERVICE)
 sys.path.insert(0, os.path.join(SERVICE, 'tools'))
 
-import cyrusClean  # noqa: E402
+import porosClean  # noqa: E402
 
 
 def _shipped():
     files = subprocess.run(['git', '-C', ROOT, 'ls-files', 'service/cyrus_pmg/pmgService/scenario',
                             'proposalTool'], capture_output=True, text=True, check=True).stdout.split()
-    return [f for f in files if f.endswith(cyrusClean.TEXT)]
+    return [f for f in files if f.endswith(porosClean.TEXT)]
 
 
-def test_every_shipped_file_reaches_cyrus_with_no_trace_and_its_code_unchanged():
+def test_every_shipped_file_reaches_poros_with_no_trace_and_its_code_unchanged():
     problems = []
     for rel in _shipped():
         before = open(os.path.join(ROOT, rel), encoding='utf-8').read()
         problems += ['{}: {}'.format(rel, p)
-                     for p in cyrusClean.check(rel, before, cyrusClean.cleanText(rel, before))]
+                     for p in porosClean.check(rel, before, porosClean.cleanText(rel, before))]
     assert problems == []
 
 
-def test_the_endpoint_block_reaches_cyrus_with_no_trace():
-    lines = open(os.path.join(ROOT, cyrusClean.ROUTER), encoding='utf-8').read().split('\n')
-    start, end = cyrusClean.blockRange(lines)
+def test_the_endpoint_block_reaches_poros_with_no_trace():
+    lines = open(os.path.join(ROOT, porosClean.ROUTER), encoding='utf-8').read().split('\n')
+    start, end = porosClean.blockRange(lines)
     block = '\n'.join(lines[start:end])
-    assert cyrusClean.check('block.py', block, cyrusClean.cleanText('block.py', block)) == []
+    assert porosClean.check('block.py', block, porosClean.cleanText('block.py', block)) == []
 
 
 def test_only_comments_change():
@@ -50,27 +50,27 @@ def test_only_comments_change():
     source = ('def f():\n'
               '    """Resolve it (spec 3.4, D12)."""\n'
               "    return 'kept (D12)'   # the floor (D7)\n")
-    out = cyrusClean.cleanText('x.py', source)
+    out = porosClean.cleanText('x.py', source)
     assert out == ('def f():\n'
                    '    """Resolve it."""\n'
                    "    return 'kept (D12)'   # the floor\n")
-    problems = cyrusClean.check('x.py', source, out)
+    problems = porosClean.check('x.py', source, out)
     assert len(problems) == 1 and problems[0].startswith('in the code') and "'kept (D12)'" in problems[0]
 
 
 def test_a_reference_that_shares_a_parenthesis_keeps_the_rest():
-    assert cyrusClean.cleanComment('# held (fundingSplit, D148) here') == '# held (fundingSplit) here'
-    assert cyrusClean.cleanComment('# dropped\n    # (D68). Next') == '# dropped.\n    # Next'
+    assert porosClean.cleanComment('# held (fundingSplit, D148) here') == '# held (fundingSplit) here'
+    assert porosClean.cleanComment('# dropped\n    # (D68). Next') == '# dropped.\n    # Next'
 
 
 def test_a_change_to_the_code_is_caught():
     js = 'var a = 1; /* note (D5) */\n'
-    assert cyrusClean.check('x.js', js, 'var a = 2; /* note */\n') == ['the code changed']
+    assert porosClean.check('x.js', js, 'var a = 2; /* note */\n') == ['the code changed']
 
 
 def test_the_delivered_bake_names_no_folder_of_the_machine_that_made_it():
     """The manifest keeps the name of each file the bake was made from, not
-    where it was: the update does the same to the copy on Cyrus."""
+    where it was: the update does the same to the copy on Poros."""
     folder = re.compile(r'"(?:/|\\\\|[A-Za-z]:(?:\\\\|/))')
     found = [os.path.basename(p) for p in glob.glob(os.path.join(SERVICE, 'var', 'baked', '*.json'))
              if folder.search(open(p, encoding='utf-8').read())]

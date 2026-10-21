@@ -14,13 +14,13 @@ WHERE
   Package: epsilon-phi-core/proposal-tool/     <- everything you need is here
   You build and run it inside epsilon-phi. You write the back end exactly as it
   would have to be written inside isg-cyrus-pmg/src/cyrus_pmg, because this gets
-  transplanted there. epsilon-phi is where you develop it; Cyrus is what you are
+  transplanted there. epsilon-phi is where you develop it; Poros is what you are
   writing it for.
 
 BEFORE YOU WRITE ANY CODE
   Read, in this order, and do not skim:
     1. proposal-tool/BRIEF.md        what you are being asked to do
-    2. proposal-tool/HOST_AUDIT.md   sections 11, 12, 13 — how Cyrus is built
+    2. proposal-tool/HOST_AUDIT.md   sections 11, 12, 13 — how Poros is built
     3. proposal-tool/spec.html       sections 1-5, then open the prototype, then 6-14
     4. proposal-tool/backend/scenario_port.py   the eight-method contract
   Then open proposal-tool/proposalTool/proposalTool.html in a browser and click
@@ -33,7 +33,7 @@ BEFORE YOU WRITE ANY CODE
 THE TEST THAT GOVERNS EVERY DECISION
   When this is copied into cyrus_pmg, what has to change? The answer must be
   configuration, never structure. If you catch yourself writing something you
-  plan to restructure when it moves, stop and write it the way Cyrus needs it now.
+  plan to restructure when it moves, stop and write it the way Poros needs it now.
 
 STEP ZERO
   Confirm you can reach epsilonPhi analytics: CAppConfig.setup() and a working
@@ -41,7 +41,7 @@ STEP ZERO
   immediately and build phases 1 and 2 anyway — they do not need it.
 
 SEQUENCE — do not skip ahead
-  1. Stand up the Cyrus topology in epsilon-phi: Flask static server, the
+  1. Stand up the Poros topology in epsilon-phi: Flask static server, the
      /api/<x> -> /api/v1/<x> proxy, FastAPI service and router, auth gate.
      Page served, data still client-side.
      Gate: page loads through Flask behind the auth gate, and /api/... returns

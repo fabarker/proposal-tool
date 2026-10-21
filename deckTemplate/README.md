@@ -1,14 +1,14 @@
 # Deck template
 
 `ProposalDeck_Template.pptx` is a PLACEHOLDER for the house slide template,
-for building and testing the deck here. Cyrus has the house template itself,
-already formatted, and keeps it: this file is never ported. The Cyrus update
+for building and testing the deck here. Poros has the house template itself,
+already formatted, and keeps it: this file is never ported. The Poros update
 carries the service package, the page and the router block, and this folder is
 outside all three.
 
 The deck adds every slide from a template's layout, so the frame and the text
 styles come from the template, not from code (D174). It reads whichever template
-`SCENARIO_DECK_TEMPLATE` names: this one here, the house template on Cyrus.
+`SCENARIO_DECK_TEMPLATE` names: this one here, the house template on Poros.
 Without the setting, the deck is drawn as it was before templates. The
 Proposal UID is not printed on a template deck: it goes in the workbook only
 (and the file's hidden properties, which the register reads). The plan is
@@ -67,7 +67,7 @@ PYTHONPATH=. python3 -m cyrus_pmg.pmgService.scenario.houseTemplate ../deckTempl
 ```
 
 Without a path it checks the template `SCENARIO_DECK_TEMPLATE` names; a second
-argument names the layout. On Cyrus, run it against the house template before
+argument names the layout. On Poros, run it against the house template before
 the setting is set.
 
 ## Changing it
@@ -191,7 +191,7 @@ minimum advisory fee comes from is still open.
   contents slide whose numbers are typed as text is left alone.
 
 The read-only check lists every mark it finds and on which slide, any name it
-does not know, and any tool slide with no marker yet. Run it on Cyrus once the
+does not know, and any tool slide with no marker yet. Run it on Poros once the
 house template is marked.
 
 This placeholder carries one mark, `tool: template only`, on its style slide.

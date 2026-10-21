@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""The copy of a shipped file that Cyrus gets: its comments read as Cyrus's own.
+"""The copy of a shipped file that Poros gets: its comments read as Poros's own.
 
 The code here cites its decision log (D-numbers), the spec's sections, its
-tests and its earlier versions, and some comments speak of Cyrus from outside
-("the host"). None of that is on Cyrus, so buildCyrusUpdate.py ships each
+tests and its earlier versions, and some comments speak of Poros from outside
+("the host"). None of that is on Poros, so buildPorosUpdate.py ships each
 package and page file through clean(): the same file, with those references
 taken out of its comments and docstrings, and nothing else touched.
 
@@ -12,11 +12,11 @@ Only comments and docstrings change, and that is checked for every file
 JavaScript, CSS or HTML file the same text once its comments are removed.
 What is left must name none of the things in TRACES, or the build stops.
 
-The update builds the copy Cyrus has from the commit Cyrus is at with THIS
+The update builds the copy Poros has from the commit Poros is at with THIS
 file as it stood at that commit, so a change here is shipped like any other:
-the next update moves Cyrus to the new copy.
+the next update moves Poros to the new copy.
 
-    python3 service/tools/cyrusClean.py            what is still left, per file
+    python3 service/tools/porosClean.py            what is still left, per file
 """
 
 import ast
@@ -236,7 +236,7 @@ def _paren(match):
 
 
 #: Rewordings for what the references leave behind: (as it reads once the
-#: references are out, as Cyrus reads it). Each is applied wherever it occurs
+#: references are out, as Poros reads it). Each is applied wherever it occurs
 #: in a comment or docstring; one that no longer occurs is simply unused.
 REWRITES = [
     # -- the page
@@ -449,7 +449,7 @@ def cleanText(key, text):
 
 
 def clean(key, data):
-    """The bytes Cyrus gets for the shipped file *key*."""
+    """The bytes Poros gets for the shipped file *key*."""
     if not key.endswith(TEXT):
         return data
     crlf = b'\r\n' in data

@@ -442,7 +442,7 @@ PUT  /api/scenario/repository/policies/funding/{scope}      {destinations, note}
 GET  /api/scenario/repository/policies/history?scope=
 POST /api/scenario/repository/policies/revert               {scope, revision, note}</pre>
 <p class="prose">The schema the page already fetches keeps its shape: <code>availability</code> narrows as before and gains <code>unavailableReasons</code>; <code>rules.privateFunding</code> is served from the store rather than the constant and gains its <code>revision</code>. <code>options.variantAllocations</code> stays for compatibility, derived from the offer.</p>
-<h3>Porting to Cyrus</h3>
+<h3>Porting to Poros</h3>
 <p class="prose">This is the usual shape: re-copy the package and the page folder, and paste the router block, which gains six routes. There is no configuration. One thing is not a plain copy: <b>curate the host's library before deploying the switch</b>, since the host's library, not the packaged one, decides what the host offers. The read-only Offer view ships a phase earlier, so the curation can be done and checked in place. The porting guide gains a step for this, and a check that each type offers the counts the desk expects.</p>
 </section>
 
@@ -461,7 +461,7 @@ POST /api/scenario/repository/policies/revert               {scope, revision, no
       <li>Tests: removing a category's sleeves withdraws exactly the books that hold it; editions, fallbacks, archived and broken sleeves are handled as the rail handles them; the cache refreshes on sleeve saves and catalogue loads; the warning counts are right.</li></ul></li>
   <li><h3>The desk curates the library</h3>
     <ul><li>Archive the Hedge Funds sleeves under ESG and both Onshore types, and the Private Markets sleeves under both Onshore types. Under decision 1 A, give ESG's Private Markets sleeves the rule "real assets excluded".</li>
-      <li>The Offer view then shows no marks against today: 172, 60, 32 and 32. This is desk work in the console, with no code change, and in Cyrus it is done in Cyrus.</li></ul></li>
+      <li>The Offer view then shows no marks against today: 172, 60, 32 and 32. This is desk work in the console, with no code change, and in Poros it is done in Poros.</li></ul></li>
   <li><h3>The library decides</h3>
     <ul><li>The schema, <code>validateKey</code>, the type-change pruning and the export gate read the offer. The picker shows the reasons, and scenarios whose base drops out show the notice and are refused at export.</li>
       <li><code>VARIANT_ALLOCATIONS</code> and <code>VARIANTS_EXCLUDING_RE</code> are deleted.</li>

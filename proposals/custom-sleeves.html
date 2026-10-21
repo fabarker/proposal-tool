@@ -232,7 +232,7 @@ td .n{color:var(--ink-3)}
         <tr><td>7</td><td>Allowed for the private assets group</td><td>Yes, weighted as % of the sleeve. <a href="#open">Question B</a> asks about % of the portfolio there.</td></tr>
         <tr><td>8</td><td>No approval step</td><td>None. The register's Custom view lets admins look them over.</td></tr>
         <tr><td>9</td><td>Clear on a type change</td><td>Custom sleeves clear with the library choices, and the message names them.</td></tr>
-        <tr><td>10</td><td>All four stages together</td><td>One build, one Cyrus update.</td></tr>
+        <tr><td>10</td><td>All four stages together</td><td>One build, one Poros update.</td></tr>
       </tbody>
     </table></div>
 
@@ -521,8 +521,8 @@ a remaining category's weight × scale; every product in it follows</div>
       <li><b>Two people on one proposal</b>: it saves with the rest of the proposal, last save wins, as for other choices.</li>
     </ul>
 
-    <h2 id="cyrus">Moving Cyrus across</h2>
-    <p>All four stages go as one <code>porting/update.py</code>, the usual single copied file. On Cyrus it adds one route for PWAs, two admin routes and register schema 7 (columns added on first open, so existing proposals are kept), and seeds the custom sleeve settings with every category off. Cyrus's sleeves database needs no change. Nothing changes for PWAs on Cyrus until an admin switches a category on.</p>
+    <h2 id="poros">Moving Poros across</h2>
+    <p>All four stages go as one <code>porting/update.py</code>, the usual single copied file. On Poros it adds one route for PWAs, two admin routes and register schema 7 (columns added on first open, so existing proposals are kept), and seeds the custom sleeve settings with every category off. Poros's sleeves database needs no change. Nothing changes for PWAs on Poros until an admin switches a category on.</p>
 
     <h2 id="tests">How it gets tested</h2>
     <ul>
@@ -547,7 +547,7 @@ a remaining category's weight × scale; every product in it follows</div>
         <tr><td>E</td><td>Is there a limit on how far % of the portfolio may move a category?</td><td><span class="rec">Rec</span>None at first, but the register records every departure. A limit (e.g. within 5 points of the strategic weight) could be added to the settings later.</td></tr>
       </tbody>
     </table></div>
-    <p class="small">Once these are settled, the build is the four stages together, then one Cyrus update with D164–D170.</p>
+    <p class="small">Once these are settled, the build is the four stages together, then one Poros update with D164–D170.</p>
   </main>
 
   <nav class="toc" aria-label="Contents">
@@ -567,7 +567,7 @@ a remaining category's weight × scale; every product in it follows</div>
     <a href="#record">What gets recorded</a>
     <a href="#tech">What changes underneath</a>
     <a href="#edges">Cases worth thinking through</a>
-    <a href="#cyrus">Moving Cyrus across</a>
+    <a href="#poros">Moving Poros across</a>
     <a href="#tests">How it gets tested</a>
     <a href="#open">Still to settle</a>
   </nav>

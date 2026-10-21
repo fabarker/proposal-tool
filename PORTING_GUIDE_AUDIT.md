@@ -4,11 +4,11 @@ Audit date 2026-09-03, extended 2026-09-04. Repository state at the original pas
 `datasource-dev` at `9f4dc50`. This report is the evidence and reasoning behind the rewritten
 `PORTING.md`; it does not repeat the guide. Paths are relative to `epsilon-phi-core/proposal-tool/`.
 
-**Second pass, 2026-09-04.** A structural note on Cyrus was supplied (§4.4), and the concurrency
+**Second pass, 2026-09-04.** A structural note on Poros was supplied (§4.4), and the concurrency
 questions it raised were tested (§8.5). One defect was found in shipped code and fixed (§9.2) —
 so, unlike the first pass, this audit did change application code.
 
-**Third pass, 2026-09-05.** Six real Cyrus files arrived at `../cyrus-files/` (§4.5). They close
+**Third pass, 2026-09-05.** Six real Poros files arrived at `../poros-files/` (§4.5). They close
 the auth blocker, correct two facts the screenshots had wrong, and expose **two incompatibilities
 that would have failed at runtime** — both fixed and covered by tests (§9.3). The mirror's auth
 was then aligned to the host's entitlement model outright, so the divergence that produced the
@@ -72,14 +72,14 @@ and two inserts" — hides the auth additions and the mandatory configuration.
 |---|---|---|
 | Proposal tool | `proposal-tool/` — `proposalTool/` (page), `service/cyrus_pmg/pmgService/scenario/` (25 modules, 7,732 lines), `service/cyrus_pmg/pmgService/dashboardRouter.py` (696 lines), the stand-ins under `service/cyrus_pmg/`, `generator/`, `backend/`, `saaSource/`, `productSource/`, `sleeveSource/` | working tree at `9f4dc50` |
 | Porting guide | `PORTING.md` (324 lines) and `service/TRANSPLANT.md` (204 lines) as at `9f4dc50` | rewritten by this audit |
-| Cyrus audit | `HOST_AUDIT.md` (785 lines, committed 2026-08-30 in `4044464`) | read in full; not modified |
+| Poros audit | `HOST_AUDIT.md` (785 lines, committed 2026-08-30 in `4044464`) | read in full; not modified |
 | Tests | `service/tests/` — 5 modules, `conftest.py`, `golden/` (3 files + README) | run (§8) |
 | Configuration | `service/dashboard.env.defaults`, `service/start_dashboard.sh`, `service/stop_dashboard.sh`, `.gitignore` | read |
 | Registers and studies | `service/DEVIATIONS.md` (D1–D74, adapter decisions, G1–G8), `service/PERFORMANCE.md`, `service/README.md`, `README.md`, `archive/BRIEF.md`, `archive/dataSources.html`, `archive/dataOperations.html`, `archive/exportPortingPlan.html`, `archive/exportTrace.html`, `spec.html` §3.4, §3.5, §16, the three `*Source/README.md` | read |
 | Git history | all 19 commits touching `proposal-tool` (`6d12d53` 2026-08-30 … `9f4dc50` 2026-09-03); per-file history of the three documents; diffs of the last guide commits; shortstats since each guide's last update | §6 |
 | Runtime | the mirror running from `service/start_dashboard.sh` (pids in `service/var/run/`), `SCENARIO_ADAPTER=baked`, fallback on; plus in-process probes with throwaway stores | §8 |
-| Cyrus structural note (second pass) | supplied 2026-09-04: transcribed screenshots of the `src/` tree, the PMG service's routes, its project structure, config and design principles. Parts marked truncated in the source | §4.4, §7 |
-| Real Cyrus files (third pass) | supplied 2026-09-05 at `../cyrus-files/`: `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`, `exceptionHandlers.py`, `config.py`, `dashboard.env.defaults`. Transcriptions with marked gaps; source rather than description | §4.5, §9.3 |
+| Poros structural note (second pass) | supplied 2026-09-04: transcribed screenshots of the `src/` tree, the PMG service's routes, its project structure, config and design principles. Parts marked truncated in the source | §4.4, §7 |
+| Real Poros files (third pass) | supplied 2026-09-05 at `../poros-files/`: `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`, `exceptionHandlers.py`, `config.py`, `dashboard.env.defaults`. Transcriptions with marked gaps; source rather than description | §4.5, §9.3 |
 
 ## 4. Current-state findings
 
@@ -131,7 +131,7 @@ router for 422/404/502, so independent of the app's exception handlers).
 | No logging in the package | no `logging` import in `scenario/` | acceptable; provenance surfaces instead |
 | Stale in-repo docs | `service/README.md` still describes `sleeves.py` as tables and `SCENARIO_ADAPTER` default `fixtures`; `scenario/__init__.py` docstring lists a `..core.accessControl` seam and omits eight modules; `README.md` cites D1–D46; `archive/dataOperations.html` expects 193 tests; `service/cyrus_pmg/pmgService/config.py` docstring says the transplant adds `SCENARIO_ADAPTER` to the host's config (it does not — `registry.py:32` reads the environment) | not in this audit's edit scope; noted |
 
-### 4.4 Second pass — what the Cyrus structural note changes
+### 4.4 Second pass — what the Poros structural note changes
 
 Newer than `HOST_AUDIT.md` (2026-08-30) and contradicting it in four places. Treated as the better
 guess, not as proof: it is a transcription, parts are marked truncated, and its `core/` listing may
@@ -158,7 +158,7 @@ exists in-tree and is probably the current version of the document this port was
 
 ### 4.5 Third pass — the real host files
 
-`../cyrus-files/` holds `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`,
+`../poros-files/` holds `pmgEntitlement.py`, `dashboardRouter.py`, `dashboardFrontend.py`,
 `exceptionHandlers.py`, `config.py` and `dashboard.env.defaults`. Transcriptions with marked gaps,
 but source rather than description; they supersede both `HOST_AUDIT.md` and the 2026-09-04 note.
 
@@ -310,7 +310,7 @@ Totals since `4d2ba93` (the last `PORTING.md` touch): `scenario/` 13 files, +6,1
 +200/−11; `generator/` +1,347/−122; tests +1,872/−15. Since `070da20` (the last `TRANSPLANT.md`
 update) the `generator/` figure is +1,657/−134 and tests +1,951/−15.
 
-## 7. Cyrus compatibility analysis
+## 7. Poros compatibility analysis
 
 ### 7.1 Confirmed matches (Verified in the mirror; Audit for the host side)
 
@@ -521,7 +521,7 @@ the brief asks for. Substantive changes:
    workbook, and the portability probe to repeat on the host.
 9. §15 has eighteen acceptance criteria; §16 rollout order, rollback per layer and an operating
    rhythm; §17 separates client-use blockers (placeholder data, the D70 block, USD-context
-   analytics) from port risks; §18 is the verify-against-live-Cyrus checklist; §19 the completion
+   analytics) from port risks; §18 is the verify-against-live-Poros checklist; §19 the completion
    checklist.
 10. The theme claim was replaced with the measured cost (§10.5).
 11. Obsolete guidance removed: the six-symbol `engine.py`, the `Reporting` example, the
@@ -640,7 +640,7 @@ Suite: **254 passed, 4 skipped**.
 
 ## 10. Risk register
 
-| # | Risk | Severity | Likelihood | Evidence | Mitigation | Needs live Cyrus? |
+| # | Risk | Severity | Likelihood | Evidence | Mitigation | Needs live Poros? |
 |---|---|---|---|---|---|---|
 | R1 | Package defaults resolve outside the package; the service fails on first read in a bare host | High | Certain unless configured | §8.3 path resolution; `universe.py:28`, `products.py:36`, `sleeveRepo.py:75,77` | Seven mandatory variables (`PORTING.md` §11.4); Step 5 censuses | No |
 | R2 | `pandas` / `openpyxl` absent or incompatible on the host | High | Unknown | `portfolio_weights.py:85`; `workbook.py:39–45`; not in `HOST_AUDIT.md` §5.1 | Verify before Step 3; pin 3.0.10 / 2.0.3 as floors | Yes |
@@ -712,6 +712,6 @@ the settings block, two dependencies, and the data.
 
 Later the same day, D77: the proposal flow was re-gated on the allowlist alone and the repository
 left on `ISGAdmin`, after the host's `pmgEntitlement.py` showed that PROD grants an allowlisted
-kerberos `view` only and that `PMGEditor` carries `modify`/`post` on every Cyrus resource. The
+kerberos `view` only and that `PMGEditor` carries `modify`/`post` on every Poros resource. The
 block imports three names from `pmgEntitlement` now, not four; the §17 PROD risk is closed; the
 mirror hands allowlisted callers `PMGViewer`, and an HTTP-level test runs the whole flow as one.

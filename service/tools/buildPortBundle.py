@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build the paste bundle: everything a Cyrus update needs, as text a browser can carry.
+"""Build the paste bundle: everything a Poros update needs, as text a browser can carry.
 
-The Cyrus machine reaches GitHub only through a browser - the firewall stops a
+The Poros machine reaches GitHub only through a browser - the firewall stops a
 clone - so an update crosses by copy and paste. Pasting thirty files one at a
 time is slow and easy to get wrong, the five deck fonts cannot be pasted at
 all, and an editor can quietly re-encode a pasted Python file. So the files an
@@ -192,13 +192,13 @@ if __name__ == '__main__':
 README = '''\
 # The paste bundle
 
-Everything a Cyrus update copies - the `scenario` package, the page folder, the
+Everything a Poros update copies - the `scenario` package, the page folder, the
 router, `portCheck.py`, `PORTING_UPDATE.md` and `requirements.txt` - zipped and
-written as text, because the Cyrus machine reaches GitHub only through a
+written as text, because the Poros machine reaches GitHub only through a
 browser. **`PORTING_UPDATE.md`, step 1, is the procedure.**
 
 Built from commit `{commit}` of {date}{dirty}: {files} files in {count} parts.
-Copy each of these into one folder on the Cyrus machine, under exactly this
+Copy each of these into one folder on the Poros machine, under exactly this
 name, then run `python unbundle.py` there:
 
 | File | Size |
