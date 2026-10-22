@@ -409,7 +409,9 @@ def test_a_type_inherits_until_edited_and_goes_back_on_removal(store):
 
 def test_a_rule_with_no_sleeve_is_saved_with_a_warning_and_attaches_automatically(store):
     saved = overlayRules.save('*', _house() + [_gold(sources=EQUITY_ONLY)], 'gold', 'alice')
-    assert any(w.startswith('No sleeve in Gold yet for ') for w in saved['warnings'])
+    assert any(w.startswith('No sleeve in Gold for ') and w.endswith(
+        'Gold Overlay is not applied there until one is created in the Sleeves view.')
+        for w in saved['warnings'])
     assert 'Gold' in rules.autoSleeveCategories()
     assert 'Gold' in sleeveRepo.fixedCategories()
     categories = sleeveRepo.categories()
@@ -804,10 +806,12 @@ def test_a_type_is_judged_on_the_portfolios_it_offers(store):
     assert sorted(offered) == sorted(k.toStr() for k in keys)
 
 
-def test_an_overlay_category_with_no_sleeve_blocks_the_export(store, tmp_path, monkeypatch):
-    """(M, N) A rule into a category the type has no sleeve in: the export is
-    refused naming it, and the model the export would build reads the list
-    once - the same entry decides the automatic categories."""
+def test_an_overlay_category_with_no_sleeve_is_not_applied_to_the_export(store, tmp_path,
+                                                                         monkeypatch):
+    """(M, N) A rule into a category the type has no sleeve in is not applied
+    to it (D191): the export is not refused for it, its book holds no such
+    category, and the model the export builds reads the list once - the same
+    entry decides the automatic categories."""
     from test_scenario_backend import BASIS, PORT, _sleeveMap
     from cyrus_pmg.pmgService.scenario import scenarioStore, sleeves
     from cyrus_pmg.pmgService.scenario.types import MandateInput
@@ -824,11 +828,12 @@ def test_an_overlay_category_with_no_sleeve_blocks_the_export(store, tmp_path, m
     calls = []
     real = overlayRules.current
     monkeypatch.setattr(overlayRules, 'current', lambda v=None: calls.append(v) or real(v))
-    refused = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
-    assert refused.status_code == 422
-    body = json.loads(refused.body)
-    assert body['field'] == 'sleeves' and body['error'].startswith('No sleeve in Gold yet for')
+    exported = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
+    assert exported.status_code == 200, exported.body
     assert calls == [sleeves.VARIANTS[0]], 'read once'
+    kept = proposalRegister.getProposal(exported.headers['X-Proposal-Id'])
+    assert [(r['id'], r['status']) for r in kept['overlays']['rules']][-1] == ('gold', 'nosleeve')
+    assert proposalRegister.overlaysText(kept['overlays']).endswith('3 Gold Overlay no sleeve')
 
 
 def test_the_premiums_currencies_come_from_its_rule(store):
@@ -919,3 +924,135 @@ def test_the_console_and_the_server_agree_on_every_rules_worst_case(store):
             if a is not None:
                 assert (a['keyStr'], a['category']) == (b['keyStr'], b['category'])
                 assert a['after'] == pytest.approx(b['after'], abs=1e-12)
+
+
+# ------------------------------------------ a type without an overlay (D191) ---
+
+US = 'US Onshore'
+
+
+def _overlaySleeve(variant, category):
+    return next(e for e in sleeveRepo.listAll(variant) if e['category'] == category)
+
+
+def test_a_type_with_no_sleeve_in_an_overlays_category_is_not_given_it(store):
+    """D191: the premium is not offered under US Onshore. Archive its sleeve
+    there and the type's list leaves the rule out - no switch, nothing taken
+    from IGFI - and names it as withheld; the record says so; the census
+    reports it as information, not a problem; the other types keep it."""
+    result, sleeves = _book()
+    sleeveRepo.deleteSleeve(_overlaySleeve(US, HFI)['id'], user='alice')
+    entry = overlayRules.current(US)
+    assert [r['id'] for r in entry['rules']] == ['ttf']
+    assert [r['id'] for r in entry['withheld']] == ['svp']
+    assert [r['id'] for r in rules._servedOverlays(US)['rules']] == ['ttf']
+    assert [r['id'] for r in overlayRules.current(ESG)['rules']] == ['ttf', 'svp']
+    assert overlayRules.current()['withheld'] == [], 'the default list itself is whole'
+    us = _model(result, sleeves, US)
+    categories = [g['category'] for g in us['groups']]
+    assert HFI not in categories and AAS in categories
+    weight = lambda m, name: next(g['weightPct'] for g in m['groups'] if g['category'] == name)
+    assert weight(us, IG) == pytest.approx(26.0), 'IGFI less the tilt, and no premium'
+    assert [(r['id'], r['status']) for r in us['overlays']['rules']] == [('ttf', 'applied'),
+                                                                        ('svp', 'nosleeve')]
+    census = sleeveRepo.census()
+    assert census['fixedCategoryProblems'] == []
+    assert census['overlaysWithheld'] == [
+        'US Onshore: Strategic Volatility Premium not applied - no sleeve in Hybrid Fixed Income']
+    assert overlayRules.describe()['sleeved'][US] == [AAS]
+    assert any(w.startswith('No sleeve in Hybrid Fixed Income for US Onshore:')
+               for w in overlayRules.describe()['warnings']['*'])
+
+
+def test_a_type_can_give_up_both_overlays_and_take_them_back(store):
+    """Archive both of US Onshore's overlay sleeves: its book is the strategic
+    allocation. Restore one and that overlay is applied again."""
+    result, sleeves = _book()
+    tilt = _overlaySleeve(US, AAS)
+    sleeveRepo.deleteSleeve(_overlaySleeve(US, HFI)['id'], user='alice')
+    sleeveRepo.deleteSleeve(tilt['id'], user='alice')
+    assert overlayRules.current(US)['rules'] == []
+    us = _model(result, sleeves, US)
+    assert not {HFI, AAS} & {g['category'] for g in us['groups']}
+    assert sum(g['weightPct'] for g in us['groups']) == pytest.approx(100.0)
+    sleeveRepo.restoreSleeves([tilt['id']], user='alice')
+    assert [r['id'] for r in overlayRules.current(US)['rules']] == ['ttf']
+
+
+def test_an_edition_alone_keeps_the_overlay(store):
+    """A type whose only sleeve in the category is a labelled edition still
+    offers the overlay: any edition counts, not only a fallback."""
+    sleeve = _overlaySleeve(US, HFI)
+    products = [{'productId': p['productId'], 'weight': p['weight']} for p in sleeve['products']]
+    sleeveRepo.deleteSleeve(sleeve['id'], user='alice')
+    sleeveRepo.createSleeve(US, HFI, sleeve['name'], products, label='USD',
+                            rules=[{'currency': ['USD']}], user='alice')
+    assert sleeveRepo.hasSleeve(HFI, US)
+    assert [r['id'] for r in overlayRules.current(US)['rules']] == ['ttf', 'svp']
+
+
+def test_the_rail_greys_out_a_switch_the_type_has_no_sleeve_for(store):
+    """D191, the rail: the schema serves the withheld rules and every rule's
+    place, and the rail draws a withheld switch where the list puts it,
+    disabled, saying the type has no sleeve for it - not hidden."""
+    import shutil
+    sleeveRepo.deleteSleeve(_overlaySleeve(US, HFI)['id'], user='alice')
+    served = rules._servedOverlays(US)
+    assert [r['id'] for r in served['rules']] == ['ttf']
+    assert served['withheld'] == [{'id': 'svp', 'name': 'Strategic Volatility Premium',
+                                   'into': HFI, 'toggle': 'volPremium'}]
+    assert served['order'] == ['ttf', 'svp']
+    assert rules._servedOverlays(ESG)['withheld'] == []
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    with open(os.path.join(HERE, '..', '..', 'generator', 'js', 'implementation.js'),
+              encoding='utf-8') as fh:
+        js = fh.read()
+
+    def body(name):
+        start = js.index('function ' + name + '(')
+        return js[start:js.index('\n}\n', start)] + '\n}\n'
+    start = js.index('var OVERLAY_SWITCH = {')
+    script = js[start:js.index('};', start) + 2] + body('withheldOverlayField') + body('overlayFields') + '''
+var served = %s, ttfFirst = served.order;
+var App = { esc: function (s) { return String(s); }, variant: function () { return 'US Onshore'; },
+            overlayList: function () { return served.rules; },
+            overlaysWithheld: function () { return served.withheld; },
+            overlayOrder: function () { return order; } };
+function strategicCategories() { return [{ name: 'X', weightPct: 100 }]; }
+function overlayField(rule, i) { return '[' + rule.id + '@' + i + ']'; }
+var order = served.order, html = overlayFields();
+order = ['svp', 'ttf']; var flipped = overlayFields();
+console.log(JSON.stringify({ html: html, flipped: flipped }));
+''' % json.dumps(served)
+    got = json.loads(subprocess.run([node, '-e', script], capture_output=True, text=True,
+                                    check=True).stdout)
+    html = got['html']
+    assert html.startswith('<div class="overlay-group">[ttf@0]<div class="tilt-field withheld">')
+    assert 'id="implvolprem" disabled' in html and 'checked' not in html
+    assert ('Not offered under US Onshore: it has no Hybrid Fixed Income sleeve.' in html)
+    assert got['flipped'].index('withheld') < got['flipped'].index('[ttf@0]'), 'in the list\'s order'
+
+
+def test_a_greyed_out_switch_is_recorded_off(store, tmp_path, monkeypatch):
+    """The register records the premium off for a type with no sleeve for it,
+    whatever the scenario last held (D191)."""
+    from test_scenario_backend import BASIS, PORT, _sleeveMap
+    from cyrus_pmg.pmgService.scenario import scenarioStore
+    from cyrus_pmg.pmgService.scenario.types import MandateInput
+    monkeypatch.setenv('SCENARIO_STORE_DIR', str(tmp_path / 'store'))
+    monkeypatch.setenv('SCENARIO_REGISTER_DB', str(tmp_path / 'proposals.db'))
+    ma = sleeveRepo.VARIANTS[0]
+    sleeveRepo.deleteSleeve(_overlaySleeve(ma, HFI)['id'], user='alice')
+    state = scenarioStore.createScenario(
+        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid'),
+        BASIS, createdBy='alice')
+    result = PORT.resolve_portfolio(BASIS, MODERATE_FULL)
+    scenarioStore.updateScenario(state['id'], variant=ma, volPremium=True, tacticalTilt=True)
+    scenarioStore.recordColumn(state['id'], MODERATE_FULL, 'base')
+    scenarioStore.updateScenario(state['id'], sleeves=_sleeveMap(result['categories'], ma))
+    exported = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
+    assert exported.status_code == 200, exported.body
+    kept = proposalRegister.getProposal(exported.headers['X-Proposal-Id'])
+    assert kept['volPremium'] is False and kept['tacticalTilt'] is True

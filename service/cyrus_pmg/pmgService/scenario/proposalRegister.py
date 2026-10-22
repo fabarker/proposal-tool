@@ -466,6 +466,10 @@ def fundingSplitText(split) -> str:
                    for d in split.get('destinations') or []))
 
 
+#: a recorded rule's status as the register's text says it (D191)
+_STATUS_WORDS = {'nosleeve': 'no sleeve'}
+
+
 def overlaysText(overlays) -> str:
     """A recorded overlay list in one line: ``r1 (default) 1 Tactical Tilts
     applied 8% · 2 Strategic Volatility Premium off``. Blank for none."""
@@ -473,7 +477,8 @@ def overlaysText(overlays) -> str:
         return ''
     return 'r{} ({}) {}'.format(
         overlays.get('revision'), 'default' if overlays.get('scope') == '*' else overlays.get('scope'),
-        ' · '.join('{} {} {}{}'.format(i, r.get('name'), r.get('status') or '',
+        ' · '.join('{} {} {}{}'.format(i, r.get('name'), _STATUS_WORDS.get(r.get('status'),
+                                                                           r.get('status') or ''),
                                          ' {:.4g}%'.format(r['amount'])
                                          if r.get('status') == 'applied' and r.get('amount') is not None
                                          else '')

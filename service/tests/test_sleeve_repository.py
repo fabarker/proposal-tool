@@ -237,10 +237,12 @@ def test_categories_follow_the_implementation_table_order():
 
 
 def test_every_fixed_category_holds_exactly_one_sleeve_under_every_type():
+    """As seeded; a type may hold none instead (D191), never two."""
     for variant in sleeves.VARIANTS:
         for category in sleeveRepo.fixedCategories():
             assert len(sleeves.listSleeves(category, variant)) == 1, (variant, category)
     assert sleeveRepo.census()['fixedCategoryProblems'] == []
+    assert sleeveRepo.census()['overlaysWithheld'] == []
 
 
 # ---- writing -----------------------------------------------------------------
@@ -305,19 +307,26 @@ def test_every_rule_refuses_naming_its_field(field, kwargs):
     assert sleeveRepo.census()['total'] == total, 'nothing may be written on refusal'
 
 
-def test_a_fixed_category_sleeve_can_be_edited_but_not_deleted():
+def test_a_fixed_category_sleeve_can_be_edited_and_archived():
+    """A type that is not to offer an overlay archives its sleeve; the
+    overlay is then not applied under it (D191), and restoring it brings
+    it back."""
     variant = sleeves.VARIANTS[0]
     entry = [e for e in sleeveRepo.listAll(variant)
              if e['category'] == rules.VOL_PREMIUM_CATEGORY][0]
     assert entry['fixed'] is True
-    with pytest.raises(ValidationError) as exc:
-        sleeveRepo.deleteSleeve(entry['id'])
-    assert exc.value.field == 'category'
     # edits are fine - the products and weights are the admin's to maintain
     original = [{'productId': p['productId'], 'weight': p['weight']} for p in entry['products']]
     upd = sleeveRepo.updateSleeve(entry['id'], entry['name'], original, note='checked', user='alice')
     assert upd['note'] == 'checked'
     sleeveRepo.updateSleeve(entry['id'], entry['name'], original, note=entry['note'])
+    sleeveRepo.deleteSleeve(entry['id'], user='alice')
+    try:
+        assert not sleeveRepo.hasSleeve(rules.VOL_PREMIUM_CATEGORY, variant)
+        assert sleeveRepo.census()['fixedCategoryProblems'] == []
+    finally:
+        sleeveRepo.restoreSleeves([entry['id']], user='alice')
+    assert sleeveRepo.hasSleeve(rules.VOL_PREMIUM_CATEGORY, variant)
 
 
 def test_renaming_onto_an_existing_name_is_refused():

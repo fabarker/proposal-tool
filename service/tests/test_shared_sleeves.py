@@ -147,9 +147,10 @@ def test_a_type_given_its_own_copy_is_separate_from_then_on(store):
         sleeveRepo.splitOff(copies[0]['id'], ESG)
 
 
-def test_a_fixed_category_is_shared_but_never_left_without_its_sleeve(store):
+def test_a_fixed_category_is_shared_and_a_type_may_give_it_up(store):
     """One shared sleeve can be every type's one in a fixed category; a type
-    cannot be taken from it, only given a copy."""
+    can be given a copy, or taken from it - and is then not given the
+    overlay (D191)."""
     fixed = sleeveRepo.fixedCategories()[0]
     rows = [r for r in sleeveRepo.exportRows() if r[1] != fixed]
     one = next(r for r in sleeveRepo.exportRows() if r[1] == fixed)
@@ -162,11 +163,13 @@ def test_a_fixed_category_is_shared_but_never_left_without_its_sleeve(store):
     assert sleeveRepo.census()['fixedCategoryProblems'] == []
     shared = next(e for e in sleeveRepo.listAll() if e['category'] == fixed)
     assert shared['variants'] == sleeveRepo.VARIANTS
-    with pytest.raises(ValidationError) as exc:
-        sleeveRepo.withdrawFrom(shared['id'], US)
-    assert exc.value.field == 'variant' and 'copy of its own' in str(exc.value)
-    sleeveRepo.splitOff(shared['id'], US)
+    sleeveRepo.splitOff(shared['id'], ESG)
     assert sleeveRepo.census()['fixedCategoryProblems'] == []
+    sleeveRepo.withdrawFrom(shared['id'], US)
+    assert US not in sleeveRepo.getSleeve(shared['id'])['variants']
+    census = sleeveRepo.census()
+    assert census['fixedCategoryProblems'] == []
+    assert [line.split(':')[0] for line in census['overlaysWithheld']] == [US]
 
 
 def test_a_file_names_the_types_and_reimporting_it_keeps_the_sleeve(store, tmp_path):

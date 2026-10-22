@@ -114,6 +114,12 @@ def _census() -> int:
         print('\nFIXED CATEGORIES:')
         for line in c['fixedCategoryProblems']:
             print('  {}'.format(line))
+    if c.get('overlaysWithheld'):
+        # not a problem either: a type with no sleeve in an overlay's
+        # category does not offer that overlay
+        print('\nOVERLAYS NOT APPLIED:')
+        for line in c['overlaysWithheld']:
+            print('  {}'.format(line))
     if c.get('archived'):
         # not a problem, so not counted as one - an archived sleeve is a normal
         # thing for a library to hold, and the census is where you see it

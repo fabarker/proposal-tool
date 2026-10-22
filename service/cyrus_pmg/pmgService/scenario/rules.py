@@ -915,11 +915,17 @@ def _servedFunding(variant) -> dict:
 def _servedOverlays(variant) -> dict:
     """The overlay rules as the schema serves them: the list in force for
     *variant*, which scope and revision it is, and whether it is the default
-    list standing in for a type with none of its own."""
+    list standing in for a type with none of its own. The rules the type has
+    no sleeve for ride along under ``withheld``, and ``order`` places them,
+    so the rail shows their switches greyed out (D191); the page resolves
+    ``rules`` alone."""
     from . import overlayRules
     entry = overlayRules.current(variant)
     return {'scope': entry['scope'], 'revision': entry['revision'],
-            'inherited': entry['inherited'], 'rules': entry['rules']}
+            'inherited': entry['inherited'], 'rules': entry['rules'],
+            'withheld': [{'id': r['id'], 'name': r['name'], 'into': r['into'],
+                          'toggle': r.get('toggle')} for r in entry['withheld']],
+            'order': entry['order']}
 
 
 def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,

@@ -469,9 +469,10 @@ def previewApplicability(payload: dict = Body(...), caller=Depends(requireAdmin)
 
 @router.delete('/scenario/repository/sleeves/{sleeveId}')
 def deleteRepositorySleeve(sleeveId: int, caller=Depends(requireAdmin)):
-    """Archive a sleeve out of the library. Refused for a fixed category,
-    which always holds one. The sleeve is not destroyed (D65): it keeps its
-    whole history, appears under the console's Archive, and can be restored.
+    """Archive a sleeve out of the library. A fixed category's may be: the
+    type is then not given its overlay (D191). The sleeve is not destroyed
+    (D65): it keeps its whole history, appears under the console's Archive,
+    and can be restored.
     A scenario still naming it keeps the name and shows the picker's
     'no longer offered' state until a PWA re-picks - never a substitution."""
     try:
@@ -1567,9 +1568,13 @@ def _assembleExport(scenarioId: str, port):
             'A custom sleeve holds a product it no longer may: {}. Edit it before '
             'exporting.'.format('; '.join(customProblems)))
 
+    # a switch whose rule the type has no sleeve for was greyed out on the
+    # rail, so it is recorded off whatever the scenario last held (D191)
+    greyed = {r.get('toggle') for r in overlayEntry.get('withheld') or []}
     implementation = {'sleeves': sleeves, 'customSleeves': customs, 'variant': variant,
-                      'tacticalTilt': bool(state.get('tacticalTilt', True)),
-                      'volPremium': bool(state.get('volPremium', True)),
+                      'tacticalTilt': bool(state.get('tacticalTilt', True))
+                                      and 'tacticalTilt' not in greyed,
+                      'volPremium': bool(state.get('volPremium', True)) and 'volPremium' not in greyed,
                       'includeFees': includeFees,
                       'feeSchedule': feeSchedule, 'feeLevel': feeLevel,
                       'customFees': state.get('customFees') or {},
@@ -1601,10 +1606,11 @@ def _assembleExport(scenarioId: str, port):
             'The implemented portfolio adds to {:.2f}%, not 100%. Change the weights of a custom '
             'sleeve set as a percentage of the portfolio until it adds to 100%.'.format(
                 model['implementedPct']))
-    # An overlay's category carries its sleeve automatically; a rule whose
-    # category has no sleeve yet for this type would put weight in the book
-    # with no product, and a table that cannot be priced or rounded closed is
-    # not delivered (D155)
+    # An overlay's category carries its sleeve automatically. A rule whose
+    # category has no sleeve under this type is not applied to it (D191);
+    # one whose sleeve has no edition for this portfolio would put weight in
+    # the book with no product, and a table that cannot be priced or rounded
+    # closed is not delivered (D155)
     bare = [g['category'] for g in model['groups']
             if g.get('auto') and not g.get('sleeve') and g['weightPct'] > 0]
     if bare:

@@ -344,6 +344,9 @@ function overlayWords(rule) {
 /* The rules in force for the implementation type the schema was fetched for,
    in the order they resolve; and the one a proposal switch answers to. */
 function overlayList() { var o = opt('rules.overlays', null); return (o && o.rules) || []; }
+/* the rules the type has no sleeve for, and every rule's place (D191) */
+function overlaysWithheld() { var o = opt('rules.overlays', null); return (o && o.withheld) || []; }
+function overlayOrder() { var o = opt('rules.overlays', null); return (o && o.order) || []; }
 function overlayRule(toggle) {
   return overlayList().filter(function (r) { return r.toggle === toggle; })[0] || null;
 }
@@ -4591,6 +4594,8 @@ return {
   overlayWords: overlayWords,
   overlayPct: overlayPct,
   overlayList: overlayList,
+  overlaysWithheld: overlaysWithheld,
+  overlayOrder: overlayOrder,
   overlayRule: overlayRule,
   categoryColour: knownCatColor,
 

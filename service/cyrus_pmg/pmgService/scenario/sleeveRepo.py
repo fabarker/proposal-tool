@@ -416,11 +416,26 @@ def _sharing(row, types) -> list:
 def fixedCategories() -> list:
     """The categories an overlay attaches a sleeve to automatically - the two
     seeded overlays' and every category a rule in the repository goes into
-    (D155). Each holds exactly one sleeve per type, and the rules that attach
-    it depend on that. Read from rules lazily - rules imports the sleeve
+    (D155). Each holds at most one sleeve per type: one where the type offers
+    the overlay, none where it does not, and the overlay is then not applied
+    under that type (D191). Read from rules lazily - rules imports the sleeve
     facade, so a module-level import here would be circular."""
     from .rules import autoSleeveCategories
     return autoSleeveCategories()
+
+
+def hasSleeve(category, variant) -> bool:
+    """Whether *variant* has a live, enabled sleeve in *category* - any
+    edition of it, labelled or not. What decides whether an overlay into
+    that category is applied under the type (D191); listSleeves without a
+    key serves fallbacks only, so it cannot answer this."""
+    if not variantExists(variant):
+        return False
+    conn = _connect()
+    try:
+        return any(not _column(row, 'disabledAt') for row in _sleeveRows(conn, variant, category))
+    finally:
+        conn.close()
 
 
 def categories() -> list:
@@ -1753,10 +1768,6 @@ def deleteSleeve(sleeveId, user='') -> dict:
             raise ValidationError('id', 'That sleeve no longer exists.')
         if row['deletedAt']:
             raise ValidationError('id', 'That sleeve is already out of the library.')
-        if row['category'] in fixedCategories():
-            raise ValidationError(
-                'category', '{} is attached automatically by its overlay and always holds one '
-                'sleeve. Edit it rather than deleting it.'.format(row['category']))
         cleaned = [(r['productId'], r['weight']) for r in _productRows(conn, sleeveId)]
         stamp = _now()
         with conn:
@@ -1783,7 +1794,9 @@ def setOffered(sleeveId, offered: bool, user='') -> dict:
     recorded in sleeveSwitches.
 
     Refused for an archived sleeve, which is offered to nobody already, and
-    for a fixed category's, which an overlay attaches to every proposal."""
+    for a fixed category's, which an overlay attaches to every proposal: a
+    type that is not to offer the overlay stops offering the sleeve, or it is
+    archived (D191)."""
     conn = _connect()
     try:
         row = conn.execute('SELECT * FROM sleeves WHERE id = ?', (sleeveId,)).fetchone()
@@ -1793,8 +1806,9 @@ def setOffered(sleeveId, offered: bool, user='') -> dict:
             raise ValidationError('id', 'That sleeve is in the Archive. Restore it first.')
         if row['category'] in fixedCategories():
             raise ValidationError(
-                'category', '{} is attached automatically by its overlay and always holds one '
-                'sleeve, so it cannot be disabled.'.format(row['category']))
+                'category', '{} is attached automatically by its overlay, so its sleeve cannot be '
+                'disabled. To stop the overlay under a type, stop offering the sleeve there or '
+                'archive it.'.format(row['category']))
         if offered == (not row['disabledAt']):
             raise ValidationError('offered', '{} is already {}.'.format(
                 row['name'], 'offered to PWAs' if offered else 'disabled'))
@@ -1904,20 +1918,15 @@ def offerUnder(sleeveId, variant, user='') -> list:
 
 def withdrawFrom(sleeveId, variant, user='') -> list:
     """Stop offering a shared sleeve under one of its types (D179); the rest
-    keep it. Its only type is not withdrawn - that is archiving it - and a
-    fixed category's sleeve is not, because the type would be left without
-    its one: give the type a copy of its own instead."""
+    keep it. Its only type is not withdrawn - that is archiving it. A fixed
+    category's sleeve may be: the type is left without one, and its overlay
+    is not applied there (D191)."""
     def work(conn, row, group, types, variant, stamp):
         if variant not in types:
             raise ValidationError('variant', '{} is not offered under {}.'.format(row['name'], variant))
         if len(types) == 1:
             raise ValidationError('variant', '{} is offered under {} alone. Archive it to take it '
                                              'out of the library.'.format(row['name'], variant))
-        if row['category'] in fixedCategories():
-            raise ValidationError(
-                'variant', '{} holds exactly one sleeve under each implementation type, so {} '
-                'cannot be left without one. Give {} a copy of its own instead.'.format(
-                    row['category'], variant, variant))
         narrower = typesText([t for t in types if t != variant])
         for member in group:
             conn.execute('UPDATE sleeves SET variant = ? WHERE id = ?', (narrower, member['id']))
@@ -2277,14 +2286,20 @@ def census() -> dict:
                 counts['disabled'] += 1
             if e['problems']:
                 counts['broken'] += 1
-    fixed = []
+    from . import overlayRules          # lazily: it imports rules, which imports this module
+    fixed, withheld = [], []
     for variant in VARIANTS:
         for category in fixedCategories():
             names = {e['name'] for e in entries
                      if variant in e['variants'] and e['category'] == category}
-            if len(names) != 1:
-                fixed.append('{} / {}: {} sleeve(s), expected exactly 1'.format(
+            if len(names) > 1:
+                fixed.append('{} / {}: {} sleeves, expected one at most'.format(
                     variant, category, len(names)))
+        # an overlay into a category the type has no sleeve in is not
+        # applied under it (D191): not a problem, but the census says so
+        for rule in overlayRules.current(variant).get('withheld') or []:
+            withheld.append('{}: {} not applied - no sleeve in {}'.format(
+                variant, rule['name'], rule['into']))
     return {
         'store': describe(),
         'catalogue': products.describeSource(),
@@ -2292,6 +2307,7 @@ def census() -> dict:
         'broken': [e for e in entries if e['problems']],
         'orphans': orphanProducts(),
         'fixedCategoryProblems': fixed,
+        'overlaysWithheld': withheld,
         'total': len(entries),
         'editions': sum(1 for e in entries if not e['fallback']),
         'shared': sum(1 for e in entries if e['shared']),

@@ -634,13 +634,16 @@ products, and the rest stay shared. <strong>Stop offering it there</strong> take
 of these is a new version of the sleeve, and each is on the Activity tab. <strong>+ New sleeve</strong>
 with several types ticked makes one shared sleeve.</p></div>
 
-<h3>9. The two fixed categories</h3>
-<p><code>Hybrid Fixed Income</code> and <code>Asset Allocation Strategies</code> hold exactly
-<strong>one</strong> sleeve per type, which the overlays attach automatically. Give each type one
-sleeve in each, with no labelled editions; one sleeve shared by every type (<code>All</code>) does
-for all four. A replace that leaves them out is accepted by the import,
-but the census then reports each missing one and ends with exit code 1, and the overlays have nothing
-to attach. Always keep them in the file.</p>
+<h3>9. The two overlay categories</h3>
+<p><code>Hybrid Fixed Income</code> (the Strategic Volatility Premium) and <code>Asset Allocation
+Strategies</code> (the Tactical Tilts) hold <strong>one sleeve per type at most</strong>, which the
+overlays attach automatically. Give each type that offers the overlay one sleeve in each; one
+sleeve shared by every type (<code>All</code>) does for all four, and
+<code>PMG Multi-Asset Portfolio|PMG ESG|Irish Onshore</code> leaves US Onshore out.</p>
+<p>A type with <strong>no</strong> sleeve in one of them is not given that overlay: its proposals
+have no switch for it and nothing is taken from the categories that fund it. So leave a type out of
+the rows on purpose only. The census lists each such type under <strong>OVERLAYS NOT APPLIED</strong>,
+for information; it is not a problem and the run still ends with exit code 0.</p>
 
 <h3>Naming</h3>
 <ul>

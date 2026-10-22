@@ -458,11 +458,14 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             # the initial allocation of a private-markets book, or None (D136)
             'initial': initialModel,
             # which overlay rules made it, and what each did: what the
-            # register records (D155)
+            # register records (D155); a rule the type has no sleeve for
+            # was not applied (D191)
             'overlays': {'scope': overlayEntry['scope'], 'revision': overlayEntry['revision'],
                          'rules': [dict(rule, status=step['status'], amount=step['amount'])
                                    for rule, step in zip(overlayEntry['rules'],
-                                                         resolved['steps'])]}}
+                                                         resolved['steps'])]
+                         + [dict(rule, status='nosleeve', amount=0.0)
+                            for rule in overlayEntry.get('withheld') or []]}}
 
 
 SHEET_PASSWORD = 'PA55WORD'

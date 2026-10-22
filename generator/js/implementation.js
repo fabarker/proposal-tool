@@ -893,13 +893,39 @@ function overlayField(rule, index, strategic) {
     + '<p class="chk-note" id="' + App.esc(noteId) + '">' + note + '</p></div>';
 }
 
+/* A rule the implementation type has no sleeve for (D191): the repository
+   gives the type none in the rule's category, so the overlay is not offered
+   under it. Its field stays where the list puts it, greyed out and saying
+   why, rather than vanishing as though the overlay did not exist. */
+function withheldOverlayField(rule) {
+  var sw = rule.toggle ? OVERLAY_SWITCH[rule.toggle] : null;
+  var id = sw ? sw.id : 'implovl-' + rule.id;
+  var noteId = sw ? sw.note : 'implovlnote-' + rule.id;
+  return '<div class="tilt-field withheld' + (sw ? '' : ' always') + '">'
+    + '<div class="chk"><input type="checkbox" id="' + App.esc(id) + '" disabled'
+    + ' aria-describedby="' + App.esc(noteId) + '">'
+    + '<label for="' + App.esc(id) + '">' + App.esc(rule.name) + '</label></div>'
+    + '<p class="chk-note" id="' + App.esc(noteId) + '">Not offered under '
+    + App.esc(App.variant() || 'this implementation type') + ': it has no '
+    + App.esc(rule.into) + ' sleeve.</p></div>';
+}
+
 /* The overlays together, below the sleeve pickers and above pricing: they
-   adjust the model the sleeves have built, so they are read after it. */
+   adjust the model the sleeves have built, so they are read after it. The
+   withheld ones take their place in the list's order, greyed out (D191). */
 function overlayFields() {
   var strategic = strategicCategories();
   if (!strategic.length) return '';
-  var fields = App.overlayList().map(function (rule, i) {
-    return overlayField(rule, i, strategic);
+  var list = App.overlayList(), withheld = App.overlaysWithheld();
+  var byId = {};
+  list.forEach(function (rule, i) { byId[rule.id] = { rule: rule, at: i }; });
+  withheld.forEach(function (rule) { byId[rule.id] = { rule: rule, withheld: true }; });
+  var order = App.overlayOrder();
+  if (!order.length) order = list.map(function (r) { return r.id; });
+  var fields = order.map(function (id) {
+    var e = byId[id];
+    if (!e) return '';
+    return e.withheld ? withheldOverlayField(e.rule) : overlayField(e.rule, e.at, strategic);
   }).join('');
   return fields ? '<div class="overlay-group">' + fields + '</div>' : '';
 }

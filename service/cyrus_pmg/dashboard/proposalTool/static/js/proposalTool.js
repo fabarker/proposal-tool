@@ -438,6 +438,9 @@ function overlayWords(rule) {
 /* The rules in force for the implementation type the schema was fetched for,
    in the order they resolve; and the one a proposal switch answers to. */
 function overlayList() { var o = opt('rules.overlays', null); return (o && o.rules) || []; }
+/* the rules the type has no sleeve for, and every rule's place (D191) */
+function overlaysWithheld() { var o = opt('rules.overlays', null); return (o && o.withheld) || []; }
+function overlayOrder() { var o = opt('rules.overlays', null); return (o && o.order) || []; }
 function overlayRule(toggle) {
   return overlayList().filter(function (r) { return r.toggle === toggle; })[0] || null;
 }
@@ -4685,6 +4688,8 @@ return {
   overlayWords: overlayWords,
   overlayPct: overlayPct,
   overlayList: overlayList,
+  overlaysWithheld: overlaysWithheld,
+  overlayOrder: overlayOrder,
   overlayRule: overlayRule,
   categoryColour: knownCatColor,
 
@@ -5861,13 +5866,39 @@ function overlayField(rule, index, strategic) {
     + '<p class="chk-note" id="' + App.esc(noteId) + '">' + note + '</p></div>';
 }
 
+/* A rule the implementation type has no sleeve for (D191): the repository
+   gives the type none in the rule's category, so the overlay is not offered
+   under it. Its field stays where the list puts it, greyed out and saying
+   why, rather than vanishing as though the overlay did not exist. */
+function withheldOverlayField(rule) {
+  var sw = rule.toggle ? OVERLAY_SWITCH[rule.toggle] : null;
+  var id = sw ? sw.id : 'implovl-' + rule.id;
+  var noteId = sw ? sw.note : 'implovlnote-' + rule.id;
+  return '<div class="tilt-field withheld' + (sw ? '' : ' always') + '">'
+    + '<div class="chk"><input type="checkbox" id="' + App.esc(id) + '" disabled'
+    + ' aria-describedby="' + App.esc(noteId) + '">'
+    + '<label for="' + App.esc(id) + '">' + App.esc(rule.name) + '</label></div>'
+    + '<p class="chk-note" id="' + App.esc(noteId) + '">Not offered under '
+    + App.esc(App.variant() || 'this implementation type') + ': it has no '
+    + App.esc(rule.into) + ' sleeve.</p></div>';
+}
+
 /* The overlays together, below the sleeve pickers and above pricing: they
-   adjust the model the sleeves have built, so they are read after it. */
+   adjust the model the sleeves have built, so they are read after it. The
+   withheld ones take their place in the list's order, greyed out (D191). */
 function overlayFields() {
   var strategic = strategicCategories();
   if (!strategic.length) return '';
-  var fields = App.overlayList().map(function (rule, i) {
-    return overlayField(rule, i, strategic);
+  var list = App.overlayList(), withheld = App.overlaysWithheld();
+  var byId = {};
+  list.forEach(function (rule, i) { byId[rule.id] = { rule: rule, at: i }; });
+  withheld.forEach(function (rule) { byId[rule.id] = { rule: rule, withheld: true }; });
+  var order = App.overlayOrder();
+  if (!order.length) order = list.map(function (r) { return r.id; });
+  var fields = order.map(function (id) {
+    var e = byId[id];
+    if (!e) return '';
+    return e.withheld ? withheldOverlayField(e.rule) : overlayField(e.rule, e.at, strategic);
   }).join('');
   return fields ? '<div class="overlay-group">' + fields + '</div>' : '';
 }
@@ -11784,7 +11815,8 @@ async function svTypeAction(sleeveId, action, variant) {
         ? entry.name + ' is now offered under ' + variant + ' too: one sleeve, shared.'
         : action === 'split'
         ? variant + ' now has its own copy of ' + entry.name + '; the rest still share this one.'
-        : entry.name + ' is no longer offered under ' + variant + '.');
+        : entry.name + ' is no longer offered under ' + variant + '.'
+          + (isFixed(entry.category) ? ' ' + svOverlayLoss(entry, [variant]) : ''));
     }
   } catch (err) { repo.error = err.message; }
   repo.saving = false; render();
@@ -12082,7 +12114,7 @@ function editorTopHtml(entry, fixed) {
   if (repo.confirmDelete) {
     return '<div class="repo-ed-top is-confirm">'
       + '<span class="repo-ed-warn">Archive <b>' + esc(entry.name) + '</b>? It keeps its history and can be '
-      + 'restored from the Archive.</span>'
+      + 'restored from the Archive.' + (fixed ? ' ' + esc(svOverlayLoss(entry, svTypes(entry))) : '') + '</span>'
       + '<button type="button" class="btn" data-repocanceldelete>Keep</button>'
       + '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>'
       + 'Confirm archive</button></div>';
@@ -12091,9 +12123,8 @@ function editorTopHtml(entry, fixed) {
     + '<button type="button" class="repo-ed-act" data-repoedition="' + entry.id + '"'
     + (repo.saving ? ' disabled' : '')
     + ' title="Another edition of ' + esc(entry.name) + ', for particular portfolios">+ Add edition</button>'
-    + (fixed ? ''
-        : '<button type="button" class="repo-ed-act danger" data-repodelete' + (repo.saving ? ' disabled' : '')
-          + '>Archive this sleeve\u2026</button>')
+    + '<button type="button" class="repo-ed-act danger" data-repodelete' + (repo.saving ? ' disabled' : '')
+    + '>Archive this sleeve\u2026</button>'
     + '</div>';
 }
 
@@ -13134,7 +13165,16 @@ function svEditionChip(s) {
   return svSiblings(s).length ? '<span class="sv-chip mute">Fallback edition</span>' : '';
 }
 function svFixedChip(category) {
-  return isFixed(category) ? '<span class="sv-chip mute">Fixed \u00b7 one per type</span>' : '';
+  return isFixed(category) ? '<span class="sv-chip mute" title="Attached by its overlay. A type with no sleeve here is not given the overlay.">Overlay \u00b7 one per type at most</span>' : '';
+}
+/* what taking an overlay category's sleeve away from *types* does (D191):
+   a type left with none in the category is not given the overlay */
+function svOverlayLoss(entry, types) {
+  var left = types.filter(function (v) {
+    return !sleevesIn(v, entry.category).some(function (x) { return x.name !== entry.name; });
+  });
+  return left.length ? 'Its overlay will no longer be applied under ' + left.join(', ')
+    + ': ' + entry.category + ' will have no sleeve there.' : '';
 }
 /* one sleeve shared by several types (D179): an edit changes it under each */
 function svSharedChip(s) {
@@ -13362,7 +13402,8 @@ function svCardsBodyHtml() {
       + ' under ' + esc(repo.variant) + '</span>'
       + svFixedChip(repo.category) + '<span class="spacer"></span>' + svTypesHtml() + '</div>'
       + (list.length ? '<div class="sv-cards">' + svByName(list).map(function (g) { return g.map(function (s) { return svCardHtml(s); }).join(''); }).join('') + '</div>'
-                     : '<p class="sv-none">No sleeve in ' + esc(repo.category) + ' under ' + esc(repo.variant) + ' yet. Use + New sleeve to make one.</p>');
+                     : '<p class="sv-none">No sleeve in ' + esc(repo.category) + ' under ' + esc(repo.variant) + ' yet. Use + New sleeve to make one.'
+                       + (isFixed(repo.category) ? ' Until there is one, its overlay is not applied under ' + esc(repo.variant) + '.' : '') + '</p>');
   }
   return svCrumbsHtml() + svPageHtml(false);
 }
@@ -13451,8 +13492,9 @@ function svOfferedHtml(entry, fixed) {
         }).join('') + '</select>'
       + '<button type="button" class="btn" data-svsplit' + (repo.saving ? ' disabled' : '')
       + ' title="That type gets a copy of its own, separate from then on; the rest still share this one">Give it its own copy</button>'
-      + (fixed ? '' : '<button type="button" class="btn btn-ghost" data-svunshare' + (repo.saving ? ' disabled' : '')
-          + ' title="Stop offering it under that type; the rest still share it">Stop offering it there</button>')
+      + '<button type="button" class="btn btn-ghost" data-svunshare' + (repo.saving ? ' disabled' : '')
+      + ' title="Stop offering it under that type; the rest still share it'
+      + (fixed ? '. That type is then not given its overlay' : '') + '">Stop offering it there</button>'
       + '</div>';
   }
   return out;
@@ -13461,19 +13503,18 @@ function svDetailsHtml(entry) {
   var fixed = isFixed(entry.category);
   var offer = svOfferedHtml(entry, fixed);
   var archive;
-  if (fixed) {
-    archive = '<p class="sv-hint">' + esc(entry.category) + ' is fixed: it always holds exactly one sleeve per implementation type, so this one cannot be archived.</p>';
-  } else if (repo.confirmDelete) {
+  if (repo.confirmDelete) {
     archive = editorTopHtml(entry, fixed);
   } else {
     archive = '<button type="button" class="btn btn-danger" data-repodelete' + (repo.saving ? ' disabled' : '') + '>Archive this sleeve\u2026</button>'
-      + '<span class="sv-hint">It keeps its history and can be restored from the Archive.</span>';
+      + '<span class="sv-hint">It keeps its history and can be restored from the Archive.'
+      + (fixed ? ' Under a type left with no sleeve in ' + esc(entry.category) + ', its overlay is not applied.' : '') + '</span>';
   }
   return '<dl class="sv-kv">'
     + '<dt>Note to PWAs</dt><dd>' + (entry.note ? esc(entry.note) : '<span class="sv-hint">None</span>') + '</dd>'
     + '<dt>Offered under</dt><dd class="sv-offers" id="svOffers" tabindex="-1">' + offer + '</dd>'
     + '<dt>Offered to PWAs</dt><dd class="sv-offrow">' + (fixed
-        ? '<span class="sv-hint">Always: its overlay attaches it to every proposal.</span>'
+        ? '<span class="sv-hint">Always, under the types it is offered under: its overlay attaches it to every proposal there.</span>'
         : (entry.disabled
             ? '<span class="sv-chip off">\u2298 Disabled</span> <span class="sv-hint">' + (entry.disabledBy ? 'by ' + esc(entry.disabledBy) + ' ' : '')
               + esc(shortDateTime(entry.disabledAt)) + ' \u00b7 left out of the implementation page\u2019s picker</span> '
@@ -13727,7 +13768,7 @@ function ncCatsHtml(d) {
   return '<div class="nc-cats" id="ncCats" tabindex="-1" role="group" aria-label="Category">' + repo.data.categories.map(function (c) {
     var full = svCategoryFull(lib, fixed, repo.data.variants, c);
     var line = full ? 'Full: holds its one sleeve under every implementation type'
-      : isFixed(c) ? 'Fixed: one sleeve per implementation type'
+      : isFixed(c) ? 'Overlay: one sleeve per implementation type at most'
       : svPlural(sleevesIn(under, c).length, 'sleeve') + ' under ' + under;
     return '<button type="button" class="nc-cat" data-nccat="' + esc(c) + '" style="--cc:' + svColour(c) + '" aria-pressed="' + (d.category === c) + '"'
       + (full ? ' disabled' : '') + '><b>' + esc(c) + '</b><small>' + esc(line) + '</small></button>';
@@ -18179,17 +18220,20 @@ function ovlChecks(list) {
   });
   return { per: per, bad: per.some(function (p) { return p.length; }), worst: worst };
 }
-/* a rule whose category has no sleeve under a type it applies to cannot be
-   exported - saved, with a warning */
+/* the types in scope with no sleeve in a rule's category: the rule is not
+   applied under them (D191) - saved, with a warning */
+function ovlUnsleeved(rule) {
+  var d = ovl.data, into = (rule.into || '').trim();
+  if (!d || !into) return [];
+  return ovlVariants().filter(function (v) { return (d.sleeved[v] || []).indexOf(into) < 0; });
+}
 function ovlWarnings(list) {
-  var d = ovl.data; if (!d) return [];
   var out = [];
   list.forEach(function (rule) {
-    var into = (rule.into || '').trim(); if (!into) return;
-    var missing = ovlVariants().filter(function (v) { return (d.sleeved[v] || []).indexOf(into) < 0; });
+    var missing = ovlUnsleeved(rule);
     if (missing.length) {
-      out.push('No sleeve in ' + into + ' yet for ' + missing.join(', ') + ': a proposal holding '
-        + (rule.name || 'this rule') + ' cannot be exported until one is created in the Sleeves view.');
+      out.push('No sleeve in ' + rule.into.trim() + ' for ' + missing.join(', ') + ': '
+        + (rule.name || 'this rule') + ' is not applied there until one is created in the Sleeves view.');
     }
   });
   return out;
@@ -18271,7 +18315,9 @@ function ovlCardsHtml(list, chk, res, readOnly) {
   list.forEach(function (rule, i) {
     var step = res ? res.steps[i] : null, problems = chk.per[i];
     var tags = (rule.toggle ? '<span class="ovl-tag">Switch on the proposal</span>' : '<span class="ovl-tag always">Every portfolio</span>')
-      + (rule.currencies && rule.currencies.length ? '<span class="ovl-tag">' + esc(rule.currencies.join(' · ')) + ' only</span>' : '');
+      + (rule.currencies && rule.currencies.length ? '<span class="ovl-tag">' + esc(rule.currencies.join(' · ')) + ' only</span>' : '')
+      + (ovlUnsleeved(rule).length ? '<span class="ovl-tag" title="No sleeve in ' + esc(rule.into.trim()) + ' under these types, so the rule is not applied there">Not under '
+          + esc(ovlUnsleeved(rule).join(' · ')) + '</span>' : '');
     var effect;
     if (problems.length) {
       effect = '<em>' + esc(problems[0]) + (problems.length > 1 ? ' (+' + (problems.length - 1) + ' more)' : '') + '</em>'

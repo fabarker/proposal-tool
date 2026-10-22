@@ -1402,7 +1402,7 @@ nav for users.
 5. `availability` is 43 per currency at the current extract; `bake --census` on the host shows the
    delivered extract with 0 unparsed names.
 6. `sleeveTools --census` shows the seeded library (102 sleeves at the packaged seed), no broken
-   sleeves, no orphans, each fixed category holding exactly one sleeve.
+   sleeves, no orphans, no fixed category holding two sleeves under one type (D191).
 7. The fee card's `delivery.version` is what you accepted (the packaged card reads
    `0.0-placeholder` and the rail says so).
 

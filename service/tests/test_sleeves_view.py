@@ -763,3 +763,37 @@ process.stdout.write(JSON.stringify({
     assert got['elsewhere'] == ['T1', 'T2']
     assert got['sources'] == [[9, ['T1', 'T2']]]
     assert got['follow'] == 'T1' and got['stay'] == 'T2'
+
+
+def test_the_console_says_which_type_loses_an_overlay():
+    """D191: archiving or stopping an overlay's sleeve names the types it
+    leaves with none there, which lose the overlay; the Overlay Funding tab
+    tags a rule with the types in scope it is not applied under."""
+    source = _source()
+    got = _node('''
+var lib = [{ id: 1, variants: ['T1', 'T2'], category: 'Overlay', name: 'SVP' },
+           { id: 2, variants: ['T3'], category: 'Overlay', name: 'Premium' }];
+function sleevesIn(v, c) { return lib.filter(function (s) { return s.variants.indexOf(v) !== -1 && s.category === c; }); }
+var ovl = { scope: '*', data: { variants: ['T1', 'T2', 'T3', 'T4'], overrides: { T4: {} },
+                                sleeved: { T1: ['Overlay'], T2: [], T3: ['Overlay'], T4: [] } } };
+%s
+}
+%s
+}
+%s
+}
+var shared = lib[0], swap = { id: 9, variants: ['T2'], category: 'Overlay', name: 'Other' };
+var both = svOverlayLoss(shared, ['T1', 'T2']);
+lib.push(swap);
+process.stdout.write(JSON.stringify({
+  both: both, one: svOverlayLoss(shared, ['T1', 'T2']), none: svOverlayLoss(shared, ['T2']),
+  house: ovlUnsleeved({ into: ' Overlay ' }), blank: ovlUnsleeved({ into: '' }),
+  own: (ovl.scope = 'T4', ovlUnsleeved({ into: 'Overlay' }))
+}));
+''' % (_body(source, 'svOverlayLoss'), _body(source, 'ovlVariants'), _body(source, 'ovlUnsleeved')))
+    assert got['both'] == ('Its overlay will no longer be applied under T1, T2: Overlay will have '
+                           'no sleeve there.')
+    assert got['one'] == 'Its overlay will no longer be applied under T1: Overlay will have no sleeve there.'
+    assert got['none'] == '', 'a type holding another sleeve there keeps the overlay'
+    assert got['house'] == ['T2'], 'the default list speaks for the types without a list of their own'
+    assert got['blank'] == [] and got['own'] == ['T4']

@@ -443,15 +443,14 @@ def _refuseShortfalls(ruleList, variants, scope, inForce=None) -> None:
 
 def warnings(ruleList, variants) -> list:
     """What a saved list leaves undone: a rule whose category has no sleeve
-    under a type it applies to cannot be exported until one is created."""
-    from .sleeves import listSleeves
+    under a type it applies to is not applied under that type until one is
+    created (D191)."""
     out = []
     for rule in ruleList:
-        missing = [v for v in variants if not listSleeves(rule['into'], v)]
+        missing = [v for v in variants if not sleeveRepo.hasSleeve(rule['into'], v)]
         if missing:
-            out.append('No sleeve in {} yet for {}: a proposal holding {} cannot be exported until one '
-                       'is created in the Sleeves view.'.format(
-                           rule['into'], ', '.join(missing), rule['name']))
+            out.append('No sleeve in {} for {}: {} is not applied there until one is created in '
+                       'the Sleeves view.'.format(rule['into'], ', '.join(missing), rule['name']))
     return out
 
 
@@ -573,13 +572,27 @@ def _overrides(conn) -> dict:
 
 def current(variant=None) -> dict:
     """The list in force for *variant*: its own, or the default list
-    (``inherited`` True). No variant means the default list."""
+    (``inherited`` True). No variant means the default list.
+
+    For a type, a rule whose category it has no sleeve in is not in force:
+    the type does not offer that overlay, so the rule is left out of
+    ``rules`` - its switch is not offered and it takes nothing - and named
+    in ``withheld`` (D191); ``order`` keeps every rule's id in the list's
+    order, so the rail can show a withheld switch greyed out where it would
+    stand. Every proposal reads its list here, so the screen, the files and
+    the register agree on it."""
     rows = _readPolicies()
     if variant and variant != HOUSE:
-        if variant in rows:
-            return _entry(rows[variant])
-        return _entry(rows[HOUSE], inherited=True)
-    return _entry(rows[HOUSE])
+        entry = _entry(rows[variant]) if variant in rows else _entry(rows[HOUSE], inherited=True)
+        order = [rule['id'] for rule in entry['rules']]
+        if not sleeveRepo.variantExists(variant):
+            return dict(entry, withheld=[], order=order)
+        kept, withheld = [], []
+        for rule in entry['rules']:
+            (kept if sleeveRepo.hasSleeve(rule['into'], variant) else withheld).append(rule)
+        return dict(entry, rules=kept, withheld=withheld, order=order)
+    entry = _entry(rows[HOUSE])
+    return dict(entry, withheld=[], order=[rule['id'] for rule in entry['rules']])
 
 
 def allRules() -> list:
@@ -617,7 +630,6 @@ def describe() -> dict:
     category weights (so the console can judge a draft as the server will),
     which portfolios each type offers, a sample portfolio per type, which
     categories each type has a sleeve in, and the warnings in force."""
-    from .sleeves import listSleeves
     rows = _readPolicies()
     house = _entry(rows[HOUSE])
     overrides = {s: _entry(r) for s, r in rows.items() if s != HOUSE}
@@ -633,7 +645,7 @@ def describe() -> dict:
         for rule in entry['rules']:
             if rule['into'] not in intos:
                 intos.append(rule['into'])
-    sleeved = {v: [c for c in intos if listSleeves(c, v)] for v in sleeveRepo.VARIANTS}
+    sleeved = {v: [c for c in intos if sleeveRepo.hasSleeve(c, v)] for v in sleeveRepo.VARIANTS}
     scopeWarnings = {HOUSE: warnings(house['rules'], _variantsFor(HOUSE, overrides))}
     for scope, entry in overrides.items():
         scopeWarnings[scope] = warnings(entry['rules'], [scope])
