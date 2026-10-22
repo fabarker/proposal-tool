@@ -536,6 +536,47 @@ def connection() -> sqlite3.Connection:
     return _connect()
 
 
+#: POSIX: one handle per file, held open for reading the header (fileStamp)
+_stampHandles = {}
+_stampOrder = []
+_stampLock = threading.Lock()
+_STAMP_HANDLES = 16
+
+
+def _header(path, inode) -> bytes:
+    """The first 28 bytes of *path*, without closing a handle on it while the
+    process may hold SQLite's locks on the file. On POSIX, closing ANY
+    descriptor of a file releases every lock the process holds on it - the
+    read here is asked for inside a write transaction (a save checks the
+    catalogue) - so the file is read through a handle kept open, by offset.
+    Windows locks per handle, and has no pread: it reads as it always has."""
+    if not hasattr(os, 'pread') or os.name != 'posix':
+        with open(path, 'rb') as handle:
+            return handle.read(28)
+    with _stampLock:
+        held = _stampHandles.get(path)
+        if held is None or held[0] != inode:
+            if held is not None:
+                _closeQuietly(held[1])
+            fd = os.open(path, os.O_RDONLY)
+            _stampHandles[path] = (inode, fd)
+            if path in _stampOrder:
+                _stampOrder.remove(path)
+            _stampOrder.append(path)
+            while len(_stampOrder) > _STAMP_HANDLES:
+                gone = _stampHandles.pop(_stampOrder.pop(0), None)
+                if gone is not None:
+                    _closeQuietly(gone[1])
+        return os.pread(_stampHandles[path][1], 28, 0)
+
+
+def _closeQuietly(fd) -> None:
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+
+
 def fileStamp(path=None):
     """What identifies one state of the repository's file: its identity, size
     and modification time, and SQLite's own file change counter (header
@@ -543,12 +584,12 @@ def fileStamp(path=None):
     a coarse or cached modification time on a network share cannot hide.
     None when there is no file. The settings, the catalogue and the fee card
     are each kept in memory against it and re-read when it moves, so a read
-    on the hot path costs a stat (D155, D165)."""
+    on the hot path costs a stat (D155, D165). The header is read without
+    dropping the process's locks on the file (_header, D193)."""
     path = path or dbPath()
     try:
         st = os.stat(path)
-        with open(path, 'rb') as handle:
-            header = handle.read(28)
+        header = _header(path, st.st_ino)
     except OSError:
         return None
     counter = int.from_bytes(header[24:28], 'big') if len(header) >= 28 else -1

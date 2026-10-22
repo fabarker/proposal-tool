@@ -1658,3 +1658,44 @@ def test_the_landing_offers_the_library_to_an_admin_and_to_nobody_else():
         page = fh.read()
     assert '<div class="lp-admin" id="lpadmin" hidden></div>' in page, \
         'it starts hidden, so it can never flash before the schema says who is asking'
+
+
+def _otherProcessCanWrite(path) -> bool:
+    import subprocess
+    import sys
+    code = ('import sqlite3, sys\n'
+            'c = sqlite3.connect(sys.argv[1], timeout=0.2)\n'
+            'try:\n'
+            '    c.execute("BEGIN IMMEDIATE"); print("wrote")\n'
+            'except sqlite3.OperationalError as exc:\n'
+            '    print(exc)\n')
+    out = subprocess.run([sys.executable, '-c', code, str(path)], capture_output=True, text=True)
+    return 'wrote' in out.stdout
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='the hazard is POSIX locking')
+def test_reading_the_file_stamp_inside_a_write_keeps_its_lock(tmp_path, monkeypatch):
+    """A save that checks the catalogue reads the file's stamp while it holds
+    the write lock. On POSIX, closing any handle on a file drops every lock
+    the process holds on it, so a stamp read by open-and-close let another
+    process write in between; read through a handle kept open, the lock
+    holds."""
+    import sqlite3
+    path = tmp_path / 'held.db'
+    conn = sqlite3.connect(str(path))
+    conn.execute('CREATE TABLE t (x)')
+    conn.commit()
+    conn.execute('BEGIN IMMEDIATE')
+    conn.execute('INSERT INTO t VALUES (1)')
+    try:
+        assert not _otherProcessCanWrite(path), 'the write lock is held'
+        for _ in range(3):
+            assert sleeveRepo.fileStamp(str(path)) is not None
+        assert not _otherProcessCanWrite(path), 'reading the stamp kept it'
+        # the way it was read before: open, read, close - and the lock is gone
+        monkeypatch.setattr(sleeveRepo.os, 'name', 'nt')
+        sleeveRepo.fileStamp(str(path))
+        assert _otherProcessCanWrite(path)
+    finally:
+        conn.rollback()
+        conn.close()
