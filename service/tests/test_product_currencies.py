@@ -50,11 +50,12 @@ def _held():
 
 
 def _own(ticker='', minimumInvestment=None, exposureCurrency='', offered=True, issueCurrency='',
-         shareClass='', distributionYield=None):
+         shareClass='', distributionYield=None, assetClass='', productCost=None):
     """One currency's values as the catalogue stores them."""
     return {'ticker': ticker, 'minimumInvestment': minimumInvestment,
             'exposureCurrency': exposureCurrency, 'issueCurrency': issueCurrency,
-            'shareClass': shareClass, 'distributionYield': distributionYield, 'offered': offered}
+            'shareClass': shareClass, 'distributionYield': distributionYield,
+            'assetClass': assetClass, 'productCost': productCost, 'offered': offered}
 
 
 NOT_OFFERED = _own(offered=False)
@@ -146,9 +147,10 @@ def test_a_product_with_no_all_row_is_offered_only_where_it_has_rows(store, tmp_
 
 
 @pytest.mark.parametrize('extra, words', [
-    ({'All': {}, 'GBP': {'ProductCost': '0.9'}}, 'only the ticker, the minimum, the exposure '
-                                                  'currency, the issue currency, the share class '
-                                                  'and the distribution yield may differ'),
+    ({'All': {}, 'GBP': {'Vehicle': 'Probe Vehicle'}}, 'only the ticker, the minimum, the exposure '
+                                                       'currency, the issue currency, the share '
+                                                       'class, the distribution yield, the asset '
+                                                       'class and the product cost may differ'),
     ({'All': {}, 'GBP': {'Name': 'Something else (GBP)'}}, 'the GBP row gives name Something else'),
     ({'GBP': {}, 'gbp': {}}, 'already has a row for GBP'),
     ({'All': {}, '': {}}, 'already has a row for All'),
@@ -557,3 +559,90 @@ def test_a_wrong_yield_in_a_currency_is_refused_naming_that_box(store):
     assert saved['currencies']['GBP']['distributionYield'] == 0.0
     history = products.changes({**saved, 'currencies': {}}, saved)
     assert [c['label'] for c in history] == ['Distribution yield in GBP']
+
+
+def test_the_asset_class_and_cost_are_kept_by_base_currency_and_round_trip(store, tmp_path):
+    """D194: a currency's row may give the product an asset class and a
+    product cost of its own - a class hedged to the currency costs more -
+    and a scenario there reads them."""
+    rows, listed = _listed()
+    pid = listed[0]
+    rows = _rowsFor(pid, {'All': {'AssetClass': 'Global Equity', 'ProductCost': '0.25'},
+                          'GBP': {'Ticker': 'GB1', 'AssetClass': 'Global Equity (GBP Hedged)',
+                                  'ProductCost': '0.35'},
+                          'EUR': {'Ticker': 'EU1', 'AssetClass': 'Global Equity', 'ProductCost': '0.3%'},
+                          'CHF': {'Ticker': 'CH1', 'AssetClass': 'Global Equity', 'ProductCost': '0.25'}})
+    product = products.readFile(_file(tmp_path, rows))[0][pid]
+    assert product['assetClass'] == 'Global Equity' and product['productCost'] == 0.25
+    assert product['currencies'] == {
+        'GBP': _own('GB1', assetClass='Global Equity (GBP Hedged)', productCost=0.35),
+        'EUR': _own('EU1', productCost=0.3),
+        'CHF': _own('CH1')}
+    gbp, eur, usd = (products.inCurrency(product, c) for c in ('GBP', 'EUR', 'USD'))
+    assert (gbp['assetClass'], gbp['productCost']) == ('Global Equity (GBP Hedged)', 0.35)
+    assert (eur['assetClass'], eur['productCost']) == ('Global Equity', 0.3)
+    assert (usd['assetClass'], usd['productCost']) == ('Global Equity', 0.25)
+    content = _upload(_file(tmp_path, rows, 'p.csv'))
+    preview = products.importPreview('p.csv', content)
+    words = next(c['changeWords'] for c in preview['changed'] if c['productId'] == pid)
+    assert 'Product cost in GBP — → 0.35' in words and 'Product cost in EUR — → 0.3' in words
+    assert 'Asset class in GBP — → Global Equity (GBP Hedged)' in words
+    products.importFile('p.csv', content, user='alice', base=preview['revision'])
+    back = products.exportRows()
+    head = back[0]
+
+    def column(name):
+        return {r[head.index('BaseCurrency')]: r[head.index(name)] for r in back[1:] if r[0] == pid}
+    assert column('ProductCost') == {'All': '0.25', 'GBP': '0.35', 'EUR': '0.3', 'CHF': '0.25'}
+    assert column('AssetClass') == {'All': 'Global Equity', 'GBP': 'Global Equity (GBP Hedged)',
+                                    'EUR': 'Global Equity', 'CHF': 'Global Equity'}
+    again = products.importPreview('again.csv', _upload(_file(tmp_path, back, 'again.csv')))
+    assert not again['changed'] and not again['added']
+    assert 'Global Equity (GBP Hedged)' in products.vocabulary()['assetClass'], \
+        'the console offers a currency\'s own asset class as a word in use'
+
+
+def test_a_cost_only_currencies_without_an_all_row_have_is_the_first_ones_main(store, tmp_path):
+    rows, listed = _listed()
+    pid = listed[0]
+    rows = _rowsFor(pid, {'USD': {'ProductCost': '0.2', 'AssetClass': 'Equity'},
+                          'GBP': {'ProductCost': '0.45', 'AssetClass': 'Hedged Equity'}})
+    product = products.readFile(_file(tmp_path, rows))[0][pid]
+    assert (product['productCost'], product['assetClass']) == (0.2, 'Equity')
+    assert product['currencies']['GBP']['productCost'] == 0.45
+    assert product['currencies']['GBP']['assetClass'] == 'Hedged Equity'
+    assert products.inCurrency(product, 'CHF')['offered'] is False
+
+
+def test_a_wrong_cost_or_asset_class_in_a_currency_is_refused_naming_that_box(store):
+    pid, _, _ = _held()
+    for bad, words in (('x', "Product cost in GBP 'x' is not a number"),
+                       ('-1', 'Product cost in GBP cannot be negative'),
+                       ('12', 'Product cost in GBP of 12% looks wrong')):
+        with pytest.raises(ValidationError) as caught:
+            _set(pid, {'GBP': {'productCost': bad}})
+        assert caught.value.field == 'productCostGBP' and words in caught.value.message
+    with pytest.raises(ValidationError) as caught:
+        _set(pid, {'GBP': {'assetClass': 'x' * 61}})
+    assert caught.value.field == 'assetClassGBP'
+    assert caught.value.message == 'Keep the asset class in GBP to 60 characters.'
+    # a cost of 0 there is a product that costs nothing there, not the main cost
+    saved = _set(pid, {'GBP': {'productCost': '0', 'assetClass': 'Hedged Equity'}}, productCost='0.4')
+    assert saved['currencies']['GBP']['productCost'] == 0.0
+    assert products.inCurrency(saved, 'GBP')['productCost'] == 0.0
+    history = products.changes({**saved, 'currencies': {}}, saved)
+    assert [c['label'] for c in history] == ['Asset class in GBP', 'Product cost in GBP']
+
+
+def test_the_model_an_export_is_built_from_reads_the_cost_and_asset_class_of_its_currency(store):
+    """What the sheet, the deck, the fees and the record are priced and
+    grouped from is the product as the portfolio's currency reads it."""
+    port = FixturesScenarioPort()
+    pid, category, name = _held()
+    _set(pid, {'GBP': {'productCost': 0.61, 'assetClass': 'Hedged Probe'}}, productCost='0.2')
+
+    def line(currency):
+        model = _modelIn(port, currency, category, name)[2]
+        return next(i for g in model['groups'] for i in g['items'] if i['productId'] == pid)
+    assert (line('GBP')['productCost'], line('GBP')['assetClass']) == (0.61, 'Hedged Probe')
+    assert line('USD')['productCost'] == 0.2 and line('USD')['assetClass'] != 'Hedged Probe'

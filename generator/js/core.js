@@ -15,6 +15,9 @@ var state = {
   phase: 'landing',                 /* 'landing' | 'workspace' */
   scenarioId: null,
   mandate: null,                    /* {topAccountSize, mandateSize, primaryPwa, entity} */
+  /* the marketing warnings acknowledged, and the allocation they were shown
+     for (D196): {allocation, acks: [{warning, by, at}]} or null */
+  marketing: null,
   basis: { currency: 'USD', hedging: 'Hedged' },
   schema: null,
   schemaStatus: 'idle',             /* 'idle'|'loading'|'ready'|'error' */
@@ -421,10 +424,17 @@ function preserveFocus(fn) {
    Data flows
    ========================================================================== */
 
-/* the custodian / entity chosen on the first card, as a query parameter
-   (D193); nothing before one is chosen */
+/* the implementation types that ask for a custodian: PMG ESG (D195) */
+function custodyNeeded(variant) {
+  return !!variant && (opt('options.custodyTypes', []) || []).indexOf(variant) !== -1;
+}
+/* the custodian in force: the one chosen, under a type that asks for one */
+function custodian() {
+  return custodyNeeded(state.variant) && state.mandate ? state.mandate.entity || '' : '';
+}
+/* the custodian as a query parameter (D193); nothing where none is in force */
 function entityQuery() {
-  return state.mandate && state.mandate.entity ? '&entity=' + encodeURIComponent(state.mandate.entity) : '';
+  return custodian() ? '&entity=' + encodeURIComponent(custodian()) : '';
 }
 function entityName(id) {
   var found = (opt('options.entities', []) || []).filter(function (e) { return e.id === id; })[0];
@@ -443,7 +453,8 @@ function schemaQuery() {
   if (state.mandate && state.mandate.topAccountSize) {
     q += '&topAccountSize=' + encodeURIComponent(state.mandate.topAccountSize);
   }
-  /* the custodian / entity: the overlays served are the ones it may hold (D193) */
+  /* the custodian, under PMG ESG: the overlays served are the ones with an
+     edition for it (D193) */
   q += entityQuery();
   /* The variant narrows options.allocations and the availability set, so it
      belongs in the key of what the schema describes (D49). */
@@ -933,9 +944,17 @@ function ensureSleeveLib(category, onReady) {
 /* The variant decides which sleeves exist and what they contain, so changing
    it invalidates every cached library and every choice made from one. Both go
    in the same turn as the PUT, which clears the server's map too (D29). */
-async function setVariant(name) {
+async function setVariant(name, entity) {
   if (!canEdit()) return;
   if (!name || name === state.variant) return;
+  /* A type that asks for a custodian (D195) asks for it first, on its own
+     card, unless the type in force already holds one; the card comes back
+     here with the choice, and closing it keeps the type in force. */
+  if (custodyNeeded(name) && entity === undefined) {
+    if (!custodian()) { openCustodyDialog(name, document.getElementById('bpv')); return; }
+    entity = custodian();
+  }
+  state.mandate = Object.assign({}, state.mandate, { entity: custodyNeeded(name) ? entity || '' : '' });
   var had = Object.keys(state.sleeves).length + Object.keys(state.customSleeves).length;
   var hadBase = state.columns[0] || null;
   state.variant = name;
@@ -960,10 +979,13 @@ async function setVariant(name) {
      comes back 422. Ordering this after the schema fetch left a whole extra
      round trip in which a fast selection could do exactly that. */
   if (state.scenarioId) {
+    /* the custodian goes with a type that asks for one; the server clears
+       it under any other */
+    var write = custodyNeeded(name) ? { variant: name, mandate: state.mandate } : { variant: name };
     variantPending = trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ variant: name })
+      body: JSON.stringify(write)
     })).then(function (body) {
       /* an approval of a custom portfolio was of the old type (D171) */
       if (body && 'customPortfolio' in body) state.customPortfolio = body.customPortfolio;
@@ -1275,7 +1297,7 @@ function mayBuildPortfolio() {
 function ensureCpLib() {
   if (!state.variant || !state.basisChosen) return;
   var key = [state.variant, state.basis.currency, state.basis.hedging,
-             (state.mandate && state.mandate.entity) || ''].join('|');
+             custodian()].join('|');
   if (state.cpLib.key === key && state.cpLib.status !== 'idle') return;
   state.cpLib = { key: key, status: 'loading', data: null, error: null };
   apiFetch('/scenario/custom-portfolio?variant=' + encodeURIComponent(state.variant)
@@ -1442,8 +1464,6 @@ function openMandateDialog(opener) {
     size: state.mandate ? state.mandate.mandateSize : null,
     pwa: state.mandate ? state.mandate.primaryPwa : '',
     q: state.mandate ? state.mandate.primaryPwa : '',
-    /* the custodian / entity (D193): empty on a scenario saved before it */
-    entity: state.mandate ? state.mandate.entity || '' : '',
     open: false, idx: -1, err: null, dirty: false,
     matches: null,                    /* null = below threshold */
     searching: false, searchTimer: null, searchAbort: null,
@@ -1518,7 +1538,6 @@ function validateDraft() {
     return { field: 'mdsize', msg: 'Mandate size cannot exceed the top account size.' };
   }
   if (!draft.pwa) return { field: 'mdpwa', msg: 'Choose a Primary PWA from the list.' };
-  if (!draft.entity) return { field: 'mdentity', msg: 'Choose the custodian / entity.' };
   return null;
 }
 
@@ -1534,9 +1553,9 @@ async function commitMandate() {
   }
   draft.saving = true;
   renderDialog();
-  var mandate = { topAccountSize: draft.top, mandateSize: draft.size, primaryPwa: draft.pwa,
-                  entity: draft.entity };
-  var entityMoved = !state.mandate || (state.mandate.entity || '') !== draft.entity;
+  /* the custodian is not the first card's (D195): it is asked for with a
+     type that needs one, and a write without it keeps the one held */
+  var mandate = { topAccountSize: draft.top, mandateSize: draft.size, primaryPwa: draft.pwa };
   try {
     if (!state.scenarioId) {
       var created = await apiFetch('/scenario', {
@@ -1566,20 +1585,14 @@ async function commitMandate() {
   } catch (err) {
     draft.saving = false;
     var field = err && err.body && err.body.field;
-    var map = { topAccountSize: 'mdtop', mandateSize: 'mdsize', primaryPwa: 'mdpwa', entity: 'mdentity' };
+    var map = { topAccountSize: 'mdtop', mandateSize: 'mdsize', primaryPwa: 'mdpwa' };
     draft.err = { field: map[field] || 'mdsize', msg: (err && err.message) || 'Could not save.' };
     renderDialog();
     var focusTo = document.getElementById(draft.err.field);
     if (focusTo) focusTo.focus();
     return;
   }
-  state.mandate = mandate;
-  /* another entity may hold other editions and exclude other products
-     (D193): every library is read again at it */
-  if (entityMoved) {
-    state.sleeveLib = {}; state.customLib = {};
-    if (state.cpLib) state.cpLib = { key: '', status: 'idle', data: null, error: null };
-  }
+  state.mandate = Object.assign(mandate, { entity: state.mandate ? state.mandate.entity || '' : '' });
   var wasLanding = (state.phase === 'landing');
   state.phase = 'workspace';
   draft = null;
@@ -1648,6 +1661,7 @@ async function boot() {
       state.sleeves = stored.sleeves || {};
       state.customSleeves = stored.customSleeves || {};
       state.customPortfolio = stored.customPortfolio || null;
+      state.marketing = stored.marketing || null;
       state.phase = 'workspace';
       await fetchSchema();                /* now with the mandate size */
       var keys = [];
@@ -1712,8 +1726,6 @@ function renderMandate() {
     + '<dt>Top Account:</dt><dd>' + money(state.mandate.topAccountSize) + '</dd>'
     + '<dt>Mandate Size:</dt><dd>' + money(state.mandate.mandateSize) + '</dd>'
     + '<dt>Primary PWA:</dt><dd>' + esc(state.mandate.primaryPwa) + '</dd>'
-    + '<dt>Custodian / entity:</dt><dd>' + (state.mandate.entity ? esc(entityName(state.mandate.entity))
-        : '<span class="mut">not chosen</span>') + '</dd>'
     + '</dl>';
 }
 
@@ -1899,6 +1911,7 @@ function renderBase() {
        one above it (D54). */
     + '<div class="field"><label for="bpv">Implementation Type</label>'
     + '<select id="bpv"' + disabled + '>' + variantOptions + '</select></div>'
+    + custodyRowHtml()
     + (variantLocked && !locked
         ? '<p class="chk-note" style="margin-left:0">Choose an implementation '
           + 'type first — it decides which portfolios are available.</p>' : '')
@@ -1921,6 +1934,7 @@ function renderBase() {
               + '. Only an admin changes a custom portfolio.')
           + '</p>' : '')
     + cpConfirmHtml()
+    + marketingNoteHtml()
     + '</div></div>';
   applyBaseRoll();
 }
@@ -3289,13 +3303,6 @@ function renderFooter() {
 }
 
 /* ---- mandate dialog render ---------------------------------------------- */
-function entityOptions(chosen) {
-  var list = (opt('options.entities', []) || []).slice();
-  if (chosen && !list.some(function (e) { return e.id === chosen; })) list.push({ id: chosen, name: chosen + ' (retired)' });
-  return list.map(function (e) {
-    return '<option value="' + esc(e.id) + '"' + (e.id === chosen ? ' selected' : '') + '>' + esc(e.name) + '</option>';
-  }).join('');
-}
 
 function renderDialog() {
   var host = document.getElementById('mandateDialog'); if (!host) return;
@@ -3353,12 +3360,6 @@ function renderDialog() {
     + (draft.open && (draft.q || '').trim().length < 2
         ? '<span class="field-hint">Type at least two characters.</span>' : '')
     + '</div>'
-    /* the custodian / entity the account is held at (D193): a retired one a
-       scenario already holds stays offered to it */
-    + '<div class="field"><label for="mdentity">Custodian / entity</label>'
-    + '<select id="mdentity"' + invalid('mdentity') + dis + '>'
-    + '<option value=""' + (draft.entity ? '' : ' selected') + '>Choose…</option>'
-    + entityOptions(draft.entity) + '</select></div>'
     + (err ? '<p class="md-err" id="mderr" role="alert">' + esc(err.msg) + '</p>' : '')
     /* Both cards carry the same pair, split to the card's two edges: the way
        on at the left, where the fields above it start, and Cancel apart from
@@ -3386,6 +3387,323 @@ function setBackgroundInert(on) {
     var node = document.querySelector(selector);
     if (node && 'inert' in node) node.inert = on;
   });
+}
+
+/* the cards that hold the page while they are open */
+var DIALOG_HOSTS = ['mandateDialog', 'accountDialog', 'feeDialog', 'priceDialog', 'customDialog',
+                    'chargesDialog', 'cslDialog', 'cpDialog', 'greetDialog', 'repoDialog',
+                    'custodyDialog', 'marketingDialog'];
+function anyDialogOpen(except) {
+  return DIALOG_HOSTS.some(function (id) {
+    var host = id !== except && document.getElementById(id);
+    return !!(host && !host.hidden);
+  });
+}
+
+/* =============================================================================
+   The custodian (D195). Asked for only under PMG ESG (options.custodyTypes):
+   what ESG means differs by jurisdiction, so the funds a client may own -
+   the sleeve editions served - follow the custodian, one of GSI, GSBZ, GSLU
+   and GSCO (options.entities). Its card opens as the type is chosen, before
+   anything is picked from that type's library; closing it without a choice
+   keeps the type in force. Rendered into #custodyDialog.
+   ========================================================================== */
+var custody = null;                 /* { variant, chosen, err, saving, opener } */
+
+function openCustodyDialog(variant, opener) {
+  if (!canEdit()) return;
+  custody = { variant: variant, chosen: custodian(), err: null, saving: false,
+              opener: opener || document.activeElement };
+  renderCustodyDialog();
+  var first = document.querySelector('#custodyDialog input[name="cust"]:checked')
+    || document.querySelector('#custodyDialog input[name="cust"]');
+  if (first) first.focus();
+}
+
+function closeCustodyDialog() {
+  var opener = custody && custody.opener;
+  custody = null;
+  renderCustodyDialog();
+  /* the type select shows the type in force again */
+  refresh();
+  var back = document.getElementById(opener && opener.id ? opener.id : 'bpv');
+  if (back && back.focus) back.focus();
+}
+
+function renderCustodyDialog() {
+  var host = document.getElementById('custodyDialog'); if (!host) return;
+  if (!custody) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!anyDialogOpen('custodyDialog')) setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  setBackgroundInert(true);
+  var list = opt('options.entities', []) || [];
+  var dis = custody.saving ? ' disabled' : '';
+  host.innerHTML = '<div class="scrim" data-custscrim></div>'
+    + '<div class="dialog cust" role="dialog" aria-modal="true" aria-labelledby="custTitle" aria-describedby="custLede">'
+    + '<button type="button" class="dlg-close" id="custclose" aria-label="Close"' + dis + '>×</button>'
+    + '<p class="cust-eyebrow">' + esc(custody.variant) + '</p>'
+    + '<h2 id="custTitle">Choose the custodian</h2>'
+    + '<p class="cust-lede" id="custLede">The funds a client may own under ' + esc(custody.variant)
+    + ' depend on where the account is held: what counts as ESG differs by jurisdiction. The sleeves '
+    + 'and products offered in the implementation follow the custodian you choose.</p>'
+    + '<fieldset class="cust-list"><legend>Custodian</legend>'
+    + list.map(function (e) {
+        return '<label class="cust-opt"><input type="radio" name="cust" value="' + esc(e.id) + '"'
+          + (e.id === custody.chosen ? ' checked' : '') + dis
+          + (custody.err ? ' aria-describedby="custerr"' : '') + '><span>' + esc(e.name) + '</span></label>';
+      }).join('')
+    + '</fieldset>'
+    + (custody.err ? '<p class="md-err" id="custerr" role="alert">' + esc(custody.err) + '</p>' : '')
+    + '<div class="dlg-actions split">'
+    + '<button type="button" class="btn btn-primary" id="custsave"' + dis + '>'
+    + (custody.saving ? 'Working…' : 'Continue') + '</button>'
+    + '<button type="button" class="btn btn-ghost" id="custcancel"' + dis + '>Cancel</button></div>'
+    + '</div>';
+}
+
+async function commitCustody() {
+  if (!custody || custody.saving) return;
+  if (!custody.chosen) {
+    custody.err = 'Choose the custodian.';
+    renderCustodyDialog();
+    var first = document.querySelector('#custodyDialog input[name="cust"]'); if (first) first.focus();
+    return;
+  }
+  var variant = custody.variant, entity = custody.chosen;
+  if (variant !== state.variant) {
+    /* the type and its custodian go to the server in one write */
+    custody = null;
+    renderCustodyDialog();
+    await setVariant(variant, entity);
+    var sel = document.getElementById('bpv'); if (sel) sel.focus();
+    return;
+  }
+  var moved = custodian() !== entity;
+  var mandate = Object.assign({}, state.mandate, { entity: entity });
+  custody.saving = true; custody.err = null;
+  renderCustodyDialog();
+  try {
+    await trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mandate: mandate })
+    }));
+  } catch (err) {
+    custody.saving = false;
+    custody.err = (err && err.message) || 'Could not save the custodian.';
+    renderCustodyDialog();
+    return;
+  }
+  state.mandate = mandate;
+  var opener = custody.opener;
+  custody = null;
+  renderCustodyDialog();
+  /* another custodian may hold other editions and exclude other products
+     (D193): every library is read again at it */
+  if (moved) {
+    state.sleeveLib = {}; state.customLib = {};
+    if (state.cpLib) state.cpLib = { key: '', status: 'idle', data: null, error: null };
+  }
+  await fetchSchema();
+  announce('polite', 'Custodian set to ' + entityName(entity) + '.');
+  refresh();
+  var back = document.getElementById(opener && opener.id ? opener.id : 'custchange');
+  if (back && back.focus) back.focus();
+}
+
+/* The console has closed: what an admin may have changed there - the
+   sleeves and their editions, the marketing warnings - is read again, so
+   the page behind it is not left showing the lists it had when the console
+   opened. */
+async function afterRepository() {
+  if (state.phase !== 'workspace' || !state.scenarioId) return;
+  state.sleeveLib = {}; state.customLib = {};
+  if (state.cpLib) state.cpLib = { key: '', status: 'idle', data: null, error: null };
+  await fetchSchema();
+  refresh();
+}
+
+/* the rail's line for it, under the type: what is chosen, and the way to change it */
+function custodyRowHtml() {
+  if (!custodyNeeded(state.variant)) return '';
+  var now = custodian();
+  return '<div class="cust-row' + (now ? '' : ' is-open') + '"><span class="cust-k">Custodian</span>'
+    + (now ? '<b>' + esc(entityName(now)) + '</b>' : '<span class="cust-none">not chosen</span>')
+    + '<button type="button" class="btn-inline" id="custchange"' + (canEdit() ? '' : ' disabled') + '>'
+    + (now ? 'Change' : 'Choose') + '</button></div>';
+}
+
+/* =============================================================================
+   Marketing warnings (D196). Some asset classes may not be marketed by some
+   offering entities. When the allocation the proposal is built on - the
+   strategic one in the first column, or a custom portfolio - holds one, a
+   card shows the desk's words for it, once for each allocation chosen; the
+   PWA acknowledges it, the server records who and when, and the register
+   keeps both with the proposal. A note stays in the rail. Nothing is
+   blocked. The warnings come with the schema (options.marketing).
+   ========================================================================== */
+var marketingCard = null;           /* { warnings, allocation, readOnly } */
+
+/* the allocation the warnings are judged against, as the server names it:
+   the base column's key, or 'custom'. Nothing while the column is still
+   resolving: it holds the figures of the allocation before it until then. */
+function marketingAllocation() {
+  if (cpActive()) return 'custom';
+  var base = state.columns[0];
+  return base && base.role === 'base' && base.status === 'ready' && base.data ? keyStr(base.key) : '';
+}
+
+/* what it holds, in the shape the register keeps an allocation in */
+function marketingPicture() {
+  if (cpActive()) {
+    var lib = state.cpLib && state.cpLib.data, byId = {};
+    ((lib && lib.products) || []).forEach(function (p) { byId[p.productId] = p; });
+    var cats = [], at = {};
+    (state.customPortfolio.products || []).forEach(function (p) {
+      if (!(p.category in at)) { at[p.category] = { name: p.category, weightPct: 0, assets: [] }; cats.push(at[p.category]); }
+      var w = Number(p.weightPct) || 0;
+      at[p.category].weightPct += w;
+      var found = byId[p.productId];
+      if (found && found.assetClass) at[p.category].assets.push({ reportingName: found.assetClass, weightPct: w });
+    });
+    return cats;
+  }
+  var base = state.columns[0];
+  return base && base.role === 'base' && base.status === 'ready' && base.data ? base.data.categories || [] : [];
+}
+
+/* the categories a custom portfolio's line stands for: a group's, or itself */
+function marketingMembers(name) {
+  var groups = opt('rules.sleeveGroups', []) || [];
+  for (var i = 0; i < groups.length; i++) {
+    if (groups[i].name === name) return groups[i].categories.slice();
+  }
+  return [name];
+}
+
+/* the warnings the allocation raises, each with what it holds of them */
+function marketingWarnings() {
+  var rules = opt('options.marketing', []) || [];
+  if (!rules.length || !marketingAllocation()) return [];
+  var held = {}, lines = {};
+  marketingPicture().forEach(function (c) {
+    var w = Number(c.weightPct) || 0;
+    if (!(w > 0)) return;
+    marketingMembers(c.name).forEach(function (n) { held[n] = (held[n] || 0) + w; });
+    (c.assets || []).forEach(function (a) {
+      var x = Number(a.weightPct) || 0;
+      if (x > 0) lines[a.reportingName] = (lines[a.reportingName] || 0) + x;
+    });
+  });
+  return rules.map(function (r) {
+    var matched = (r.categories || []).filter(function (c) { return c in held; })
+      .map(function (c) { return { name: c, weightPct: held[c] }; })
+      .concat((r.lines || []).filter(function (n) { return n in lines; })
+        .map(function (n) { return { name: n, weightPct: lines[n] }; }));
+    return matched.length ? Object.assign({}, r, { matched: matched }) : null;
+  }).filter(Boolean);
+}
+
+/* the ones not yet acknowledged for this allocation */
+function marketingUnacked(found, allocation) {
+  var m = state.marketing;
+  var done = m && m.allocation === allocation
+    ? (m.acks || []).map(function (a) { return a.warning; }) : [];
+  return found.filter(function (w) { return done.indexOf(w.id) === -1; });
+}
+
+/* after every render: a warning not yet acknowledged opens its card, once
+   nothing else holds the page */
+function checkMarketing() {
+  if (marketingCard || custody || draft || account || !canEdit() || !state.scenarioId) return;
+  if (state.fromCache || anyDialogOpen()) return;
+  var allocation = marketingAllocation();
+  if (!allocation) return;
+  var fresh = marketingUnacked(marketingWarnings(), allocation);
+  if (!fresh.length) return;
+  marketingCard = { warnings: fresh, allocation: allocation, readOnly: false,
+                    opener: document.activeElement };
+  renderMarketingDialog();
+  var ok = document.getElementById('mktok'); if (ok) ok.focus();
+}
+
+function marketingHeldText(w) {
+  return w.matched.map(function (m) { return m.name + ' ' + num(m.weightPct, 1, '%'); }).join(', ');
+}
+
+function renderMarketingDialog() {
+  var host = document.getElementById('marketingDialog'); if (!host) return;
+  if (!marketingCard) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!anyDialogOpen('marketingDialog')) setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  setBackgroundInert(true);
+  var list = marketingCard.warnings;
+  host.innerHTML = '<div class="scrim" data-mktscrim></div>'
+    + '<div class="dialog mkt" role="alertdialog" aria-modal="true" aria-labelledby="mktTitle" aria-describedby="mktBody">'
+    + '<p class="mkt-eyebrow">Marketing restriction</p>'
+    + '<h2 id="mktTitle">This allocation holds ' + esc(list.map(function (w) {
+        return w.matched.map(function (m) { return m.name; }).join(', ');
+      }).join('; ')) + '</h2>'
+    + '<div id="mktBody">' + list.map(function (w) {
+        return '<section class="mkt-w"><p class="mkt-held">Held: ' + esc(marketingHeldText(w)) + '</p>'
+          + '<div class="mkt-text">' + String(w.text || '').split(/\n+/).map(function (para) {
+              return '<p>' + esc(para) + '</p>';
+            }).join('') + '</div></section>';
+      }).join('') + '</div>'
+    + '<div class="dlg-actions"><button type="button" class="btn btn-primary" id="mktok">'
+    + (marketingCard.readOnly ? 'Close' : 'Understood') + '</button></div>'
+    + '</div>';
+}
+
+async function acknowledgeMarketing() {
+  var card = marketingCard;
+  if (!card) return;
+  marketingCard = null;
+  renderMarketingDialog();
+  /* back where the card was opened from, found again after the rail redraws */
+  function focusBack() {
+    var from = card.opener && card.opener !== document.body ? card.opener : null;
+    var back = from && from.isConnected ? from
+      : document.getElementById(from && from.id ? from.id : 'mktread') || document.getElementById('mktread');
+    if (back && back.focus) back.focus();
+  }
+  if (card.readOnly) { focusBack(); return; }
+  var ids = card.warnings.map(function (w) { return w.id; });
+  /* held here at once, so the card does not open again while the write is
+     on its way; the server's answer replaces it */
+  var m = state.marketing && state.marketing.allocation === card.allocation
+    ? state.marketing : { allocation: card.allocation, acks: [] };
+  state.marketing = { allocation: card.allocation, acks: (m.acks || []).concat(ids.map(function (id) {
+    return { warning: id, by: opt('capabilities.user', ''), at: '' };
+  })) };
+  announce('polite', 'Marketing restriction acknowledged.');
+  refresh();
+  focusBack();
+  try {
+    var body = await trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ marketingAck: { allocation: card.allocation, warnings: ids } })
+    }));
+    if (body && body.marketing) state.marketing = body.marketing;
+  } catch (err) {
+    showAlert('error', 'The acknowledgement was not saved: ' + ((err && err.message) || String(err)));
+  }
+}
+
+/* the rail's note: what the allocation holds that some may not market */
+function marketingNoteHtml() {
+  var found = marketingWarnings();
+  if (!found.length) return '';
+  return '<div class="mkt-note" role="note"><b>Marketing restriction</b>'
+    + '<span>' + esc(found.map(function (w) { return w.matched.map(function (m) { return m.name; }).join(', '); }).join('; '))
+    + '</span><button type="button" class="btn-inline" id="mktread">Read</button></div>';
 }
 
 /* =============================================================================
@@ -4025,6 +4343,7 @@ function saveSnapshot() {
       sleeves: state.sleeves,
       customSleeves: state.customSleeves,
       customPortfolio: state.customPortfolio,
+      marketing: state.marketing,
       columns: state.columns.filter(function (c) { return c.status === 'ready'; })
     }));
   } catch (e) { /* private mode, or full: the page simply has no fallback */ }
@@ -4057,6 +4376,7 @@ function restoreSnapshot(snap) {
   state.sleeves = snap.sleeves || {};
   state.customSleeves = snap.customSleeves || {};
   state.customPortfolio = snap.customPortfolio || null;
+  state.marketing = snap.marketing || null;
   state.columns = snap.columns || [];
   state.phase = 'workspace';
   state.fromCache = true;
@@ -4269,6 +4589,7 @@ function refresh() {
   placeChrome();
   /* and again once the columns have finished moving to their new widths */
   window.setTimeout(placeChrome, 480);
+  checkMarketing();
 }
 
 /* ---- shared tooltip for both charts ------------------------------------- */
@@ -4320,6 +4641,27 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'down-more') {
     var reason = document.getElementById('schema-error-reason');
     if (reason) reason.hidden = !reason.hidden;
+    return;
+  }
+  /* the custodian's card (D195), and the marketing card (D196) */
+  if (e.target.id === 'custchange') { openCustodyDialog(state.variant, e.target); return; }
+  if (e.target.id === 'custsave') { commitCustody(); return; }
+  if (e.target.id === 'custcancel' || e.target.id === 'custclose') {
+    if (custody && !custody.saving) closeCustodyDialog();
+    return;
+  }
+  if (e.target.dataset && e.target.dataset.custscrim !== undefined) {
+    if (custody && !custody.saving) closeCustodyDialog();
+    return;
+  }
+  if (e.target.id === 'mktok') { acknowledgeMarketing(); return; }
+  if (e.target.id === 'mktread') {
+    var found = marketingWarnings();
+    if (found.length) {
+      marketingCard = { warnings: found, allocation: marketingAllocation(), readOnly: true, opener: e.target };
+      renderMarketingDialog();
+      var ok = document.getElementById('mktok'); if (ok) ok.focus();
+    }
     return;
   }
   if (e.target.id === 'dlgsave') { commitMandate(); return; }
@@ -4376,8 +4718,8 @@ document.addEventListener('click', function (e) {
 });
 
 document.addEventListener('change', function (e) {
-  if (!draft || !e.target || e.target.id !== 'mdentity') return;
-  draft.entity = e.target.value; draft.err = null; draft.dirty = true;
+  if (!custody || !e.target || e.target.name !== 'cust') return;
+  custody.chosen = e.target.value; custody.err = null;
 });
 
 document.addEventListener('input', function (e) {
@@ -4431,6 +4773,18 @@ document.addEventListener('change', function (e) {
 });
 
 document.addEventListener('keydown', function (e) {
+  /* the marketing card closes only by its button, unless it is being re-read */
+  if (marketingCard) {
+    if (e.key === 'Escape' && marketingCard.readOnly) { e.preventDefault(); acknowledgeMarketing(); return; }
+    if (e.key === 'Tab') trapFocus(e, document.getElementById('marketingDialog'));
+    return;
+  }
+  if (custody) {
+    if (e.key === 'Escape') { e.preventDefault(); if (!custody.saving) closeCustodyDialog(); return; }
+    if (e.key === 'Enter' && e.target && e.target.name === 'cust') { e.preventDefault(); commitCustody(); return; }
+    if (e.key === 'Tab') trapFocus(e, document.getElementById('custodyDialog'));
+    return;
+  }
   if (account && !draft) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -4601,21 +4955,19 @@ return {
   basis: function () { return state.basis; },
   mandate: function () { return state.mandate; },
   mandateSize: function () { return state.mandate ? state.mandate.mandateSize : null; },
-  /* the custodian / entity chosen on the first card, and its name (D193) */
-  entity: function () { return (state.mandate && state.mandate.entity) || ''; },
+  /* the custodian in force, and its name (D193, D195) */
+  entity: function () { return custodian(); },
   entityName: entityName,
   columns: function () { return state.columns; },
   base: function () { return state.columns[0] || null; },
   step: function () { return state.step; },
   implSeen: function () { return state.implSeen; },
   setStep: function (s) {
-    /* step 2 opens once the custodian / entity is chosen (D193): a scenario
-       saved before it asks for one first */
-    if (s === 'impl' && state.mandate && !state.mandate.entity) {
-      announce('assertive', 'Choose the custodian / entity before the implementation step.');
-      openMandateDialog(document.activeElement);
-      if (draft) { draft.err = { field: 'mdentity', msg: 'Choose the custodian / entity before the implementation step.' }; renderDialog(); }
-      var sel = document.getElementById('mdentity'); if (sel) sel.focus();
+    /* step 2 opens once the custodian is chosen, under a type that asks for
+       one (D193, D195): a scenario saved before it asks for one first */
+    if (s === 'impl' && state.mandate && custodyNeeded(state.variant) && !custodian()) {
+      announce('assertive', 'Choose the custodian before the implementation step.');
+      openCustodyDialog(state.variant, document.activeElement);
       return;
     }
     var wasStep = state.step;
@@ -4725,6 +5077,7 @@ return {
   setFeeSchedule: setFeeSchedule,
   setFeeLevel: setFeeLevel,
   setVariant: setVariant,
+  afterRepository: afterRepository,
   implementationVariants: function () {
     return opt('options.implementationVariants', []);
   },

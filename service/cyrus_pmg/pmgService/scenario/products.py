@@ -125,26 +125,28 @@ FILE_COLUMNS = [c for _, c, _ in _FIELDS]
 LABELS = {k: label for k, _, label in _FIELDS}
 
 #: What may differ with a scenario's base currency
-#: (D180, D182, D184, D189, D190): the ticker a product is listed under there,
-#: the minimum it takes there, the currency it exposes a holder to there, the
-#: currency that listing is issued in, its share class and its distribution
-#: yield - a share class hedged to each base currency is one product, and an
-#: accumulating class distributes nothing. Each is kept per currency only
-#: where it differs from the main one, so a blank is the main value - and a
-#: minimum or a yield of 0 is none, in a currency that has none.
+#: (D180, D182, D184, D189, D190, D194): the ticker a product is listed under
+#: there, the minimum it takes there, the currency it exposes a holder to
+#: there, the currency that listing is issued in, its share class, its
+#: distribution yield, its asset class and its product cost - a share class
+#: hedged to each base currency is one product, an accumulating class
+#: distributes nothing, and a hedged class costs more. Each is kept per
+#: currency only where it differs from the main one, so a blank is the main
+#: value - and a minimum or a yield of 0 is none, in a currency that has none.
 CURRENCY_FIELDS = ('ticker', 'minimumInvestment', 'exposureCurrency', 'issueCurrency', 'shareClass',
-                   'distributionYield')
+                   'distributionYield', 'assetClass', 'productCost')
 #: the ones of those that are figures: a blank is the main one, 0 is none
-CURRENCY_FIGURES = ('minimumInvestment', 'distributionYield')
+#: (a cost of 0 is a product that costs nothing there)
+CURRENCY_FIGURES = ('minimumInvestment', 'distributionYield', 'productCost')
 #: the ones of those that are words: a blank is the main one
-CURRENCY_WORDS = ('exposureCurrency', 'issueCurrency', 'shareClass')
+CURRENCY_WORDS = ('exposureCurrency', 'issueCurrency', 'shareClass', 'assetClass')
 #: A product may also not be offered at all in a base currency (D182): a
 #: scenario there flags it in the implementation table, and the export
 #: refuses while a sleeve holds it.
 OFFERED = 'offered'
 #: the flat key the console and a refusal name one currency's field by:
 #: tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP, issueCurrencyGBP, shareClassGBP,
-#: distributionYieldGBP, offeredGBP
+#: distributionYieldGBP, assetClassGBP, productCostGBP, offeredGBP
 CURRENCY_KEYS = [f + c for f in CURRENCY_FIELDS + (OFFERED,) for c in CURRENCIES]
 #: A file gives a product's values in a currency as a row of their own
 #: (D182): the same ProductId on one row per base currency, named in the
@@ -322,9 +324,10 @@ def _fold(fileName, pid, rows, feeGroups, strict, categories):
     All row is the main one, else the row of the first currency it is
     offered in; each other row gives the values it has in its currency,
     which may differ only in the ticker, the minimum, the exposure currency,
-    the issue currency (D184), the share class (D189) and the distribution
-    yield (D190). A row is the product whole, so a blank there is none: a
-    minimum of 0, a ticker of none. With no All row, a currency without a
+    the issue currency (D184), the share class (D189), the distribution
+    yield (D190), the asset class and the product cost (D194). A row is the
+    product whole, so a blank there is none: a minimum of 0, a ticker of
+    none. With no All row, a currency without a
     row of its own is not offered."""
     if len(rows) == 1 and rows[0][1] == ALL:
         return rows[0][2]
@@ -339,8 +342,9 @@ def _fold(fileName, pid, rows, feeGroups, strict, categories):
                 continue
             raise BadCatalogue(
                 '{}: row {} ({}): the {} row gives {} {} where row {} gives {} - only the ticker, the '
-                'minimum, the exposure currency, the issue currency, the share class and the '
-                'distribution yield may differ by base currency.'.format(
+                'minimum, the exposure currency, the issue currency, the share class, the '
+                'distribution yield, the asset class and the product cost may differ by base '
+                'currency.'.format(
                     fileName, n, pid, currency, LABELS[key].lower(), show(key, record[key]),
                     mainRow, show(key, main[key])))
     currencies = {}
@@ -577,9 +581,9 @@ def _ticker(value, key, strict=True) -> str:
 
 
 def _currencies(value, strict=True) -> dict:
-    """The values by currency (D180, D182, D184, D189, D190) as stored: {currency: {'ticker',
-    'minimumInvestment', 'distributionYield', 'exposureCurrency', 'issueCurrency', 'shareClass',
-    'offered'}} for each currency
+    """The values by currency (D180, D182, D184, D189, D190, D194) as stored: {currency:
+    {'ticker', 'minimumInvestment', 'distributionYield', 'productCost', 'exposureCurrency',
+    'issueCurrency', 'shareClass', 'assetClass', 'offered'}} for each currency
     that sets one or is not offered, in the vocabulary's order. A ticker of
     a dash is none there, whatever the main one; a currency not offered
     keeps no values. A refusal names the one field."""
@@ -602,14 +606,16 @@ def _currencies(value, strict=True) -> dict:
         if not isinstance(given, dict):
             raise ValidationError('currencies', 'The {} values are a ticker, a minimum, an exposure '
                                                 'currency, an issue currency, a share class, a '
-                                                'distribution yield and whether it is offered.'.format(currency))
+                                                'distribution yield, an asset class, a product cost '
+                                                'and whether it is offered.'.format(currency))
         offered = given.get(OFFERED, True)
         if not isinstance(offered, bool):
             raise ValidationError(OFFERED + currency, 'Whether it is offered in {} is yes or '
                                                       'no.'.format(currency))
         if not offered:
-            out[currency] = dict({'ticker': '', 'minimumInvestment': None, 'distributionYield': None,
-                                  OFFERED: False}, **{word: '' for word in CURRENCY_WORDS})
+            out[currency] = dict({'ticker': '', OFFERED: False},
+                                 **{figure: None for figure in CURRENCY_FIGURES},
+                                 **{word: '' for word in CURRENCY_WORDS})
             continue
         none = _text(given.get('ticker')) in (NO_TICKER, '-', '–')
         ticker = NO_TICKER if none else _ticker(given.get('ticker'), 'ticker' + currency, strict)
@@ -635,9 +641,10 @@ def _currencies(value, strict=True) -> dict:
 
 def inCurrency(product, currency):
     """*product* as a scenario in *currency* reads it
-    (D180, D182, D184, D189, D190): the ticker, the minimum, the exposure
-    currency, the issue currency, the share class and the distribution yield
-    it has there, where it has its own, else its main ones; and whether it is offered there at all. Any
+    (D180, D182, D184, D189, D190, D194): the ticker, the minimum, the
+    exposure currency, the issue currency, the share class, the distribution
+    yield, the asset class and the product cost it has there, where it has
+    its own, else its main ones; and whether it is offered there at all. Any
     other currency, or none, reads the main ones, offered."""
     if not product:
         return product
@@ -920,11 +927,15 @@ def describeSource() -> dict:
 
 def vocabulary() -> dict:
     """The values the console offers for each of the six words - every one a
-    live product already uses, in A-Z order - with the share classes."""
+    live product already uses, in A-Z order, its values by currency too - with
+    the share classes."""
     cat = _catalogue()
     out = {}
     for key in WORDS:
         seen = {p[key] for p in cat['live'].values() if p[key]}
+        if key in CURRENCY_WORDS:
+            seen.update(own[key] for p in cat['live'].values()
+                        for own in (p.get('currencies') or {}).values() if own.get(key))
         out[key] = sorted(seen, key=lambda v: v.lower())
     out['shareClass'] = list(SHARE_CLASSES)
     return out

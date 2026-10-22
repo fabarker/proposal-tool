@@ -85,9 +85,8 @@ class ScenarioPort(Protocol):
         has not settled a variant has nothing to list. An empty sequence is a
         legitimate answer - that variant reaches no sleeve for that category.
 
-        *entity* is the custodian / entity the account is held at, by id, or
-        None (D193): an edition may be for particular entities, and a sleeve
-        holding a product the entity excludes says so under ``notAvailable``.
+        *entity* is the custodian the account is held at, by id, or None
+        (D193): an edition may be for particular custodians.
         """
 
     def build_export(

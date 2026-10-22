@@ -57,7 +57,7 @@ def test_the_vocabulary_is_three_fields_from_the_universe():
     vocab = sleeveRules.vocabulary()
     # and the custodian / entity, the scenario's rather than the portfolio's (D193)
     assert list(vocab) == ['currency', 'riskLevel', 'allocationType', 'entity'] == list(sleeveRules.FIELDS)
-    assert vocab['entity'] == ['gsi', 'gsbe', 'gsbz', 'middle-east']
+    assert vocab['entity'] == ['gsi', 'gsbz', 'gslu', 'gsco']
     assert vocab['currency'] == ['USD', 'GBP', 'CHF', 'EUR']
     assert vocab['riskLevel'][0] == 'LowVol' and vocab['riskLevel'][-1] == 'All Equity'
     assert vocab['allocationType'] == ['Full', 'Core', 'ex-Alts', 'ex-HFs', 'NA']

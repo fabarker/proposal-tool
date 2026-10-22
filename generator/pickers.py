@@ -280,6 +280,44 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .dialog .md-err{margin:0;padding:9px 12px;border-radius:4px;background:#FDE8E8;
   border:1px solid #F1B8B2;color:#9B1C1C;font-size:13px;line-height:1.45;font-weight:600}
 
+/* ── the custodian (D195) ──
+   Its own card, over the rail, as a type that asks for one is chosen; and a
+   line under the type in the rail saying which is chosen. */
+#custodyDialog[hidden],#marketingDialog[hidden]{display:none}
+#custodyDialog .scrim,#marketingDialog .scrim{z-index:97}
+#custodyDialog .dialog,#marketingDialog .dialog{z-index:98}
+.cust-eyebrow,.mkt-eyebrow{margin:0 0 6px;font-family:var(--f-num);font-size:10.5px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+.dialog.cust h2,.dialog.mkt h2{margin:0 0 10px;font-size:19px;line-height:1.25}
+.cust-lede{margin:0 0 14px;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.cust-list{border:0;margin:0 0 6px;padding:0;display:grid;gap:6px}
+.cust-list legend{font-size:13px;color:var(--ink-2);font-weight:600;padding:0;margin:0 0 6px}
+.cust-opt{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line-strong);
+  border-radius:var(--radius-sm);cursor:pointer;font-size:14.5px;color:var(--ink)}
+.cust-opt:hover{border-color:var(--accent)}
+.cust-opt:has(input:checked){border-color:var(--accent);background:var(--surface-2);font-weight:600}
+.cust-opt input{margin:0;accent-color:var(--accent)}
+.cust-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:-6px 0 14px;font-size:13px;
+  color:var(--rail-ink-2)}
+.cust-row .cust-k{font-weight:600}
+.cust-row b{color:var(--rail-ink);font-weight:600}
+.cust-row .cust-none{color:var(--rail-eyebrow,#9B1C1C);font-weight:600}
+.cust-row .btn-inline{color:var(--rail-focus,var(--accent))}
+
+/* ── the marketing warnings (D196) ──
+   A card the PWA acknowledges, with the desk's own words, and a note in the
+   rail while the allocation holds what it warns of. */
+.mkt-w{margin:0 0 12px;padding:12px 14px;border-left:3px solid #B45309;background:#FFF8EB;
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+.mkt-held{margin:0 0 6px;font-family:var(--f-num);font-size:11.5px;font-weight:700;letter-spacing:.04em;
+  color:#8A4B08}
+.mkt-text p{margin:0 0 8px;font-size:14px;line-height:1.55;color:var(--ink)}
+.mkt-text p:last-child{margin-bottom:0}
+.mkt-note{display:flex;align-items:baseline;gap:6px 8px;flex-wrap:wrap;margin:12px 0 0;padding:8px 10px;
+  border-left:3px solid #B45309;background:#FFF8EB;border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  font-size:12.5px;color:#5C3A06}
+.mkt-note b{font-weight:700}
+
 /* ── the account opening request (D76, D107) ── */
 /* The landing card once seated three buttons on one line and needed 600px to
    hold them. With the third moved below the rule, both cards are the standard

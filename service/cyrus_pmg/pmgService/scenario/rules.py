@@ -15,6 +15,7 @@ from functools import lru_cache
 from numbers import Real
 
 from . import entities as _entities
+from . import marketing as _marketing
 from . import fees
 from . import otherCharges as _otherCharges
 from . import portfolio_weights as pw
@@ -964,8 +965,12 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             # types offer the ex-RAs toggle - both derived from the universe
             'allocationTypesByRisk': derived['_FACETS']['allocationTypes'],
             'exclusionOffered': derived['_FACETS']['exclusionOffered'],
-            # the custodians / entities the first card offers (D193)
+            # the custodians / entities a PWA may choose (D193), and the
+            # implementation types that ask for one (D195)
             'entities': _entities.offered(),
+            'custodyTypes': _entities.custodyTypes(),
+            # the marketing warnings an allocation may raise (D196)
+            'marketing': _marketing.served(),
             'implementationVariants': IMPLEMENTATION_VARIANTS,
             'variantAllocations': VARIANT_ALLOCATIONS,
             'variantsExcludingRealEstate': VARIANTS_EXCLUDING_RE,

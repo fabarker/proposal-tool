@@ -465,7 +465,7 @@ def test_the_register_records_the_rules_a_proposal_was_built_with(store, monkeyp
     conn = sqlite3.connect(str(store / 'proposals.db'))
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     conn.close()
-    assert int(version) == proposalRegister.SCHEMA_VERSION == 10   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193)
+    assert int(version) == proposalRegister.SCHEMA_VERSION == 11   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193), the marketing warnings (D196)
 
 
 def test_the_schema_serves_the_list_in_force_for_the_type(store):

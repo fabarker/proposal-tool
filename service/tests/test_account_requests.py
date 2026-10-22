@@ -274,7 +274,7 @@ def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the
             assert set(names) <= {'requireAuth'}, (route.path, names)
     # 32, the funding split's five (D148), the overlays' five (D155), the
     # catalogue's nine (D165), the fee card's seven (D166), the sleeve switch (D169) and custom sleeves' one (D170)
-    assert seen == 69                      # custom portfolios' three (D171), the switch (D172), sharing (D179), the entities (D193)
+    assert seen == 69                      # custom portfolios' three (D171), the switch (D172), sharing (D179), the marketing lists' four (D196); the entities' four gone (D195)
 
 
 def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):

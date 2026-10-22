@@ -153,14 +153,16 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
                    includeFees: bool = None, volPremium: bool = None,
                    customFees: dict = None, customFeesBy: str = None,
                    customSleeves: dict = None, customPortfolio: dict = None,
-                   otherCharges: dict = None, otherChargesBy: str = None) -> dict:
+                   otherCharges: dict = None, otherChargesBy: str = None,
+                   marketing: dict = None) -> dict:
     """Apply a partial state update (the PUT endpoint - deviation D2).
 
     *customFees* replaces the whole map (D96) and records who wrote it and
     when, for the workbook's header: a custom rate has no delivery behind it,
     so the sheet says whose it is. *otherCharges* replaces the charges the
     PWA quotes beside the fees (D177), and records whose they are the same
-    way.
+    way. *marketing* replaces the marketing warnings the PWA has
+    acknowledged and the allocation they were shown for (D196).
 
     A variant change clears the sleeve map in the same write unless the caller
     supplied one, because sleeve names are only meaningful under the variant
@@ -219,6 +221,8 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
             state['otherCharges'] = dict(otherCharges)
             state['otherChargesBy'] = otherChargesBy or customFeesBy or ''
             state['otherChargesAt'] = time.time()
+        if marketing is not None:
+            state['marketing'] = dict(marketing)
         return _save(state)
 
 

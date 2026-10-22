@@ -441,11 +441,10 @@ def hasSleeve(category, variant, entity=None) -> bool:
     that category is applied under the type (D191); listSleeves without a
     key serves fallbacks only, so it cannot answer this.
 
-    At an *entity* (D193), only an edition that may be for it - no rules, or
-    a rule naming no entity or this one - and holds nothing it excludes."""
+    At a custodian (D193), only an edition that may be for it: no rules, or
+    a rule naming no custodian or this one."""
     if not variantExists(variant):
         return False
-    barred = entities.excluded(entity)
     conn = _connect()
     try:
         for row in _sleeveRows(conn, variant, category):
@@ -455,8 +454,6 @@ def hasSleeve(category, variant, entity=None) -> bool:
                 return True
             rules = _ruleRows(conn, row['id'])
             if rules and not any(not r.get('entity') or entity in r['entity'] for r in rules):
-                continue
-            if any(p['productId'] in barred for p in _productRows(conn, row['id'])):
                 continue
             return True
         return False
@@ -933,6 +930,15 @@ def readRuleRows(path: str):
 
 # ------------------------------------------------------------ validation ---
 
+def _refuseCustodianElsewhere(rules, types) -> None:
+    """A custodian is chosen only under PMG ESG (D195): a rule naming one for
+    a sleeve offered under no type that asks for one would never be served."""
+    if any(r.get('entity') for r in rules) and not any(entities.needed(t) for t in types):
+        raise ValidationError('rules', 'Only a sleeve offered under {} may have an edition for a '
+                                       'custodian: no other type asks for one.'.format(
+                                           ' or '.join(entities.custodyTypes())))
+
+
 def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
               label='', rules=None):
     """Everything an edition has to satisfy to be saved. Raises the first
@@ -972,6 +978,7 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
     if len(label) > NAME_MAX:
         raise ValidationError('label', 'Keep the edition label to {} characters.'.format(NAME_MAX))
     rules = sleeveRules.normalise(rules)
+    _refuseCustodianElsewhere(rules, types)
     if rules and not label:
         raise ValidationError('label', 'An edition with rules needs a label - the desk\'s short '
                                        'name for it, such as "GBP" or "GBP ex-Alts".')
@@ -1289,15 +1296,11 @@ def listSleeves(category: str, variant: str, key=None, entity=None) -> list:
     disabled edition lets the name fall back to its fallback edition, and a
     name whose every edition is disabled is not offered.
 
-    *entity* is the custodian / entity the proposal is for (D193): an edition
-    may be for particular entities, and the one resolved is judged against
-    the entity's exclusions. One holding a product the entity excludes is
-    still served, saying so under ``notAvailable`` - the picker greys it out
-    with the reason - and an alternative the entity excludes is not one
-    there."""
+    *entity* is the custodian the proposal is held at, under a type that
+    asks for one (D193, D195): an edition may be for particular custodians,
+    and the one resolved is the edition for this one, else the fallback."""
     if not variantExists(variant):
         return []
-    barred = entities.excluded(entity)
     conn = _connect()
     try:
         byName, order = {}, []
@@ -1316,14 +1319,6 @@ def listSleeves(category: str, variant: str, key=None, entity=None) -> list:
             served = _served(row, _productRows(conn, row['id']))
             if served is None:
                 continue
-            if barred:
-                held = [p['name'] for p in served['products'] if p['productId'] in barred]
-                if held:
-                    served['notAvailable'] = {'entity': entity, 'entityName': entities.name(entity),
-                                              'products': held}
-                for product in served['products']:
-                    if product.get('alternative') and product['alternative']['productId'] in barred:
-                        product['alternative'] = None
             out.append(served)
         return out
     finally:
@@ -1331,10 +1326,8 @@ def listSleeves(category: str, variant: str, key=None, entity=None) -> list:
 
 
 def sleeveExists(category: str, name, variant: str, key=None, entity=None) -> bool:
-    """Whether *name* is offered for *key* at *entity* - and may be held
-    there: a sleeve greyed out at the entity (D193) is not."""
-    return any(s['name'] == name and not s.get('notAvailable')
-               for s in listSleeves(category, variant, key, entity))
+    """Whether *name* is offered for *key* at the custodian *entity*."""
+    return any(s['name'] == name for s in listSleeves(category, variant, key, entity))
 
 
 def listAll(variant: str = None) -> list:
@@ -2365,6 +2358,7 @@ def _importInto(conn, rows, replace, user, strict, action='imported', ruleRows=N
                 cleaned = [(p['productId'], float(p['weight']), p.get('alternative') or '')
                            for p in productRows]
                 rules = sleeveRules.normalise(rules)
+                _refuseCustodianElsewhere(rules, typesOf(typesText(variant)))
                 if rules and not label:
                     raise ValidationError('rules', 'The fallback edition of {} in {} under {} '
                                           'carries rules; give it an Edition label.'.format(

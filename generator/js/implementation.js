@@ -640,12 +640,6 @@ function complete() {
   return counts.total > 0 && counts.filled === counts.total;
 }
 
-/* why a sleeve is greyed out at the custodian / entity (D193): "Not
-   available at GSBE: holds Product X." */
-function notAvailableText(barred) {
-  return 'Not available at ' + barred.entityName + ': holds ' + (barred.products || []).join(', ') + '.';
-}
-
 /* ---- rows: every printed figure from the printed weight (spec 8.4) ------ */
 /* one line of the table, as the library serves its product */
 function implItem(product, level) {
@@ -2884,14 +2878,10 @@ function renderRail() {
         + '<button type="button" class="sl-retry" data-slretry="'
         + App.esc(category.name) + '">Retry</button>';
     } else {
-      /* a sleeve holding a product the custodian / entity excludes stays
-         listed, greyed out with the reason (D193) */
       var options = lib.sleeves.map(function (s) {
-        var barred = s.notAvailable;
         return '<option value="' + App.esc(s.name) + '"'
-          + (App.sleeves()[category.name] === s.name ? ' selected' : '')
-          + (barred ? ' disabled title="' + App.esc(notAvailableText(barred)) + '"' : '') + '>'
-          + App.esc(s.name) + (barred ? ' — not available at ' + App.esc(barred.entityName) : '') + '</option>';
+          + (App.sleeves()[category.name] === s.name ? ' selected' : '') + '>'
+          + App.esc(s.name) + '</option>';
       }).join('');
       /* a held custom sleeve, or the way to build one where this person may
          (D170); one this person may not build is shown only while it is in
@@ -2919,9 +2909,6 @@ function renderRail() {
             + ' no longer this category\u2019s</span>'
             + (mayBuild ? '<button type="button" class="sl-edit" data-custedit="' + App.esc(category.name) + '">Edit</button>' : '')
           : '<span>Reading the custom sleeve\u2026</span>') + '</span>';
-    } else if (chosen && chosen.notAvailable) {
-      after = '<span class="sl-shape"><span class="bad">' + App.esc(notAvailableText(chosen.notAvailable))
-        + ' Choose another.</span></span>';
     } else if (chosen) {
       after = sleeveShapeText(sleeveShape(chosen, category.weightPct));
     }

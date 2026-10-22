@@ -471,11 +471,11 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/overlays/remove', ('POST',)),
         ('/scenario/repository/overlays/history', ('GET',)),
         ('/scenario/repository/overlays/revert', ('POST',)),
-        # the custodians / entities (D193)
-        ('/scenario/repository/entities', ('GET',)),
-        ('/scenario/repository/entities', ('PUT',)),
-        ('/scenario/repository/entities/history', ('GET',)),
-        ('/scenario/repository/entities/revert', ('POST',)),
+        # the marketing lists (D196)
+        ('/scenario/repository/marketing', ('GET',)),
+        ('/scenario/repository/marketing', ('PUT',)),
+        ('/scenario/repository/marketing/history', ('GET',)),
+        ('/scenario/repository/marketing/revert', ('POST',)),
         # the product catalogue (D165)
         ('/scenario/repository/products', ('POST',)),
         ('/scenario/repository/products', ('PUT',)),
@@ -1651,7 +1651,7 @@ def test_the_landing_offers_the_library_to_an_admin_and_to_nobody_else():
         assert "'" + view + "'" in views, view
     # real anchors carrying the hashes the console already answers to, so a
     # middle click opens a second tab and a copied link still works
-    assert "'<a href=\"#' + v[0] + '\" data-repoopen=\"' + v[0] + '\">'" in body
+    assert "'<a href=\"#' + (v[2] || v[0]) + '\" data-repoopen=\"' + v[0] + '\">'" in body
 
     shell = os.path.join(HERE, '..', '..', 'generator', 'build_styles.py')
     with open(shell, encoding='utf-8') as fh:

@@ -1102,6 +1102,10 @@ PAGE_SHELL = """<!doctype html>
 <div id="cpDialog" hidden></div>
 <div id="greetDialog" hidden></div>
 <div id="repoDialog" hidden></div>
+<!-- The custodian, under a type that asks for one (D195), and the marketing
+     warnings (D196), rendered on demand. -->
+<div id="custodyDialog" hidden></div>
+<div id="marketingDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>
 </body>

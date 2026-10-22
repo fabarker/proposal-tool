@@ -1019,8 +1019,9 @@ def test_the_page_offers_one_download_and_awaits_its_writes():
     with open(os.path.join(root, 'js', 'core.js'), encoding='utf-8') as handle:
         core = handle.read()
     assert core.count("trackWrite(apiFetch('/scenario/'"
-                      " + encodeURIComponent(state.scenarioId), {") == 8, \
-        'six fire-and-forget writes, the custom sleeves\' (D170) and the custom portfolio\'s (D171), each tracked'
+                      " + encodeURIComponent(state.scenarioId), {") == 10, \
+        'six fire-and-forget writes, the custom sleeves\' (D170), the custom portfolio\'s (D171), ' \
+        'the custodian\'s (D195) and the marketing acknowledgement (D196), each tracked'
     assert 'writesSettled: writesSettled,' in core
     with open(os.path.join(root, 'js', 'implementation.js'), encoding='utf-8') as handle:
         impl = handle.read()

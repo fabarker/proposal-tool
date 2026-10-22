@@ -52,11 +52,12 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 10         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+SCHEMA_VERSION = 11         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
                             # 5: the overlay rules (D155); 6: the catalogue and fee card versions (D165, D166);
                             # 7: custom sleeves, and whether the strategic allocation was left out (D170);
                             # 8: custom portfolios (D171); 9: the other charges (D177);
-                            # 10: the custodian / entity (D193)
+                            # 10: the custodian / entity (D193);
+                            # 11: the marketing warnings (D196)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     customPortfolio   TEXT,
     otherCharges      TEXT,
     entity            TEXT,
+    marketing         TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -131,7 +133,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
                  'deckName, deckBytes, deckSha, fundingSplit, overlays, catalogueRevision, '
-                 'feeCardRevision, departs, customPortfolio, entity')
+                 'feeCardRevision, departs, customPortfolio, entity, marketing')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -211,6 +213,10 @@ def _connect() -> sqlite3.Connection:
         # for anything delivered before it
         if 'entity' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN entity TEXT')
+        # the marketing warnings the allocation raised and who acknowledged
+        # each (D196); NULL for none, and for anything delivered before
+        if 'marketing' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN marketing TEXT')
         pins = {row[1] for row in conn.execute('PRAGMA table_info(proposalSleeves)')}
         if 'custom' not in pins:
             conn.execute('ALTER TABLE proposalSleeves ADD COLUMN custom TEXT')
@@ -388,6 +394,12 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
     from . import products
     catalogueRevision = products.describeSource()['revision']
     feeCardRevision = fees.deliveryInfo()['revision'] if implementation.get('includeFees') else None
+    # the marketing warnings its allocation raises, each with who
+    # acknowledged it (D196)
+    from . import marketing as _marketing
+    warned = _marketing.acknowledged(
+        _marketing.warningsFor(allocation), implementation.get('marketing'),
+        'custom' if builtByHand else allocation.get('keyStr'))
     stamp = _now()
     sha = hashlib.sha256(workbook).hexdigest()
     deckSha = hashlib.sha256(deck).hexdigest()
@@ -404,8 +416,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
                 'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
                 'overlays, catalogueRevision, feeCardRevision, departs, customPortfolio, '
-                'otherCharges, entity) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'otherCharges, entity, marketing) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -437,7 +449,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                   if implementation.get('includeFees') and implementation.get('otherCharges')
                   else None),
                  # the custodian / entity the account is held at (D193)
-                 getattr(mandate, 'entity', '') or None))
+                 getattr(mandate, 'entity', '') or None,
+                 # the marketing warnings and their acknowledgements (D196)
+                 json.dumps(warned) if warned else None))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName, '
                 'custom) VALUES (?,?,?,?,?,?)',
@@ -467,6 +481,8 @@ def _rowToEntry(row) -> dict:
     if 'entity' in entry:
         # the id as recorded, and the name it goes by now (D193)
         entry['entityName'] = _entities.name(entry['entity']) if entry['entity'] else ''
+    if 'marketing' in entry:
+        entry['marketing'] = json.loads(entry['marketing']) if entry['marketing'] else None
     return entry
 
 
@@ -815,7 +831,23 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
                   'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays',
                   'CatalogueVersion', 'FeeCardVersion', 'CustomSleeves', 'StrategicAllocation',
-                  'CustomPortfolio', 'Entity']
+                  'CustomPortfolio', 'Entity', 'MarketingWarnings']
+
+
+def marketingText(warnings) -> str:
+    """The marketing warnings in one line (D196): ``Hedge Funds 10% - not by
+    GSBE, Middle East - acknowledged by jtaylor 2026-10-22 14:05``. Blank for
+    none."""
+    out = []
+    for w in warnings or []:
+        held = ', '.join('{} {:g}%'.format(m['name'], round(float(m['weightPct']), 2))
+                         for m in w.get('matched') or [])
+        ack = ('acknowledged by {} {}'.format(w['acknowledgedBy'] or 'someone',
+                                              (w.get('acknowledgedAt') or '').replace('T', ' ')[:16])
+               if w.get('acknowledgedAt') else 'not acknowledged')
+        out.append('{} - not by {} - {}'.format(held, ', '.join(w.get('bannedNames') or w.get('banned') or []),
+                                               ack))
+    return '; '.join(out)
 
 
 def customPortfolioText(custom) -> str:
@@ -865,7 +897,8 @@ def exportRows(**filters) -> list:
                         e.get('catalogueRevision') or '', e.get('feeCardRevision') or '',
                         built, 'Left out' if e.get('departs') or e.get('customPortfolio')
                         else 'Included', customPortfolioText(e.get('customPortfolio')),
-                        _entities.name(e['entity']) if e.get('entity') else ''))
+                        _entities.name(e['entity']) if e.get('entity') else '',
+                        marketingText(e.get('marketing'))))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

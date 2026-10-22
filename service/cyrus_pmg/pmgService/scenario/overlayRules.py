@@ -580,8 +580,8 @@ def current(variant=None, entity=None) -> dict:
     in ``withheld`` (D191); ``order`` keeps every rule's id in the list's
     order, so the rail can show a withheld switch greyed out where it would
     stand. Every proposal reads its list here, so the screen, the files and
-    the register agree on it. At an *entity* the sleeve must be one the
-    entity may hold (D193)."""
+    the register agree on it. At a custodian, the sleeve must have an
+    edition that may be for it (D193)."""
     rows = _readPolicies()
     if variant and variant != HOUSE:
         entry = _entry(rows[variant]) if variant in rows else _entry(rows[HOUSE], inherited=True)

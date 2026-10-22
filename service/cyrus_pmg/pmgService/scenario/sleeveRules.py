@@ -12,8 +12,8 @@ A rule constrains any subset of three fields of a strategic portfolio:
 
     currency        riskLevel        allocationType
 
-and the custodian / entity the proposal is for (entities.py, D193), which
-is the scenario's rather than the portfolio's:
+and the custodian the proposal is held at under PMG ESG (D193, D195),
+which is the scenario's rather than the portfolio's:
 
     entity
 
@@ -80,7 +80,7 @@ def vocabulary() -> dict:
         'riskLevel': [r for r in saaKeys.RISK_LEVELS if r in risks],
         'allocationType': ([t for t in saaKeys.ALLOCATION_TYPES if t in types]
                            + ([NA] if NA in types else [])),
-        # the entities by id, retired ones too: a rule naming one keeps it
+        # the custodians, by id (D195)
         'entity': entities.ids(),
     }
 
@@ -153,12 +153,12 @@ def normalise(rules) -> list:
             if not values:
                 continue
             if field == 'entity':
-                # by id or by name, whatever the capitals: a file says GSBE
+                # by id or by name, whatever the capitals: a file says GSBZ
                 values = [entities.resolve(v) or v for v in values]
             bad = [v for v in values if v not in vocab[field]]
             if bad and field == 'entity':
                 raise ValidationError(
-                    'rules', 'Rule {}: {} {} not a custodian / entity. Known: {}.'.format(
+                    'rules', 'Rule {}: {} {} not a custodian. Known: {}.'.format(
                         position, ', '.join(repr(b) for b in bad), 'is' if len(bad) == 1 else 'are',
                         ', '.join(entities.name(e) for e in vocab[field])))
             if bad:

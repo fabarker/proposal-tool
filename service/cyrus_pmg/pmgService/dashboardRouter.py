@@ -30,7 +30,7 @@ from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
 from cyrus_pmg.pmgService.scenario import (accountRequests, customAccess, customPortfolio,
                                            customSleeves, entities, feeCard, fees,
-                                           fundingSplit, overlayRules, products,
+                                           fundingSplit, marketing, overlayRules, products,
                                            otherCharges as _otherCharges,
                                            proposalRegister, repositoryFeed, scenarioStore,
                                            sleeveRepo, sleeveRules)
@@ -114,9 +114,13 @@ def _includeFees(state: dict) -> bool:
 
 def _scenarioPayload(state: dict) -> dict:
     """A stored scenario as the wire shape of GET /scenario/{id}."""
+    # the custodian only under PMG ESG, and only one on the list (D195): a
+    # scenario saved before may hold one it does not use
+    mandate = dict(state['mandate'] or {})
+    mandate['entity'] = entities.effective(mandate.get('entity'), state.get('variant'))
     return {
         'id': state['id'],
-        'mandate': state['mandate'],
+        'mandate': mandate,
         'basis': state['basis'],
         'base': state['base'],
         'comparisons': state['comparisons'],
@@ -134,6 +138,8 @@ def _scenarioPayload(state: dict) -> dict:
         'customSleeves': state.get('customSleeves') or {},
         # a proposal built product by product, and whether it is in force (D171)
         'customPortfolio': state.get('customPortfolio') or None,
+        # the marketing warnings acknowledged, and for which allocation (D196)
+        'marketing': state.get('marketing') or None,
     }
 
 
@@ -161,9 +167,9 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
     try:
         validateBasis(basis)
         mandate = None
-        # *entity* is the custodian / entity chosen on the first card: the
-        # overlays served are the ones it may hold (D193)
-        entity = entities.checkChoice(entity, allowRetired=True) if entity else ''
+        # *entity* is the custodian chosen under PMG ESG: the overlays served
+        # are the ones with an edition for it (D193, D195)
+        entity = entities.effective(entity, variant)
         if mandateSize is not None or topAccountSize is not None or entity:
             mandate = MandateInput(topAccountSize=topAccountSize,
                                    mandateSize=mandateSize, primaryPwa='', entity=entity)
@@ -205,7 +211,7 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
 
 @router.get('/scenario/products')
 def listCategoryProducts(category: str, variant: str = None, currency: str = None,
-                         entity: str = None, caller=Depends(requireAuth)):
+                         caller=Depends(requireAuth)):
     """The products a custom sleeve in *category* may hold under *variant*
     (D170): those the category's library sleeves hold under the type, whole
     as the catalogue has them, with the ticker and minimum each has in
@@ -215,12 +221,9 @@ def listCategoryProducts(category: str, variant: str = None, currency: str = Non
         validateVariant(variant)
         if category not in sleeveRepo.categories():
             raise ValidationError('category', 'There is no category {!r}.'.format(category))
-        # none the custodian / entity excludes (D193)
-        barred = entities.excluded(entity)
         return {'category': category, 'variant': variant,
                 'products': [products.inCurrency(p, currency)
-                             for p in customSleeves.categoryProducts(category, variant)
-                             if p['productId'] not in barred],
+                             for p in customSleeves.categoryProducts(category, variant)],
                 'mayBuild': customSleeves.mayBuild(category, isAdmin(caller))}
     except ValidationError as exc:
         return _validationError(exc)
@@ -235,8 +238,7 @@ def listCategoryProducts(category: str, variant: str = None, currency: str = Non
 
 @router.get('/scenario/custom-portfolio')
 def getCustomPortfolioCatalogue(variant: str = None, currency: str = 'USD',
-                                hedging: str = 'Hedged', entity: str = None,
-                                caller=Depends(requireAuth)):
+                                hedging: str = 'Hedged', caller=Depends(requireAuth)):
     """What a custom portfolio is built from under *variant* (D171): the
     products it may hold, each with its category; every line; the type's
     library sleeves to insert; each risk profile's anchor portfolio and the
@@ -247,11 +249,8 @@ def getCustomPortfolioCatalogue(variant: str = None, currency: str = 'USD',
         basis = BasisInput(currency=currency, hedging=hedging)
         validateBasis(basis)
         body = customPortfolio.catalogue(variant)
-        # each product's ticker and minimum in the portfolio's currency (D180),
-        # none the custodian / entity excludes (D193)
-        barred = entities.excluded(entity)
-        body['products'] = [products.inCurrency(p, basis.currency) for p in body['products']
-                            if p['productId'] not in barred]
+        # each product's ticker and minimum in the portfolio's currency (D180)
+        body['products'] = [products.inCurrency(p, basis.currency) for p in body['products']]
         body.update(customPortfolio.profiles(getScenarioPort(), basis, variant))
         body['library'] = customPortfolio.library(variant)
         body['mayBuild'] = customPortfolio.mayBuild(variant, isAdmin(caller))
@@ -322,15 +321,14 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
     that portfolio is served as that edition, and nothing in the response
     says so - the PWA sees names. Without a key only fallback editions are
     offered. Each product carries the ticker and the minimum it has in
-    *currency* (D180). *entity* is the custodian / entity chosen on the
-    first card (D193): a sleeve holding a product it excludes is served
-    saying so, and the picker greys it out.
+    *currency* (D180). *entity* is the custodian chosen under PMG ESG
+    (D193, D195): a name with an edition for it is served as that edition.
     """
     basis = BasisInput(currency=currency, hedging=hedging)
     try:
         validateVariant(variant)
         baseKey = _baseKeyFrom(key)
-        entity = entities.checkChoice(entity, allowRetired=True) if entity else None
+        entity = entities.effective(entity, variant) or None
         served = list(getScenarioPort().list_sleeves(category, basis, variant, baseKey, entity))
         for sleeve in served:
             sleeve['products'] = [products.inCurrency(p, basis.currency)
@@ -387,8 +385,10 @@ def getRepository(caller=Depends(requireAdmin)):
             'catalogue': products.describeSource(),
             # whether PWAs may enter the custom workflows at all (D172)
             'customAccess': customAccess.describe(),
-            # the custodians / entities and what each excludes (D193)
-            'entities': entities.describe(),
+            # the types an edition may name a custodian under (D195)
+            'custodyTypes': entities.custodyTypes(),
+            # the offering entities and the marketing warnings (D196)
+            'marketing': marketing.describe(),
             'store': sleeveRepo.describe(),
             'register': proposalRegister.describe(),
             'user': caller.kerberos,
@@ -1083,45 +1083,46 @@ def revertOverlayRules(payload: dict = Body(...), caller=Depends(requireAdmin)):
         return _overlayError(exc)
 
 
-# ---- the custodians / entities (D193) -----------------------------------
-# The console's Entities tab: the entities the first card offers, and the
-# products each may not hold. Admin only, like the rest of the repository.
+# ---- the marketing warnings (D196) ---------------------------------------
+# The console's Marketing tab: the offering entities, and the warnings an
+# allocation holding an asset class raises - which of them may not market it,
+# and the words the PWA is shown. Admin only, like the rest of the repository.
 
-@router.get('/scenario/repository/entities')
-def getEntities(caller=Depends(requireAdmin)):
-    """The list in force: every entity, retired ones too, and what each
-    excludes."""
-    return entities.describe()
+@router.get('/scenario/repository/marketing')
+def getMarketing(caller=Depends(requireAdmin)):
+    """The lists in force, with what a warning may name."""
+    return marketing.describe()
 
 
-@router.put('/scenario/repository/entities')
-def saveEntities(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put a list in force: {entities: [{id?, name, retired, excluded,
-    note}], note, base?}. An entity without an id is new. Refused (422) when
-    the list is invalid or would delete an entity; 409 when *base* is no
-    longer the revision in force."""
+@router.put('/scenario/repository/marketing')
+def saveMarketing(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put the lists in force: {offering: [{id?, name, retired, note}],
+    warnings: [{id?, categories, lines, banned, text}], note, base?}. An
+    entry without an id is new. Refused (422) when a list is invalid or
+    would delete an offering entity; 409 when *base* is no longer the
+    revision in force."""
     try:
-        entities.save(payload.get('entities'), payload.get('note'), user=caller.kerberos,
-                      base=payload.get('base'))
-        return {'entities': entities.describe()}
+        marketing.save({'offering': payload.get('offering'), 'warnings': payload.get('warnings')},
+                       payload.get('note'), user=caller.kerberos, base=payload.get('base'))
+        return {'marketing': marketing.describe()}
     except ValidationError as exc:
         return _validationError(exc)
 
 
-@router.get('/scenario/repository/entities/history')
-def getEntitiesHistory(caller=Depends(requireAdmin)):
-    """Every revision of the list, newest first, with what changed."""
-    return {'history': entities.history()}
+@router.get('/scenario/repository/marketing/history')
+def getMarketingHistory(caller=Depends(requireAdmin)):
+    """Every revision of the lists, newest first, with what changed."""
+    return {'history': marketing.history()}
 
 
-@router.post('/scenario/repository/entities/revert')
-def revertEntities(payload: dict = Body(...), caller=Depends(requireAdmin)):
+@router.post('/scenario/repository/marketing/revert')
+def revertMarketing(payload: dict = Body(...), caller=Depends(requireAdmin)):
     """Put an earlier revision back in force: {revision, note, base?}. An
-    entity added since stays, retired."""
+    offering entity added since stays, retired."""
     try:
-        entities.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
-                        base=payload.get('base'))
-        return {'entities': entities.describe()}
+        marketing.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
+                         base=payload.get('base'))
+        return {'marketing': marketing.describe()}
     except ValidationError as exc:
         return _validationError(exc)
 
@@ -1201,7 +1202,10 @@ def createScenario(payload: dict = Body(...), caller=Depends(requireAuth)):
     port = getScenarioPort()
     try:
         mandate = MandateInput.fromDict(payload.get('mandate') or {})
-        entities.checkChoice(mandate.entity)
+        # no type is chosen yet, so no custodian is asked for (D195)
+        mandate = MandateInput(topAccountSize=mandate.topAccountSize,
+                               mandateSize=mandate.mandateSize, primaryPwa=mandate.primaryPwa,
+                               entity='')
         basis = BasisInput.fromDict(payload.get('basis') or {})
         validateBasis(basis)
         port.validate_mandate(mandate)
@@ -1233,17 +1237,18 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         current = scenarioStore.getScenario(scenarioId)
         mandate = basis = sleeves = variant = None
         tacticalTilt = feeSchedule = feeLevel = includeFees = None
-        volPremium = customFees = customs = built = charges = None
+        volPremium = customFees = customs = built = charges = acks = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
-            # the custodian / entity (D193): kept when the write does not
-            # name it; a retired one the scenario already holds may stay
-            held = (current.get('mandate') or {}).get('entity') or ''
+            # the custodian (D193): kept when the write does not name it, if
+            # it is still one on the list (D195)
             if 'entity' not in (payload['mandate'] or {}):
+                held = (current.get('mandate') or {}).get('entity') or ''
                 mandate = MandateInput(topAccountSize=mandate.topAccountSize,
                                        mandateSize=mandate.mandateSize,
-                                       primaryPwa=mandate.primaryPwa, entity=held)
-            entities.checkChoice(mandate.entity, allowRetired=mandate.entity == held)
+                                       primaryPwa=mandate.primaryPwa,
+                                       entity=held if entities.get(held) else '')
+            entities.checkChoice(mandate.entity)
             port.validate_mandate(mandate)
         if 'basis' in payload:
             basis = BasisInput.fromDict(payload['basis'] or {})
@@ -1251,6 +1256,22 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         if 'variant' in payload:
             variant = payload['variant']
             validateVariant(variant)
+        # a custodian only under a type that asks for one (D195): moving to a
+        # type that does not clears it, and one named for such a type is not kept
+        typeNow = variant or current.get('variant')
+        if not entities.needed(typeNow):
+            held = mandate if mandate is not None else MandateInput.fromDict(current['mandate'])
+            if held.entity:
+                mandate = MandateInput(topAccountSize=held.topAccountSize,
+                                       mandateSize=held.mandateSize,
+                                       primaryPwa=held.primaryPwa, entity='')
+        if 'marketingAck' in payload:
+            # the marketing warnings the PWA has acknowledged (D196)
+            ack = payload['marketingAck'] or {}
+            if not isinstance(ack, dict):
+                raise ValidationError('marketingAck', 'Say which warnings were acknowledged.')
+            acks = marketing.acknowledge(current.get('marketing'), ack.get('allocation'),
+                                         ack.get('warnings'), caller.kerberos)
         if 'tacticalTilt' in payload:
             tacticalTilt = bool(payload['tacticalTilt'])
         if 'volPremium' in payload:
@@ -1312,7 +1333,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             includeFees=includeFees, volPremium=volPremium,
             customFees=customFees, customFeesBy=caller.kerberos,
             customSleeves=customs, customPortfolio=built,
-            otherCharges=charges, otherChargesBy=caller.kerberos)
+            otherCharges=charges, otherChargesBy=caller.kerberos, marketing=acks)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
@@ -1586,8 +1607,8 @@ def _assembleExport(scenarioId: str, port):
         validateFeeSchedule(feeSchedule)
         validateFeeLevel(feeLevel)
     basis = BasisInput.fromDict(state['basis'])
-    mandate = MandateInput.fromDict(state['mandate'])
-    entity = _entityToDeliver(mandate)
+    mandate = _mandateToDeliver(state)
+    entity = _entityToDeliver(mandate, variant)
 
     keys = [state['base']] + list(state['comparisons'])
     results = [port.resolve_portfolio(basis, PortfolioKey.fromStr(k))
@@ -1630,15 +1651,6 @@ def _assembleExport(scenarioId: str, port):
             'Attach a sleeve to every category first - missing: {}.'.format(
                 ', '.join(missing)))
     if unresolved:
-        # one the custodian / entity excludes a product of says so (D193)
-        for under in unresolved:
-            served = next((x for x in sleeveRepo.listSleeves(under, variant, baseKey, entity)
-                           if x['name'] == sleeves[under]), None)
-            if served and served.get('notAvailable'):
-                barred = served['notAvailable']
-                raise ValidationError(
-                    'entity', 'The sleeve chosen for {} is not available at {}: it holds {}. '
-                    'Choose another.'.format(under, barred['entityName'], ', '.join(barred['products'])))
         raise ValidationError(
             'sleeves',
             'The sleeve chosen for {} is not offered for this portfolio. '
@@ -1661,7 +1673,9 @@ def _assembleExport(scenarioId: str, port):
                       'customFees': state.get('customFees') or {},
                       'customFeesBy': state.get('customFeesBy') or '',
                       'customFeesAt': state.get('customFeesAt'),
-                      'otherCharges': _otherCharges.withDefaults(state.get('otherCharges'))}
+                      'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
+                      # the marketing warnings acknowledged, for the register (D196)
+                      'marketing': state.get('marketing')}
     # The implemented model is built ONCE here and handed to both the
     # writer and the register, so the sheet a client receives and the
     # record kept of it are the same model rather than two builds (D69).
@@ -1673,7 +1687,6 @@ def _assembleExport(scenarioId: str, port):
         mandate.topAccountSize, implementation['volPremium'], basis.currency,
         customFees=implementation['customFees'], overlayEntry=overlayEntry,
         customSleeves=customs, entity=entity)
-    _refuseExcluded(model, entity)
     # the level the book is priced at: a fee group the card leaves without
     # the chosen source moves it to Management (D185), and the files and
     # the register say what priced it
@@ -1758,30 +1771,25 @@ def _breachText(breaches) -> str:
         + ('' if len(breaches) <= 4 else ', and {} more'.format(len(breaches) - 4)))
 
 
-def _entityToDeliver(mandate) -> str:
-    """The custodian / entity a proposal is delivered for (D193): chosen on
-    the first card, or the export is refused. One retired since it was
-    chosen stays the scenario's."""
+def _mandateToDeliver(state) -> MandateInput:
+    """The scenario's mandate, holding a custodian only where its type asks
+    for one (D195)."""
+    held = MandateInput.fromDict(state['mandate'])
+    return MandateInput(topAccountSize=held.topAccountSize, mandateSize=held.mandateSize,
+                        primaryPwa=held.primaryPwa,
+                        entity=entities.effective(held.entity, state.get('variant')))
+
+
+def _entityToDeliver(mandate, variant):
+    """The custodian a proposal is delivered for (D193): under PMG ESG
+    (D195) it must be chosen, or the export is refused; under any other
+    type, none."""
+    if not entities.needed(variant):
+        return None
     if not mandate.entity:
-        raise ValidationError('entity', 'Choose the custodian / entity on the first card.')
-    return entities.checkChoice(mandate.entity, allowRetired=True)
-
-
-def _refuseExcluded(model, entity) -> None:
-    """Nothing the custodian / entity excludes is delivered there (D193):
-    the picker greys out a sleeve holding one, and this is the last word on
-    a sleeve chosen before the product was excluded, a custom sleeve or a
-    custom portfolio."""
-    barred = entities.excluded(entity)
-    held = []
-    for group in model.get('groups') or []:
-        for item in group.get('items') or []:
-            if item.get('productId') in barred and item.get('name') not in held:
-                held.append(item.get('name'))
-    if held:
-        raise ValidationError(
-            'entity', '{} may not hold {}. Choose another sleeve, or take {} out.'.format(
-                entities.name(entity), ', '.join(held), 'it' if len(held) == 1 else 'them'))
+        raise ValidationError('entity', 'Choose the custodian for {}: the products it may hold '
+                                        'depend on it.'.format(variant))
+    return entities.checkChoice(mandate.entity)
 
 
 def _assembleCustomExport(state, port):
@@ -1800,8 +1808,8 @@ def _assembleCustomExport(state, port):
         validateFeeSchedule(feeSchedule)
         validateFeeLevel(feeLevel)
     basis = BasisInput.fromDict(state['basis'])
-    mandate = MandateInput.fromDict(state['mandate'])
-    entity = _entityToDeliver(mandate)
+    mandate = _mandateToDeliver(state)
+    entity = _entityToDeliver(mandate, variant)
     built = state['customPortfolio']
     check, anchorResult = _customCheck(state, port)
     if check['status'] == 'bad':
@@ -1810,7 +1818,6 @@ def _assembleCustomExport(state, port):
     model = customPortfolio.buildModel(
         built, mandate.mandateSize, variant, feeSchedule if includeFees else None, feeLevel,
         mandate.topAccountSize, basis.currency, customFees=customFees)
-    _refuseExcluded(model, entity)
     # the level the book is priced at (D185)
     if model.get('feeLevel'):
         feeLevel = model['feeLevel']
@@ -1862,6 +1869,7 @@ def _assembleCustomExport(state, port):
                       'customFeesBy': state.get('customFeesBy') or '',
                       'customFeesAt': state.get('customFeesAt'),
                       'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
+                      'marketing': state.get('marketing'),
                       'customPortfolio': model['customPortfolio']}
     # every other check first: the charges are what the page asks for last,
     # as Download opens their card (D177)

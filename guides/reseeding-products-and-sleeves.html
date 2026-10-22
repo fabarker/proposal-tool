@@ -380,18 +380,21 @@ left blank. One product can also be given or changed a category on its own: open
 <h3 id="currencies">Products by base currency</h3>
 <p>A product is one product in every base currency, but each currency can list it under its own
 ticker, give it its own minimum, its own exposure currency, its own issue currency, its own
-share class and its own distribution yield: a share class hedged to each base currency, say, or an
-accumulating class that pays out nothing. It can also be left out of a currency altogether. A scenario shows the ticker,
-exposure and share class for its own currency in the implementation table, the custom builders, the sheet, the deck
-and the saved proposal, and checks a position against that currency's minimum.</p>
+share class, its own distribution yield, its own asset class and its own product cost: a share class
+hedged to each base currency, say, which may cost more, or an accumulating class that pays out
+nothing. It can also be left out of a currency altogether. A scenario shows the ticker,
+exposure, share class and asset class for its own currency in the implementation table, the custom builders, the sheet, the deck
+and the saved proposal, prices every cost and fee figure with that currency's product cost, and
+checks a position against that currency's minimum.</p>
 <div class="steps">
 <div class="step"><h3>One row per currency</h3>
 <p>Give the product a row for each base currency it differs in, all with the same
 <code>ProductId</code>, and say which currency each row is for in <code>BaseCurrency</code>. A name
 may end in its row's currency, <code>GS Green Bond Fund (GBP)</code>: the catalogue shows it as
 <code>GS Green Bond Fund</code>. Only <code>Ticker</code>, <code>MinimumInvestment</code>,
-<code>ExposureCurrency</code>, <code>IssueCurrency</code>, <code>ShareClass</code> and <code>DistributionYield</code>
-may differ between a product's rows; everything else must be the same on every row.</p>
+<code>ExposureCurrency</code>, <code>IssueCurrency</code>, <code>ShareClass</code>, <code>DistributionYield</code>,
+<code>AssetClass</code> and <code>ProductCost</code> may differ between a product's rows; everything
+else, the fee group included, must be the same on every row.</p>
 <pre class="out">ProductId,Name,Ticker,&hellip;,ExposureCurrency,&hellip;,MinimumInvestment,BaseCurrency
 gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF,GBIL,&hellip;,USD,&hellip;,,All
 gs-access-treasury-0-1-etf,GS Access Treasury 0-1 ETF (GBP),GBIL LN,&hellip;,GBP,&hellip;,250000,GBP
@@ -415,7 +418,9 @@ one, and the same goes for the distribution yield. So an accumulating class in G
 minimum for a GBP proposal, which is in dollars too. The share class is the exception: a blank
 <code>ShareClass</code> on a currency's row is the main row's share class, so a product that is
 <code>Distributing</code> on its <code>All</code> row and <code>Accumulating</code> in GBP has
-<code>Accumulating</code> on the GBP row and the other rows blank or <code>Distributing</code>.</p></div>
+<code>Accumulating</code> on the GBP row and the other rows blank or <code>Distributing</code>.
+Every row needs its <code>AssetClass</code> and <code>ProductCost</code>, as the main row does; a
+cost of <code>0</code> on a row is a product that costs nothing in that currency.</p></div>
 <div class="step"><h3>Import it and read the preview</h3>
 <pre class="out">products-ccy.csv: 73 product(s)
   0 new, 2 changed, 0 back from withdrawn, 71 unchanged, 0 not in the file
@@ -427,15 +432,15 @@ product given only an <code>All</code> row loses the values it had by currency, 
 without <code>Category</code> clears the categories. The preview lists every value that would go,
 so read it before you apply.</p></div>
 <div class="step"><h3>If it refuses</h3>
-<pre class="out">REFUSED: products-bad.csv: row 50 (gs-green-bond-fund): the GBP row gives product cost 0.55 where row 49 gives 0.48 - only the ticker, the minimum, the exposure currency, the issue currency, the share class and the distribution yield may differ by base currency.
+<pre class="out">REFUSED: products-bad.csv: row 50 (gs-green-bond-fund): the GBP row gives fee group Specialist Active where row 49 gives Core Active - only the ticker, the minimum, the exposure currency, the issue currency, the share class, the distribution yield, the asset class and the product cost may differ by base currency.
 nothing was written</pre>
 <p>A product given two rows for the same currency, or two rows in a file with no
 <code>BaseCurrency</code> column, is refused the same way.</p></div>
 <div class="step"><h3>One product at a time</h3>
 <p>Open its card on the Catalogue and press <strong>Edit</strong>. Under <strong>By base
 currency</strong> each currency has <em>Offered</em> yes or no, and a ticker, a minimum, an
-exposure currency and an issue currency; under them each currency has a share class and a
-distribution yield. An empty box shows the main value it falls back to, as does the share class's <em>Main</em> choice, a yield of <code>0</code> is none, and a ticker of <code>-</code> is none there. The card's <em>By currency</em> line lists what a product has of
+exposure currency and an issue currency; under them each currency has a share class, an asset
+class, a distribution yield and a product cost. An empty box shows the main value it falls back to, as does the share class's <em>Main</em> choice, a yield of <code>0</code> is none, and a ticker of <code>-</code> is none there. The card's <em>By currency</em> line lists what a product has of
 its own. The download writes each product back as the rows above.</p></div>
 </div>
 
@@ -473,9 +478,10 @@ ticker.</p>
 <code>.rules</code> added to its name (<code>library.csv</code> &rarr;
 <code>library.rules.csv</code>):</p>
 <pre class="out">Variant,Category,Sleeve,Edition,Currency,RiskLevel,AllocationType,Entity</pre>
-<p><code>Entity</code> is optional: the custodians / entities the rule is for, by name (<code>GSBE</code>,
-<code>Middle East</code>) or id, several separated by <code>|</code>. Blank, or a file without the column,
-means any entity.</p>
+<p><code>Entity</code> is optional: the custodians the rule is for, by name (<code>GSBZ</code>,
+<code>GSLU</code>) or id, several separated by <code>|</code>. Blank, or a file without the column,
+means any custodian. A custodian is chosen only under PMG ESG, so a rule naming one matters only
+there.</p>
 <p>A library with no labelled editions needs no rules file. An Excel workbook can carry both
 instead: a sheet named <code>Sleeves</code> and a sheet named <code>Rules</code>.</p>
 
@@ -542,7 +548,7 @@ rules, <code>library.rules.csv</code>.</p>
 <tr><td class="key">Currency</td><td><code>USD</code> <code>GBP</code> <code>CHF</code> <code>EUR</code></td></tr>
 <tr><td class="key">RiskLevel</td><td><code>LowVol</code> <code>Conservative</code> <code>ConsMod</code> <code>Moderate</code> <code>ModAgg</code> <code>Agg</code> <code>Higher Risk</code> <code>All Equity</code></td></tr>
 <tr><td class="key">AllocationType</td><td><code>Full</code> <code>Core</code> <code>ex-Alts</code> <code>ex-HFs</code> <code>NA</code> (<code>NA</code> is the all-equity portfolio, which has no allocation type)</td></tr>
-<tr><td class="key">Entity</td><td>The entities on the Repository's Entities tab: <code>GSI</code> <code>GSBE</code> <code>GSBZ</code> <code>Middle East</code> and any added there. A rule naming entities applies only to proposals for one of them; two editions for different entities never clash.</td></tr>
+<tr><td class="key">Entity</td><td>The custodians: <code>GSI</code> <code>GSBZ</code> <code>GSLU</code> <code>GSCO</code>. A rule naming custodians applies only to PMG ESG proposals held at one of them; two editions for different custodians never clash.</td></tr>
 </tbody></table></div>
 <p>The values are written exactly as above, capitals included. Only values present in the current
 portfolio extract are accepted.</p>

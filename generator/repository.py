@@ -1101,8 +1101,10 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .sv-pt td small{display:block;font-size:13px;color:var(--sv-ink2)}
 .sv-pt td small.warn{color:#8A4B00;font-weight:600}
 .sv-pt td small.sv-alt{font-style:italic}
-/* ---- the Entities tab (D193) ---- */
-.ent-b{display:grid;gap:12px;align-content:start}
+/* ---- the Marketing tab's lists (D196) ---- */
+/* one column, scrolling: .repo-b is the sleeves view's three-pane grid */
+.ent-b{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;gap:12px;
+  align-content:start;overflow-y:auto;padding:16px 22px 22px}
 .ent-lead{margin:0;max-width:78ch;color:var(--sv-ink2);font-size:14px;line-height:1.5}
 .ent-t td{vertical-align:middle}
 .ent-t input[type=text]{font:inherit;font-size:13.5px;padding:5px 8px;border:1px solid var(--line-strong);
@@ -1110,20 +1112,32 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .ent-t .ent-name{max-width:220px}
 .ent-t tr.ent-retired td{opacity:.6}
 .ent-ret{display:inline-flex;gap:6px;align-items:center;font-size:13.5px;white-space:nowrap}
-.ent-ex td{background:var(--surface-2)}
-.ent-exb{display:grid;gap:8px}
-.ent-q{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13.5px}
-.ent-q input{flex:1 1 220px;max-width:360px}
-.ent-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
-  gap:4px 14px;max-height:320px;overflow:auto}
-.ent-list label{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 8px;align-items:start;font-size:13.5px;cursor:pointer}
-.ent-list label small{grid-column:2;color:var(--sv-ink2);font-size:12px}
 .ent-save{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border-top:1px solid var(--line);padding-top:12px}
 .ent-save label{font-weight:600;font-size:13.5px}
 .ent-save input{flex:1 1 280px;max-width:520px;font:inherit;font-size:13.5px;padding:6px 9px;
   border:1px solid var(--line-strong);border-radius:5px;background:var(--surface);color:var(--ink)}
 .ent-hist{margin:0;padding-left:20px;display:grid;gap:6px;font-size:13.5px}
 .ent-hist small{display:block;color:var(--sv-ink2);font-size:12.5px}
+/* the Marketing tab (D196) */
+.mkt-cards{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.mkt-card{border:1px solid var(--line-strong);border-radius:var(--radius);padding:12px 14px;display:grid;gap:12px;
+  background:var(--surface)}
+.mkt-card-h{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.mkt-f{display:grid;gap:6px}
+.mkt-k{font-weight:600;font-size:13.5px}
+.mkt-f .sv-hint{margin:0}
+.mkt-cats{display:grid;gap:6px}
+.mkt-cat{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
+.mkt-cat.is-whole .mkt-chip:not(.strong){opacity:.55}
+.mkt-bans{display:flex;flex-wrap:wrap;gap:4px 6px}
+.mkt-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 9px;border:1px solid var(--line-strong);
+  border-radius:999px;font-size:12.5px;cursor:pointer;background:var(--surface)}
+.mkt-chip.strong{font-weight:600}
+.mkt-chip:has(input:checked){border-color:#B45309;background:#FFF8EB}
+.mkt-chip input{margin:0}
+.mkt-f textarea{font:inherit;font-size:13.5px;line-height:1.5;padding:7px 9px;border:1px solid var(--line-strong);
+  border-radius:var(--radius-sm);resize:vertical;max-width:760px}
+.reg-mkt{margin-top:2px}
 .sv-pt tfoot td{font-weight:700;background:var(--sv-zone2);border-top:2px solid var(--sv-frame);border-bottom:0}
 .sv-pt tfoot .sv-hint{font-weight:400}
 .sv-pt .ok{color:#155F2E}
@@ -1624,6 +1638,7 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .prd-ccy-list thead th:nth-child(4){width:25%}
 .prd-ccy-cls{margin-top:8px}
 .prd-ccy-cls thead th:nth-child(2){width:46%}
+.prd-ccy-ac{margin-top:8px}
 .prd-ccy tr.off input,.prd-ccy tr.off select:disabled{background:var(--surface-2);color:var(--ink-3);border-style:dashed}
 .prd-ccyl{display:grid;gap:2px}
 .prd-ccyl b{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;margin-right:4px}

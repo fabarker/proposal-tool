@@ -414,3 +414,36 @@ process.stdout.write(JSON.stringify(out));
     assert 'looks wrong' in got['problems']['distributionYieldCHF']
     assert got['problems']['distributionYieldUSD'] == ('Distribution yield in USD "lots" is not a number: '
                                                        'give a percentage, such as 3.2.')
+
+
+def test_the_form_gives_each_currency_an_asset_class_and_a_cost_of_its_own():
+    """D194: a currency's asset class is a box, blank for the main one; its
+    product cost a percentage box, blank for the main one, checked as the
+    main cost is - and not needed, as the main asset class and cost are."""
+    got = _node(_products() + '''
+var p = { productId: 'x', name: 'Probe', ticker: 'PRB', assetClass: 'Equity', style: 'Active',
+          vehicle: 'SMA', shareClass: 'Distributing', source: 'Internal', liquidity: 'Daily',
+          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
+          distributionYield: null, minimumInvestment: null,
+          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '', issueCurrency: '',
+                               shareClass: '', distributionYield: null, assetClass: 'Hedged Equity',
+                               productCost: 0.35, offered: true } } };
+var d = prdDraftFrom(p);
+var out = { gbp: [d.assetClassGBP, d.productCostGBP], eur: [d.assetClassEUR, d.productCostEUR],
+            same: prdChanges(p, d), blank: prdProblems(d, { isNew: false, feeGroups: ['Passive'] }) };
+d.productCostEUR = '0.3%'; d.assetClassEUR = 'Euro Equity';
+out.payload = prdPayload(d).currencies;
+out.moved = prdChanges(p, d).map(function (c) { return [c.key, c.before, c.after]; });
+d.productCostCHF = '12'; d.productCostUSD = 'lots'; d.assetClassUSD = new Array(62).join('x');
+out.problems = prdProblems(d, { isNew: false, feeGroups: ['Passive'] });
+process.stdout.write(JSON.stringify(out));
+''')
+    assert got['gbp'] == ['Hedged Equity', '0.35'] and got['eur'] == ['', '']
+    assert got['same'] == [] and got['blank'] == {}
+    assert got['payload'] == {'GBP': {'assetClass': 'Hedged Equity', 'productCost': 0.35},
+                              'EUR': {'assetClass': 'Euro Equity', 'productCost': 0.3}}
+    assert got['moved'] == [['assetClassEUR', '—', 'Euro Equity'], ['productCostEUR', '—', '0.3']]
+    assert 'looks wrong' in got['problems']['productCostCHF']
+    assert got['problems']['productCostUSD'] == ('Product cost in USD "lots" is not a number: '
+                                                 'give a percentage, such as 0.25 for 0.25%.')
+    assert got['problems']['assetClassUSD'] == 'Keep the asset class in USD to 60 characters.'
