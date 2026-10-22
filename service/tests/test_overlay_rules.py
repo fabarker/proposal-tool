@@ -154,7 +154,7 @@ def test_a_schema_5_file_is_brought_to_6_and_seeded(store):
     raw = sqlite3.connect(str(path))
     version = raw.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     raw.close()
-    assert int(version) == sleeveRepo.SCHEMA_VERSION == 12         # the catalogue's (D165), the switch (D169), the product's category (D178), shared sleeves (D179), the tickers by currency (D180), the issue currency (D184)
+    assert int(version) == sleeveRepo.SCHEMA_VERSION == 14         # the catalogue's (D165), the switch (D169), the product's category (D178), shared sleeves (D179), the tickers by currency (D180), the issue currency (D184)
 
 
 # ------------------------------------------------------------ the engine ---
@@ -465,7 +465,7 @@ def test_the_register_records_the_rules_a_proposal_was_built_with(store, monkeyp
     conn = sqlite3.connect(str(store / 'proposals.db'))
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     conn.close()
-    assert int(version) == proposalRegister.SCHEMA_VERSION == 9    # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177)
+    assert int(version) == proposalRegister.SCHEMA_VERSION == 10   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193)
 
 
 def test_the_schema_serves_the_list_in_force_for_the_type(store):
@@ -819,7 +819,7 @@ def test_an_overlay_category_with_no_sleeve_is_not_applied_to_the_export(store, 
     overlayRules.save('*', _house() + [_gold(sources=[{'category': EQ, 'weightPct': 100.0}])],
                       'gold', 'alice')
     state = scenarioStore.createScenario(
-        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid'),
+        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid', entity='gsi'),
         BASIS, createdBy='alice')
     result = PORT.resolve_portfolio(BASIS, MODERATE_FULL)
     scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0])
@@ -827,7 +827,7 @@ def test_an_overlay_category_with_no_sleeve_is_not_applied_to_the_export(store, 
     scenarioStore.updateScenario(state['id'], sleeves=_sleeveMap(result['categories'], sleeves.VARIANTS[0]))
     calls = []
     real = overlayRules.current
-    monkeypatch.setattr(overlayRules, 'current', lambda v=None: calls.append(v) or real(v))
+    monkeypatch.setattr(overlayRules, 'current', lambda v=None, e=None: calls.append(v) or real(v, e))
     exported = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
     assert exported.status_code == 200, exported.body
     assert calls == [sleeves.VARIANTS[0]], 'read once'
@@ -1046,7 +1046,7 @@ def test_a_greyed_out_switch_is_recorded_off(store, tmp_path, monkeypatch):
     ma = sleeveRepo.VARIANTS[0]
     sleeveRepo.deleteSleeve(_overlaySleeve(ma, HFI)['id'], user='alice')
     state = scenarioStore.createScenario(
-        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid'),
+        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid', entity='gsi'),
         BASIS, createdBy='alice')
     result = PORT.resolve_portfolio(BASIS, MODERATE_FULL)
     scenarioStore.updateScenario(state['id'], variant=ma, volPremium=True, tacticalTilt=True)

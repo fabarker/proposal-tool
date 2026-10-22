@@ -55,7 +55,9 @@ def _archive(*ids):
 
 def test_the_vocabulary_is_three_fields_from_the_universe():
     vocab = sleeveRules.vocabulary()
-    assert list(vocab) == ['currency', 'riskLevel', 'allocationType'] == list(sleeveRules.FIELDS)
+    # and the custodian / entity, the scenario's rather than the portfolio's (D193)
+    assert list(vocab) == ['currency', 'riskLevel', 'allocationType', 'entity'] == list(sleeveRules.FIELDS)
+    assert vocab['entity'] == ['gsi', 'gsbe', 'gsbz', 'middle-east']
     assert vocab['currency'] == ['USD', 'GBP', 'CHF', 'EUR']
     assert vocab['riskLevel'][0] == 'LowVol' and vocab['riskLevel'][-1] == 'All Equity'
     assert vocab['allocationType'] == ['Full', 'Core', 'ex-Alts', 'ex-HFs', 'NA']
@@ -273,7 +275,7 @@ def test_an_overlap_that_arrives_after_the_fact_withholds_the_name_and_flags_bot
 
 def test_the_old_seed_loads_unchanged_as_fallbacks():
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 12     # D152, D155, D165, D169, D178, D179, D180, D184
+    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 14     # D152, D155, D165, D169, D178, D179, D180, D184
     entries = sleeveRepo.listAll()
     assert len(entries) == 102 and all(e['fallback'] for e in entries)
     assert sleeveRepo.census()['editions'] == 0
@@ -314,16 +316,16 @@ def test_a_delivery_with_editions_and_rules_round_trips(tmp_path, monkeypatch):
     assert sleeveTools.main(['--export', str(out)]) == 0
     assert (tmp_path / 'out.rules.csv').exists()
     with open(out) as fh:
-        assert next(csv.reader(fh)) == sleeveRepo.SEED_COLUMNS_EDITIONS
+        assert next(csv.reader(fh)) == sleeveRepo.SEED_COLUMNS_EDITIONS + [sleeveRepo.ALTERNATIVE_COLUMN]
     monkeypatch.setenv('SCENARIO_SLEEVES_DB', str(tmp_path / 'again.db'))
     monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
     assert sleeveTools.main(['--import', str(out)]) == 0
     assert sorted((e['label'], e['applies']) for e in sleeveRepo.listAll(V)) == [
         ('', None), ('EUR Mod / GBP Full', 20), ('GBP', 29)]
     assert sorted(sleeveRepo.exportRuleRows()) == sorted([
-        (V, C, 'Bonds', 'EUR Mod / GBP Full', 'EUR', 'Moderate', ''),
-        (V, C, 'Bonds', 'EUR Mod / GBP Full', 'GBP', '', 'Full'),
-        (V, C, 'Bonds', 'GBP', 'GBP', '', 'Core|ex-Alts|ex-HFs|NA')])
+        (V, C, 'Bonds', 'EUR Mod / GBP Full', 'EUR', 'Moderate', '', ''),
+        (V, C, 'Bonds', 'EUR Mod / GBP Full', 'GBP', '', 'Full', ''),
+        (V, C, 'Bonds', 'GBP', 'GBP', '', 'Core|ex-Alts|ex-HFs|NA', '')])
 
 
 def test_a_delivery_that_overlaps_or_names_the_unknown_is_refused_whole(tmp_path, monkeypatch):
@@ -391,7 +393,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
 
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == 12 and store['sleeves'] == 1      # to 12 in one open (D152, D155, D165, D169, D178, D179, D180, D184)
+    assert store['schemaVersion'] == 14 and store['sleeves'] == 1      # to 14 in one open (D152, D155, D165, D169, D178, D179, D180, D184, D192, D193)
     conn = sqlite3.connect(str(path))
     columns = {r[1] for r in conn.execute('PRAGMA table_info(sleeves)')}
     history = {r[1] for r in conn.execute('PRAGMA table_info(sleeveHistory)')}
@@ -408,7 +410,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     # and the migrated store takes an edition like any other
     made = sleeveRepo.addEdition(7, 'GBP', [{'currency': 'GBP'}], _products(), user='desk')
     assert made['applies'] == 43
-    assert sleeveRepo.describe()['schemaVersion'] == 12, 'opening again is a no-op'
+    assert sleeveRepo.describe()['schemaVersion'] == 14, 'opening again is a no-op'
 
 
 # ---- the endpoints ---------------------------------------------------------------
@@ -437,7 +439,7 @@ def test_the_console_payload_and_the_two_new_endpoints(monkeypatch):
     monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
     body = dashboardRouter.getRepository(caller=_caller('alice'))
     assert body['ruleVocabulary'] == sleeveRules.vocabulary()
-    assert body['ruleFields'] == ['currency', 'riskLevel', 'allocationType']
+    assert body['ruleFields'] == ['currency', 'riskLevel', 'allocationType', 'entity']
     # the New edition form counts, lists and maps portfolios itself (D158)
     assert body['strategicPortfolios'] == universe.keyStrs() and len(body['strategicPortfolios']) == len(universe.keys())
     assert body['ruleLabels']['riskLevel']['ConsMod'] == 'Conservative-Moderate'
@@ -489,7 +491,7 @@ def test_the_new_routes_are_admin_only_and_the_count_is_thirty_seven():
     # catalogue's nine (D165), the fee card's seven (D166), the sleeve switch (D169), custom sleeves' one (D170)
     # custom portfolios' three (D171) and the custom workflows' switch (D172); no settings routes (D173);
     # where a sleeve is offered (D179)
-    assert len(found) == 65
+    assert len(found) == 69
     assert 'requireAdmin' in found[('/scenario/repository/sleeves/{sleeveId}/editions', ('POST',))]
     assert 'requireAdmin' in found[('/scenario/repository/applicability', ('POST',))]
 
@@ -499,7 +501,7 @@ def test_the_new_routes_are_admin_only_and_the_count_is_thirty_seven():
 def _scenarioOn(key):
     from cyrus_pmg.pmgService.scenario import scenarioStore
     from cyrus_pmg.pmgService.scenario.types import MandateInput
-    state = scenarioStore.createScenario(MandateInput(1e9, 1e9, 'M. Aldridge — Zurich'),
+    state = scenarioStore.createScenario(MandateInput(1e9, 1e9, 'M. Aldridge — Zurich', 'gsi'),
                                          BasisInput(currency=key.currency, hedging='Hedged'))
     scenarioStore.updateScenario(state['id'], variant=V)
     scenarioStore.recordColumn(state['id'], key, 'base')

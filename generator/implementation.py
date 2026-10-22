@@ -611,6 +611,11 @@ body.has-rail.step-impl .shell{max-width:none}
    background pale enough to vanish on a meeting-room projector. */
 .bdg.b-breach.sm{font-size:9.5px;letter-spacing:.07em;padding:0 5px;line-height:15px;
   margin-left:6px;vertical-align:1px}
+/* a product held in place of one whose minimum the line falls short of
+   (D192): said beside the name, as the breach is, in the slack colours */
+.bdg.b-slack.sm{font-size:9.5px;letter-spacing:.07em;padding:0 5px;line-height:15px;
+  margin-left:6px;vertical-align:1px}
+.stands-in{display:block;font-size:11px;color:var(--ink-3);line-height:1.3;margin-top:1px}
 /* and the minimum it breaches, under its own notional */
 .vs-min{display:block;font-family:var(--f-num);font-size:10.5px;font-weight:400;
   letter-spacing:.02em;color:#9B1C1C;line-height:1.2;margin-top:-1px}

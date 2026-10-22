@@ -70,7 +70,7 @@ class ScenarioPort(Protocol):
         take seconds. Implementations should cache."""
 
     def list_sleeves(
-        self, category: str, basis: "BasisInput", variant: str, key=None
+        self, category: str, basis: "BasisInput", variant: str, key=None, entity=None
     ) -> "Sequence[Sleeve]":
         """The PMG-authored sleeve library for one category, under one
         implementation type, resolved for the base portfolio *key* - a
@@ -84,6 +84,10 @@ class ScenarioPort(Protocol):
         (deviation D29). It is not optional and has no default: a caller that
         has not settled a variant has nothing to list. An empty sequence is a
         legitimate answer - that variant reaches no sleeve for that category.
+
+        *entity* is the custodian / entity the account is held at, by id, or
+        None (D193): an edition may be for particular entities, and a sleeve
+        holding a product the entity excludes says so under ``notAvailable``.
         """
 
     def build_export(

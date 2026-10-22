@@ -138,6 +138,58 @@ def implColumns(includeFees: bool = True, deck: bool = False) -> list:
     return kept + [COST_COLUMN]
 
 
+def _holdAlternatives(groups, currency, mandateSize) -> list:
+    """Put the product a sleeve names below a minimum in place of the one the
+    amount reaching it falls short of (D192), group by group; returns the
+    line items as they now stand.
+
+    The amount is the line's long-term notional, from its printed weight -
+    the figure the minimum check has always read - so the switches and a
+    custom weight count, and the initial allocation holds the same product.
+    The alternative takes the whole line: its weight, its share of the
+    sleeve. Where the sleeve holds the alternative too, the two lines are
+    one, at the first one's place. One not offered in the currency is not
+    used, and the line stays below its minimum, flagged as before; so does a
+    line whose alternative is short too, since there is one alternative per
+    product. ``standsIn`` names what each held line stands in for."""
+    out = []
+    for group in groups:
+        lines = []
+        for item in group['items']:
+            alternative = item.pop('alternative', None)
+            minimum = item.get('minimumInvestment')
+            short = (alternative and minimum and item['printedPct'] > 0
+                     and item['notional'] < float(minimum)
+                     and alternative.get(_products.OFFERED, True))
+            if not short:
+                lines.append(item)
+                continue
+            held = dict(alternative)
+            held.pop('alternative', None)
+            for field in ('weight', 'exactPct', 'printedPct', 'notional'):
+                held[field] = item[field]
+            held['standsIn'] = [{'productId': item['productId'], 'name': item.get('name'),
+                                 'minimumInvestment': float(minimum),
+                                 'notional': item['notional']}]
+            lines.append(held)
+        merged, at = [], {}
+        for line in lines:
+            first = at.get(line['productId'])
+            if first is None:
+                at[line['productId']] = line
+                merged.append(line)
+                continue
+            for field in ('weight', 'exactPct'):
+                first[field] = float(first[field]) + float(line[field])
+            # two printed weights make one, still to the hundredth
+            first['printedPct'] = round(float(first['printedPct']) + float(line['printedPct']), 2)
+            first['notional'] = round(mandateSize * first['printedPct'] / 100.0 / 100.0) * 100.0
+            first['standsIn'] = (first.get('standsIn') or []) + (line.get('standsIn') or [])
+        group['items'] = merged
+        out.extend(merged)
+    return out
+
+
 def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                             autoCategories, mandateSize: float,
                             variant: str = None, tacticalTilt: bool = False,
@@ -147,7 +199,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                             currency: str = None,
                             customFees: dict = None,
                             overlayEntry: dict = None,
-                            customSleeves: dict = None) -> dict:
+                            customSleeves: dict = None,
+                            entity: str = None) -> dict:
     """The implementation model's numbers, derived per spec 8.4.
 
     Returns {'groups': [...], 'total': {...}, 'complete': bool, 'priced': bool,
@@ -193,7 +246,7 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     # built, not only where the toggle is drawn. The list is read once, so the
     # figures and the record of which list made them agree.
     if overlayEntry is None:
-        overlayEntry = overlayRules.current(variant)
+        overlayEntry = overlayRules.current(variant, entity)
     resolved = rules.resolveOverlays(baseResult['categories'], overlayEntry['rules'],
                                      {'tacticalTilt': tacticalTilt, 'volPremium': volPremium},
                                      currency)
@@ -226,14 +279,15 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         pickedUnder = sleeveCategory(name)
         customDef = None
         if name in autoCategories:
-            library = listSleeves(pickedUnder, variant, baseKey)
+            # at the custodian / entity the account is held at (D193)
+            library = listSleeves(pickedUnder, variant, baseKey, entity)
             sleeve = library[0] if library else None
             auto = True
         else:
             chosen = (sleevesMap or {}).get(pickedUnder)
             sleeve = None
             if chosen:
-                sleeve = next((s for s in listSleeves(pickedUnder, variant, baseKey)
+                sleeve = next((s for s in listSleeves(pickedUnder, variant, baseKey, entity)
                                if s['name'] == chosen), None)
             else:
                 # a custom sleeve (D170): products as the library serves them,
@@ -268,11 +322,14 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
     complete = all(group['sleeve'] for group in groups) and bool(groups)
     # A level is offered only where every row pricing the book has its
     # source: a product whose fee group the card leaves without PMG rates
-    # prices the book at the same point on Management (D185).
+    # prices the book at the same point on Management (D185). The groups are
+    # those the sleeves could hold: their products and the ones they name
+    # below a minimum (D192), so the level does not turn on the amounts.
     levelMovedBy = []
     if priced:
-        feeLevel, levelMovedBy = fees.levelInForce(feeSchedule, feeLevel,
-                                                   [i['feeGroup'] for i in lineItems])
+        feeLevel, levelMovedBy = fees.levelInForce(feeSchedule, feeLevel, [
+            i['feeGroup'] for i in lineItems] + [
+            i['alternative']['feeGroup'] for i in lineItems if i.get('alternative')])
     # Under the custom level the ladder is not read at all: the one rate a
     # uniform schedule carries is the PWA's (D96), so that is the "blend".
     if marginal and custom:
@@ -299,6 +356,12 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         for item, weight in zip(lineItems, printed):
             item['printedPct'] = weight
             item['notional'] = round(mandateSize * weight / 100.0 / 100.0) * 100.0
+        # A product the amount reaching it falls short of gives way to the
+        # one its sleeve names below its minimum (D192), before anything is
+        # priced or flagged: the line is then that product's.
+        lineItems = _holdAlternatives(groups, currency, mandateSize)
+        for item in lineItems:
+            weight = item['printedPct']
             if priced:
                 item['managementFee'] = fees.productFee(
                     feeSchedule, feeLevel, item['feeGroup'],

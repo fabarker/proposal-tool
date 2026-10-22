@@ -205,7 +205,7 @@ def test_a_catalogue_from_before_the_issue_currency_gains_it_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 12
+    assert sleeveRepo.describe()['schemaVersion'] == 14
     assert products.get(pid)['issueCurrency'] == ''
     _set(pid, {}, issueCurrency='EUR')
     assert products.get(pid)['issueCurrency'] == 'EUR'
@@ -302,7 +302,7 @@ def test_a_catalogue_from_before_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 12
+    assert sleeveRepo.describe()['schemaVersion'] == 14
     assert products.get(pid)['currencies'] == {}
     _set(pid, {'GBP': {'ticker': 'GBX1'}})
     assert products.get(pid)['currencies'] == {'GBP': _own('GBX1')}
@@ -425,7 +425,7 @@ def test_a_product_not_offered_in_the_currency_is_flagged_and_stops_the_export(s
 
     basis = BasisInput(currency='CHF', hedging='Hedged')
     state = scenarioStore.createScenario(
-        MandateInput(topAccountSize=5e9, mandateSize=5e9, primaryPwa='A. Castellanos — Madrid'),
+        MandateInput(topAccountSize=5e9, mandateSize=5e9, primaryPwa='A. Castellanos — Madrid', entity='gsi'),
         basis, createdBy='alice')
     key = PortfolioKey('CHF', 'Moderate', 'Full', False)
     scenarioStore.updateScenario(state['id'], variant=MA)

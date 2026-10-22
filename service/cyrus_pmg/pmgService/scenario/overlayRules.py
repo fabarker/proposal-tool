@@ -570,7 +570,7 @@ def _overrides(conn) -> dict:
     return {r['scope']: _entry(r) for r in rows}
 
 
-def current(variant=None) -> dict:
+def current(variant=None, entity=None) -> dict:
     """The list in force for *variant*: its own, or the default list
     (``inherited`` True). No variant means the default list.
 
@@ -580,7 +580,8 @@ def current(variant=None) -> dict:
     in ``withheld`` (D191); ``order`` keeps every rule's id in the list's
     order, so the rail can show a withheld switch greyed out where it would
     stand. Every proposal reads its list here, so the screen, the files and
-    the register agree on it."""
+    the register agree on it. At an *entity* the sleeve must be one the
+    entity may hold (D193)."""
     rows = _readPolicies()
     if variant and variant != HOUSE:
         entry = _entry(rows[variant]) if variant in rows else _entry(rows[HOUSE], inherited=True)
@@ -589,7 +590,7 @@ def current(variant=None) -> dict:
             return dict(entry, withheld=[], order=order)
         kept, withheld = [], []
         for rule in entry['rules']:
-            (kept if sleeveRepo.hasSleeve(rule['into'], variant) else withheld).append(rule)
+            (kept if sleeveRepo.hasSleeve(rule['into'], variant, entity) else withheld).append(rule)
         return dict(entry, rules=kept, withheld=withheld, order=order)
     entry = _entry(rows[HOUSE])
     return dict(entry, withheld=[], order=[rule['id'] for rule in entry['rules']])

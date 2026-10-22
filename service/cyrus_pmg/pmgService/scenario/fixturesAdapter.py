@@ -88,7 +88,8 @@ class FixturesScenarioPort:
         mandateSize = mandate.mandateSize if mandate else None
         topAccountSize = mandate.topAccountSize if mandate else None
         return rules.schemaPayload(basis, mandateSize, self.capabilities(),
-                                   self.describe(), variant, topAccountSize)
+                                   self.describe(), variant, topAccountSize,
+                                   entity=(mandate.entity or None) if mandate else None)
 
     def search_advisors(self, query: str, limit: int = 20):
         return advisors.searchAdvisors(query, limit)
@@ -149,11 +150,11 @@ class FixturesScenarioPort:
 
         return portfolioResult(basis, key, categories, metrics, stress, premia)
 
-    def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None):
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None, entity=None):
         fail = _knob('SCENARIO_FIXTURES_FAIL_SLEEVES')
         if fail and fail.lower() in ('any', category.lower()):
             raise AnalyticsError('Fixture failure: sleeves for {} unavailable.'.format(category))
-        return sleeves.listSleeves(category, variant, key)
+        return sleeves.listSleeves(category, variant, key, entity)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:

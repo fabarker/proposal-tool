@@ -187,7 +187,7 @@ def _client(monkeypatch):
 def _scenario(client, who, mandate=1e9):
     made = client.post('/api/v1/scenario', headers=who, json={
         'mandate': {'topAccountSize': mandate, 'mandateSize': mandate,
-                    'primaryPwa': 'A. Castellanos — Madrid'},
+                    'primaryPwa': 'A. Castellanos — Madrid', 'entity': 'gsi'},
         'basis': {'currency': 'USD', 'hedging': 'Hedged'}})
     sid = made.json()['id']
     assert client.put('/api/v1/scenario/' + sid, headers=who, json={'variant': VARIANT}).status_code == 200

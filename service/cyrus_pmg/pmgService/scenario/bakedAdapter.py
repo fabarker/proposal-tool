@@ -112,7 +112,8 @@ class BakedScenarioPort:
         available = set(self._slice(basis.currency, basis.hedging))
         return rules.schemaPayload(basis, mandateSize, self.capabilities(),
                                    self.describe(), variant, topAccountSize,
-                                   availableKeyStrs=available)
+                                   availableKeyStrs=available,
+                                   entity=(mandate.entity or None) if mandate else None)
 
     def search_advisors(self, query: str, limit: int = 20):
         return advisors.searchAdvisors(query, limit)
@@ -129,8 +130,8 @@ class BakedScenarioPort:
             'slice.'.format(
                 rules.portfolioName(basis, key), basis.currency, basis.hedging))
 
-    def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None):
-        return sleeves.listSleeves(category, variant, key)
+    def list_sleeves(self, category: str, basis: BasisInput, variant: str, key=None, entity=None):
+        return sleeves.listSleeves(category, variant, key, entity)
 
     def build_export(self, basis: BasisInput, mandate: MandateInput,
                      portfolios, implementation) -> bytes:

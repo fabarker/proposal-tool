@@ -60,7 +60,7 @@ def test_availability_matches_supplied_universe():
 
 
 def test_twenty_million_rule_removes_private_allocations():
-    small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='')
+    small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='', entity='gsi')
     schema = PORT.get_schema(BASIS, small)
     assert schema['options']['allocations'] == ['Core', 'ex-Alts']
     assert len(schema['availability']) == 15          # 7 x (Core, ex-Alts) + all-equity
@@ -145,7 +145,7 @@ def test_variant_is_enforced_server_side():
 def test_variant_and_mandate_filters_compose():
     """Both are subtractive and independent; every variant offers Ex Alts,
     which holds no private assets, so no intersection is empty."""
-    small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='')
+    small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='', entity='gsi')
     esg = PORT.get_schema(BASIS, small, 'PMG ESG')['options']['allocations']
     assert esg == ['ex-Alts']                 # ex-HFs is a private-asset allocation
     for variant in rules.IMPLEMENTATION_VARIANTS:
@@ -162,15 +162,15 @@ def test_columns_the_new_variant_cannot_build_are_named():
 def test_mandate_validation_fields():
     with pytest.raises(ValidationError) as err:
         PORT.validate_mandate(MandateInput(topAccountSize=50e6, mandateSize=4e6,
-                                           primaryPwa='M. Aldridge — Zurich'))
+                                           primaryPwa='M. Aldridge — Zurich', entity='gsi'))
     assert err.value.field == 'mandateSize'
     with pytest.raises(ValidationError) as err:
         PORT.validate_mandate(MandateInput(topAccountSize=10e6, mandateSize=26e6,
-                                           primaryPwa='M. Aldridge — Zurich'))
+                                           primaryPwa='M. Aldridge — Zurich', entity='gsi'))
     assert err.value.field == 'mandateSize'
     with pytest.raises(ValidationError) as err:
         PORT.validate_mandate(MandateInput(topAccountSize=50e6, mandateSize=26e6,
-                                           primaryPwa='Nobody'))
+                                           primaryPwa='Nobody', entity='gsi'))
     assert err.value.field == 'primaryPwa'
 
 
@@ -415,7 +415,7 @@ def test_fixtures_workbook_reconciles_and_has_four_sheets(tmp_path):
     result = PORT.resolve_portfolio(BASIS, key)
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     mandate = MandateInput(topAccountSize=48.5e6, mandateSize=26e6,
-                           primaryPwa='M. Aldridge — Zurich')
+                           primaryPwa='M. Aldridge — Zurich', entity='gsi')
     payload = PORT.build_export(BASIS, mandate, [result],
                                 {'sleeves': chosen, 'variant': sleeves.VARIANTS[0],
                                  'feeSchedule': 'CASP', 'feeLevel': 'PMG Target'})
@@ -446,7 +446,7 @@ def test_store_lifecycle(tmp_path, monkeypatch):
     from cyrus_pmg.pmgService.scenario import scenarioStore as store
     from cyrus_pmg.pmgService.scenario.types import ScenarioNotFound
     mandate = MandateInput(topAccountSize=48.5e6, mandateSize=26e6,
-                           primaryPwa='M. Aldridge — Zurich')
+                           primaryPwa='M. Aldridge — Zurich', entity='gsi')
     state = store.createScenario(mandate, BASIS)
     key = PortfolioKey('USD', 'Moderate', 'Core', False)
     store.recordColumn(state['id'], key, 'base')
@@ -1108,7 +1108,7 @@ def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
                           text=True, env=environment)
     assert done.returncode == 0, done.stderr[-600:]
     routes, asked = done.stdout.split()
-    assert int(routes) == 65, 'the whole block registered without the extract'
+    assert int(routes) == 69, 'the whole block registered without the extract'
     assert asked == 'raised', 'and the data is still required when it is wanted'
 
 
@@ -1842,7 +1842,7 @@ def test_the_export_reproduces_the_engines_workbook_cell_for_cell():
     results, implementation = _goldenCase()
     basis = BasisInput(currency='USD', hedging='Hedged')
     mandate = MandateInput(topAccountSize=50_000_000.0, mandateSize=50_000_000.0,
-                           primaryPwa='A. Castellanos — Madrid')
+                           primaryPwa='A. Castellanos — Madrid', entity='gsi')
     content = writeWorkbook(
         basis, mandate, results, implementation['sleeves'],
         rules.AUTO_SLEEVE_CATEGORIES, implementation['variant'],
@@ -1873,7 +1873,7 @@ def test_the_export_carries_four_sheets_and_keeps_the_assumptions():
     content = writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
         MandateInput(topAccountSize=50_000_000.0, mandateSize=50_000_000.0,
-                     primaryPwa='x'),
+                     primaryPwa='x', entity='gsi'),
         results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'],
@@ -1907,7 +1907,7 @@ def test_an_export_imports_no_part_of_the_analytics_library():
         'results = json.load(open(g + "/engine_USD_Hedged_2col.results.json"))\n'
         'impl = json.load(open(g + "/engine_USD_Hedged_2col.impl.json"))\n'
         'data = writeWorkbook(BasisInput(currency="USD", hedging="Hedged"),\n'
-        '    MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa="x"),\n'
+        '    MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa="x", entity="gsi"),\n'
         '    results, impl["sleeves"], rules.AUTO_SLEEVE_CATEGORIES,\n'
         '    impl["variant"], impl["tacticalTilt"], impl["feeSchedule"],\n'
         '    impl["feeLevel"], impl["includeFees"], impl["volPremium"],\n'
@@ -1947,7 +1947,7 @@ def test_a_missing_estimate_block_still_produces_the_sheet():
     results, implementation = _goldenCase()
     content = writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
-        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
         results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'],
@@ -1970,7 +1970,7 @@ def test_the_strategic_sheets_carry_no_category_nobody_holds():
     results, implementation = _goldenCase()
     content = writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
-        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
         results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'],
@@ -1995,7 +1995,7 @@ def test_the_strategic_sheets_carry_no_category_nobody_holds():
                              if c['name'] != 'Hedge Funds']
     twoColumn = writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
-        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
         [thin[0], results[1]], implementation['sleeves'],
         rules.AUTO_SLEEVE_CATEGORIES, implementation['variant'],
         implementation['tacticalTilt'], implementation['feeSchedule'],
@@ -2042,7 +2042,7 @@ def test_the_strategic_sheets_drop_a_line_item_zero_in_every_column():
     def labels(lineup):
         content = writeWorkbook(
             BasisInput(currency='USD', hedging='Hedged'),
-            MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+            MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
             lineup, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
             implementation['variant'], implementation['tacticalTilt'],
             implementation['feeSchedule'], implementation['feeLevel'],
@@ -2126,7 +2126,7 @@ def _builtWorkbook():
     results, implementation = _goldenCase()
     return writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
-        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
         results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'],
@@ -2635,7 +2635,7 @@ def test_engine_parity_still_reproduces_the_bands_and_heights_it_was_built_for()
     def build(parity):
         return load_workbook(io.BytesIO(writeWorkbook(
             BasisInput(currency='USD', hedging='Hedged'),
-            MandateInput(topAccountSize=50e6, mandateSize=50e6, primaryPwa='x'),
+            MandateInput(topAccountSize=50e6, mandateSize=50e6, primaryPwa='x', entity='gsi'),
             results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
             implementation['variant'], implementation['tacticalTilt'],
             implementation['feeSchedule'], implementation['feeLevel'],
@@ -2688,7 +2688,7 @@ def test_engine_parity_restores_the_whole_universe_on_the_assumptions_sheet():
     results, implementation = _goldenCase()
     content = writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
-        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
         results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'],
@@ -2869,7 +2869,7 @@ def test_the_export_refuses_while_a_position_is_below_its_minimum(tmp_path):
     from cyrus_pmg.pmgService.scenario import scenarioStore
     from cyrus_pmg.pmgService import dashboardRouter
     state = scenarioStore.createScenario(
-        MandateInput(topAccountSize=5e6, mandateSize=5e6, primaryPwa='A. Castellanos — Madrid'),
+        MandateInput(topAccountSize=5e6, mandateSize=5e6, primaryPwa='A. Castellanos — Madrid', entity='gsi'),
         BASIS, createdBy='alice')
     key = PortfolioKey('USD', 'Moderate', 'Full', False)
     result = PORT.resolve_portfolio(BASIS, key)
@@ -2895,7 +2895,7 @@ def test_a_delivered_export_carries_one_uid_in_the_name_the_file_and_the_registe
     from cyrus_pmg.pmgService.scenario.workbook import stampedProposalId
     from cyrus_pmg.pmgService import dashboardRouter
     state = scenarioStore.createScenario(
-        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid'),
+        MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid', entity='gsi'),
         BASIS, createdBy='alice')
     key = PortfolioKey('USD', 'Moderate', 'Full', False)
     result = PORT.resolve_portfolio(BASIS, key)
@@ -3037,7 +3037,7 @@ def test_js_donut_share_rounding_mirror_agrees_with_python():
 # ------------------------------------------- custom fee rates (D96) --------
 
 MANDATE_26M = MandateInput(topAccountSize=TOP_ACCOUNT, mandateSize=26e6,
-                           primaryPwa='M. Aldridge — Zurich')
+                           primaryPwa='M. Aldridge — Zurich', entity='gsi')
 
 
 def test_custom_level_is_a_level_and_its_bounds_are_the_bounding_source_band():

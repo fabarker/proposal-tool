@@ -59,7 +59,7 @@ def test_a_filled_template_with_an_edition_imports(tmp_path, repo):
     assert repo.importRows(rows, replace=True, ruleRows=rules) == 2
     live = [s for s in repo.exportRows() if s[2] == 'Seed Test']
     assert sorted(r[3] for r in live) == ['', '', 'GBP']
-    assert repo.exportRuleRows() == [(var, cat, 'Seed Test', 'GBP', 'GBP', '', '')]
+    assert repo.exportRuleRows() == [(var, cat, 'Seed Test', 'GBP', 'GBP', '', '', '')]
 
 
 def test_the_library_round_trips_through_the_workbook(tmp_path, repo):

@@ -81,11 +81,12 @@ def _outOfTheCatalogue(productId):
 
 def _seedRows():
     """The delivered seed in the interchange shape - the seed predates
-    editions, so every row is a fallback (edition '') (D89)."""
+    editions, so every row is a fallback (edition '') (D89), and names no
+    alternative below a minimum (D192)."""
     with open(SEED, newline='', encoding='utf-8') as fh:
         reader = csv.reader(fh)
         next(reader)
-        return [(v, c, s, '', p, float(w)) for v, c, s, p, w in reader]
+        return [(v, c, s, '', p, float(w), '') for v, c, s, p, w in reader]
 
 
 def _request(kerberos=None):
@@ -181,7 +182,7 @@ def test_seed_equals_the_extract_sleeve_for_sleeve_and_weight_for_weight():
     """The parity that lets the rest of the suite pass unchanged: what the
     repository serves is what the tables used to say."""
     want = {}
-    for v, c, s, _, p, w in _seedRows():
+    for v, c, s, _, p, w, _ in _seedRows():
         want.setdefault((v, c, s), {})[p] = w
     got = {}
     for variant in sleeves.VARIANTS:
@@ -470,6 +471,11 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/overlays/remove', ('POST',)),
         ('/scenario/repository/overlays/history', ('GET',)),
         ('/scenario/repository/overlays/revert', ('POST',)),
+        # the custodians / entities (D193)
+        ('/scenario/repository/entities', ('GET',)),
+        ('/scenario/repository/entities', ('PUT',)),
+        ('/scenario/repository/entities/history', ('GET',)),
+        ('/scenario/repository/entities/revert', ('POST',)),
         # the product catalogue (D165)
         ('/scenario/repository/products', ('POST',)),
         ('/scenario/repository/products', ('PUT',)),
@@ -1257,7 +1263,7 @@ def test_four_workers_cold_starting_together_seed_the_library_once(tmp_path):
 
     rows = list(sleeveRepo.readSeedRows(sleeveRepo.seedPath()))
     wantedSleeves = len({(variant, category, name, label)
-                         for variant, category, name, label, _, _ in rows})
+                         for variant, category, name, label, _, _, _ in rows})
     wantedProducts = len(rows)
 
     database = tmp_path / 'cold.db'

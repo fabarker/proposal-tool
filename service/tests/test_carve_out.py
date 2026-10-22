@@ -84,7 +84,7 @@ def test_a_production_cycle_against_the_delivered_bake_never_loads_the_library(t
         "assert schema.json()['dataInfo']['adapter'] == 'baked', schema.json()['dataInfo']\n"
         "made = c.post('/api/v1/scenario', headers=h, json={\n"
         "    'mandate': {'topAccountSize': 5e7, 'mandateSize': 5e7,\n"
-        "                'primaryPwa': 'A. Castellanos \u2014 Madrid'},\n"
+        "                'primaryPwa': 'A. Castellanos \u2014 Madrid', 'entity': 'gsi'},\n"
         "    'basis': {'currency': 'USD', 'hedging': 'Hedged'}})\n"
         "assert made.status_code == 200, made.text\n"
         "from cyrus_pmg.pmgService.scenario.sleeves import VARIANTS\n"

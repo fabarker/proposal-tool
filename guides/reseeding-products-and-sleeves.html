@@ -458,14 +458,24 @@ and nothing is destroyed.</p>
 
 <h3>The two files</h3>
 <p><strong>The sleeves file</strong> has one row per product in an edition:</p>
-<pre class="out">Variant,Category,Sleeve,Edition,ProductId,Weight</pre>
+<pre class="out">Variant,Category,Sleeve,Edition,ProductId,Weight,BelowMinimum</pre>
 <p><code>Weight</code> is a fraction, so 60% is <code>0.6</code>. In Excel you may format the column
 as a percentage and type <code>60%</code>, which is the same value. Each edition's weights must total
 exactly 100%, and a product may appear only once in an edition.</p>
+<p><code>BelowMinimum</code> is optional: the ProductId of the product to hold instead wherever the
+amount reaching this row's product (mandate size &times; the line's weight in the implemented
+portfolio) is below that product's minimum for the base currency. Leave it blank for none; the line is
+then flagged below its minimum as before. A file without the column loads as it always did. The
+converter reads it from a <em>Below Minimum</em> column in the long table, by product name, ID or
+ticker.</p>
+<pre class="out">All,Investment Grade Fixed Income,SMA,,gsam-core-municipal-sma,1,gs-us-corporate-bond-fund</pre>
 <p><strong>The rules file</strong> has one row per rule, and sits beside the sleeves file with
 <code>.rules</code> added to its name (<code>library.csv</code> &rarr;
 <code>library.rules.csv</code>):</p>
-<pre class="out">Variant,Category,Sleeve,Edition,Currency,RiskLevel,AllocationType</pre>
+<pre class="out">Variant,Category,Sleeve,Edition,Currency,RiskLevel,AllocationType,Entity</pre>
+<p><code>Entity</code> is optional: the custodians / entities the rule is for, by name (<code>GSBE</code>,
+<code>Middle East</code>) or id, several separated by <code>|</code>. Blank, or a file without the column,
+means any entity.</p>
 <p>A library with no labelled editions needs no rules file. An Excel workbook can carry both
 instead: a sheet named <code>Sleeves</code> and a sheet named <code>Rules</code>.</p>
 
@@ -532,6 +542,7 @@ rules, <code>library.rules.csv</code>.</p>
 <tr><td class="key">Currency</td><td><code>USD</code> <code>GBP</code> <code>CHF</code> <code>EUR</code></td></tr>
 <tr><td class="key">RiskLevel</td><td><code>LowVol</code> <code>Conservative</code> <code>ConsMod</code> <code>Moderate</code> <code>ModAgg</code> <code>Agg</code> <code>Higher Risk</code> <code>All Equity</code></td></tr>
 <tr><td class="key">AllocationType</td><td><code>Full</code> <code>Core</code> <code>ex-Alts</code> <code>ex-HFs</code> <code>NA</code> (<code>NA</code> is the all-equity portfolio, which has no allocation type)</td></tr>
+<tr><td class="key">Entity</td><td>The entities on the Repository's Entities tab: <code>GSI</code> <code>GSBE</code> <code>GSBZ</code> <code>Middle East</code> and any added there. A rule naming entities applies only to proposals for one of them; two editions for different entities never clash.</td></tr>
 </tbody></table></div>
 <p>The values are written exactly as above, capitals included. Only values present in the current
 portfolio extract are accepted.</p>

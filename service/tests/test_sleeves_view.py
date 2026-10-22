@@ -554,7 +554,7 @@ def test_the_grid_draws_rules_exactly_or_says_it_cannot():
     assert got['everyone'] == [{'allocationType': vocab['allocationType']}]
     assert got['eurFull'] == [{'currency': ['EUR'], 'allocationType': ['Full']}]
     assert got['none'] == []
-    assert got['empty'] == {'ok': True, 'alloc': None, 'cells': {}}
+    assert got['empty'] == {'ok': True, 'alloc': None, 'entity': None, 'cells': {}}
 
 
 def test_the_new_edition_forms_words_counts_and_clashes():

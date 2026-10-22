@@ -652,6 +652,10 @@ def inCurrency(product, currency):
         if own.get(word):
             out[word] = own[word]
     out[OFFERED] = own.get(OFFERED, True)
+    # a sleeve's product carries the one held instead below its minimum
+    # (D192), read in the same currency
+    if isinstance(product.get('alternative'), dict):
+        out['alternative'] = inCurrency(product['alternative'], currency)
     return out
 
 
@@ -927,15 +931,17 @@ def vocabulary() -> dict:
 
 
 def _holders(conn, productId) -> list:
-    """The live sleeves that hold a product."""
+    """The live sleeves that hold a product, or name it to hold below another
+    product's minimum (D192)."""
     from . import sleeveRepo
     return [{'id': r['id'], 'variant': sleeveRepo.typesLabel(r['variant']),
              'variants': sleeveRepo.typesOf(r['variant']), 'category': r['category'],
              'name': r['name'], 'label': r['label']}
             for r in conn.execute(
-                "SELECT s.id, s.variant, s.category, s.name, s.label FROM sleeveProducts p "
-                "JOIN sleeves s ON s.id = p.sleeveId WHERE p.productId = ? AND s.deletedAt = '' "
-                "ORDER BY s.variant, s.category, s.name, s.label", (productId,)).fetchall()]
+                "SELECT DISTINCT s.id, s.variant, s.category, s.name, s.label FROM sleeveProducts p "
+                "JOIN sleeves s ON s.id = p.sleeveId WHERE (p.productId = ? OR p.alternative = ?) "
+                "AND s.deletedAt = '' ORDER BY s.variant, s.category, s.name, s.label",
+                (productId, productId)).fetchall()]
 
 
 def feeGroupUsage(conn=None) -> dict:

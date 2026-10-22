@@ -14,7 +14,7 @@ var App = (function () {
 var state = {
   phase: 'landing',                 /* 'landing' | 'workspace' */
   scenarioId: null,
-  mandate: null,                    /* {topAccountSize, mandateSize, primaryPwa} */
+  mandate: null,                    /* {topAccountSize, mandateSize, primaryPwa, entity} */
   basis: { currency: 'USD', hedging: 'Hedged' },
   schema: null,
   schemaStatus: 'idle',             /* 'idle'|'loading'|'ready'|'error' */
@@ -421,6 +421,16 @@ function preserveFocus(fn) {
    Data flows
    ========================================================================== */
 
+/* the custodian / entity chosen on the first card, as a query parameter
+   (D193); nothing before one is chosen */
+function entityQuery() {
+  return state.mandate && state.mandate.entity ? '&entity=' + encodeURIComponent(state.mandate.entity) : '';
+}
+function entityName(id) {
+  var found = (opt('options.entities', []) || []).filter(function (e) { return e.id === id; })[0];
+  return found ? found.name : (id || '');
+}
+
 function schemaQuery() {
   var q = '?currency=' + encodeURIComponent(state.basis.currency)
         + '&hedging=' + encodeURIComponent(state.basis.hedging);
@@ -433,6 +443,8 @@ function schemaQuery() {
   if (state.mandate && state.mandate.topAccountSize) {
     q += '&topAccountSize=' + encodeURIComponent(state.mandate.topAccountSize);
   }
+  /* the custodian / entity: the overlays served are the ones it may hold (D193) */
+  q += entityQuery();
   /* The variant narrows options.allocations and the availability set, so it
      belongs in the key of what the schema describes (D49). */
   if (state.variant) q += '&variant=' + encodeURIComponent(state.variant);
@@ -903,7 +915,7 @@ function ensureSleeveLib(category, onReady) {
       + '&variant=' + encodeURIComponent(state.variant)
       + '&currency=' + encodeURIComponent(state.basis.currency)
       + '&hedging=' + encodeURIComponent(state.basis.hedging)
-      + (base ? '&key=' + encodeURIComponent(keyStr(base.key)) : ''))
+      + (base ? '&key=' + encodeURIComponent(keyStr(base.key)) : '') + entityQuery())
     .then(function (body) {
       state.sleeveLib[category] = { status: 'ready', sleeves: body.sleeves || [], error: null };
       if (onReady) onReady(state.sleeveLib[category]);
@@ -1187,7 +1199,7 @@ function ensureCustomLib(category, onReady) {
      each (D180) */
   apiFetch('/scenario/products?category=' + encodeURIComponent(category)
       + '&variant=' + encodeURIComponent(state.variant)
-      + '&currency=' + encodeURIComponent(state.basis.currency))
+      + '&currency=' + encodeURIComponent(state.basis.currency) + entityQuery())
     .then(function (body) {
       state.customLib[category] = { status: 'ready', products: body.products || [],
                                     mayBuild: !!body.mayBuild, error: null };
@@ -1262,12 +1274,13 @@ function mayBuildPortfolio() {
 
 function ensureCpLib() {
   if (!state.variant || !state.basisChosen) return;
-  var key = [state.variant, state.basis.currency, state.basis.hedging].join('|');
+  var key = [state.variant, state.basis.currency, state.basis.hedging,
+             (state.mandate && state.mandate.entity) || ''].join('|');
   if (state.cpLib.key === key && state.cpLib.status !== 'idle') return;
   state.cpLib = { key: key, status: 'loading', data: null, error: null };
   apiFetch('/scenario/custom-portfolio?variant=' + encodeURIComponent(state.variant)
       + '&currency=' + encodeURIComponent(state.basis.currency)
-      + '&hedging=' + encodeURIComponent(state.basis.hedging))
+      + '&hedging=' + encodeURIComponent(state.basis.hedging) + entityQuery())
     .then(function (body) {
       if (state.cpLib.key !== key) return;
       state.cpLib = { key: key, status: 'ready', data: body, error: null };
@@ -1429,6 +1442,8 @@ function openMandateDialog(opener) {
     size: state.mandate ? state.mandate.mandateSize : null,
     pwa: state.mandate ? state.mandate.primaryPwa : '',
     q: state.mandate ? state.mandate.primaryPwa : '',
+    /* the custodian / entity (D193): empty on a scenario saved before it */
+    entity: state.mandate ? state.mandate.entity || '' : '',
     open: false, idx: -1, err: null, dirty: false,
     matches: null,                    /* null = below threshold */
     searching: false, searchTimer: null, searchAbort: null,
@@ -1503,6 +1518,7 @@ function validateDraft() {
     return { field: 'mdsize', msg: 'Mandate size cannot exceed the top account size.' };
   }
   if (!draft.pwa) return { field: 'mdpwa', msg: 'Choose a Primary PWA from the list.' };
+  if (!draft.entity) return { field: 'mdentity', msg: 'Choose the custodian / entity.' };
   return null;
 }
 
@@ -1518,7 +1534,9 @@ async function commitMandate() {
   }
   draft.saving = true;
   renderDialog();
-  var mandate = { topAccountSize: draft.top, mandateSize: draft.size, primaryPwa: draft.pwa };
+  var mandate = { topAccountSize: draft.top, mandateSize: draft.size, primaryPwa: draft.pwa,
+                  entity: draft.entity };
+  var entityMoved = !state.mandate || (state.mandate.entity || '') !== draft.entity;
   try {
     if (!state.scenarioId) {
       var created = await apiFetch('/scenario', {
@@ -1548,7 +1566,7 @@ async function commitMandate() {
   } catch (err) {
     draft.saving = false;
     var field = err && err.body && err.body.field;
-    var map = { topAccountSize: 'mdtop', mandateSize: 'mdsize', primaryPwa: 'mdpwa' };
+    var map = { topAccountSize: 'mdtop', mandateSize: 'mdsize', primaryPwa: 'mdpwa', entity: 'mdentity' };
     draft.err = { field: map[field] || 'mdsize', msg: (err && err.message) || 'Could not save.' };
     renderDialog();
     var focusTo = document.getElementById(draft.err.field);
@@ -1556,6 +1574,12 @@ async function commitMandate() {
     return;
   }
   state.mandate = mandate;
+  /* another entity may hold other editions and exclude other products
+     (D193): every library is read again at it */
+  if (entityMoved) {
+    state.sleeveLib = {}; state.customLib = {};
+    if (state.cpLib) state.cpLib = { key: '', status: 'idle', data: null, error: null };
+  }
   var wasLanding = (state.phase === 'landing');
   state.phase = 'workspace';
   draft = null;
@@ -1688,6 +1712,8 @@ function renderMandate() {
     + '<dt>Top Account:</dt><dd>' + money(state.mandate.topAccountSize) + '</dd>'
     + '<dt>Mandate Size:</dt><dd>' + money(state.mandate.mandateSize) + '</dd>'
     + '<dt>Primary PWA:</dt><dd>' + esc(state.mandate.primaryPwa) + '</dd>'
+    + '<dt>Custodian / entity:</dt><dd>' + (state.mandate.entity ? esc(entityName(state.mandate.entity))
+        : '<span class="mut">not chosen</span>') + '</dd>'
     + '</dl>';
 }
 
@@ -3263,6 +3289,14 @@ function renderFooter() {
 }
 
 /* ---- mandate dialog render ---------------------------------------------- */
+function entityOptions(chosen) {
+  var list = (opt('options.entities', []) || []).slice();
+  if (chosen && !list.some(function (e) { return e.id === chosen; })) list.push({ id: chosen, name: chosen + ' (retired)' });
+  return list.map(function (e) {
+    return '<option value="' + esc(e.id) + '"' + (e.id === chosen ? ' selected' : '') + '>' + esc(e.name) + '</option>';
+  }).join('');
+}
+
 function renderDialog() {
   var host = document.getElementById('mandateDialog'); if (!host) return;
   if (!draft) { host.innerHTML = ''; host.hidden = true; if (!account) setBackgroundInert(false); return; }
@@ -3319,6 +3353,12 @@ function renderDialog() {
     + (draft.open && (draft.q || '').trim().length < 2
         ? '<span class="field-hint">Type at least two characters.</span>' : '')
     + '</div>'
+    /* the custodian / entity the account is held at (D193): a retired one a
+       scenario already holds stays offered to it */
+    + '<div class="field"><label for="mdentity">Custodian / entity</label>'
+    + '<select id="mdentity"' + invalid('mdentity') + dis + '>'
+    + '<option value=""' + (draft.entity ? '' : ' selected') + '>Choose…</option>'
+    + entityOptions(draft.entity) + '</select></div>'
     + (err ? '<p class="md-err" id="mderr" role="alert">' + esc(err.msg) + '</p>' : '')
     /* Both cards carry the same pair, split to the card's two edges: the way
        on at the left, where the fields above it start, and Cancel apart from
@@ -4335,6 +4375,11 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'basis-cancel') { cancelBasisChange(); return; }
 });
 
+document.addEventListener('change', function (e) {
+  if (!draft || !e.target || e.target.id !== 'mdentity') return;
+  draft.entity = e.target.value; draft.err = null; draft.dirty = true;
+});
+
 document.addEventListener('input', function (e) {
   if (account && onAccountInput(e)) return;
   if (!draft) return;
@@ -4556,11 +4601,23 @@ return {
   basis: function () { return state.basis; },
   mandate: function () { return state.mandate; },
   mandateSize: function () { return state.mandate ? state.mandate.mandateSize : null; },
+  /* the custodian / entity chosen on the first card, and its name (D193) */
+  entity: function () { return (state.mandate && state.mandate.entity) || ''; },
+  entityName: entityName,
   columns: function () { return state.columns; },
   base: function () { return state.columns[0] || null; },
   step: function () { return state.step; },
   implSeen: function () { return state.implSeen; },
   setStep: function (s) {
+    /* step 2 opens once the custodian / entity is chosen (D193): a scenario
+       saved before it asks for one first */
+    if (s === 'impl' && state.mandate && !state.mandate.entity) {
+      announce('assertive', 'Choose the custodian / entity before the implementation step.');
+      openMandateDialog(document.activeElement);
+      if (draft) { draft.err = { field: 'mdentity', msg: 'Choose the custodian / entity before the implementation step.' }; renderDialog(); }
+      var sel = document.getElementById('mdentity'); if (sel) sel.focus();
+      return;
+    }
     var wasStep = state.step;
     state.step = s;
     if (s === 'impl') state.implSeen = true;   /* stop beckoning once opened */

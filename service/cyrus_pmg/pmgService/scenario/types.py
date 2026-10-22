@@ -55,11 +55,14 @@ class BasisInput:
 
 @dataclass(frozen=True)
 class MandateInput:
-    """The client mandate (spec 2.4). Amounts are USD."""
+    """The client mandate (spec 2.4). Amounts are USD. *entity* is the
+    custodian / entity the account is held at (D193), by id: '' for none
+    chosen yet, which a scenario saved before it has."""
 
     topAccountSize: float
     mandateSize: float
     primaryPwa: str
+    entity: str = ''
 
     @staticmethod
     def fromDict(data) -> "MandateInput":
@@ -69,10 +72,14 @@ class MandateInput:
                 return float(value)
             except (TypeError, ValueError):
                 raise ValidationError(field, 'Enter an amount.')
+        entity = data.get('entity')
+        if entity is not None and not isinstance(entity, str):
+            raise ValidationError('entity', 'Choose the custodian / entity from the list.')
         return MandateInput(
             topAccountSize=_amount('topAccountSize'),
             mandateSize=_amount('mandateSize'),
             primaryPwa=str(data.get('primaryPwa', '')).strip(),
+            entity=(entity or '').strip(),
         )
 
     def toDict(self) -> dict:
@@ -80,6 +87,7 @@ class MandateInput:
             'topAccountSize': self.topAccountSize,
             'mandateSize': self.mandateSize,
             'primaryPwa': self.primaryPwa,
+            'entity': self.entity,
         }
 
 

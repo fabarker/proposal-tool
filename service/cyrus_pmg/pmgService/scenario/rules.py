@@ -14,6 +14,7 @@ from __future__ import annotations
 from functools import lru_cache
 from numbers import Real
 
+from . import entities as _entities
 from . import fees
 from . import otherCharges as _otherCharges
 from . import portfolio_weights as pw
@@ -912,15 +913,15 @@ def _servedFunding(variant) -> dict:
             'inherited': entry['inherited']}
 
 
-def _servedOverlays(variant) -> dict:
+def _servedOverlays(variant, entity=None) -> dict:
     """The overlay rules as the schema serves them: the list in force for
     *variant*, which scope and revision it is, and whether it is the default
     list standing in for a type with none of its own. The rules the type has
     no sleeve for ride along under ``withheld``, and ``order`` places them,
     so the rail shows their switches greyed out (D191); the page resolves
-    ``rules`` alone."""
+    ``rules`` alone. At an *entity* the sleeve must be one it may hold (D193)."""
     from . import overlayRules
-    entry = overlayRules.current(variant)
+    entry = overlayRules.current(variant, entity)
     return {'scope': entry['scope'], 'revision': entry['revision'],
             'inherited': entry['inherited'], 'rules': entry['rules'],
             'withheld': [{'id': r['id'], 'name': r['name'], 'into': r['into'],
@@ -930,7 +931,7 @@ def _servedOverlays(variant) -> dict:
 
 def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
                   dataInfo: dict, variant=None, topAccountSize=None,
-                  availableKeyStrs=None) -> dict:
+                  availableKeyStrs=None, entity=None) -> dict:
     """Assemble the GET /api/scenario/schema response (spec 3.4).
 
     capabilities() and describe() ride along here: the port defines both but
@@ -963,6 +964,8 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             # types offer the ex-RAs toggle - both derived from the universe
             'allocationTypesByRisk': derived['_FACETS']['allocationTypes'],
             'exclusionOffered': derived['_FACETS']['exclusionOffered'],
+            # the custodians / entities the first card offers (D193)
+            'entities': _entities.offered(),
             'implementationVariants': IMPLEMENTATION_VARIANTS,
             'variantAllocations': VARIANT_ALLOCATIONS,
             'variantsExcludingRealEstate': VARIANTS_EXCLUDING_RE,
@@ -982,7 +985,7 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'privateFunding': _servedFunding(variant),
             # the overlay rules in force for this type, in the order they
             # resolve (D155): the page's mirror applies them as the model does
-            'overlays': _servedOverlays(variant),
+            'overlays': _servedOverlays(variant, entity),
         },
         'fees': dict(fees.feePayload(topAccountSize, mandateSize),
                      # the charges a PWA quotes beside the fees, for the form (D177)

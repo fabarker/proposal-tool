@@ -47,14 +47,16 @@ import secrets
 import sqlite3
 import threading
 
+from . import entities as _entities
 from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 9          # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+SCHEMA_VERSION = 10         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
                             # 5: the overlay rules (D155); 6: the catalogue and fee card versions (D165, D166);
                             # 7: custom sleeves, and whether the strategic allocation was left out (D170);
-                            # 8: custom portfolios (D171); 9: the other charges (D177)
+                            # 8: custom portfolios (D171); 9: the other charges (D177);
+                            # 10: the custodian / entity (D193)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -98,6 +100,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     departs           INTEGER,
     customPortfolio   TEXT,
     otherCharges      TEXT,
+    entity            TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -128,7 +131,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
                  'deckName, deckBytes, deckSha, fundingSplit, overlays, catalogueRevision, '
-                 'feeCardRevision, departs, customPortfolio')
+                 'feeCardRevision, departs, customPortfolio, entity')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -137,7 +140,10 @@ _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
                 'printedPct', 'notional',
                 # the initial allocation's figures, for a private-markets book
                 # (D136); absent - None - on anything delivered before it
-                'initialPct', 'initialNotional')
+                'initialPct', 'initialNotional',
+                # what a line holds its product in place of, below that one's
+                # minimum (D192); None on anything delivered before it
+                'standsIn')
 
 _lock = threading.Lock()
 
@@ -201,6 +207,10 @@ def _connect() -> sqlite3.Connection:
         # unpriced proposal and for anything delivered before
         if 'otherCharges' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN otherCharges TEXT')
+        # the custodian / entity the account is held at, by id (D193); NULL
+        # for anything delivered before it
+        if 'entity' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN entity TEXT')
         pins = {row[1] for row in conn.execute('PRAGMA table_info(proposalSleeves)')}
         if 'custom' not in pins:
             conn.execute('ALTER TABLE proposalSleeves ADD COLUMN custom TEXT')
@@ -394,8 +404,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
                 'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
                 'overlays, catalogueRevision, feeCardRevision, departs, customPortfolio, '
-                'otherCharges) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'otherCharges, entity) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -425,7 +435,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                  # the charges quoted beside the fees, when fees priced it (D177)
                  (json.dumps(implementation.get('otherCharges'))
                   if implementation.get('includeFees') and implementation.get('otherCharges')
-                  else None)))
+                  else None),
+                 # the custodian / entity the account is held at (D193)
+                 getattr(mandate, 'entity', '') or None))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName, '
                 'custom) VALUES (?,?,?,?,?,?)',
@@ -452,6 +464,9 @@ def _rowToEntry(row) -> dict:
     if 'customPortfolio' in entry:
         entry['customPortfolio'] = (json.loads(entry['customPortfolio'])
                                     if entry['customPortfolio'] else None)
+    if 'entity' in entry:
+        # the id as recorded, and the name it goes by now (D193)
+        entry['entityName'] = _entities.name(entry['entity']) if entry['entity'] else ''
     return entry
 
 
@@ -800,7 +815,7 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
                   'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays',
                   'CatalogueVersion', 'FeeCardVersion', 'CustomSleeves', 'StrategicAllocation',
-                  'CustomPortfolio']
+                  'CustomPortfolio', 'Entity']
 
 
 def customPortfolioText(custom) -> str:
@@ -849,7 +864,8 @@ def exportRows(**filters) -> list:
                         overlaysText(e.get('overlays')),
                         e.get('catalogueRevision') or '', e.get('feeCardRevision') or '',
                         built, 'Left out' if e.get('departs') or e.get('customPortfolio')
-                        else 'Included', customPortfolioText(e.get('customPortfolio'))))
+                        else 'Included', customPortfolioText(e.get('customPortfolio')),
+                        _entities.name(e['entity']) if e.get('entity') else ''))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

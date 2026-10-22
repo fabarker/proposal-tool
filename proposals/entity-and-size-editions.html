@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sleeves by Entity and Size</title>
+<style>
+:root{
+  --bg:#F6F7F4; --surface:#FFFFFF; --sunk:#EDF0EA; --ink:#1D2520; --ink-2:#4B574F; --ink-3:#7C877F;
+  --line:#DFE4DC; --line-2:#C9D1C5; --accent:#2F6B4F; --accent-tint:#E3F0E8;
+  --new:#8A5300; --new-tint:#FBF0DD; --code:#EFF2EC;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121714; --surface:#1A211D; --sunk:#202923; --ink:#E5EBE6; --ink-2:#AEBAB1; --ink-3:#7F8C83;
+  --line:#2A352E; --line-2:#3A473F; --accent:#83C7A3; --accent-tint:#1C2E24;
+  --new:#F0C070; --new-tint:#2C2415; --code:#1F2722; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#121714; --surface:#1A211D; --sunk:#202923; --ink:#E5EBE6; --ink-2:#AEBAB1; --ink-3:#7F8C83;
+  --line:#2A352E; --line-2:#3A473F; --accent:#83C7A3; --accent-tint:#1C2E24;
+  --new:#F0C070; --new-tint:#2C2415; --code:#1F2722; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:28px 64px}
+.eyebrow{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin:0 0 8px}
+h1{font-size:clamp(28px,7vw,40px);line-height:1.1;margin:0 0 10px;letter-spacing:-.01em;text-wrap:balance}
+.meta{color:var(--ink-2);font-size:14px;margin:0 0 26px}
+h2{font-size:23px;line-height:1.2;margin:46px 0 10px;text-wrap:balance;padding-top:14px;border-top:1px solid var(--line)}
+h2 .n{color:var(--accent);margin-right:6px}
+h3{font-size:17px;margin:28px 0 6px}
+p,li{max-width:66ch}
+p{margin:0 0 12px}
+ul,ol{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 6px}
+b{font-weight:650}
+code{font:13.5px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:4px}
+pre{font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;background:var(--code);border:1px solid var(--line);
+  border-radius:8px;padding:12px 14px;margin:8px 0 16px;overflow-x:auto;white-space:pre}
+.short{display:grid;gap:12px;margin:0 0 8px}
+.short div{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);
+  border-radius:8px;padding:14px 16px}
+.short b{display:block;font-size:16.5px;margin-bottom:4px}
+.short p{margin:0;color:var(--ink-2);font-size:15px}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  background:var(--new-tint);color:var(--new);border-radius:999px;padding:1px 8px;vertical-align:2px;margin-left:6px}
+/* a sketch of a form: schematic, not a picture of the tool */
+.sketch{background:var(--surface);border:1px dashed var(--line-2);border-radius:10px;padding:14px 16px;margin:10px 0 16px}
+.sketch .cap{font-size:12px;color:var(--ink-3);margin:0 0 10px;letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+.fld{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:10px;align-items:center;padding:7px 0;
+  border-bottom:1px solid var(--line)}
+.fld:last-child{border-bottom:0}
+.fld span{color:var(--ink-2);font-size:14.5px}
+.box{border:1px solid var(--line-2);border-radius:6px;padding:6px 10px;font-size:14.5px;background:var(--bg);
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fld.is-new span{color:var(--new);font-weight:650}
+.fld.is-new .box{border-color:var(--new);background:var(--new-tint)}
+.opts{font-size:13px;color:var(--ink-3);margin:8px 0 0}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .w{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.row .alt{grid-column:1 / -1;font-size:14px;color:var(--new);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.row .alt .box{border-color:var(--new);background:var(--new-tint);color:var(--ink)}
+.scroll{overflow-x:auto;margin:8px 0 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+thead th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:var(--sunk)}
+tbody tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right}
+td.swap{color:var(--new);font-weight:650}
+.note{background:var(--accent-tint);border-radius:8px;padding:12px 14px;margin:12px 0 16px;font-size:15px}
+.note p:last-child{margin:0}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps li{counter-increment:s;position:relative;padding-left:34px;margin-bottom:10px}
+.steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:24px;height:24px;border-radius:50%;
+  background:var(--accent);color:var(--surface);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.qs{list-style:none;padding:0;counter-reset:q}
+.qs li{counter-increment:q;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px 12px 46px;
+  position:relative;margin-bottom:10px;max-width:none}
+.qs li::before{content:counter(q);position:absolute;left:14px;top:12px;font-weight:700;color:var(--accent);font-size:15px}
+.qs .sug{display:block;margin-top:6px;font-size:14px;color:var(--ink-2)}
+.qs .sug b{color:var(--accent)}
+.foot{margin-top:40px;font-size:13px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="eyebrow">Proposal Tool · design proposal</p>
+<h1>Sleeves by Entity and Size</h1>
+<p class="meta">22 October 2026 · updated with your answers · a proposal only: nothing is built and no code has changed</p>
+
+<div class="short">
+  <div><b>1 · Custodian / entity</b>
+    <p>A required drop-down on the first card (GSI, GSBE, GSBZ, Middle East, and any an admin adds), kept with the scenario. It becomes a fourth thing an edition can be for, beside base currency, risk level and allocation type. Each entity also has a list of products it may not hold, and a sleeve holding one is greyed out there.</p></div>
+  <div><b>2 · Size</b>
+    <p>Not an edition. Each product in a sleeve can name an <b>alternative</b> to hold when the amount reaching it is below its minimum. The minimum is the one the catalogue already holds for the base currency.</p></div>
+</div>
+
+<!-- ============================================================ part 1 -->
+<h2><span class="n">1</span>Custodian / entity</h2>
+
+<h3>On the first card</h3>
+<p>The card where the PWA enters the top account size and the mandate size gains one field.</p>
+<div class="sketch">
+  <p class="cap">First card · sketch</p>
+  <div class="fld"><span>Top account size</span><div class="box">$50,000,000</div></div>
+  <div class="fld"><span>Mandate size</span><div class="box">$20,000,000</div></div>
+  <div class="fld"><span>Primary PWA</span><div class="box">Name — Office</div></div>
+  <div class="fld is-new"><span>Custodian / entity <span class="tag">new</span></span><div class="box">Choose…</div></div>
+  <p class="opts">Choices: GSI · GSBE · GSBZ · Middle East, and any an admin adds</p>
+</div>
+<ul>
+  <li><b>Required.</b> The card can't be completed without it, so the sleeves are never chosen without knowing the entity.</li>
+  <li><b>Kept with the scenario</b>, like the mandate size, and editable later (see below).</li>
+  <li><b>Always chosen by the PWA.</b> It isn't filled in from the Primary PWA's office.</li>
+  <li><b>Scenarios saved before this</b> show the entity empty when next opened, and step 2 stays locked until one is chosen. Delivered proposals stay exactly as they were.</li>
+</ul>
+
+<h3>Editions get an Entity rule</h3>
+<p>Rules work exactly as they do now, with one more column. Within a rule every filled cell must match; a blank cell means any; several values in a cell are separated by <code>|</code>; several rules for one edition mean any of them.</p>
+<div class="scroll"><table>
+  <thead><tr><th>Currency</th><th>Risk level</th><th>Allocation type</th><th>Entity <span class="tag">new</span></th></tr></thead>
+  <tbody><tr><td>USD GBP CHF EUR</td><td>Low Vol … All Equity</td><td>Full Core ex-Alts ex-HFs</td><td>GSI GSBE GSBZ Middle East</td></tr></tbody>
+</table></div>
+
+<p><b>Example:</b> an ESG equity sleeve under PMG ESG that differs by entity.</p>
+<div class="scroll"><table>
+  <thead><tr><th>Edition</th><th>Rule</th><th>Holds</th></tr></thead>
+  <tbody>
+    <tr><td>(fallback)</td><td>none: everyone else</td><td>Product A 60% · Product B 40%</td></tr>
+    <tr><td>GSBE</td><td>Entity = GSBE</td><td>Product C 100%</td></tr>
+    <tr><td>Middle East</td><td>Entity = Middle East</td><td>Product D 70% · Product E 30%</td></tr>
+    <tr><td>GSI GBP</td><td>Currency = GBP, Entity = GSI</td><td>Product F 100%</td></tr>
+  </tbody>
+</table></div>
+<p>In the rules file, Entity is an optional last column. A file without it still loads, and every rule in it reads "any entity".</p>
+<pre>Variant,Category,Sleeve,Edition,Currency,RiskLevel,AllocationType,Entity
+PMG ESG,Public Equity,ESG Equity Core,GSBE,,,,GSBE
+PMG ESG,Public Equity,ESG Equity Core,Middle East,,,,Middle East
+PMG ESG,Public Equity,ESG Equity Core,GSI GBP,GBP,,,GSI</pre>
+
+<h3>How a proposal gets its edition</h3>
+<p>Today the edition is chosen by the base portfolio. It would be chosen by the <b>portfolio and the entity together</b>. The existing guarantees carry over unchanged:</p>
+<ul>
+  <li><b>Exactly one edition per proposal.</b> Two editions of one sleeve can't both claim, say, GSBE · GBP Moderate Full. The save is refused and names the clash, as a currency overlap is today.</li>
+  <li><b>The fallback</b> serves every portfolio and entity that no labelled edition claims.</li>
+  <li><b>The PWA never sees the edition.</b> They pick the sleeve by name.</li>
+  <li><b>The edition editor's count</b> says what it covers, e.g. "43 portfolios at GSBE". The grid gains an entity selector.</li>
+</ul>
+
+<h3>Changing the entity on a scenario</h3>
+<p>The chosen sleeves stay chosen by name. Each one re-resolves to its edition for the new entity. A sleeve with no edition for the new entity shows the picker's existing "not offered for this portfolio" state until the PWA picks again. Nothing is swapped silently.</p>
+
+<h3>Products an entity may not hold</h3>
+<p>A new <b>Entities</b> tab in the Repository, for admins:</p>
+<ul>
+  <li><b>The entities themselves.</b> The list starts with the four. An admin can add one or rename one. A rename carries through to every rule and list that names it. An entity that scenarios or rules use can be retired (no longer offered on the first card) but not deleted.</li>
+  <li><b>Each entity's exclusion list.</b> Open an entity and tick the catalogue products it may not hold, with an optional note. Every change is kept in its history, like the other Repository tabs.</li>
+  <li><b>Shown on the product too.</b> The Catalogue's product page reads "Not available at: GSBZ, Middle East". The product file can carry the same thing in an optional <code>NotAvailableAt</code> column, e.g. <code>GSBZ|Middle East</code>.</li>
+</ul>
+<p>What a PWA sees at an entity:</p>
+<ul>
+  <li><b>A sleeve holding an excluded product</b> stays in the sleeve picker, <b>greyed out with the reason</b>: "Not available at GSBE: holds Product X". The check uses the edition the proposal would actually get, so an admin can make the sleeve available by adding a GSBE edition that holds allowed products.</li>
+  <li><b>A sleeve already chosen</b> when the entity is changed, or when a product is added to the list, is flagged in the same way until the PWA picks again.</li>
+  <li><b>Custom sleeves:</b> excluded products aren't offered in the builder.</li>
+  <li><b>Alternatives below the minimum (part 2):</b> an excluded alternative isn't used, and the line is flagged below its minimum.</li>
+  <li><b>The overlay sleeves:</b> an SVP or Tactical Tilt sleeve holding an excluded product greys out its switch at that entity (see below).</li>
+  <li><b>The export</b> refuses any excluded product as a final check.</li>
+</ul>
+<p>In the Sleeves view, admins see a chip on each sleeve holding an excluded product, e.g. "Not available at Middle East", so the effect of a list is visible before a PWA meets it.</p>
+
+<h3>Knock-on: the overlay sleeves</h3>
+<p>Today's change made SVP and Tactical Tilts depend on whether the implementation type has a sleeve for them. With entities, that check would become <b>"can this proposal be served one"</b>. An SVP sleeve offered only at some entities, or holding a product an entity excludes, would then grey out the switch at the others, in the same way it now greys out under a type without one.</p>
+
+<h3>Where the entity is recorded</h3>
+<p>In the scenario and in the <b>proposal register</b> (a new column, and in the register's export). Not on the workbook, the deck or the account request.</p>
+<p>The sleeve converter would read an optional Entity column in your long table and turn it into editions with rules, as it does for currency now.</p>
+
+<!-- ============================================================ part 2 -->
+<h2><span class="n">2</span>Size: an alternative below the minimum</h2>
+
+<h3>Why not an edition</h3>
+<ol>
+  <li><b>Editions answer who the proposal is for. This is about how much reaches a product.</b> That amount is only known after the mandate size, the portfolio's weights and the overlays are applied, which is after the edition has been chosen.</li>
+  <li><b>The threshold already exists.</b> The catalogue holds each product's minimum for each base currency. A size rule on an edition would be a second number to keep in step with it.</li>
+  <li><b>The amount depends on the portfolio.</b> At $20m, a portfolio with 30% in investment grade fixed income puts $6m into the SMA; one with 12% puts in $2.4m. A rule on the mandate size can't tell those apart.</li>
+</ol>
+
+<h3>The proposal</h3>
+<p>In the sleeve editor, each product row with a minimum can name one alternative product.</p>
+<div class="sketch">
+  <p class="cap">Sleeve editor · SMA · sketch</p>
+  <div class="row"><span>Core Muni SMA <small style="color:var(--ink-3)">· minimum $5,000,000</small></span><span class="w">100%</span>
+    <span class="alt">If below its minimum, hold <span class="box">Muni Bond Fund</span><span class="tag">new</span></span></div>
+</div>
+<p>When a proposal is built, the amount reaching each product is worked out as it is now (mandate size × the line's weight in the implemented portfolio). Wherever that amount is below the product's minimum and the product names an alternative, the line holds the alternative instead.</p>
+
+<h3>Worked example</h3>
+<p>Core Muni SMA, minimum $5m, alternative Muni Bond Fund. The Tactical Tilts take 8% of the portfolio from investment grade fixed income.</p>
+<div class="scroll"><table>
+  <thead><tr><th class="num">Mandate</th><th class="num">IGFI weight</th><th class="num">Into the SMA</th><th>Holds</th></tr></thead>
+  <tbody>
+    <tr><td class="num">$20m</td><td class="num">30%</td><td class="num">$6.0m</td><td>Core Muni SMA</td></tr>
+    <tr><td class="num">$12m</td><td class="num">30%</td><td class="num">$3.6m</td><td class="swap">Muni Bond Fund</td></tr>
+    <tr><td class="num">$20m</td><td class="num">22% (tilts on)</td><td class="num">$4.4m</td><td class="swap">Muni Bond Fund</td></tr>
+  </tbody>
+</table></div>
+<p>The third row is the point: switching the tilts on moves the SMA below its minimum, and the line changes as the switch is clicked.</p>
+
+<h3>The rules</h3>
+<ul>
+  <li><b>The amount</b> is the one the implementation table's amount column already shows, after overlays and custom weights.</li>
+  <li><b>The minimum</b> is the catalogue's for the scenario's base currency, in dollars, as now.</li>
+  <li><b>The alternative takes the whole line's weight.</b> If it is already in the sleeve, the two lines merge.</li>
+  <li><b>One alternative per product.</b> If the alternative is also below its own minimum, the line stays flagged below its minimum exactly as today.</li>
+  <li><b>The PWA is told.</b> The rail says, for example: "Core Muni SMA needs $5.0m; $3.6m here, so Muni Bond Fund is held instead." The workbook shows the product actually held, and the register records the swap.</li>
+  <li><b>Fees</b> follow the product held: its fee group and its product cost.</li>
+  <li><b>Custom sleeves</b> are unchanged. The person building one chooses its products directly.</li>
+</ul>
+<p>In the sleeve file, an optional <code>BelowMinimum</code> column on a product's row names its alternative:</p>
+<pre>Variant,Category,Sleeve,Edition,ProductId,Weight,BelowMinimum
+All,Investment Grade Fixed Income,SMA,,core-muni-sma,1,muni-bond-fund</pre>
+
+<div class="note"><p><b>A side benefit.</b> Today a line below its minimum stops the export until the PWA changes something. With alternatives in place, most of those lines resolve themselves.</p></div>
+
+<!-- ============================================================ together -->
+<h2><span class="n">3</span>Both together</h2>
+<p>Building the implementation runs in this order:</p>
+<ol class="steps">
+  <li>Each sleeve's <b>edition</b> is chosen by the base portfolio and the entity. A sleeve whose edition holds a product the entity excludes is greyed out.</li>
+  <li>The <b>weights</b> are set: the strategic allocation, the overlays, any custom weights.</li>
+  <li>The <b>amount</b> reaching each product is worked out from the mandate size.</li>
+  <li><b>Alternatives</b> replace any product below its minimum, unless the entity excludes the alternative.</li>
+  <li><b>Fees</b> and the export's checks run on what is actually held.</li>
+</ol>
+
+<h2><span class="n">4</span>Considered, not recommended</h2>
+<ul>
+  <li><b>Entities as extra implementation types</b> (e.g. "PMG ESG at GSBE"). Four types × four entities makes sixteen libraries to keep in step. The entity describes the client's account, not the style of the mandate.</li>
+  <li><b>Size as an edition rule</b> (a mandate-size band). A second threshold to maintain, and blind to the portfolio's weights (see 2, "Why not an edition").</li>
+</ul>
+
+<h2><span class="n">5</span>Your answers</h2>
+<ol class="qs">
+  <li><b>Entity list:</b> admins can add or rename entities in the Repository, starting from the four.</li>
+  <li><b>Scenarios saved before this:</b> ask for the entity before step 2 opens. Delivered proposals stay as they were.</li>
+  <li><b>Filled in from the PWA's office:</b> not at first. The PWA always chooses.</li>
+  <li><b>What else the entity restricts:</b> products. Each entity has an exclusion list, and a sleeve holding an excluded product is greyed out there with the reason. The lists are built in a new Entities tab.</li>
+  <li><b>Where the entity appears:</b> the proposal register only.</li>
+  <li><b>The amount for the size switch:</b> mandate size × the line's implemented weight, so the overlays and their switches count.</li>
+  <li><b>An alternative also below its minimum:</b> flagged as today. One alternative per product.</li>
+  <li><b>Keeping a product below its minimum:</b> not allowed, as today.</li>
+  <li><b>Private markets' initial allocation:</b> the swap is decided on the long-term amount, and the same product is held in both columns.</li>
+</ol>
+
+<h2><span class="n">6</span>Size of the work</h2>
+<ul>
+  <li><b>Alternatives below the minimum:</b> medium. The sleeve's product rows, the editor, the implementation model (on the server and in the page), the sleeve file and the register. Self-contained.</li>
+  <li><b>Custodian / entity:</b> larger. The first card and the scenario; the Entities tab with its exclusion lists and history; a fourth rule field through editions, with the editor's count and grid; the exclusion check wherever a sleeve is offered (picker, custom sleeves, alternatives, overlays, export); the files and converter; and the register. It reaches everywhere a sleeve is served.</li>
+</ul>
+<p>Each would ship as its own update. I'd suggest <b>alternatives first</b>: it is smaller, and it removes most of today's below-minimum blocks straight away.</p>
+
+<p class="foot">Product names in the examples are placeholders. Nothing here has been built.</p>
+</div>
+</body>
+</html>

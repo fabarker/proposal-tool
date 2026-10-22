@@ -35,7 +35,7 @@ PLACEHOLDER = os.path.join(HERE, '..', '..', 'deckTemplate', 'ProposalDeck_Templ
 UID = 'pr_0123456789ab'
 BASIS = BasisInput(currency='USD', hedging='Hedged')
 MANDATE = MandateInput(topAccountSize=10_000_000.0, mandateSize=25_000_000.0,
-                       primaryPwa='J. Mercer')
+                       primaryPwa='J. Mercer', entity='gsi')
 _SECTIONS_URI = '{521415D9-36F7-43E2-AB2F-B90AF26B5E84}'
 #: the charges a PWA enters for the Fees Summary slide (D177)
 CHARGES = {'fxHighEdge': 5e6, 'fxLowEdge': 1e6, 'fxHighBps': 10, 'fxMidBps': 10, 'fxLowBps': 20,
@@ -816,7 +816,7 @@ def test_the_charges_go_from_the_scenario_to_the_deck_and_the_register(monkeypat
     client = TestClient(app)
     pwa = {'X-Kerberos': 'bob'}
     sid = client.post('/api/v1/scenario', headers=pwa, json={
-        'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9, 'primaryPwa': 'A. Castellanos — Madrid'},
+        'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9, 'primaryPwa': 'A. Castellanos — Madrid', 'entity': 'gsi'},
         'basis': {'currency': 'USD', 'hedging': 'Hedged'}}).json()['id']
     assert client.put('/api/v1/scenario/' + sid, headers=pwa,
                       json={'variant': sleeves.VARIANTS[0]}).status_code == 200

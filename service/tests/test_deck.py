@@ -28,7 +28,7 @@ GOLDEN = os.path.join(HERE, 'golden')
 UID = 'pr_0123456789ab'
 BASIS = BasisInput(currency='USD', hedging='Hedged')
 MANDATE = MandateInput(topAccountSize=10_000_000.0, mandateSize=25_000_000.0,
-                       primaryPwa='J. Mercer')
+                       primaryPwa='J. Mercer', entity='gsi')
 
 
 def _goldenCase():
@@ -919,7 +919,7 @@ def test_one_export_delivers_both_files_or_neither(monkeypatch):
 
     made = client.post('/api/v1/scenario', headers=pwa, json={
         'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9,
-                    'primaryPwa': 'A. Castellanos — Madrid'},
+                    'primaryPwa': 'A. Castellanos — Madrid', 'entity': 'gsi'},
         'basis': {'currency': 'USD', 'hedging': 'Hedged'}})
     assert made.status_code == 200, made.text
     sid = made.json()['id']

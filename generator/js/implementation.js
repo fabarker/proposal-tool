@@ -208,7 +208,11 @@ function heldFeeGroups() {
   implementedLines().forEach(function (category) {
     var sleeve = sleeveFor(category.name);
     ((sleeve && sleeve.products) || []).forEach(function (product) {
-      if (product.feeGroup && out.indexOf(product.feeGroup) === -1) out.push(product.feeGroup);
+      /* the product, and the one it gives way to below its minimum (D192):
+         the level does not turn on the amounts. Mirrors buildImplementationRows. */
+      [product, product.alternative].forEach(function (p) {
+        if (p && p.feeGroup && out.indexOf(p.feeGroup) === -1) out.push(p.feeGroup);
+      });
     });
   });
   return out;
@@ -636,7 +640,77 @@ function complete() {
   return counts.total > 0 && counts.filled === counts.total;
 }
 
+/* why a sleeve is greyed out at the custodian / entity (D193): "Not
+   available at GSBE: holds Product X." */
+function notAvailableText(barred) {
+  return 'Not available at ' + barred.entityName + ': holds ' + (barred.products || []).join(', ') + '.';
+}
+
 /* ---- rows: every printed figure from the printed weight (spec 8.4) ------ */
+/* one line of the table, as the library serves its product */
+function implItem(product, level) {
+  return {
+    productId: product.productId,
+    name: product.name, ticker: product.ticker, assetClass: product.assetClass,
+    style: product.style, vehicle: product.vehicle,
+    shareClass: product.shareClass || null, source: product.source,
+    liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
+    cost: product.productCost, feeGroup: product.feeGroup,
+    minimumInvestment: product.minimumInvestment,
+    /* not offered in the portfolio's currency (D182): the library
+       serves each product as that currency reads it */
+    notOffered: product.offered === false,
+    mgmt: managementFee(product.feeGroup, level)
+  };
+}
+
+/* A product the amount reaching it falls short of gives way to the one its
+   sleeve names below its minimum (D192): the whole line, at the product's
+   place, joining the alternative's own line where the sleeve holds it too.
+   Decided on the long-term notional, so the initial allocation holds the
+   same product; one not offered in the currency is not used. Returns the
+   lines as they now stand. Mirrors buildImplementationRows. */
+function holdAlternatives(groups, level) {
+  var out = [];
+  groups.forEach(function (group) {
+    var lines = [];
+    group.items.forEach(function (item) {
+      var alt = item.alternative;
+      delete item.alternative;
+      var short = alt && item.minimumInvestment && item.weight > 0
+        && item.notional < item.minimumInvestment && alt.offered !== false;
+      if (!short) { lines.push(item); return; }
+      var held = implItem(alt, level);
+      held.share = item.share; held.exact = item.exact;
+      held.weight = item.weight; held.notional = item.notional;
+      held.standsIn = [{ productId: item.productId, name: item.name,
+                         minimum: item.minimumInvestment, notional: item.notional }];
+      lines.push(held);
+    });
+    var merged = [], at = {};
+    lines.forEach(function (line) {
+      var first = at[line.productId];
+      if (!first) { at[line.productId] = line; merged.push(line); return; }
+      first.share += line.share; first.exact += line.exact;
+      first.weight = Math.round((first.weight + line.weight) * 100) / 100;
+      first.notional = Math.round(App.mandateSize() * first.weight / 100 / ROUND_TO) * ROUND_TO;
+      first.standsIn = (first.standsIn || []).concat(line.standsIn || []);
+    });
+    group.items = merged;
+    out = out.concat(merged);
+  });
+  return out;
+}
+
+/* what a line holds its product in place of (D192): "In place of Core Muni
+   SMA, which needs $5,000,000 and would hold $3,600,000 here." */
+function standsInText(item) {
+  return (item.standsIn || []).map(function (s) {
+    return 'In place of ' + s.name + ', which needs ' + money(s.minimum)
+      + ' and would hold ' + money(s.notional) + ' here.';
+  }).join(' ');
+}
+
 function rows() {
   var groups = [];
   var all = [];
@@ -652,21 +726,11 @@ function rows() {
     var items = [];
     if (sleeve) {
       sleeve.products.forEach(function (product) {
-        var item = {
-          productId: product.productId,
-          name: product.name, ticker: product.ticker, assetClass: product.assetClass,
-          style: product.style, vehicle: product.vehicle,
-          shareClass: product.shareClass || null, source: product.source,
-          liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
-          cost: product.productCost, feeGroup: product.feeGroup,
-          minimumInvestment: product.minimumInvestment,
-          /* not offered in the portfolio's currency (D182): the library
-             serves each product as that currency reads it */
-          notOffered: product.offered === false,
-          mgmt: managementFee(product.feeGroup, level),
-          share: product.weight,
-          exact: category.weightPct * product.weight
-        };
+        var item = implItem(product, level);
+        item.share = product.weight;
+        item.exact = category.weightPct * product.weight;
+        /* the product held instead below its minimum (D192) */
+        item.alternative = product.alternative || null;
         items.push(item);
         all.push(item);
       });
@@ -687,9 +751,12 @@ function rows() {
       : all.map(function (i) { return Math.round(i.exact * 100) / 100; });
     all.forEach(function (item, ix) {
       item.weight = printed[ix];
+      item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
+    });
+    all = holdAlternatives(groups, level);
+    all.forEach(function (item) {
       /* percent x percent = bp; null while the book is unpriced */
       item.wtdBp = item.mgmt === null ? null : (item.cost + item.mgmt) * item.weight;
-      item.notional = Math.round(App.mandateSize() * item.weight / 100 / ROUND_TO) * ROUND_TO;
       /* A position smaller than the product will accept is not a position
          (item 3); nor is a line the long-term book does not hold, kept only
          for its initial figures (D136). Mirrors buildImplementationRows. */
@@ -2817,10 +2884,14 @@ function renderRail() {
         + '<button type="button" class="sl-retry" data-slretry="'
         + App.esc(category.name) + '">Retry</button>';
     } else {
+      /* a sleeve holding a product the custodian / entity excludes stays
+         listed, greyed out with the reason (D193) */
       var options = lib.sleeves.map(function (s) {
+        var barred = s.notAvailable;
         return '<option value="' + App.esc(s.name) + '"'
-          + (App.sleeves()[category.name] === s.name ? ' selected' : '') + '>'
-          + App.esc(s.name) + '</option>';
+          + (App.sleeves()[category.name] === s.name ? ' selected' : '')
+          + (barred ? ' disabled title="' + App.esc(notAvailableText(barred)) + '"' : '') + '>'
+          + App.esc(s.name) + (barred ? ' — not available at ' + App.esc(barred.entityName) : '') + '</option>';
       }).join('');
       /* a held custom sleeve, or the way to build one where this person may
          (D170); one this person may not build is shown only while it is in
@@ -2848,6 +2919,9 @@ function renderRail() {
             + ' no longer this category\u2019s</span>'
             + (mayBuild ? '<button type="button" class="sl-edit" data-custedit="' + App.esc(category.name) + '">Edit</button>' : '')
           : '<span>Reading the custom sleeve\u2026</span>') + '</span>';
+    } else if (chosen && chosen.notAvailable) {
+      after = '<span class="sl-shape"><span class="bad">' + App.esc(notAvailableText(chosen.notAvailable))
+        + ' Choose another.</span></span>';
     } else if (chosen) {
       after = sleeveShapeText(sleeveShape(chosen, category.weightPct));
     }
@@ -3478,6 +3552,9 @@ function renderView() {
             ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
               + App.esc(money(item.notional)) + ', below its '
               + App.esc(money(item.minimumInvestment)) + ' minimum">below min</span>' : '')
+        + (item.standsIn && item.standsIn.length
+            ? ' <span class="bdg b-slack sm">alternative</span><span class="stands-in">'
+              + App.esc(standsInText(item)) + '</span>' : '')
         + (custom ? App.cpNameExtras(item, group) : '')
         + '</td>'
         + '<td class="num">' + (custom ? App.cpWeightCell(item) : App.num(item.weight, 2, '%')) + '</td>'

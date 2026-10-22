@@ -8,7 +8,8 @@ app. Five tables:
                     deletion - unique on (variant, category, name, label)
                     among the LIVE ones; variant names every type the
                     sleeve is offered under (D179)
-    sleeveProducts  sleeveId, position, productId, weight   (weight a fraction)
+    sleeveProducts  sleeveId, position, productId, weight   (weight a fraction),
+                    alternative (held below the product's minimum, D192)
     sleeveRules     sleeveId, position, currency, riskLevel, allocationType -
                     which strategic portfolios this row is for (D89)
     sleeveHistory   one append-only row per revision: the whole sleeve as it
@@ -108,7 +109,7 @@ import os
 import sqlite3
 import threading
 
-from . import products, sleeveRules, universe
+from . import entities, products, sleeveRules, universe
 from .types import ValidationError
 from .csvText import unwrapRows
 
@@ -136,11 +137,17 @@ _DEFAULT_SEED = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 #: every row becomes a fallback edition. SEED_COLUMNS_EDITIONS adds the label.
 SEED_COLUMNS = ['Variant', 'Category', 'Sleeve', 'ProductId', 'Weight']
 SEED_COLUMNS_EDITIONS = ['Variant', 'Category', 'Sleeve', 'Edition', 'ProductId', 'Weight']
+#: an optional seventh column after either header: the product a row's
+#: product gives way to where the amount reaching it is below its minimum
+ALTERNATIVE_COLUMN = 'BelowMinimum'
 #: The rules, one row per rule, in a file beside the seed (D89). A cell holds
 #: one value or several separated by |; blank means any. Several rows for one
 #: edition are alternatives - the edition applies where any of them matches.
 RULE_COLUMNS = ['Variant', 'Category', 'Sleeve', 'Edition', 'Currency', 'RiskLevel',
                 'AllocationType']
+#: an optional eighth column: the custodians / entities a rule is for, by
+#: name or id (D193); blank, or the column left out, means any
+ENTITY_COLUMN = 'Entity'
 NAME_MAX = 80
 WEIGHT_TOLERANCE = 1e-6
 
@@ -158,8 +165,10 @@ WEIGHT_TOLERANCE = 1e-6
 #: (D178); 10 a sleeve may be offered under several types, and a switch names
 #: the type it added, took away or gave a copy of its own (D179); 11 a product
 #: has a ticker and a minimum of its own in each base currency (D180); 12 a
-#: product has the currency it is issued in (D184).
-SCHEMA_VERSION = 12
+#: product has the currency it is issued in (D184); 13 a product in a sleeve
+#: may name the product held instead below its minimum (D192); 14 a rule may
+#: name the custodians / entities an edition is for (D193).
+SCHEMA_VERSION = 14
 
 #: how a sleeve offered under several types stores them (D179), and the word
 #: a file may use for every type
@@ -207,6 +216,7 @@ CREATE TABLE IF NOT EXISTS sleeveProducts (
     position  INTEGER NOT NULL,
     productId TEXT NOT NULL,
     weight    REAL NOT NULL,
+    alternative TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (sleeveId, productId)
 );
 CREATE TABLE IF NOT EXISTS sleeveRules (
@@ -215,6 +225,7 @@ CREATE TABLE IF NOT EXISTS sleeveRules (
     currency       TEXT NOT NULL DEFAULT '',
     riskLevel      TEXT NOT NULL DEFAULT '',
     allocationType TEXT NOT NULL DEFAULT '',
+    entity         TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (sleeveId, position)
 );
 CREATE TABLE IF NOT EXISTS sleeveHistory (
@@ -424,16 +435,31 @@ def fixedCategories() -> list:
     return autoSleeveCategories()
 
 
-def hasSleeve(category, variant) -> bool:
+def hasSleeve(category, variant, entity=None) -> bool:
     """Whether *variant* has a live, enabled sleeve in *category* - any
     edition of it, labelled or not. What decides whether an overlay into
     that category is applied under the type (D191); listSleeves without a
-    key serves fallbacks only, so it cannot answer this."""
+    key serves fallbacks only, so it cannot answer this.
+
+    At an *entity* (D193), only an edition that may be for it - no rules, or
+    a rule naming no entity or this one - and holds nothing it excludes."""
     if not variantExists(variant):
         return False
+    barred = entities.excluded(entity)
     conn = _connect()
     try:
-        return any(not _column(row, 'disabledAt') for row in _sleeveRows(conn, variant, category))
+        for row in _sleeveRows(conn, variant, category):
+            if _column(row, 'disabledAt'):
+                continue
+            if entity is None:
+                return True
+            rules = _ruleRows(conn, row['id'])
+            if rules and not any(not r.get('entity') or entity in r['entity'] for r in rules):
+                continue
+            if any(p['productId'] in barred for p in _productRows(conn, row['id'])):
+                continue
+            return True
+        return False
     finally:
         conn.close()
 
@@ -706,6 +732,23 @@ def _migrate(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute("ALTER TABLE products ADD COLUMN issueCurrency TEXT NOT NULL DEFAULT ''")
 
+    # 12 -> 13 (D192): a product in a sleeve may name the product held instead
+    # where the amount reaching it is below its minimum; blank for every row
+    # already here, which holds its own product whatever the amount
+    if _tableExists(conn, 'sleeveProducts'):
+        held = {r['name'] for r in conn.execute('PRAGMA table_info(sleeveProducts)')}
+        if 'alternative' not in held:
+            with conn:
+                conn.execute("ALTER TABLE sleeveProducts ADD COLUMN alternative TEXT NOT NULL DEFAULT ''")
+
+    # 13 -> 14 (D193): a rule may name the custodians / entities an edition
+    # is for; blank for every rule already here, which is for any entity
+    if _tableExists(conn, 'sleeveRules'):
+        ruleColumns = {r['name'] for r in conn.execute('PRAGMA table_info(sleeveRules)')}
+        if 'entity' not in ruleColumns:
+            with conn:
+                conn.execute("ALTER TABLE sleeveRules ADD COLUMN entity TEXT NOT NULL DEFAULT ''")
+
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()
@@ -788,11 +831,14 @@ def _tableRows(path: str, sheetName: str = None):
 
 def readSeedRows(path: str):
     """Rows of the interchange shape from a CSV or XLSX:
-    (variant, category, sleeve, edition, productId, weight).
+    (variant, category, sleeve, edition, productId, weight, alternative).
 
     Both headers are read: the one delivered before editions existed, whose
     rows become fallback editions (edition ''), and the one with the Edition
-    column. A reader is told which it has so the two never get confused."""
+    column. A reader is told which it has so the two never get confused.
+    Either may carry a BelowMinimum column after its own: the product held
+    instead where the amount reaching the row's product is below its
+    minimum (D192); without it every row's alternative is ''."""
     head, body = _tableRows(path, SEED_SHEET)
     if head[:6] == SEED_COLUMNS_EDITIONS:
         width, editions = 6, True
@@ -801,6 +847,7 @@ def readSeedRows(path: str):
     else:
         raise ValueError('{}: header is {!r}, expected {!r} or {!r}'.format(
             path, head, SEED_COLUMNS_EDITIONS, SEED_COLUMNS))
+    alternatives = len(head) > width and str(head[width] or '').strip() == ALTERNATIVE_COLUMN
     for row in body:
         cells = ['' if v is None else str(v).strip() for v in row[:width]]
         while len(cells) < width:
@@ -811,6 +858,8 @@ def readSeedRows(path: str):
             cells[5] = float(cells[5])
         except ValueError:
             raise ValueError('{}: weight {!r} is not a number'.format(' / '.join(cells[:4]), cells[5]))
+        alternative = row[width] if alternatives and len(row) > width else None
+        cells.append('' if alternative is None else str(alternative).strip())
         yield tuple(cells)
 
 
@@ -823,19 +872,22 @@ def workbookRules(path: str) -> bool:
 
 
 def readRuleRows(path: str):
-    """Rules from a CSV or XLSX with RULE_COLUMNS: one dict per row, the three
-    fields as lists (blank means any)."""
+    """Rules from a CSV or XLSX with RULE_COLUMNS: one dict per row, the
+    fields as lists (blank means any), and the entities from an Entity
+    column after them where the file has one (D193)."""
     head, body = _tableRows(path, RULES_SHEET)
     if head[:7] != RULE_COLUMNS:
         raise ValueError('{}: header is {!r}, expected {!r}'.format(path, head, RULE_COLUMNS))
+    width = 8 if len(head) > 7 and str(head[7] or '').strip() == ENTITY_COLUMN else 7
     for row in body:
-        cells = ['' if v is None else str(v).strip() for v in row[:7]]
-        while len(cells) < 7:
+        cells = ['' if v is None else str(v).strip() for v in row[:width]]
+        while len(cells) < 8:
             cells.append('')
         yield {'variant': cells[0], 'category': cells[1], 'sleeve': cells[2], 'edition': cells[3],
                'currency': sleeveRules.parseCell(cells[4]),
                'riskLevel': sleeveRules.parseCell(cells[5]),
-               'allocationType': sleeveRules.parseCell(cells[6])}
+               'allocationType': sleeveRules.parseCell(cells[6]),
+               'entity': sleeveRules.parseCell(cells[7])}
 
 
 # ------------------------------------------------------------ validation ---
@@ -844,7 +896,7 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
               label='', rules=None):
     """Everything an edition has to satisfy to be saved. Raises the first
     failure as a ValidationError naming the field; returns the cleaned
-    (name, note, [(productId, weight)], label, rules).
+    (name, note, [(productId, weight, alternative)], label, rules).
 
     The edition rules (D89): a labelled edition carries rules and a fallback
     carries none, never the other way round; labels are unique within a name;
@@ -931,13 +983,14 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         # one NAME per type - its editions are all that one sleeve
         if any(r['name'] != name for r in near):
             raise ValidationError(
-                'category', '{} holds exactly one sleeve under each implementation type - '
+                'category', '{} holds one sleeve at most under each implementation type - '
                 'it is attached automatically by its overlay. Edit the one it has.'.format(category))
 
     cleaned, seen, total = [], set(), 0.0
     for entry in productRows or []:
         pid = str(entry.get('productId', '') if isinstance(entry, dict) else entry[0]).strip()
         raw = entry.get('weight') if isinstance(entry, dict) else entry[1]
+        alternative = _alternativeOf(entry, pid)
         if not pid:
             raise ValidationError('products', 'Every row needs a product from the catalogue.')
         if pid in seen:
@@ -951,7 +1004,7 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         if weight <= 0:
             raise ValidationError('weights', 'Weights must be greater than zero.')
         seen.add(pid)
-        cleaned.append((pid, weight))
+        cleaned.append((pid, weight, alternative))
         total += weight
     if not cleaned:
         raise ValidationError('products', 'A sleeve needs at least one product.')
@@ -959,6 +1012,36 @@ def _validate(conn, variant, category, name, note, productRows, sleeveId=None,
         raise ValidationError(
             'weights', 'Weights sum to {}%; a sleeve must sum to exactly 100%.'.format(_pctText(total * 100.0)))
     return name, note, cleaned, label, rules, stored
+
+
+def _alternativeOf(entry, pid) -> str:
+    """The product a row names to hold instead where the amount reaching
+    *pid* is below its minimum (D192): '' for none. It must be in the
+    catalogue and be another product; it may be one the sleeve holds too,
+    whose line the amount then joins."""
+    raw = entry.get('alternative') if isinstance(entry, dict) else (
+        entry[2] if len(entry) > 2 else '')
+    if raw is not None and not isinstance(raw, str):
+        raise ValidationError('products', 'Name the product held below the minimum by its id.')
+    alternative = (raw or '').strip()
+    if not alternative:
+        return ''
+    if alternative == pid:
+        raise ValidationError('products', 'A product cannot be its own alternative below its minimum.')
+    if not products.has(alternative):
+        raise ValidationError('products', 'Product {!r}, named to hold below the minimum, is not in '
+                                          'the catalogue.'.format(alternative))
+    return alternative
+
+
+def _held(rows) -> list:
+    """Product rows as the store reads them, in the cleaned shape."""
+    return [(r['productId'], r['weight'], _column(r, 'alternative') or '') for r in rows]
+
+
+def _asRows(rows) -> list:
+    """Product rows as the store reads them, in the shape a save takes."""
+    return [{'productId': p, 'weight': w, 'alternative': a} for p, w, a in _held(rows)]
 
 
 #: labels the console uses for the edition without rules (D158)
@@ -1004,14 +1087,15 @@ def _sleeveRows(conn, variant=None, category=None, deleted=False):
 
 def _productRows(conn, sleeveId):
     return conn.execute(
-        'SELECT productId, weight, position FROM sleeveProducts WHERE sleeveId = ? ORDER BY position',
+        'SELECT productId, weight, position, alternative FROM sleeveProducts WHERE sleeveId = ? '
+        'ORDER BY position',
         (sleeveId,)).fetchall()
 
 
 def _ruleRows(conn, sleeveId) -> list:
     """An edition's rules in the canonical shape: [] for the fallback."""
     out = []
-    for r in conn.execute('SELECT currency, riskLevel, allocationType FROM sleeveRules '
+    for r in conn.execute('SELECT currency, riskLevel, allocationType, entity FROM sleeveRules '
                           'WHERE sleeveId = ? ORDER BY position', (sleeveId,)):
         rule = {}
         for field in sleeveRules.FIELDS:
@@ -1023,7 +1107,7 @@ def _ruleRows(conn, sleeveId) -> list:
     return out
 
 
-def _resolveEdition(conn, rows, key):
+def _resolveEdition(conn, rows, key, entity=None):
     """The one row of a name to serve for *key*: the edition whose rules
     match, else the fallback, else None. With no key only the fallback can
     answer. More than one match is a library fault - the universe moved under
@@ -1035,7 +1119,7 @@ def _resolveEdition(conn, rows, key):
         if not rules:
             if fallback is None:
                 fallback = row
-        elif key is not None and sleeveRules.matches(rules, key):
+        elif key is not None and sleeveRules.matches(rules, key, entity):
             hits.append(row)
     if len(hits) == 1:
         return hits[0]
@@ -1046,13 +1130,18 @@ def _resolveEdition(conn, rows, key):
 
 def _served(row, productRows):
     """The shape a sleeve has always been served in - name and fully hydrated
-    products - or None when a product is missing from the catalogue."""
+    products - or None when a product is missing from the catalogue. Each
+    product carries the one held instead below its minimum, hydrated, or None
+    (D192); one the catalogue no longer has is None, and the console lists it
+    as a problem."""
     served = []
     for pr in productRows:
         product = products.get(pr['productId'])
         if product is None:
             return None
         product['weight'] = pr['weight']
+        alternative = _column(pr, 'alternative') or ''
+        product['alternative'] = products.get(alternative) if alternative else None
         served.append(product)
     return {'id': row['id'], 'name': row['name'], 'note': row['note'], 'products': served}
 
@@ -1066,8 +1155,14 @@ def _entry(conn, row, productRows, revisions=None):
         product = products.get(pr['productId'])
         if product is None:
             problems.append('Product {!r} is no longer in the catalogue.'.format(pr['productId']))
+        alternative = _column(pr, 'alternative') or ''
+        held = products.get(alternative) if alternative else None
+        if alternative and held is None:
+            problems.append('Product {!r}, held below the minimum of {}, is no longer in the '
+                            'catalogue.'.format(alternative, (product or {}).get('name') or pr['productId']))
         hydrated.append({'productId': pr['productId'], 'weight': pr['weight'],
-                         'position': pr['position'], 'product': product})
+                         'position': pr['position'], 'product': product,
+                         'alternative': alternative, 'alternativeProduct': held})
         total += pr['weight']
     if not productRows:
         problems.append('The sleeve has no products.')
@@ -1132,7 +1227,7 @@ def _column(row, name):
     return row[name] if name in row.keys() else None
 
 
-def listSleeves(category: str, variant: str, key=None) -> list:
+def listSleeves(category: str, variant: str, key=None, entity=None) -> list:
     """The library for one category under one type, in the shape every
     consumer has always read: one entry per NAME, well-formed sleeves only.
 
@@ -1151,9 +1246,17 @@ def listSleeves(category: str, variant: str, key=None) -> list:
 
     A disabled sleeve (D169) is left out as though it were not there: a
     disabled edition lets the name fall back to its fallback edition, and a
-    name whose every edition is disabled is not offered."""
+    name whose every edition is disabled is not offered.
+
+    *entity* is the custodian / entity the proposal is for (D193): an edition
+    may be for particular entities, and the one resolved is judged against
+    the entity's exclusions. One holding a product the entity excludes is
+    still served, saying so under ``notAvailable`` - the picker greys it out
+    with the reason - and an alternative the entity excludes is not one
+    there."""
     if not variantExists(variant):
         return []
+    barred = entities.excluded(entity)
     conn = _connect()
     try:
         byName, order = {}, []
@@ -1166,19 +1269,31 @@ def listSleeves(category: str, variant: str, key=None) -> list:
             byName[row['name']].append(row)
         out = []
         for name in order:
-            row = _resolveEdition(conn, byName[name], key)
+            row = _resolveEdition(conn, byName[name], key, entity)
             if row is None:
                 continue
             served = _served(row, _productRows(conn, row['id']))
-            if served is not None:
-                out.append(served)
+            if served is None:
+                continue
+            if barred:
+                held = [p['name'] for p in served['products'] if p['productId'] in barred]
+                if held:
+                    served['notAvailable'] = {'entity': entity, 'entityName': entities.name(entity),
+                                              'products': held}
+                for product in served['products']:
+                    if product.get('alternative') and product['alternative']['productId'] in barred:
+                        product['alternative'] = None
+            out.append(served)
         return out
     finally:
         conn.close()
 
 
-def sleeveExists(category: str, name, variant: str, key=None) -> bool:
-    return any(s['name'] == name for s in listSleeves(category, variant, key))
+def sleeveExists(category: str, name, variant: str, key=None, entity=None) -> bool:
+    """Whether *name* is offered for *key* at *entity* - and may be held
+    there: a sleeve greyed out at the entity (D193) is not."""
+    return any(s['name'] == name and not s.get('notAvailable')
+               for s in listSleeves(category, variant, key, entity))
 
 
 def listAll(variant: str = None) -> list:
@@ -1249,14 +1364,19 @@ def _packProducts(cleaned) -> str:
     A revision is a photograph, never a thing to query across: it is read back
     whole, for one sleeve, to be shown or re-applied. Rows would buy nothing
     and would need the same delete-and-reinsert dance the live table already
-    does. Order is the sleeve's own order and is part of what is preserved."""
-    return json.dumps([[pid, float(weight)] for pid, weight in cleaned])
+    does. Order is the sleeve's own order and is part of what is preserved.
+    A row naming an alternative below its minimum carries it third (D192);
+    the rest stay pairs, as every revision written before it is."""
+    return json.dumps([[held[0], float(held[1])] + ([held[2]] if len(held) > 2 and held[2] else [])
+                       for held in cleaned])
 
 
 def _unpackProducts(packed):
+    """[(productId, weight, alternative)] from a revision, '' for none."""
     try:
-        return [(str(pid), float(weight)) for pid, weight in json.loads(packed or '[]')]
-    except (ValueError, TypeError):
+        return [(str(held[0]), float(held[1]), str(held[2]) if len(held) > 2 else '')
+                for held in json.loads(packed or '[]')]
+    except (ValueError, TypeError, IndexError):
         return []
 
 
@@ -1311,8 +1431,10 @@ def _changes(previous, current) -> list:
         out.append('Rules now: {}'.format(sleeveRules.describe(now)) if now else 'Rules cleared')
     if (previous['note'] or '') != (current['note'] or ''):
         out.append('Note changed' if current['note'] else 'Note cleared')
-    was = dict(_unpackProducts(previous['products']))
-    now = dict(_unpackProducts(current['products']))
+    wasHeld = _unpackProducts(previous['products'])
+    nowHeld = _unpackProducts(current['products'])
+    was = {p: w for p, w, _ in wasHeld}
+    now = {p: w for p, w, _ in nowHeld}
     for pid in [p for p in now if p not in was]:
         out.append('Added {} at {:g}%'.format(_productLabel(pid), now[pid] * 100.0))
     for pid in [p for p in was if p not in now]:
@@ -1320,6 +1442,14 @@ def _changes(previous, current) -> list:
     for pid in [p for p in now if p in was and not _weightsMatch(was[p], now[p])]:
         out.append('{} {:g}% to {:g}%'.format(
             _productLabel(pid), was[pid] * 100.0, now[pid] * 100.0))
+    # the product held instead below the minimum (D192)
+    wasAlt = {p: a for p, _, a in wasHeld}
+    for pid, _, alt in nowHeld:
+        if pid in was and wasAlt.get(pid, '') != alt:
+            out.append('{}: below its minimum, holds {}'.format(_productLabel(pid), _productLabel(alt))
+                       if alt else '{}: no alternative below its minimum'.format(_productLabel(pid)))
+        elif pid not in was and alt:
+            out.append('{}: below its minimum, holds {}'.format(_productLabel(pid), _productLabel(alt)))
     return out
 
 
@@ -1330,8 +1460,9 @@ def _productLabel(productId) -> str:
 
 def _historyEntry(row, previous, currentRevision) -> dict:
     hydrated = []
-    for pid, weight in _unpackProducts(row['products']):
-        hydrated.append({'productId': pid, 'weight': weight, 'product': products.get(pid)})
+    for pid, weight, alternative in _unpackProducts(row['products']):
+        hydrated.append({'productId': pid, 'weight': weight, 'product': products.get(pid),
+                         'alternative': alternative})
     return {
         'sleeveId': row['sleeveId'], 'revision': row['revision'], 'action': row['action'],
         'variant': typesLabel(row['variant']), 'variants': typesOf(row['variant']),
@@ -1557,17 +1688,20 @@ def activityRows(**filters) -> list:
 def _writeProducts(conn, sleeveId, cleaned):
     conn.execute('DELETE FROM sleeveProducts WHERE sleeveId = ?', (sleeveId,))
     conn.executemany(
-        'INSERT INTO sleeveProducts (sleeveId, position, productId, weight) VALUES (?, ?, ?, ?)',
-        [(sleeveId, position, pid, weight) for position, (pid, weight) in enumerate(cleaned)])
+        'INSERT INTO sleeveProducts (sleeveId, position, productId, weight, alternative) '
+        'VALUES (?, ?, ?, ?, ?)',
+        [(sleeveId, position, held[0], held[1], held[2] if len(held) > 2 else '')
+         for position, held in enumerate(cleaned)])
 
 
 def _writeRules(conn, sleeveId, rules):
     conn.execute('DELETE FROM sleeveRules WHERE sleeveId = ?', (sleeveId,))
     conn.executemany(
-        'INSERT INTO sleeveRules (sleeveId, position, currency, riskLevel, allocationType) '
-        'VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO sleeveRules (sleeveId, position, currency, riskLevel, allocationType, entity) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
         [(sleeveId, position, sleeveRules.cell(r.get('currency')),
-          sleeveRules.cell(r.get('riskLevel')), sleeveRules.cell(r.get('allocationType')))
+          sleeveRules.cell(r.get('riskLevel')), sleeveRules.cell(r.get('allocationType')),
+          sleeveRules.cell(r.get('entity')))
          for position, r in enumerate(rules or [])])
 
 
@@ -1695,12 +1829,12 @@ def updateSleeve(sleeveId, name, productRows, note='', user='', action='updated'
             conn, row['variant'], row['category'], name, note, productRows, sleeveId=sleeveId,
             label=label, rules=rules)
         stamp = _now()
-        before = [(r['productId'], r['weight']) for r in _productRows(conn, sleeveId)]
+        before = _held(_productRows(conn, sleeveId))
         beforeRules = _ruleRows(conn, sleeveId)
         changed = (name != row['name'] or label != row['label'] or note != row['note']
                    or sleeveRules.pack(rules) != sleeveRules.pack(beforeRules)
                    or len(before) != len(cleaned)
-                   or any(a[0] != b[0] or not _weightsMatch(a[1], b[1])
+                   or any(a[0] != b[0] or not _weightsMatch(a[1], b[1]) or a[2] != b[2]
                           for a, b in zip(before, cleaned)))
         kept = None
         with conn:
@@ -1768,7 +1902,7 @@ def deleteSleeve(sleeveId, user='') -> dict:
             raise ValidationError('id', 'That sleeve no longer exists.')
         if row['deletedAt']:
             raise ValidationError('id', 'That sleeve is already out of the library.')
-        cleaned = [(r['productId'], r['weight']) for r in _productRows(conn, sleeveId)]
+        cleaned = _held(_productRows(conn, sleeveId))
         stamp = _now()
         with conn:
             conn.execute('UPDATE sleeves SET deletedBy = ?, deletedAt = ? WHERE id = ?',
@@ -1886,8 +2020,7 @@ def _switch(conn, row, action, variant, detail, user, stamp):
 
 def _revalidate(conn, row, variant):
     """The edition as it stands, checked as offered under *variant*."""
-    productRows = [{'productId': r['productId'], 'weight': r['weight']}
-                   for r in _productRows(conn, row['id'])]
+    productRows = _asRows(_productRows(conn, row['id']))
     return _validate(conn, variant, row['category'], row['name'], row['note'], productRows,
                      sleeveId=row['id'], label=row['label'], rules=_ruleRows(conn, row['id']))
 
@@ -1990,8 +2123,7 @@ def restoreSleeve(sleeveId, user='') -> dict:
             raise ValidationError('id', 'That sleeve no longer exists.')
         if not row['deletedAt']:
             raise ValidationError('id', 'That sleeve is already in the library.')
-        productRows = [{'productId': r['productId'], 'weight': r['weight']}
-                       for r in _productRows(conn, sleeveId)]
+        productRows = _asRows(_productRows(conn, sleeveId))
         name, note, cleaned, label, rules, _ = _validate(
             conn, row['variant'], row['category'], row['name'], row['note'], productRows,
             sleeveId=sleeveId, label=row['label'], rules=_ruleRows(conn, sleeveId))
@@ -2028,8 +2160,7 @@ def restoreSleeves(ids, user='') -> list:
                 raise ValidationError('ids', 'Sleeve {} no longer exists.'.format(sleeveId))
             if not row['deletedAt']:
                 raise ValidationError('ids', '{} is already in the library.'.format(row['name']))
-            productRows = [{'productId': r['productId'], 'weight': r['weight']}
-                           for r in _productRows(conn, sleeveId)]
+            productRows = _asRows(_productRows(conn, sleeveId))
             name, note, cleaned, label, rules, _ = _validate(
                 conn, row['variant'], row['category'], row['name'], row['note'], productRows,
                 sleeveId=sleeveId, label=row['label'], rules=_ruleRows(conn, sleeveId))
@@ -2077,8 +2208,8 @@ def revertSleeve(sleeveId, number: int, user='', base=None) -> dict:
     stored = revision(sleeveId, number)
     if stored is None:
         raise ValidationError('revision', 'Revision {} does not exist for this sleeve.'.format(number))
-    productRows = [{'productId': p['productId'], 'weight': p['weight']}
-                   for p in stored['products']]
+    productRows = [{'productId': p['productId'], 'weight': p['weight'],
+                    'alternative': p.get('alternative') or ''} for p in stored['products']]
     return updateSleeve(sleeveId, stored['name'], productRows, note=stored['note'],
                         user=user, action='reverted', label=stored['label'],
                         rules=stored['rules'], base=base)
@@ -2088,22 +2219,24 @@ def revertSleeve(sleeveId, number: int, user='', base=None) -> dict:
 
 def exportRows() -> list:
     """The whole library in the interchange shape, one row per product, with
-    the edition label (SEED_COLUMNS_EDITIONS)."""
+    the edition label (SEED_COLUMNS_EDITIONS) and the product held instead
+    below the minimum, or '' (ALTERNATIVE_COLUMN, D192)."""
     conn = _connect()
     try:
         out = []
         for row in _sleeveRows(conn):
             for pr in _productRows(conn, row['id']):
                 out.append((fileTypes(row['variant']), row['category'], row['name'], row['label'],
-                            pr['productId'], pr['weight']))
+                            pr['productId'], pr['weight'], pr['alternative'] or ''))
         return out
     finally:
         conn.close()
 
 
 def exportRuleRows() -> list:
-    """Every live edition's rules in the interchange shape (RULE_COLUMNS),
-    one row per rule; a fallback has none and appears nowhere here."""
+    """Every live edition's rules in the interchange shape (RULE_COLUMNS and
+    ENTITY_COLUMN, the entities by name), one row per rule; a fallback has
+    none and appears nowhere here."""
     conn = _connect()
     try:
         out = []
@@ -2112,7 +2245,8 @@ def exportRuleRows() -> list:
                 out.append((fileTypes(row['variant']), row['category'], row['name'], row['label'],
                             sleeveRules.cell(rule.get('currency')),
                             sleeveRules.cell(rule.get('riskLevel')),
-                            sleeveRules.cell(rule.get('allocationType'))))
+                            sleeveRules.cell(rule.get('allocationType')),
+                            sleeveRules.cell([entities.name(e) for e in rule.get('entity') or []])))
         return out
     finally:
         conn.close()
@@ -2145,12 +2279,14 @@ def _importInto(conn, rows, replace, user, strict, action='imported', ruleRows=N
             return str(variant or '').strip()
 
     grouped, order = {}, []
-    for variant, category, name, label, pid, weight in rows:
+    for held in rows:
+        variant, category, name, label, pid, weight = held[:6]
+        alternative = held[6] if len(held) > 6 else ''
         key = (stored(variant), category, name, label)
         if key not in grouped:
             grouped[key] = []
             order.append(key)
-        grouped[key].append({'productId': pid, 'weight': weight})
+        grouped[key].append({'productId': pid, 'weight': weight, 'alternative': alternative or ''})
     rulesFor = {}
     for r in ruleRows or []:
         key = (stored(r['variant']), r['category'], r['sleeve'], r['edition'])
@@ -2171,7 +2307,7 @@ def _importInto(conn, rows, replace, user, strict, action='imported', ruleRows=N
                              (user, stamp, row['id']))
                 _recordHistory(conn, row['id'], 'deleted', row['variant'], row['category'],
                                row['name'], row['note'],
-                               [(r['productId'], r['weight']) for r in _productRows(conn, row['id'])],
+                               _held(_productRows(conn, row['id'])),
                                user, stamp, label=row['label'], rules=_ruleRows(conn, row['id']))
         for key in order:
             variant, category, name, label = key
@@ -2185,7 +2321,8 @@ def _importInto(conn, rows, replace, user, strict, action='imported', ruleRows=N
                     conn, variant, category, name, '', productRows,
                     sleeveId=existing['id'] if existing else None, label=label, rules=rules)
             else:
-                cleaned = [(p['productId'], float(p['weight'])) for p in productRows]
+                cleaned = [(p['productId'], float(p['weight']), p.get('alternative') or '')
+                           for p in productRows]
                 rules = sleeveRules.normalise(rules)
                 if rules and not label:
                     raise ValidationError('rules', 'The fallback edition of {} in {} under {} '

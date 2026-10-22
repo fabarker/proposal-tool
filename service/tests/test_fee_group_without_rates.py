@@ -91,7 +91,7 @@ def test_a_group_with_a_dash_in_every_box_takes_products_and_prices_nothing(stor
     with pytest.raises(ValidationError) as caught:
         rules.validateCustomFees({'RDR': {'CFI SMA': 0.5}},
                                  MandateInput(topAccountSize=5e6, mandateSize=5e6,
-                                              primaryPwa='A. Castellanos — Madrid'))
+                                              primaryPwa='A. Castellanos — Madrid', entity='gsi'))
     assert 'no rates for it yet' in caught.value.message
     # the file writes it as it was given, and loads back the same
     exported = list(csv.reader(io.StringIO(feeCard.exportCsv())))
@@ -141,7 +141,7 @@ def test_a_priced_proposal_holding_one_is_unpriced_and_not_delivered(store):
             assert (item['managementFee'] is None) == (item['feeGroup'] == empty)
 
     state = scenarioStore.createScenario(
-        MandateInput(topAccountSize=5e9, mandateSize=5e9, primaryPwa='A. Castellanos — Madrid'),
+        MandateInput(topAccountSize=5e9, mandateSize=5e9, primaryPwa='A. Castellanos — Madrid', entity='gsi'),
         BasisInput(currency='USD', hedging='Hedged'), createdBy='alice')
     scenarioStore.updateScenario(state['id'], variant=MA)
     scenarioStore.recordColumn(state['id'], PortfolioKey('USD', 'Moderate', 'Full', False), 'base')

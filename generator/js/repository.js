@@ -75,8 +75,8 @@ var fund = {
 
 /* the three fields an edition's rules may constrain (D89), in the order
    the builder shows them, and the words it shows them under */
-var RULE_FIELDS = ['currency', 'riskLevel', 'allocationType'];
-var RULE_LABELS = { currency: 'Currency', riskLevel: 'Risk level', allocationType: 'Allocation' };
+var RULE_FIELDS = ['currency', 'riskLevel', 'allocationType', 'entity'];
+var RULE_LABELS = { currency: 'Currency', riskLevel: 'Risk level', allocationType: 'Allocation', entity: 'Entity' };
 
 /* The catalogue view's own state (D63). It survives a switch to the other
    view, and every part of it encodes into the URL, so a view is a link. */
@@ -1063,7 +1063,8 @@ function draftFrom(entry) {
     id: entry.id, name: entry.name, note: entry.note || '',
     label: entry.label || '', rules: copyRules(entry.rules),
     products: entry.products.map(function (row) {
-      return { productId: row.productId, weightPct: Math.round(row.weight * 10000) / 100 };
+      return { productId: row.productId, weightPct: Math.round(row.weight * 10000) / 100,
+               alternative: row.alternative || '' };
     })
   };
 }
@@ -1179,7 +1180,10 @@ function ruleIsEmpty(r) {
 function describeRules(rules) {
   return (rules || []).map(function (r) {
     return RULE_FIELDS.filter(function (f) { return (r[f] || []).length; })
-      .map(function (f) { return RULE_LABELS[f].toLowerCase() + ' ' + r[f].join(' | '); }).join('; ');
+      .map(function (f) {
+        var names = f === 'entity' ? r[f].map(function (v) { return edValueLabel('entity', v, repo.data && repo.data.ruleLabels); }) : r[f];
+        return RULE_LABELS[f].toLowerCase() + ' ' + names.join(' | ');
+      }).join('; ');
   }).join('  OR  ');
 }
 /* the live editions of one name in one book and category, the draft's own
@@ -1365,7 +1369,7 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = ['catalogue', 'fees', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(view) !== -1 ? view : 'sleeves';
+  repo.view = ['catalogue', 'fees', 'entities', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(view) !== -1 ? view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -1381,6 +1385,7 @@ function switchView(view) {
   /* an open product form, or a card being edited, keeps its changes (D165, D166) */
   if (repo.view === 'catalogue' && prdDirty()) { prd.leaving = true; render(); prdFocus('#prdSave'); return; }
   if (repo.view === 'fees' && feeDirty()) { fct.flash = 'Save or discard the changes to the card first.'; render(); return; }
+  if (repo.view === 'entities' && entDirty()) { ent.flash = 'Save or discard the changes to the entities first.'; render(); return; }
   if (repo.view === 'catalogue') { prdStop(); imp = null; }
   repo.view = view; cat.openChip = null; cat.detail = null;
   repo.historyOpen = false; repo.history = null; repo.openRevision = null;
@@ -1393,6 +1398,7 @@ function switchView(view) {
   if (view === 'uncalled' && !fund.loaded) loadFunding();
   if (view === 'overlays' && !ovl.loaded) loadOverlays();
   if (view === 'fees' && !fct.loaded) loadFeeCard();
+  if (view === 'entities' && !ent.history) loadEntityHistory();
 }
 
 async function api(method, path, body) {
@@ -1606,7 +1612,8 @@ async function saveDraft() {
     label: d.edition ? svNormName(d.label) : d.label.trim(),
     rules: d.edition ? cleanRules(d.rules).filter(function (r) { return !ruleIsEmpty(r); }) : cleanRules(d.rules),
     products: d.products.map(function (r) {
-      return { productId: r.productId, weight: Math.round(r.weightPct * 10000) / 1000000 };
+      return { productId: r.productId, weight: Math.round(r.weightPct * 10000) / 1000000,
+               alternative: r.alternative || '' };
     })
   };
   repo.saving = true; repo.fieldError = null; repo.error = null; render();
@@ -1978,6 +1985,8 @@ function pickerMatches() {
 function choose(productId) {
   var row = repo.picker.row;
   repo.draft.products[row].productId = productId;
+  /* a product is never its own alternative below its minimum (D192) */
+  if (repo.draft.products[row].alternative === productId) repo.draft.products[row].alternative = '';
   markDirty(); repo.fieldError = null;
   closePicker(false); render();
   var w = document.querySelector('[data-repoweight="' + row + '"]'); if (w) { w.focus(); w.select(); }
@@ -2043,6 +2052,7 @@ function productsHtml() {
       + (r.weightText != null && String(r.weightText).trim() !== '' && !isFinite(r.weightPct) ? ' aria-invalid="true"' : '')
       + ' value="' + (r.weightText != null ? esc(r.weightText) : isFinite(r.weightPct) ? esc(money2(r.weightPct)) : '') + '">'
       + '<button type="button" class="repo-rm" data-reporm="' + i + '" aria-label="Remove product">×</button>'
+      + altChoiceHtml(r, i, p)
       + '</div>';
   }).join('');
   return '<div class="repo-prods">'
@@ -2050,6 +2060,32 @@ function productsHtml() {
     + rows
     + '<div class="repo-tot" id="repoTotal">' + totalHtml() + '</div>'
     + '</div>';
+}
+
+/* The product held instead where the amount reaching a row's product is
+   below its minimum (D192). Offered on a row whose product has a minimum
+   in some currency, or already names one; the choice is any other product
+   in the catalogue. */
+function altHasMinimum(p) {
+  if (!p) return false;
+  if (p.minimumInvestment > 0) return true;
+  var own = p.currencies || {};
+  return Object.keys(own).some(function (c) { return (own[c] || {}).minimumInvestment > 0; });
+}
+function altOffered(p, r) { return altHasMinimum(p) || !!(r && r.alternative); }
+function altChoiceHtml(r, i, p) {
+  if (!p || !altOffered(p, r)) return '';
+  var options = (repo.data.products || []).filter(function (x) { return x.productId !== r.productId; })
+    .slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+  var known = !r.alternative || options.some(function (x) { return x.productId === r.alternative; });
+  return '<label class="repo-alt"><span>If below its minimum, hold</span>'
+    + '<select data-repoalt="' + i + '" aria-label="Product held instead when ' + esc(p.name) + ' is below its minimum">'
+    + '<option value=""' + (r.alternative ? '' : ' selected') + '>No alternative: flag it</option>'
+    + (known ? '' : '<option value="' + esc(r.alternative) + '" selected>' + esc(r.alternative) + ' (not in the catalogue)</option>')
+    + options.map(function (x) {
+        return '<option value="' + esc(x.productId) + '"' + (x.productId === r.alternative ? ' selected' : '') + '>'
+          + esc(x.name + (x.vehicle ? ' · ' + x.vehicle : '') + (x.minimumInvestment > 0 ? ' · min ' + catMoney(x.minimumInvestment) : '')) + '</option>';
+      }).join('') + '</select></label>';
 }
 
 function totalHtml() {
@@ -2640,13 +2676,14 @@ function svDraftSig(d) {
   if (!d) return '';
   var rules = (d.rules || []).map(function (r) {
     var out = {};
-    ['currency', 'riskLevel', 'allocationType'].forEach(function (f) { if ((r[f] || []).length) out[f] = r[f].slice(); });
+    RULE_FIELDS.forEach(function (f) { if ((r[f] || []).length) out[f] = r[f].slice(); });
     return out;
   });
   return JSON.stringify({
     name: (d.name || '').trim(), note: (d.note || '').trim(), label: (d.label || '').trim(), rules: rules,
     products: (d.products || []).map(function (r) {
-      return [r.productId || null, isFinite(r.weightPct) ? Math.round(r.weightPct * 10000) / 10000 : String(r.weightText || '')];
+      return [r.productId || null, isFinite(r.weightPct) ? Math.round(r.weightPct * 10000) / 10000 : String(r.weightText || ''),
+              r.alternative || ''];
     }),
     category: d.category || null, variants: d.variants || null
   });
@@ -2878,18 +2915,42 @@ function svAddRows(rows, ids) {
    form can count, list and map portfolios as the desk ticks. The server
    still decides at save. */
 var ED_FIELDS = ['currency', 'riskLevel', 'allocationType'];
+/* every field a rule may name: the portfolio's three and the custodian /
+   entity, which is the scenario's (D193). A portfolio is counted when a rule
+   names it at some entity; two editions clash only where they also share an
+   entity. */
+var ED_ALL = ED_FIELDS.concat(['entity']);
 function edFields(key) {
   var p = String(key).split('|');
   return { key: String(key), currency: p[0], riskLevel: p[1], allocationType: !p[2] || p[2] === 'NA' ? 'NA' : p[2], exRA: p[3] === '1' };
 }
 /* a rule that names nothing matches nothing here: the server refuses it, and
    counting it as "every portfolio" would only mislead while it is half made */
-function edRuleLive(r) { return ED_FIELDS.some(function (f) { return ((r && r[f]) || []).length; }); }
+function edRuleLive(r) { return ED_ALL.some(function (f) { return ((r && r[f]) || []).length; }); }
 function edMatch(rules, f) {
   return (rules || []).some(function (r) {
     if (!edRuleLive(r)) return false;
     return ED_FIELDS.every(function (k) { var v = r[k] || []; return !v.length || v.indexOf(f[k]) !== -1; });
   });
+}
+/* the entities the rules claim a portfolio at: null for any, else a list
+   (empty where none matches) */
+function edEntitiesAt(rules, f) {
+  var out = [];
+  for (var i = 0; i < (rules || []).length; i++) {
+    var r = rules[i];
+    if (!edRuleLive(r)) continue;
+    if (!ED_FIELDS.every(function (k) { var v = r[k] || []; return !v.length || v.indexOf(f[k]) !== -1; })) continue;
+    if (!(r.entity || []).length) return null;
+    r.entity.forEach(function (e) { if (out.indexOf(e) === -1) out.push(e); });
+  }
+  return out;
+}
+/* whether two rule sets claim a portfolio at a common entity */
+function edClashAt(a, b, f) {
+  if (!edMatch(a, f) || !edMatch(b, f)) return false;
+  var ea = edEntitiesAt(a, f), eb = edEntitiesAt(b, f);
+  return ea === null || eb === null || ea.some(function (e) { return eb.indexOf(e) !== -1; });
 }
 function edApplies(rules, keys) {
   return (keys || []).filter(function (k) { return edMatch(rules, edFields(k)); });
@@ -2913,10 +2974,11 @@ function edOrList(values) {
 /* one rule in words: "GBP portfolios at Moderate risk, Full allocations" */
 function edRuleWords(r, labels) {
   var lab = function (f) { return (r[f] || []).map(function (v) { return edValueLabel(f, v, labels); }); };
-  var cur = lab('currency'), risk = lab('riskLevel'), alloc = lab('allocationType');
+  var cur = lab('currency'), risk = lab('riskLevel'), alloc = lab('allocationType'), ent = lab('entity');
   return (cur.length ? edOrList(cur) + ' portfolios' : 'Portfolios in any currency')
     + (risk.length ? ' at ' + edOrList(risk) + ' risk' : ' at any risk level')
-    + (alloc.length ? ', ' + edOrList(alloc) + (alloc.length === 1 && alloc[0] === 'All equity' ? '' : ' allocation' + (alloc.length === 1 ? '' : 's')) : ', any allocation');
+    + (alloc.length ? ', ' + edOrList(alloc) + (alloc.length === 1 && alloc[0] === 'All equity' ? '' : ' allocation' + (alloc.length === 1 ? '' : 's')) : ', any allocation')
+    + (ent.length ? ', held at ' + edOrList(ent) : '');
 }
 function edRulesWords(rules, labels) {
   var live = (rules || []).filter(edRuleLive);
@@ -2954,14 +3016,19 @@ function edCoverCells(rules, vocab) {
 }
 function edGridOf(rules, vocab) {
   var live = (rules || []).filter(edRuleLive);
-  if (!live.length) return { ok: true, alloc: null, cells: {} };
+  if (!live.length) return { ok: true, alloc: null, entity: null, cells: {} };
   var alloc = edField(live[0], 'allocationType', vocab);
+  var entity = edField(live[0], 'entity', vocab);
   for (var i = 1; i < live.length; i++) {
     if (!edSameList(edField(live[i], 'allocationType', vocab), alloc)) {
       return { ok: false, why: 'Rule ' + (i + 1) + ' is for different allocations from rule 1, and the grid shows one allocation choice for all its cells.' };
     }
+    if (!edSameList(edField(live[i], 'entity', vocab), entity)) {
+      return { ok: false, why: 'Rule ' + (i + 1) + ' is for different entities from rule 1, and the grid shows one choice of entities for all its cells.' };
+    }
   }
-  return { ok: true, alloc: alloc.length ? alloc : null, cells: edCoverCells(live, vocab) };
+  return { ok: true, alloc: alloc.length ? alloc : null, entity: entity.length ? entity : null,
+           cells: edCoverCells(live, vocab) };
 }
 /* rules the grid cannot draw, made drawable: the cells they reach, under
    every allocation; null when they reach nothing (nothing to start from) */
@@ -2975,9 +3042,12 @@ function edResetGrid(rules, vocab) {
    allowing every value is left out, as the server leaves it */
 function edRulesOf(grid, vocab) {
   var curs = vocab.currency || [], risks = vocab.riskLevel || [], allocs = vocab.allocationType || [];
+  var ents = vocab.entity || [];
   var on = function (c, r) { return !!grid.cells[c + '|' + r]; };
   var alloc = grid.alloc && grid.alloc.length && grid.alloc.length < allocs.length
     ? allocs.filter(function (v) { return grid.alloc.indexOf(v) !== -1; }) : null;
+  var entity = grid.entity && grid.entity.length && grid.entity.length < ents.length
+    ? ents.filter(function (v) { return grid.entity.indexOf(v) !== -1; }) : null;
   var build = function (outer, inner, outerField, innerField, cell) {
     var groups = [];
     outer.forEach(function (o) {
@@ -3005,7 +3075,8 @@ function edRulesOf(grid, vocab) {
        allocations ticked, so the rule is not empty and the count says why it
        cannot stand */
     if (alloc) out.allocationType = alloc.slice();
-    else if (!out.currency && !out.riskLevel) out.allocationType = allocs.slice();
+    if (entity) out.entity = entity.slice();
+    else if (!alloc && !out.currency && !out.riskLevel) out.allocationType = allocs.slice();
     return out;
   });
 }
@@ -3015,7 +3086,7 @@ function edDupRule(rules, vocab) {
   var list = rules || [];
   for (var i = 0; i < list.length; i++) {
     if (!edRuleLive(list[i])) continue;
-    var sig = JSON.stringify(ED_FIELDS.map(function (f) { return edField(list[i], f, vocab); }));
+    var sig = JSON.stringify(ED_ALL.map(function (f) { return edField(list[i], f, vocab); }));
     if (seen[sig] !== undefined) return i;
     seen[sig] = i;
   }
@@ -3038,7 +3109,7 @@ function edCells(keys, rules, sibs, vocab, alloc) {
     (sibs || []).forEach(function (s) {
       if (!edMatch(s.rules, f)) return;
       if (cell.claimed.indexOf(s.label) === -1) cell.claimed.push(s.label);
-      if (mine) cell.clash += 1;
+      if (mine && edClashAt(rules, s.rules, f)) cell.clash += 1;
     });
   });
   return out;
@@ -3053,7 +3124,9 @@ function edCoverage(keys, rules, sibs) {
     var f = edFields(k), m = edMatch(rules, f);
     var claimers = (sibs || []).filter(function (s) { return edMatch(s.rules, f); });
     if (m) mine.push(k);
-    if (m && claimers.length) claimers.forEach(function (s) { (clash[s.label] = clash[s.label] || []).push(k); });
+    /* a clash is a shared portfolio at a shared entity (D193) */
+    var clashing = m ? claimers.filter(function (s) { return edClashAt(rules, s.rules, f); }) : [];
+    if (clashing.length) clashing.forEach(function (s) { (clash[s.label] = clash[s.label] || []).push(k); });
     else if (!m && claimers.length) { others += 1; keeps[claimers[0].label] += 1; }
     else if (!m) fallback += 1;
   });
@@ -3150,6 +3223,15 @@ function svOverlayLoss(entry, types) {
     + ': ' + entry.category + ' will have no sleeve there.' : '';
 }
 /* one sleeve shared by several types (D179): an edit changes it under each */
+/* the entities that grey this sleeve out: it holds a product they exclude (D193) */
+function svNotAtChip(s) {
+  var held = (s.products || []).map(function (r) { return r.productId; });
+  var at = (entData().entities || []).filter(function (e) {
+    return (e.excluded || []).some(function (p) { return held.indexOf(p) !== -1; });
+  });
+  return at.length ? '<span class="sv-chip warn" title="It holds a product ' + esc(at.map(function (e) { return e.name; }).join(' and '))
+    + ' may not hold, so PWAs there see it greyed out">Not available at ' + esc(at.map(function (e) { return e.name; }).join(', ')) + '</span>' : '';
+}
 function svSharedChip(s) {
   if (!s.shared) return '';
   var t = svTypes(s), all = t.length === repo.data.variants.length;
@@ -3329,7 +3411,7 @@ function svCardHtml(s, why) {
   }).join('');
   return '<div class="sv-cardw' + (s.disabled ? ' off' : '') + '">'
     + '<button type="button" class="sv-card" data-svcard="' + s.id + '" data-svmenu="' + s.id + '">'
-    + '<span class="sv-card-h"><b>' + esc(s.name) + '</b>' + svEditionChip(s) + svSharedChip(s) + '</span>'
+    + '<span class="sv-card-h"><b>' + esc(s.name) + '</b>' + svEditionChip(s) + svSharedChip(s) + svNotAtChip(s) + '</span>'
     + (why !== undefined ? '<span class="sv-card-w">' + svWhere(s.variant, s.category) + '</span>'
         + (why ? '<span class="sv-card-why">' + esc(why.charAt(0).toUpperCase() + why.slice(1)) + '</span>' : '') : '')
     + '<span class="sv-card-p">' + rows + '</span>'
@@ -3391,7 +3473,10 @@ function svProductsHtml(entry) {
     var p = r.product, row = p ? catRow(p.productId) : null;
     var facts = p ? [p.assetClass, p.vehicle, p.style, p.source, p.liquidity].filter(Boolean).join(' \u00b7 ') : 'Not in the catalogue';
     var w = r.weight * 100;
-    return '<tr><td><b>' + esc(p ? p.name : r.productId) + '</b><small' + (p ? '' : ' class="warn"') + '>' + esc(facts) + '</small></td>'
+    /* the product held below its minimum (D192) */
+    var alt = r.alternative ? (r.alternativeProduct ? r.alternativeProduct.name : r.alternative + ' (not in the catalogue)') : '';
+    return '<tr><td><b>' + esc(p ? p.name : r.productId) + '</b><small' + (p ? '' : ' class="warn"') + '>' + esc(facts) + '</small>'
+      + (alt ? '<small class="sv-alt' + (r.alternativeProduct ? '' : ' warn') + '">Below its minimum, holds ' + esc(alt) + '</small>' : '') + '</td>'
       + '<td class="num">' + (p ? svPct(p.productCost) : '—') + '</td>'
       + '<td class="num">' + (p ? esc(catMoney(p.minimumInvestment)) : '—')
       + (row && row.tooBig ? ' <span class="sv-chip warn" title="Above the mandate open in the tool">above mandate</span>' : '') + '</td>'
@@ -3508,7 +3593,7 @@ function svReadHtml(entry, inDrawer) {
   return '<div class="sv-head"><div class="sv-head-t">'
     + (inDrawer ? '' : '<h3 id="svTitle" tabindex="-1">' + esc(entry.name) + '</h3>')
     + '<p class="sv-where">' + svWhere(entry.variant, entry.category) + '</p>'
-    + '<p class="sv-chips">' + svStatusChip(entry) + svEditionChip(entry) + svSharedChip(entry) + svFixedChip(entry.category) + '</p></div>'
+    + '<p class="sv-chips">' + svStatusChip(entry) + svEditionChip(entry) + svSharedChip(entry) + svNotAtChip(entry) + svFixedChip(entry.category) + '</p></div>'
     + '<button type="button" class="btn btn-primary sv-edit-btn" data-svedit' + (repo.saving ? ' disabled' : '') + '>Edit sleeve</button></div>'
     + keptNoticeHtml() + serverProblems
     + (sv.createdEdition && sv.createdEdition.id === entry.id
@@ -3614,7 +3699,7 @@ function ncStartDefault() {
 function ncReset() {
   nc.srcq = ''; nc.allV = false; nc.ask = null; nc.lost = ''; nc.keptNote = ''; nc.addedNote = false;
   nc.tried = false; nc.dlg = null; nc.touched = false;
-  nc.which = false; nc.alloc = null; nc.gridAt = null; nc.undo = null; nc.clashAll = false;   /* the New edition form's (D158) */
+  nc.which = false; nc.alloc = null; nc.entity = null; nc.gridAt = null; nc.undo = null; nc.clashAll = false;   /* the New edition form's (D158) */
 }
 function ncOpen() { return !!(repo.draft && repo.draft.create); }
 function ncProducts() {
@@ -3839,7 +3924,8 @@ function ncRowHtml(d, r, i, src, products) {
     + (row && row.tooBig ? ' <span class="sv-chip warn" title="Above the mandate open in the tool">above mandate</span>' : '') + '</td>'
     + '<td class="num"><input type="text" inputmode="decimal" class="nc-w" data-repoweight="' + i + '" aria-label="Weight of ' + esc(p ? p.name : r.productId) + ', percent"'
     + (bad ? ' aria-invalid="true"' : '') + ' value="' + esc(val) + '"><span class="nc-rowerr" id="ncRowErr' + i + '">' + esc(why) + '</span></td>'
-    + '<td class="num"><button type="button" class="btn nc-rm" data-reporm="' + i + '" aria-label="Remove ' + esc(p ? p.name : r.productId) + '">Remove</button></td></tr>';
+    + '<td class="num"><button type="button" class="btn nc-rm" data-reporm="' + i + '" aria-label="Remove ' + esc(p ? p.name : r.productId) + '">Remove</button></td></tr>'
+    + (p && altOffered(p, r) ? '<tr class="nc-alt"><td colspan="5">' + altChoiceHtml(r, i, p) + '</td></tr>' : '');
 }
 function ncMarkHtml(mark) {
   if (!mark) return '';
@@ -4017,7 +4103,9 @@ function ncRefresh() {
 function ncUseSource(id) {
   var d = repo.draft, s = sleeveById(id); if (!d || !s) return;
   d.sourceId = id; d.sourceIds = ncCopyIds(s); d.sourceName = s.name;
-  d.products = s.products.map(function (r) { return { productId: r.productId, weightPct: svPctOf(r.weight) }; });
+  d.products = s.products.map(function (r) {
+    return { productId: r.productId, weightPct: svPctOf(r.weight), alternative: r.alternative || '' };
+  });
   nc.ask = null; nc.lost = ''; nc.keptNote = ''; nc.touched = false; repo.fieldError = null;
   markDirty();
   /* to the name, unless it has one already */
@@ -4302,7 +4390,7 @@ function neCount(d) {
 }
 function neGrid(d) {
   var g = edGridOf(d.rules, neVocab());
-  if (g.ok && !neLive(d).length) g.alloc = nc.alloc || null;
+  if (g.ok && !neLive(d).length) { g.alloc = nc.alloc || null; g.entity = nc.entity || null; }
   return g;
 }
 /* who keeps what today, in words: "the fallback (129) or the GBP edition (43)" */
@@ -4423,6 +4511,15 @@ function neGridHtml(d) {
         var on = picked.indexOf(a) !== -1;
         return '<button type="button" class="ne-achip' + (on ? ' on' : '') + '" data-nealloc="' + esc(a) + '" aria-pressed="' + on + '">' + esc(edValueLabel('allocationType', a, labels)) + '</button>';
       }).join('') + '</span></div>';
+  /* the custodians / entities every cell is for (D193): all of them is any */
+  var ents = vocab.entity || [], pickedE = g.entity || ents;
+  if (ents.length) {
+    allocBtns += '<div class="ne-allocs"><span class="nc-lab" id="neEntL">Entities</span><span class="ne-achips" role="group" aria-labelledby="neEntL">'
+      + ents.map(function (e) {
+          var on = pickedE.indexOf(e) !== -1;
+          return '<button type="button" class="ne-achip' + (on ? ' on' : '') + '" data-neentity="' + esc(e) + '" aria-pressed="' + on + '">' + esc(edValueLabel('entity', e, labels)) + '</button>';
+        }).join('') + '</span></div>';
+  }
   var cells = edCells(neKeys(), neLive(d), neSibs(d), vocab, g.alloc);
   var curs = vocab.currency || [], risks = vocab.riskLevel || [];
   var pressed = function (keys) {
@@ -4648,6 +4745,7 @@ function neSetGrid(g, focusSel) {
   var d = repo.draft; if (!d) return;
   var any = Object.keys(g.cells).length;
   nc.alloc = g.alloc || null;
+  nc.entity = g.entity || null;
   nc.undo = null;
   d.rules = any ? edRulesOf(g, neVocab()) : [];
   markDirty(); repo.fieldError = null;
@@ -4658,7 +4756,7 @@ function neToggleCells(keys, on) {
   var d = repo.draft, g = neGrid(d); if (!g.ok) return null;
   var cells = {}; Object.keys(g.cells).forEach(function (k) { cells[k] = 1; });
   keys.forEach(function (k) { if (on) cells[k] = 1; else delete cells[k]; });
-  return { alloc: g.alloc, cells: cells };
+  return { alloc: g.alloc, entity: g.entity, cells: cells };
 }
 function neCellClick(key) {
   var d = repo.draft, g = neGrid(d); if (!g.ok) return;
@@ -4687,7 +4785,18 @@ function neAllocClick(a) {
     picked.splice(at, 1);
   } else picked.push(a);
   picked = allocs.filter(function (x) { return picked.indexOf(x) !== -1; });
-  neSetGrid({ alloc: picked.length === allocs.length ? null : picked, cells: g.cells }, '[data-nealloc="' + svCssEscape(a) + '"]');
+  neSetGrid({ alloc: picked.length === allocs.length ? null : picked, entity: g.entity, cells: g.cells }, '[data-nealloc="' + svCssEscape(a) + '"]');
+}
+function neEntityClick(e) {
+  var d = repo.draft, g = neGrid(d), ents = neVocab().entity || []; if (!g.ok) return;
+  var picked = (g.entity || ents).slice();
+  var at = picked.indexOf(e);
+  if (at !== -1) {
+    if (picked.length === 1) { App.announce('polite', 'Keep at least one entity.'); return; }
+    picked.splice(at, 1);
+  } else picked.push(e);
+  picked = ents.filter(function (x) { return picked.indexOf(x) !== -1; });
+  neSetGrid({ alloc: g.alloc, entity: picked.length === ents.length ? null : picked, cells: g.cells }, '[data-neentity="' + svCssEscape(e) + '"]');
 }
 /* rules the grid cannot draw become the cells they reach, under every
    allocation - only when the desk asks, and undoably */
@@ -4695,7 +4804,7 @@ function neGridReset() {
   var d = repo.draft; if (!d) return;
   var g = edResetGrid(neLive(d), neVocab()); if (!g) return;
   var before = copyRules(d.rules), was = neCount(d);
-  nc.alloc = null;
+  nc.alloc = null; nc.entity = null;
   d.rules = edRulesOf(g, neVocab());
   nc.undo = before;                       /* set before the redraw, so Undo is there to take focus */
   markDirty(); repo.fieldError = null;
@@ -5866,7 +5975,9 @@ function regDetailHtml() {
         : esc((r.baseKey || '').split('|').slice(1, 3).join(' ')))
     + (r.tacticalTilt ? ' · tactical tilt' : '') + (r.volPremium ? ' · vol premium' : '') + '</p>'
     + '<p>' + esc(r.variant)
-    + (r.includeFees ? ' · ' + esc((r.feeSchedule || '') + ' ' + (r.feeLevel || '')) : ' · no fees') + '</p>'
+    + (r.includeFees ? ' · ' + esc((r.feeSchedule || '') + ' ' + (r.feeLevel || '')) : ' · no fees')
+    /* the custodian / entity the account is held at (D193) */
+    + (r.entityName ? ' · held at ' + esc(r.entityName) : '') + '</p>'
     + '<p class="repo-prov"><button type="button" class="reg-uid" data-reguid="' + esc(r.proposalId)
     + '" title="Copy the Proposal UID">' + esc(r.proposalId) + '</button>'
     + ' · exported ' + esc(shortDate(r.exportedAt)) + ' ' + esc((r.exportedAt || '').slice(11, 16))
@@ -6586,6 +6697,7 @@ function prdViewHtml(row) {
     + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
     + prdByCurrencyHtml(p)
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
+    + (entNotAt(p.productId).length ? '<dt>Not available at</dt><dd>' + esc(entNotAt(p.productId).join(', ')) + '</dd>' : '')
     + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
     + prdHistoryHtml(p)
@@ -7308,7 +7420,8 @@ function render() {
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals', onUncalled = repo.view === 'uncalled';
   var onOverlays = repo.view === 'overlays', onFees = repo.view === 'fees';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees;
+  var onEntities = repo.view === 'entities';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees && !onEntities;
 
   /* One tab strip in the header, and it navigates (A1). The implementation
      type used to sit beside it, identical in shape and selected state but
@@ -7318,6 +7431,7 @@ function render() {
   var VIEWS = [['sleeves', 'Sleeves', onSleeves, 0],
                ['catalogue', 'Catalogue', onCatalogue, 0],
                ['fees', 'Fees', onFees, 0],
+               ['entities', 'Entities', onEntities, 0],
                ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
                ['activity', 'Activity', onActivity, 0],
                ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0],
@@ -7358,6 +7472,8 @@ function render() {
     body = overlaysViewHtml();
   } else if (onFees) {
     body = feesViewHtml();
+  } else if (onEntities) {
+    body = entitiesViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -7520,7 +7636,7 @@ function catEdge() {
    signed in as them". The five views are named rather than hidden behind one
    "Repository" link, because the admin knows which of them they came for. */
 var LANDING_VIEWS = [
-  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['fees', 'Fees'], ['archive', 'Archive'],
+  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['fees', 'Fees'], ['entities', 'Entities'], ['archive', 'Archive'],
   ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation'],
   ['overlays', 'Overlay Funding']
 ];
@@ -7708,6 +7824,146 @@ function fundBarHtml(rows) {
     return '<span style="width:' + (w / total * 100) + '%;background:' + FUND_COLOURS[i % 3] + '">'
       + esc(String(+w.toFixed(FUND_PLACES))) + '%</span>';
   }).join('');
+}
+
+/* ---- the custodians / entities (D193) -------------------------------------
+   The entities the first card offers, and the products each may not hold. A
+   sleeve whose edition holds one is greyed out at that entity, with the
+   reason; a rule in an edition may be for particular entities. An entity is
+   never deleted - retired, it leaves the first card and keeps its meaning
+   wherever it is named. Every change carries a note and is a revision. */
+var ent = { draft: null, open: -1, q: '', note: '', saving: false, error: null, flash: '', history: null };
+
+function entData() { return (repo.data && repo.data.entities) || { revision: 0, entities: [] }; }
+function entList() { return ent.draft || entData().entities || []; }
+function entDirty() { return !!ent.draft && JSON.stringify(ent.draft) !== JSON.stringify(entData().entities); }
+function entEnsureDraft() { if (!ent.draft) ent.draft = JSON.parse(JSON.stringify(entData().entities || [])); return ent.draft; }
+/* the entities, as saved, that exclude a product: the catalogue's line */
+function entNotAt(productId) {
+  return (entData().entities || []).filter(function (e) { return (e.excluded || []).indexOf(productId) !== -1; })
+    .map(function (e) { return e.name; });
+}
+/* the live sleeves an entity's list greys out there: any edition holding a
+   product it excludes */
+function entImpact(e) {
+  var barred = e.excluded || [];
+  if (!barred.length) return [];
+  return ((repo.data && repo.data.sleeves) || []).filter(function (s) {
+    return (s.products || []).some(function (r) { return barred.indexOf(r.productId) !== -1; });
+  });
+}
+function entExclusionHtml(e, i) {
+  var q = ent.q.trim().toLowerCase();
+  var all = ((repo.data && repo.data.products) || []).slice();
+  var ticked = e.excluded || [];
+  var hits = all.filter(function (p) {
+    return !q || (p.name + ' ' + (p.ticker || '') + ' ' + (p.vehicle || '') + ' ' + (p.category || '') + ' ' + p.productId).toLowerCase().indexOf(q) !== -1;
+  }).sort(function (a, b) {
+    var ta = ticked.indexOf(a.productId) !== -1, tb = ticked.indexOf(b.productId) !== -1;
+    return ta !== tb ? (ta ? -1 : 1) : a.name.localeCompare(b.name);
+  });
+  var shown = hits.slice(0, 80);
+  return '<tr class="ent-ex"><td colspan="5"><div class="ent-exb">'
+    + '<label class="ent-q"><span>Products ' + esc(e.name) + ' may not hold</span>'
+    + '<input type="search" id="entQ" data-entq placeholder="Search the catalogue" value="' + esc(ent.q) + '" autocomplete="off"></label>'
+    + '<ul class="ent-list">' + shown.map(function (p) {
+        var on = ticked.indexOf(p.productId) !== -1;
+        return '<li><label><input type="checkbox" data-entexcl="' + esc(p.productId) + '" data-enti="' + i + '"' + (on ? ' checked' : '') + '>'
+          + '<b>' + esc(p.name) + '</b><small>' + esc([p.ticker, p.vehicle, p.category].filter(Boolean).join(' · ')) + '</small></label></li>';
+      }).join('') + '</ul>'
+    + '<p class="sv-hint">' + (hits.length > shown.length ? 'Showing ' + shown.length + ' of ' + hits.length + ': keep typing to narrow. ' : '')
+    + svPlural(ticked.length, 'product') + ' excluded.</p></div></td></tr>';
+}
+function entitiesViewHtml() {
+  var d = entData(), list = entList(), dirty = entDirty();
+  var rows = list.map(function (e, i) {
+    var hit = entImpact(e);
+    return '<tr' + (e.retired ? ' class="ent-retired"' : '') + '>'
+      + '<td><input type="text" class="ent-name" data-entname="' + i + '" maxlength="' + (d.nameMax || 40) + '" value="' + esc(e.name) + '" aria-label="Name of entity ' + (i + 1) + '">'
+      + (e.id ? '<small class="sv-hint">id ' + esc(e.id) + '</small>' : '<small class="sv-hint">new</small>') + '</td>'
+      + '<td><label class="ent-ret"><input type="checkbox" data-entretired="' + i + '"' + (e.retired ? ' checked' : '') + '> Retired</label></td>'
+      + '<td><button type="button" class="btn" data-entopen="' + i + '" aria-expanded="' + (ent.open === i) + '">'
+      + ((e.excluded || []).length ? 'Excludes ' + svPlural(e.excluded.length, 'product') : 'Excludes nothing') + '</button></td>'
+      + '<td>' + (hit.length ? '<span class="sv-chip warn" title="' + esc(hit.map(function (s) { return s.name + ' (' + s.variant + ' · ' + s.category + ')'; }).join('; ')) + '">'
+          + svPlural(hit.length, 'sleeve') + ' greyed out here</span>' : '<span class="sv-hint">No sleeve affected</span>') + '</td>'
+      + '<td><input type="text" class="ent-note" data-entnote="' + i + '" maxlength="' + (d.noteMax || 240) + '" value="' + esc(e.note || '') + '" placeholder="Note" aria-label="Note on ' + esc(e.name) + '"></td>'
+      + '</tr>' + (ent.open === i ? entExclusionHtml(e, i) : '');
+  }).join('');
+  var hist = ent.history === null ? '<p class="repo-loading">Loading the history…</p>'
+    : '<ol class="ent-hist">' + ent.history.map(function (h) {
+        return '<li><b>Revision ' + h.revision + '</b> · ' + esc(shortDateTime(h.at)) + (h.actor ? ' · ' + esc(h.actor) : '')
+          + (h.current ? ' <span class="sv-chip info">in force</span>'
+             : ' <button type="button" class="cat-link" data-entrestore="' + h.revision + '">Restore this list</button>')
+          + '<small>' + esc((h.changes && h.changes.length ? h.changes.join('; ') : h.action === 'baseline' ? 'The four entities, excluding nothing' : h.action)
+            + (h.note ? ' — ' + h.note : '')) + '</small></li>';
+      }).join('') + '</ol>';
+  return '<div class="repo-b ent-b">'
+    + '<p class="ent-lead">The custodians / entities the first card offers, and the products each may not hold. A sleeve whose edition holds one is greyed out at that entity, with the reason, and nothing excluded is delivered there. An edition may also be <i>for</i> particular entities: give it a rule naming them in the Sleeves view.</p>'
+    + (ent.flash ? '<p class="prd-flash" role="status">' + esc(ent.flash) + '</p>' : '')
+    + '<div class="sv-ptwrap"><table class="sv-pt ent-t"><thead><tr><th scope="col">Entity</th><th scope="col">Offered</th><th scope="col">Products it may not hold</th><th scope="col">Effect</th><th scope="col">Note</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table></div>'
+    + '<p><button type="button" class="btn" data-entadd>+ Add an entity</button></p>'
+    + '<div class="ent-save"><label for="entNote">Why <small>every change carries a note</small></label>'
+    + '<input type="text" id="entNote" data-entsavenote maxlength="240" value="' + esc(ent.note) + '" placeholder="For example: GSBZ cannot hold US mutual funds">'
+    + '<button type="button" class="btn btn-primary" data-entsave' + (dirty && !ent.saving ? '' : ' disabled') + '>' + (ent.saving ? 'Saving…' : 'Save changes') + '</button>'
+    + (dirty ? '<button type="button" class="btn btn-ghost" data-entdiscard>Discard</button>' : '')
+    + (ent.error ? '<p class="md-err" role="alert">' + esc(ent.error) + '</p>' : '')
+    + '<span class="sv-hint">Revision ' + (d.revision || 0) + (d.updatedBy ? ', saved by ' + esc(d.updatedBy) + ' ' + esc(shortDateTime(d.updatedAt)) : '') + '</span></div>'
+    + '<h3 class="sv-h3">History</h3>' + hist
+    + '</div>';
+}
+async function loadEntityHistory() {
+  var r = await api('GET', '/scenario/repository/entities/history');
+  ent.history = r && r.ok ? (r.body.history || []) : [];
+  render();
+}
+/* a saved list carries new ids and names to the rule chips too */
+function entTake(body) {
+  repo.data.entities = body;
+  var ids = (body.entities || []).map(function (e) { return e.id; });
+  if (repo.data.ruleVocabulary) repo.data.ruleVocabulary.entity = ids;
+  if (repo.data.ruleLabels) {
+    repo.data.ruleLabels.entity = {};
+    (body.entities || []).forEach(function (e) { repo.data.ruleLabels.entity[e.id] = e.name; });
+  }
+}
+async function entWrite(path, payload, done) {
+  if (ent.saving) return;
+  if (!ent.note.trim()) { ent.error = 'Say why: every change to the entities carries a note.'; sv.focus = '#entNote'; render(); return; }
+  ent.saving = true; ent.error = null; render();
+  try {
+    var r = await api(path === 'save' ? 'PUT' : 'POST', '/scenario/repository/entities' + (path === 'save' ? '' : '/revert'),
+                      Object.assign({ note: ent.note.trim(), base: entData().revision }, payload));
+    if (!r) return;
+    if (!r.ok) ent.error = r.body.error || ('Could not save the entities (' + r.status + ')');
+    else {
+      entTake(r.body.entities);
+      ent.draft = null; ent.note = ''; ent.open = -1;
+      ent.flash = done + ' Revision ' + r.body.entities.revision + '.';
+      ent.history = null; loadEntityHistory();
+      catRowCache = null;
+    }
+  } catch (err) { ent.error = err.message; }
+  ent.saving = false; render();
+}
+function entClick(ds) {
+  if (ds.entadd !== undefined) {
+    var list = entEnsureDraft();
+    list.push({ name: 'New entity', retired: false, excluded: [], note: '' });
+    ent.open = -1; sv.focus = '[data-entname="' + (list.length - 1) + '"]'; render(); return true;
+  }
+  if (ds.entopen !== undefined) {
+    var i = parseInt(ds.entopen, 10);
+    ent.open = ent.open === i ? -1 : i; ent.q = '';
+    sv.focus = ent.open === i ? '#entQ' : '[data-entopen="' + i + '"]'; render(); return true;
+  }
+  if (ds.entsave !== undefined) { entWrite('save', { entities: entEnsureDraft() }, 'Saved.'); return true; }
+  if (ds.entdiscard !== undefined) { ent.draft = null; ent.error = null; ent.flash = ''; ent.open = -1; render(); return true; }
+  if (ds.entrestore !== undefined) {
+    if (entDirty()) { ent.error = 'Save or discard the changes first.'; render(); return true; }
+    entWrite('revert', { revision: parseInt(ds.entrestore, 10) }, 'Restored.'); return true;
+  }
+  return false;
 }
 
 function uncalledViewHtml() {
@@ -9606,13 +9862,14 @@ document.addEventListener('click', function (e) {
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
+    + '[data-entadd],[data-entopen],[data-entsave],[data-entdiscard],[data-entrestore],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
     + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svshare],[data-svsplit],[data-svunshare],[data-svopen],'
     + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'
     + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-ncstart],[data-nccat],[data-ncsrc],[data-nckeepmine],[data-ncreplace],[data-ncadd],[data-ncspread],[data-nccreate],[data-nccancel],'
     + '[data-ncdlgclose],[data-ncdlgscrim],[data-ncusename],[data-ncdscope],[data-ncdclear],[data-ncdsort],[data-ncdrow],[data-ncdadd],'
-    + '[data-nemode],[data-negcell],[data-negcol],[data-negrow],[data-nealloc],[data-negridreset],[data-negridundo],[data-repoappliesall],[data-neclashall],[data-newhich],[data-necreate],[data-necancel],'
+    + '[data-nemode],[data-negcell],[data-negcol],[data-negrow],[data-nealloc],[data-neentity],[data-negridreset],[data-negridundo],[data-repoappliesall],[data-neclashall],[data-newhich],[data-necreate],[data-necancel],'
     + '[data-repodelete],[data-repocanceldelete],[data-repokeep],[data-repodiscard],'
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
@@ -9642,6 +9899,7 @@ document.addEventListener('click', function (e) {
   if (ds.repoclose !== undefined) { if (!repo.saving) closeRepository(false); return; }
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
   if (fundClick(ds)) return;
+  if (entClick(ds)) return;
   if (ovlClick(el)) return;
   if (impClick(el)) return;
   if (prdClick(el)) return;
@@ -9775,6 +10033,7 @@ document.addEventListener('click', function (e) {
   if (ds.negcol !== undefined) { neLineClick('currency', ds.negcol); return; }
   if (ds.negrow !== undefined) { neLineClick('riskLevel', ds.negrow); return; }
   if (ds.nealloc !== undefined) { neAllocClick(ds.nealloc); return; }
+  if (ds.neentity !== undefined) { neEntityClick(ds.neentity); return; }
   if (ds.negridreset !== undefined) { neGridReset(); return; }
   if (ds.negridundo !== undefined) { neGridUndo(); return; }
   if (ds.repoappliesall !== undefined) { repo.appliesAll = !repo.appliesAll; updateApplies(); var aa = document.querySelector('#repoDialog [data-repoappliesall]'); if (aa) aa.focus(); return; }
@@ -9985,6 +10244,27 @@ document.addEventListener('change', function (e) {
   }
   if (ds.svfv !== undefined) { sv.fv = e.target.value; sv.focus = '[data-svfv]'; render(); return; }
   if (ds.svsplittype !== undefined) { sv.splitType = e.target.value; return; }
+  /* the Entities tab (D193) */
+  if (ds.entretired !== undefined) {
+    var er = entEnsureDraft()[parseInt(ds.entretired, 10)];
+    if (er) er.retired = e.target.checked;
+    sv.focus = '[data-entretired="' + ds.entretired + '"]'; render(); return;
+  }
+  if (ds.entexcl !== undefined) {
+    var ee = entEnsureDraft()[parseInt(ds.enti, 10)];
+    if (ee) {
+      var have = (ee.excluded || []).filter(function (x) { return x !== ds.entexcl; });
+      if (e.target.checked) have.push(ds.entexcl);
+      ee.excluded = have.sort();
+    }
+    sv.focus = '[data-entexcl="' + svCssEscape(ds.entexcl) + '"]'; render(); return;
+  }
+  /* the product held below a row's minimum (D192) */
+  if (ds.repoalt !== undefined && repo.draft) {
+    var arow = repo.draft.products[parseInt(ds.repoalt, 10)];
+    if (arow) { arow.alternative = e.target.value; markDirty(); sv.focus = '[data-repoalt="' + ds.repoalt + '"]'; render(); }
+    return;
+  }
   if (ds.svfc !== undefined) { sv.fc = e.target.value; sv.focus = '[data-svfc]'; render(); return; }
   /* the archive's filters and tick boxes (D66) */
   if (ds.arcfilter !== undefined) { arc.filters[ds.arcfilter] = e.target.value; render(); return; }
@@ -10068,6 +10348,17 @@ document.addEventListener('input', function (e) {
   if (el.id === 'arcSearch') { arc.query = el.value; updateArchive(); return; }
   if (el.id === 'actSearch') { act.query = el.value; syncHash(); actRefresh(); return; }
   if (el.id === 'regSearch') { reg.query = el.value; syncHash(); regRefresh(); return; }
+  /* the Entities tab (D193): typing changes the draft and the Save button,
+     not the page under the caret */
+  var eds = el.dataset || {};
+  if (eds.entname !== undefined || eds.entnote !== undefined) {
+    var row = entEnsureDraft()[parseInt(eds.entname !== undefined ? eds.entname : eds.entnote, 10)];
+    if (row) { if (eds.entname !== undefined) row.name = el.value; else row.note = el.value; }
+    var save = document.querySelector('[data-entsave]'); if (save) save.disabled = !entDirty() || ent.saving;
+    return;
+  }
+  if (eds.entsavenote !== undefined) { ent.note = el.value; return; }
+  if (eds.entq !== undefined) { ent.q = el.value; sv.focus = '#entQ'; render(); return; }
   if (!repo.draft) return;
   if (el.id === 'repoName') {
     repo.draft.name = el.value;

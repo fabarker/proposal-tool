@@ -86,7 +86,7 @@ def test_the_rule_parks_the_private_line_a_third_and_two_thirds():
 
 def test_the_schema_serves_the_rule_so_the_page_never_restates_it():
     schema = PORT.get_schema(BasisInput(currency='USD', hedging='Hedged'),
-                             MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'))
+                             MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'))
     served = schema['rules']['privateFunding']
     assert served['from'] == PRIVATE
     assert [(t['category'], t['share']) for t in served['to']] == rules.privateFunding()
@@ -214,7 +214,7 @@ def _golden():
 def _workbook(results, implementation):
     return writeWorkbook(
         BasisInput(currency='USD', hedging='Hedged'),
-        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+        MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
         results, implementation['sleeves'], rules.AUTO_SLEEVE_CATEGORIES,
         implementation['variant'], implementation['tacticalTilt'],
         implementation['feeSchedule'], implementation['feeLevel'],
@@ -293,7 +293,7 @@ def test_the_workbook_gives_the_initial_allocation_a_sheet_of_its_own():
 def test_a_book_without_private_markets_writes_todays_sheets():
     from openpyxl import load_workbook
     basis, plain = _book('USD', 'USD|Moderate|ex-Alts|0')
-    content = writeWorkbook(basis, MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x'),
+    content = writeWorkbook(basis, MandateInput(topAccountSize=5e7, mandateSize=5e7, primaryPwa='x', entity='gsi'),
                             [plain], _sleeves(plain), rules.AUTO_SLEEVE_CATEGORIES, VARIANT,
                             False, 'CASP', 'PMG Target', True, False,
                             assets=assetEstimates.forSlice('USD', 'Hedged'))

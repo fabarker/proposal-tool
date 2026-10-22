@@ -99,7 +99,7 @@ def test_a_version_four_store_gains_the_stamps_from_its_history(tmp_path, monkey
         UPDATE meta SET value = '4' WHERE key = 'schemaVersion';""")
     conn.execute("INSERT INTO sleeves VALUES (3, ?, ?, 'Old', '', '', 'a', '2026-01-01T00:00:00Z', "
                  "'b', '2026-03-01T00:00:00Z', '', '')", (V, C))
-    conn.execute("INSERT INTO sleeveProducts VALUES (3, 0, ?, 1.0)", (A,))
+    conn.execute("INSERT INTO sleeveProducts (sleeveId, position, productId, weight) VALUES (3, 0, ?, 1.0)", (A,))
     for rev, action, at in ((1, 'created', '2026-01-01T00:00:00Z'), (2, 'updated', '2026-02-01T00:00:00Z'),
                             (3, 'deleted', '2026-02-10T00:00:00Z'), (4, 'restored', '2026-03-01T00:00:00Z')):
         conn.execute("INSERT INTO sleeveHistory (sleeveId, revision, action, variant, category, name, "
@@ -107,7 +107,7 @@ def test_a_version_four_store_gains_the_stamps_from_its_history(tmp_path, monkey
                      (rev, action, V, C, json.dumps([[A, 1.0]]), at))
     conn.commit(); conn.close()
 
-    assert sleeveRepo.describe()['schemaVersion'] == 12         # the overlays' (D155), the catalogue's (D165), the switch (D169), the product's category (D178), shared sleeves (D179), the tickers by currency (D180), the issue currency (D184)
+    assert sleeveRepo.describe()['schemaVersion'] == 14         # the overlays' (D155), the catalogue's (D165), the switch (D169), the product's category (D178), shared sleeves (D179), the tickers by currency (D180), the issue currency (D184)
     old = sleeveRepo.getSleeve(3)
     assert old['firstCreatedAt'] == '2026-01-01T00:00:00Z'
     assert old['createdAt'] == '2026-02-01T00:00:00Z', 'the last save that changed it, not the restore'

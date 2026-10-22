@@ -7,11 +7,13 @@ between environments, and reviewing it as a table:
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --census
         What the store and the catalogue hold; every broken sleeve and why;
         every product the sleeves reference that the catalogue no longer
-        carries; any fixed category not holding exactly one sleeve.
+        carries; any fixed category holding two sleeves under one type; and
+        the overlays a type is not given for want of a sleeve (D191).
 
     python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --export out.csv
         The whole library in the interchange shape, one row per product:
-        Variant, Category, Sleeve, Edition, ProductId, Weight - and beside
+        Variant, Category, Sleeve, Edition, ProductId, Weight, BelowMinimum
+        (the product held instead below the row's minimum, D192) - and beside
         it, as out.rules.csv, every edition's rules (D89). A sleeve shared
         by several types names them all in Variant, separated by |, or All
         for every type (D179).
@@ -265,7 +267,7 @@ def _export(path: str) -> int:
     rows = sleeveRepo.exportRows()
     with open(path, 'w', newline='', encoding='utf-8') as fh:
         writer = csv.writer(fh)
-        writer.writerow(sleeveRepo.SEED_COLUMNS_EDITIONS)
+        writer.writerow(sleeveRepo.SEED_COLUMNS_EDITIONS + [sleeveRepo.ALTERNATIVE_COLUMN])
         writer.writerows(rows)
     print('wrote {} rows ({} editions) to {}'.format(
         len(rows), len({r[:4] for r in rows}), path))
@@ -277,7 +279,7 @@ def _export(path: str) -> int:
     if ruleRows or os.path.exists(rulesFile):
         with open(rulesFile, 'w', newline='', encoding='utf-8') as fh:
             writer = csv.writer(fh)
-            writer.writerow(sleeveRepo.RULE_COLUMNS)
+            writer.writerow(sleeveRepo.RULE_COLUMNS + [sleeveRepo.ENTITY_COLUMN])
             writer.writerows(ruleRows)
         print('wrote {} rule(s) to {}'.format(len(ruleRows), rulesFile))
     return 0

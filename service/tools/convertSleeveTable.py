@@ -8,7 +8,9 @@ implementation type and one portfolio:
     Product Name | Product Weight
 
 (or Long Name for the sleeve and Implementation / Product for the product;
-the columns may come in any order, under title rows)
+the columns may come in any order, under title rows), and optionally Below
+Minimum: the product held instead where the amount reaching the row's
+product is below its minimum, by name, ID or ticker
 
 Each (Currency, Sleeve Name, Implementation Type, Portfolio Name) holds a set
 of products whose weights sum to 1. The import wants the library instead:
@@ -78,7 +80,7 @@ EXCLUSION = 'ex-RAs'
 #: an all-equity portfolio's allocation type, as a rule names it
 NA = 'NA'
 
-SEED_COLUMNS = ['Variant', 'Category', 'Sleeve', 'Edition', 'ProductId', 'Weight']
+SEED_COLUMNS = ['Variant', 'Category', 'Sleeve', 'Edition', 'ProductId', 'Weight', 'BelowMinimum']
 RULE_COLUMNS = ['Variant', 'Category', 'Sleeve', 'Edition', 'Currency', 'RiskLevel',
                 'AllocationType']
 SEED_SHEET, RULES_SHEET = 'Sleeves', 'Rules'
@@ -95,6 +97,12 @@ COLUMNS = {
     'portfolio': ('portfolioname', 'portfolio'),
     'product': ('productname', 'product', 'implementationproduct', 'productid'),
     'weight': ('productweight', 'weight'),
+}
+#: optional: the product held instead where the amount reaching a row's
+#: product is below its minimum, by name, ID or ticker
+OPTIONAL_COLUMNS = {
+    'alternative': ('belowminimum', 'ifbelowminimum', 'alternative', 'alternativeproduct',
+                    'belowminimumproduct'),
 }
 TYPE_WORDS = {
     'all': ALL_TYPES, 'alltypes': ALL_TYPES,
@@ -246,9 +254,10 @@ def parseTypes(cell):
 def readTable(path, productsBy, clash, shown):
     """The long table as {(category, sleeve): {type: {triple: holdings}}},
     the order sleeves first appear in, and what was read."""
-    sheet, cols, headerRow, rows = _findTable(path, COLUMNS)
+    sheet, cols, headerRow, rows = _findTable(path, COLUMNS, optional=OPTIONAL_COLUMNS)
     problems, stats = [], {'rows': 0, 'zero': 0, 'overridden': 0, 'sheet': sheet}
     groups, order = {}, []          # (cat, sleeve, typesKey, portfolio) -> [(pid, w)]
+    altOf = {}                      # ((cat, sleeve, typesKey, portfolio), pid) -> alternative
     for at, row in enumerate(rows, start=headerRow + 1):
         cell = {f: (row[i] if i < len(row) else None) for f, i in cols.items()}
         if not any(_words(v) for v in cell.values()):
@@ -281,6 +290,17 @@ def readTable(path, productsBy, clash, shown):
                 raise ValueError('weight {!r} is not a number'.format(cell['weight']))
             if weight < 0:
                 raise ValueError('weight {} is below zero'.format(weight))
+            alternative = _words(cell.get('alternative'))
+            altId = productsBy.get(alternative.casefold()) if alternative else ''
+            if alternative and alternative.casefold() in clash:
+                raise ValueError('more than one product is called {!r}; use its ID'.format(alternative))
+            if alternative and altId is None:
+                near = difflib.get_close_matches(alternative.casefold(), list(productsBy), n=1)
+                raise ValueError('the product to hold below the minimum, {!r}, is not in the product '
+                                 'file{}'.format(alternative, '; did you mean {!r}?'.format(
+                                     shown[near[0]]) if near else ''))
+            if altId and altId == pid:
+                raise ValueError('{} cannot be its own alternative below its minimum'.format(product))
         except ValueError as exc:
             problems.append('{}: {}'.format(where, exc))
             continue
@@ -296,6 +316,7 @@ def readTable(path, productsBy, clash, shown):
                 where, product, sleeve, ', '.join(types), _portfolioText(portfolio)))
             continue
         groups[key].append((pid, weight, at))
+        altOf[(key, pid)] = altId or ''
 
     # each group's weights sum to 1
     for key in order:
@@ -310,7 +331,7 @@ def readTable(path, productsBy, clash, shown):
     claims = {}
     for key in order:
         category, sleeve, types, portfolio = key
-        holdings = tuple(sorted((p, round(w, 9)) for p, w, _ in groups[key]))
+        holdings = tuple(sorted((p, round(w, 9), altOf.get((key, p), '')) for p, w, _ in groups[key]))
         for t in types:
             claims.setdefault((category, sleeve, t, portfolio), []).append(
                 (len(types), holdings, groups[key]))
@@ -468,8 +489,10 @@ def convert(library, sleeveOrder):
                 made.append((label, holdings, e['rows'], _rules(e['triples'])))
             made.sort(key=lambda m: m[0] != '')
             for label, holdings, rows, rules in made:
+                altById = {held[0]: held[2] for held in holdings}
                 for pid, weight, _ in rows:
-                    seedRows.append([variant, category, sleeve, label, pid, weight])
+                    seedRows.append([variant, category, sleeve, label, pid, weight,
+                                     altById.get(pid, '')])
                 for rule in rules:
                     ruleRows.append([variant, category, sleeve, label,
                                      TYPE_SEP.join(rule['currency']),

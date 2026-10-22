@@ -222,7 +222,7 @@ def test_a_book_off_its_strategic_allocation_is_delivered_without_it(store):
     from cyrus_pmg.pmgService.scenario.workbook import writeWorkbook
     import openpyxl
     basis = BasisInput(currency='USD', hedging='Hedged')
-    mandate = MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid')
+    mandate = MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid', entity='gsi')
     args = (basis, mandate, [result], customs, rules.autoSleeveCategories(), VARIANT, True, 'CASP',
             'PMG Target', True, True)
     book = openpyxl.load_workbook(io.BytesIO(writeWorkbook(
@@ -254,7 +254,7 @@ def _scenario(client, who):
     from test_scenario_backend import BASIS, PORT, _sleeveMap
     from cyrus_pmg.pmgService.scenario.types import PortfolioKey
     made = client.post('/api/v1/scenario', headers=who, json={
-        'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9, 'primaryPwa': 'A. Castellanos — Madrid'},
+        'mandate': {'topAccountSize': 1e9, 'mandateSize': 1e9, 'primaryPwa': 'A. Castellanos — Madrid', 'entity': 'gsi'},
         'basis': {'currency': 'USD', 'hedging': 'Hedged'}})
     sid = made.json()['id']
     assert client.put('/api/v1/scenario/' + sid, headers=who, json={'variant': VARIANT}).status_code == 200

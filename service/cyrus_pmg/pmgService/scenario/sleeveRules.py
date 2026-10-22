@@ -12,6 +12,11 @@ A rule constrains any subset of three fields of a strategic portfolio:
 
     currency        riskLevel        allocationType
 
+and the custodian / entity the proposal is for (entities.py, D193), which
+is the scenario's rather than the portfolio's:
+
+    entity
+
 A constrained field lists the values it allows; an unconstrained one means
 any. A rule matches a portfolio when every constrained field contains the
 portfolio's value. An edition has one or more rules and applies to a
@@ -39,10 +44,15 @@ from __future__ import annotations
 import json
 import threading
 
-from . import saaKeys, universe
+from . import entities, saaKeys, universe
 from .types import PortfolioKey, ValidationError
 
-FIELDS = ('currency', 'riskLevel', 'allocationType')
+FIELDS = ('currency', 'riskLevel', 'allocationType', 'entity')
+#: the fields a strategic portfolio answers; the entity is the scenario's
+PORTFOLIO_FIELDS = FIELDS[:3]
+
+#: every entity: what a rule naming none allows
+ANY = None
 
 #: what an all-equity portfolio's allocation type reads as in a rule
 NA = 'NA'
@@ -70,6 +80,8 @@ def vocabulary() -> dict:
         'riskLevel': [r for r in saaKeys.RISK_LEVELS if r in risks],
         'allocationType': ([t for t in saaKeys.ALLOCATION_TYPES if t in types]
                            + ([NA] if NA in types else [])),
+        # the entities by id, retired ones too: a rule naming one keeps it
+        'entity': entities.ids(),
     }
 
 
@@ -86,7 +98,8 @@ def valueLabels() -> dict:
     firm's names, and the all-equity "allocation" as what it is. Cosmetic -
     a rule still names the value."""
     from .rules import RISK_LEVEL_LABELS
-    return {'riskLevel': dict(RISK_LEVEL_LABELS), 'allocationType': {NA: 'All equity'}}
+    return {'riskLevel': dict(RISK_LEVEL_LABELS), 'allocationType': {NA: 'All equity'},
+            'entity': {e['id']: e['name'] for e in entities.everyEntity()}}
 
 
 def fieldsOf(key: PortfolioKey) -> dict:
@@ -139,7 +152,15 @@ def normalise(rules) -> list:
             values = parseCell(rule.get(field))
             if not values:
                 continue
+            if field == 'entity':
+                # by id or by name, whatever the capitals: a file says GSBE
+                values = [entities.resolve(v) or v for v in values]
             bad = [v for v in values if v not in vocab[field]]
+            if bad and field == 'entity':
+                raise ValidationError(
+                    'rules', 'Rule {}: {} {} not a custodian / entity. Known: {}.'.format(
+                        position, ', '.join(repr(b) for b in bad), 'is' if len(bad) == 1 else 'are',
+                        ', '.join(entities.name(e) for e in vocab[field])))
             if bad:
                 raise ValidationError(
                     'rules', 'Rule {}: {} {} not in the universe. Known values: {}.'.format(
@@ -178,26 +199,48 @@ def describe(rules) -> str:
     per rule, rules joined by `` OR ``. Blank for the fallback."""
     parts = []
     for rule in rules or []:
-        parts.append('; '.join('{} {}'.format(f, cell(rule[f])) for f in FIELDS if rule.get(f)))
+        parts.append('; '.join('{} {}'.format(f, cell(
+            [entities.name(v) for v in rule[f]] if f == 'entity' else rule[f]))
+            for f in FIELDS if rule.get(f)))
     return ' OR '.join(parts)
 
 
 # ------------------------------------------------------------ matching ---
 
-def matches(rules, key: PortfolioKey) -> bool:
-    """Whether any rule matches *key*. No rules match nothing - the fallback
-    is chosen by the resolver, not by matching."""
+def _portfolioMatch(rule, fields) -> bool:
+    return all(fields[f] in rule[f] for f in PORTFOLIO_FIELDS if rule.get(f))
+
+
+def matches(rules, key: PortfolioKey, entity=None) -> bool:
+    """Whether any rule matches *key* at *entity* (D193). No rules match
+    nothing - the fallback is chosen by the resolver, not by matching. A rule
+    naming entities matches only a scenario at one of them; one naming none,
+    a scenario at any entity or none."""
     fields = fieldsOf(key)
     for rule in rules or []:
-        if all(fields[f] in rule[f] for f in FIELDS if rule.get(f)):
+        if _portfolioMatch(rule, fields) and (not rule.get('entity') or entity in rule['entity']):
             return True
     return False
 
 
+def entitiesAt(rules, key: PortfolioKey):
+    """The entities the rules claim *key* at: ANY where a rule matching it
+    names none, else the set they name (empty where none matches)."""
+    fields = fieldsOf(key)
+    out = set()
+    for rule in rules or []:
+        if not _portfolioMatch(rule, fields):
+            continue
+        if not rule.get('entity'):
+            return ANY
+        out.update(rule['entity'])
+    return out
+
+
 def applicability(rules) -> list:
-    """Every portfolio in the universe the rules name, as key strings in the
-    universe's own order. Empty for the fallback. Cached against the
-    universe's generation."""
+    """Every portfolio in the universe the rules name at some entity, as key
+    strings in the universe's own order. Empty for the fallback. Cached
+    against the universe's generation."""
     if not rules:
         return []
     signature = pack(rules)
@@ -206,13 +249,24 @@ def applicability(rules) -> list:
         hit = _cache.get(signature)
         if hit is not None and hit[0] == generation:
             return list(hit[1])
-    keys = [k.toStr() for k in universe.keys() if matches(rules, k)]
+    keys = [k.toStr() for k in universe.keys()
+            if any(_portfolioMatch(rule, fieldsOf(k)) for rule in rules)]
     with _lock:
         _cache[signature] = (generation, keys)
     return list(keys)
 
 
 def overlap(rulesA, rulesB) -> list:
-    """The portfolios both rule sets name, in universe order."""
+    """The portfolios both rule sets name at a common entity, in universe
+    order (D193): an edition for GSBE and one for GSI may name the same
+    portfolios, and never meet."""
     b = set(applicability(rulesB))
-    return [k for k in applicability(rulesA) if k in b]
+    out = []
+    for k in applicability(rulesA):
+        if k not in b:
+            continue
+        key = PortfolioKey.fromStr(k)
+        atA, atB = entitiesAt(rulesA, key), entitiesAt(rulesB, key)
+        if atA is ANY or atB is ANY or atA & atB:
+            out.append(k)
+    return out
