@@ -15,7 +15,8 @@ to what only this repository has, the code untouched. It will not build while
 the copy of HEAD carries a trace; the copy Poros already holds is rebuilt with
 the cleaner as it stood at the commit Poros is at.
 
-    python3 service/tools/buildPorosUpdate.py            build porting/update.py
+    python3 service/tools/buildPorosUpdate.py "<what it carries>"
+                                                         build porting/update.py
     python3 service/tools/buildPorosUpdate.py --confirm  Poros has it: record that
 
 The shipped paths must be committed first. --confirm moves porting/poros.json
@@ -155,7 +156,7 @@ def _needs(lines, block):
     return out
 
 
-def build():
+def build(title):
     with open(STATE, encoding='utf-8') as fh:
         state = json.load(fh)
     dirty = _git('status', '--porcelain', '--', *(list(AREAS.values()) + [ROUTER, CLEANER])).strip()
@@ -221,6 +222,7 @@ def build():
         'ROUTERDROPBLANK': state.get('routerDropAfterBlank', []),
         'NEEDS': _needs(newRouter, (newRange[0], newRange[1])),
         'NOTES': state.get('notes', []),
+        'TITLE': title,
     }
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'porosUpdateTemplate.py'),
               encoding='utf-8') as fh:
@@ -266,4 +268,8 @@ def confirm():
 
 
 if __name__ == '__main__':
-    sys.exit(confirm() if sys.argv[1:] == ['--confirm'] else build())
+    if sys.argv[1:] == ['--confirm']:
+        sys.exit(confirm())
+    if len(sys.argv) != 2 or not sys.argv[1].strip() or sys.argv[1].startswith('-'):
+        sys.exit('name what the update carries: buildPorosUpdate.py "<what it carries>"')
+    sys.exit(build(sys.argv[1].strip()))

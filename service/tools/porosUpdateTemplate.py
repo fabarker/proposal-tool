@@ -835,6 +835,7 @@ def main(argv=None):
     ap.add_argument('--src', default=DEFAULT_SRC, help="the folder holding cyrus_pmg")
     args = ap.parse_args(argv)
     try:
+        say('This update: {} (id {})'.format(TITLE, UPDATE_ID))
         if args.action == 'undo':
             return undo()
         plan, problems, warnings = survey(os.path.abspath(args.src))
@@ -845,7 +846,7 @@ def main(argv=None):
                 say('  - ' + p)
             return 1
         if not (plan['files'] or plan['router']['work'] or plan['manifests'] or plan['reword']):
-            say('Nothing to do: this machine already has this update.')
+            say('Nothing to do: this machine already has this update ({}).'.format(UPDATE_ID))
             return 0
         if args.action == 'look':
             say('Ready. Nothing was changed. To update:  python {} go'.format(
@@ -871,6 +872,10 @@ NEEDS = json.loads(r'''@@NEEDS@@''')
 #: history notes an earlier version wrote, and how they read now
 NOTES = json.loads(r'''@@NOTES@@''')
 ROUTES = int('@@ROUTES@@')
+#: what this update carries, and a short id from the files it writes, so each
+#: run says which update it is
+TITLE = json.loads(r'''@@TITLE@@''')
+UPDATE_ID = hashlib.sha256(json.dumps(TARGET, sort_keys=True).encode('ascii')).hexdigest()[:8]
 PAYLOAD = """
 @@PAYLOAD@@
 """
