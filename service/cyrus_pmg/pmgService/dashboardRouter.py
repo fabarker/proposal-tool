@@ -748,6 +748,44 @@ def exportProducts(caller=Depends(requireAdmin)):
     return _csv(rows[0], rows[1:], 'products.csv')
 
 
+# the SMA mandates (D197): a file of their own, one row per code, previewed
+# and applied the way a product file is, and exported to edit and load again
+
+@router.post('/scenario/repository/mandates/import/preview')
+def previewMandateImport(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What an SMA mandate file would do, before anything moves: {name,
+    content} with the file as base64."""
+    try:
+        return products.mandatePreview(payload.get('name'), payload.get('content'))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
+
+
+@router.post('/scenario/repository/mandates/import')
+def importMandates(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Apply an SMA mandate file: {name, content, note?, base} - base being
+    the catalogue version the preview showed."""
+    try:
+        done = products.importMandates(payload.get('name'), payload.get('content'),
+                                       user=caller.kerberos, note=payload.get('note', ''),
+                                       base=payload.get('base'))
+        return {'import': done, 'catalogue': products.describeSource()}
+    except ValidationError as exc:
+        return _validationError(exc)
+    except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
+
+
+@router.get('/scenario/repository/mandates.csv')
+def exportMandates(caller=Depends(requireAdmin)):
+    """The live catalogue's SMA mandates as a mandate file, ready to edit
+    and import."""
+    rows = products.mandateRows()
+    return _csv(rows[0], rows[1:], 'mandates.csv')
+
+
 # ---- the fee card (D166) ---------------------------------------------------
 # The card every proposal is priced from, kept in the repository: admin only,
 # every change carrying a note and a new version, a write made against an

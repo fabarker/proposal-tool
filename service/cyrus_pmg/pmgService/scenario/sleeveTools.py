@@ -55,6 +55,17 @@ between environments, and reviewing it as a table:
         Every version of one product, oldest first: who changed it, when,
         why, and what moved.
 
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --mandates-export out.csv
+        The SMA mandates as a mandate file (D197): one row per code -
+        ProductId, MandateCode, BaseCurrency, Hedging, Category, ProductCost,
+        MinimumInvestment, DistributionYield. Edit it and import it.
+
+    python3 -m cyrus_pmg.pmgService.scenario.sleeveTools --mandates-import in.csv [--note TEXT]
+        Load a mandate file (CSV or XLSX) through the same checks the
+        console gives a product's mandates, after printing what it would
+        do. Codes are added and changed by code, never taken off; a single
+        bad row refuses the whole load.
+
 The store is SCENARIO_SLEEVES_DB. The catalogue and the fee card are kept in
 it (D165, D166). A store that does not exist yet is created and seeded on
 the first command that opens it: the fee card from SCENARIO_FEES_SOURCE, the
@@ -234,6 +245,43 @@ def _productsImport(path: str, withdrawMissing: bool, note: str) -> int:
     return 0
 
 
+def _mandatesExport(path: str) -> int:
+    rows = products.mandateRows()
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows(rows)
+    print('wrote {} SMA mandate(s) to {}'.format(len(rows) - 1, path))
+    return 0
+
+
+def _mandatesImport(path: str, note: str) -> int:
+    import base64
+    try:
+        with open(path, 'rb') as fh:
+            content = base64.b64encode(fh.read()).decode('ascii')
+        preview = products.mandatePreview(path, content)
+    except (OSError, ValidationError, products.BadCatalogue) as exc:
+        print('REFUSED: {}'.format(getattr(exc, 'message', exc)))
+        print('nothing was written')
+        return 1
+    print('{}: {} row(s), {} product(s)'.format(preview['file'], preview['rows'],
+                                                 len(preview['products'])))
+    print('  {} mandate(s) new, {} changed; {} product(s) as they are'.format(
+        preview['added'], preview['changed'], preview['same']))
+    for item in preview['products']:
+        if not item['same']:
+            print('  {}  {}'.format(item['productId'], '; '.join(item['changeWords'])))
+    try:
+        done = products.importMandates(path, content, user=getpass.getuser(), note=note or '',
+                                       base=preview['revision'])
+    except ValidationError as exc:
+        print('REFUSED ({}): {}'.format(exc.field, exc.message))
+        print('nothing was written')
+        return 1
+    print('imported: {added} mandate(s) added, {changed} changed on {products} product(s) - the '
+          'catalogue is now version {revision}'.format(**done))
+    return 0
+
+
 def _productHistory(productId: str) -> int:
     trail = products.history(productId)
     if not trail:
@@ -320,11 +368,17 @@ def main(argv=None) -> int:
     ap.add_argument('--withdraw-missing', action='store_true', dest='withdrawMissing')
     ap.add_argument('--note', default='')
     ap.add_argument('--product-history', metavar='PRODUCTID', dest='productHistory')
+    ap.add_argument('--mandates-export', metavar='CSV', dest='mandatesExport')
+    ap.add_argument('--mandates-import', metavar='FILE', dest='mandatesImport')
     args = ap.parse_args(argv)
     if args.productsExport:
         return _productsExport(args.productsExport)
     if args.productsImport:
         return _productsImport(args.productsImport, args.withdrawMissing, args.note)
+    if args.mandatesExport:
+        return _mandatesExport(args.mandatesExport)
+    if args.mandatesImport:
+        return _mandatesImport(args.mandatesImport, args.note)
     if args.productHistory:
         return _productHistory(args.productHistory)
     if args.history is not None:

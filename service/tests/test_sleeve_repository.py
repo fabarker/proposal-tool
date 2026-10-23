@@ -101,13 +101,13 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     """One row per product, every field a sleeve product has always carried,
     the fee left out and the group in its place; an empty ticker is the dash
     the table has always shown. Beside them, the ticker and minimum it has in
-    each base currency where they differ (D180), and the currency it is
-    issued in (D184)."""
+    each base currency where they differ (D180), the currency it is
+    issued in (D184), and a separate account's SMA mandates (D197)."""
     rows = products.all()
     assert len(rows) == 73
     expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
                 'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
-                'distributionYield', 'minimumInvestment', 'currencies'}
+                'distributionYield', 'minimumInvestment', 'currencies', 'mandates'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p
@@ -484,6 +484,9 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/products/revert', ('POST',)),
         ('/scenario/repository/products/history', ('GET',)),
         ('/scenario/repository/products/import/preview', ('POST',)),
+        ('/scenario/repository/mandates.csv', ('GET',)),
+        ('/scenario/repository/mandates/import', ('POST',)),
+        ('/scenario/repository/mandates/import/preview', ('POST',)),
         ('/scenario/repository/products/import', ('POST',)),
         ('/scenario/repository/products.csv', ('GET',)),
         # the fee card (D166)

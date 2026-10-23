@@ -50,6 +50,19 @@ Reads are cheap: the catalogue is kept in memory against the file's stamp
 (sleeveRepo.fileStamp) and re-read through a plain read-only connection when
 the file moves, the way the overlay rules are (D155). A write from any
 process is seen by the next read in every process.
+
+A separate account - an SMA, a product whose vehicle says so - carries its
+SMA mandates beside its values by currency (D197): one mandate code for each
+base currency it is offered in and, for a Public Equity SMA, for each of the
+three hedging versions the account comes in there (Hedged, ISG Hedged,
+Unhedged); an SMA in any other category has one mandate a currency and no
+hedging version. A mandate may carry a product cost, a minimum and a
+distribution yield of its own, which a scenario on that basis will read in
+place of the product's (not yet: the catalogue holds them first). They come
+from a mandate file of their own, one row per code, or from the product's
+form, and a code is never given to two products. The word "mandate" on its
+own is the client's mandate everywhere else in the tool, so on screen these
+are always "SMA mandates".
 """
 
 from __future__ import annotations
@@ -170,6 +183,38 @@ WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurre
 #: the figures, all percentages but the minimum, which is currency units
 _PERCENT = ('productCost', 'distributionYield')
 
+#: What marks a product as a separate account, an SMA (D197): its vehicle,
+#: which reads Separate Account on Poros and SMA in the sample file here,
+#: compared without regard to case.
+SMA_VEHICLES = ('separate account', 'sma')
+#: the one sleeve category whose SMAs come in hedging versions
+EQUITY_CATEGORY = 'Public Equity'
+#: the versions a Public Equity SMA's mandates come in, in the grid's order;
+#: an SMA in any other category has no version, stored as ''
+MANDATE_VERSIONS = ('Hedged', 'ISG Hedged', 'Unhedged')
+#: what a mandate may carry of its own, read on its basis in place of the
+#: product's figure there
+MANDATE_FIGURES = ('productCost', 'minimumInvestment', 'distributionYield')
+CODE_MAX = 40
+#: the mandate file's columns (D197): one row per code, the first four and
+#: Category required, the figures blank for none of its own. A row's Category
+#: is the product's, checked against it, and fills a blank one.
+MANDATE_COLUMNS = ['ProductId', 'MandateCode', 'BaseCurrency', 'Hedging', 'Category',
+                   'ProductCost', 'MinimumInvestment', 'DistributionYield']
+#: what a file may head each with, lower-cased and stripped of all but
+#: letters and digits
+_MANDATE_HEADERS = {
+    'productid': 'productId', 'mandatecode': 'code', 'code': 'code', 'mandate': 'code',
+    'basecurrency': 'currency', 'baseccy': 'currency', 'currency': 'currency', 'ccy': 'currency',
+    'hedging': 'hedging', 'hedgingversion': 'hedging', 'version': 'hedging',
+    'category': 'category', 'catagory': 'category', 'group': 'category',
+    'productcost': 'productCost', 'cost': 'productCost',
+    'minimuminvestment': 'minimumInvestment', 'minimum': 'minimumInvestment',
+    'distributionyield': 'distributionYield', 'yield': 'distributionYield',
+}
+_MANDATE_REQUIRED = ('productId', 'code', 'currency', 'category')
+LABELS.update({'mandates': 'SMA mandates', 'code': 'Mandate code', 'hedging': 'Hedging'})
+
 ID_MAX = 80
 NAME_MAX = 120
 TICKER_MAX = 24
@@ -204,10 +249,10 @@ def _now() -> str:
 
 # ------------------------------------------------------------ the extract ---
 
-def _readRows(path: str, data: bytes = None):
+def _readRows(path: str, data: bytes = None, sheet: str = 'products'):
     """(header, rows...) from a CSV or an XLSX - a path, or the bytes of an
-    upload named *path*. A workbook is read from its 'products' sheet when it
-    has one (the data template keeps the products there), else its first."""
+    upload named *path*. A workbook is read from its *sheet* when it has one
+    (the data template keeps the products on 'products'), else its first."""
     if path.lower().endswith('.csv'):
         if data is None:
             # utf-8-sig drops a BOM from an Excel export; unwrapRows takes off
@@ -230,7 +275,7 @@ def _readRows(path: str, data: bytes = None):
     from openpyxl import load_workbook
     book = load_workbook(io.BytesIO(data) if data is not None else path, read_only=True,
                          data_only=True)
-    named = [s for s in book.sheetnames if s.strip().lower() == 'products']
+    named = [s for s in book.sheetnames if s.strip().lower() == sheet]
     sheet = book[named[0]] if named else book.active
     rows = sheet.iter_rows(values_only=True)
     head = next(rows, None) or []
@@ -515,6 +560,9 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
     out = {k: record[k] for k in KEYS}
     out['currencies'] = _currencies(fields.get('currencies'), strict)
     _canonical(out)
+    # the SMA mandates (D197), checked against the product as it now stands:
+    # its vehicle, its category and the currencies it is offered in
+    out['mandates'] = _mandates(fields.get('mandates'), out, strict)
     return out
 
 
@@ -639,6 +687,141 @@ def _currencies(value, strict=True) -> dict:
     return out
 
 
+def isSma(product) -> bool:
+    """Whether *product* is a separate account (D197): its vehicle says so."""
+    return _text((product or {}).get('vehicle')).lower() in SMA_VEHICLES
+
+
+def _mandates(value, record, strict=True) -> list:
+    """The SMA mandates (D197) as stored: [{code, currency, hedging,
+    productCost, minimumInvestment, distributionYield}] in the grid's order
+    - by base currency, then by version - from a list, or its JSON. Each is
+    checked as a product's figures are, and the list against *record*: only
+    an SMA has any; a Public Equity SMA's each name a version and any other
+    SMA's none; a currency is one the product is offered in; and no code or
+    cell is on the product twice. A refusal names the row's box
+    (mandate0code, mandate2hedging...) or, for the list, ``mandates``."""
+    if value is None or value == '' or value == []:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise ValidationError('mandates', 'The SMA mandates could not be read.')
+    # (all() here is the catalogue, not the builtin)
+    if not isinstance(value, list) or any(not isinstance(m, dict) for m in value):
+        raise ValidationError('mandates', 'The SMA mandates are a list, one a mandate code.')
+    name = record.get('name') or record.get('productId') or 'the product'
+    if value and not isSma(record):
+        raise ValidationError('mandates', 'Only a separate account (an SMA) has SMA mandates: '
+                                          '{} is {}.'.format(name, _an(record.get('vehicle'))))
+    equity = record.get('category') == EQUITY_CATEGORY
+    offered = offeredIn(record)
+    out, codes, cells = [], {}, {}
+    for n, given in enumerate(value):
+        box = 'mandate{}'.format(n)
+        code = _text(given.get('code'))
+        if not code:
+            raise ValidationError(box + 'code', 'Give the SMA mandate its code.')
+        if strict and len(code) > CODE_MAX:
+            raise ValidationError(box + 'code', 'Keep the mandate code to {} characters.'.format(
+                CODE_MAX))
+        if code.lower() in codes:
+            raise ValidationError(box + 'code', 'The mandate code {} is on {} twice.'.format(
+                code, name))
+        codes[code.lower()] = code
+        currency = _text(given.get('currency')).upper()
+        if currency not in CURRENCIES:
+            raise ValidationError(box + 'currency', 'The base currency of {} is one of {}.'.format(
+                code, ', '.join(CURRENCIES)))
+        if currency not in offered:
+            raise ValidationError(box + 'currency', 'The SMA mandate {} is for {}, where {} is not '
+                                                    'offered.'.format(code, currency, name))
+        hedging = _text(given.get('hedging'))
+        if equity:
+            if not hedging:
+                raise ValidationError(box + 'hedging', 'The SMA mandate {} needs its hedging version: '
+                                      '{} is {}, whose SMAs come as {}.'.format(
+                                          code, name, EQUITY_CATEGORY, ', '.join(MANDATE_VERSIONS)))
+            if hedging not in MANDATE_VERSIONS:
+                same = [v for v in MANDATE_VERSIONS if v.lower() == hedging.lower()]
+                if same:
+                    raise ValidationError(box + 'hedging', 'The hedging version {!r} is spelled '
+                                                           '{}.'.format(hedging, same[0]))
+                raise ValidationError(box + 'hedging', 'The hedging version of {} is one of {}.'.format(
+                    code, ', '.join(MANDATE_VERSIONS)))
+        elif hedging:
+            raise ValidationError(box + 'hedging', 'Only a {} SMA has hedging versions: {} is {}, so '
+                                  'leave the hedging of {} blank.'.format(
+                                      EQUITY_CATEGORY, name,
+                                      record.get('category') or 'in no category', code))
+        cell = (currency, hedging)
+        if cell in cells:
+            raise ValidationError(box + 'code', 'Two SMA mandates for {}: {} and {}. One code a '
+                                  'cell.'.format(_cellWords(currency, hedging), cells[cell], code))
+        cells[cell] = code
+        figures = {}
+        for figure in MANDATE_FIGURES:
+            try:
+                figures[figure] = _figure(given.get(figure), figure, strict=strict)
+            except ValidationError as exc:
+                raise ValidationError(box + figure, exc.message.replace(
+                    LABELS[figure], LABELS[figure] + ' of ' + code, 1))
+        out.append(dict({'code': code, 'currency': currency, 'hedging': hedging}, **figures))
+    out.sort(key=lambda m: (CURRENCIES.index(m['currency']),
+                            MANDATE_VERSIONS.index(m['hedging']) if m['hedging'] else -1))
+    return out
+
+
+def _an(word) -> str:
+    """'an ETF', 'a Mutual Fund', 'of no vehicle'."""
+    word = _text(word)
+    if not word:
+        return 'of no vehicle'
+    return ('an ' if word[0].lower() in 'aeiou' else 'a ') + word
+
+
+def _cellWords(currency, hedging) -> str:
+    return currency + (' · ' + hedging if hedging else '')
+
+
+def showMandate(mandate) -> str:
+    """One SMA mandate as a history line or a preview shows it: its cell,
+    then the figures it carries of its own."""
+    if mandate is None:
+        return '—'
+    bits = [_cellWords(mandate['currency'], mandate['hedging'])]
+    for figure, word in (('productCost', 'cost'), ('minimumInvestment', 'min'),
+                         ('distributionYield', 'yield')):
+        if mandate.get(figure) is not None:
+            bits.append('{} {}'.format(word, show(figure, mandate[figure])))
+    return ' · '.join(bits)
+
+
+def _sameMandate(a, b) -> bool:
+    return not any(not _same(a.get(k), b.get(k))
+                   for k in ('code', 'currency', 'hedging') + MANDATE_FIGURES)
+
+
+def mandateFor(product, currency, hedging, version=None):
+    """The SMA mandate of *product* a scenario in *currency* with the
+    hedging policy *hedging* holds (D197), or None where it has none there.
+    An SMA whose mandates come in versions takes the version the policy
+    names - Equity Not Hedged leaves equity unhedged, so it takes Unhedged -
+    unless *version* fixes one; an SMA with no versions takes its one
+    mandate in the currency, whatever the policy."""
+    held = (product or {}).get('mandates') or []
+    if not held:
+        return None
+    versioned = any(m['hedging'] for m in held)
+    if versioned:
+        wanted = version or (hedging if hedging in MANDATE_VERSIONS else MANDATE_VERSIONS[-1])
+    else:
+        wanted = ''
+    return next((dict(m) for m in held if m['currency'] == currency and m['hedging'] == wanted),
+                None)
+
+
 def inCurrency(product, currency):
     """*product* as a scenario in *currency* reads it
     (D180, D182, D184, D189, D190, D194): the ticker, the minimum, the
@@ -729,6 +912,15 @@ def changes(before, after) -> list:
             key = field + currency
             out.append({'field': key, 'label': LABELS[key], 'before': _showOwn(field, was),
                         'after': _showOwn(field, now)})
+    # the SMA mandates (D197), one line a code that came, went or moved
+    was = {m['code']: m for m in before.get('mandates') or []}
+    now = {m['code']: m for m in after.get('mandates') or []}
+    for code in list(was) + [c for c in now if c not in was]:
+        a, b = was.get(code), now.get(code)
+        if a is not None and b is not None and _sameMandate(a, b):
+            continue
+        out.append({'field': 'mandate:' + code, 'label': 'SMA mandate ' + code,
+                    'before': showMandate(a), 'after': showMandate(b)})
     return out
 
 
@@ -761,7 +953,19 @@ def _record(row) -> dict:
         'distributionYield': None if row['distributionYield'] is None else float(row['distributionYield']),
         'minimumInvestment': None if row['minimumInvestment'] is None else float(row['minimumInvestment']),
         'currencies': _storedCurrencies(row),
+        'mandates': _storedMandates(row),
     }
+
+
+def _storedMandates(row) -> list:
+    """The SMA mandates as stored (D197): read back without the checks, which
+    were made on the way in and would need the product whole."""
+    text = row['mandates'] if 'mandates' in row.keys() else ''
+    return json.loads(text) if text else []
+
+
+def _mandateText(record) -> str:
+    return json.dumps(record.get('mandates') or []) if record.get('mandates') else ''
 
 
 def _storedCurrencies(row) -> dict:
@@ -782,6 +986,7 @@ def _served(record) -> dict:
     out = dict(record)
     out['ticker'] = record['ticker'] or NO_TICKER
     out['currencies'] = {c: dict(v) for c, v in (record.get('currencies') or {}).items()}
+    out['mandates'] = [dict(m) for m in record.get('mandates') or []]
     out.pop('category', None)
     return out
 
@@ -1052,14 +1257,15 @@ def _insert(conn, record, position, user, stamp) -> None:
     conn.execute(
         'INSERT INTO products (productId, position, name, ticker, assetClass, category, style, '
         'vehicle, shareClass, source, liquidity, exposureCurrency, issueCurrency, productCost, '
-        'feeGroup, distributionYield, minimumInvestment, currencies, revision, createdBy, '
+        'feeGroup, distributionYield, minimumInvestment, currencies, mandates, revision, createdBy, '
         'createdAt, updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
-        '?, ?, 1, ?, ?, ?, ?)',
+        '?, ?, ?, 1, ?, ?, ?, ?)',
         (record['productId'], position, record['name'], record['ticker'], record['assetClass'],
          record.get('category') or '', record['style'], record['vehicle'], record['shareClass'] or '', record['source'],
          record['liquidity'], record['exposureCurrency'], record.get('issueCurrency') or '',
          record['productCost'], record['feeGroup'], record['distributionYield'],
-         record['minimumInvestment'], _currencyText(record), user, stamp, user, stamp))
+         record['minimumInvestment'], _currencyText(record), _mandateText(record), user, stamp,
+         user, stamp))
 
 
 def _update(conn, record, revision, user, stamp) -> None:
@@ -1067,13 +1273,13 @@ def _update(conn, record, revision, user, stamp) -> None:
         'UPDATE products SET name = ?, ticker = ?, assetClass = ?, category = ?, style = ?, '
         'vehicle = ?, shareClass = ?, source = ?, liquidity = ?, exposureCurrency = ?, '
         'issueCurrency = ?, productCost = ?, feeGroup = ?, distributionYield = ?, minimumInvestment = ?, '
-        'currencies = ?, revision = ?, updatedBy = ?, updatedAt = ? WHERE productId = ?',
+        'currencies = ?, mandates = ?, revision = ?, updatedBy = ?, updatedAt = ? WHERE productId = ?',
         (record['name'], record['ticker'], record['assetClass'], record.get('category') or '',
          record['style'],
          record['vehicle'], record['shareClass'] or '', record['source'], record['liquidity'],
          record['exposureCurrency'], record.get('issueCurrency') or '', record['productCost'],
          record['feeGroup'], record['distributionYield'], record['minimumInvestment'],
-         _currencyText(record), revision, user, stamp, record['productId']))
+         _currencyText(record), _mandateText(record), revision, user, stamp, record['productId']))
 
 
 def _history(conn, productId, revision, action, record, user, stamp, note='', source='') -> None:
@@ -1160,6 +1366,31 @@ def _entryOn(conn, productId) -> dict:
     return _entry(_row(conn, productId))
 
 
+def _codesHeld(conn, exceptId=None) -> dict:
+    """{code, lower-cased: (code, productId, name)} for every SMA mandate on
+    any other product than *exceptId*, withdrawn ones included (D197): a
+    code belongs to one product, and a withdrawn product keeps its own."""
+    out = {}
+    for r in conn.execute("SELECT productId, name, mandates FROM products WHERE mandates != ''"):
+        if r['productId'] == exceptId:
+            continue
+        for m in json.loads(r['mandates']):
+            out[m['code'].lower()] = (m['code'], r['productId'], r['name'])
+    return out
+
+
+def _refuseTakenCodes(conn, record) -> None:
+    """A mandate code another product holds refuses the save, naming it."""
+    if not record.get('mandates'):
+        return
+    held = _codesHeld(conn, record['productId'])
+    for n, m in enumerate(record['mandates']):
+        taken = held.get(m['code'].lower())
+        if taken is not None:
+            raise ValidationError('mandate{}code'.format(n), 'The SMA mandate code {} belongs to {} '
+                                  '({}). A code is one product\'s.'.format(taken[0], taken[2], taken[1]))
+
+
 def create(fields, user='', note='') -> dict:
     """Add a product to the catalogue. Refused, naming the field, when it is
     not a product the catalogue can hold or its id is taken - by a live
@@ -1178,6 +1409,7 @@ def create(fields, user='', note='') -> dict:
                                                    taken['withdrawnAt'][:10]))
             raise ValidationError('productId', 'The ID {} is already {}. Choose another.'.format(
                 record['productId'], taken['name']))
+        _refuseTakenCodes(conn, record)
         position = conn.execute('SELECT COALESCE(MAX(position), -1) + 1 FROM products').fetchone()[0]
         stamp = _now()
         _insert(conn, record, position, user or '', stamp)
@@ -1205,9 +1437,13 @@ def update(productId, fields, user='', note='', base=None) -> dict:
     def work(conn):
         row = _live(conn, productId)
         _refuseStale(row, base)
+        if 'mandates' not in fields:
+            # a save that says nothing of the SMA mandates keeps them
+            fields['mandates'] = _record(row)['mandates']
         record = clean(fields, _groupsOn(conn), strict=True, categories=known)
         if not changes(_record(row), record):
             raise ValidationError('product', 'Nothing has changed: these are the values in force.')
+        _refuseTakenCodes(conn, record)
         revision = row['revision'] + 1
         stamp = _now()
         _update(conn, record, revision, user or '', stamp)
@@ -1297,7 +1533,10 @@ def revert(productId, revision, user='', note='', base=None) -> dict:
                             (productId, revision)).fetchone()
         if held is None:
             raise ValidationError('revision', 'There is no version {} of {}.'.format(revision, row['name']))
-        record = clean(json.loads(held['body']), _groupsOn(conn), strict=False)
+        body = json.loads(held['body'])
+        # a version from before the SMA mandates (D197) keeps the ones in force
+        body.setdefault('mandates', _record(row)['mandates'])
+        record = clean(body, _groupsOn(conn), strict=False)
         if not changes(_record(row), record):
             raise ValidationError('revision', 'Those are the values in force already.')
         top = row['revision'] + 1
@@ -1356,8 +1595,12 @@ def _fileName(name) -> str:
     return name
 
 
-def _compare(conn, byId, order) -> dict:
-    """What a file would do to the catalogue on *conn*."""
+def _compare(conn, byId, order, fileName='') -> dict:
+    """What a file would do to the catalogue on *conn*. A product file says
+    nothing of the SMA mandates (D197), so a product already here keeps its
+    own - checked again against the product as the file gives it, since a
+    row that moves an SMA out of Public Equity, or makes it another vehicle,
+    leaves them wrong, and is refused naming the product."""
     rows = {r['productId']: r for r in conn.execute('SELECT * FROM products ORDER BY position')}
     added, changed, back, unchanged = [], [], [], 0
     for pid in order:
@@ -1365,6 +1608,13 @@ def _compare(conn, byId, order) -> dict:
         if row is None:
             added.append({'productId': pid, 'name': incoming['name']})
             continue
+        kept = _storedMandates(row)
+        if kept:
+            try:
+                incoming['mandates'] = _mandates(kept, incoming)
+            except ValidationError as exc:
+                raise BadCatalogue('{}: {} ({}) keeps its SMA mandates, which the file leaves wrong: '
+                                   '{}'.format(fileName, incoming['name'], pid, exc.message))
         moved = changes(_record(row), incoming)
         if row['withdrawnAt']:
             back.append({'productId': pid, 'name': incoming['name'], 'changes': moved,
@@ -1401,12 +1651,25 @@ def importPreview(name, content) -> dict:
     try:
         groups = _groupsOn(conn)
         byId, order = _load(name, groups, strict=True, data=data, categories=known)
-        out = _compare(conn, byId, order)
+        out = _compare(conn, byId, order, name)
         out.update(file=name, rows=len(order),
                    revision=int(_meta(conn, 'catalogueRevision', '0') or 0))
         return out
     finally:
         conn.close()
+
+
+def _refuseStaleCatalogue(conn, base) -> None:
+    """An import made against a preview of an older catalogue is refused."""
+    now = int(_meta(conn, 'catalogueRevision', '0') or 0)
+    if base is not None and base != now:
+        last = conn.execute('SELECT actor, at FROM productHistory ORDER BY at DESC, id DESC '
+                            'LIMIT 1').fetchone()
+        raise StaleError('base', 'The catalogue changed since this preview{} (now version {}). '
+                         'Preview the file again.'.format(
+                             ' - {} at {}'.format(last['actor'] or 'someone',
+                                                  last['at'].replace('T', ' ')[:16]) if last else '',
+                             now))
 
 
 def importFile(name, content, user='', withdraw=None, note='', base=None) -> dict:
@@ -1424,17 +1687,9 @@ def importFile(name, content, user='', withdraw=None, note='', base=None) -> dic
     known = knownCategories()
 
     def work(conn):
-        now = int(_meta(conn, 'catalogueRevision', '0') or 0)
-        if base is not None and base != now:
-            last = conn.execute('SELECT actor, at FROM productHistory ORDER BY at DESC, id DESC '
-                                'LIMIT 1').fetchone()
-            raise StaleError('base', 'The catalogue changed since this preview{} (now version {}). '
-                             'Preview the file again.'.format(
-                                 ' - {} at {}'.format(last['actor'] or 'someone',
-                                                      last['at'].replace('T', ' ')[:16]) if last else '',
-                                 now))
+        _refuseStaleCatalogue(conn, base)
         byId, order = _load(name, _groupsOn(conn), strict=True, data=data, categories=known)
-        plan = _compare(conn, byId, order)
+        plan = _compare(conn, byId, order, name)
         missing = {m['productId']: m for m in plan['missing']}
         for pid in withdraw:
             if pid not in missing:
@@ -1515,3 +1770,223 @@ def exportCsv() -> str:
     buf = io.StringIO()
     csv.writer(buf, lineterminator='\n').writerows(exportRows())
     return buf.getvalue()
+
+
+# ------------------------------------------------- the SMA mandate file ---
+# One row per mandate code (D197), each naming its SMA by ProductId. A file
+# adds codes and changes the ones it names, by code; it never takes one off
+# - that is done on the product's card. Previewed, product by product, before
+# anything moves, and refused whole at the first bad row.
+
+_MANDATE_COLUMN_OF = dict(zip(('productId', 'code', 'currency', 'hedging', 'category') + MANDATE_FIGURES,
+                              MANDATE_COLUMNS))
+
+
+def _mandateFileName(name) -> str:
+    name = os.path.basename(str(name or '').replace('\\', '/')).strip()
+    if not name.lower().endswith(('.csv', '.xlsx')):
+        raise ValidationError('file', 'An SMA mandate file is a .csv or an .xlsx.')
+    return name
+
+
+def _loadMandates(name, data, conn, categories):
+    """The mandate file *data* named *name* read against the catalogue on
+    *conn*: ({productId: record}, [ids in file order], rows) - each product
+    as it would stand, its mandates merged by code with the file's rows and
+    its category filled where it was blank. Refused whole with BadCatalogue
+    at the first bad row, naming the row and the product."""
+    rows = _readRows(name, data, sheet='mandates')
+    head = next(rows)
+    index = {}
+    for at, column in enumerate(head):
+        key = ''.join(ch for ch in column.lower() if ch.isalnum())
+        if not key:
+            continue
+        field = _MANDATE_HEADERS.get(key)
+        if field is None:
+            raise BadCatalogue('{}: the column {!r} is not one of the mandate file\'s: {}.'.format(
+                name, column, ', '.join(MANDATE_COLUMNS)))
+        if field in index:
+            raise BadCatalogue('{}: the column {} is there twice.'.format(
+                name, _MANDATE_COLUMN_OF[field]))
+        index[field] = at
+    missing = [_MANDATE_COLUMN_OF[f] for f in _MANDATE_REQUIRED if f not in index]
+    if missing:
+        raise BadCatalogue('{}: missing column(s) {}'.format(name, ', '.join(missing)))
+    live = {r['productId']: r for r in conn.execute('SELECT * FROM products')}
+    held = _codesHeld(conn)
+    touched, order, seen, count = {}, [], {}, 0
+    for n, row in enumerate(rows, start=2):
+        count += 1
+
+        def cell(field):
+            at = index.get(field)
+            return row[at] if at is not None and at < len(row) else ''
+        pid = _text(cell('productId'), keepSpaces=True)
+        where = '{}: row {} ({})'.format(name, n, pid or 'no ProductId')
+        if not pid:
+            raise BadCatalogue(where + ': give the ProductId of the SMA.')
+        r = live.get(pid)
+        if r is None:
+            raise BadCatalogue('{}: there is no product {} in the catalogue.'.format(where, pid))
+        if r['withdrawnAt']:
+            raise BadCatalogue('{}: {} was withdrawn on {}. Restore it first.'.format(
+                where, r['name'], r['withdrawnAt'][:10]))
+        record = touched[pid]['record'] if pid in touched else _record(r)
+        if not isSma(record):
+            raise BadCatalogue('{}: {} is not a separate account: it is {}. Only an SMA has '
+                               'mandates.'.format(where, record['name'], _an(record['vehicle'])))
+        category = _text(cell('category'))
+        if not category:
+            raise BadCatalogue(where + ': give the Category, the product\'s own.')
+        if category not in categories:
+            same = [c for c in categories if c.lower() == category.lower()]
+            raise BadCatalogue('{}: the Category {!r} is {}.'.format(
+                where, category, 'spelled ' + same[0] if same
+                else 'not one the sleeves are built for: ' + ', '.join(categories)))
+        if pid not in touched:
+            if record['category'] and record['category'] != category:
+                raise BadCatalogue('{}: the Category {} is not {}\'s, which is {}.'.format(
+                    where, category, record['name'], record['category']))
+            touched[pid] = {'record': dict(record, category=category), 'given': {}, 'category': category}
+            order.append(pid)
+        elif touched[pid]['category'] != category:
+            raise BadCatalogue('{}: the Category {} differs from the product\'s other rows, which '
+                               'say {}.'.format(where, category, touched[pid]['category']))
+        code = _text(cell('code'))
+        if not code:
+            raise BadCatalogue(where + ': give the MandateCode.')
+        if code.lower() in seen:
+            raise BadCatalogue('{}: the code {} is already on row {}.'.format(
+                where, code, seen[code.lower()]))
+        seen[code.lower()] = n
+        taken = held.get(code.lower())
+        if taken is not None and taken[1] != pid:
+            raise BadCatalogue('{}: the code {} belongs to {} ({}). A code is one product\'s.'.format(
+                where, taken[0], taken[2], taken[1]))
+        mandate = {'code': code, 'currency': _text(cell('currency')).upper(),
+                   'hedging': _text(cell('hedging'))}
+        for figure in MANDATE_FIGURES:
+            mandate[figure] = cell(figure)
+        touched[pid]['given'][code.lower()] = (n, mandate)
+    out = {}
+    for pid in order:
+        entry = touched[pid]
+        record, given = entry['record'], entry['given']
+        # the file's row replaces the mandate with its code; the rest stay
+        merged, rowsOf = [], []
+        for m in record['mandates']:
+            at = given.get(m['code'].lower())
+            merged.append(at[1] if at else m)
+            rowsOf.append(at[0] if at else None)
+        for c, (n, m) in given.items():
+            if not any(m['code'].lower() == c for m in record['mandates']):
+                merged.append(m)
+                rowsOf.append(n)
+        # a new code for a cell another code already holds: one code a cell
+        cells = {(m['currency'], m['hedging']): m['code'] for m in record['mandates']}
+        for c, (n, m) in given.items():
+            at = cells.get((m['currency'], m['hedging']))
+            if at is not None and at.lower() != c:
+                raise BadCatalogue('{}: row {} ({}): {} already has the code {}; one code a cell. '
+                                   'Take it off the product\'s card first.'.format(
+                                       name, n, pid, _cellWords(m['currency'], m['hedging']), at))
+        try:
+            record['mandates'] = _mandates(merged, record, strict=True)
+        except ValidationError as exc:
+            box = re.match(r'mandate(\d+)', exc.field)
+            n = rowsOf[int(box.group(1))] if box and int(box.group(1)) < len(rowsOf) else None
+            raise BadCatalogue('{}: {}({}): {}'.format(name, 'row {} '.format(n) if n else '', pid,
+                                                      exc.message))
+        out[pid] = record
+    return out, order, count
+
+
+def _compareMandates(conn, byId, order) -> dict:
+    """What a mandate file would do, product by product."""
+    products, touched, added, changed = [], 0, 0, 0
+    for pid in order:
+        before, after = _record(_row(conn, pid)), byId[pid]
+        moved = changes(before, after)
+        was = {m['code'] for m in before['mandates']}
+        new = [m['code'] for m in after['mandates'] if m['code'] not in was]
+        moving = [c['field'][8:] for c in moved
+                  if c['field'].startswith('mandate:') and c['field'][8:] in was]
+        products.append({
+            'productId': pid, 'name': after['name'], 'added': new, 'changed': moving,
+            'unchanged': len(after['mandates']) - len(new) - len(moving),
+            'category': after['category'] if before['category'] != after['category'] else '',
+            'same': not moved, 'changes': moved, 'changeWords': changeWords(moved)})
+        if moved:
+            touched += 1
+        added += len(new)
+        changed += len(moving)
+    return {'products': products, 'touched': touched, 'same': len(order) - touched,
+            'added': added, 'changed': changed}
+
+
+def mandatePreview(name, content) -> dict:
+    """What importing an SMA mandate file would do, without doing it (D197):
+    for each product it names, the codes it adds, the ones it changes, how
+    many it leaves as they are, and the category it fills in. A file with
+    any bad row is refused whole, naming the row. *revision* is the
+    catalogue version the preview was made against."""
+    from . import sleeveRepo
+    name = _mandateFileName(name)
+    data = _decode(content)
+    known = knownCategories()
+    conn = sleeveRepo.connection()
+    try:
+        byId, order, rows = _loadMandates(name, data, conn, known)
+        out = _compareMandates(conn, byId, order)
+        out.update(file=name, rows=rows,
+                   revision=int(_meta(conn, 'catalogueRevision', '0') or 0))
+        return out
+    finally:
+        conn.close()
+
+
+def importMandates(name, content, user='', note='', base=None) -> dict:
+    """Apply an SMA mandate file: each product it changes gets one revision
+    marked *imported*, naming the file; the products it leaves as they are
+    are not touched. All or nothing, and refused as STALE when *base* is not
+    the catalogue version the preview showed."""
+    name = _mandateFileName(name)
+    data = _decode(content)
+    note = _note(note)
+    base = _base(base)
+    known = knownCategories()
+
+    def work(conn):
+        _refuseStaleCatalogue(conn, base)
+        byId, order, _ = _loadMandates(name, data, conn, known)
+        plan = _compareMandates(conn, byId, order)
+        if not plan['touched']:
+            raise ValidationError('file', 'The file matches the catalogue: every SMA mandate in it '
+                                          'is there already.')
+        stamp = _now()
+        for entry in plan['products']:
+            if entry['same']:
+                continue
+            row = _row(conn, entry['productId'])
+            record = byId[entry['productId']]
+            revision = row['revision'] + 1
+            _update(conn, record, revision, user or '', stamp)
+            _history(conn, entry['productId'], revision, 'imported', record, user or '', stamp,
+                     note=note, source=name)
+        revision = _bump(conn)
+        return {'file': name, 'products': plan['touched'], 'same': plan['same'],
+                'added': plan['added'], 'changed': plan['changed'], 'revision': revision}
+
+    return _writing(work)
+
+
+def mandateRows() -> list:
+    """The live catalogue's SMA mandates as the file they can be loaded from
+    again: the header, then one row per code in catalogue order."""
+    out = [list(MANDATE_COLUMNS)]
+    for p in entries():
+        for m in p.get('mandates') or []:
+            out.append([p['productId'], m['code'], m['currency'], m['hedging'], p['category']]
+                       + [_cell(m.get(figure)) for figure in MANDATE_FIGURES])
+    return out

@@ -1642,6 +1642,28 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .prd-ccy tr.off input,.prd-ccy tr.off select:disabled{background:var(--surface-2);color:var(--ink-3);border-style:dashed}
 .prd-ccyl{display:grid;gap:2px}
 .prd-ccyl b{font-family:var(--f-num);font-size:11px;letter-spacing:.06em;margin-right:4px}
+/* the SMA mandates (D197): the card's grid of codes, and the form's rows */
+.prd-mnd-v{border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:grid;gap:6px}
+.prd-mnd-v .h{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.prd-mnd-v p.none,.prd-mnd-v small{margin:0;font-size:11.5px;color:var(--ink-3);line-height:1.4}
+.prd-mnd-grid{width:100%;border-collapse:collapse;table-layout:fixed}
+.prd-mnd-grid th{font-family:var(--f-num);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:0 6px 3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prd-mnd-grid thead th:first-child,.prd-mnd-grid tbody th{width:36px;color:var(--ink)}
+.prd-mnd-grid td{padding:4px 6px 4px 0;vertical-align:top;border-top:1px solid var(--line);font-size:12.5px;line-height:1.3}
+.prd-mnd-grid tbody th{border-top:1px solid var(--line);vertical-align:top;padding-top:4px}
+.prd-mnd-grid td b{font-family:var(--f-num);font-size:12px;font-weight:600;word-break:break-all}
+.prd-mnd-grid td small{display:block;font-size:11px;color:var(--ink-3)}
+.prd-mnd-grid td.none{color:var(--ink-3)}
+.prd-mnd{margin:6px 0 4px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:8px}
+.prd-mnd .btn{justify-self:start}
+/* a mandate: its code and cell on one line, the figures it carries on the next */
+.prd-mnd-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) 18px;gap:2px 8px;align-items:start;
+  border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.prd-mnd-row .c-wide{grid-column:1 / 3}
+.prd-mnd-row .x{grid-column:4;align-self:center;margin-top:14px;font-size:16px;line-height:1;color:var(--ink-3);padding:0;text-decoration:none}
+.prd-mnd-row .x:hover{color:#9B1C1C}
+.prd-mnd-row input,.prd-mnd-row select{width:100%;box-sizing:border-box}
+.prd-mnd-row select{padding:5px 4px}
 .prd-note{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line-strong);border-radius:4px;
   background:var(--surface);color:var(--ink);width:100%;box-sizing:border-box}
 .prd-note-l{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}

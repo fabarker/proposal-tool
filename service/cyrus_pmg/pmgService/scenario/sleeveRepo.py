@@ -167,8 +167,10 @@ WEIGHT_TOLERANCE = 1e-6
 #: has a ticker and a minimum of its own in each base currency (D180); 12 a
 #: product has the currency it is issued in (D184); 13 a product in a sleeve
 #: may name the product held instead below its minimum (D192); 14 a rule may
-#: name the custodians / entities an edition is for (D193).
-SCHEMA_VERSION = 14
+#: name the custodians / entities an edition is for (D193); 15 a separate
+#: account carries its SMA mandates, one code a base currency and hedging
+#: version, each with figures of its own (D197).
+SCHEMA_VERSION = 15
 
 #: how a sleeve offered under several types stores them (D179), and the word
 #: a file may use for every type
@@ -293,6 +295,7 @@ CREATE TABLE IF NOT EXISTS products (
     distributionYield REAL,
     minimumInvestment REAL,
     currencies        TEXT NOT NULL DEFAULT '',
+    mandates          TEXT NOT NULL DEFAULT '',
     revision          INTEGER NOT NULL,
     createdBy         TEXT NOT NULL DEFAULT '',
     createdAt         TEXT NOT NULL,
@@ -786,6 +789,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if 'entity' not in ruleColumns:
             with conn:
                 conn.execute("ALTER TABLE sleeveRules ADD COLUMN entity TEXT NOT NULL DEFAULT ''")
+
+    # 14 -> 15 (D197): a separate account's SMA mandates, blank for every
+    # product already here until a mandate file or its form gives it some
+    if productColumns and 'mandates' not in productColumns:
+        with conn:
+            conn.execute("ALTER TABLE products ADD COLUMN mandates TEXT NOT NULL DEFAULT ''")
 
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.

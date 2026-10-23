@@ -207,7 +207,7 @@ def test_a_catalogue_from_before_the_issue_currency_gains_it_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 14
+    assert sleeveRepo.describe()['schemaVersion'] == 15
     assert products.get(pid)['issueCurrency'] == ''
     _set(pid, {}, issueCurrency='EUR')
     assert products.get(pid)['issueCurrency'] == 'EUR'
@@ -304,7 +304,7 @@ def test_a_catalogue_from_before_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 14
+    assert sleeveRepo.describe()['schemaVersion'] == 15
     assert products.get(pid)['currencies'] == {}
     _set(pid, {'GBP': {'ticker': 'GBX1'}})
     assert products.get(pid)['currencies'] == {'GBP': _own('GBX1')}

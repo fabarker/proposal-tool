@@ -10833,6 +10833,8 @@ function catMatches(p, q) {
   var own = p.currencies || {};
   return [p.name, p.ticker, p.assetClass, p.category, p.vehicle, p.source]
     .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
+    /* and an SMA by any of its mandate codes (D197) */
+    .concat((p.mandates || []).map(function (m) { return m.code; }))
     .join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catPasses(row, state, except) {
@@ -11000,7 +11002,51 @@ function prdValueOf(p, f) {
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
 var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
 var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240,
-                productCost: 10, distributionYield: 50 };
+                productCost: 10, distributionYield: 50, code: 40 };
+/* a separate account's SMA mandates (D197): one code a base currency and,
+   for a Public Equity SMA, a hedging version, each with figures of its own.
+   In the draft, d.mandates is a list of rows of text; the boxes are keyed
+   mandate0code, mandate0currency, mandate0hedging, mandate0productCost...
+   as the server names them */
+var PRD_SMA_VEHICLES = ['separate account', 'sma'];
+var PRD_EQUITY = 'Public Equity';
+var PRD_VERSIONS = ['Hedged', 'ISG Hedged', 'Unhedged'];
+var PRD_MND_FIELDS = [['code', 'Code', 'text'], ['currency', 'Currency', 'ccy'], ['hedging', 'Hedging', 'version'],
+                      ['productCost', 'Cost %', 'pct'], ['minimumInvestment', 'Minimum', 'amount'],
+                      ['distributionYield', 'Yield %', 'pct']];
+var PRD_MND_KEY = /^mandate(\d+)([a-zA-Z]+)$/;
+function prdIsSma(d) { return PRD_SMA_VEHICLES.indexOf(prdText(d && d.vehicle).toLowerCase()) !== -1; }
+function prdIsEquity(d) { return prdText(d && d.category) === PRD_EQUITY; }
+function prdMandateRow(m) {
+  var row = {};
+  PRD_MND_FIELDS.forEach(function (f) {
+    var v = m ? m[f[0]] : '';
+    row[f[0]] = (v === null || v === undefined) ? '' : String(v);
+  });
+  return row;
+}
+/* the boxes of the draft's mandate rows, as the form's fields: for the
+   problems, the error boxes and the first problem's focus */
+function prdMandateFields(d) {
+  var out = [];
+  ((d && d.mandates) || []).forEach(function (m, i) {
+    PRD_MND_FIELDS.forEach(function (f) {
+      out.push({ key: 'mandate' + i + f[0], label: f[1] + ' of SMA mandate ' + (i + 1), kind: f[2], mnd: i, base: f[0] });
+    });
+  });
+  return out;
+}
+/* one box's text, in the draft: a product's field, or a mandate row's */
+function prdSetDraft(key, value) {
+  var at = PRD_MND_KEY.exec(key);
+  if (at && prd.draft.mandates && prd.draft.mandates[+at[1]]) prd.draft.mandates[+at[1]][at[2]] = value;
+  else prd.draft[key] = value;
+}
+function prdGetDraft(d, key) {
+  var at = PRD_MND_KEY.exec(key);
+  if (at) return d.mandates && d.mandates[+at[1]] ? d.mandates[+at[1]][at[2]] : '';
+  return d[key];
+}
 
 function prdText(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
 /* a figure as typed: '0.25%' and '5,000,000' are numbers, a blank is null,
@@ -11025,6 +11071,7 @@ function prdDraftFrom(p) {
     if (f.key === 'ticker' && v === '—') v = '';
     d[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
+  d.mandates = ((p && p.mandates) || []).map(prdMandateRow);
   return d;
 }
 function prdExample(key) {
@@ -11101,11 +11148,52 @@ function prdProblems(d, ctx) {
       if (own) out[f.key] = own;
     }
   });
+  prdMandateProblems(d, out);
   return out;
+}
+/* the SMA mandates' problems (D197), into *out*: the server's checks in
+   miniature - only an SMA has any, a Public Equity SMA's name a version and
+   any other SMA's none, a currency is one it is offered in, and no code or
+   cell twice */
+function prdMandateProblems(d, out) {
+  var rows = d.mandates || [];
+  if (!rows.length) return;
+  if (!prdIsSma(d)) {
+    out.mandates = 'Only a separate account (an SMA) has SMA mandates: take them off, or make the vehicle Separate Account.';
+    return;
+  }
+  var equity = prdIsEquity(d), codes = {}, cells = {};
+  rows.forEach(function (m, i) {
+    var box = 'mandate' + i, code = prdText(m.code), ccy = prdText(m.currency).toUpperCase(), hedging = prdText(m.hedging);
+    if (!code) out[box + 'code'] = 'Give the SMA mandate its code.';
+    else if (code.length > PRD_MAX.code) out[box + 'code'] = 'Keep the mandate code to ' + PRD_MAX.code + ' characters.';
+    else if (codes[code.toLowerCase()]) out[box + 'code'] = 'The mandate code ' + code + ' is on the product twice.';
+    codes[code.toLowerCase()] = true;
+    if (PRD_CURRENCIES.indexOf(ccy) === -1) out[box + 'currency'] = 'Choose the base currency.';
+    else if (d['offered' + ccy] === 'no') out[box + 'currency'] = 'The product is not offered in ' + ccy + '.';
+    if (equity && !hedging) out[box + 'hedging'] = 'Choose the hedging version: a Public Equity SMA comes as ' + PRD_VERSIONS.join(', ') + '.';
+    else if (!equity && hedging) out[box + 'hedging'] = 'Only a Public Equity SMA has hedging versions: leave it blank.';
+    var cell = ccy + '|' + (equity ? hedging : '');
+    if (!out[box + 'currency'] && !out[box + 'hedging'] && code) {
+      if (cells[cell]) out[box + 'code'] = out[box + 'code'] || ('Two SMA mandates for ' + ccy + (equity ? ' · ' + hedging : '') + ': ' + cells[cell] + ' and ' + code + '. One code a cell.');
+      else cells[cell] = code;
+    }
+    ['productCost', 'minimumInvestment', 'distributionYield'].forEach(function (figure) {
+      var label = PRD_MND_FIELDS.filter(function (f) { return f[0] === figure; })[0][1];
+      var probe = {}; probe[figure] = m[figure];
+      var p = prdFigureProblem(probe, figure, label + ' of ' + (code || 'the mandate'), false);
+      if (p) out[box + figure] = p;
+    });
+  });
 }
 /* the draft as the server reads it: words as words, figures as numbers */
 function prdPayload(d) {
   var out = { currencies: {} };
+  out.mandates = (d.mandates || []).map(function (m) {
+    return { code: prdText(m.code), currency: prdText(m.currency).toUpperCase(), hedging: prdIsEquity(d) ? prdText(m.hedging) : '',
+             productCost: prdNumber(m.productCost, true), minimumInvestment: prdNumber(m.minimumInvestment, false),
+             distributionYield: prdNumber(m.distributionYield, true) };
+  });
   PRD_FIELDS.forEach(function (f) {
     if (f.ccy && d['offered' + f.ccy] === 'no') {
       /* not offered there: nothing else of its own */
@@ -11154,7 +11242,25 @@ function prdChanges(before, d) {
     }
     out.push({ key: f.key, label: f.label, before: prdShow(f.base || f.key, was), after: prdShow(f.base || f.key, is) });
   });
+  /* the SMA mandates, one line a code that came, went or moved (D197) */
+  var was = {}, is = {};
+  ((before && before.mandates) || []).forEach(function (m) { was[m.code] = m; });
+  now.mandates.forEach(function (m) { if (m.code) is[m.code] = m; });
+  Object.keys(was).concat(Object.keys(is).filter(function (c) { return !was[c]; })).forEach(function (code) {
+    var a = was[code], b = is[code];
+    if (a && b && prdShowMandate(a) === prdShowMandate(b)) return;
+    out.push({ key: 'mandate:' + code, label: 'SMA mandate ' + code, before: prdShowMandate(a), after: prdShowMandate(b) });
+  });
   return out;
+}
+/* one SMA mandate as a history line shows it: its cell, then its own figures */
+function prdShowMandate(m) {
+  if (!m) return '—';
+  var bits = [m.currency + (m.hedging ? ' · ' + m.hedging : '')];
+  if (typeof m.productCost === 'number' && !isNaN(m.productCost)) bits.push('cost ' + prdShow('productCost', m.productCost));
+  if (typeof m.minimumInvestment === 'number' && !isNaN(m.minimumInvestment)) bits.push('min ' + prdShow('minimumInvestment', m.minimumInvestment));
+  if (typeof m.distributionYield === 'number' && !isNaN(m.distributionYield)) bits.push('yield ' + prdShow('distributionYield', m.distributionYield));
+  return bits.join(' · ');
 }
 /* the word in use a typed one is most likely a slip for: the same but for
    its capitals, or one or two letters off - or null */
@@ -16759,6 +16865,9 @@ function catToolbarHtml() {
     + '<button type="button" class="btn btn-primary" data-prd="new"' + (cat.withdrawn ? ' disabled' : '') + '>+ New product</button>'
     + '<button type="button" class="btn" data-prd="import">Import a file</button>'
     + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/products.csv') + '" download>Download the product file</a>'
+    /* the SMA mandates have a file of their own (D197) */
+    + '<button type="button" class="btn" data-prd="importmandates">Import SMA mandates</button>'
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/mandates.csv') + '" download>Download the SMA mandate file</a>'
     + '<button type="button" class="btn' + (cat.withdrawn ? ' on' : '') + '" data-prd="withdrawn" aria-pressed="' + !!cat.withdrawn + '">'
     + (cat.withdrawn ? '← The catalogue' : 'Withdrawn · ' + ((repo.data.withdrawnProducts || []).length)) + '</button>'
     + '<span class="cat-src">' + esc(catSourceText()) + '</span>'
@@ -17012,7 +17121,10 @@ function prdCtx(isNew) {
 function prdProblemsNow() { return prd.draft ? prdProblems(prd.draft, prdCtx(prd.mode === 'new')) : {}; }
 function prdDirty() {
   if (!prd.mode || !prd.draft) return false;
-  if (prd.mode === 'new') return PRD_FIELDS.some(function (f) { return prdText(prd.draft[f.key]) !== ''; }) || !!prd.note.trim();
+  if (prd.mode === 'new') {
+    return PRD_FIELDS.some(function (f) { return prdText(prd.draft[f.key]) !== ''; })
+      || (prd.draft.mandates || []).length > 0 || !!prd.note.trim();
+  }
   return prdChanges(prd.original, prd.draft).length > 0 || !!prd.note.trim();
 }
 function prdStamp(p) {
@@ -17110,7 +17222,7 @@ async function prdPost(method, path, body, after) {
 
 async function prdSave() {
   var probs = prdProblemsNow();
-  PRD_FIELDS.forEach(function (f) { prd.shown[f.key] = true; });
+  PRD_FIELDS.concat(prdMandateFields(prd.draft)).forEach(function (f) { prd.shown[f.key] = true; });
   if (Object.keys(probs).length) { render(); prdFocusFirstProblem(probs); return; }
   var payload = prdPayload(prd.draft);
   if (prd.mode === 'new') {
@@ -17132,8 +17244,9 @@ async function prdSave() {
   }
 }
 function prdFocusFirstProblem(probs) {
-  var first = PRD_FIELDS.filter(function (f) { return probs[f.key]; })[0];
+  var first = PRD_FIELDS.concat(prdMandateFields(prd.draft)).filter(function (f) { return probs[f.key]; })[0];
   if (first) prdFocus('#prdF-' + first.key);
+  else if (probs.mandates) prdFocus('#prdF-vehicle');
 }
 async function prdWithdraw(id) {
   var p = prdEntry(id); if (!p) return;
@@ -17245,6 +17358,7 @@ function prdViewHtml(row) {
     + prdByCurrencyHtml(p)
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
     + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
+    + prdMandatesHtml(p, row)
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
     + prdHistoryHtml(p)
     + (asking ? '<div class="prd-ask" role="alertdialog" aria-label="Withdraw ' + esc(p.name) + '">'
@@ -17261,6 +17375,39 @@ function prdViewHtml(row) {
     + (prd.error ? '<p class="md-err" role="alert">' + esc(prd.error) + '</p>' : '')
     + '<div class="acts">' + acts + '</div>'
     + '</div>';
+}
+
+/* the card's SMA mandates (D197): a grid of the codes a separate account
+   holds, a row a base currency it is offered in and, for a Public Equity
+   SMA, a column a hedging version; each cell its code and the figures it
+   carries of its own. Only an SMA has the section. */
+function prdMandateCellHtml(m) {
+  if (!m) return '<td class="none">—</td>';
+  var bits = [];
+  if (typeof m.productCost === 'number') bits.push('cost ' + esc(prdShow('productCost', m.productCost)) + '%');
+  if (typeof m.minimumInvestment === 'number') bits.push('min ' + esc(catMoney(m.minimumInvestment)));
+  if (typeof m.distributionYield === 'number') bits.push('yield ' + esc(prdShow('distributionYield', m.distributionYield)) + '%');
+  return '<td><b>' + esc(m.code) + '</b>' + (bits.length ? '<small>' + bits.join(' · ') + '</small>' : '') + '</td>';
+}
+function prdMandatesHtml(p, row) {
+  if (!prdIsSma(p)) return '';
+  var held = p.mandates || [], equity = prdIsEquity(p);
+  var versions = equity ? PRD_VERSIONS : [''];
+  var ccys = PRD_CURRENCIES.filter(function (c) { return !p.currencies || !p.currencies[c] || p.currencies[c].offered !== false; });
+  var head = '<div class="h">SMA mandates · ' + held.length + '</div>';
+  if (!held.length) {
+    return '<div class="prd-mnd-v">' + head + '<p class="none">No SMA mandates yet. Edit the product to add them, or import an SMA mandate file.</p></div>';
+  }
+  var grid = '<table class="prd-mnd-grid"><thead><tr><th scope="col" title="Base currency">Ccy</th>'
+    + versions.map(function (v) { return '<th scope="col">' + esc(v || 'Mandate') + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + ccys.map(function (c) {
+        return '<tr><th scope="row">' + c + '</th>' + versions.map(function (v) {
+          return prdMandateCellHtml(held.filter(function (m) { return m.currency === c && (m.hedging || '') === v; })[0]);
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table>';
+  var note = equity ? 'A Public Equity SMA comes in three hedging versions; a scenario takes the one its hedging names, Equity Not Hedged the unhedged one.'
+    : 'One mandate a base currency: the scenario’s hedging plays no part.';
+  return '<div class="prd-mnd-v">' + head + grid + '<small>' + note + '</small></div>';
 }
 
 /* ---- rendering: the form ---- */
@@ -17389,6 +17536,62 @@ function prdCurrencyHtml(d, probs) {
       }).join('')
     + '</tbody></table></div>';
 }
+/* the form's SMA mandates (D197), a row a code, shown only while the
+   vehicle makes the product a separate account; the hedging column only
+   while its category is Public Equity. A row is added blank and taken off
+   with its ×; the file is the other way in. */
+function prdMandatesFormHtml(d, probs) {
+  if (!prdIsSma(d) && !(d.mandates || []).length) return '';
+  var equity = prdIsEquity(d), rows = d.mandates || [];
+  /* the list's own problem is about the vehicle, not a box being typed in,
+     so it shows at once */
+  var listErr = probs.mandates || '';
+  /* one box: its label, the box, its problem - a mandate is two lines of
+     them, the code and its cell above the figures it carries */
+  function box(i, f, cls) {
+    var key = 'mandate' + i + f[0], m = rows[i];
+    var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
+    var err = server || (prd.shown[key] ? probs[key] || '' : '');
+    var invalid = err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '';
+    var label = ' aria-label="' + esc(f[1] + ' of SMA mandate ' + (i + 1)) + '"';
+    var input;
+    if (f[2] === 'ccy') {
+      input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + label + invalid + '>'
+        + '<option value=""' + (m.currency ? '' : ' selected') + '>Choose…</option>'
+        + PRD_CURRENCIES.map(function (c) { return '<option value="' + c + '"' + (m.currency === c ? ' selected' : '') + '>' + c + '</option>'; }).join('')
+        + '</select>';
+    } else if (f[2] === 'version') {
+      input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + label + invalid + '>'
+        + '<option value=""' + (m.hedging ? '' : ' selected') + '>Choose…</option>'
+        + PRD_VERSIONS.map(function (v) { return '<option value="' + esc(v) + '"' + (m.hedging === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('')
+        + '</select>';
+    } else {
+      input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
+        + ' value="' + esc(m[f[0]]) + '"' + label + invalid
+        + (f[2] === 'pct' || f[2] === 'amount' ? ' inputmode="decimal" placeholder="Product’s"' : '') + '>';
+    }
+    return '<div class="prd-f' + (cls ? ' ' + cls : '') + '"><label for="prdF-' + key + '">' + esc(f[1]) + '</label>' + input
+      + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
+  }
+  var by = {};
+  PRD_MND_FIELDS.forEach(function (f) { by[f[0]] = f; });
+  return '<div class="prd-mnd" id="prdMandates"><div class="prd-ccy-h"><b>SMA mandates</b>'
+    + '<small>One code a base currency' + (equity ? ' and hedging version (Hedged, ISG Hedged, Unhedged)' : '')
+    + '. A cost, minimum or yield of its own is read on that basis in place of the product’s; blank is the product’s. '
+    + 'A code belongs to one product.</small></div>'
+    + (rows.length
+        ? rows.map(function (m, i) {
+            return '<div class="prd-mnd-row" role="group" aria-label="SMA mandate ' + (i + 1) + '">'
+              + box(i, by.code, equity ? '' : 'c-wide') + box(i, by.currency) + (equity ? box(i, by.hedging) : '')
+              + '<button type="button" class="cat-link x" data-prd="mndremove" data-i="' + i + '" aria-label="Take off SMA mandate ' + (i + 1) + '" title="Take it off">×</button>'
+              + box(i, by.productCost) + box(i, by.minimumInvestment) + box(i, by.distributionYield)
+              + '</div>';
+          }).join('')
+        : '<p class="prd-hint">No SMA mandates yet.</p>')
+    + '<p class="prd-err" id="prdE-mandates" role="status">' + esc(listErr) + '</p>'
+    + '<button type="button" class="btn" data-prd="mndadd">+ Add an SMA mandate</button>'
+    + '</div>';
+}
 /* the detail's line for them: only the currencies with a value of their own */
 function prdByCurrencyHtml(p) {
   var own = p.currencies || {};
@@ -17467,6 +17670,7 @@ function prdFormHtml() {
     + '<div class="prd-grid">' + PRD_FIELDS.filter(function (f) { return !f.ccy; })
         .map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
     + prdCurrencyHtml(d, probs)
+    + prdMandatesFormHtml(d, probs)
     + prdReachHtml()
     + '<div class="prd-f wide"><label for="prdNote">Note <small>optional</small></label>'
     + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '"'
@@ -17492,7 +17696,7 @@ function prdUpdate() {
   if (!prd.draft) return;
   var probs = prdProblemsNow(), isNew = prd.mode === 'new';
   var moved = isNew ? [] : prdChanges(prd.original, prd.draft), dirty = prdDirty();
-  PRD_FIELDS.forEach(function (f) {
+  PRD_FIELDS.concat(prdMandateFields(prd.draft)).forEach(function (f) {
     var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
     var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
     var box = document.getElementById('prdE-' + f.key); if (box) box.textContent = err;
@@ -17505,6 +17709,8 @@ function prdUpdate() {
     if (f.ccy && input && input.tagName === 'INPUT') input.placeholder = prdMainText(prd.draft, f.base);
     if (f.ccy && input && f.base === 'shareClass') input.options[0].textContent = prdMainChoice(prd.draft);
   });
+  var listBox = document.getElementById('prdE-mandates');
+  if (listBox) listBox.textContent = probs.mandates || '';
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);
   var status = document.getElementById('prdStatus'); if (status) status.textContent = prdStatusText(probs, moved, dirty);
@@ -17535,7 +17741,8 @@ async function impChoose(file) {
   imp.name = file.name; render();
   try {
     imp.content = await impRead(file);
-    var path = imp.kind === 'fees' ? '/scenario/repository/fees/import/preview' : '/scenario/repository/products/import/preview';
+    var path = imp.kind === 'fees' ? '/scenario/repository/fees/import/preview'
+      : imp.kind === 'mandates' ? '/scenario/repository/mandates/import/preview' : '/scenario/repository/products/import/preview';
     var r = await api('POST', path, { name: imp.name, content: imp.content });
     if (!r) return;
     if (!r.ok) { imp.error = r.body.error || ('The file could not be read (' + r.status + ')'); imp.step = 'choose'; }
@@ -17551,6 +17758,9 @@ async function impApply() {
     if (imp.kind === 'fees') {
       r = await api('POST', '/scenario/repository/fees/import',
         { name: imp.name, content: imp.content, note: imp.note, base: imp.preview.revision });
+    } else if (imp.kind === 'mandates') {
+      r = await api('POST', '/scenario/repository/mandates/import',
+        { name: imp.name, content: imp.content, note: imp.note, base: imp.preview.revision });
     } else {
       r = await api('POST', '/scenario/repository/products/import',
         { name: imp.name, content: imp.content, withdraw: imp.withdraw, note: imp.note, base: imp.preview.revision });
@@ -17563,6 +17773,14 @@ async function impApply() {
       fct.flash = 'Imported ' + imp.name + ' · the card is version ' + r.body.saved.revision;
       loadFeeHistory(); feeRefetchSchema();
       await prdRefreshData();
+    } else if (imp.kind === 'mandates') {
+      var put = r.body['import'];
+      prd.flash = '';
+      cat.importSaid = 'Imported ' + put.file + ': ' + put.added + ' SMA mandate' + (put.added === 1 ? '' : 's') + ' added, '
+        + put.changed + ' changed, on ' + put.products + ' product' + (put.products === 1 ? '' : 's')
+        + ' · the catalogue is version ' + put.revision;
+      await prdRefreshData();
+      prdHistoryForget();
     } else {
       var done = r.body['import'];
       said = [done.added + ' added', done.changed + ' changed'];
@@ -17605,6 +17823,21 @@ function impProductsPreviewHtml(p) {
     + '<label class="prd-note-l" for="impNote">Note <small>optional</small></label>'
     + '<input id="impNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(imp.note) + '" placeholder="Where the file came from">';
 }
+/* an SMA mandate file (D197): product by product, the codes it adds and
+   changes and the category it fills in; a file never takes a code off */
+function impMandatesPreviewHtml(p) {
+  var moving = p.products.filter(function (x) { return !x.same; });
+  return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' row' + (p.rows === 1 ? '' : 's') + ' on ' + p.products.length
+    + ' product' + (p.products.length === 1 ? '' : 's') + ': '
+    + [p.added + ' new', p.changed + ' changed', p.same + ' product' + (p.same === 1 ? '' : 's') + ' as ' + (p.same === 1 ? 'it is' : 'they are')].join(' · ') + '</p>'
+    + impListHtml('changed', moving, function (x) {
+        return '<li><b>' + esc(x.name) + '</b> <small>' + esc(x.productId) + '</small><ul class="rev-changes">'
+          + x.changeWords.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></li>';
+      })
+    + (!moving.length ? '<p class="imp-same">The file matches the catalogue: every SMA mandate in it is there already.</p>' : '')
+    + '<label class="prd-note-l" for="impNote">Note <small>optional</small></label>'
+    + '<input id="impNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(imp.note) + '" placeholder="Where the file came from">';
+}
 function impFeesPreviewHtml(p) {
   var blocked = p.blocked || [];
   return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' rates · '
@@ -17621,27 +17854,32 @@ function impCanApply() {
   if (!imp || !imp.preview || imp.busy) return false;
   var p = imp.preview;
   if (imp.kind === 'fees') return !p.same && !(p.blocked || []).length && !!imp.note.trim();
+  if (imp.kind === 'mandates') return p.touched > 0;
   return !!(p.added.length || p.changed.length || p.restored.length || imp.withdraw.length);
 }
 function impDialogHtml() {
   if (!imp) return '';
-  var fees = imp.kind === 'fees';
+  var fees = imp.kind === 'fees', mandates = imp.kind === 'mandates';
   var body;
   if (imp.step === 'choose' || !imp.preview) {
     body = '<p class="imp-lede">' + (fees
         ? 'Choose a fee card file: a CSV with one row per rate - schedule, feeGroup, tier, tierMin, tierMax, source, point, rate. '
           + 'Nothing changes until you have seen what it would move and applied it.'
+        : mandates
+        ? 'Choose an SMA mandate file: a CSV, or an Excel workbook with the mandates on its first sheet or one called mandates, '
+          + 'one row per code - ProductId, MandateCode, BaseCurrency, Hedging, Category, ProductCost, MinimumInvestment, DistributionYield. '
+          + 'Codes are added and changed by code, never taken off. Nothing changes until you have seen what it would do and applied it.'
         : 'Choose a product file: a CSV, or an Excel workbook with the products on its first sheet or one called products, '
           + 'with the columns the product file has always had. Nothing changes until you have seen what it would do and applied it.') + '</p>'
       + '<input type="file" id="impFile" accept="' + (fees ? '.csv' : '.csv,.xlsx') + '"' + (imp.busy ? ' disabled' : '') + '>'
       + (imp.busy ? '<p class="repo-loading">Reading ' + esc(imp.name) + '…</p>' : '');
   } else {
-    body = fees ? impFeesPreviewHtml(imp.preview) : impProductsPreviewHtml(imp.preview);
+    body = fees ? impFeesPreviewHtml(imp.preview) : mandates ? impMandatesPreviewHtml(imp.preview) : impProductsPreviewHtml(imp.preview);
   }
   return '<div class="imp-scrim" data-imp="close"></div>'
     + '<div class="imp-dlg" role="dialog" aria-modal="true" aria-labelledby="impTitle">'
     + '<button type="button" class="dlg-close" data-imp="close" aria-label="Close">×</button>'
-    + '<h3 id="impTitle">' + (fees ? 'Import a fee card file' : 'Import a product file') + '</h3>'
+    + '<h3 id="impTitle">' + (fees ? 'Import a fee card file' : mandates ? 'Import an SMA mandate file' : 'Import a product file') + '</h3>'
     + body
     + (imp.error ? '<p class="md-err" role="alert">' + esc(imp.error) + '</p>' : '')
     + '<div class="imp-acts">'
@@ -17668,6 +17906,28 @@ function prdClick(el) {
   }
   if (act === 'startblank') { prd.start = 'blank'; prdUseCopy(''); render(); return true; }
   if (act === 'startcopy') { prd.start = 'copy'; render(); prdFocus('#prdCopyOf'); return true; }
+  if (act === 'mndadd') {
+    /* a blank row (D197); the first currency the product is offered in, so one box fewer to fill */
+    var free = PRD_CURRENCIES.filter(function (c) { return prd.draft['offered' + c] !== 'no'; })[0] || '';
+    prd.draft.mandates.push(prdMandateRow({ currency: free }));
+    prd.leaving = false;
+    render(); prdFocus('#prdF-mandate' + (prd.draft.mandates.length - 1) + 'code'); return true;
+  }
+  if (act === 'mndremove') {
+    var at = parseInt(el.dataset.i, 10);
+    prd.draft.mandates.splice(at, 1);
+    /* the rows after it move up a box, so their shown marks go with them */
+    var shown = {};
+    Object.keys(prd.shown).forEach(function (k) {
+      var m = PRD_MND_KEY.exec(k);
+      if (!m) { shown[k] = prd.shown[k]; return; }
+      var i = +m[1];
+      if (i < at) shown[k] = prd.shown[k]; else if (i > at) shown['mandate' + (i - 1) + m[2]] = prd.shown[k];
+    });
+    prd.shown = shown; prd.serverError = null; prd.leaving = false;
+    render(); prdFocus(prd.draft.mandates.length ? '#prdF-mandate' + Math.min(at, prd.draft.mandates.length - 1) + 'code' : '[data-prd="mndadd"]');
+    return true;
+  }
   if (act === 'askwithdraw') { prd.confirm = 'withdraw'; prd.note = ''; render(); prdFocus('#prdNote'); return true; }
   if (act === 'askrevert') { prd.confirm = { revert: parseInt(el.dataset.rev, 10) }; render(); return true; }
   if (act === 'unask') { prd.confirm = null; render(); return true; }
@@ -17689,6 +17949,7 @@ function prdClick(el) {
     render(); return true;
   }
   if (act === 'import') { impOpen('products'); return true; }
+  if (act === 'importmandates') { impOpen('mandates'); return true; }
   return false;
 }
 function impClick(el) {
@@ -20356,13 +20617,25 @@ document.addEventListener('input', function (e) {
   if (el.id === 'prdNote') { prd.note = el.value; return; }
   if (el.dataset && el.dataset.prdf !== undefined && prd.draft) {
     var key = el.dataset.prdf;
-    prd.draft[key] = el.value;
+    var wasSma = prdIsSma(prd.draft);
+    prdSetDraft(key, el.value);
     if (prd.serverError && prd.serverError.field === key) prd.serverError = null;
     prd.leaving = false;
     if (key === 'productId') prd.idTyped = el.value.trim() !== '';
     if (key === 'name' && prd.mode === 'new' && !prd.idTyped) {
       prd.draft.productId = prdSlug(el.value);
       var idBox = document.getElementById('prdF-productId'); if (idBox) idBox.value = prd.draft.productId;
+    }
+    if (key === 'vehicle' && prdIsSma(prd.draft) !== wasSma) {
+      /* the SMA mandates' table comes and goes with the vehicle (D197): a
+         redraw, with the caret put back where it was */
+      var caret = el.selectionStart;
+      render();
+      window.setTimeout(function () {
+        var again = document.getElementById('prdF-vehicle');
+        if (again) { again.focus(); try { again.setSelectionRange(caret, caret); } catch (err) { /* a select */ } }
+      }, 0);
+      return;
     }
     prdUpdate(); return;
   }
@@ -20420,11 +20693,12 @@ document.addEventListener('change', function (e) {
   }
   if (el.id === 'prdCopyOf' && prd.mode === 'new') { prdUseCopy(el.value); render(); prdFocus('#prdF-name'); return; }
   if (el.dataset && el.dataset.prdf !== undefined && prd.draft && el.tagName === 'SELECT') {
-    prd.draft[el.dataset.prdf] = el.value;
+    prdSetDraft(el.dataset.prdf, el.value);
     prd.shown[el.dataset.prdf] = true;
     if (prd.serverError && prd.serverError.field === el.dataset.prdf) prd.serverError = null;
-    /* a currency's boxes open or close with whether it is offered there */
-    if (el.dataset.prdf.indexOf('offered') === 0) { render(); return; }
+    /* a currency's boxes open or close with whether it is offered there;
+       the SMA mandates' hedging column with the category (D197) */
+    if (el.dataset.prdf.indexOf('offered') === 0 || (el.dataset.prdf === 'category' && prdIsSma(prd.draft))) { render(); return; }
     prdUpdate(); return;
   }
   if (el.id === 'feeAddLike') { fct.addLike = el.value; return; }
