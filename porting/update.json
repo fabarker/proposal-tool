@@ -1,10 +1,14 @@
 {
-  "from": "71e14ee",
-  "to": "d450d3f",
+  "from": "d450d3f",
+  "to": "3cd55dc",
   "write": [
+    "package/products.py",
+    "package/sleeveRepo.py",
+    "package/sleeveTools.py",
+    "page/static/css/proposalTool.css",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
-  "routerBlock": false,
-  "bytes": 46363
+  "routerBlock": true,
+  "bytes": 97744
 }
