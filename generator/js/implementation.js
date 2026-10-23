@@ -2016,6 +2016,13 @@ function greetCategories() {
 
 function renderGreetPanel() {
   var host = document.getElementById('greetDialog'); if (!host) return;
+  /* asked for on the way to a step not yet reached - the custodian's card
+     stands in the way (D195) - it waits, and greets on arrival */
+  if (greetPanel.open && App.step() !== 'impl') {
+    host.innerHTML = ''; host.hidden = true;
+    document.body.classList.remove('greeting');
+    return;
+  }
   var live = greetPanel.open ? greetCategories() : [];
   var left = live.filter(function (c) { return !sleeveFor(c.name); }).length;
   if (!greetPanel.open || !live.length || !left) {

@@ -1041,11 +1041,16 @@ function ensureSleeveLib(category, onReady) {
 async function setVariant(name, entity) {
   if (!canEdit()) return;
   if (!name || name === state.variant) return;
-  /* A type that asks for a custodian (D195) asks for it first, on its own
-     card, unless the type in force already holds one; the card comes back
-     here with the choice, and closing it keeps the type in force. */
+  /* A type that asks for a custodian (D195) is chosen without one: its card
+     opens on the way to the implementation step, where the custodian first
+     matters. Chosen on that step, the type asks for it first, on the card;
+     the card comes back here with the choice, and closing it keeps the type
+     in force. */
   if (custodyNeeded(name) && entity === undefined) {
-    if (!custodian()) { openCustodyDialog(name, document.getElementById('bpv')); return; }
+    if (!custodian() && state.step === 'impl') {
+      openCustodyDialog(name, document.getElementById('bpv'));
+      return;
+    }
     entity = custodian();
   }
   state.mandate = Object.assign({}, state.mandate, { entity: custodyNeeded(name) ? entity || '' : '' });
@@ -3498,16 +3503,19 @@ function anyDialogOpen(except) {
    The custodian (D195). Asked for only under PMG ESG (options.custodyTypes):
    what ESG means differs by jurisdiction, so the funds a client may own -
    the sleeve editions served - follow the custodian, one of GSI, GSBZ, GSLU
-   and GSCO (options.entities). Its card opens as the type is chosen, before
-   anything is picked from that type's library; closing it without a choice
-   keeps the type in force. Rendered into #custodyDialog.
+   and GSCO (options.entities). The type is chosen without one; its card
+   opens when the PWA moves on to the implementation step, before anything is
+   picked from that type's library, and Continue goes on to the step. Cancel
+   stays on the allocation step. Rendered into #custodyDialog.
    ========================================================================== */
-var custody = null;                 /* { variant, chosen, err, saving, opener } */
+var custody = null;           /* { variant, chosen, err, saving, opener, then } */
 
-function openCustodyDialog(variant, opener) {
+/* *then*, when given, runs once the custodian is saved: the step the card
+   stood in the way of */
+function openCustodyDialog(variant, opener, then) {
   if (!canEdit()) return;
   custody = { variant: variant, chosen: custodian(), err: null, saving: false,
-              opener: opener || document.activeElement };
+              opener: opener || document.activeElement, then: then || null };
   renderCustodyDialog();
   var first = document.querySelector('#custodyDialog input[name="cust"]:checked')
     || document.querySelector('#custodyDialog input[name="cust"]');
@@ -3520,7 +3528,8 @@ function closeCustodyDialog() {
   renderCustodyDialog();
   /* the type select shows the type in force again */
   refresh();
-  var back = document.getElementById(opener && opener.id ? opener.id : 'bpv');
+  var back = opener && opener.isConnected && !opener.id && opener !== document.body ? opener
+    : document.getElementById(opener && opener.id ? opener.id : 'bpv');
   if (back && back.focus) back.focus();
 }
 
@@ -3592,7 +3601,7 @@ async function commitCustody() {
     return;
   }
   state.mandate = mandate;
-  var opener = custody.opener;
+  var opener = custody.opener, then = custody.then;
   custody = null;
   renderCustodyDialog();
   /* another custodian may hold other editions and exclude other products
@@ -3603,6 +3612,15 @@ async function commitCustody() {
   }
   await fetchSchema();
   announce('polite', 'Custodian set to ' + entityName(entity) + '.');
+  if (then) {
+    then();
+    /* back to what was pressed to move on, unless the step has put focus
+       somewhere itself (its greeting) */
+    var from = opener && (opener.isConnected ? opener : opener.id && document.getElementById(opener.id));
+    var free = !document.activeElement || document.activeElement === document.body;
+    if (free && from && from.focus) from.focus();
+    return;
+  }
   refresh();
   var back = document.getElementById(opener && opener.id ? opener.id : 'custchange');
   if (back && back.focus) back.focus();
@@ -3620,10 +3638,13 @@ async function afterRepository() {
   refresh();
 }
 
-/* the rail's line for it, under the type: what is chosen, and the way to change it */
+/* the rail's line for it, under the type: what is chosen, and the way to
+   change it. On the allocation step it shows once one is chosen: until the
+   PWA moves on, nothing asks for it. */
 function custodyRowHtml() {
   if (!custodyNeeded(state.variant)) return '';
   var now = custodian();
+  if (!now && state.step !== 'impl') return '';
   return '<div class="cust-row' + (now ? '' : ' is-open') + '"><span class="cust-k">Custodian</span>'
     + (now ? '<b>' + esc(entityName(now)) + '</b>' : '<span class="cust-none">not chosen</span>')
     + '<button type="button" class="btn-inline" id="custchange"' + (canEdit() ? '' : ' disabled') + '>'
@@ -5058,10 +5079,11 @@ return {
   implSeen: function () { return state.implSeen; },
   setStep: function (s) {
     /* step 2 opens once the custodian is chosen, under a type that asks for
-       one (D193, D195): a scenario saved before it asks for one first */
+       one (D193, D195): moving on asks for it, and the card's Continue goes
+       on to the step */
     if (s === 'impl' && state.mandate && custodyNeeded(state.variant) && !custodian()) {
       announce('assertive', 'Choose the custodian before the implementation step.');
-      openCustodyDialog(state.variant, document.activeElement);
+      openCustodyDialog(state.variant, document.activeElement, function () { App.setStep('impl'); });
       return;
     }
     var wasStep = state.step;
@@ -7399,6 +7421,13 @@ function greetCategories() {
 
 function renderGreetPanel() {
   var host = document.getElementById('greetDialog'); if (!host) return;
+  /* asked for on the way to a step not yet reached - the custodian's card
+     stands in the way (D195) - it waits, and greets on arrival */
+  if (greetPanel.open && App.step() !== 'impl') {
+    host.innerHTML = ''; host.hidden = true;
+    document.body.classList.remove('greeting');
+    return;
+  }
   var live = greetPanel.open ? greetCategories() : [];
   var left = live.filter(function (c) { return !sleeveFor(c.name); }).length;
   if (!greetPanel.open || !live.length || !left) {
