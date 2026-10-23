@@ -781,8 +781,8 @@ def go(plan):
         say('== The router\'s endpoints: ' + ('{} of {}'.format(out, ROUTES) if ok else
                                              'not checked here ({})'.format(out)))
     say('')
-    say('Done. ' + ('Start isgPMGService, then ' if plan['code'] else '')
-        + 'press Ctrl+F5 on the page.')
+    say('Done. ' + ('Start isgPMGService, then press' if plan['code'] else 'Press')
+        + ' Ctrl+F5 on the page.')
     return 0
 
 
