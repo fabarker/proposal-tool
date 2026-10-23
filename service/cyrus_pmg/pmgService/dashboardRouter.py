@@ -140,6 +140,8 @@ def _scenarioPayload(state: dict) -> dict:
         'customPortfolio': state.get('customPortfolio') or None,
         # the marketing warnings acknowledged, and for which allocation (D196)
         'marketing': state.get('marketing') or None,
+        # who confirmed the hedge fund notice, and who declined it (D198)
+        'hedgeFundNotice': state.get('hedgeFundNotice') or None,
     }
 
 
@@ -1140,8 +1142,11 @@ def saveMarketing(payload: dict = Body(...), caller=Depends(requireAdmin)):
     would delete an offering entity; 409 when *base* is no longer the
     revision in force."""
     try:
-        marketing.save({'offering': payload.get('offering'), 'warnings': payload.get('warnings')},
-                       payload.get('note'), user=caller.kerberos, base=payload.get('base'))
+        body = {'offering': payload.get('offering'), 'warnings': payload.get('warnings')}
+        # the hedge fund notice's title and body (D198), kept when not sent
+        if payload.get('hedgeFundNotice') is not None:
+            body['hedgeFundNotice'] = payload['hedgeFundNotice']
+        marketing.save(body, payload.get('note'), user=caller.kerberos, base=payload.get('base'))
         return {'marketing': marketing.describe()}
     except ValidationError as exc:
         return _validationError(exc)
@@ -1275,7 +1280,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         current = scenarioStore.getScenario(scenarioId)
         mandate = basis = sleeves = variant = None
         tacticalTilt = feeSchedule = feeLevel = includeFees = None
-        volPremium = customFees = customs = built = charges = acks = None
+        volPremium = customFees = customs = built = charges = acks = notice = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
             # the custodian (D193): kept when the write does not name it, if
@@ -1310,6 +1315,15 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                 raise ValidationError('marketingAck', 'Say which warnings were acknowledged.')
             acks = marketing.acknowledge(current.get('marketing'), ack.get('allocation'),
                                          ack.get('warnings'), caller.kerberos)
+        if 'hedgeFundNotice' in payload:
+            # the hedge fund notice confirmed, its box ticked, or declined, as
+            # the signed-in user and now (D198): {action, attested, category, sleeve}
+            said = payload['hedgeFundNotice'] or {}
+            if not isinstance(said, dict):
+                raise ValidationError('hedgeFundNotice', 'Confirm the hedge fund notice, or decline it.')
+            notice = marketing.respond(current.get('hedgeFundNotice'), said.get('action'),
+                                       said.get('category'), said.get('sleeve'), caller.kerberos,
+                                       attested=said.get('attested'))
         if 'tacticalTilt' in payload:
             tacticalTilt = bool(payload['tacticalTilt'])
         if 'volPremium' in payload:
@@ -1371,7 +1385,8 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             includeFees=includeFees, volPremium=volPremium,
             customFees=customFees, customFeesBy=caller.kerberos,
             customSleeves=customs, customPortfolio=built,
-            otherCharges=charges, otherChargesBy=caller.kerberos, marketing=acks)
+            otherCharges=charges, otherChargesBy=caller.kerberos, marketing=acks,
+            hedgeFundNotice=notice)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
@@ -1713,7 +1728,9 @@ def _assembleExport(scenarioId: str, port):
                       'customFeesAt': state.get('customFeesAt'),
                       'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
                       # the marketing warnings acknowledged, for the register (D196)
-                      'marketing': state.get('marketing')}
+                      'marketing': state.get('marketing'),
+                      # and the hedge fund notice confirmed (D198)
+                      'hedgeFundNotice': state.get('hedgeFundNotice')}
     # The implemented model is built ONCE here and handed to both the
     # writer and the register, so the sheet a client receives and the
     # record kept of it are the same model rather than two builds (D69).
@@ -1782,6 +1799,8 @@ def _assembleExport(scenarioId: str, port):
                                       b['minimumInvestment']) for b in model['breaches'][:4])
                                   + ('' if len(model['breaches']) <= 4
                                      else ', and {} more'.format(len(model['breaches']) - 4))))
+    # a hedge fund in the model needs the notice confirmed (D198)
+    _refuseUnconfirmedHedgeFunds(state, model)
     # every other check first: the charges are what the page asks for last,
     # as Download opens their card (D177)
     _otherCharges.required(implementation['otherCharges'], includeFees)
@@ -1913,6 +1932,19 @@ def _assembleCustomExport(state, port):
     # as Download opens their card (D177)
     _otherCharges.required(implementation['otherCharges'], includeFees)
     return state, basis, mandate, results, implementation, model
+
+
+def _refuseUnconfirmedHedgeFunds(state, model) -> None:
+    """A proposal that holds a hedge fund is not delivered until the hedge
+    fund notice is confirmed for it (D198), so the page's card cannot be
+    walked past by calling the endpoint directly."""
+    held = proposalRegister.hedgeFundsIn(model)
+    if held and not marketing.confirmed(state.get('hedgeFundNotice')):
+        raise ValidationError(
+            'hedgeFundNotice',
+            'The proposal holds {} {}: confirm the hedge fund notice before downloading.'.format(
+                'a hedge fund,' if len(held) == 1 else 'hedge funds,', ', '.join(held[:4])
+                + ('' if len(held) <= 4 else ', and {} more'.format(len(held) - 4))))
 
 
 _PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'

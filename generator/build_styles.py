@@ -1106,6 +1106,9 @@ PAGE_SHELL = """<!doctype html>
      warnings (D196), rendered on demand. -->
 <div id="custodyDialog" hidden></div>
 <div id="marketingDialog" hidden></div>
+<!-- The hedge fund notice (D198), last so it stands over a builder that
+     asked for it. -->
+<div id="hedgeFundDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>
 </body>

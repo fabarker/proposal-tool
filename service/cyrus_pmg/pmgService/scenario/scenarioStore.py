@@ -154,7 +154,7 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
                    customFees: dict = None, customFeesBy: str = None,
                    customSleeves: dict = None, customPortfolio: dict = None,
                    otherCharges: dict = None, otherChargesBy: str = None,
-                   marketing: dict = None) -> dict:
+                   marketing: dict = None, hedgeFundNotice: dict = None) -> dict:
     """Apply a partial state update (the PUT endpoint - deviation D2).
 
     *customFees* replaces the whole map (D96) and records who wrote it and
@@ -163,6 +163,8 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
     PWA quotes beside the fees (D177), and records whose they are the same
     way. *marketing* replaces the marketing warnings the PWA has
     acknowledged and the allocation they were shown for (D196).
+    *hedgeFundNotice* replaces the record of the hedge fund notice: who
+    confirmed it and when, and who declined it (D198).
 
     A variant change clears the sleeve map in the same write unless the caller
     supplied one, because sleeve names are only meaningful under the variant
@@ -223,6 +225,8 @@ def updateScenario(scenarioId: str, mandate: MandateInput = None,
             state['otherChargesAt'] = time.time()
         if marketing is not None:
             state['marketing'] = dict(marketing)
+        if hedgeFundNotice is not None:
+            state['hedgeFundNotice'] = dict(hedgeFundNotice)
         return _save(state)
 
 

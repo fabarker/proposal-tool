@@ -133,7 +133,7 @@ def test_an_overlay_without_an_edition_for_the_custodian_is_not_given_there(stor
 # --------------------------------------------------- the scenario & export ---
 
 def _scenario(entity, variant=ESG, key=USD_ESG):
-    from test_scenario_backend import BASIS, PORT, _sleeveMap
+    from test_scenario_backend import BASIS, PORT, _confirmHedgeFunds, _sleeveMap
     from cyrus_pmg.pmgService.scenario import scenarioStore
     state = scenarioStore.createScenario(
         MandateInput(topAccountSize=1e9, mandateSize=1e9, primaryPwa='A. Castellanos — Madrid',
@@ -142,6 +142,7 @@ def _scenario(entity, variant=ESG, key=USD_ESG):
     scenarioStore.updateScenario(state['id'], variant=variant)
     scenarioStore.recordColumn(state['id'], key, 'base')
     scenarioStore.updateScenario(state['id'], sleeves=_sleeveMap(result['categories'], variant))
+    _confirmHedgeFunds(state['id'])
     return state['id']
 
 

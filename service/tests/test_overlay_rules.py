@@ -465,7 +465,7 @@ def test_the_register_records_the_rules_a_proposal_was_built_with(store, monkeyp
     conn = sqlite3.connect(str(store / 'proposals.db'))
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     conn.close()
-    assert int(version) == proposalRegister.SCHEMA_VERSION == 11   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193), the marketing warnings (D196)
+    assert int(version) == proposalRegister.SCHEMA_VERSION == 12   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193), the marketing warnings (D196), the hedge fund notice (D198)
 
 
 def test_the_schema_serves_the_list_in_force_for_the_type(store):
@@ -825,6 +825,8 @@ def test_an_overlay_category_with_no_sleeve_is_not_applied_to_the_export(store, 
     scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0])
     scenarioStore.recordColumn(state['id'], MODERATE_FULL, 'base')
     scenarioStore.updateScenario(state['id'], sleeves=_sleeveMap(result['categories'], sleeves.VARIANTS[0]))
+    from test_scenario_backend import _confirmHedgeFunds
+    _confirmHedgeFunds(state['id'])
     calls = []
     real = overlayRules.current
     monkeypatch.setattr(overlayRules, 'current', lambda v=None, e=None: calls.append(v) or real(v, e))
@@ -1052,6 +1054,8 @@ def test_a_greyed_out_switch_is_recorded_off(store, tmp_path, monkeypatch):
     scenarioStore.updateScenario(state['id'], variant=ma, volPremium=True, tacticalTilt=True)
     scenarioStore.recordColumn(state['id'], MODERATE_FULL, 'base')
     scenarioStore.updateScenario(state['id'], sleeves=_sleeveMap(result['categories'], ma))
+    from test_scenario_backend import _confirmHedgeFunds
+    _confirmHedgeFunds(state['id'])
     exported = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
     assert exported.status_code == 200, exported.body
     kept = proposalRegister.getProposal(exported.headers['X-Proposal-Id'])

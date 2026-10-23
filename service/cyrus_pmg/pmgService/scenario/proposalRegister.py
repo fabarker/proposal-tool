@@ -52,12 +52,13 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 11         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+SCHEMA_VERSION = 12         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
                             # 5: the overlay rules (D155); 6: the catalogue and fee card versions (D165, D166);
                             # 7: custom sleeves, and whether the strategic allocation was left out (D170);
                             # 8: custom portfolios (D171); 9: the other charges (D177);
                             # 10: the custodian / entity (D193);
-                            # 11: the marketing warnings (D196)
+                            # 11: the marketing warnings (D196);
+                            # 12: the hedge fund notice confirmed (D198)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     otherCharges      TEXT,
     entity            TEXT,
     marketing         TEXT,
+    hedgeFundNotice   TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -133,7 +135,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
                  'deckName, deckBytes, deckSha, fundingSplit, overlays, catalogueRevision, '
-                 'feeCardRevision, departs, customPortfolio, entity, marketing')
+                 'feeCardRevision, departs, customPortfolio, entity, marketing, hedgeFundNotice')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -217,6 +219,10 @@ def _connect() -> sqlite3.Connection:
         # each (D196); NULL for none, and for anything delivered before
         if 'marketing' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN marketing TEXT')
+        # the hedge fund notice confirmed, for a proposal holding a hedge fund
+        # (D198); NULL for one that holds none, and for anything delivered before
+        if 'hedgeFundNotice' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN hedgeFundNotice TEXT')
         pins = {row[1] for row in conn.execute('PRAGMA table_info(proposalSleeves)')}
         if 'custom' not in pins:
             conn.execute('ALTER TABLE proposalSleeves ADD COLUMN custom TEXT')
@@ -400,6 +406,11 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
     warned = _marketing.acknowledged(
         _marketing.warningsFor(allocation), implementation.get('marketing'),
         'custom' if builtByHand else allocation.get('keyStr'))
+    # the hedge fund notice, where the model holds a hedge fund (D198): who
+    # confirmed it, when, and the wording's revision, beside the funds held
+    held = [] if builtByHand else hedgeFundsIn(model)
+    record = (implementation.get('hedgeFundNotice') or {}).get('confirmed') if held else None
+    notice = dict(record, holds=held) if record else ({'holds': held} if held else None)
     stamp = _now()
     sha = hashlib.sha256(workbook).hexdigest()
     deckSha = hashlib.sha256(deck).hexdigest()
@@ -416,8 +427,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
                 'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
                 'overlays, catalogueRevision, feeCardRevision, departs, customPortfolio, '
-                'otherCharges, entity, marketing) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'otherCharges, entity, marketing, hedgeFundNotice) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -451,7 +462,9 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                  # the custodian / entity the account is held at (D193)
                  getattr(mandate, 'entity', '') or None,
                  # the marketing warnings and their acknowledgements (D196)
-                 json.dumps(warned) if warned else None))
+                 json.dumps(warned) if warned else None,
+                 # the hedge fund notice confirmed (D198)
+                 json.dumps(notice) if notice else None))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName, '
                 'custom) VALUES (?,?,?,?,?,?)',
@@ -483,7 +496,24 @@ def _rowToEntry(row) -> dict:
         entry['entityName'] = _entities.name(entry['entity']) if entry['entity'] else ''
     if 'marketing' in entry:
         entry['marketing'] = json.loads(entry['marketing']) if entry['marketing'] else None
+    if 'hedgeFundNotice' in entry:
+        entry['hedgeFundNotice'] = (json.loads(entry['hedgeFundNotice'])
+                                    if entry['hedgeFundNotice'] else None)
     return entry
+
+
+def hedgeFundsIn(model) -> list:
+    """The hedge funds a model holds, by name: its products and the ones
+    named below a minimum whose own category is Hedge Funds (D198)."""
+    out = []
+    for group in (model or {}).get('groups') or []:
+        for item in group.get('items') or []:
+            for p in (item, item.get('alternative')):
+                if isinstance(p, dict) and p.get('hedgeFund'):
+                    name = p.get('name') or p.get('productId')
+                    if name not in out:
+                        out.append(name)
+    return out
 
 
 def fundingSplitText(split) -> str:
@@ -831,7 +861,7 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
                   'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays',
                   'CatalogueVersion', 'FeeCardVersion', 'CustomSleeves', 'StrategicAllocation',
-                  'CustomPortfolio', 'Entity', 'MarketingWarnings']
+                  'CustomPortfolio', 'Entity', 'MarketingWarnings', 'HedgeFundNotice']
 
 
 def marketingText(warnings) -> str:
@@ -848,6 +878,18 @@ def marketingText(warnings) -> str:
         out.append('{} - not by {} - {}'.format(held, ', '.join(w.get('bannedNames') or w.get('banned') or []),
                                                ack))
     return '; '.join(out)
+
+
+def hedgeFundNoticeText(notice) -> str:
+    """The hedge fund notice in one line (D198): ``confirmed by jtaylor
+    2026-10-23 14:05 (wording r3) - holds Ashfield Select Equity L/S``.
+    Blank for a proposal that holds no hedge fund."""
+    if not notice:
+        return ''
+    said = ('confirmed by {} {} (wording r{})'.format(
+        notice.get('by') or 'someone', (notice.get('at') or '').replace('T', ' ')[:16],
+        notice.get('revision', 0)) if notice.get('at') else 'not confirmed')
+    return '{} - holds {}'.format(said, ', '.join(notice.get('holds') or []))
 
 
 def customPortfolioText(custom) -> str:
@@ -898,7 +940,8 @@ def exportRows(**filters) -> list:
                         built, 'Left out' if e.get('departs') or e.get('customPortfolio')
                         else 'Included', customPortfolioText(e.get('customPortfolio')),
                         _entities.name(e['entity']) if e.get('entity') else '',
-                        marketingText(e.get('marketing'))))
+                        marketingText(e.get('marketing')),
+                        hedgeFundNoticeText(e.get('hedgeFundNotice'))))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

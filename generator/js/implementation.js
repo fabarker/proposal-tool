@@ -519,6 +519,23 @@ var initialShown = false;
    overlay rules in force, top to bottom, as rules.implementedCategories()
    applies them (D155): with the seeded list the tilt first, then the
    premium, whose share is of what the tilt leaves. */
+/* the hedge funds the implementation holds as it stands, by name (D198):
+   every category's sleeve in force, attached or chosen, library or custom */
+function heldHedgeFunds() {
+  if (App.cpActive() || !App.variant()) return [];
+  var out = [];
+  sleeveCategories(baseCategories()).forEach(function (c) {
+    var s = sleeveFor(c.name);
+    ((s && s.products) || []).forEach(function (p) {
+      [p, p && p.alternative].forEach(function (x) {
+        if (x && x.hedgeFund && out.indexOf(x.name || x.productId) === -1) out.push(x.name || x.productId);
+      });
+    });
+  });
+  return out;
+}
+App.heldHedgeFunds = heldHedgeFunds;
+
 function baseCategories() {
   /* a custom portfolio's lines are its products' categories (D171) */
   if (App.cpActive()) return App.cpLines ? App.cpLines() : [];
@@ -2538,6 +2555,8 @@ function renderCustomBuilder() {
   var had = document.activeElement && host.contains(document.activeElement) ? document.activeElement : null;
   var hadId = had && had.id, hadAt = had && typeof had.selectionStart === 'number' ? had.selectionStart : null;
   if (hadId) window.setTimeout(function () {
+    /* not from the hedge fund notice standing over it (D198) */
+    if (App.hedgeFundOpen()) return;
     var back = document.getElementById(hadId);
     if (back && document.activeElement !== back && (!document.activeElement || document.activeElement === document.body
         || !host.contains(document.activeElement))) {
@@ -2853,6 +2872,8 @@ function renderRail() {
      carries one sleeve by rule and is put there by the toggle above, so a
      control for it would be a control that can never be used; the count and
      the note below say it is in the model (D53). */
+  /* the hedge fund notice (D198): confirmed, or wanted for what is held */
+  html += App.hedgeFundNoteHtml(heldHedgeFunds());
   html += '<div class="sl-list">';
   /* the lines as implemented: a custom sleeve weighted against the portfolio
      shows its own weight, the strategic one struck through (D170) */

@@ -107,7 +107,7 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     assert len(rows) == 73
     expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
                 'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
-                'distributionYield', 'minimumInvestment', 'currencies', 'mandates'}
+                'distributionYield', 'minimumInvestment', 'currencies', 'mandates', 'hedgeFund'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p

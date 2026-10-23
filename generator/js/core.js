@@ -18,6 +18,9 @@ var state = {
   /* the marketing warnings acknowledged, and the allocation they were shown
      for (D196): {allocation, acks: [{warning, by, at}]} or null */
   marketing: null,
+  /* the hedge fund notice (D198): {confirmed: {by, at, revision, title,
+     category, sleeve} or null, declined: [{by, at, category, sleeve}]} or null */
+  hedgeFundNotice: null,
   basis: { currency: 'USD', hedging: 'Hedged' },
   schema: null,
   schemaStatus: 'idle',             /* 'idle'|'loading'|'ready'|'error' */
@@ -1196,6 +1199,17 @@ function setFeeLevel(level) {
 
 function chooseSleeve(category, name) {
   if (!canEdit()) return;
+  /* a sleeve holding a hedge fund asks for the notice first (D198) */
+  if (name) {
+    var lib = state.sleeveLib[category];
+    var picked = lib && lib.status === 'ready'
+      ? lib.sleeves.filter(function (s) { return s.name === name; })[0] : null;
+    if (hedgeFundGate(category, name, picked ? picked.products : [], function () { attachSleeve(category, name); })) return;
+  }
+  attachSleeve(category, name);
+}
+
+function attachSleeve(category, name) {
   if (name) state.sleeves[category] = name; else delete state.sleeves[category];
   pushSleeves();
   refresh();
@@ -1261,6 +1275,21 @@ function pushCustomSleeves() {
    changes here and the message comes back. */
 async function setCustomSleeve(category, definition) {
   if (!canEdit()) return 'Your role cannot change this proposal.';
+  /* a custom sleeve holding a hedge fund asks for the notice first (D198);
+     declined, the builder stays open and says why */
+  if (definition) {
+    var asked = await new Promise(function (resolve) {
+      var gated = hedgeFundGate(category, customSleeveName(definition), customProductsOf(category, definition),
+        function () { resolve(null); },
+        function () { resolve('The hedge fund notice was not confirmed, so this sleeve is not in force.'); });
+      if (!gated) resolve(null);
+    });
+    if (asked) return asked;
+  }
+  return putCustomSleeve(category, definition);
+}
+
+async function putCustomSleeve(category, definition) {
   var before = { sleeves: Object.assign({}, state.sleeves),
                  custom: Object.assign({}, state.customSleeves) };
   if (definition) {
@@ -1280,9 +1309,30 @@ async function setCustomSleeve(category, definition) {
 /* Put a held custom sleeve back in force, in place of the library's. */
 function useCustomSleeve(category) {
   if (!canEdit() || !state.customSleeves[category]) return;
+  var held = state.customSleeves[category];
+  if (hedgeFundGate(category, customSleeveName(held), customProductsOf(category, held), function () { putBackCustom(category); })) return;
+  putBackCustom(category);
+}
+
+function putBackCustom(category) {
   delete state.sleeves[category];
   pushSleeves();
   refresh();
+}
+
+/* a custom sleeve's products as the library serves them, where the
+   category's list is read; the ones it no longer has are left out */
+function customProductsOf(category, definition) {
+  var lib = state.customLib[category];
+  if (!lib || lib.status !== 'ready') return [];
+  var byId = {};
+  (lib.products || []).forEach(function (p) { byId[p.productId] = p; });
+  return ((definition && definition.products) || []).map(function (p) { return byId[p.productId]; }).filter(Boolean);
+}
+/* the name a custom sleeve goes by on the rail (D170) */
+function customSleeveName(definition) {
+  var name = String((definition && definition.name) || '').trim();
+  return name ? 'Custom: ' + name : 'Custom';
 }
 
 /* ---- custom portfolios (D171) --------------------------------------------
@@ -1667,6 +1717,7 @@ async function boot() {
       state.customSleeves = stored.customSleeves || {};
       state.customPortfolio = stored.customPortfolio || null;
       state.marketing = stored.marketing || null;
+      state.hedgeFundNotice = stored.hedgeFundNotice || null;
       state.phase = 'workspace';
       await fetchSchema();                /* now with the mandate size */
       var keys = [];
@@ -3397,7 +3448,7 @@ function setBackgroundInert(on) {
 /* the cards that hold the page while they are open */
 var DIALOG_HOSTS = ['mandateDialog', 'accountDialog', 'feeDialog', 'priceDialog', 'customDialog',
                     'chargesDialog', 'cslDialog', 'cpDialog', 'greetDialog', 'repoDialog',
-                    'custodyDialog', 'marketingDialog'];
+                    'custodyDialog', 'marketingDialog', 'hedgeFundDialog'];
 function anyDialogOpen(except) {
   return DIALOG_HOSTS.some(function (id) {
     var host = id !== except && document.getElementById(id);
@@ -3547,6 +3598,190 @@ async function afterRepository() {
   refresh();
 }
 
+/* =============================================================================
+   The hedge fund notice (D198). A hedge fund - a product whose catalogue
+   category is Hedge Funds (served as hedgeFund) - may not be marketed to a
+   client until its registration for sale where the client is domiciled has
+   been checked. The first time a sleeve holding one is attached to a
+   proposal, from the library or as a custom sleeve, a card shows the desk's
+   notice (options.hedgeFundNotice, worded on the console's Marketing tab),
+   with a tick box above the buttons that must be ticked before Confirm.
+   Confirm records who, when and the words ticked, and attaches the sleeve;
+   Cancel records the decline and leaves the sleeve off. Once per proposal: after a
+   confirmation, hedge fund sleeves attach without asking. The download needs
+   it, so a proposal holding a hedge fund some other way - one saved before,
+   or a product whose category changed - says so in the rail, with Read.
+   ========================================================================== */
+var hfCard = null;          /* { category, sleeve, held, proceed, cancel, opener, ticked, saving, err } */
+
+function hedgeFundConfirmed() {
+  return !!(state.hedgeFundNotice && state.hedgeFundNotice.confirmed);
+}
+
+/* the hedge funds among *products*, by name: theirs, and the ones each
+   names to hold below its minimum (D192) */
+function hedgeFundNames(products) {
+  var out = [];
+  (products || []).forEach(function (p) {
+    [p, p && p.alternative].forEach(function (x) {
+      if (x && x.hedgeFund && out.indexOf(x.name || x.productId) === -1) out.push(x.name || x.productId);
+    });
+  });
+  return out;
+}
+
+/* true when the card stands in the way: *proceed* runs on Confirm, and
+   *cancel* on Cancel. False when nothing asks - no hedge fund, already
+   confirmed, or nothing that may be recorded - and the caller goes on. */
+function hedgeFundGate(category, sleeve, products, proceed, cancel) {
+  var held = hedgeFundNames(products);
+  if (!held.length || hedgeFundConfirmed() || !canEdit() || !state.scenarioId) return false;
+  openHedgeFundCard({ category: category, sleeve: sleeve, held: held, proceed: proceed,
+                      cancel: cancel || null });
+  return true;
+}
+
+function openHedgeFundCard(card) {
+  hfCard = Object.assign({ opener: document.activeElement, ticked: false, saving: false, err: null }, card);
+  announce('assertive', 'Hedge fund notice: tick the box and confirm it to attach the sleeve.');
+  renderHedgeFundDialog();
+  var body = document.getElementById('hfBody'); if (body) body.scrollTop = 0;
+  /* the tick comes first: Confirm waits for it */
+  var tick = document.getElementById('hftick'); if (tick) tick.focus();
+}
+
+/* the tick box moved: Confirm and its hint follow, without a redraw, so
+   focus stays on the box */
+function tickHedgeFund(on) {
+  if (!hfCard || hfCard.saving) return;
+  hfCard.ticked = !!on;
+  var ok = document.getElementById('hfok'); if (ok) ok.disabled = !hfCard.ticked;
+  var why = document.getElementById('hfwhy'); if (why) why.textContent = hfCard.ticked ? '' : 'Tick the box to confirm.';
+}
+
+/* the notice's body as the admin worded it: a blank line parts paragraphs,
+   and a block of lines numbered 1. 2. is a list */
+function hedgeFundBodyHtml(text) {
+  return String(text || '').split(/\n\s*\n/).map(function (block) {
+    var lines = block.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    if (!lines.length) return '';
+    if (lines.every(function (l) { return /^\d+[.)]\s+/.test(l); })) {
+      return '<ol>' + lines.map(function (l) { return '<li>' + esc(l.replace(/^\d+[.)]\s+/, '')) + '</li>'; }).join('') + '</ol>';
+    }
+    return '<p>' + lines.map(esc).join('<br>') + '</p>';
+  }).join('');
+}
+
+function renderHedgeFundDialog() {
+  var host = document.getElementById('hedgeFundDialog'); if (!host) return;
+  if (!hfCard) {
+    host.innerHTML = ''; host.hidden = true;
+    if (!anyDialogOpen('hedgeFundDialog')) setBackgroundInert(false);
+    return;
+  }
+  host.hidden = false;
+  setBackgroundInert(true);
+  var notice = opt('options.hedgeFundNotice', null) || {};
+  var dis = hfCard.saving ? ' disabled' : '';
+  var attest = notice.attestation
+    || 'I understand that I am responsible for completing these checks before sharing any information with the client.';
+  var held = hfCard.held || [];
+  host.innerHTML = '<div class="scrim" data-hfscrim></div>'
+    + '<div class="dialog mkt hfn" role="alertdialog" aria-modal="true" aria-labelledby="hfTitle" aria-describedby="hfBody">'
+    + '<p class="mkt-eyebrow">Hedge fund notice</p>'
+    + '<h2 id="hfTitle">' + esc(notice.title || 'Hedge funds: check fund eligibility before marketing') + '</h2>'
+    + (held.length
+        ? '<p class="mkt-held hf-held">' + esc(hfCard.sleeve ? hfCard.sleeve + ' holds ' : 'The proposal holds ')
+          + esc(held.join(', ')) + '</p>' : '')
+    + '<div class="mkt-text hf-text" id="hfBody">' + hedgeFundBodyHtml(notice.body) + '</div>'
+    /* the tick box, above the buttons: Confirm waits for it */
+    + '<label class="hf-tick" for="hftick"><input type="checkbox" id="hftick"' + (hfCard.ticked ? ' checked' : '') + dis + '>'
+    + '<span>' + esc(attest) + '</span></label>'
+    + (hfCard.err ? '<p class="md-err" role="alert">' + esc(hfCard.err) + '</p>' : '')
+    + '<div class="dlg-actions split hf-acts">'
+    + '<button type="button" class="btn btn-primary" id="hfok"' + (hfCard.saving || !hfCard.ticked ? ' disabled' : '')
+    + ' aria-describedby="hfwhy">' + (hfCard.saving ? 'Working…' : 'Confirm') + '</button>'
+    + '<p class="hf-why" id="hfwhy" aria-live="polite">' + (hfCard.ticked ? '' : 'Tick the box to confirm.') + '</p>'
+    + '<button type="button" class="btn btn-ghost" id="hfcancel"' + dis + '>'
+    + (hfCard.proceed ? 'Cancel' : 'Not now') + '</button></div>'
+    + '</div>';
+}
+
+/* back where the card was opened from, unless what it led to put focus
+   somewhere itself */
+function hedgeFundFocusBack(card) {
+  var free = !document.activeElement || document.activeElement === document.body;
+  if (!free) return;
+  var from = card.opener && card.opener !== document.body ? card.opener : null;
+  var back = from && from.isConnected ? from : document.getElementById(from && from.id ? from.id : 'hfread');
+  if (back && back.focus) back.focus();
+}
+
+async function confirmHedgeFund() {
+  var card = hfCard;
+  if (!card || card.saving || !card.ticked) return;
+  card.saving = true; card.err = null;
+  renderHedgeFundDialog();
+  try {
+    var body = await trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hedgeFundNotice: { action: 'confirm', attested: true,
+                                                category: card.category || '', sleeve: card.sleeve || '' } })
+    }));
+    state.hedgeFundNotice = (body && body.hedgeFundNotice) || state.hedgeFundNotice;
+  } catch (err) {
+    card.saving = false;
+    card.err = 'The confirmation was not saved, so nothing is attached: ' + ((err && err.message) || String(err));
+    renderHedgeFundDialog();
+    var again = document.getElementById(card.ticked ? 'hfok' : 'hftick'); if (again) again.focus();
+    return;
+  }
+  hfCard = null;
+  renderHedgeFundDialog();
+  announce('polite', 'Hedge fund notice confirmed.');
+  if (card.proceed) card.proceed(); else refresh();
+  hedgeFundFocusBack(card);
+}
+
+async function declineHedgeFund() {
+  var card = hfCard;
+  if (!card || card.saving) return;
+  hfCard = null;
+  renderHedgeFundDialog();
+  if (card.cancel) card.cancel();
+  refresh();
+  if (card.proceed) announce('polite', 'Not attached: the hedge fund notice was not confirmed.');
+  hedgeFundFocusBack(card);
+  /* the decline is recorded too, where an attach was asked for */
+  if (!card.proceed) return;
+  try {
+    var body = await trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hedgeFundNotice: { action: 'decline', category: card.category || '',
+                                                sleeve: card.sleeve || '' } })
+    }));
+    if (body && body.hedgeFundNotice) state.hedgeFundNotice = body.hedgeFundNotice;
+  } catch (err) {
+    showAlert('error', 'The decline was not recorded: ' + ((err && err.message) || String(err)));
+  }
+}
+
+/* the rail's line for it on the implementation step (D198): who confirmed
+   it, or - for a proposal holding a hedge fund without it - Read */
+function hedgeFundNoteHtml(held) {
+  var record = state.hedgeFundNotice && state.hedgeFundNotice.confirmed;
+  if (record) {
+    return '<p class="hf-note is-done" role="note">Hedge fund notice confirmed by ' + esc(record.by || 'someone')
+      + (record.at ? ', ' + esc(String(record.at).replace('T', ' ').slice(0, 16)) : '') + '.</p>';
+  }
+  if (!(held || []).length) return '';
+  return '<div class="mkt-note hf-note" role="note"><b>Hedge fund notice</b><span>Not confirmed: the proposal holds '
+    + esc(held.join(', ')) + '. The download needs it.</span>'
+    + '<button type="button" class="btn-inline" id="hfread"' + (canEdit() ? '' : ' disabled') + '>Read</button></div>';
+}
+
 /* the rail's line for it, in the Mandate tier, under the PWA: what is
    chosen, and the way to change it. On the allocation step it shows once
    one is chosen: until the PWA moves on, nothing asks for it. */
@@ -3642,7 +3877,7 @@ function marketingUnacked(found, allocation) {
 /* after every render: a warning not yet acknowledged opens its card, once
    nothing else holds the page */
 function checkMarketing() {
-  if (marketingCard || custody || draft || account || !canEdit() || !state.scenarioId) return;
+  if (marketingCard || hfCard || custody || draft || account || !canEdit() || !state.scenarioId) return;
   if (state.fromCache || anyDialogOpen()) return;
   var allocation = marketingAllocation();
   if (!allocation) return;
@@ -4368,6 +4603,7 @@ function saveSnapshot() {
       customSleeves: state.customSleeves,
       customPortfolio: state.customPortfolio,
       marketing: state.marketing,
+      hedgeFundNotice: state.hedgeFundNotice,
       columns: state.columns.filter(function (c) { return c.status === 'ready'; })
     }));
   } catch (e) { /* private mode, or full: the page simply has no fallback */ }
@@ -4401,6 +4637,7 @@ function restoreSnapshot(snap) {
   state.customSleeves = snap.customSleeves || {};
   state.customPortfolio = snap.customPortfolio || null;
   state.marketing = snap.marketing || null;
+  state.hedgeFundNotice = snap.hedgeFundNotice || null;
   state.columns = snap.columns || [];
   state.phase = 'workspace';
   state.fromCache = true;
@@ -4679,6 +4916,14 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (e.target.id === 'mktok') { acknowledgeMarketing(); return; }
+  /* the hedge fund notice (D198) */
+  if (e.target.id === 'hfok') { confirmHedgeFund(); return; }
+  if (e.target.id === 'hfcancel') { declineHedgeFund(); return; }
+  if (e.target.id === 'hfread' && !hfCard) {
+    var holds = App.heldHedgeFunds ? App.heldHedgeFunds() : [];
+    openHedgeFundCard({ category: '', sleeve: '', held: holds, proceed: null, cancel: null, opener: e.target });
+    return;
+  }
   if (e.target.id === 'mktread') {
     var found = marketingWarnings();
     if (found.length) {
@@ -4791,12 +5036,25 @@ document.addEventListener('focusout', function (e) {
   }
 });
 
+/* the hedge fund notice's tick box (D198) */
+document.addEventListener('change', function (e) {
+  if (hfCard && e.target && e.target.id === 'hftick') tickHedgeFund(e.target.checked);
+});
+
 /* selects report through change rather than input */
 document.addEventListener('change', function (e) {
   if (account && e.target && e.target.dataset && e.target.dataset.acf) onAccountInput(e);
 });
 
 document.addEventListener('keydown', function (e) {
+  /* the hedge fund notice closes by a button; Escape is Cancel (D198) */
+  if (hfCard) {
+    /* it may stand over a builder: the keys are its alone while it is up */
+    e.stopImmediatePropagation();
+    if (e.key === 'Escape') { e.preventDefault(); declineHedgeFund(); return; }
+    if (e.key === 'Tab') trapFocus(e, document.getElementById('hedgeFundDialog'));
+    return;
+  }
   /* the marketing card closes only by its button, unless it is being re-read */
   if (marketingCard) {
     if (e.key === 'Escape' && marketingCard.readOnly) { e.preventDefault(); acknowledgeMarketing(); return; }
@@ -4979,6 +5237,9 @@ return {
   basis: function () { return state.basis; },
   mandate: function () { return state.mandate; },
   mandateSize: function () { return state.mandate ? state.mandate.mandateSize : null; },
+  /* the hedge fund notice (D198): the rail's line, and whether its card is up */
+  hedgeFundNoteHtml: hedgeFundNoteHtml,
+  hedgeFundOpen: function () { return !!hfCard; },
   /* the custodian in force, and its name (D193, D195); whether its card is up */
   entity: function () { return custodian(); },
   custodyOpen: function () { return !!custody; },

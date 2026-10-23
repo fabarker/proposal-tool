@@ -1133,6 +1133,11 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .mkt-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 9px;border:1px solid var(--line-strong);
   border-radius:999px;font-size:12.5px;cursor:pointer;background:var(--surface)}
 .mkt-chip.strong{font-weight:600}
+/* the hedge fund notice's editor (D198) */
+.mkt-notice textarea,.mkt-notice input[type=text]{width:100%;box-sizing:border-box;font:inherit;font-size:13.5px;
+  padding:7px 9px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink)}
+.mkt-notice .mkt-f textarea{line-height:1.5;resize:vertical;width:100%;max-width:none}
+.mkt-notice p{margin:0}
 .mkt-chip:has(input:checked){border-color:#B45309;background:#FFF8EB}
 .mkt-chip input{margin:0}
 .mkt-f textarea{font:inherit;font-size:13.5px;line-height:1.5;padding:7px 9px;border:1px solid var(--line-strong);

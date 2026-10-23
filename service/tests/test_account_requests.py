@@ -309,6 +309,8 @@ def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository
     chosen = _sleeveMap(PORT.resolve_portfolio(BASIS, PortfolioKey.fromDict(key))['categories'],
                         sleeves.VARIANTS[0])
     assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'sleeves': chosen}).status_code == 200
+    # the notice the hedge funds it holds ask for (D198)
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'hedgeFundNotice': {'action': 'confirm', 'attested': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
     exported = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert exported.status_code == 200, exported.text
     uid = exported.headers['x-proposal-id']

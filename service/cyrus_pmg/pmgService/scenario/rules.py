@@ -971,6 +971,8 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             'custodyTypes': _entities.custodyTypes(),
             # the marketing warnings an allocation may raise (D196)
             'marketing': _marketing.served(),
+            # the hedge fund notice a sleeve holding one asks to confirm (D198)
+            'hedgeFundNotice': _marketing.notice(),
             'implementationVariants': IMPLEMENTATION_VARIANTS,
             'variantAllocations': VARIANT_ALLOCATIONS,
             'variantsExcludingRealEstate': VARIANTS_EXCLUDING_RE,

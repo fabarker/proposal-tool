@@ -592,7 +592,7 @@ def test_a_register_from_before_decks_gains_the_columns_and_keeps_its_rows():
         version = opened.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
         opened.close()
         assert {'deck', 'deckName', 'deckSha', 'deckBytes', 'fundingSplit', 'overlays'} <= columns
-        assert version == str(proposalRegister.SCHEMA_VERSION) == '11'     # D148, D155, D165, D170, D171, D177, D193, D196
+        assert version == str(proposalRegister.SCHEMA_VERSION) == '12'     # D148, D155, D165, D170, D171, D177, D193, D196, D198
         assert proposalRegister.deck('pr_00000000abcd') is None, 'an old row keeps its NULLs'
         assert proposalRegister.workbook('pr_00000000abcd')['name'] == 'old.xlsx'
     finally:

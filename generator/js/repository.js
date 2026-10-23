@@ -6101,6 +6101,15 @@ function regDetailHtml() {
               + esc(shortDate(w.acknowledgedAt)) + ' ' + esc((w.acknowledgedAt || '').slice(11, 16))
               : '<b class="warn">not acknowledged</b>') + '</p>';
       }).join('')
+    /* the hedge fund notice, for a proposal holding a hedge fund (D198) */
+    + (r.hedgeFundNotice
+        ? '<p class="repo-prov reg-mkt"><b class="warn">Hedge fund notice</b> '
+          + esc((r.hedgeFundNotice.holds || []).join(', ')) + ' · '
+          + (r.hedgeFundNotice.at ? 'confirmed by ' + esc(r.hedgeFundNotice.by || 'someone') + ' '
+              + esc(shortDate(r.hedgeFundNotice.at)) + ' ' + esc((r.hedgeFundNotice.at || '').slice(11, 16))
+              + ' · wording revision ' + esc(String(r.hedgeFundNotice.revision || 0))
+              : '<b class="warn">not confirmed</b>') + '</p>'
+        : '')
     + '<p class="repo-prov"><button type="button" class="reg-uid" data-reguid="' + esc(r.proposalId)
     + '" title="Copy the Proposal UID">' + esc(r.proposalId) + '</button>'
     + ' · exported ' + esc(shortDate(r.exportedAt)) + ' ' + esc((r.exportedAt || '').slice(11, 16))
@@ -8131,7 +8140,12 @@ var mkt = { draft: null, note: '', saving: false, error: null, flash: '', histor
 function mktData() {
   return (repo.data && repo.data.marketing) || { revision: 0, offering: [], warnings: [], vocabulary: [] };
 }
-function mktShape(d) { return { offering: d.offering || [], warnings: d.warnings || [] }; }
+function mktShape(d) {
+  /* and the hedge fund notice's wording (D198) */
+  var n = d.hedgeFundNotice || d.noticeDefault || { title: '', body: '', attestation: '' };
+  return { offering: d.offering || [], warnings: d.warnings || [],
+           hedgeFundNotice: { title: n.title || '', body: n.body || '', attestation: n.attestation || '' } };
+}
 function mktNow() { return mkt.draft || mktShape(mktData()); }
 function mktDirty() { return !!mkt.draft && JSON.stringify(mkt.draft) !== JSON.stringify(mktShape(mktData())); }
 function mktEnsureDraft() {
@@ -8210,6 +8224,7 @@ function marketingViewHtml() {
         ? '<ol class="mkt-cards">' + now.warnings.map(function (w, i) { return mktWarningHtml(w, i, now); }).join('') + '</ol>'
         : '<p class="sv-hint">No warnings yet.</p>')
     + '<p><button type="button" class="btn" data-mktwadd>+ Add a warning</button></p>'
+    + mktNoticeHtml(now)
     + '<div class="ent-save"><label for="mktNote">Why <small>every change carries a note</small></label>'
     + '<input type="text" id="mktNote" data-mktsavenote maxlength="240" value="' + esc(mkt.note) + '" placeholder="For example: GSBE may not market hedge funds">'
     + '<button type="button" class="btn btn-primary" data-mktsave' + (dirty && !mkt.saving ? '' : ' disabled') + '>' + (mkt.saving ? 'Saving…' : 'Save changes') + '</button>'
@@ -8217,6 +8232,30 @@ function marketingViewHtml() {
     + (mkt.error ? '<p class="md-err" role="alert">' + esc(mkt.error) + '</p>' : '')
     + '<span class="sv-hint">Revision ' + (d.revision || 0) + (d.updatedBy ? ', saved by ' + esc(d.updatedBy) + ' ' + esc(shortDateTime(d.updatedAt)) : '') + '</span></div>'
     + '<h3 class="sv-h3">History</h3>' + hist
+    + '</div>';
+}
+/* the hedge fund notice (D198): a title and the words, a blank line between
+   paragraphs and a numbered list as lines 1. 2. */
+function mktNoticeHtml(now) {
+  var d = mktData(), n = now.hedgeFundNotice || { title: '', body: '', attestation: '' }, base = d.noticeDefault || {};
+  var desk = n.title === base.title && n.body === base.body && n.attestation === base.attestation;
+  return '<h3 class="sv-h3">Hedge fund notice</h3>'
+    + '<p class="ent-lead">Shown the first time a sleeve holding a hedge fund - a product whose catalogue category is Hedge Funds - '
+    + 'is attached to a proposal, from the library or as a custom sleeve. The PWA confirms it or the sleeve is not attached; '
+    + 'the tick box above the buttons must be ticked first. Either is recorded on the proposal, and the register keeps who confirmed it, when, '
+    + 'the words ticked and this wording\u2019s revision. '
+    + 'Once per proposal, under every implementation type.</p>'
+    + '<div class="mkt-card mkt-notice">'
+    + '<div class="mkt-f"><label class="mkt-k" for="mktnTitle">Title</label>'
+    + '<input type="text" id="mktnTitle" data-mktntitle maxlength="' + (d.titleMax || 160) + '" value="' + esc(n.title) + '"></div>'
+    + '<div class="mkt-f"><label class="mkt-k" for="mktnBody">Words the PWA confirms</label>'
+    + '<p class="sv-hint">A blank line starts a new paragraph; lines beginning 1. 2. are shown as a numbered list.</p>'
+    + '<textarea id="mktnBody" data-mktnbody rows="14" maxlength="' + (d.bodyMax || 3000) + '">' + esc(n.body) + '</textarea></div>'
+    + '<div class="mkt-f"><label class="mkt-k" for="mktnAttest">Tick box words</label>'
+    + '<p class="sv-hint">Beside the box the PWA must tick before Confirm.</p>'
+    + '<input type="text" id="mktnAttest" data-mktnattest maxlength="' + (d.attestationMax || 300) + '" value="' + esc(n.attestation) + '"></div>'
+    + (desk ? '<p class="sv-hint">The desk\u2019s wording.</p>'
+        : '<p><button type="button" class="cat-link" data-mktndefault>Put back the desk\u2019s wording</button></p>')
     + '</div>';
 }
 async function loadMarketingHistory() {
@@ -8256,6 +8295,11 @@ function mktClick(ds) {
   if (ds.mktwrm !== undefined) {
     mktEnsureDraft().warnings.splice(parseInt(ds.mktwrm, 10), 1);
     sv.focus = '[data-mktwadd]'; render(); return true;
+  }
+  if (ds.mktndefault !== undefined) {
+    var base = mktData().noticeDefault || {};
+    mktEnsureDraft().hedgeFundNotice = { title: base.title || '', body: base.body || '', attestation: base.attestation || '' };
+    sv.focus = '#mktnTitle'; render(); return true;
   }
   if (ds.mktsave !== undefined) { mktWrite('save', mktEnsureDraft(), 'Saved.'); return true; }
   if (ds.mktdiscard !== undefined) { mkt.draft = null; mkt.error = null; mkt.flash = ''; render(); return true; }
@@ -8297,6 +8341,11 @@ function mktInput(eds, el) {
   } else if (eds.mkttext !== undefined) {
     var w = mktEnsureDraft().warnings[parseInt(eds.mkttext, 10)];
     if (w) w.text = el.value;
+  } else if (eds.mktntitle !== undefined || eds.mktnbody !== undefined || eds.mktnattest !== undefined) {
+    var n = mktEnsureDraft().hedgeFundNotice;
+    if (eds.mktntitle !== undefined) n.title = el.value;
+    else if (eds.mktnbody !== undefined) n.body = el.value;
+    else n.attestation = el.value;
   } else if (eds.mktsavenote !== undefined) {
     mkt.note = el.value; return true;
   } else {
@@ -10215,7 +10264,7 @@ document.addEventListener('click', function (e) {
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
-    + '[data-mktadd],[data-mktwadd],[data-mktwrm],[data-mktsave],[data-mktdiscard],[data-mktrestore],'
+    + '[data-mktadd],[data-mktwadd],[data-mktwrm],[data-mktsave],[data-mktdiscard],[data-mktrestore],[data-mktndefault],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
     + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svshare],[data-svsplit],[data-svunshare],[data-svopen],'
     + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'

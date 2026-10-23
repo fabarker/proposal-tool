@@ -147,6 +147,8 @@ def test_a_priced_proposal_holding_one_is_unpriced_and_not_delivered(store):
     scenarioStore.recordColumn(state['id'], PortfolioKey('USD', 'Moderate', 'Full', False), 'base')
     scenarioStore.updateScenario(state['id'], sleeves=chosen, includeFees=True, feeSchedule='RDR',
                                  feeLevel='PMG Target')
+    from test_scenario_backend import _confirmHedgeFunds
+    _confirmHedgeFunds(state['id'])
     refused = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
     assert getattr(refused, 'status_code', 200) == 422
     error = json.loads(refused.body.decode('utf-8'))

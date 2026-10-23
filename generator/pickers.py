@@ -316,6 +316,30 @@ dl.md-kv dd.cust-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
   font-size:12.5px;color:#5C3A06}
 .mkt-note b{font-weight:700}
 
+/* ── the hedge fund notice (D198) ──
+   Over everything, a builder included: it is the last card in the page. Its
+   body is the admin's words, paragraphs and a numbered list, scrolling
+   inside the card on a short screen; Confirm and Cancel stay in view. */
+#hedgeFundDialog[hidden]{display:none}
+#hedgeFundDialog .scrim{z-index:99}
+#hedgeFundDialog .dialog{z-index:100}
+.dialog.hfn{width:min(620px,calc(100vw - 32px));max-height:calc(100vh - 48px);display:flex;flex-direction:column}
+.dialog.hfn .hf-text{overflow:auto;min-height:0;margin:0 0 14px;padding:12px 14px;border-left:3px solid #B45309;
+  background:#FFF8EB;border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+.hf-text ol{margin:0 0 8px;padding-left:22px}
+.hf-text li{margin:0 0 6px;font-size:14px;line-height:1.55;color:var(--ink)}
+.hf-text ol:last-child{margin-bottom:0}
+.dialog.hfn .dlg-actions{flex:none}
+/* the tick box above the buttons: a large target, the words clickable */
+.hf-tick{display:flex;gap:10px;align-items:flex-start;margin:0 0 14px;cursor:pointer;font-size:14px;line-height:1.45;
+  color:var(--ink);flex:none}
+.hf-tick input{flex:none;width:20px;height:20px;margin:1px 0 0;accent-color:var(--accent);cursor:pointer}
+.hf-acts{align-items:center;gap:10px;flex-wrap:wrap}
+.hf-why{flex:1 1 140px;margin:0;font-size:12px;color:var(--ink-3)}
+.hf-note{margin:0 0 12px}
+p.hf-note.is-done{font-size:12px;color:var(--rail-ink-2);line-height:1.45}
+.hf-note .btn-inline{color:#8A4B08;font-weight:600}
+
 /* ── the account opening request (D76, D107) ── */
 /* The landing card once seated three buttons on one line and needed 600px to
    hold them. With the third moved below the rule, both cards are the standard

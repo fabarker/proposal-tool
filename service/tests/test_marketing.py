@@ -171,6 +171,9 @@ def _scenario():
     scenarioStore.updateScenario(state['id'], variant=MA)
     scenarioStore.recordColumn(state['id'], USD_MOD_FULL, 'base')
     scenarioStore.updateScenario(state['id'], sleeves=_sleeveMap(result['categories'], MA))
+    # the hedge fund notice, which a proposal holding one needs (D198)
+    from test_scenario_backend import _confirmHedgeFunds
+    _confirmHedgeFunds(state['id'])
     return state['id']
 
 

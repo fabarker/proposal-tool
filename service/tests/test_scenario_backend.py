@@ -317,6 +317,16 @@ def _implementationFor(key, sleeveChoice=0, mandateSize=26_000_000,
                                    volPremium, currency)
 
 
+def _confirmHedgeFunds(scenarioId, user='alice'):
+    """The hedge fund notice confirmed for a scenario (D198): the packaged
+    catalogue holds hedge funds, and a proposal holding one is delivered
+    only once it is."""
+    from cyrus_pmg.pmgService.scenario import scenarioStore
+    scenarioStore.updateScenario(scenarioId, hedgeFundNotice={'confirmed': {
+        'by': user, 'at': '2026-10-23T12:00:00', 'revision': 0, 'title': 'Hedge funds',
+        'category': 'Hedge Funds', 'sleeve': ''}, 'declined': []})
+
+
 def _sleeveMap(categories, variant, pick=0):
     """A complete sleeve map for *categories*: one choice per SLEEVE category,
     which is not one per category - grouped categories share a sleeve and so
@@ -2903,6 +2913,7 @@ def test_a_delivered_export_carries_one_uid_in_the_name_the_file_and_the_registe
     scenarioStore.updateScenario(state['id'], variant=sleeves.VARIANTS[0])
     scenarioStore.recordColumn(state['id'], key, 'base')
     scenarioStore.updateScenario(state['id'], sleeves=chosen)
+    _confirmHedgeFunds(state['id'])
     delivered = dashboardRouter.exportScenario(state['id'], caller=_caller('alice'))
     assert delivered.status_code == 200, delivered.body[:300]
     uid = delivered.headers['x-proposal-id']
