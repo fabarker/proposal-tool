@@ -15,7 +15,7 @@ from functools import lru_cache
 from numbers import Real
 
 from . import entities as _entities
-from . import marketing as _marketing
+from . import notices as _notices
 from . import fees
 from . import otherCharges as _otherCharges
 from . import portfolio_weights as pw
@@ -969,10 +969,8 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
             # implementation types that ask for one (D195)
             'entities': _entities.offered(),
             'custodyTypes': _entities.custodyTypes(),
-            # the marketing warnings an allocation may raise (D196)
-            'marketing': _marketing.served(),
-            # the hedge fund notice a sleeve holding one asks to confirm (D198)
-            'hedgeFundNotice': _marketing.notice(),
+            # the notices a sleeve or a product attached may raise (D199)
+            'notices': _notices.served(),
             'implementationVariants': IMPLEMENTATION_VARIANTS,
             'variantAllocations': VARIANT_ALLOCATIONS,
             'variantsExcludingRealEstate': VARIANTS_EXCLUDING_RE,

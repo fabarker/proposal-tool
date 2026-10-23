@@ -274,7 +274,7 @@ def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the
             assert set(names) <= {'requireAuth'}, (route.path, names)
     # 32, the funding split's five (D148), the overlays' five (D155), the
     # catalogue's nine (D165), the fee card's seven (D166), the sleeve switch (D169) and custom sleeves' one (D170)
-    assert seen == 72                      # custom portfolios' three (D171), the switch (D172), sharing (D179), the marketing lists' four (D196); the entities' four gone (D195); the SMA mandate file's three (D197)
+    assert seen == 72                      # custom portfolios' three (D171), the switch (D172), sharing (D179), the notices' four where the marketing lists' were (D196, D199); the entities' four gone (D195); the SMA mandate file's three (D197)
 
 
 def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):
@@ -310,7 +310,7 @@ def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository
                         sleeves.VARIANTS[0])
     assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'sleeves': chosen}).status_code == 200
     # the notice the hedge funds it holds ask for (D198)
-    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'hedgeFundNotice': {'action': 'confirm', 'attested': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
     exported = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert exported.status_code == 200, exported.text
     uid = exported.headers['x-proposal-id']

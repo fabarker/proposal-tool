@@ -947,7 +947,7 @@ def test_one_export_delivers_both_files_or_neither(monkeypatch):
     assert client.put('/api/v1/scenario/' + sid, headers=pwa,
                       json={'sleeves': chosen}).status_code == 200
     # the notice the hedge funds it holds ask for (D198)
-    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'hedgeFundNotice': {'action': 'confirm', 'attested': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
 
     delivered = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert delivered.status_code == 200, delivered.text
@@ -1021,10 +1021,9 @@ def test_the_page_offers_one_download_and_awaits_its_writes():
     with open(os.path.join(root, 'js', 'core.js'), encoding='utf-8') as handle:
         core = handle.read()
     assert core.count("trackWrite(apiFetch('/scenario/'"
-                      " + encodeURIComponent(state.scenarioId), {") == 12, \
+                      " + encodeURIComponent(state.scenarioId), {") == 10, \
         'six fire-and-forget writes, the custom sleeves\' (D170), the custom portfolio\'s (D171), ' \
-        'the custodian\'s (D195), the marketing acknowledgement (D196) and the hedge fund notice\'s ' \
-        'confirmation and decline (D198), each tracked'
+        'the custodian\'s (D195) and a notice\'s confirmation or decline (D199), each tracked'
     assert 'writesSettled: writesSettled,' in core
     with open(os.path.join(root, 'js', 'implementation.js'), encoding='utf-8') as handle:
         impl = handle.read()

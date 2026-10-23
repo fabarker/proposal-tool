@@ -73,8 +73,8 @@ def test_the_first_open_loads_the_file_once_and_serves_what_the_file_served(stor
     for p in served:
         record = dict(byId[p['productId']])
         record['ticker'] = record['ticker'] or products.NO_TICKER
-        # the console's, not served (D178): served as whether it is a hedge fund (D198)
-        record['hedgeFund'] = record.pop('category') == products.HEDGE_FUND_CATEGORY
+        # the console's, not served (D178): served as the product's own (D199)
+        record['ownCategory'] = record.pop('category')
         assert p == record
     info = products.describeSource()
     assert info['products'] == 73 and info['withdrawn'] == 0 and info['revision'] == 1
@@ -392,7 +392,7 @@ def test_a_catalogue_from_before_the_category_gains_the_column_blank(store):
     assert sleeveRepo.describe()['schemaVersion'] == 15
     after = products.entries()
     assert [p['category'] for p in after] == [''] * len(before)
-    strip = lambda ps: [{k: v for k, v in p.items() if k not in ('category', 'hedgeFund')} for p in ps]
+    strip = lambda ps: [{k: v for k, v in p.items() if k not in ('category', 'ownCategory')} for p in ps]
     assert strip(after) == strip(before)
 
 

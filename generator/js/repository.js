@@ -1476,8 +1476,8 @@ function hashFor(view) {
   if (view === 'uncalled') return '#uncalled';
   if (view === 'overlays') return '#overlays';
   if (view === 'fees') return '#fees';
-  /* the marketing lists (D196) */
-  if (view === 'marketing') return '#marketing';
+  /* the notices (D199) */
+  if (view === 'notices') return '#notices';
   return '#repository';
 }
 function syncHash() {
@@ -1488,7 +1488,8 @@ function syncHash() {
 function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
-  repo.view = ['catalogue', 'fees', 'marketing', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(view) !== -1 ? view : 'sleeves';
+  repo.view = view === 'marketing' ? 'notices' : view;
+  repo.view = ['catalogue', 'fees', 'notices', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(repo.view) !== -1 ? repo.view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
@@ -1497,7 +1498,7 @@ function openRepository(trigger, view, at) {
   render();
   loadRepository();
   /* opened straight onto a tab that keeps a history */
-  if (repo.view === 'marketing' && !mkt.history) loadMarketingHistory();
+  if (repo.view === 'notices' && !ntc.history) loadNoticesHistory();
 }
 
 function switchView(view) {
@@ -1506,7 +1507,7 @@ function switchView(view) {
   /* an open product form, or a card being edited, keeps its changes (D165, D166) */
   if (repo.view === 'catalogue' && prdDirty()) { prd.leaving = true; render(); prdFocus('#prdSave'); return; }
   if (repo.view === 'fees' && feeDirty()) { fct.flash = 'Save or discard the changes to the card first.'; render(); return; }
-  if (repo.view === 'marketing' && mktDirty()) { mkt.flash = 'Save or discard the changes to the marketing lists first.'; render(); return; }
+  if (repo.view === 'notices' && ntcDirty()) { ntc.error = 'Save or cancel the changes to the notice first.'; render(); return; }
   if (repo.view === 'catalogue') { prdStop(); imp = null; }
   repo.view = view; cat.openChip = null; cat.detail = null;
   repo.historyOpen = false; repo.history = null; repo.openRevision = null;
@@ -1519,7 +1520,7 @@ function switchView(view) {
   if (view === 'uncalled' && !fund.loaded) loadFunding();
   if (view === 'overlays' && !ovl.loaded) loadOverlays();
   if (view === 'fees' && !fct.loaded) loadFeeCard();
-  if (view === 'marketing' && !mkt.history) loadMarketingHistory();
+  if (view === 'notices' && !ntc.history) loadNoticesHistory();
 }
 
 async function api(method, path, body) {
@@ -1612,7 +1613,7 @@ function closeRepository(force) {
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (/^#(repository|catalogue|fees|marketing|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
+  if (/^#(repository|catalogue|fees|notices|marketing|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -6101,7 +6102,16 @@ function regDetailHtml() {
               + esc(shortDate(w.acknowledgedAt)) + ' ' + esc((w.acknowledgedAt || '').slice(11, 16))
               : '<b class="warn">not acknowledged</b>') + '</p>';
       }).join('')
-    /* the hedge fund notice, for a proposal holding a hedge fund (D198) */
+    /* the notices it raised, and who confirmed each (D199) */
+    + (r.notices || []).map(function (n) {
+        var c = n.confirmed || {};
+        return '<p class="repo-prov reg-mkt"><b class="warn">Notice</b> ' + esc(n.name)
+          + ((n.holds || []).length ? ' · raised by ' + esc(n.holds.join(', ')) : '') + ' · '
+          + (c.at ? 'confirmed by ' + esc(c.by || 'someone') + ' ' + esc(shortDate(c.at)) + ' ' + esc((c.at || '').slice(11, 16))
+              + (c.ticked ? ' · box ticked' : '') + ' · revision ' + esc(String(c.revision || 0))
+              : '<b class="warn">not confirmed</b>') + '</p>';
+      }).join('')
+    /* the hedge fund notice, for a proposal delivered before the notices (D198) */
     + (r.hedgeFundNotice
         ? '<p class="repo-prov reg-mkt"><b class="warn">Hedge fund notice</b> '
           + esc((r.hedgeFundNotice.holds || []).join(', ')) + ' · '
@@ -7720,8 +7730,8 @@ function render() {
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals', onUncalled = repo.view === 'uncalled';
   var onOverlays = repo.view === 'overlays', onFees = repo.view === 'fees';
-  var onMarketing = repo.view === 'marketing';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees && !onMarketing;
+  var onNotices = repo.view === 'notices';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees && !onNotices;
 
   /* One tab strip in the header, and it navigates (A1). The implementation
      type used to sit beside it, identical in shape and selected state but
@@ -7731,7 +7741,7 @@ function render() {
   var VIEWS = [['sleeves', 'Sleeves', onSleeves, 0],
                ['catalogue', 'Catalogue', onCatalogue, 0],
                ['fees', 'Fees', onFees, 0],
-               ['marketing', 'Marketing', onMarketing, 0],
+               ['notices', 'Notices', onNotices, 0],
                ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
                ['activity', 'Activity', onActivity, 0],
                ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0],
@@ -7772,8 +7782,8 @@ function render() {
     body = overlaysViewHtml();
   } else if (onFees) {
     body = feesViewHtml();
-  } else if (onMarketing) {
-    body = marketingViewHtml();
+  } else if (onNotices) {
+    body = noticesViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -7936,7 +7946,7 @@ function catEdge() {
    signed in as them". The five views are named rather than hidden behind one
    "Repository" link, because the admin knows which of them they came for. */
 var LANDING_VIEWS = [
-  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['fees', 'Fees'], ['marketing', 'Marketing'], ['archive', 'Archive'],
+  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['fees', 'Fees'], ['notices', 'Notices'], ['archive', 'Archive'],
   ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation'],
   ['overlays', 'Overlay Funding']
 ];
@@ -7991,7 +8001,7 @@ function renderEntryLinks() {
     if (show && window.location.hash.indexOf('#uncalled') === 0) openRepository(null, 'uncalled');
     if (show && window.location.hash.indexOf('#overlays') === 0) openRepository(null, 'overlays');
     if (show && window.location.hash.indexOf('#fees') === 0) openRepository(null, 'fees');
-    if (show && window.location.hash.indexOf('#marketing') === 0) openRepository(null, 'marketing');
+    if (show && (window.location.hash.indexOf('#notices') === 0 || window.location.hash.indexOf('#marketing') === 0)) openRepository(null, 'notices');
   }
 }
 
@@ -8127,233 +8137,261 @@ function fundBarHtml(rows) {
   }).join('');
 }
 
-/* ---- the marketing warnings (D196) ----------------------------------------
-   The offering entities - who shows a proposal to the client, which is not
-   the custodian - and the warnings: asset classes of the strategic
-   allocation, whole categories or lines within one, the offering entities
-   that may not market them, and the words the PWA is shown when the
-   allocation a proposal is built on holds one. An offering entity is retired,
-   never deleted; a warning may be removed. Every change carries a note and
-   is a revision. */
-var mkt = { draft: null, note: '', saving: false, error: null, flash: '', history: null };
+/* ---- the notices (D199) ---------------------------------------------------
+   The notices a PWA confirms before a sleeve or a product goes into a
+   proposal, as tiles: each says what it is about and when it shows, whether
+   it asks for a tick box, and whether it is Active. A tile opens the
+   notice's editor, with the card as the PWA will see it beside the form.
+   Every save is a revision of the whole list, with an optional note; a
+   notice removed stays in the history, and an earlier revision can be put
+   back. */
+var ntc = { editing: null, draft: null, note: '', saving: false, error: null, flash: '', history: null,
+            filter: 'all', query: '', kind: 'sleeveCategories', askRemove: false };
+var NTC_KINDS = [['sleeveCategories', 'Sleeve category'], ['productCategories', 'Product category'],
+                 ['assetClasses', 'Asset class'], ['products', 'Product']];
 
-function mktData() {
-  return (repo.data && repo.data.marketing) || { revision: 0, offering: [], warnings: [], vocabulary: [] };
+function ntcData() {
+  return (repo.data && repo.data.notices) || { revision: 0, notices: [], vocabulary: {} };
 }
-function mktShape(d) {
-  /* and the hedge fund notice's wording (D198) */
-  var n = d.hedgeFundNotice || d.noticeDefault || { title: '', body: '', attestation: '' };
-  return { offering: d.offering || [], warnings: d.warnings || [],
-           hedgeFundNotice: { title: n.title || '', body: n.body || '', attestation: n.attestation || '' } };
+function ntcList() { return ntcData().notices || []; }
+function ntcProductName(id) {
+  var p = ((ntcData().vocabulary || {}).products || []).filter(function (x) { return x.id === id; })[0];
+  return p ? p.name : id;
 }
-function mktNow() { return mkt.draft || mktShape(mktData()); }
-function mktDirty() { return !!mkt.draft && JSON.stringify(mkt.draft) !== JSON.stringify(mktShape(mktData())); }
-function mktEnsureDraft() {
-  if (!mkt.draft) mkt.draft = JSON.parse(JSON.stringify(mktShape(mktData())));
-  return mkt.draft;
+/* when a notice shows, in words: "a sleeve in Hedge Funds or a product of
+   the asset class Global Macro" */
+function ntcAboutWords(about) {
+  about = about || {};
+  var bits = [];
+  if ((about.sleeveCategories || []).length) bits.push('a sleeve in ' + about.sleeveCategories.join(', '));
+  if ((about.productCategories || []).length) bits.push('a product in the category ' + about.productCategories.join(', '));
+  if ((about.assetClasses || []).length) bits.push('a product of the asset class ' + about.assetClasses.join(', '));
+  if ((about.products || []).length) bits.push((about.products.length === 1 ? 'the product ' : 'the products ')
+    + about.products.map(ntcProductName).join(', '));
+  return bits.length ? bits.join(' or ') : 'nothing yet';
 }
-/* how many warnings name an offering entity */
-function mktUses(id, now) {
-  return (now.warnings || []).filter(function (w) { return (w.banned || []).indexOf(id) !== -1; }).length;
+function ntcBlank() {
+  return { id: '', name: '', active: true, title: '', body: '', tick: false, tickWords: '',
+           about: { sleeveCategories: [], productCategories: [], assetClasses: [], products: [] } };
 }
-function mktWarningHtml(w, i, now) {
-  var d = mktData();
-  var cats = w.categories || [], lines = w.lines || [];
-  var picks = (d.vocabulary || []).map(function (v) {
-    var whole = cats.indexOf(v.category) !== -1;
-    return '<div class="mkt-cat' + (whole ? ' is-whole' : '') + '">'
-      + '<label class="mkt-chip strong"><input type="checkbox" data-mktcat="' + i + '" value="' + esc(v.category) + '"' + (whole ? ' checked' : '') + '> ' + esc(v.category) + '</label>'
-      + v.lines.map(function (n) {
-          return '<label class="mkt-chip"><input type="checkbox" data-mktline="' + i + '" value="' + esc(n) + '"'
-            + (lines.indexOf(n) !== -1 ? ' checked' : '') + '> ' + esc(n) + '</label>';
-        }).join('') + '</div>';
-  }).join('');
-  var saved = (now.offering || []).filter(function (e) { return e.id && (!e.retired || (w.banned || []).indexOf(e.id) !== -1); });
-  var unsaved = (now.offering || []).filter(function (e) { return !e.id; }).length;
-  var bans = saved.length
-    ? saved.map(function (e) {
-        return '<label class="mkt-chip"><input type="checkbox" data-mktban="' + i + '" value="' + esc(e.id) + '"'
-          + ((w.banned || []).indexOf(e.id) !== -1 ? ' checked' : '') + '> ' + esc(e.name) + (e.retired ? ' (retired)' : '') + '</label>';
-      }).join('')
-    : '<span class="sv-hint">Add an offering entity above and save it first.</span>';
-  return '<li class="mkt-card">'
-    + '<div class="mkt-card-h"><b>' + (w.id ? 'Warning ' + esc(w.id) : 'New warning') + '</b>'
-    + '<button type="button" class="btn btn-danger" data-mktwrm="' + i + '">Remove</button></div>'
-    + '<div class="mkt-f"><span class="mkt-k">Asset classes it is about</span>'
-    + '<p class="sv-hint">Tick a whole category, or single lines within one. It is raised when the allocation holds any of them.</p>'
-    + '<div class="mkt-cats">' + picks + '</div></div>'
-    + '<div class="mkt-f"><span class="mkt-k">May not be marketed by</span><div class="mkt-bans">' + bans + '</div>'
-    + (unsaved ? '<p class="sv-hint">A new offering entity can be ticked once it is saved.</p>' : '') + '</div>'
-    + '<div class="mkt-f"><label class="mkt-k" for="mktText' + i + '">Words the PWA is shown</label>'
-    + '<textarea id="mktText' + i + '" data-mkttext="' + i + '" rows="4" maxlength="' + (d.textMax || 1200) + '"'
-    + ' placeholder="For example: Hedge funds may not be marketed to clients by GS Bank Europe. Check who is offering this proposal before it is shown.">'
-    + esc(w.text || '') + '</textarea></div>'
+function ntcDirty() {
+  if (!ntc.editing || !ntc.draft) return false;
+  var was = ntc.editing === 'new' ? ntcBlank() : ntcList().filter(function (n) { return n.id === ntc.editing; })[0];
+  return JSON.stringify(ntc.draft) !== JSON.stringify(was) || !!ntc.note.trim();
+}
+function ntcOpen(id) {
+  var found = id === 'new' ? ntcBlank() : ntcList().filter(function (n) { return n.id === id; })[0];
+  if (!found) return;
+  ntc.editing = id; ntc.draft = JSON.parse(JSON.stringify(found)); ntc.note = ''; ntc.error = null;
+  ntc.flash = ''; ntc.askRemove = false; ntc.kind = 'sleeveCategories';
+  sv.focus = '#ntcName'; render();
+}
+function ntcClose() { ntc.editing = null; ntc.draft = null; ntc.note = ''; ntc.error = null; ntc.askRemove = false; }
+
+/* ---- rendering: the tiles ---- */
+function ntcTileHtml(n) {
+  return '<li class="ntc-tile' + (n.active ? '' : ' is-off') + '">'
+    + '<div class="ntc-pills"><span class="ntc-pill ' + (n.active ? 'live' : 'off') + '">' + (n.active ? 'Active' : 'Disabled') + '</span>'
+    + '<span class="ntc-pill act">' + (n.tick ? 'Tick + confirm' : 'Confirm') + '</span></div>'
+    + '<h4>' + esc(n.name) + '</h4>'
+    + '<p class="ntc-when">When ' + esc(ntcAboutWords(n.about)) + ' is attached</p>'
+    + '<p class="ntc-title">' + esc(n.title) + '</p>'
+    + '<div class="ntc-foot"><button type="button" class="btn" data-ntcedit="' + esc(n.id) + '">Edit</button>'
+    + '<button type="button" class="btn btn-ghost" data-ntctoggle="' + esc(n.id) + '"' + (ntc.saving ? ' disabled' : '') + '>'
+    + (n.active ? 'Disable' : 'Make active') + '</button></div>'
     + '</li>';
 }
-function marketingViewHtml() {
-  var d = mktData(), now = mktNow(), dirty = mktDirty();
-  var rows = (now.offering || []).map(function (e, i) {
-    var uses = e.id ? mktUses(e.id, now) : 0;
-    return '<tr' + (e.retired ? ' class="ent-retired"' : '') + '>'
-      + '<td><input type="text" class="ent-name" data-mktname="' + i + '" maxlength="' + (d.nameMax || 60) + '" value="' + esc(e.name) + '" aria-label="Name of offering entity ' + (i + 1) + '">'
-      + (e.id ? '<small class="sv-hint">id ' + esc(e.id) + '</small>' : '<small class="sv-hint">new</small>') + '</td>'
-      + '<td><label class="ent-ret"><input type="checkbox" data-mktretired="' + i + '"' + (e.retired ? ' checked' : '') + '> Retired</label></td>'
-      + '<td>' + (uses ? svPlural(uses, 'warning') : '<span class="sv-hint">No warning</span>') + '</td>'
-      + '<td><input type="text" class="ent-note" data-mktonote="' + i + '" maxlength="' + (d.noteMax || 240) + '" value="' + esc(e.note || '') + '" placeholder="Note" aria-label="Note on ' + esc(e.name) + '"></td>'
-      + '</tr>';
-  }).join('');
-  var hist = mkt.history === null ? '<p class="repo-loading">Loading the history…</p>'
-    : !mkt.history.length ? '<p class="sv-hint">Nothing saved yet.</p>'
-    : '<ol class="ent-hist">' + mkt.history.map(function (h) {
-        return '<li><b>Revision ' + h.revision + '</b> · ' + esc(shortDateTime(h.at)) + (h.actor ? ' · ' + esc(h.actor) : '')
-          + (h.current ? ' <span class="sv-chip info">in force</span>'
-             : ' <button type="button" class="cat-link" data-mktrestore="' + h.revision + '">Restore these lists</button>')
-          + '<small>' + esc((h.changes && h.changes.length ? h.changes.join('; ') : h.action) + (h.note ? ' — ' + h.note : '')) + '</small></li>';
-      }).join('') + '</ol>';
-  return '<div class="repo-b ent-b mkt-b">'
-    + '<p class="ent-lead">Some asset classes may not be marketed by some offering entities: the entity showing the proposal to the client, which is not the custodian. A warning names the asset classes, the offering entities that may not market them, and your words. When the strategic allocation a proposal is built on, or a custom portfolio, holds one, the PWA is shown your words and acknowledges them, and the register records who did and when. Nothing is blocked.</p>'
-    + (mkt.flash ? '<p class="prd-flash" role="status">' + esc(mkt.flash) + '</p>' : '')
-    + '<h3 class="sv-h3">Offering entities</h3>'
-    + ((now.offering || []).length
-        ? '<div class="sv-ptwrap"><table class="sv-pt ent-t"><thead><tr><th scope="col">Offering entity</th><th scope="col">In use</th><th scope="col">Named by</th><th scope="col">Note</th></tr></thead>'
-          + '<tbody>' + rows + '</tbody></table></div>'
-        : '<p class="sv-hint">No offering entities yet.</p>')
-    + '<p><button type="button" class="btn" data-mktadd>+ Add an offering entity</button></p>'
-    + '<h3 class="sv-h3">Warnings</h3>'
-    + ((now.warnings || []).length
-        ? '<ol class="mkt-cards">' + now.warnings.map(function (w, i) { return mktWarningHtml(w, i, now); }).join('') + '</ol>'
-        : '<p class="sv-hint">No warnings yet.</p>')
-    + '<p><button type="button" class="btn" data-mktwadd>+ Add a warning</button></p>'
-    + mktNoticeHtml(now)
-    + '<div class="ent-save"><label for="mktNote">Why <small>every change carries a note</small></label>'
-    + '<input type="text" id="mktNote" data-mktsavenote maxlength="240" value="' + esc(mkt.note) + '" placeholder="For example: GSBE may not market hedge funds">'
-    + '<button type="button" class="btn btn-primary" data-mktsave' + (dirty && !mkt.saving ? '' : ' disabled') + '>' + (mkt.saving ? 'Saving…' : 'Save changes') + '</button>'
-    + (dirty ? '<button type="button" class="btn btn-ghost" data-mktdiscard>Discard</button>' : '')
-    + (mkt.error ? '<p class="md-err" role="alert">' + esc(mkt.error) + '</p>' : '')
-    + '<span class="sv-hint">Revision ' + (d.revision || 0) + (d.updatedBy ? ', saved by ' + esc(d.updatedBy) + ' ' + esc(shortDateTime(d.updatedAt)) : '') + '</span></div>'
-    + '<h3 class="sv-h3">History</h3>' + hist
+function ntcHistoryHtml() {
+  if (ntc.history === null) return '<p class="repo-loading">Loading the history…</p>';
+  if (!ntc.history.length) return '<p class="sv-hint">Nothing saved yet: these are the notices the tool started with.</p>';
+  return '<ol class="ent-hist">' + ntc.history.map(function (h) {
+    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(shortDateTime(h.at)) + (h.actor ? ' · ' + esc(h.actor) : '')
+      + (h.current ? ' <span class="sv-chip info">in force</span>'
+         : ' <button type="button" class="cat-link" data-ntcrestore="' + h.revision + '">Restore this revision</button>')
+      + '<small>' + esc((h.changes && h.changes.length ? h.changes.join('; ') : h.action) + (h.note ? ' — ' + h.note : '')) + '</small></li>';
+  }).join('') + '</ol>';
+}
+function noticesViewHtml() {
+  if (ntc.editing && ntc.draft) return ntcEditorHtml();
+  var d = ntcData(), all = ntcList(), q = ntc.query.trim().toLowerCase();
+  var on = all.filter(function (n) { return n.active; }).length;
+  var shown = all.filter(function (n) {
+    if (ntc.filter === 'active' && !n.active) return false;
+    if (ntc.filter === 'off' && n.active) return false;
+    return !q || [n.name, n.title, ntcAboutWords(n.about)].join(' ').toLowerCase().indexOf(q) !== -1;
+  });
+  var seg = [['all', 'All', all.length], ['active', 'Active', on], ['off', 'Disabled', all.length - on]];
+  return '<div class="repo-b ent-b ntc-b">'
+    + '<p class="ent-lead">A notice is shown to the PWA when a sleeve or a product it is about is attached to a proposal, '
+    + 'and must be confirmed before it goes in; Cancel leaves it out. A notice may ask for a tick box first. Each is confirmed once a proposal, '
+    + 'and the register keeps who confirmed it and when.</p>'
+    + (ntc.flash ? '<p class="prd-flash" role="status">' + esc(ntc.flash) + '</p>' : '')
+    + (ntc.error ? '<p class="md-err" role="alert">' + esc(ntc.error) + '</p>' : '')
+    + '<div class="ntc-bar"><input type="search" id="ntcSearch" class="ntc-search" placeholder="Search notices…" aria-label="Search notices" value="' + esc(ntc.query) + '">'
+    + '<div class="repo-seg" role="tablist" aria-label="Show">' + seg.map(function (x) {
+        return '<button type="button" role="tab" data-ntcfilter="' + x[0] + '" aria-selected="' + (ntc.filter === x[0]) + '">' + x[1] + ' <span class="n">' + x[2] + '</span></button>';
+      }).join('') + '</div></div>'
+    + '<ul class="ntc-tiles" id="ntcTiles">' + shown.map(ntcTileHtml).join('')
+    + '<li class="ntc-tile ntc-add"><button type="button" class="btn btn-primary" data-ntcnew>+ New notice</button></li></ul>'
+    + (!shown.length && all.length ? '<p class="sv-hint">No notice matches.</p>' : '')
+    + '<p class="sv-hint">Revision ' + (d.revision || 0) + (d.updatedBy ? ', saved by ' + esc(d.updatedBy) + ' ' + esc(shortDateTime(d.updatedAt)) : '') + '</p>'
+    + '<h3 class="sv-h3">History</h3>' + ntcHistoryHtml()
     + '</div>';
 }
-/* the hedge fund notice (D198): a title and the words, a blank line between
-   paragraphs and a numbered list as lines 1. 2. */
-function mktNoticeHtml(now) {
-  var d = mktData(), n = now.hedgeFundNotice || { title: '', body: '', attestation: '' }, base = d.noticeDefault || {};
-  var desk = n.title === base.title && n.body === base.body && n.attestation === base.attestation;
-  return '<h3 class="sv-h3">Hedge fund notice</h3>'
-    + '<p class="ent-lead">Shown the first time a sleeve holding a hedge fund - a product whose catalogue category is Hedge Funds - '
-    + 'is attached to a proposal, from the library or as a custom sleeve. The PWA confirms it or the sleeve is not attached; '
-    + 'the tick box above the buttons must be ticked first. Either is recorded on the proposal, and the register keeps who confirmed it, when, '
-    + 'the words ticked and this wording\u2019s revision. '
-    + 'Once per proposal, under every implementation type.</p>'
-    + '<div class="mkt-card mkt-notice">'
-    + '<div class="mkt-f"><label class="mkt-k" for="mktnTitle">Title</label>'
-    + '<input type="text" id="mktnTitle" data-mktntitle maxlength="' + (d.titleMax || 160) + '" value="' + esc(n.title) + '"></div>'
-    + '<div class="mkt-f"><label class="mkt-k" for="mktnBody">Words the PWA confirms</label>'
-    + '<p class="sv-hint">A blank line starts a new paragraph; lines beginning 1. 2. are shown as a numbered list; '
-    + 'words between double asterisks, **like this**, are shown in bold.</p>'
-    + '<textarea id="mktnBody" data-mktnbody rows="14" maxlength="' + (d.bodyMax || 3000) + '">' + esc(n.body) + '</textarea></div>'
-    + '<div class="mkt-f"><label class="mkt-k" for="mktnAttest">Tick box words</label>'
-    + '<p class="sv-hint">Beside the box the PWA must tick before Confirm.</p>'
-    + '<input type="text" id="mktnAttest" data-mktnattest maxlength="' + (d.attestationMax || 300) + '" value="' + esc(n.attestation) + '"></div>'
-    + (desk ? '<p class="sv-hint">The desk\u2019s wording.</p>'
-        : '<p><button type="button" class="cat-link" data-mktndefault>Put back the desk\u2019s wording</button></p>')
-    + '</div>';
+
+/* ---- rendering: the editor ---- */
+function ntcValuesFor(kind) {
+  var v = ntcData().vocabulary || {};
+  if (kind === 'products') return (v.products || []).slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; })
+    .map(function (p) { return [p.id, p.name]; });
+  return (v[kind] || []).map(function (x) { return [x, x]; });
 }
-async function loadMarketingHistory() {
-  var r = await api('GET', '/scenario/repository/marketing/history');
-  mkt.history = r && r.ok ? (r.body.history || []) : [];
+function ntcPreviewHtml(n) {
+  var body = App.noticeBodyHtml ? App.noticeBodyHtml(n.body) : esc(n.body);
+  return '<div class="ntc-prev" id="ntcPreview"><p class="mkt-eyebrow">Notice</p>'
+    + '<h5>' + esc(n.title || 'The title') + '</h5>'
+    + '<div class="mkt-text hf-text">' + (body || '<p class="sv-hint">The words the PWA confirms.</p>') + '</div>'
+    + (n.tick ? '<label class="hf-tick"><input type="checkbox" disabled><span>' + esc(n.tickWords || 'The tick box words') + '</span></label>' : '')
+    + '<div class="ntc-prev-acts"><span class="btn btn-primary"' + (n.tick ? ' aria-disabled="true" style="opacity:.45"' : '') + '>Confirm</span><span class="btn btn-ghost">Cancel</span></div></div>';
+}
+function ntcEditorHtml() {
+  var d = ntcData(), n = ntc.draft, isNew = ntc.editing === 'new';
+  var chosen = [].concat.apply([], NTC_KINDS.map(function (k) {
+    return (n.about[k[0]] || []).map(function (v) {
+      return '<span class="ntc-chip"><small>' + esc(k[1]) + '</small> ' + esc(k[0] === 'products' ? ntcProductName(v) : v)
+        + '<button type="button" class="ntc-x" data-ntcrm="' + esc(k[0] + '|' + v) + '" aria-label="Take off ' + esc(v) + '">×</button></span>';
+    });
+  }));
+  var have = n.about[ntc.kind] || [];
+  var values = ntcValuesFor(ntc.kind).filter(function (x) { return have.indexOf(x[0]) === -1; });
+  return '<div class="repo-b ent-b ntc-b ntc-ed">'
+    + '<p><button type="button" class="cat-link" data-ntcback>← All notices</button></p>'
+    + '<h3 class="sv-h3">' + (isNew ? 'New notice' : esc(n.name || 'Notice')) + '</h3>'
+    + '<div class="ntc-ed-g"><div class="ntc-form">'
+    + '<div class="mkt-f"><label class="mkt-k" for="ntcName">Name</label><input type="text" id="ntcName" data-ntcf="name" maxlength="' + (d.nameMax || 80) + '" value="' + esc(n.name) + '" placeholder="For example: Hedge funds · DNE eligibility"></div>'
+    + '<label class="ntc-check"><input type="checkbox" data-ntcf="active"' + (n.active ? ' checked' : '') + '> Active: PWAs are shown it</label>'
+    + '<div class="mkt-f"><span class="mkt-k">What it is about</span>'
+    + '<p class="sv-hint">Shown when ' + esc(ntcAboutWords(n.about)) + ' is attached to a proposal.</p>'
+    + '<div class="ntc-chips">' + (chosen.join('') || '<span class="sv-hint">Nothing yet.</span>') + '</div>'
+    + '<div class="ntc-adder"><select id="ntcKind" aria-label="Kind">' + NTC_KINDS.map(function (k) {
+        return '<option value="' + k[0] + '"' + (ntc.kind === k[0] ? ' selected' : '') + '>' + esc(k[1]) + '</option>';
+      }).join('') + '</select>'
+    + '<select id="ntcValue" aria-label="Which">' + (values.length ? values.map(function (x) {
+        return '<option value="' + esc(x[0]) + '">' + esc(x[1]) + '</option>';
+      }).join('') : '<option value="">Nothing more to add</option>') + '</select>'
+    + '<button type="button" class="btn" data-ntcadd' + (values.length ? '' : ' disabled') + '>Add</button></div></div>'
+    + '<div class="mkt-f"><label class="mkt-k" for="ntcTitle">Title</label><input type="text" id="ntcTitle" data-ntcf="title" maxlength="' + (d.titleMax || 160) + '" value="' + esc(n.title) + '"></div>'
+    + '<div class="mkt-f"><label class="mkt-k" for="ntcBody">Words the PWA confirms</label>'
+    + '<p class="sv-hint">A blank line starts a new paragraph; lines beginning 1. 2. are a numbered list; words between double asterisks, **like this**, are bold.</p>'
+    + '<textarea id="ntcBody" data-ntcf="body" rows="12" maxlength="' + (d.bodyMax || 3000) + '">' + esc(n.body) + '</textarea></div>'
+    + '<label class="ntc-check"><input type="checkbox" data-ntcf="tick"' + (n.tick ? ' checked' : '') + '> Ask for a tick box before Confirm</label>'
+    + (n.tick ? '<div class="mkt-f"><label class="mkt-k" for="ntcTick">Tick box words</label><input type="text" id="ntcTick" data-ntcf="tickWords" maxlength="' + (d.tickMax || 300) + '" value="' + esc(n.tickWords) + '" placeholder="For example: I understand that I am responsible for completing these checks."></div>' : '')
+    + '</div><div class="ntc-side"><span class="mkt-k">As the PWA sees it</span>' + ntcPreviewHtml(n) + '</div></div>'
+    + (ntc.error ? '<p class="md-err" role="alert">' + esc(ntc.error) + '</p>' : '')
+    + (ntc.askRemove ? '<div class="prd-ask" role="alertdialog" aria-label="Remove ' + esc(n.name) + '"><p>Remove ' + esc(n.name)
+        + '? PWAs stop seeing it, and it stays in the history, where it can be restored. Its confirmations stay on the proposals that have them.</p>'
+        + '<button type="button" class="btn btn-danger" data-ntcremoveyes>Remove</button><button type="button" class="btn" data-ntcunask>Keep it</button></div>' : '')
+    + '<div class="ent-save"><label for="ntcNote">Note <small>optional</small></label>'
+    + '<input type="text" id="ntcNote" data-ntcnote maxlength="' + (d.noteMax || 240) + '" value="' + esc(ntc.note) + '" placeholder="Why it is changing">'
+    + '<button type="button" class="btn btn-primary" data-ntcsave' + (ntc.saving ? ' disabled' : '') + '>' + (ntc.saving ? 'Saving…' : isNew ? 'Add the notice' : 'Save') + '</button>'
+    + '<button type="button" class="btn" data-ntcback>Cancel</button>'
+    + (isNew ? '' : '<button type="button" class="btn btn-ghost prd-wd" data-ntcremove>Remove</button>')
+    + '</div></div>';
+}
+
+/* ---- writing ---- */
+async function loadNoticesHistory() {
+  var r = await api('GET', '/scenario/repository/notices/history');
+  ntc.history = r && r.ok ? (r.body.history || []) : [];
   render();
 }
-async function mktWrite(path, payload, done) {
-  if (mkt.saving) return;
-  if (!mkt.note.trim()) { mkt.error = 'Say why: every change to the marketing lists carries a note.'; sv.focus = '#mktNote'; render(); return; }
-  mkt.saving = true; mkt.error = null; render();
+async function ntcWrite(list, note, done, path, extra) {
+  if (ntc.saving) return false;
+  ntc.saving = true; ntc.error = null; render();
+  var ok = false;
   try {
-    var r = await api(path === 'save' ? 'PUT' : 'POST', '/scenario/repository/marketing' + (path === 'save' ? '' : '/revert'),
-                      Object.assign({ note: mkt.note.trim(), base: mktData().revision }, payload));
-    if (!r) return;
-    if (!r.ok) mkt.error = r.body.error || ('Could not save the marketing lists (' + r.status + ')');
-    else {
-      repo.data.marketing = r.body.marketing;
-      mkt.draft = null; mkt.note = '';
-      mkt.flash = done + ' Revision ' + r.body.marketing.revision + '.';
-      mkt.history = null; loadMarketingHistory();
+    var r = await api(path === 'revert' ? 'POST' : 'PUT', '/scenario/repository/notices' + (path === 'revert' ? '/revert' : ''),
+                      Object.assign({ note: note || '', base: ntcData().revision }, path === 'revert' ? extra : { notices: list }));
+    if (r && !r.ok) ntc.error = r.body.error || ('Could not save the notices (' + r.status + ')');
+    else if (r) {
+      repo.data.notices = r.body.notices;
+      ntc.flash = done + ' Revision ' + r.body.notices.revision + '.';
+      ntc.history = null; loadNoticesHistory();
+      ok = true;
     }
-  } catch (err) { mkt.error = err.message; }
-  mkt.saving = false; render();
+  } catch (err) { ntc.error = err.message; }
+  ntc.saving = false; render();
+  return ok;
 }
-function mktClick(ds) {
-  if (ds.mktadd !== undefined) {
-    var draft = mktEnsureDraft();
-    draft.offering.push({ name: 'New offering entity', retired: false, note: '' });
-    sv.focus = '[data-mktname="' + (draft.offering.length - 1) + '"]'; render(); return true;
+async function ntcSave() {
+  var n = ntc.draft, list = ntcList().slice();
+  var at = list.map(function (x) { return x.id; }).indexOf(ntc.editing);
+  if (ntc.editing === 'new') list.push(n); else if (at !== -1) list[at] = n;
+  var name = n.name || 'The notice';
+  if (await ntcWrite(list, ntc.note.trim(), (ntc.editing === 'new' ? name + ' added.' : name + ' saved.'))) { ntcClose(); render(); }
+}
+async function ntcRemove() {
+  var n = ntc.draft, list = ntcList().filter(function (x) { return x.id !== ntc.editing; });
+  if (await ntcWrite(list, ntc.note.trim(), n.name + ' removed: it is in the history.')) { ntcClose(); render(); }
+}
+async function ntcToggle(id) {
+  var list = ntcList().map(function (x) { return x.id === id ? Object.assign({}, x, { active: !x.active }) : x; });
+  var n = list.filter(function (x) { return x.id === id; })[0];
+  await ntcWrite(list, '', n.name + (n.active ? ' is active.' : ' is disabled.'));
+  sv.focus = '[data-ntctoggle="' + id + '"]'; render();
+}
+function ntcClick(ds) {
+  if (ds.ntcnew !== undefined) { ntcOpen('new'); return true; }
+  if (ds.ntcedit !== undefined) { ntcOpen(ds.ntcedit); return true; }
+  if (ds.ntctoggle !== undefined) { ntcToggle(ds.ntctoggle); return true; }
+  if (ds.ntcfilter !== undefined) { ntc.filter = ds.ntcfilter; render(); return true; }
+  if (ds.ntcback !== undefined) { ntcClose(); ntc.flash = ''; render(); return true; }
+  if (ds.ntcsave !== undefined) { ntcSave(); return true; }
+  if (ds.ntcremove !== undefined) { ntc.askRemove = true; render(); return true; }
+  if (ds.ntcunask !== undefined) { ntc.askRemove = false; render(); return true; }
+  if (ds.ntcremoveyes !== undefined) { ntcRemove(); return true; }
+  if (ds.ntcrestore !== undefined) { ntcWrite(null, '', 'Restored.', 'revert', { revision: parseInt(ds.ntcrestore, 10) }); return true; }
+  if (ds.ntcadd !== undefined) {
+    var box = document.getElementById('ntcValue');
+    if (box && box.value) {
+      var list = ntc.draft.about[ntc.kind] = ntc.draft.about[ntc.kind] || [];
+      if (list.indexOf(box.value) === -1) list.push(box.value);
+      sv.focus = '#ntcValue'; render();
+    }
+    return true;
   }
-  if (ds.mktwadd !== undefined) {
-    var d2 = mktEnsureDraft();
-    d2.warnings.push({ categories: [], lines: [], banned: [], text: '' });
-    sv.focus = '#mktText' + (d2.warnings.length - 1); render(); return true;
-  }
-  if (ds.mktwrm !== undefined) {
-    mktEnsureDraft().warnings.splice(parseInt(ds.mktwrm, 10), 1);
-    sv.focus = '[data-mktwadd]'; render(); return true;
-  }
-  if (ds.mktndefault !== undefined) {
-    var base = mktData().noticeDefault || {};
-    mktEnsureDraft().hedgeFundNotice = { title: base.title || '', body: base.body || '', attestation: base.attestation || '' };
-    sv.focus = '#mktnTitle'; render(); return true;
-  }
-  if (ds.mktsave !== undefined) { mktWrite('save', mktEnsureDraft(), 'Saved.'); return true; }
-  if (ds.mktdiscard !== undefined) { mkt.draft = null; mkt.error = null; mkt.flash = ''; render(); return true; }
-  if (ds.mktrestore !== undefined) {
-    if (mktDirty()) { mkt.error = 'Save or discard the changes first.'; render(); return true; }
-    mktWrite('revert', { revision: parseInt(ds.mktrestore, 10) }, 'Restored.'); return true;
+  if (ds.ntcrm !== undefined) {
+    var cut = ds.ntcrm.indexOf('|'), kind = ds.ntcrm.slice(0, cut), value = ds.ntcrm.slice(cut + 1);
+    ntc.draft.about[kind] = (ntc.draft.about[kind] || []).filter(function (x) { return x !== value; });
+    sv.focus = '#ntcValue'; render(); return true;
   }
   return false;
 }
-/* a tick in a list: the value added or taken out, in the list's own order */
-function mktToggle(list, value, on, order) {
-  var out = (list || []).filter(function (x) { return x !== value; });
-  if (on) out.push(value);
-  return order ? order.filter(function (x) { return out.indexOf(x) !== -1; }) : out;
-}
-function mktChange(ds, el) {
-  var vocab = mktData().vocabulary || [];
-  if (ds.mktretired !== undefined) {
-    var row = mktEnsureDraft().offering[parseInt(ds.mktretired, 10)];
-    if (row) row.retired = el.checked;
-    sv.focus = '[data-mktretired="' + ds.mktretired + '"]'; render(); return true;
-  }
-  if (ds.mktcat !== undefined || ds.mktline !== undefined || ds.mktban !== undefined) {
-    var key = ds.mktcat !== undefined ? 'mktcat' : ds.mktline !== undefined ? 'mktline' : 'mktban';
-    var w = mktEnsureDraft().warnings[parseInt(ds[key], 10)];
-    if (w) {
-      if (key === 'mktcat') w.categories = mktToggle(w.categories, el.value, el.checked, vocab.map(function (v) { return v.category; }));
-      else if (key === 'mktline') w.lines = mktToggle(w.lines, el.value, el.checked, [].concat.apply([], vocab.map(function (v) { return v.lines; })));
-      else w.banned = mktToggle(w.banned, el.value, el.checked, mktNow().offering.map(function (e) { return e.id; }));
+function ntcChange(ds, el) {
+  if (el.id === 'ntcKind') { ntc.kind = el.value; sv.focus = '#ntcValue'; render(); return true; }
+  if (ds.ntcf === 'active' || ds.ntcf === 'tick') {
+    ntc.draft[ds.ntcf] = el.checked;
+    if (ds.ntcf === 'tick' && el.checked && !ntc.draft.tickWords) {
+      ntc.draft.tickWords = 'I understand that I am responsible for completing these checks before sharing any information with the client.';
     }
-    sv.focus = '[data-' + key + '="' + ds[key] + '"][value="' + svCssEscape(el.value) + '"]'; render(); return true;
+    sv.focus = '[data-ntcf="' + ds.ntcf + '"]'; render(); return true;
   }
   return false;
 }
-function mktInput(eds, el) {
-  if (eds.mktname !== undefined || eds.mktonote !== undefined) {
-    var row = mktEnsureDraft().offering[parseInt(eds.mktname !== undefined ? eds.mktname : eds.mktonote, 10)];
-    if (row) { if (eds.mktname !== undefined) row.name = el.value; else row.note = el.value; }
-  } else if (eds.mkttext !== undefined) {
-    var w = mktEnsureDraft().warnings[parseInt(eds.mkttext, 10)];
-    if (w) w.text = el.value;
-  } else if (eds.mktntitle !== undefined || eds.mktnbody !== undefined || eds.mktnattest !== undefined) {
-    var n = mktEnsureDraft().hedgeFundNotice;
-    if (eds.mktntitle !== undefined) n.title = el.value;
-    else if (eds.mktnbody !== undefined) n.body = el.value;
-    else n.attestation = el.value;
-  } else if (eds.mktsavenote !== undefined) {
-    mkt.note = el.value; return true;
-  } else {
-    return false;
+function ntcInput(eds, el) {
+  if (el.id === 'ntcSearch') {
+    ntc.query = el.value;
+    var host = document.getElementById('ntcTiles');
+    if (host) { sv.focus = '#ntcSearch'; render(); }
+    return true;
   }
-  var save = document.querySelector('[data-mktsave]'); if (save) save.disabled = !mktDirty() || mkt.saving;
-  return true;
+  if (eds.ntcnote !== undefined) { ntc.note = el.value; return true; }
+  if (eds.ntcf !== undefined && ntc.draft && ['name', 'title', 'body', 'tickWords'].indexOf(eds.ntcf) !== -1) {
+    ntc.draft[eds.ntcf] = el.value;
+    var prev = document.getElementById('ntcPreview'); if (prev) prev.outerHTML = ntcPreviewHtml(ntc.draft);
+    return true;
+  }
+  return false;
 }
 
 function uncalledViewHtml() {
@@ -10265,7 +10303,8 @@ document.addEventListener('click', function (e) {
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
-    + '[data-mktadd],[data-mktwadd],[data-mktwrm],[data-mktsave],[data-mktdiscard],[data-mktrestore],[data-mktndefault],'
+    + '[data-ntcnew],[data-ntcedit],[data-ntctoggle],[data-ntcfilter],[data-ntcback],[data-ntcsave],[data-ntcremove],[data-ntcunask],'
+    + '[data-ntcremoveyes],[data-ntcrestore],[data-ntcadd],[data-ntcrm],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
     + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svshare],[data-svsplit],[data-svunshare],[data-svopen],'
     + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'
@@ -10302,7 +10341,7 @@ document.addEventListener('click', function (e) {
   if (ds.repoclose !== undefined) { if (!repo.saving) closeRepository(false); return; }
   if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
   if (fundClick(ds)) return;
-  if (mktClick(ds)) return;
+  if (ntcClick(ds)) return;
   if (ovlClick(el)) return;
   if (impClick(el)) return;
   if (prdClick(el)) return;
@@ -10647,8 +10686,8 @@ document.addEventListener('change', function (e) {
   }
   if (ds.svfv !== undefined) { sv.fv = e.target.value; sv.focus = '[data-svfv]'; render(); return; }
   if (ds.svsplittype !== undefined) { sv.splitType = e.target.value; return; }
-  /* the Marketing tab (D196) */
-  if (mktChange(ds, e.target)) return;
+  /* the Notices tab (D199) */
+  if (ntcChange(ds, e.target)) return;
   /* the product held below a row's minimum (D192) */
   if (ds.repoalt !== undefined && repo.draft) {
     var arow = repo.draft.products[parseInt(ds.repoalt, 10)];
@@ -10738,10 +10777,10 @@ document.addEventListener('input', function (e) {
   if (el.id === 'arcSearch') { arc.query = el.value; updateArchive(); return; }
   if (el.id === 'actSearch') { act.query = el.value; syncHash(); actRefresh(); return; }
   if (el.id === 'regSearch') { reg.query = el.value; syncHash(); regRefresh(); return; }
-  /* the Marketing tab (D196): typing changes the draft and the Save button,
+  /* the Notices tab (D199): typing changes the draft and the preview,
      not the page under the caret */
   var eds = el.dataset || {};
-  if (mktInput(eds, el)) return;
+  if (ntcInput(eds, el)) return;
   if (!repo.draft) return;
   if (el.id === 'repoName') {
     repo.draft.name = el.value;

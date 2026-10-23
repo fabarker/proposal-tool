@@ -327,7 +327,7 @@ def test_a_book_that_does_not_add_to_100_is_not_delivered_and_one_that_does_is_r
     assert client.put('/api/v1/scenario/' + sid, headers=admin,
                       json={'sleeves': rest, 'customSleeves': customs}).status_code == 200
     # the notice the hedge funds it holds ask for (D198)
-    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'hedgeFundNotice': {'action': 'confirm', 'attested': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
     short = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert short.status_code == 422 and 'not 100%' in short.json()['error'], short.text
     # the missing point goes to Public Equity

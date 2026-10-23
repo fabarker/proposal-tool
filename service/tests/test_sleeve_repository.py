@@ -107,7 +107,7 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     assert len(rows) == 73
     expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
                 'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
-                'distributionYield', 'minimumInvestment', 'currencies', 'mandates', 'hedgeFund'}
+                'distributionYield', 'minimumInvestment', 'currencies', 'mandates', 'ownCategory'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p
@@ -471,11 +471,11 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/overlays/remove', ('POST',)),
         ('/scenario/repository/overlays/history', ('GET',)),
         ('/scenario/repository/overlays/revert', ('POST',)),
-        # the marketing lists (D196)
-        ('/scenario/repository/marketing', ('GET',)),
-        ('/scenario/repository/marketing', ('PUT',)),
-        ('/scenario/repository/marketing/history', ('GET',)),
-        ('/scenario/repository/marketing/revert', ('POST',)),
+        # the notices (D199), where the marketing lists were (D196)
+        ('/scenario/repository/notices', ('GET',)),
+        ('/scenario/repository/notices', ('PUT',)),
+        ('/scenario/repository/notices/history', ('GET',)),
+        ('/scenario/repository/notices/revert', ('POST',)),
         # the product catalogue (D165)
         ('/scenario/repository/products', ('POST',)),
         ('/scenario/repository/products', ('PUT',)),

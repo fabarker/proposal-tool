@@ -879,6 +879,16 @@ function noteDlg(d) {
 function rowsNow() { return products().map(function (p) { return Object.assign({}, p); }); }
 
 function addProducts(ids) {
+  /* a product a notice is about asks for it first (D199); declined, none
+     of them is added */
+  var fresh = ids.filter(function (id) { return !rowsNow().some(function (r) { return r.productId === id; }); });
+  var items = fresh.map(function (id) { var p = productOf(id); return { category: lineFor(p), product: p }; })
+    .filter(function (it) { return it.product; });
+  if (App.noticeGateFor(items, 'Custom portfolio', function () { putProducts(ids); }, function () {})) return;
+  putProducts(ids);
+}
+
+function putProducts(ids) {
   remember();
   var next = rowsNow();
   ids.forEach(function (id) {
@@ -897,6 +907,12 @@ function addProducts(ids) {
 function applyPaste(mode) {
   var r = parsePaste(ui.dlg.text);
   if (r.errors.length) return;
+  var items = r.rows.map(function (x) { return { category: lineFor(x.p), product: x.p }; });
+  if (App.noticeGateFor(items, 'Custom portfolio', function () { takePaste(mode, r); }, function () {})) return;
+  takePaste(mode, r);
+}
+
+function takePaste(mode, r) {
   remember();
   var next = mode === 'replace' ? [] : rowsNow();
   r.rows.forEach(function (x) {

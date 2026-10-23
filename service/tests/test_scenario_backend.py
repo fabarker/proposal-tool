@@ -318,13 +318,14 @@ def _implementationFor(key, sleeveChoice=0, mandateSize=26_000_000,
 
 
 def _confirmHedgeFunds(scenarioId, user='alice'):
-    """The hedge fund notice confirmed for a scenario (D198): the packaged
-    catalogue holds hedge funds, and a proposal holding one is delivered
-    only once it is."""
+    """The hedge fund notice - notice n1 - confirmed for a scenario (D198,
+    D199): the packaged catalogue holds hedge funds, and a proposal holding
+    one is delivered only once it is."""
     from cyrus_pmg.pmgService.scenario import scenarioStore
-    scenarioStore.updateScenario(scenarioId, hedgeFundNotice={'confirmed': {
-        'by': user, 'at': '2026-10-23T12:00:00', 'revision': 0, 'title': 'Hedge funds',
-        'category': 'Hedge Funds', 'sleeve': ''}, 'declined': []})
+    scenarioStore.updateScenario(scenarioId, notices={'n1': {'confirmed': {
+        'by': user, 'at': '2026-10-23T12:00:00', 'revision': 0, 'name': 'Hedge funds',
+        'title': 'Hedge funds', 'ticked': True, 'tickWords': 'I understand.', 'category': 'Hedge Funds',
+        'sleeve': ''}, 'declined': []}})
 
 
 def _sleeveMap(categories, variant, pick=0):

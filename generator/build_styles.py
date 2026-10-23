@@ -1102,13 +1102,12 @@ PAGE_SHELL = """<!doctype html>
 <div id="cpDialog" hidden></div>
 <div id="greetDialog" hidden></div>
 <div id="repoDialog" hidden></div>
-<!-- The custodian, under a type that asks for one (D195), and the marketing
-     warnings (D196), rendered on demand. -->
+<!-- The custodian, under a type that asks for one (D195), rendered on
+     demand. -->
 <div id="custodyDialog" hidden></div>
-<div id="marketingDialog" hidden></div>
-<!-- The hedge fund notice (D198), last so it stands over a builder that
-     asked for it. -->
-<div id="hedgeFundDialog" hidden></div>
+<!-- The notices (D199), last so a card stands over a builder that asked
+     for it. -->
+<div id="noticeDialog" hidden></div>
 
 <script src="static/js/{slug}.js"></script>
 </body>

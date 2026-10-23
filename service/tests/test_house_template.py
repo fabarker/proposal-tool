@@ -840,10 +840,10 @@ def test_the_charges_go_from_the_scenario_to_the_deck_and_the_register(monkeypat
     # a new scenario stands at the house's trade sizes and the default custody
     assert client.get('/api/v1/scenario/' + sid, headers=pwa).json()['otherCharges'] == {
         'fxHighEdge': 5e6, 'fxLowEdge': 1e6, 'custodyFee': 5000}
-    # the notice the hedge funds it holds ask for comes first (D198)
+    # the notice the hedge funds it holds raise comes first (D198, D199)
     refused = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
-    assert refused.status_code == 422 and refused.json()['field'] == 'hedgeFundNotice', refused.text
-    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'hedgeFundNotice': {'action': 'confirm', 'attested': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
+    assert refused.status_code == 422 and refused.json()['field'] == 'notice', refused.text
+    assert client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True, 'category': 'Hedge Funds', 'sleeve': ''}}).status_code == 200
     refused = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert refused.status_code == 422, refused.text
     assert refused.json()['field'] == 'otherCharges'

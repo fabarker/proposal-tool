@@ -52,13 +52,14 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 12         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+SCHEMA_VERSION = 13         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
                             # 5: the overlay rules (D155); 6: the catalogue and fee card versions (D165, D166);
                             # 7: custom sleeves, and whether the strategic allocation was left out (D170);
                             # 8: custom portfolios (D171); 9: the other charges (D177);
                             # 10: the custodian / entity (D193);
                             # 11: the marketing warnings (D196);
-                            # 12: the hedge fund notice confirmed (D198)
+                            # 12: the hedge fund notice confirmed (D198);
+                            # 13: the notices raised and confirmed (D199)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -105,6 +106,7 @@ CREATE TABLE IF NOT EXISTS proposals (
     entity            TEXT,
     marketing         TEXT,
     hedgeFundNotice   TEXT,
+    notices           TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -135,7 +137,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
                  'deckName, deckBytes, deckSha, fundingSplit, overlays, catalogueRevision, '
-                 'feeCardRevision, departs, customPortfolio, entity, marketing, hedgeFundNotice')
+                 'feeCardRevision, departs, customPortfolio, entity, marketing, hedgeFundNotice, notices')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -223,6 +225,10 @@ def _connect() -> sqlite3.Connection:
         # (D198); NULL for one that holds none, and for anything delivered before
         if 'hedgeFundNotice' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN hedgeFundNotice TEXT')
+        # the notices the delivered proposal raised and who confirmed each
+        # (D199); NULL for none, and for anything delivered before
+        if 'notices' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN notices TEXT')
         pins = {row[1] for row in conn.execute('PRAGMA table_info(proposalSleeves)')}
         if 'custom' not in pins:
             conn.execute('ALTER TABLE proposalSleeves ADD COLUMN custom TEXT')
@@ -400,17 +406,13 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
     from . import products
     catalogueRevision = products.describeSource()['revision']
     feeCardRevision = fees.deliveryInfo()['revision'] if implementation.get('includeFees') else None
-    # the marketing warnings its allocation raises, each with who
-    # acknowledged it (D196)
-    from . import marketing as _marketing
-    warned = _marketing.acknowledged(
-        _marketing.warningsFor(allocation), implementation.get('marketing'),
-        'custom' if builtByHand else allocation.get('keyStr'))
-    # the hedge fund notice, where the model holds a hedge fund (D198): who
-    # confirmed it, when, and the wording's revision, beside the funds held
-    held = [] if builtByHand else hedgeFundsIn(model)
-    record = (implementation.get('hedgeFundNotice') or {}).get('confirmed') if held else None
-    notice = dict(record, holds=held) if record else ({'holds': held} if held else None)
+    # the notices it raised, each with who confirmed it, when, the words
+    # ticked and the revision (D199) - the marketing warnings (D196) and the
+    # hedge fund notice (D198) are notices now, so their columns stay for
+    # what was delivered before
+    from . import notices as _notices
+    raised = _notices.delivered(implementation.get('raisedNotices') or [],
+                                {'notices': implementation.get('notices') or {}})
     stamp = _now()
     sha = hashlib.sha256(workbook).hexdigest()
     deckSha = hashlib.sha256(deck).hexdigest()
@@ -427,8 +429,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
                 'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
                 'overlays, catalogueRevision, feeCardRevision, departs, customPortfolio, '
-                'otherCharges, entity, marketing, hedgeFundNotice) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'otherCharges, entity, notices) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -461,10 +463,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                   else None),
                  # the custodian / entity the account is held at (D193)
                  getattr(mandate, 'entity', '') or None,
-                 # the marketing warnings and their acknowledgements (D196)
-                 json.dumps(warned) if warned else None,
-                 # the hedge fund notice confirmed (D198)
-                 json.dumps(notice) if notice else None))
+                 # the notices raised and their confirmations (D199)
+                 json.dumps(raised) if raised else None))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName, '
                 'custom) VALUES (?,?,?,?,?,?)',
@@ -499,21 +499,9 @@ def _rowToEntry(row) -> dict:
     if 'hedgeFundNotice' in entry:
         entry['hedgeFundNotice'] = (json.loads(entry['hedgeFundNotice'])
                                     if entry['hedgeFundNotice'] else None)
+    if 'notices' in entry:
+        entry['notices'] = json.loads(entry['notices']) if entry['notices'] else None
     return entry
-
-
-def hedgeFundsIn(model) -> list:
-    """The hedge funds a model holds, by name: its products and the ones
-    named below a minimum whose own category is Hedge Funds (D198)."""
-    out = []
-    for group in (model or {}).get('groups') or []:
-        for item in group.get('items') or []:
-            for p in (item, item.get('alternative')):
-                if isinstance(p, dict) and p.get('hedgeFund'):
-                    name = p.get('name') or p.get('productId')
-                    if name not in out:
-                        out.append(name)
-    return out
 
 
 def fundingSplitText(split) -> str:
@@ -861,7 +849,7 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
                   'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays',
                   'CatalogueVersion', 'FeeCardVersion', 'CustomSleeves', 'StrategicAllocation',
-                  'CustomPortfolio', 'Entity', 'MarketingWarnings', 'HedgeFundNotice']
+                  'CustomPortfolio', 'Entity', 'MarketingWarnings', 'HedgeFundNotice', 'Notices']
 
 
 def marketingText(warnings) -> str:
@@ -890,6 +878,21 @@ def hedgeFundNoticeText(notice) -> str:
         notice.get('by') or 'someone', (notice.get('at') or '').replace('T', ' ')[:16],
         notice.get('revision', 0)) if notice.get('at') else 'not confirmed')
     return '{} - holds {}'.format(said, ', '.join(notice.get('holds') or []))
+
+
+def noticesText(raised) -> str:
+    """The notices a proposal raised in one line (D199): ``Hedge funds ·
+    DNE eligibility - confirmed by jtaylor 2026-10-23 14:05 (r3, ticked) -
+    raised by HFM & ART``. Blank for none."""
+    out = []
+    for n in raised or []:
+        done = n.get('confirmed') or {}
+        said = ('confirmed by {} {} (r{}{})'.format(
+            done.get('by') or 'someone', (done.get('at') or '').replace('T', ' ')[:16],
+            done.get('revision', 0), ', ticked' if done.get('ticked') else '')
+            if done.get('at') else 'not confirmed')
+        out.append('{} - {} - raised by {}'.format(n.get('name'), said, ', '.join(n.get('holds') or [])))
+    return '; '.join(out)
 
 
 def customPortfolioText(custom) -> str:
@@ -941,7 +944,8 @@ def exportRows(**filters) -> list:
                         else 'Included', customPortfolioText(e.get('customPortfolio')),
                         _entities.name(e['entity']) if e.get('entity') else '',
                         marketingText(e.get('marketing')),
-                        hedgeFundNoticeText(e.get('hedgeFundNotice'))))
+                        hedgeFundNoticeText(e.get('hedgeFundNotice')),
+                        noticesText(e.get('notices'))))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

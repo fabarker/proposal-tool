@@ -519,22 +519,23 @@ var initialShown = false;
    overlay rules in force, top to bottom, as rules.implementedCategories()
    applies them (D155): with the seeded list the tilt first, then the
    premium, whose share is of what the tilt leaves. */
-/* the hedge funds the implementation holds as it stands, by name (D198):
-   every category's sleeve in force, attached or chosen, library or custom */
-function heldHedgeFunds() {
+/* the notices the implementation raises as it stands (D199): every
+   category's sleeve in force, attached or chosen, library or custom -
+   [{notice, products}] */
+function raisedNotices() {
   if (App.cpActive() || !App.variant()) return [];
-  var out = [];
+  var out = {}, order = [];
   sleeveCategories(baseCategories()).forEach(function (c) {
     var s = sleeveFor(c.name);
-    ((s && s.products) || []).forEach(function (p) {
-      [p, p && p.alternative].forEach(function (x) {
-        if (x && x.hedgeFund && out.indexOf(x.name || x.productId) === -1) out.push(x.name || x.productId);
-      });
+    if (!s) return;
+    App.noticesRaised(c.name, s.products || []).forEach(function (n) {
+      if (!out[n.id]) { out[n.id] = { notice: n, products: [] }; order.push(n.id); }
+      out[n.id].products = out[n.id].products.concat(s.products || []);
     });
   });
-  return out;
+  return order.map(function (id) { return out[id]; });
 }
-App.heldHedgeFunds = heldHedgeFunds;
+App.raisedNotices = raisedNotices;
 
 function baseCategories() {
   /* a custom portfolio's lines are its products' categories (D171) */
@@ -2555,8 +2556,8 @@ function renderCustomBuilder() {
   var had = document.activeElement && host.contains(document.activeElement) ? document.activeElement : null;
   var hadId = had && had.id, hadAt = had && typeof had.selectionStart === 'number' ? had.selectionStart : null;
   if (hadId) window.setTimeout(function () {
-    /* not from the hedge fund notice standing over it (D198) */
-    if (App.hedgeFundOpen()) return;
+    /* not from a notice standing over it (D199) */
+    if (App.noticeOpen()) return;
     var back = document.getElementById(hadId);
     if (back && document.activeElement !== back && (!document.activeElement || document.activeElement === document.body
         || !host.contains(document.activeElement))) {
@@ -2872,8 +2873,8 @@ function renderRail() {
      carries one sleeve by rule and is put there by the toggle above, so a
      control for it would be a control that can never be used; the count and
      the note below say it is in the model (D53). */
-  /* the hedge fund notice (D198): confirmed, or wanted for what is held */
-  html += App.hedgeFundNoteHtml(heldHedgeFunds());
+  /* the notices (D199): confirmed, or wanted for what is held */
+  html += App.noticesNoteHtml(raisedNotices());
   html += '<div class="sl-list">';
   /* the lines as implemented: a custom sleeve weighted against the portfolio
      shows its own weight, the strategic one struck through (D170) */

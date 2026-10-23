@@ -30,7 +30,7 @@ from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
 from cyrus_pmg.pmgService.scenario import (accountRequests, customAccess, customPortfolio,
                                            customSleeves, entities, feeCard, fees,
-                                           fundingSplit, marketing, overlayRules, products,
+                                           fundingSplit, notices, overlayRules, products,
                                            otherCharges as _otherCharges,
                                            proposalRegister, repositoryFeed, scenarioStore,
                                            sleeveRepo, sleeveRules)
@@ -138,10 +138,8 @@ def _scenarioPayload(state: dict) -> dict:
         'customSleeves': state.get('customSleeves') or {},
         # a proposal built product by product, and whether it is in force (D171)
         'customPortfolio': state.get('customPortfolio') or None,
-        # the marketing warnings acknowledged, and for which allocation (D196)
-        'marketing': state.get('marketing') or None,
-        # who confirmed the hedge fund notice, and who declined it (D198)
-        'hedgeFundNotice': state.get('hedgeFundNotice') or None,
+        # who confirmed each notice, and who declined it (D199)
+        'notices': notices.recordOf(state) or None,
     }
 
 
@@ -389,8 +387,8 @@ def getRepository(caller=Depends(requireAdmin)):
             'customAccess': customAccess.describe(),
             # the types an edition may name a custodian under (D195)
             'custodyTypes': entities.custodyTypes(),
-            # the offering entities and the marketing warnings (D196)
-            'marketing': marketing.describe(),
+            # the notices a sleeve or a product attached raises (D199)
+            'notices': notices.describe(),
             'store': sleeveRepo.describe(),
             'register': proposalRegister.describe(),
             'user': caller.kerberos,
@@ -1123,49 +1121,44 @@ def revertOverlayRules(payload: dict = Body(...), caller=Depends(requireAdmin)):
         return _overlayError(exc)
 
 
-# ---- the marketing warnings (D196) ---------------------------------------
-# The console's Marketing tab: the offering entities, and the warnings an
-# allocation holding an asset class raises - which of them may not market it,
-# and the words the PWA is shown. Admin only, like the rest of the repository.
+# ---- the notices (D199) ----------------------------------------------------
+# The console's Notices tab: the notices a sleeve or a product attached to a
+# proposal raises, what each is about and the words the PWA confirms. Admin
+# only, like the rest of the repository.
 
-@router.get('/scenario/repository/marketing')
-def getMarketing(caller=Depends(requireAdmin)):
-    """The lists in force, with what a warning may name."""
-    return marketing.describe()
+@router.get('/scenario/repository/notices')
+def getNotices(caller=Depends(requireAdmin)):
+    """The notices in force, with what a notice may be about."""
+    return notices.describe()
 
 
-@router.put('/scenario/repository/marketing')
-def saveMarketing(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put the lists in force: {offering: [{id?, name, retired, note}],
-    warnings: [{id?, categories, lines, banned, text}], note, base?}. An
-    entry without an id is new. Refused (422) when a list is invalid or
-    would delete an offering entity; 409 when *base* is no longer the
-    revision in force."""
+@router.put('/scenario/repository/notices')
+def saveNotices(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put the list in force: {notices: [{id?, name, active, about, title,
+    body, tick, tickWords}], note?, base?}. A notice without an id is new;
+    one left out is removed. Refused (422) when the list is invalid; 409
+    when *base* is no longer the revision in force."""
     try:
-        body = {'offering': payload.get('offering'), 'warnings': payload.get('warnings')}
-        # the hedge fund notice's title and body (D198), kept when not sent
-        if payload.get('hedgeFundNotice') is not None:
-            body['hedgeFundNotice'] = payload['hedgeFundNotice']
-        marketing.save(body, payload.get('note'), user=caller.kerberos, base=payload.get('base'))
-        return {'marketing': marketing.describe()}
+        notices.save({'notices': payload.get('notices')}, payload.get('note'), user=caller.kerberos,
+                     base=payload.get('base'))
+        return {'notices': notices.describe()}
     except ValidationError as exc:
         return _validationError(exc)
 
 
-@router.get('/scenario/repository/marketing/history')
-def getMarketingHistory(caller=Depends(requireAdmin)):
-    """Every revision of the lists, newest first, with what changed."""
-    return {'history': marketing.history()}
+@router.get('/scenario/repository/notices/history')
+def getNoticesHistory(caller=Depends(requireAdmin)):
+    """Every revision of the list, newest first, with what changed."""
+    return {'history': notices.history()}
 
 
-@router.post('/scenario/repository/marketing/revert')
-def revertMarketing(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put an earlier revision back in force: {revision, note, base?}. An
-    offering entity added since stays, retired."""
+@router.post('/scenario/repository/notices/revert')
+def revertNotices(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {revision, note?, base?}."""
     try:
-        marketing.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
-                         base=payload.get('base'))
-        return {'marketing': marketing.describe()}
+        notices.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
+                       base=payload.get('base'))
+        return {'notices': notices.describe()}
     except ValidationError as exc:
         return _validationError(exc)
 
@@ -1280,7 +1273,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
         current = scenarioStore.getScenario(scenarioId)
         mandate = basis = sleeves = variant = None
         tacticalTilt = feeSchedule = feeLevel = includeFees = None
-        volPremium = customFees = customs = built = charges = acks = notice = None
+        volPremium = customFees = customs = built = charges = record = None
         if 'mandate' in payload:
             mandate = MandateInput.fromDict(payload['mandate'] or {})
             # the custodian (D193): kept when the write does not name it, if
@@ -1308,22 +1301,16 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
                 mandate = MandateInput(topAccountSize=held.topAccountSize,
                                        mandateSize=held.mandateSize,
                                        primaryPwa=held.primaryPwa, entity='')
-        if 'marketingAck' in payload:
-            # the marketing warnings the PWA has acknowledged (D196)
-            ack = payload['marketingAck'] or {}
-            if not isinstance(ack, dict):
-                raise ValidationError('marketingAck', 'Say which warnings were acknowledged.')
-            acks = marketing.acknowledge(current.get('marketing'), ack.get('allocation'),
-                                         ack.get('warnings'), caller.kerberos)
-        if 'hedgeFundNotice' in payload:
-            # the hedge fund notice confirmed, its box ticked, or declined, as
-            # the signed-in user and now (D198): {action, attested, category, sleeve}
-            said = payload['hedgeFundNotice'] or {}
+        if 'noticeAction' in payload:
+            # a notice confirmed, its box ticked where it asks for one, or
+            # declined, as the signed-in user and now (D199):
+            # {notice, action, ticked, category, sleeve}
+            said = payload['noticeAction'] or {}
             if not isinstance(said, dict):
-                raise ValidationError('hedgeFundNotice', 'Confirm the hedge fund notice, or decline it.')
-            notice = marketing.respond(current.get('hedgeFundNotice'), said.get('action'),
-                                       said.get('category'), said.get('sleeve'), caller.kerberos,
-                                       attested=said.get('attested'))
+                raise ValidationError('notice', 'Confirm the notice, or decline it.')
+            record = notices.respond(current, said.get('notice'), said.get('action'), caller.kerberos,
+                                     ticked=said.get('ticked'), category=said.get('category'),
+                                     sleeve=said.get('sleeve'))
         if 'tacticalTilt' in payload:
             tacticalTilt = bool(payload['tacticalTilt'])
         if 'volPremium' in payload:
@@ -1385,8 +1372,7 @@ def updateScenario(scenarioId: str, payload: dict = Body(...),
             includeFees=includeFees, volPremium=volPremium,
             customFees=customFees, customFeesBy=caller.kerberos,
             customSleeves=customs, customPortfolio=built,
-            otherCharges=charges, otherChargesBy=caller.kerberos, marketing=acks,
-            hedgeFundNotice=notice)
+            otherCharges=charges, otherChargesBy=caller.kerberos, notices=record)
         return _scenarioPayload(state)
     except ScenarioNotFound:
         return _notFound(scenarioId)
@@ -1727,10 +1713,8 @@ def _assembleExport(scenarioId: str, port):
                       'customFeesBy': state.get('customFeesBy') or '',
                       'customFeesAt': state.get('customFeesAt'),
                       'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
-                      # the marketing warnings acknowledged, for the register (D196)
-                      'marketing': state.get('marketing'),
-                      # and the hedge fund notice confirmed (D198)
-                      'hedgeFundNotice': state.get('hedgeFundNotice')}
+                      # the notices confirmed, for the register (D199)
+                      'notices': notices.recordOf(state)}
     # The implemented model is built ONCE here and handed to both the
     # writer and the register, so the sheet a client receives and the
     # record kept of it are the same model rather than two builds (D69).
@@ -1799,8 +1783,9 @@ def _assembleExport(scenarioId: str, port):
                                       b['minimumInvestment']) for b in model['breaches'][:4])
                                   + ('' if len(model['breaches']) <= 4
                                      else ', and {} more'.format(len(model['breaches']) - 4))))
-    # a hedge fund in the model needs the notice confirmed (D198)
-    _refuseUnconfirmedHedgeFunds(state, model)
+    # every notice the model raises needs confirming (D199)
+    implementation['raisedNotices'] = notices.raisedByModel(model)
+    _refuseUnconfirmedNotices(state, implementation['raisedNotices'])
     # every other check first: the charges are what the page asks for last,
     # as Download opens their card (D177)
     _otherCharges.required(implementation['otherCharges'], includeFees)
@@ -1926,25 +1911,33 @@ def _assembleCustomExport(state, port):
                       'customFeesBy': state.get('customFeesBy') or '',
                       'customFeesAt': state.get('customFeesAt'),
                       'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
-                      'marketing': state.get('marketing'),
+                      'notices': notices.recordOf(state),
                       'customPortfolio': model['customPortfolio']}
+    # every notice its products raise needs confirming (D199)
+    held = []
+    for p in built.get('products') or []:
+        found = products.get(p.get('productId'))
+        if found:
+            held.append(dict(products.inCurrency(found, basis.currency), category=p.get('category') or ''))
+    implementation['raisedNotices'] = notices.raisedByProducts(held)
+    _refuseUnconfirmedNotices(state, implementation['raisedNotices'])
     # every other check first: the charges are what the page asks for last,
     # as Download opens their card (D177)
     _otherCharges.required(implementation['otherCharges'], includeFees)
     return state, basis, mandate, results, implementation, model
 
 
-def _refuseUnconfirmedHedgeFunds(state, model) -> None:
-    """A proposal that holds a hedge fund is not delivered until the hedge
-    fund notice is confirmed for it (D198), so the page's card cannot be
-    walked past by calling the endpoint directly."""
-    held = proposalRegister.hedgeFundsIn(model)
-    if held and not marketing.confirmed(state.get('hedgeFundNotice')):
+def _refuseUnconfirmedNotices(state, raised) -> None:
+    """A proposal is not delivered while a notice it raises is unconfirmed
+    (D199), so the page's card cannot be walked past by calling the
+    endpoint directly."""
+    left = notices.unconfirmed(raised, state)
+    if left:
         raise ValidationError(
-            'hedgeFundNotice',
-            'The proposal holds {} {}: confirm the hedge fund notice before downloading.'.format(
-                'a hedge fund,' if len(held) == 1 else 'hedge funds,', ', '.join(held[:4])
-                + ('' if len(held) <= 4 else ', and {} more'.format(len(held) - 4))))
+            'notice', 'Confirm {} before downloading: {}.'.format(
+                'the notice' if len(left) == 1 else 'the notices',
+                '; '.join('{} (raised by {})'.format(n['name'], ', '.join(n['holds'][:3]))
+                          for n in left[:4])))
 
 
 _PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'

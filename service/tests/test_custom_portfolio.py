@@ -284,6 +284,8 @@ def test_outside_the_usual_range_an_admin_who_did_not_build_it_approves_it(store
     mine = client.post(approval, headers=admin, json={'action': 'approve'})
     assert mine.status_code == 422 and 'another admin' in mine.json()['error']
     assert client.post(approval, headers=other, json={'action': 'approve'}).status_code == 200
+    # the notice its hedge funds raise (D199)
+    client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True}})
     delivered = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert delivered.status_code == 200, delivered.text
     record = proposalRegister.getProposal(delivered.headers['x-proposal-id'])
@@ -302,6 +304,8 @@ def test_a_custom_portfolio_is_delivered_with_its_own_allocation_and_recorded(st
     client.put('/api/v1/scenario/' + sid, headers=pwa, json={
         'includeFees': True, 'feeSchedule': 'CASP',
         'otherCharges': {'fxHighBps': 10, 'fxMidBps': 10, 'fxLowBps': 20, 'equityTradeBps': 35}})
+    # the notice its hedge funds raise (D199)
+    client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True}})
     delivered = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert delivered.status_code == 200, delivered.text
     uid = delivered.headers['x-proposal-id']

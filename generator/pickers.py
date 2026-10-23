@@ -283,9 +283,9 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 /* ── the custodian (D195) ──
    Its own card, over the rail, as a type that asks for one is chosen; and a
    line under the type in the rail saying which is chosen. */
-#custodyDialog[hidden],#marketingDialog[hidden]{display:none}
-#custodyDialog .scrim,#marketingDialog .scrim{z-index:97}
-#custodyDialog .dialog,#marketingDialog .dialog{z-index:98}
+#custodyDialog[hidden]{display:none}
+#custodyDialog .scrim{z-index:97}
+#custodyDialog .dialog{z-index:98}
 .cust-eyebrow,.mkt-eyebrow{margin:0 0 6px;font-family:var(--f-num);font-size:10.5px;font-weight:700;
   letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
 .dialog.cust h2,.dialog.mkt h2{margin:0 0 10px;font-size:19px;line-height:1.25}
@@ -302,7 +302,7 @@ dl.md-kv dd.cust-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .cust-row .cust-none{color:var(--rail-eyebrow,#9B1C1C);font-weight:600}
 .cust-row .btn-inline{color:var(--rail-focus,var(--accent));font-weight:500}
 
-/* ── the marketing warnings (D196) ──
+/* ── the notice card's words and the rail's line (D196, D199) ──
    A card the PWA acknowledges, with the desk's own words, and a note in the
    rail while the allocation holds what it warns of. */
 .mkt-w{margin:0 0 12px;padding:12px 14px;border-left:3px solid #B45309;background:#FFF8EB;
@@ -320,9 +320,9 @@ dl.md-kv dd.cust-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
    Over everything, a builder included: it is the last card in the page. Its
    body is the admin's words, paragraphs and a numbered list, scrolling
    inside the card on a short screen; Confirm and Cancel stay in view. */
-#hedgeFundDialog[hidden]{display:none}
-#hedgeFundDialog .scrim{z-index:99}
-#hedgeFundDialog .dialog{z-index:100}
+#noticeDialog[hidden]{display:none}
+#noticeDialog .scrim{z-index:99}
+#noticeDialog .dialog{z-index:100}
 .dialog.hfn{width:min(620px,calc(100vw - 32px));max-height:calc(100vh - 48px);display:flex;flex-direction:column}
 .dialog.hfn .hf-text{overflow:auto;min-height:0;margin:0 0 14px;padding:12px 14px;border-left:3px solid #B45309;
   background:#FFF8EB;border-radius:0 var(--radius-sm) var(--radius-sm) 0}

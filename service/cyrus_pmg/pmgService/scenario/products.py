@@ -189,8 +189,7 @@ _PERCENT = ('productCost', 'distributionYield')
 SMA_VEHICLES = ('separate account', 'sma')
 #: the one sleeve category whose SMAs come in hedging versions
 EQUITY_CATEGORY = 'Public Equity'
-#: a product whose own category is this is a hedge fund (D198): attaching a
-#: sleeve that holds one asks the PWA to confirm the hedge fund notice
+#: a product whose own category is this is a hedge fund (D198)
 HEDGE_FUND_CATEGORY = 'Hedge Funds'
 #: the versions a Public Equity SMA's mandates come in, in the grid's order;
 #: an SMA in any other category has no version, stored as ''
@@ -990,9 +989,10 @@ def _served(record) -> dict:
     out['ticker'] = record['ticker'] or NO_TICKER
     out['currencies'] = {c: dict(v) for c, v in (record.get('currencies') or {}).items()}
     out['mandates'] = [dict(m) for m in record.get('mandates') or []]
-    # whether it is a hedge fund, by its own category (D198): served on its
-    # own, since the category a sleeve's product is served under is the sleeve's
-    out['hedgeFund'] = record.get('category') == HEDGE_FUND_CATEGORY
+    # its own category, which a notice may be about (D199): served under its
+    # own name, since the category a sleeve's product is served under is the
+    # sleeve's
+    out['ownCategory'] = record.get('category') or ''
     out.pop('category', None)
     return out
 
