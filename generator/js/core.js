@@ -3659,16 +3659,21 @@ function tickHedgeFund(on) {
   var why = document.getElementById('hfwhy'); if (why) why.textContent = hfCard.ticked ? '' : 'Tick the box to confirm.';
 }
 
+/* one line of the notice: its words as typed, and **words** in bold */
+function hedgeFundLineHtml(line) {
+  return esc(line).replace(/\*\*([^*]+?)\*\*/g, '<b>$1</b>');
+}
+
 /* the notice's body as the admin worded it: a blank line parts paragraphs,
-   and a block of lines numbered 1. 2. is a list */
+   a block of lines numbered 1. 2. is a list, and **words** are bold */
 function hedgeFundBodyHtml(text) {
   return String(text || '').split(/\n\s*\n/).map(function (block) {
     var lines = block.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
     if (!lines.length) return '';
     if (lines.every(function (l) { return /^\d+[.)]\s+/.test(l); })) {
-      return '<ol>' + lines.map(function (l) { return '<li>' + esc(l.replace(/^\d+[.)]\s+/, '')) + '</li>'; }).join('') + '</ol>';
+      return '<ol>' + lines.map(function (l) { return '<li>' + hedgeFundLineHtml(l.replace(/^\d+[.)]\s+/, '')) + '</li>'; }).join('') + '</ol>';
     }
-    return '<p>' + lines.map(esc).join('<br>') + '</p>';
+    return '<p>' + lines.map(hedgeFundLineHtml).join('<br>') + '</p>';
   }).join('');
 }
 
