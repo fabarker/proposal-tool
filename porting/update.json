@@ -1,10 +1,17 @@
 {
   "from": "8091eaa",
-  "to": "3fe38b0",
+  "to": "b01e89a",
   "write": [
+    "package/notices.py",
+    "package/products.py",
+    "package/proposalRegister.py",
+    "package/rules.py",
+    "package/scenarioStore.py",
+    "page/proposalTool.html",
+    "page/static/css/proposalTool.css",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
-  "routerBlock": false,
-  "bytes": 45429
+  "routerBlock": true,
+  "bytes": 103898
 }
