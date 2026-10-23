@@ -1731,6 +1731,7 @@ function renderMandate() {
     + '<dt>Top Account:</dt><dd>' + money(state.mandate.topAccountSize) + '</dd>'
     + '<dt>Mandate Size:</dt><dd>' + money(state.mandate.mandateSize) + '</dd>'
     + '<dt>Primary PWA:</dt><dd>' + esc(state.mandate.primaryPwa) + '</dd>'
+    + custodyRowHtml()
     + '</dl>';
 }
 
@@ -1916,7 +1917,6 @@ function renderBase() {
        one above it (D54). */
     + '<div class="field"><label for="bpv">Implementation Type</label>'
     + '<select id="bpv"' + disabled + '>' + variantOptions + '</select></div>'
-    + custodyRowHtml()
     + (variantLocked && !locked
         ? '<p class="chk-note" style="margin-left:0">Choose an implementation '
           + 'type first — it decides which portfolios are available.</p>' : '')
@@ -3410,18 +3410,20 @@ function anyDialogOpen(except) {
    what ESG means differs by jurisdiction, so the funds a client may own -
    the sleeve editions served - follow the custodian, one of GSI, GSBZ, GSLU
    and GSCO (options.entities). The type is chosen without one; its card
-   opens when the PWA moves on to the implementation step, before anything is
-   picked from that type's library, and Continue goes on to the step. Cancel
-   stays on the allocation step. Rendered into #custodyDialog.
+   opens once the PWA has moved on to the implementation step, before
+   anything is picked from that type's library. Continue stays on the step;
+   Cancel goes back to the allocation step. The rail's Mandate tier shows the
+   custodian, with Change. Rendered into #custodyDialog.
    ========================================================================== */
-var custody = null;           /* { variant, chosen, err, saving, opener, then } */
+var custody = null;           /* { variant, chosen, err, saving, opener, then, cancel } */
 
-/* *then*, when given, runs once the custodian is saved: the step the card
-   stood in the way of */
-function openCustodyDialog(variant, opener, then) {
+/* *then*, when given, runs once the custodian is saved, and *cancel* once
+   the card is closed without one: the implementation step it was asked on
+   stays, or is left */
+function openCustodyDialog(variant, opener, then, cancel) {
   if (!canEdit()) return;
   custody = { variant: variant, chosen: custodian(), err: null, saving: false,
-              opener: opener || document.activeElement, then: then || null };
+              opener: opener || document.activeElement, then: then || null, cancel: cancel || null };
   renderCustodyDialog();
   var first = document.querySelector('#custodyDialog input[name="cust"]:checked')
     || document.querySelector('#custodyDialog input[name="cust"]');
@@ -3429,10 +3431,11 @@ function openCustodyDialog(variant, opener, then) {
 }
 
 function closeCustodyDialog() {
-  var opener = custody && custody.opener;
+  var opener = custody && custody.opener, cancel = custody && custody.cancel;
   custody = null;
   renderCustodyDialog();
   /* the type select shows the type in force again */
+  if (cancel) { cancel(); return; }
   refresh();
   var back = opener && opener.isConnected && !opener.id && opener !== document.body ? opener
     : document.getElementById(opener && opener.id ? opener.id : 'bpv');
@@ -3544,17 +3547,17 @@ async function afterRepository() {
   refresh();
 }
 
-/* the rail's line for it, under the type: what is chosen, and the way to
-   change it. On the allocation step it shows once one is chosen: until the
-   PWA moves on, nothing asks for it. */
+/* the rail's line for it, in the Mandate tier, under the PWA: what is
+   chosen, and the way to change it. On the allocation step it shows once
+   one is chosen: until the PWA moves on, nothing asks for it. */
 function custodyRowHtml() {
   if (!custodyNeeded(state.variant)) return '';
   var now = custodian();
   if (!now && state.step !== 'impl') return '';
-  return '<div class="cust-row' + (now ? '' : ' is-open') + '"><span class="cust-k">Custodian</span>'
-    + (now ? '<b>' + esc(entityName(now)) + '</b>' : '<span class="cust-none">not chosen</span>')
-    + '<button type="button" class="btn-inline" id="custchange"' + (canEdit() ? '' : ' disabled') + '>'
-    + (now ? 'Change' : 'Choose') + '</button></div>';
+  return '<dt>Custodian:</dt><dd class="cust-row' + (now ? '' : ' is-open') + '">'
+    + (now ? esc(entityName(now)) : '<span class="cust-none">not chosen</span>')
+    + ' <button type="button" class="btn-inline" id="custchange"' + (canEdit() ? '' : ' disabled') + '>'
+    + (now ? 'Change' : 'Choose') + '</button></dd>';
 }
 
 /* =============================================================================
@@ -4976,23 +4979,17 @@ return {
   basis: function () { return state.basis; },
   mandate: function () { return state.mandate; },
   mandateSize: function () { return state.mandate ? state.mandate.mandateSize : null; },
-  /* the custodian in force, and its name (D193, D195) */
+  /* the custodian in force, and its name (D193, D195); whether its card is up */
   entity: function () { return custodian(); },
+  custodyOpen: function () { return !!custody; },
   entityName: entityName,
   columns: function () { return state.columns; },
   base: function () { return state.columns[0] || null; },
   step: function () { return state.step; },
   implSeen: function () { return state.implSeen; },
   setStep: function (s) {
-    /* step 2 opens once the custodian is chosen, under a type that asks for
-       one (D193, D195): moving on asks for it, and the card's Continue goes
-       on to the step */
-    if (s === 'impl' && state.mandate && custodyNeeded(state.variant) && !custodian()) {
-      announce('assertive', 'Choose the custodian before the implementation step.');
-      openCustodyDialog(state.variant, document.activeElement, function () { App.setStep('impl'); });
-      return;
-    }
     var wasStep = state.step;
+    var opener = document.activeElement;
     state.step = s;
     if (s === 'impl') state.implSeen = true;   /* stop beckoning once opened */
     /* The base tier follows the step: rolled up while the implementation is
@@ -5000,6 +4997,20 @@ return {
     if (s !== wasStep) setBaseCollapsed(s === 'impl', true);
     announce('polite', s === 'impl' ? 'Implementation step.' : 'Asset allocation step.');
     refresh();
+    /* under a type that asks for a custodian (D193, D195), the implementation
+       step asks for it once it is on screen: Continue stays on the step,
+       Cancel goes back to the allocation step, since nothing here can be
+       picked without one */
+    if (s === 'impl' && state.mandate && custodyNeeded(state.variant) && !custodian()) {
+      announce('assertive', 'Choose the custodian for the implementation step.');
+      openCustodyDialog(state.variant, opener, function () { refresh(); }, function () {
+        App.setStep('aa');
+        /* back to what moved on, or the step it moved on to */
+        var back = opener && opener.isConnected && opener !== document.body ? opener
+          : document.querySelector('.step[data-step="impl"]');
+        if (back && back.focus) back.focus();
+      });
+    }
   },
   baseCollapsed: function () { return state.baseCollapsed; },
   toggleBaseCollapsed: function () {

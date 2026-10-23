@@ -741,12 +741,10 @@ body.phase-landing #alertArea{padding:0 clamp(20px,6vw,80px)}
 .cust-opt:hover{border-color:var(--accent)}
 .cust-opt:has(input:checked){border-color:var(--accent);background:var(--surface-2);font-weight:600}
 .cust-opt input{margin:0;accent-color:var(--accent)}
-.cust-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:-6px 0 14px;font-size:13px;
-  color:var(--rail-ink-2)}
-.cust-row .cust-k{font-weight:600}
-.cust-row b{color:var(--rail-ink);font-weight:600}
+/* the custodian's line in the Mandate tier (D195): its name, then Change */
+dl.md-kv dd.cust-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .cust-row .cust-none{color:var(--rail-eyebrow,#9B1C1C);font-weight:600}
-.cust-row .btn-inline{color:var(--rail-focus,var(--accent))}
+.cust-row .btn-inline{color:var(--rail-focus,var(--accent));font-weight:500}
 
 /* ── the marketing warnings (D196) ──
    A card the PWA acknowledges, with the desk's own words, and a note in the

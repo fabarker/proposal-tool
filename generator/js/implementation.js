@@ -2016,9 +2016,10 @@ function greetCategories() {
 
 function renderGreetPanel() {
   var host = document.getElementById('greetDialog'); if (!host) return;
-  /* asked for on the way to a step not yet reached - the custodian's card
-     stands in the way (D195) - it waits, and greets on arrival */
-  if (greetPanel.open && App.step() !== 'impl') {
+  /* asked for on the way to a step not yet reached, or while the
+     custodian's card is up on arrival (D195): it waits, and greets once the
+     card has gone */
+  if (greetPanel.open && (App.step() !== 'impl' || App.custodyOpen())) {
     host.innerHTML = ''; host.hidden = true;
     document.body.classList.remove('greeting');
     return;
