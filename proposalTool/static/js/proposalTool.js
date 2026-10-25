@@ -23718,7 +23718,7 @@ document.addEventListener('click', function (e) {
   var el = e.target.closest ? e.target.closest(
     '[data-repoclose],[data-reposcrim],[data-repoview],[data-repogo],[data-rnopen],[data-repovariant],'
     + '[data-ntcnew],[data-ntcedit],[data-ntctoggle],[data-ntcfilter],[data-ntcback],[data-ntcsave],[data-ntcremove],[data-ntcunask],'
-    + '[data-ntcremoveyes],[data-ntcrestore],[data-ntcadd],[data-ntcrm],[data-pmm],[data-aor],[data-aormove],[data-aoc],[data-aosub],'
+    + '[data-ntcremoveyes],[data-ntcrestore],[data-ntcadd],[data-ntcrm],[data-pmm],[data-aor],[data-aormove],[data-aoc],[data-aosub],[data-pbm],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
     + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svshare],[data-svsplit],[data-svunshare],[data-svopen],'
     + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'

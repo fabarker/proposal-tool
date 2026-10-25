@@ -1730,3 +1730,20 @@ def test_reading_the_file_stamp_inside_a_write_keeps_its_lock(tmp_path, monkeypa
     finally:
         conn.rollback()
         conn.close()
+
+
+def test_every_button_in_the_console_is_one_its_click_handler_answers():
+    """The console's click handler answers only to the attributes it names;
+    a button carrying none of them does nothing when clicked (D211)."""
+    with open(os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js'), encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index("var el = e.target.closest ? e.target.closest(\n    '[data-repoclose]")
+    named = set(re.findall(r'\[data-([a-z0-9]+)\]', source[start:source.index(') : null;', start)]))
+    named.add('repoopen')
+    deaf = []
+    for m in re.finditer(r'<(?:button|a)\b([^>]*)', source):
+        carried = set(re.findall(r'data-([a-z0-9]+)', m.group(1)))
+        if carried and not carried & named:
+            deaf.append((source.count('\n', 0, m.start()) + 1, sorted(carried)))
+    assert 'pbm' in named
+    assert not deaf
