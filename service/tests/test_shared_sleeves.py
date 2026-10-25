@@ -239,7 +239,7 @@ def test_a_ninth_store_gains_the_switch_detail_in_place(store):
     conn.execute("UPDATE meta SET value = '9' WHERE key = 'schemaVersion'")
     conn.commit()
     conn.close()
-    assert sleeveRepo.describe()['schemaVersion'] == 15
+    assert sleeveRepo.describe()['schemaVersion'] == 17
     made = _shared(variants=[MA, ESG])
     sleeveRepo.withdrawFrom(made['id'], ESG)
     conn = sqlite3.connect(path)

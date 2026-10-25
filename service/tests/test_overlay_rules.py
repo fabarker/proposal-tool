@@ -154,7 +154,7 @@ def test_a_schema_5_file_is_brought_to_6_and_seeded(store):
     raw = sqlite3.connect(str(path))
     version = raw.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     raw.close()
-    assert int(version) == sleeveRepo.SCHEMA_VERSION == 15         # the catalogue's (D165), the switch (D169), the product's category (D178), shared sleeves (D179), the tickers by currency (D180), the issue currency (D184), the SMA mandates (D197)
+    assert int(version) == sleeveRepo.SCHEMA_VERSION == 17         # the catalogue's (D165), the switch (D169), the product's category (D178), shared sleeves (D179), the tickers by currency (D180), the issue currency (D184), the SMA mandates (D197), the benchmark (D204), the listings (D207)
 
 
 # ------------------------------------------------------------ the engine ---
@@ -465,7 +465,7 @@ def test_the_register_records_the_rules_a_proposal_was_built_with(store, monkeyp
     conn = sqlite3.connect(str(store / 'proposals.db'))
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
     conn.close()
-    assert int(version) == proposalRegister.SCHEMA_VERSION == 13   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193), the marketing warnings (D196), the hedge fund notice (D198), the notices (D199)
+    assert int(version) == proposalRegister.SCHEMA_VERSION == 14   # the versions (D165, D166), custom sleeves (D170), custom portfolios (D171), the other charges (D177), the entity (D193), the marketing warnings (D196), the hedge fund notice (D198), the notices (D199), the benchmark (D211)
 
 
 def test_the_schema_serves_the_list_in_force_for_the_type(store):
@@ -588,8 +588,7 @@ def test_the_console_has_the_tab_and_never_says_book():
     with open(os.path.join(HERE, '..', '..', 'generator', 'js', 'repository.js'),
               encoding='utf-8') as handle:
         source = handle.read()
-    assert "['overlays', 'Overlay Funding', onOverlays, 0]" in source
-    assert "['overlays', 'Overlay Funding']" in source
+    assert "{ view: 'overlays', label: 'Overlay Funding' }" in source   # in the Proposals menu (D212)
     assert "if (view === 'overlays') return '#overlays';" in source
     assert "'/scenario/repository/overlays'" in source
 

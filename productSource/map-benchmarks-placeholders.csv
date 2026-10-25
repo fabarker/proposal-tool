@@ -1,0 +1,129 @@
+Benchmark,Currency,Risk,Hedging,Mnemonic
+Placeholder: 80% Bloomberg US Aggregate / 20% MSCI ACWI (USD hedged),USD,Low Vol,Hedged,TBD-USD-LV-H
+Placeholder: 80% Bloomberg US Aggregate / 20% MSCI ACWI (USD hedged),USD,Low Vol,ISG Hedged,TBD-USD-LV-ISG
+Placeholder: 80% Bloomberg US Aggregate / 20% MSCI ACWI,USD,Low Vol,Unhedged,TBD-USD-LV-U
+Placeholder: 80% Bloomberg US Aggregate / 20% MSCI ACWI,USD,Low Vol,Equity Not Hedged,TBD-USD-LV-ENH
+Placeholder: 70% Bloomberg US Aggregate / 30% MSCI ACWI (USD hedged),USD,Conservative,Hedged,TBD-USD-CON-H
+Placeholder: 70% Bloomberg US Aggregate / 30% MSCI ACWI (USD hedged),USD,Conservative,ISG Hedged,TBD-USD-CON-ISG
+Placeholder: 70% Bloomberg US Aggregate / 30% MSCI ACWI,USD,Conservative,Unhedged,TBD-USD-CON-U
+Placeholder: 70% Bloomberg US Aggregate / 30% MSCI ACWI,USD,Conservative,Equity Not Hedged,TBD-USD-CON-ENH
+Placeholder: 60% Bloomberg US Aggregate / 40% MSCI ACWI (USD hedged),USD,Conservative-Moderate,Hedged,TBD-USD-CM-H
+Placeholder: 60% Bloomberg US Aggregate / 40% MSCI ACWI (USD hedged),USD,Conservative-Moderate,ISG Hedged,TBD-USD-CM-ISG
+Placeholder: 60% Bloomberg US Aggregate / 40% MSCI ACWI,USD,Conservative-Moderate,Unhedged,TBD-USD-CM-U
+Placeholder: 60% Bloomberg US Aggregate / 40% MSCI ACWI,USD,Conservative-Moderate,Equity Not Hedged,TBD-USD-CM-ENH
+Placeholder: 45% Bloomberg US Aggregate / 55% MSCI ACWI (USD hedged),USD,Moderate,Hedged,TBD-USD-MOD-H
+Placeholder: 45% Bloomberg US Aggregate / 55% MSCI ACWI (USD hedged),USD,Moderate,ISG Hedged,TBD-USD-MOD-ISG
+Placeholder: 45% Bloomberg US Aggregate / 55% MSCI ACWI,USD,Moderate,Unhedged,TBD-USD-MOD-U
+Placeholder: 45% Bloomberg US Aggregate / 55% MSCI ACWI,USD,Moderate,Equity Not Hedged,TBD-USD-MOD-ENH
+Placeholder: 30% Bloomberg US Aggregate / 70% MSCI ACWI (USD hedged),USD,Moderate-Aggressive,Hedged,TBD-USD-MA-H
+Placeholder: 30% Bloomberg US Aggregate / 70% MSCI ACWI (USD hedged),USD,Moderate-Aggressive,ISG Hedged,TBD-USD-MA-ISG
+Placeholder: 30% Bloomberg US Aggregate / 70% MSCI ACWI,USD,Moderate-Aggressive,Unhedged,TBD-USD-MA-U
+Placeholder: 30% Bloomberg US Aggregate / 70% MSCI ACWI,USD,Moderate-Aggressive,Equity Not Hedged,TBD-USD-MA-ENH
+Placeholder: 15% Bloomberg US Aggregate / 85% MSCI ACWI (USD hedged),USD,Aggressive,Hedged,TBD-USD-AGG-H
+Placeholder: 15% Bloomberg US Aggregate / 85% MSCI ACWI (USD hedged),USD,Aggressive,ISG Hedged,TBD-USD-AGG-ISG
+Placeholder: 15% Bloomberg US Aggregate / 85% MSCI ACWI,USD,Aggressive,Unhedged,TBD-USD-AGG-U
+Placeholder: 15% Bloomberg US Aggregate / 85% MSCI ACWI,USD,Aggressive,Equity Not Hedged,TBD-USD-AGG-ENH
+Placeholder: 5% Bloomberg US Aggregate / 95% MSCI ACWI (USD hedged),USD,Higher Risk,Hedged,TBD-USD-HR-H
+Placeholder: 5% Bloomberg US Aggregate / 95% MSCI ACWI (USD hedged),USD,Higher Risk,ISG Hedged,TBD-USD-HR-ISG
+Placeholder: 5% Bloomberg US Aggregate / 95% MSCI ACWI,USD,Higher Risk,Unhedged,TBD-USD-HR-U
+Placeholder: 5% Bloomberg US Aggregate / 95% MSCI ACWI,USD,Higher Risk,Equity Not Hedged,TBD-USD-HR-ENH
+Placeholder: MSCI ACWI (USD hedged),USD,All Equity,Hedged,TBD-USD-AE-H
+Placeholder: MSCI ACWI (USD hedged),USD,All Equity,ISG Hedged,TBD-USD-AE-ISG
+Placeholder: MSCI ACWI,USD,All Equity,Unhedged,TBD-USD-AE-U
+Placeholder: MSCI ACWI,USD,All Equity,Equity Not Hedged,TBD-USD-AE-ENH
+Placeholder: 80% Bloomberg Sterling Aggregate / 20% MSCI ACWI (GBP hedged),GBP,Low Vol,Hedged,TBD-GBP-LV-H
+Placeholder: 80% Bloomberg Sterling Aggregate / 20% MSCI ACWI (GBP hedged),GBP,Low Vol,ISG Hedged,TBD-GBP-LV-ISG
+Placeholder: 80% Bloomberg Sterling Aggregate / 20% MSCI ACWI,GBP,Low Vol,Unhedged,TBD-GBP-LV-U
+Placeholder: 80% Bloomberg Sterling Aggregate / 20% MSCI ACWI,GBP,Low Vol,Equity Not Hedged,TBD-GBP-LV-ENH
+Placeholder: 70% Bloomberg Sterling Aggregate / 30% MSCI ACWI (GBP hedged),GBP,Conservative,Hedged,TBD-GBP-CON-H
+Placeholder: 70% Bloomberg Sterling Aggregate / 30% MSCI ACWI (GBP hedged),GBP,Conservative,ISG Hedged,TBD-GBP-CON-ISG
+Placeholder: 70% Bloomberg Sterling Aggregate / 30% MSCI ACWI,GBP,Conservative,Unhedged,TBD-GBP-CON-U
+Placeholder: 70% Bloomberg Sterling Aggregate / 30% MSCI ACWI,GBP,Conservative,Equity Not Hedged,TBD-GBP-CON-ENH
+Placeholder: 60% Bloomberg Sterling Aggregate / 40% MSCI ACWI (GBP hedged),GBP,Conservative-Moderate,Hedged,TBD-GBP-CM-H
+Placeholder: 60% Bloomberg Sterling Aggregate / 40% MSCI ACWI (GBP hedged),GBP,Conservative-Moderate,ISG Hedged,TBD-GBP-CM-ISG
+Placeholder: 60% Bloomberg Sterling Aggregate / 40% MSCI ACWI,GBP,Conservative-Moderate,Unhedged,TBD-GBP-CM-U
+Placeholder: 60% Bloomberg Sterling Aggregate / 40% MSCI ACWI,GBP,Conservative-Moderate,Equity Not Hedged,TBD-GBP-CM-ENH
+Placeholder: 45% Bloomberg Sterling Aggregate / 55% MSCI ACWI (GBP hedged),GBP,Moderate,Hedged,TBD-GBP-MOD-H
+Placeholder: 45% Bloomberg Sterling Aggregate / 55% MSCI ACWI (GBP hedged),GBP,Moderate,ISG Hedged,TBD-GBP-MOD-ISG
+Placeholder: 45% Bloomberg Sterling Aggregate / 55% MSCI ACWI,GBP,Moderate,Unhedged,TBD-GBP-MOD-U
+Placeholder: 45% Bloomberg Sterling Aggregate / 55% MSCI ACWI,GBP,Moderate,Equity Not Hedged,TBD-GBP-MOD-ENH
+Placeholder: 30% Bloomberg Sterling Aggregate / 70% MSCI ACWI (GBP hedged),GBP,Moderate-Aggressive,Hedged,TBD-GBP-MA-H
+Placeholder: 30% Bloomberg Sterling Aggregate / 70% MSCI ACWI (GBP hedged),GBP,Moderate-Aggressive,ISG Hedged,TBD-GBP-MA-ISG
+Placeholder: 30% Bloomberg Sterling Aggregate / 70% MSCI ACWI,GBP,Moderate-Aggressive,Unhedged,TBD-GBP-MA-U
+Placeholder: 30% Bloomberg Sterling Aggregate / 70% MSCI ACWI,GBP,Moderate-Aggressive,Equity Not Hedged,TBD-GBP-MA-ENH
+Placeholder: 15% Bloomberg Sterling Aggregate / 85% MSCI ACWI (GBP hedged),GBP,Aggressive,Hedged,TBD-GBP-AGG-H
+Placeholder: 15% Bloomberg Sterling Aggregate / 85% MSCI ACWI (GBP hedged),GBP,Aggressive,ISG Hedged,TBD-GBP-AGG-ISG
+Placeholder: 15% Bloomberg Sterling Aggregate / 85% MSCI ACWI,GBP,Aggressive,Unhedged,TBD-GBP-AGG-U
+Placeholder: 15% Bloomberg Sterling Aggregate / 85% MSCI ACWI,GBP,Aggressive,Equity Not Hedged,TBD-GBP-AGG-ENH
+Placeholder: 5% Bloomberg Sterling Aggregate / 95% MSCI ACWI (GBP hedged),GBP,Higher Risk,Hedged,TBD-GBP-HR-H
+Placeholder: 5% Bloomberg Sterling Aggregate / 95% MSCI ACWI (GBP hedged),GBP,Higher Risk,ISG Hedged,TBD-GBP-HR-ISG
+Placeholder: 5% Bloomberg Sterling Aggregate / 95% MSCI ACWI,GBP,Higher Risk,Unhedged,TBD-GBP-HR-U
+Placeholder: 5% Bloomberg Sterling Aggregate / 95% MSCI ACWI,GBP,Higher Risk,Equity Not Hedged,TBD-GBP-HR-ENH
+Placeholder: MSCI ACWI (GBP hedged),GBP,All Equity,Hedged,TBD-GBP-AE-H
+Placeholder: MSCI ACWI (GBP hedged),GBP,All Equity,ISG Hedged,TBD-GBP-AE-ISG
+Placeholder: MSCI ACWI,GBP,All Equity,Unhedged,TBD-GBP-AE-U
+Placeholder: MSCI ACWI,GBP,All Equity,Equity Not Hedged,TBD-GBP-AE-ENH
+Placeholder: 80% SBI AAA-BBB / 20% MSCI ACWI (CHF hedged),CHF,Low Vol,Hedged,TBD-CHF-LV-H
+Placeholder: 80% SBI AAA-BBB / 20% MSCI ACWI (CHF hedged),CHF,Low Vol,ISG Hedged,TBD-CHF-LV-ISG
+Placeholder: 80% SBI AAA-BBB / 20% MSCI ACWI,CHF,Low Vol,Unhedged,TBD-CHF-LV-U
+Placeholder: 80% SBI AAA-BBB / 20% MSCI ACWI,CHF,Low Vol,Equity Not Hedged,TBD-CHF-LV-ENH
+Placeholder: 70% SBI AAA-BBB / 30% MSCI ACWI (CHF hedged),CHF,Conservative,Hedged,TBD-CHF-CON-H
+Placeholder: 70% SBI AAA-BBB / 30% MSCI ACWI (CHF hedged),CHF,Conservative,ISG Hedged,TBD-CHF-CON-ISG
+Placeholder: 70% SBI AAA-BBB / 30% MSCI ACWI,CHF,Conservative,Unhedged,TBD-CHF-CON-U
+Placeholder: 70% SBI AAA-BBB / 30% MSCI ACWI,CHF,Conservative,Equity Not Hedged,TBD-CHF-CON-ENH
+Placeholder: 60% SBI AAA-BBB / 40% MSCI ACWI (CHF hedged),CHF,Conservative-Moderate,Hedged,TBD-CHF-CM-H
+Placeholder: 60% SBI AAA-BBB / 40% MSCI ACWI (CHF hedged),CHF,Conservative-Moderate,ISG Hedged,TBD-CHF-CM-ISG
+Placeholder: 60% SBI AAA-BBB / 40% MSCI ACWI,CHF,Conservative-Moderate,Unhedged,TBD-CHF-CM-U
+Placeholder: 60% SBI AAA-BBB / 40% MSCI ACWI,CHF,Conservative-Moderate,Equity Not Hedged,TBD-CHF-CM-ENH
+Placeholder: 45% SBI AAA-BBB / 55% MSCI ACWI (CHF hedged),CHF,Moderate,Hedged,TBD-CHF-MOD-H
+Placeholder: 45% SBI AAA-BBB / 55% MSCI ACWI (CHF hedged),CHF,Moderate,ISG Hedged,TBD-CHF-MOD-ISG
+Placeholder: 45% SBI AAA-BBB / 55% MSCI ACWI,CHF,Moderate,Unhedged,TBD-CHF-MOD-U
+Placeholder: 45% SBI AAA-BBB / 55% MSCI ACWI,CHF,Moderate,Equity Not Hedged,TBD-CHF-MOD-ENH
+Placeholder: 30% SBI AAA-BBB / 70% MSCI ACWI (CHF hedged),CHF,Moderate-Aggressive,Hedged,TBD-CHF-MA-H
+Placeholder: 30% SBI AAA-BBB / 70% MSCI ACWI (CHF hedged),CHF,Moderate-Aggressive,ISG Hedged,TBD-CHF-MA-ISG
+Placeholder: 30% SBI AAA-BBB / 70% MSCI ACWI,CHF,Moderate-Aggressive,Unhedged,TBD-CHF-MA-U
+Placeholder: 30% SBI AAA-BBB / 70% MSCI ACWI,CHF,Moderate-Aggressive,Equity Not Hedged,TBD-CHF-MA-ENH
+Placeholder: 15% SBI AAA-BBB / 85% MSCI ACWI (CHF hedged),CHF,Aggressive,Hedged,TBD-CHF-AGG-H
+Placeholder: 15% SBI AAA-BBB / 85% MSCI ACWI (CHF hedged),CHF,Aggressive,ISG Hedged,TBD-CHF-AGG-ISG
+Placeholder: 15% SBI AAA-BBB / 85% MSCI ACWI,CHF,Aggressive,Unhedged,TBD-CHF-AGG-U
+Placeholder: 15% SBI AAA-BBB / 85% MSCI ACWI,CHF,Aggressive,Equity Not Hedged,TBD-CHF-AGG-ENH
+Placeholder: 5% SBI AAA-BBB / 95% MSCI ACWI (CHF hedged),CHF,Higher Risk,Hedged,TBD-CHF-HR-H
+Placeholder: 5% SBI AAA-BBB / 95% MSCI ACWI (CHF hedged),CHF,Higher Risk,ISG Hedged,TBD-CHF-HR-ISG
+Placeholder: 5% SBI AAA-BBB / 95% MSCI ACWI,CHF,Higher Risk,Unhedged,TBD-CHF-HR-U
+Placeholder: 5% SBI AAA-BBB / 95% MSCI ACWI,CHF,Higher Risk,Equity Not Hedged,TBD-CHF-HR-ENH
+Placeholder: MSCI ACWI (CHF hedged),CHF,All Equity,Hedged,TBD-CHF-AE-H
+Placeholder: MSCI ACWI (CHF hedged),CHF,All Equity,ISG Hedged,TBD-CHF-AE-ISG
+Placeholder: MSCI ACWI,CHF,All Equity,Unhedged,TBD-CHF-AE-U
+Placeholder: MSCI ACWI,CHF,All Equity,Equity Not Hedged,TBD-CHF-AE-ENH
+Placeholder: 80% Bloomberg Euro Aggregate / 20% MSCI ACWI (EUR hedged),EUR,Low Vol,Hedged,TBD-EUR-LV-H
+Placeholder: 80% Bloomberg Euro Aggregate / 20% MSCI ACWI (EUR hedged),EUR,Low Vol,ISG Hedged,TBD-EUR-LV-ISG
+Placeholder: 80% Bloomberg Euro Aggregate / 20% MSCI ACWI,EUR,Low Vol,Unhedged,TBD-EUR-LV-U
+Placeholder: 80% Bloomberg Euro Aggregate / 20% MSCI ACWI,EUR,Low Vol,Equity Not Hedged,TBD-EUR-LV-ENH
+Placeholder: 70% Bloomberg Euro Aggregate / 30% MSCI ACWI (EUR hedged),EUR,Conservative,Hedged,TBD-EUR-CON-H
+Placeholder: 70% Bloomberg Euro Aggregate / 30% MSCI ACWI (EUR hedged),EUR,Conservative,ISG Hedged,TBD-EUR-CON-ISG
+Placeholder: 70% Bloomberg Euro Aggregate / 30% MSCI ACWI,EUR,Conservative,Unhedged,TBD-EUR-CON-U
+Placeholder: 70% Bloomberg Euro Aggregate / 30% MSCI ACWI,EUR,Conservative,Equity Not Hedged,TBD-EUR-CON-ENH
+Placeholder: 60% Bloomberg Euro Aggregate / 40% MSCI ACWI (EUR hedged),EUR,Conservative-Moderate,Hedged,TBD-EUR-CM-H
+Placeholder: 60% Bloomberg Euro Aggregate / 40% MSCI ACWI (EUR hedged),EUR,Conservative-Moderate,ISG Hedged,TBD-EUR-CM-ISG
+Placeholder: 60% Bloomberg Euro Aggregate / 40% MSCI ACWI,EUR,Conservative-Moderate,Unhedged,TBD-EUR-CM-U
+Placeholder: 60% Bloomberg Euro Aggregate / 40% MSCI ACWI,EUR,Conservative-Moderate,Equity Not Hedged,TBD-EUR-CM-ENH
+Placeholder: 45% Bloomberg Euro Aggregate / 55% MSCI ACWI (EUR hedged),EUR,Moderate,Hedged,TBD-EUR-MOD-H
+Placeholder: 45% Bloomberg Euro Aggregate / 55% MSCI ACWI (EUR hedged),EUR,Moderate,ISG Hedged,TBD-EUR-MOD-ISG
+Placeholder: 45% Bloomberg Euro Aggregate / 55% MSCI ACWI,EUR,Moderate,Unhedged,TBD-EUR-MOD-U
+Placeholder: 45% Bloomberg Euro Aggregate / 55% MSCI ACWI,EUR,Moderate,Equity Not Hedged,TBD-EUR-MOD-ENH
+Placeholder: 30% Bloomberg Euro Aggregate / 70% MSCI ACWI (EUR hedged),EUR,Moderate-Aggressive,Hedged,TBD-EUR-MA-H
+Placeholder: 30% Bloomberg Euro Aggregate / 70% MSCI ACWI (EUR hedged),EUR,Moderate-Aggressive,ISG Hedged,TBD-EUR-MA-ISG
+Placeholder: 30% Bloomberg Euro Aggregate / 70% MSCI ACWI,EUR,Moderate-Aggressive,Unhedged,TBD-EUR-MA-U
+Placeholder: 30% Bloomberg Euro Aggregate / 70% MSCI ACWI,EUR,Moderate-Aggressive,Equity Not Hedged,TBD-EUR-MA-ENH
+Placeholder: 15% Bloomberg Euro Aggregate / 85% MSCI ACWI (EUR hedged),EUR,Aggressive,Hedged,TBD-EUR-AGG-H
+Placeholder: 15% Bloomberg Euro Aggregate / 85% MSCI ACWI (EUR hedged),EUR,Aggressive,ISG Hedged,TBD-EUR-AGG-ISG
+Placeholder: 15% Bloomberg Euro Aggregate / 85% MSCI ACWI,EUR,Aggressive,Unhedged,TBD-EUR-AGG-U
+Placeholder: 15% Bloomberg Euro Aggregate / 85% MSCI ACWI,EUR,Aggressive,Equity Not Hedged,TBD-EUR-AGG-ENH
+Placeholder: 5% Bloomberg Euro Aggregate / 95% MSCI ACWI (EUR hedged),EUR,Higher Risk,Hedged,TBD-EUR-HR-H
+Placeholder: 5% Bloomberg Euro Aggregate / 95% MSCI ACWI (EUR hedged),EUR,Higher Risk,ISG Hedged,TBD-EUR-HR-ISG
+Placeholder: 5% Bloomberg Euro Aggregate / 95% MSCI ACWI,EUR,Higher Risk,Unhedged,TBD-EUR-HR-U
+Placeholder: 5% Bloomberg Euro Aggregate / 95% MSCI ACWI,EUR,Higher Risk,Equity Not Hedged,TBD-EUR-HR-ENH
+Placeholder: MSCI ACWI (EUR hedged),EUR,All Equity,Hedged,TBD-EUR-AE-H
+Placeholder: MSCI ACWI (EUR hedged),EUR,All Equity,ISG Hedged,TBD-EUR-AE-ISG
+Placeholder: MSCI ACWI,EUR,All Equity,Unhedged,TBD-EUR-AE-U
+Placeholder: MSCI ACWI,EUR,All Equity,Equity Not Hedged,TBD-EUR-AE-ENH

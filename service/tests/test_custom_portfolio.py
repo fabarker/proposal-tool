@@ -454,7 +454,31 @@ def test_the_page_offers_custom_where_the_person_may_build():
     impl = open(os.path.join(root, 'implementation.py'), encoding='utf-8').read()
     assert "'<optgroup label=\"Build it yourself\"><option value=\"__custom__\"'" in core
     assert "(opt('customPortfolio.mayBuild', []) || []).indexOf(state.variant) !== -1" in core
-    assert "body: JSON.stringify({ customPortfolio: { active: !!next.active, profile: next.profile," in core
+    assert "body: JSON.stringify({ customPortfolio: Object.assign({ active: !!next.active, profile: next.profile," in core
     assert '<div id="cpDialog" hidden></div>' in shell
     assert "_asset('implementation.js') + '\\n' + _asset('customPortfolio.js')" in impl
     assert 'var CP_BALANCE = {};'.format(customPortfolio.BALANCE_TOLERANCE) in js
+
+
+def test_each_private_markets_product_is_held_to_its_minimum_at_the_profiles_full(store, monkeypatch):
+    """D200: a custom portfolio has no allocation type, so its private
+    markets products are checked one by one against the Full minimums at its
+    risk profile; the $20m rule gives way once there is a table."""
+    from cyrus_pmg.pmgService.scenario import privateMarkets
+    client, pwa, admin, _ = _client(monkeypatch)
+    sid = _scenario(client, pwa)
+    build = _asBuild(_strategic()[1])
+    assert _put(client, admin, sid, build).status_code == 200
+    client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True}})
+    held = next(p['productId'] for p in build['products'] if p['category'] == PRIVATE)
+    every = {privateMarkets.cell(a, r, c): 2000 for a in privateMarkets.ALLOCATIONS
+             for r in privateMarkets.RISKS for c in privateMarkets.CURRENCIES}
+    privateMarkets.save({'products': [{'productId': held, 'type': 'PE', 'minimums': every}]}, user='alice', base=0)
+    assert client.get('/api/v1/scenario/schema', headers=admin).json()['customPortfolio']['privateMinimum'] is None
+    refused = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
+    assert refused.status_code == 422 and refused.json()['field'] == 'privateMarkets'
+    assert 'for Full · Moderate · USD at a $1,000,000,000 mandate' in refused.json()['error']
+    assert 'or take the product out' in refused.json()['error']
+    privateMarkets.save({'products': [{'productId': held, 'type': 'PE', 'minimums': dict(every, **{'Full|Moderate|USD': 900})}]},
+                        user='alice', base=1)
+    assert client.post('/api/v1/scenario/' + sid + '/export', headers=pwa).status_code == 200

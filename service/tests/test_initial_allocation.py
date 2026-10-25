@@ -322,7 +322,7 @@ def test_the_deck_gives_the_initial_allocation_a_slide_of_its_own():
     assert headings[at + 2] == 'Composition of the Implemented Model'
     (impl,) = plan[at]['tables']
     head = impl.doc.rows[impl.header[0]].cells
-    assert [head[c].value for c in sorted(head)] == implColumns(True)
+    assert [head[c].value for c in sorted(head)] == implColumns(True, deck=True)     # no listing columns (D208)
     assert plan[at]['notes'][1].endswith('is on the next slide.')
     entry = plan[at + 1]
     (tp,) = entry['tables']

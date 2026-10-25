@@ -52,14 +52,15 @@ from . import fees, rules, sleeveRepo, sleeves
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
-SCHEMA_VERSION = 13         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
+SCHEMA_VERSION = 14         # 2: customFees (D96); 3: the deck (D123); 4: the funding split (D148);
                             # 5: the overlay rules (D155); 6: the catalogue and fee card versions (D165, D166);
                             # 7: custom sleeves, and whether the strategic allocation was left out (D170);
                             # 8: custom portfolios (D171); 9: the other charges (D177);
                             # 10: the custodian / entity (D193);
                             # 11: the marketing warnings (D196);
                             # 12: the hedge fund notice confirmed (D198);
-                            # 13: the notices raised and confirmed (D199)
+                            # 13: the notices raised and confirmed (D199);
+                            # 14: the portfolio's benchmark and its mnemonic (D211)
 LIST_LIMIT_MAX = 500
 
 _DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -107,6 +108,8 @@ CREATE TABLE IF NOT EXISTS proposals (
     marketing         TEXT,
     hedgeFundNotice   TEXT,
     notices           TEXT,
+    benchmark         TEXT,
+    benchmarkMnemonic TEXT,
     UNIQUE (scenarioId, sequence)
 );
 CREATE TABLE IF NOT EXISTS proposalSleeves (
@@ -137,7 +140,8 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
                  'baseKey, tacticalTilt, volPremium, includeFees, '
                  'feeSchedule, feeLevel, customFees, workbookName, workbookBytes, workbookSha, '
                  'deckName, deckBytes, deckSha, fundingSplit, overlays, catalogueRevision, '
-                 'feeCardRevision, departs, customPortfolio, entity, marketing, hedgeFundNotice, notices')
+                 'feeCardRevision, departs, customPortfolio, entity, marketing, hedgeFundNotice, notices, '
+                 'benchmark, benchmarkMnemonic')
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
@@ -149,7 +153,11 @@ _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
                 'initialPct', 'initialNotional',
                 # what a line holds its product in place of, below that one's
                 # minimum (D192); None on anything delivered before it
-                'standsIn')
+                'standsIn',
+                # the listing it held (D207, D208): its issue currency, hedging
+                # and mandate code, its name, and the one it stepped down from
+                # below that one's minimum; None on anything delivered before
+                'issueCurrency', 'hedging', 'code', 'listing', 'steppedFrom')
 
 _lock = threading.Lock()
 
@@ -229,6 +237,12 @@ def _connect() -> sqlite3.Connection:
         # (D199); NULL for none, and for anything delivered before
         if 'notices' not in held:
             conn.execute('ALTER TABLE proposals ADD COLUMN notices TEXT')
+        # the portfolio's benchmark the files named (D211); NULL for none,
+        # and for anything delivered before
+        if 'benchmark' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN benchmark TEXT')
+        if 'benchmarkMnemonic' not in held:
+            conn.execute('ALTER TABLE proposals ADD COLUMN benchmarkMnemonic TEXT')
         pins = {row[1] for row in conn.execute('PRAGMA table_info(proposalSleeves)')}
         if 'custom' not in pins:
             conn.execute('ALTER TABLE proposalSleeves ADD COLUMN custom TEXT')
@@ -429,8 +443,8 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                 'feeLevel, customFees, allocation, implemented, workbook, workbookName, '
                 'workbookSha, workbookBytes, deck, deckName, deckSha, deckBytes, fundingSplit, '
                 'overlays, catalogueRevision, feeCardRevision, departs, customPortfolio, '
-                'otherCharges, entity, notices) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'otherCharges, entity, notices, benchmark, benchmarkMnemonic) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (proposalId, scenarioId, sequence, stamp, user or '', createdBy or '',
                  mandate.primaryPwa, float(mandate.topAccountSize), float(mandate.mandateSize),
                  basis.currency, basis.hedging, implementation.get('variant') or '',
@@ -464,7 +478,10 @@ def record(proposalId: str, scenarioId: str, user: str, createdBy: str, basis, m
                  # the custodian / entity the account is held at (D193)
                  getattr(mandate, 'entity', '') or None,
                  # the notices raised and their confirmations (D199)
-                 json.dumps(raised) if raised else None))
+                 json.dumps(raised) if raised else None,
+                 # the portfolio's benchmark the files named (D211)
+                 implementation.get('benchmark') or None,
+                 implementation.get('benchmarkMnemonic') or None))
             conn.executemany(
                 'INSERT INTO proposalSleeves (proposalId, category, sleeveId, revision, sleeveName, '
                 'custom) VALUES (?,?,?,?,?,?)',
@@ -849,7 +866,8 @@ EXPORT_COLUMNS = ['ProposalId', 'ScenarioId', 'Sequence', 'ExportedAt', 'Exporte
                   'FeeSchedule', 'FeeLevel', 'CustomFees', 'Sleeves', 'WorkbookName',
                   'WorkbookBytes', 'WorkbookSha', 'FundingSplit', 'Overlays',
                   'CatalogueVersion', 'FeeCardVersion', 'CustomSleeves', 'StrategicAllocation',
-                  'CustomPortfolio', 'Entity', 'MarketingWarnings', 'HedgeFundNotice', 'Notices']
+                  'CustomPortfolio', 'Entity', 'MarketingWarnings', 'HedgeFundNotice', 'Notices',
+                  'Benchmark', 'BenchmarkMnemonic']
 
 
 def marketingText(warnings) -> str:
@@ -945,7 +963,9 @@ def exportRows(**filters) -> list:
                         _entities.name(e['entity']) if e.get('entity') else '',
                         marketingText(e.get('marketing')),
                         hedgeFundNoticeText(e.get('hedgeFundNotice')),
-                        noticesText(e.get('notices'))))
+                        noticesText(e.get('notices')),
+                        # the portfolio's benchmark the files named (D211)
+                        e.get('benchmark') or '', e.get('benchmarkMnemonic') or ''))
         if not page['next'] or not page['entries']:
             return out
         before = page['next']

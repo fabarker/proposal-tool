@@ -30,10 +30,11 @@ from cyrus_pmg.pmgService.core.accessControl import (
     isAdmin, requireAdmin, requireAuth)
 from cyrus_pmg.pmgService.scenario import (accountRequests, customAccess, customPortfolio,
                                            customSleeves, entities, feeCard, fees,
-                                           fundingSplit, notices, overlayRules, products,
-                                           otherCharges as _otherCharges,
-                                           proposalRegister, repositoryFeed, scenarioStore,
-                                           sleeveRepo, sleeveRules)
+                                           fundingSplit, mandateCodes, notices, overlayRules,
+                                           portfolioBenchmarks, privateMarkets,
+                                           products, otherCharges as _otherCharges,
+                                           proposalRegister, repositoryFeed, restrictions,
+                                           scenarioStore, sleeveRepo, sleeveRules)
 from cyrus_pmg.pmgService.scenario.registry import getScenarioPort
 from cyrus_pmg.pmgService.scenario.rules import (
     exportFilename, validateBasis, validateCustomFees, validateFeeLevel, validateFeeSchedule,
@@ -159,7 +160,7 @@ def getScenarioSchema(request: Request, currency: str = 'USD', hedging: str = 'H
     absent, no variant filter applies and the picker stays disabled
     client-side until one is set.
 
-    *mandateSize* gates the $20m private-assets rule and *topAccountSize*
+    *mandateSize* gates the private markets minimums (D200) and *topAccountSize*
     sets the fee tier (D51). Each binds only when given: a schema fetched
     before the mandate exists carries every allocation and no fee rates.
     """
@@ -214,9 +215,9 @@ def listCategoryProducts(category: str, variant: str = None, currency: str = Non
                          caller=Depends(requireAuth)):
     """The products a custom sleeve in *category* may hold under *variant*
     (D170): those the category's library sleeves hold under the type, whole
-    as the catalogue has them, with the ticker and minimum each has in
-    *currency* (D180). Any signed-in user may read it; whether they may
-    build is ``mayBuild``."""
+    as the catalogue has them, each at the listing it holds in *currency*
+    (D207). Any signed-in user may read it; whether they may build is
+    ``mayBuild``."""
     try:
         validateVariant(variant)
         if category not in sleeveRepo.categories():
@@ -249,11 +250,13 @@ def getCustomPortfolioCatalogue(variant: str = None, currency: str = 'USD',
         basis = BasisInput(currency=currency, hedging=hedging)
         validateBasis(basis)
         body = customPortfolio.catalogue(variant)
-        # each product's ticker and minimum in the portfolio's currency (D180)
+        # each product at the listing it holds in the portfolio's currency (D207)
         body['products'] = [products.inCurrency(p, basis.currency) for p in body['products']]
         body.update(customPortfolio.profiles(getScenarioPort(), basis, variant))
         body['library'] = customPortfolio.library(variant)
         body['mayBuild'] = customPortfolio.mayBuild(variant, isAdmin(caller))
+        # what its benchmark is chosen from (D211)
+        body['benchmarks'] = portfolioBenchmarks.choices()
         return body
     except ValidationError as exc:
         return _validationError(exc)
@@ -320,8 +323,8 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
     *key* is the base column's key string. A name that has an edition for
     that portfolio is served as that edition, and nothing in the response
     says so - the PWA sees names. Without a key only fallback editions are
-    offered. Each product carries the ticker and the minimum it has in
-    *currency* (D180). *entity* is the custodian chosen under PMG ESG
+    offered. Each product carries the listing it holds in *currency* and
+    the ones it may step down to below that one's minimum (D207). *entity* is the custodian chosen under PMG ESG
     (D193, D195): a name with an edition for it is served as that edition.
     """
     basis = BasisInput(currency=currency, hedging=hedging)
@@ -748,44 +751,6 @@ def exportProducts(caller=Depends(requireAdmin)):
     return _csv(rows[0], rows[1:], 'products.csv')
 
 
-# the SMA mandates (D197): a file of their own, one row per code, previewed
-# and applied the way a product file is, and exported to edit and load again
-
-@router.post('/scenario/repository/mandates/import/preview')
-def previewMandateImport(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """What an SMA mandate file would do, before anything moves: {name,
-    content} with the file as base64."""
-    try:
-        return products.mandatePreview(payload.get('name'), payload.get('content'))
-    except ValidationError as exc:
-        return _validationError(exc)
-    except (products.BadCatalogue, fees.BadRateCard) as exc:
-        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
-
-
-@router.post('/scenario/repository/mandates/import')
-def importMandates(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Apply an SMA mandate file: {name, content, note?, base} - base being
-    the catalogue version the preview showed."""
-    try:
-        done = products.importMandates(payload.get('name'), payload.get('content'),
-                                       user=caller.kerberos, note=payload.get('note', ''),
-                                       base=payload.get('base'))
-        return {'import': done, 'catalogue': products.describeSource()}
-    except ValidationError as exc:
-        return _validationError(exc)
-    except (products.BadCatalogue, fees.BadRateCard) as exc:
-        return JSONResponse(status_code=422, content={'error': str(exc), 'field': 'file'})
-
-
-@router.get('/scenario/repository/mandates.csv')
-def exportMandates(caller=Depends(requireAdmin)):
-    """The live catalogue's SMA mandates as a mandate file, ready to edit
-    and import."""
-    rows = products.mandateRows()
-    return _csv(rows[0], rows[1:], 'mandates.csv')
-
-
 # ---- the fee card (D166) ---------------------------------------------------
 # The card every proposal is priced from, kept in the repository: admin only,
 # every change carrying a note and a new version, a write made against an
@@ -1163,6 +1128,266 @@ def revertNotices(payload: dict = Body(...), caller=Depends(requireAdmin)):
         return _validationError(exc)
 
 
+# ---- the private markets minimums (D200) -----------------------------------
+# The console's PM Minimums tab: the mandate each private markets product
+# needs, by allocation type, risk level and currency, loaded from the desk's
+# file or edited on screen. Admin only, like the rest of the repository.
+
+@router.get('/scenario/repository/pm-minimums')
+def getPrivateMarketMinimums(caller=Depends(requireAdmin)):
+    """The table in force, its gaps, and what the tab offers."""
+    return privateMarkets.describe()
+
+
+@router.put('/scenario/repository/pm-minimums')
+def savePrivateMarketMinimums(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a table edited on screen in force: {products: [{productId, type,
+    minimums: {cell: $m}}], note?, base?}. Refused (422) when it is not a
+    table; 409 when *base* is no longer the revision in force."""
+    try:
+        privateMarkets.save({'products': payload.get('products')}, payload.get('note'),
+                            user=caller.kerberos, base=payload.get('base'))
+        return {'minimums': privateMarkets.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/pm-minimums/history')
+def getPrivateMarketMinimumsHistory(caller=Depends(requireAdmin)):
+    """Every revision of the table, newest first, with what moved."""
+    return {'history': privateMarkets.history()}
+
+
+@router.post('/scenario/repository/pm-minimums/revert')
+def revertPrivateMarketMinimums(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {revision, note?, base?}."""
+    try:
+        privateMarkets.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
+                              base=payload.get('base'))
+        return {'minimums': privateMarkets.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/pm-minimums/import/preview')
+def previewPrivateMarketMinimums(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What a minimums file would do, before anything moves: {name, content}
+    with the file as base64."""
+    try:
+        return privateMarkets.preview(payload.get('name'), payload.get('content'))
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/pm-minimums/import')
+def importPrivateMarketMinimums(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a minimums file in force, whole: {name, content, note?, base} -
+    base being the revision the preview showed."""
+    try:
+        privateMarkets.importFile(payload.get('name'), payload.get('content'),
+                                  note=payload.get('note', ''), user=caller.kerberos,
+                                  base=payload.get('base'))
+        return {'minimums': privateMarkets.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/pm-minimums.xlsx')
+def exportPrivateMarketMinimums(caller=Depends(requireAdmin)):
+    """The table in force as the desk's long-form workbook, ready to edit
+    and load again."""
+    return Response(content=privateMarkets.exportWorkbook(),
+                    media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': 'attachment; filename="private-market-mins.xlsx"'})
+
+
+# ---- the investment restrictions (D203) ------------------------------------
+# The console's Account Opening tab: the restrictions a PWA may pick on the
+# account opening request, in the order the form shows them. Admin only, like
+# the rest of the repository.
+
+@router.get('/scenario/repository/restrictions')
+def getRestrictions(caller=Depends(requireAdmin)):
+    """The list in force, and what the tab allows."""
+    return restrictions.describe()
+
+
+@router.put('/scenario/repository/restrictions')
+def saveRestrictions(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put the list in force: {restrictions: [{id?, name, description,
+    active}], note?, base?}. One without an id is new; none may be left out.
+    Refused (422) when the list is invalid; 409 when *base* is no longer the
+    revision in force."""
+    try:
+        restrictions.save({'restrictions': payload.get('restrictions')}, payload.get('note'),
+                          user=caller.kerberos, base=payload.get('base'))
+        return {'restrictions': restrictions.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/restrictions/history')
+def getRestrictionsHistory(caller=Depends(requireAdmin)):
+    """Every revision of the list, newest first, with what changed."""
+    return {'history': restrictions.history()}
+
+
+@router.post('/scenario/repository/restrictions/revert')
+def revertRestrictions(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {revision, note?, base?}."""
+    try:
+        restrictions.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
+                            base=payload.get('base'))
+        return {'restrictions': restrictions.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+# ---- the mandate codes (D205) ---------------------------------------------
+# The console's Account Opening tab: a code for each portfolio on offer,
+# which the account opening request names for the mandate's own row. Admin only, like the rest of the repository.
+
+@router.get('/scenario/repository/mandate-codes')
+def getMandateCodes(caller=Depends(requireAdmin)):
+    """The table in force, its gaps, and the portfolios on offer."""
+    return mandateCodes.describe()
+
+
+@router.put('/scenario/repository/mandate-codes')
+def saveMandateCodes(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a table edited on screen in force: {codes: {cell: code}, note?,
+    base?}. Refused (422) when it is not a table; 409
+    when *base* is no longer the revision in force."""
+    try:
+        mandateCodes.save({'codes': payload.get('codes')}, payload.get('note'), user=caller.kerberos,
+                          base=payload.get('base'))
+        return {'mandateCodes': mandateCodes.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/mandate-codes/history')
+def getMandateCodesHistory(caller=Depends(requireAdmin)):
+    """Every revision of the table, newest first, with what moved."""
+    return {'history': mandateCodes.history()}
+
+
+@router.post('/scenario/repository/mandate-codes/revert')
+def revertMandateCodes(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {revision, note?, base?}."""
+    try:
+        mandateCodes.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
+                            base=payload.get('base'))
+        return {'mandateCodes': mandateCodes.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/mandate-codes/import/preview')
+def previewMandateCodes(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What a mandate codes file would do, before anything moves: {name,
+    content} with the file as base64."""
+    try:
+        return mandateCodes.preview(payload.get('name'), payload.get('content'))
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/mandate-codes/import')
+def importMandateCodes(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a mandate codes file in force, whole: {name, content, note?,
+    base} - base being the revision the preview showed."""
+    try:
+        mandateCodes.importFile(payload.get('name'), payload.get('content'),
+                                note=payload.get('note', ''), user=caller.kerberos,
+                                base=payload.get('base'))
+        return {'mandateCodes': mandateCodes.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/mandate-codes.xlsx')
+def exportMandateCodes(caller=Depends(requireAdmin)):
+    """The table in force as the long-form workbook, ready to edit and load
+    again."""
+    return Response(content=mandateCodes.exportWorkbook(),
+                    media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': 'attachment; filename="mandate-codes.xlsx"'})
+
+
+# ---- the MAP benchmarks (D211) --------------------------------------------
+# The console's Account Opening tab, MAP Benchmarks: a benchmark and its
+# mnemonic for each risk level, currency and hedging policy, which a
+# strategic proposal's files name and its account opening request reads.
+# Admin only, like the rest of the repository.
+
+@router.get('/scenario/repository/portfolio-benchmarks')
+def getPortfolioBenchmarks(caller=Depends(requireAdmin)):
+    """The table in force, its gaps, and the portfolios on offer."""
+    return portfolioBenchmarks.describe()
+
+
+@router.put('/scenario/repository/portfolio-benchmarks')
+def savePortfolioBenchmarks(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a table edited on screen in force: {rows: [{benchmark, currency,
+    risk, hedging, mnemonic}], note?, base?}. Refused (422) when a row is not
+    what it should be; 409 when *base* is no longer the revision in force."""
+    try:
+        portfolioBenchmarks.save({'rows': payload.get('rows')}, payload.get('note'), user=caller.kerberos,
+                                 base=payload.get('base'))
+        return {'portfolioBenchmarks': portfolioBenchmarks.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/portfolio-benchmarks/history')
+def getPortfolioBenchmarksHistory(caller=Depends(requireAdmin)):
+    """Every revision of the table, newest first, with what moved."""
+    return {'history': portfolioBenchmarks.history()}
+
+
+@router.post('/scenario/repository/portfolio-benchmarks/revert')
+def revertPortfolioBenchmarks(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put an earlier revision back in force: {revision, note?, base?}."""
+    try:
+        portfolioBenchmarks.revert(payload.get('revision'), payload.get('note'), user=caller.kerberos,
+                                   base=payload.get('base'))
+        return {'portfolioBenchmarks': portfolioBenchmarks.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/portfolio-benchmarks/import/preview')
+def previewPortfolioBenchmarks(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """What a MAP benchmarks file would do, before anything moves: {name,
+    content} with the file as base64."""
+    try:
+        return portfolioBenchmarks.preview(payload.get('name'), payload.get('content'))
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.post('/scenario/repository/portfolio-benchmarks/import')
+def importPortfolioBenchmarks(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a MAP benchmarks file in force, whole: {name, content, note?,
+    base} - base being the revision the preview showed."""
+    try:
+        portfolioBenchmarks.importFile(payload.get('name'), payload.get('content'),
+                                       note=payload.get('note', ''), user=caller.kerberos,
+                                       base=payload.get('base'))
+        return {'portfolioBenchmarks': portfolioBenchmarks.describe()}
+    except ValidationError as exc:
+        return _validationError(exc)
+
+
+@router.get('/scenario/repository/portfolio-benchmarks.xlsx')
+def exportPortfolioBenchmarks(caller=Depends(requireAdmin)):
+    """The table in force as the workbook it loads from."""
+    return Response(content=portfolioBenchmarks.exportWorkbook(),
+                    media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': 'attachment; filename="map-benchmarks.xlsx"'})
+
+
 # ---- account opening requests (D76) --------------------------------------
 # The landing card's third button opens a form that fills itself from a
 # Proposal UID (D75) and records a request against that proposal. Static
@@ -1462,6 +1687,8 @@ def _customPortfolioFrom(raw, current, variant, caller) -> dict:
             against, isAdmin(caller)):
         raise ValidationError('customPortfolio', 'Custom portfolios are built by an admin.')
     out = dict(held, active=active, profile=build['profile'], products=build['products'])
+    if 'benchmark' in raw:
+        out['benchmark'] = _chosenBenchmark(raw.get('benchmark'), held.get('benchmark'))
     out.setdefault('approval', None)
     out.setdefault('notice', None)
     if changed:
@@ -1472,6 +1699,18 @@ def _customPortfolioFrom(raw, current, variant, caller) -> dict:
                 else 'risk profile' if build['products'] == held.get('products') else 'portfolio')
         _voided(out, what)
     return out
+
+
+def _chosenBenchmark(raw, held) -> str:
+    """A custom portfolio's benchmark (D211): one the MAP benchmarks hold,
+    the one it already has, or none. Anyone who may edit the proposal
+    chooses it; the build and its approval are untouched."""
+    if raw is not None and not isinstance(raw, str):
+        raise ValidationError('benchmark', 'A benchmark is words.')
+    chosen = ' '.join((raw or '').split())
+    if chosen and chosen != (held or '') and chosen not in portfolioBenchmarks.choices():
+        raise ValidationError('benchmark', '{} is not one of the MAP benchmarks.'.format(chosen))
+    return chosen
 
 
 def _customCheck(state, port):
@@ -1519,14 +1758,11 @@ def customPortfolioApproval(scenarioId: str, payload: dict = Body(...),
             # its products as its currency reads them, the minimums included
             model = customPortfolio.buildModel(built, mandate.mandateSize, variant,
                                                currency=BasisInput.fromDict(state['basis']).currency)
-            if check['status'] == 'bad' or model['breaches'] or model.get('unavailable'):
+            if check['status'] == 'bad' or model['breaches']:
                 raise ValidationError('approval', 'It cannot be delivered yet, so there is nothing to '
                                                   'approve: {}'.format(' '.join(check['problems'])
-                                                                       or ('a product is not offered '
-                                                                           'in its currency.'
-                                                                           if model.get('unavailable')
-                                                                           else 'a position is below its '
-                                                                                'product\'s minimum.')))
+                                                                       or 'a position is below its '
+                                                                          'product\'s minimum.'))
             if check['status'] == 'ok':
                 raise ValidationError('approval', 'Every category is within its usual range: it needs '
                                                   'no approval.')
@@ -1767,13 +2003,10 @@ def _assembleExport(scenarioId: str, port):
     # today, so it is checked again here as it was when it was entered.
     if includeFees and fees.isCustom(feeLevel):
         validateCustomFees(implementation['customFees'], mandate)
-    # A product not offered in the proposal's currency cannot be bought in
-    # it (D182), and a position smaller than the product will accept is not
-    # a position: the export refuses while either survives, so the UI's
-    # block cannot be walked past by calling the endpoint directly (item 3).
-    if model.get('unavailable'):
-        raise ValidationError('offered', _unavailableText(model['unavailable'], basis.currency,
-                                                          'change the sleeve or drop the product'))
+    # A position smaller than the listing it holds will accept is not a
+    # position: the export refuses while one survives, so the UI's block
+    # cannot be walked past by calling the endpoint directly (item 3). Every
+    # product can be held in every currency (D207).
     if model['breaches']:
         raise ValidationError('minimumInvestment',
                               'Below mandate minimum: {}. Raise the mandate, change the '
@@ -1783,6 +2016,17 @@ def _assembleExport(scenarioId: str, port):
                                       b['minimumInvestment']) for b in model['breaches'][:4])
                                   + ('' if len(model['breaches']) <= 4
                                      else ', and {} more'.format(len(model['breaches']) - 4))))
+    # a private markets product below its minimum at this portfolio (D200)
+    at = privateMarkets.cellOf(state['base'])
+    short = privateMarkets.shortfalls(model['groups'], at, mandate.mandateSize)
+    if short:
+        raise ValidationError('privateMarkets',
+                              privateMarkets.shortfallText(short, at, mandate.mandateSize))
+    # the portfolio's benchmark and its mnemonic, by its risk level, currency
+    # and hedging policy; the files name it where the table gives one (D211)
+    found = portfolioBenchmarks.entryForPortfolio(state['base'], basis.hedging) or {}
+    model['benchmark'] = implementation['benchmark'] = found.get('benchmark') or ''
+    implementation['benchmarkMnemonic'] = found.get('mnemonic') or ''
     # every notice the model raises needs confirming (D199)
     implementation['raisedNotices'] = notices.raisedByModel(model)
     _refuseUnconfirmedNotices(state, implementation['raisedNotices'])
@@ -1797,13 +2041,6 @@ def _unratedText(groups) -> str:
     delivered (D187)."""
     return ('The fee card has no rates yet for {}, which the model holds. Add them on the '
             'Fees tab, or untick Include Fees, before exporting.'.format(', '.join(groups)))
-
-
-def _unavailableText(unavailable, currency, fix) -> str:
-    return 'Not offered in {}: {}. {} before exporting.'.format(
-        currency, ', '.join('{} in {}'.format(u['name'], u['category']) for u in unavailable[:4])
-        + ('' if len(unavailable) <= 4 else ', and {} more'.format(len(unavailable) - 4)),
-        fix[0].upper() + fix[1:])
 
 
 def _breachText(breaches) -> str:
@@ -1872,11 +2109,14 @@ def _assembleCustomExport(state, port):
                 ', '.join(model['unpricedGroups'])))
     if includeFees and fees.isCustom(feeLevel):
         validateCustomFees(customFees, mandate)
-    if model.get('unavailable'):
-        raise ValidationError('offered', _unavailableText(model['unavailable'], basis.currency,
-                                                          'take the product out'))
     if model['breaches']:
         raise ValidationError('minimumInvestment', _breachText(model['breaches']))
+    # each private markets product against its minimum at the profile's Full (D200)
+    at = privateMarkets.customCell(basis.currency, built['profile'])
+    short = privateMarkets.shortfalls(model['groups'], at, mandate.mandateSize)
+    if short:
+        raise ValidationError('privateMarkets', privateMarkets.shortfallText(short, at, mandate.mandateSize)
+                              .replace('or change the sleeve', 'or take the product out'))
     profileLabel = customPortfolio.profileLabel(built['profile'])
     approval = built.get('approval') or {}
     if check['status'] == 'warn' and not customPortfolio.approved(built, variant):
@@ -1913,6 +2153,10 @@ def _assembleCustomExport(state, port):
                       'otherCharges': _otherCharges.withDefaults(state.get('otherCharges')),
                       'notices': notices.recordOf(state),
                       'customPortfolio': model['customPortfolio']}
+    # the benchmark chosen for it from the table's, and its mnemonic (D211)
+    model['benchmark'] = implementation['benchmark'] = built.get('benchmark') or ''
+    implementation['benchmarkMnemonic'] = portfolioBenchmarks.mnemonicOf(model['benchmark']) \
+        if model['benchmark'] else ''
     # every notice its products raise needs confirming (D199)
     held = []
     for p in built.get('products') or []:

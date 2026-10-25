@@ -616,6 +616,9 @@ body.has-rail.step-impl .shell{max-width:none}
 .bdg.b-slack.sm{font-size:9.5px;letter-spacing:.07em;padding:0 5px;line-height:15px;
   margin-left:6px;vertical-align:1px}
 .stands-in{display:block;font-size:11px;color:var(--ink-3);line-height:1.3;margin-top:1px}
+/* the listing a line holds, under its ticker: its currency and hedging (D208) */
+.tbl.impl .lst-sub{display:block;font-family:var(--f-body);font-size:10.5px;color:var(--ink-3);
+  letter-spacing:.02em;line-height:1.25;white-space:nowrap}
 /* and the minimum it breaches, under its own notional */
 .vs-min{display:block;font-family:var(--f-num);font-size:10.5px;font-weight:400;
   letter-spacing:.02em;color:#9B1C1C;line-height:1.2;margin-top:-1px}
@@ -789,6 +792,9 @@ td small.was{display:block;font-family:var(--f-num);font-size:10.5px;font-weight
 .cp-rail-btns{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
 .cp-rail-btns .btn{font-size:12px;padding:6px 10px}
 .cp-rail-note{margin:12px 0 0}
+/* the benchmark chosen for it (D211) */
+.cp-bench{margin:0 0 12px}
+.cp-bench .field-note{margin:4px 0 0}
 /* step 1: what a custom proposal shows there */
 body.cp-on #view-aa .sec.viz{display:none}
 /* the grouped lines' names are long: they wrap rather than clip */

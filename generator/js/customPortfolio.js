@@ -144,7 +144,9 @@ function cpCheck(products, ctx) {
     problems.push(illiquid.toFixed(2) + '% is not daily-dealing; at most ' + cpG(ctx.limits.illiquid) + '%.');
   }
   var priv = cpWeightsByLine(products)[ctx.privateLine] || 0;
-  if (priv > 0 && ctx.mandateSize != null && ctx.mandateSize < ctx.privateMinimum) {
+  /* the $20m rule, until there is a private markets minimums table: then
+     each product is held to its own, as a sleeve's are (D200) */
+  if (priv > 0 && ctx.mandateSize != null && ctx.privateMinimum != null && ctx.mandateSize < ctx.privateMinimum) {
     problems.push('Private markets need a mandate of ' + cpMoney(ctx.privateMinimum) + ' or more.');
   }
   var lines = {};
@@ -186,6 +188,12 @@ function pct(v, dp) { return App.num(v, dp == null ? 2 : dp, '%'); }
 function cp() { return App.customPortfolio() || null; }
 function lib() { var l = App.cpLib(); return l && l.status === 'ready' ? l.data : null; }
 function settings() { return App.opt('customPortfolio', {}) || {}; }
+/* the $20m rule before a private markets minimums table, or null (D200) */
+function cpPrivateMinimum() {
+  var s = settings();
+  if (!Object.prototype.hasOwnProperty.call(s, 'privateMinimum')) return 20000000;
+  return s.privateMinimum == null ? null : s.privateMinimum;
+}
 function limits() {
   return Object.assign({ soft: 8, hard: 15, concentration: 25, illiquid: 30, maxProducts: 40 },
                        settings().limits || {});
@@ -248,7 +256,7 @@ function checkCtx() {
   var anchor = anchorEntry();
   return { lines: l ? l.lines : [], anchor: anchor ? anchor.lines : {}, limits: limits(),
            countedIn: settings().countedIn || {}, allowed: allowed, liquidity: liquidity, label: label,
-           mandateSize: App.mandateSize(), privateMinimum: settings().privateMinimum || 20000000,
+           mandateSize: App.mandateSize(), privateMinimum: cpPrivateMinimum(),
            privateLine: settings().privateLine || '' };
 }
 
@@ -351,6 +359,7 @@ function cpRailHtml() {
     if (a && a.state === 'approved' && chk.status === 'warn') tone = 'ok';
   }
   html += '<p class="cp-railstat ' + tone + '" role="status">' + status + '</p>';
+  html += cpBenchmarkHtml();
   /* each line against its usual range; the overlays' lines counted in the
      line they are funded from */
   var counted = settings().countedIn || {}, weights = cpWeightsByLine(products());
@@ -398,6 +407,28 @@ function cpRailHtml() {
   return html;
 }
 
+/* The portfolio's benchmark (D211): a custom portfolio has no risk level,
+   currency and hedging cell of its own, so whoever prepares it chooses one
+   from the MAP benchmarks. The workbook, the deck and the account opening
+   request name it. */
+function cpBenchmarkHtml() {
+  var l = lib(), held = (cp() || {}).benchmark || '';
+  var options = ((l && l.benchmarks) || []).slice();
+  if (held && options.indexOf(held) === -1) options.unshift(held);
+  if (!options.length) {
+    return '<div class="field cp-bench"><label>Benchmark</label><p class="field-note">None to choose yet: '
+      + 'an admin adds them in Account Opening, MAP Benchmarks.</p></div>';
+  }
+  return '<div class="field cp-bench"><label for="cpBench">Benchmark</label>'
+    + '<select id="cpBench" data-cpbench' + (App.canEdit() ? '' : ' disabled') + '>'
+    + '<option value=""' + (held ? '' : ' selected') + '>Choose the benchmark…</option>'
+    + options.map(function (b) {
+        return '<option' + (b === held ? ' selected' : '') + '>' + esc(b) + '</option>';
+      }).join('') + '</select>'
+    + '<p class="field-note">' + (held ? 'Named in the workbook, the deck and the account opening request.'
+      : 'Without one, the files name none and an account opening request cannot be submitted.') + '</p></div>';
+}
+
 /* ---- the implementation page ------------------------------------------- */
 function cpSummaryHtml(gate) {
   var chk = check(), count = products().length;
@@ -442,7 +473,9 @@ function cpBlankHtml() {
     + '<p class="cp-lim-more">Within the usual ranges it delivers; between them and the limits an admin approves it first; '
     + 'beyond, it cannot be delivered. Also: no product above ' + cpG(lim.concentration) + '% of the portfolio, at most '
     + cpG(lim.illiquid) + '% not daily-dealing, at most ' + lim.maxProducts + ' products, every position at its product’s '
-    + 'minimum, and private markets from a ' + cpMoney(settings().privateMinimum || 20000000) + ' mandate. Tactical Tilts and '
+    + 'minimum, and ' + (cpPrivateMinimum() == null
+        ? 'each private markets product at its private markets minimum for the profile’s Full portfolio'
+        : 'private markets from a ' + cpMoney(cpPrivateMinimum()) + ' mandate') + '. Tactical Tilts and '
     + 'the Strategic Volatility Premium count with the category they are funded from.</p></div>';
   return html;
 }
@@ -734,8 +767,7 @@ function addDlg(d) {
               + (!on && n >= room ? ' disabled' : '') + ' aria-label="Add ' + esc(p.name) + '">') + '</td>'
           + '<td><b>' + esc(p.name) + '</b><small>' + esc(p.ticker && p.ticker !== '—' ? p.ticker + ' · ' : '')
           + esc(p.style) + ' · ' + esc(p.source) + '</small>' + (isHeld ? '<span class="cp-held">In the portfolio</span>' : '')
-          /* not offered in the portfolio's currency (D182): it would stop the download */
-          + (p.offered === false ? '<span class="cp-sug">not offered in ' + esc(App.basis().currency) + '</span>' : '') + '</td>'
+          + '</td>'
           + '<td>' + esc(lineFor(p)) + (p.category ? '' : '<span class="cp-sug">suggested</span>') + '</td>'
           + '<td>' + esc(p.assetClass) + '</td><td>' + esc(p.vehicle) + '</td><td>' + esc(p.liquidity) + '</td>'
           + '<td class="n">' + pct(p.productCost) + '</td><td class="n">'
@@ -1100,6 +1132,14 @@ document.addEventListener('change', function (e) {
     return;
   }
   if (el.dataset && el.dataset.cpscale !== undefined) { scaleLine(el.dataset.cpscale, el.value); return; }
+  if (el.dataset && el.dataset.cpbench !== undefined) {
+    var chosen = el.value;
+    App.pushCustomPortfolio({ benchmark: chosen }).then(function (refused) {
+      if (refused) showRefusal(refused);
+      else App.announce('polite', chosen ? 'Benchmark ' + chosen + '.' : 'No benchmark chosen.');
+    });
+    return;
+  }
   if (el.dataset && el.dataset.cpcat !== undefined) {
     remember();
     var next = rowsNow();

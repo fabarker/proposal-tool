@@ -659,7 +659,9 @@ function complete() {
 }
 
 /* ---- rows: every printed figure from the printed weight (spec 8.4) ------ */
-/* one line of the table, as the library serves its product */
+/* one line of the table, as the library serves its product: at the
+   listing it holds in the portfolio's currency, with the ones it may step
+   down to below that one's minimum (D207) */
 function implItem(product, level) {
   return {
     productId: product.productId,
@@ -667,21 +669,52 @@ function implItem(product, level) {
     style: product.style, vehicle: product.vehicle,
     shareClass: product.shareClass || null, source: product.source,
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
+    issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
+    listing: product.listing || '',
+    ranked: product.ranked || [],
     cost: product.productCost, feeGroup: product.feeGroup,
     minimumInvestment: product.minimumInvestment,
-    /* not offered in the portfolio's currency (D182): the library
-       serves each product as that currency reads it */
-    notOffered: product.offered === false,
     mgmt: managementFee(product.feeGroup, level)
   };
 }
 
-/* A product the amount reaching it falls short of gives way to the one its
-   sleeve names below its minimum (D192): the whole line, at the product's
-   place, joining the alternative's own line where the sleeve holds it too.
-   Decided on the long-term notional, so the initial allocation holds the
-   same product; one not offered in the currency is not used. Returns the
-   lines as they now stand. Mirrors buildImplementationRows. */
+/* *item* holding *listing* of its product (D208) */
+function holdListing(item, listing) {
+  var held = {};
+  for (var k in item) if (Object.prototype.hasOwnProperty.call(item, k)) held[k] = item[k];
+  held.ticker = listing.ticker || '\u2014';
+  held.assetClass = listing.assetClass; held.shareClass = listing.shareClass || null;
+  held.exposureCurrency = listing.exposureCurrency;
+  held.issueCurrency = listing.issueCurrency || ''; held.hedging = listing.hedging || '';
+  held.listing = listing.listing || '';
+  held.cost = listing.productCost; held.minimumInvestment = listing.minimumInvestment;
+  delete held.steppedFrom;
+  return held;
+}
+
+/* the first listing of *order* the line's notional meets, or null (D208);
+   one stepped to from the first names it */
+function stepDown(item, order) {
+  for (var i = 0; i < order.length; i += 1) {
+    var min = order[i].minimumInvestment;
+    if (!min || item.notional >= min) {
+      var held = holdListing(item, order[i]);
+      if (i > 0) held.steppedFrom = { listing: order[0].listing || '', minimum: order[0].minimumInvestment };
+      return held;
+    }
+  }
+  return null;
+}
+
+/* What a line can hold in place of a listing the amount reaching it falls
+   short of: first the next listing of the same product in the currency's
+   ranking whose minimum the amount meets (D208); failing that, the product
+   its sleeve names below its minimum (D192), at its own listing for the
+   amount; failing both, the first listing, flagged as before. The
+   alternative takes the whole line, joining its own line where the sleeve
+   holds it too, at the listing the two together meet. Decided on the
+   long-term notional, so the initial allocation holds the same product.
+   Returns the lines as they now stand. Mirrors buildImplementationRows. */
 function holdAlternatives(groups, level) {
   var out = [];
   groups.forEach(function (group) {
@@ -689,12 +722,16 @@ function holdAlternatives(groups, level) {
     group.items.forEach(function (item) {
       var alt = item.alternative;
       delete item.alternative;
-      var short = alt && item.minimumInvestment && item.weight > 0
-        && item.notional < item.minimumInvestment && alt.offered !== false;
+      var short = item.minimumInvestment && item.weight > 0
+        && item.notional < item.minimumInvestment;
       if (!short) { lines.push(item); return; }
+      var stepped = (item.ranked || []).length > 1 ? stepDown(item, item.ranked) : null;
+      if (stepped) { lines.push(stepped); return; }
+      if (!alt) { lines.push(item); return; }
       var held = implItem(alt, level);
       held.share = item.share; held.exact = item.exact;
       held.weight = item.weight; held.notional = item.notional;
+      held = stepDown(held, held.ranked || []) || held;
       held.standsIn = [{ productId: item.productId, name: item.name,
                          minimum: item.minimumInvestment, notional: item.notional }];
       lines.push(held);
@@ -707,6 +744,13 @@ function holdAlternatives(groups, level) {
       first.weight = Math.round((first.weight + line.weight) * 100) / 100;
       first.notional = Math.round(App.mandateSize() * first.weight / 100 / ROUND_TO) * ROUND_TO;
       first.standsIn = (first.standsIn || []).concat(line.standsIn || []);
+      /* the listing the two amounts together meet, from the top */
+      var order = first.ranked || [];
+      if (order.length > 1) {
+        var again = stepDown(first, order) || holdListing(first, order[0]);
+        for (var k in again) if (Object.prototype.hasOwnProperty.call(again, k)) first[k] = again[k];
+        if (!again.steppedFrom) delete first.steppedFrom;
+      }
     });
     group.items = merged;
     out = out.concat(merged);
@@ -721,6 +765,21 @@ function standsInText(item) {
     return 'In place of ' + s.name + ', which needs ' + money(s.minimum)
       + ' and would hold ' + money(s.notional) + ' here.';
   }).join(' ');
+}
+
+/* the listing a line holds, under its ticker: the currency it is dealt in
+   and its hedging (D208) */
+function listingSub(item) {
+  var bits = [item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
+  return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
+}
+
+/* what a line steps down from (D208): "In place of GEF-GBPH, which needs
+   $1,000,000 and would hold $400,000 here." */
+function steppedText(item) {
+  var s = item.steppedFrom;
+  return 'In place of ' + (s.listing || 'the first listing') + ', which needs ' + money(s.minimum)
+    + ' and would hold ' + money(item.notional) + ' here.';
 }
 
 function rows() {
@@ -798,6 +857,17 @@ function rows() {
         && item.initialNotional < item.minimumInvestment;
     });
   }
+  /* A private markets product the mandate does not reach the minimum of at
+     this portfolio, or which has none set there (D200). Mirrors
+     privateMarkets.shortfalls. */
+  var pmAt = pmKeyStr(), pmTable = App.opt('rules.privateMarkets.minimums', {}) || {};
+  all.forEach(function (item) {
+    var mins = pmAt && pmTable[item.productId];
+    if (!mins || !Object.prototype.hasOwnProperty.call(mins, pmAt)) { item.pmShort = false; return; }
+    item.pmMinimum = mins[pmAt];
+    item.pmShort = (item.weight > 0 || (item.initialWeight || 0) > 0)
+      && (item.pmMinimum === null || App.mandateSize() < item.pmMinimum - 1e-6);
+  });
   /* Nothing that prints as zero earns a line (D68). Dropped after the
      rounding, so the column still closes on 100.00 exactly - a row worth
      0.00 adds nothing to that sum. A category keeps its row while it has
@@ -855,6 +925,48 @@ function initialOf(groups) {
   };
 }
 
+/* The portfolio the private markets minimums are read at (D200): the base
+   portfolio's, or a custom portfolio's Full at its risk profile. */
+function pmKeyStr() {
+  if (App.cpActive()) {
+    var cp = App.customPortfolio();
+    return cp && cp.profile ? App.basis().currency + '|' + cp.profile + '|Full|0' : null;
+  }
+  var base = App.base();
+  return base && base.key ? App.keyStr(base.key) : null;
+}
+/* the portfolio as the gate names it: Full · Moderate · USD */
+function pmWhere() {
+  var at = pmKeyStr();
+  if (!at) return '';
+  var p = at.split('|');
+  return (p[2] === 'Full' ? (p[3] === '1' ? 'ex-RA' : 'Full') : (p[3] === '1' ? 'ex-HFs ex-RA' : p[2]))
+    + ' · ' + App.riskLabel(p[1]) + ' · ' + p[0];
+}
+function pmMillions(n) { return '$' + (Math.round(n / 1e4) / 100).toLocaleString('en-US') + 'm'; }
+/* Every private markets product below its minimum here (D200). The export is
+   refused while this is non-empty, on the page and on the server. */
+function pmShortfalls(groups) {
+  var out = [];
+  groups.forEach(function (group) {
+    group.items.forEach(function (item) {
+      if (item.pmShort) out.push({ category: group.category, name: item.name, minimum: item.pmMinimum });
+    });
+  });
+  return out;
+}
+function pmShortWords(short, html, fixWords) {
+  var names = short.map(function (b) {
+    var name = html ? '<button type="button" class="gate-go" data-implgo="'
+      + App.esc(rowAnchor(b.category, b.name)) + '">' + App.esc(b.name) + '</button>' : b.name;
+    return name + (b.minimum === null ? ' (no minimum set here yet)' : ' (needs ' + pmMillions(b.minimum) + ')');
+  });
+  var said = 'the private markets minimum for ' + (html ? App.esc(pmWhere()) : pmWhere()) + ' at a '
+    + money(App.mandateSize()) + ' mandate';
+  return (short.length === 1 ? names[0] + ' is below ' + said
+          : short.length + ' products are below ' + said + ': ' + names.join(', ')) + '. ' + fixWords;
+}
+
 /* Every position that falls below its product's minimum (item 3). The export
    is refused while this is non-empty, on the page and on the server. */
 function breaches(groups) {
@@ -864,21 +976,6 @@ function breaches(groups) {
       if (item.belowMinimum) {
         out.push({ category: group.category, name: item.name,
                    notional: item.notional, minimum: item.minimumInvestment });
-      }
-    });
-  });
-  return out;
-}
-
-/* Every product held that is not offered in the portfolio's currency
-   (D182). The export is refused while this is non-empty, on the page and on
-   the server. Mirrors model['unavailable']. */
-function unavailable(groups) {
-  var out = [];
-  groups.forEach(function (group) {
-    group.items.forEach(function (item) {
-      if (item.notOffered && (item.weight || item.initialWeight)) {
-        out.push({ category: group.category, name: item.name });
       }
     });
   });
@@ -3113,25 +3210,9 @@ function customStuck() {
   });
 }
 
-/* the gate's words for products not offered in the currency (D182): as
-   html, each named product is the way to its row */
-function notOfferedWords(missing, html, cp) {
-  var ccy = App.basis().currency;
-  var names = missing.map(function (m) {
-    return html ? '<button type="button" class="gate-go" data-implgo="'
-      + App.esc(rowAnchor(m.category, m.name)) + '">' + App.esc(m.name) + '</button>' : m.name;
-  });
-  var fix = cp ? 'Take ' + (missing.length === 1 ? 'it' : 'them') + ' out of the portfolio.'
-    : 'Change the sleeve.';
-  return missing.length === 1
-    ? names[0] + ' in ' + (html ? App.esc(missing[0].category) : missing[0].category)
-      + ' is not offered in ' + ccy + '. ' + fix
-    : missing.length + ' products are not offered in ' + ccy + ': ' + names.join(', ') + '. ' + fix;
-}
-
 function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   var breached = breaches(groups);
-  var missing = unavailable(groups);
+  var pmShort = pmShortfalls(groups);
   var reason = null, blocking = false;
   /* a custom portfolio is held to its own checks and, outside its usual
      ranges, to an admin's approval (D171) */
@@ -3168,12 +3249,13 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
       + ', not 100%. Change a custom sleeve set as % of the portfolio until it does.';
   }
   else if (columnsBusy) reason = 'Wait for every portfolio column to finish resolving.';
-  /* A hard block: a product not offered in the portfolio's currency, or a
-     position below the product's minimum, cannot be bought, so the
-     materials cannot be produced. The server refuses both too. */
-  else if (missing.length) {
+  /* A hard block: a position below the minimum of the listing it holds
+     cannot be bought, so the materials cannot be produced. The server
+     refuses it too. */
+  else if (pmShort.length) {
+    /* a private markets product below its minimum (D200) */
     blocking = true;
-    reason = notOfferedWords(missing, false, cp);
+    reason = pmShortWords(pmShort, false, fixWords);
   }
   else if (breached.length) {
     blocking = true;
@@ -3194,10 +3276,10 @@ function exportGate(groups, t, done, columnsBusy, fees, schedule, exporting) {
   } else if (exporting.status === 'error') {
     tone = 'error'; headline = 'Export failed';
     html = App.esc(exporting.error || 'Export failed.');
-  } else if (blocking && missing.length) {
+  } else if (blocking && pmShort.length) {
     tone = 'error';
-    headline = 'Not offered in ' + App.basis().currency;
-    html = notOfferedWords(missing, true, cp);
+    headline = pmShort.length + ' below the private markets minimum';
+    html = pmShortWords(pmShort, true, fixWords);
   } else if (blocking) {
     tone = 'error';
     headline = breached.length + ' below minimum';
@@ -3554,7 +3636,7 @@ function renderView() {
       + '<td class="num"></td></tr>';
     group.items.forEach(function (item, ix) {
       html += '<tr class="asset' + (ix % 2 ? ' alt' : '')
-        + (item.belowMinimum || item.notOffered ? ' below-min' : '') + '"'
+        + (item.belowMinimum || item.pmShort ? ' below-min' : '') + '"'
         + ' data-implrow="' + App.esc(rowAnchor(group.category, item.name)) + '"'
         + '><th scope="row">'
         + App.esc(item.assetClass) + '</th>'
@@ -3562,16 +3644,23 @@ function renderView() {
            row's pink fill was the only carrier of it at rest, and the badge
            that explained it sat 753px to the right. */
         + '<td class="txt prodcol">' + App.esc(item.name)
-        + (item.notOffered
-            ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' is not offered in '
-              + App.esc(App.basis().currency) + '">not in ' + App.esc(App.basis().currency) + '</span>' : '')
         + (item.belowMinimum
             ? ' <span class="bdg b-breach sm" title="' + App.esc(item.name) + ' would hold '
               + App.esc(money(item.notional)) + ', below its '
               + App.esc(money(item.minimumInvestment)) + ' minimum">below min</span>' : '')
+        /* below its private markets minimum here (D200) */
+        + (item.pmShort
+            ? ' <span class="bdg b-breach sm" title="' + App.esc(item.pmMinimum === null
+                ? item.name + ' has no private markets minimum set for ' + pmWhere()
+                : item.name + ' needs a ' + money(item.pmMinimum) + ' mandate at ' + pmWhere()) + '">'
+              + (item.pmMinimum === null ? 'no PM minimum' : 'needs ' + App.esc(pmMillions(item.pmMinimum))) + '</span>' : '')
         + (item.standsIn && item.standsIn.length
             ? ' <span class="bdg b-slack sm">alternative</span><span class="stands-in">'
               + App.esc(standsInText(item)) + '</span>' : '')
+        /* a listing further down the currency's ranking (D208) */
+        + (item.steppedFrom
+            ? ' <span class="bdg b-slack sm">next listing</span><span class="stands-in">'
+              + App.esc(steppedText(item)) + '</span>' : '')
         + (custom ? App.cpNameExtras(item, group) : '')
         + '</td>'
         + '<td class="num">' + (custom ? App.cpWeightCell(item) : App.num(item.weight, 2, '%')) + '</td>'
@@ -3587,7 +3676,7 @@ function renderView() {
               + money(item.initialNotional) + '</span>'
               + (item.initialBelowMinimum
                   ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')) : '')
-        + '<td class="txt tick">' + App.esc(item.ticker) + '</td>'
+        + '<td class="txt tick">' + App.esc(item.ticker) + listingSub(item) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
         + '<td class="txt">' + (item.shareClass

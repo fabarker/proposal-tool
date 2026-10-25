@@ -356,10 +356,11 @@ p.hf-note.is-done{font-size:12px;color:var(--rail-ink-2);line-height:1.45}
 .dlg-actions.split{justify-content:space-between;align-items:center;flex-wrap:wrap}
 .dlg-grp{display:flex;gap:10px;align-items:center;min-width:0}
 /* Two sizes (D111): the card opens at the mandate card's 460px holding only
-   the UID, and grows to 560px - two columns of fields - once the UID names a
-   proposal that can still take a request. The script animates between them. */
+   the UID, and grows - two columns of fields - once the UID names a proposal
+   that can still take a request. The script animates between them. Grown it
+   is 760px, room for what the request states beside what it asks (D202). */
 .dialog.account{width:min(460px,calc(100vw - 32px))}
-.dialog.account.open{width:min(560px,calc(100vw - 32px))}
+.dialog.account.open{width:min(760px,calc(100vw - 32px))}
 .dlg-sub{margin:-14px 0 18px;font-size:13px;color:var(--ink-3);line-height:1.4}
 /* the UID box's own error sits under it, as its hint would */
 .dialog .field .md-err.dlg-uiderr{margin-top:6px}
@@ -399,17 +400,69 @@ p.hf-note.is-done{font-size:12px;color:var(--rail-ink-2);line-height:1.45}
 .ac-digest dt{font-family:var(--f-num);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--ink-3);margin:0 0 2px}
 .ac-digest dd{margin:0;font-family:var(--f-num);font-size:14.5px;color:var(--ink);overflow-wrap:anywhere}
-.ac-sleeves{margin:0 0 18px;border:1px solid var(--line);border-radius:var(--radius-sm)}
-.ac-sleeves summary{display:flex;align-items:baseline;gap:8px;padding:9px 12px;cursor:pointer;
-  font-size:13px;color:var(--ink-2);list-style:none}
-.ac-sleeves summary::-webkit-details-marker{display:none}
-.ac-sleeves summary::after{content:"\25BE";margin-left:auto;color:var(--ink-3);transition:transform .15s}
-.ac-sleeves[open] summary::after{transform:rotate(180deg)}
-.ac-sleeves summary b{color:var(--ink);font-weight:600;white-space:nowrap}
-.ac-sleeves summary span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ac-sleeves summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.ac-sleeves .dlg-sleeves{border:0;border-top:1px solid var(--line);border-radius:0 0 var(--radius-sm) var(--radius-sm)}
-.ac-none{font-size:13px;color:var(--ink-3);margin:0 0 18px}
+.ac-digest .wide{grid-column:1 / -1}
+/* What the proposal implements (D202): worked out, not asked - greyed and set
+   apart from the terms above, with nothing in it to press. */
+.ac-digest.ac-fixed{background:var(--surface-2);border-style:dashed;margin-bottom:18px}
+.ac-digest.ac-fixed dd{color:var(--ink-2)}
+.dlg-sect .dlg-tag.ac-fixed-tag{color:var(--ink-3)}
+/* A field's note, behind an i beside its label (D202): up on hover or focus,
+   and held up once pressed, for a tap. */
+.ac-lab{display:flex;align-items:center;gap:7px;position:relative;min-width:0}
+.ac-info{flex:none;width:18px;height:18px;padding:0;border-radius:50%;border:1px solid var(--accent);
+  background:var(--surface);color:var(--accent);font:700 11px/1 var(--f-num);cursor:help;
+  display:inline-grid;place-items:center}
+.ac-info:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ac-note{display:none;position:absolute;left:0;right:0;top:calc(100% + 8px);z-index:6;
+  margin:0;padding:10px 12px;border-radius:var(--radius-sm);background:#16243A;color:#fff;
+  font-size:12.5px;font-weight:400;line-height:1.5;letter-spacing:0;box-shadow:0 10px 24px -10px rgba(16,24,40,.5)}
+.ac-info:hover + .ac-note,.ac-info:focus-visible + .ac-note,.ac-lab.is-open .ac-note{display:block}
+.ac-lab.is-shut .ac-note{display:none}
+/* Investment restrictions (D203): what is picked as chips beneath the list,
+   each with its way out; the list scrolls inside the card once it is long. */
+.ac-restr{margin:0 0 16px}
+.ac-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 0;min-height:26px}
+.ac-chosen{font-size:12.5px;color:var(--ink-3);margin-right:2px}
+.ac-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 10px;border-radius:999px;
+  border:1px solid #C5D6F2;background:#E6EEFA;color:#1F4E9A;font-size:12.5px;font-weight:600}
+.ac-chipx{border:0;background:none;color:inherit;font:inherit;font-size:14px;line-height:1;padding:0 5px;
+  border-radius:50%;cursor:pointer}
+.ac-chipx:hover:not(:disabled){background:#C5D6F2}
+.ac-chipx:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ac-rsearch{width:100%;margin:0 0 8px;font:inherit;font-size:14px;padding:8px 11px;border:1px solid var(--line-strong);
+  border-radius:var(--radius-sm);background:var(--surface);color:var(--ink)}
+.ac-rlist{max-height:236px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-sm)}
+.ac-ropt{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);
+  cursor:pointer;font-size:13.5px;color:var(--ink)}
+.ac-ropt:last-child{border-bottom:0}
+.ac-ropt:hover{background:var(--surface-2)}
+.ac-ropt input{margin:2px 0 0;flex:none;width:15px;height:15px;accent-color:var(--accent)}
+.ac-ropt b{font-weight:600}
+.ac-ropt small{display:block;color:var(--ink-3);font-size:12px;margin-top:1px}
+.ac-rnone{font-size:13px;color:var(--ink-3);margin:0 0 16px;padding:0 2px}
+.ac-rlist .ac-rnone{margin:0;padding:10px 12px}
+/* SMA Details (D206): the mandate, then each SMA; a row that stops the
+   request in red, saying why */
+.ac-sma-wrap{overflow-x:auto;margin:0 0 16px}
+.ac-sma{width:100%;min-width:600px;border-collapse:collapse;font-size:13px}
+.ac-sma th{font-family:var(--f-num);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+  text-align:left;font-weight:600;padding:0 8px 6px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+.ac-sma td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink)}
+.ac-sma .n{text-align:right;white-space:nowrap}
+.ac-sma small{display:block;color:var(--ink-3);font-size:11.5px;margin-top:1px}
+.ac-sma code{font-family:var(--f-num);font-size:11.5px;color:var(--ink-2)}
+.ac-sma-nm{font-weight:600}
+.ac-sma-nm.unnamed{color:var(--ink-3);font-style:italic}
+.ac-sma tr.mand td{background:var(--surface-2)}
+.ac-sma tr.blocked td{background:#FBEDED}
+.ac-sma-gap{display:block;color:#9B1C1C;font-size:12px;font-weight:600;margin-top:3px;white-space:normal}
+.ac-sma-none{color:var(--ink-3)}
+.ac-bp{display:inline-flex;align-items:center;gap:4px}
+.ac-bp input{width:72px;font:inherit;font-family:var(--f-num);font-size:13.5px;text-align:right;padding:5px 7px;
+  border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink)}
+.ac-bp input[aria-invalid="true"]{border-color:#B42318;box-shadow:0 0 0 1px #B42318}
+.ac-bp span{font-size:12px;color:var(--ink-3)}
+.dlg-status.off{color:#9B1C1C}
 /* the grown card's footer sits under a rule, apart from the last field */
 .dlg-actions.ac-foot{padding-top:16px;border-top:1px solid var(--line)}
 .dialog select,.dialog input[type=date],.dialog textarea{font:inherit;font-family:var(--f-num);font-size:15.5px;
@@ -418,13 +471,6 @@ p.hf-note.is-done{font-size:12px;color:var(--rail-ink-2);line-height:1.45}
 .dialog select{padding-right:30px}
 .dialog textarea{min-height:64px;resize:vertical;font-family:var(--f-body);font-size:14px;line-height:1.4}
 .dialog select[aria-invalid="true"],.dialog input[type=date][aria-invalid="true"]{border-color:#B42318}
-.dlg-sleeves{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);
-  padding:6px 12px;font-size:13px;color:var(--ink-2)}
-.dlg-sleeves div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px dashed var(--line-strong)}
-.dlg-sleeves div:last-child{border-bottom:0}
-.dlg-sleeves span:last-child{font-family:var(--f-num);color:var(--ink);text-align:right}
-.dlg-sleeves em{font-style:normal;color:var(--ink-3);font-size:11.5px;margin-left:6px}
-.dlg-sleeves .none{color:var(--ink-3);padding:6px 0}
 .dlg-status{font-size:12.5px;color:var(--ink-3);line-height:1.4;min-width:0;flex:1 1 200px}
 .dlg-status.ok{color:#176A33}
 .field-hint.ok{color:#176A33;font-weight:600}

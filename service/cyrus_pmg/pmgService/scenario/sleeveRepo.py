@@ -169,8 +169,11 @@ WEIGHT_TOLERANCE = 1e-6
 #: may name the product held instead below its minimum (D192); 14 a rule may
 #: name the custodians / entities an edition is for (D193); 15 a separate
 #: account carries its SMA mandates, one code a base currency and hedging
-#: version, each with figures of its own (D197).
-SCHEMA_VERSION = 15
+#: version, each with figures of its own (D197); 16 a product has a benchmark,
+#: of its own in a base currency where it differs, and so may each SMA
+#: mandate (D204); 17 a product has listings, each ranked by base currency,
+#: in place of its values by currency and its SMA mandates (D207).
+SCHEMA_VERSION = 17
 
 #: how a sleeve offered under several types stores them (D179), and the word
 #: a file may use for every type
@@ -296,6 +299,8 @@ CREATE TABLE IF NOT EXISTS products (
     minimumInvestment REAL,
     currencies        TEXT NOT NULL DEFAULT '',
     mandates          TEXT NOT NULL DEFAULT '',
+    benchmark         TEXT NOT NULL DEFAULT '',
+    listings          TEXT NOT NULL DEFAULT '',
     revision          INTEGER NOT NULL,
     createdBy         TEXT NOT NULL DEFAULT '',
     createdAt         TEXT NOT NULL,
@@ -796,6 +801,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
         with conn:
             conn.execute("ALTER TABLE products ADD COLUMN mandates TEXT NOT NULL DEFAULT ''")
 
+    # 15 -> 16 (D204): a product's benchmark, blank for every product already
+    # here until its form or a product file gives it one
+    if productColumns and 'benchmark' not in productColumns:
+        with conn:
+            conn.execute("ALTER TABLE products ADD COLUMN benchmark TEXT NOT NULL DEFAULT ''")
+
+    # 16 -> 17 (D207): a product's listings. Each product with values by base
+    # currency or SMA mandates is listed as they read - its main values a
+    # listing, each currency's own a listing ranked first there, each mandate
+    # a listing - and the catalogue's version moves once, since what some
+    # proposals hold moves with it; every other product is one listing, its
+    # main values, which a blank column says. No revision is written: each
+    # version the history holds reads as it is listed. The columns the move
+    # reads are left as they were, unread from now on, so the code from
+    # before listings still reads the store until a product is saved again.
+    if productColumns and 'listings' not in productColumns:
+        _listProducts(conn)
+
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()
@@ -804,6 +827,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE meta SET value = ? WHERE key = 'schemaVersion'",
                          (str(SCHEMA_VERSION),))
             conn.execute("INSERT OR REPLACE INTO meta VALUES ('migratedAt', ?)", (_now(),))
+
+
+def _listProducts(conn: sqlite3.Connection) -> None:
+    """The move to listings (D207), in one transaction: the column, and each
+    product that had more than its main values listed whole - the values it
+    was listed from left where they were."""
+    from . import products
+    with conn:
+        conn.execute("ALTER TABLE products ADD COLUMN listings TEXT NOT NULL DEFAULT ''")
+        moved = 0
+        for row in conn.execute("SELECT * FROM products WHERE currencies != '' OR mandates != ''").fetchall():
+            record = products._record(row)
+            conn.execute('UPDATE products SET listings = ? WHERE productId = ?',
+                         (json.dumps(record['listings']), row['productId']))
+            moved += 1
+        if moved and conn.execute("SELECT 1 FROM meta WHERE key = 'catalogueRevision'").fetchone():
+            conn.execute("UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) "
+                         "WHERE key = 'catalogueRevision'")
 
 
 def _baseline(conn: sqlite3.Connection) -> None:
@@ -1485,6 +1526,10 @@ def _changes(previous, current) -> list:
     for pid in [p for p in now if p in was and not _weightsMatch(was[p], now[p])]:
         out.append('{} {:g}% to {:g}%'.format(
             _productLabel(pid), was[pid] * 100.0, now[pid] * 100.0))
+    # the order of the rows, which the implementation table follows (D201)
+    kept = [p for p, _, _ in nowHeld if p in was]
+    if kept != [p for p, _, _ in wasHeld if p in now] and len(kept) > 1:
+        out.append('Order now: {}'.format(', '.join(_productLabel(p) for p, _, _ in nowHeld)))
     # the product held instead below the minimum (D192)
     wasAlt = {p: a for p, _, a in wasHeld}
     for pid, _, alt in nowHeld:

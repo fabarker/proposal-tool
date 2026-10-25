@@ -300,8 +300,8 @@ def vocabulary() -> dict:
     try:
         live = products.entries()
         classes = sorted({p['assetClass'] for p in live if p['assetClass']}
-                         | {o['assetClass'] for p in live for o in (p.get('currencies') or {}).values()
-                            if o.get('assetClass')}, key=str.lower)
+                         | {l['assetClass'] for p in live for l in p.get('listings') or []
+                            if l.get('assetClass')}, key=str.lower)
         listed = [{'id': p['productId'], 'name': p['name'], 'category': p.get('category') or '',
                    'assetClass': p['assetClass']} for p in live]
     except products.BadCatalogue:

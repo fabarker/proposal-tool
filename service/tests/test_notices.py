@@ -209,7 +209,7 @@ def test_the_download_waits_for_every_notice_raised_and_the_register_keeps_them(
     rows = [dict(zip(proposalRegister.EXPORT_COLUMNS, r)) for r in proposalRegister.exportRows()]
     assert rows[0]['Notices'].startswith('Hedge funds · DNE eligibility - confirmed by bob ')
     assert ', ticked) - raised by ' in rows[0]['Notices']
-    assert proposalRegister.describe()['schemaVersion'] == 13
+    assert proposalRegister.describe()['schemaVersion'] == 14
 
 
 def test_a_disabled_notice_asks_for_nothing(store):

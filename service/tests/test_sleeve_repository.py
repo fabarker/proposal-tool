@@ -100,14 +100,15 @@ def _request(kerberos=None):
 def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     """One row per product, every field a sleeve product has always carried,
     the fee left out and the group in its place; an empty ticker is the dash
-    the table has always shown. Beside them, the ticker and minimum it has in
-    each base currency where they differ (D180), the currency it is
-    issued in (D184), and a separate account's SMA mandates (D197)."""
+    the table has always shown. Beside them, the currency it is issued in
+    (D184), its benchmark (D204), its main listing's mandate code and hedging
+    and its listings, each ranked by base currency (D207)."""
     rows = products.all()
     assert len(rows) == 73
     expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
                 'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
-                'distributionYield', 'minimumInvestment', 'currencies', 'mandates', 'ownCategory'}
+                'distributionYield', 'minimumInvestment', 'ownCategory', 'benchmark', 'code', 'hedging',
+                'listings'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p
@@ -145,7 +146,9 @@ def test_an_extract_without_the_optional_figures_still_loads(tmp_path):
 @pytest.mark.parametrize('bad, message', [
     ('FeeGroup', 'fee group'),
     ('ProductCost', 'not a number'),
-    ('ProductId', 'already on row'),
+    # a repeated id is another listing of that product (D207): the product
+    # it is must read the same on both rows
+    ('ProductId', 'gives name'),
     ('DistributionYield', 'not a number'),
     ('MinimumInvestment', 'negative'),
 ])
@@ -476,6 +479,35 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/notices', ('PUT',)),
         ('/scenario/repository/notices/history', ('GET',)),
         ('/scenario/repository/notices/revert', ('POST',)),
+        # the private markets minimums (D200)
+        ('/scenario/repository/pm-minimums', ('GET',)),
+        ('/scenario/repository/pm-minimums', ('PUT',)),
+        ('/scenario/repository/pm-minimums/history', ('GET',)),
+        ('/scenario/repository/pm-minimums/revert', ('POST',)),
+        ('/scenario/repository/pm-minimums/import/preview', ('POST',)),
+        ('/scenario/repository/pm-minimums/import', ('POST',)),
+        ('/scenario/repository/pm-minimums.xlsx', ('GET',)),
+        # the investment restrictions (D203)
+        ('/scenario/repository/restrictions', ('GET',)),
+        ('/scenario/repository/restrictions', ('PUT',)),
+        ('/scenario/repository/restrictions/history', ('GET',)),
+        ('/scenario/repository/restrictions/revert', ('POST',)),
+        # the mandate codes (D205)
+        ('/scenario/repository/mandate-codes', ('GET',)),
+        ('/scenario/repository/mandate-codes', ('PUT',)),
+        ('/scenario/repository/mandate-codes/history', ('GET',)),
+        ('/scenario/repository/mandate-codes/revert', ('POST',)),
+        ('/scenario/repository/mandate-codes/import/preview', ('POST',)),
+        ('/scenario/repository/mandate-codes/import', ('POST',)),
+        ('/scenario/repository/mandate-codes.xlsx', ('GET',)),
+        # the portfolio benchmarks (D211)
+        ('/scenario/repository/portfolio-benchmarks', ('GET',)),
+        ('/scenario/repository/portfolio-benchmarks', ('PUT',)),
+        ('/scenario/repository/portfolio-benchmarks/history', ('GET',)),
+        ('/scenario/repository/portfolio-benchmarks/revert', ('POST',)),
+        ('/scenario/repository/portfolio-benchmarks/import/preview', ('POST',)),
+        ('/scenario/repository/portfolio-benchmarks/import', ('POST',)),
+        ('/scenario/repository/portfolio-benchmarks.xlsx', ('GET',)),
         # the product catalogue (D165)
         ('/scenario/repository/products', ('POST',)),
         ('/scenario/repository/products', ('PUT',)),
@@ -484,9 +516,6 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/products/revert', ('POST',)),
         ('/scenario/repository/products/history', ('GET',)),
         ('/scenario/repository/products/import/preview', ('POST',)),
-        ('/scenario/repository/mandates.csv', ('GET',)),
-        ('/scenario/repository/mandates/import', ('POST',)),
-        ('/scenario/repository/mandates/import/preview', ('POST',)),
         ('/scenario/repository/products/import', ('POST',)),
         ('/scenario/repository/products.csv', ('GET',)),
         # the fee card (D166)
@@ -644,7 +673,8 @@ process.stdout.write(JSON.stringify({
     a, b, c = got['enriched']
     # product fees only (D114): net is the yield less the product's own cost,
     # and a row carries no management or all-in figure at all
-    assert a['keys'] == ['books', 'categories', 'net', 'p', 'tooBig', 'used']
+    assert a['keys'] == ['books', 'categories', 'count', 'listing', 'lower', 'main', 'matched', 'net', 'p',
+                         'tooBig', 'used', 'v', 'varies', 'view'], 'each line read at the listing in view (D207)'
     assert a['net'] == 4.48
     assert (b['net'], b['tooBig']) == (4.57, True), 'a $5m minimum is above a $2m mandate'
     assert (c['net'], c['used'], c['cats'], c['books']) == (None, 0, [], []), 'no yield means no net; unplaced means empty joins'
@@ -1648,13 +1678,11 @@ def test_the_landing_offers_the_library_to_an_admin_and_to_nobody_else():
     assert "App.phase() !== 'workspace'" in body
     assert 'host.hidden = !on' in body and "host.innerHTML = ''" in body, \
         'hidden AND emptied: a strip with nothing in it is worse than no strip'
-    # every view is reachable, not just the two the rail's glyphs offer
-    views = re.search(r'var LANDING_VIEWS = \[(.*?)\];', source, re.S).group(1)
-    for view in ('repository', 'catalogue', 'archive', 'activity', 'proposals'):
-        assert "'" + view + "'" in views, view
-    # real anchors carrying the hashes the console already answers to, so a
+    # one way in, the Repository, whose header's menus reach every view
+    # (D212, D213) - a real anchor at the hash the console answers to, so a
     # middle click opens a second tab and a copied link still works
-    assert "'<a href=\"#' + (v[2] || v[0]) + '\" data-repoopen=\"' + v[0] + '\">'" in body
+    assert '<a href="#repository" data-repoopen="repository">Repository</a>' in body
+    assert body.count('<a href=') == 1 and 'LANDING_VIEWS' not in source
 
     shell = os.path.join(HERE, '..', '..', 'generator', 'build_styles.py')
     with open(shell, encoding='utf-8') as fh:

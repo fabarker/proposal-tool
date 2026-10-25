@@ -181,7 +181,7 @@ def test_the_page_makes_the_same_swap_as_the_files():
     sma = {'productId': SMA, 'name': 'SMA', 'feeGroup': 'Core Active', 'productCost': 0.25,
            'minimumInvestment': 5e6}
     other = {'productId': OTHER_SMA, 'name': 'Other SMA', 'feeGroup': 'Core Active', 'productCost': 0.3,
-             'minimumInvestment': 5e6, 'offered': False}
+             'minimumInvestment': 5e6}
 
     def server(mandate):
         groups = [{'items': [
@@ -195,7 +195,8 @@ def test_the_page_makes_the_same_swap_as_the_files():
         return [[(i['productId'], round(i['printedPct'], 2), [s['productId'] for s in i.get('standsIn') or []])
                  for i in g['items']] for g in groups]
 
-    script = 'var ROUND_TO = 100, MANDATE = 0;\n' + _js('implItem') + _js('holdAlternatives') + '''
+    script = ('var ROUND_TO = 100, MANDATE = 0;\n' + _js('implItem') + _js('holdListing') + _js('stepDown')
+              + _js('holdAlternatives') + '''
 var App = { mandateSize: function () { return MANDATE; } };
 function managementFee() { return null; }
 var fund = %s, sma = %s, other = %s;
@@ -213,13 +214,15 @@ function page(mandate) {
   }); });
 }
 console.log(JSON.stringify([page(10e6), page(100e6)]));
-''' % (json.dumps(fund), json.dumps(sma), json.dumps(other))
+''' % (json.dumps(fund), json.dumps(sma), json.dumps(other)))
     got = json.loads(subprocess.run([node, '-e', script], capture_output=True, text=True,
                                     check=True).stdout)
     want = [server(10e6), server(100e6)]
     assert got == [[[list(x) for x in g] for g in m] for m in want]
     assert want[0][0] == [(FUND, 30.0, [SMA])], 'below: one line, the fund'
-    assert want[0][1] == [(SMA, 10.0, [])], 'an alternative not offered in the currency is not used'
+    # every product is held in every currency (D207): an alternative short
+    # too is still held, and flagged below its minimum, as before
+    assert want[0][1] == [(OTHER_SMA, 10.0, [SMA])]
     assert want[1][0] == [(SMA, 18.0, []), (FUND, 12.0, [])], 'above: as the sleeve holds them'
 
 

@@ -96,9 +96,12 @@ _CHART_SHEET = 'chartData'
 # from the model rather than from a column (D134).
 IMPL_COLUMNS = [
     'Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)',
-    'Style', 'Vehicle', 'Share Class', 'Source', 'Liquidity',
+    'Style', 'Vehicle', 'Share Class', 'Issue Currency', 'Hedging', 'Source', 'Liquidity',
     'Product Cost', 'Mgmt fee', 'Wtd fee (bp)',
 ]
+# The listing a line holds, beside its share class: the currency it is dealt
+# in and its hedging (D208). The sheet's alone - the deck is as it was.
+LISTING_COLUMNS = ('Issue Currency', 'Hedging')
 # The two the sheet loses when the proposal excludes fees (D52). A proposal
 # that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
@@ -112,7 +115,8 @@ COST_COLUMN = 'Wtd cost (bp)'
 # (D78) while staying on the screen, in the catalogue and in the register.
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
-    'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Source': 10, 'Liquidity': 11,
+    'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Issue Currency': 10, 'Hedging': 11,
+    'Source': 10, 'Liquidity': 11,
     'Product Cost': 12, 'Mgmt fee': 10,
     'Wtd fee (bp)': 12, 'Notional': 14, COST_COLUMN: 13,
 }
@@ -129,45 +133,72 @@ def implColumns(includeFees: bool = True, deck: bool = False) -> list:
     book's initial allocation has a sheet of its own (D141).
 
     Unpriced, the workbook keeps the product cost and weights it alone
-    (``COST_COLUMN``), and the deck drops every cost column (D152)."""
+    (``COST_COLUMN``), and the deck drops every cost column (D152). The deck
+    has no listing columns (D208)."""
+    columns = [name for name in IMPL_COLUMNS if not (deck and name in LISTING_COLUMNS)]
     if includeFees:
-        return list(IMPL_COLUMNS)
-    kept = [name for name in IMPL_COLUMNS if name not in FEE_COLUMNS]
+        return columns
+    kept = [name for name in columns if name not in FEE_COLUMNS]
     if deck:
         return [name for name in kept if name != 'Product Cost']
     return kept + [COST_COLUMN]
 
 
+def _stepDown(item, order):
+    """*item* holding the first listing of *order* its notional meets (D208),
+    with what it steps down from named, or None when it meets none."""
+    listing = _products.pickListing(order, item['notional'])
+    if listing is None:
+        return None
+    held = _products.holdListing(item, listing)
+    held.pop('steppedFrom', None)
+    if listing is not order[0]:
+        held['steppedFrom'] = {'listing': order[0].get('listing') or '',
+                               'minimumInvestment': float(order[0].get('minimumInvestment') or 0)}
+    return held
+
+
 def _holdAlternatives(groups, currency, mandateSize) -> list:
-    """Put the product a sleeve names below a minimum in place of the one the
-    amount reaching it falls short of (D192), group by group; returns the
-    line items as they now stand.
+    """Put what a line can hold in place of a listing the amount reaching it
+    falls short of, group by group; returns the line items as they now
+    stand. First the next listing of the same product in the currency's
+    ranking whose minimum the amount meets (D208); failing that, the product
+    a sleeve names below the minimum (D192), at its own listing for the
+    amount; failing both, the line keeps its first listing and is flagged
+    below its minimum, as before.
 
     The amount is the line's long-term notional, from its printed weight -
     the figure the minimum check has always read - so the switches and a
-    custom weight count, and the initial allocation holds the same product.
-    The alternative takes the whole line: its weight, its share of the
-    sleeve. Where the sleeve holds the alternative too, the two lines are
-    one, at the first one's place. One not offered in the currency is not
-    used, and the line stays below its minimum, flagged as before; so does a
-    line whose alternative is short too, since there is one alternative per
-    product. ``standsIn`` names what each held line stands in for."""
+    custom weight count, and the initial allocation holds the same product
+    and listing. The alternative takes the whole line: its weight, its share
+    of the sleeve. Where the sleeve holds the alternative too, the two lines
+    are one, at the first one's place, at the listing the two amounts
+    together meet. ``standsIn`` names the product each held line stands in
+    for, and ``steppedFrom`` the listing."""
     out = []
     for group in groups:
         lines = []
         for item in group['items']:
             alternative = item.pop('alternative', None)
+            order = item.get('ranked') or []
             minimum = item.get('minimumInvestment')
-            short = (alternative and minimum and item['printedPct'] > 0
-                     and item['notional'] < float(minimum)
-                     and alternative.get(_products.OFFERED, True))
+            short = (minimum and item['printedPct'] > 0
+                     and item['notional'] < float(minimum))
             if not short:
+                lines.append(item)
+                continue
+            stepped = _stepDown(item, order) if len(order) > 1 else None
+            if stepped is not None:
+                lines.append(stepped)
+                continue
+            if not alternative:
                 lines.append(item)
                 continue
             held = dict(alternative)
             held.pop('alternative', None)
             for field in ('weight', 'exactPct', 'printedPct', 'notional'):
                 held[field] = item[field]
+            held = _stepDown(held, held.get('ranked') or []) or held
             held['standsIn'] = [{'productId': item['productId'], 'name': item.get('name'),
                                  'minimumInvestment': float(minimum),
                                  'notional': item['notional']}]
@@ -185,6 +216,15 @@ def _holdAlternatives(groups, currency, mandateSize) -> list:
             first['printedPct'] = round(float(first['printedPct']) + float(line['printedPct']), 2)
             first['notional'] = round(mandateSize * first['printedPct'] / 100.0 / 100.0) * 100.0
             first['standsIn'] = (first.get('standsIn') or []) + (line.get('standsIn') or [])
+            # the listing the two amounts together meet, from the top
+            order = first.get('ranked') or []
+            if len(order) > 1:
+                again = _stepDown(first, order)
+                if again is None:
+                    again = _products.holdListing(first, order[0])
+                    again.pop('steppedFrom', None)
+                first.clear()
+                first.update(again)
         group['items'] = merged
         out.extend(merged)
     return out
@@ -301,8 +341,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         items = []
         if sleeve:
             for product in sleeve['products']:
-                # the ticker, minimum and exposure it has in the portfolio's
-                # currency (D180, D182), and whether it is offered there
+                # the listing it holds in the portfolio's currency, and the
+                # ones it may step down to below that one's minimum (D207)
                 item = _products.inCurrency(product, currency)
                 item['exactPct'] = catWeight * float(product['weight'])
                 items.append(item)
@@ -492,13 +532,6 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
                  'minimumInvestment': float(item['minimumInvestment'])}
                 for group in groups for item in group['items']
                 if item.get('belowMinimum')]
-    # A product not offered in the portfolio's currency cannot be bought in
-    # it (D182): flagged per line, and the export refuses while any is held.
-    unavailable = [{'category': group['category'], 'name': item.get('name'),
-                    'productId': item.get('productId')}
-                   for group in groups for item in group['items']
-                   if item.get('offered') is False
-                   and (item.get('printedPct') or item.get('initialPct'))]
 
     # what the sheet's header states under the custom level: the row (or
     # rows) and the rate each carries, in the card's own order
@@ -515,7 +548,7 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
             'priced': priced, 'tier': tier, 'marginal': marginal,
             # the level it is priced at, and the rows that moved it there (D185)
             'feeLevel': feeLevel if priced else None, 'feeLevelMovedBy': levelMovedBy,
-            'effectiveRate': effectiveRate, 'breaches': breaches, 'unavailable': unavailable,
+            'effectiveRate': effectiveRate, 'breaches': breaches,
             'custom': custom, 'customRates': customRates,
             'unpricedGroups': unpricedGroups, 'unratedGroups': unratedGroups,
             # the initial allocation of a private-markets book, or None (D136)

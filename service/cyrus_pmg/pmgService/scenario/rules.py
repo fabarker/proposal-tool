@@ -16,6 +16,7 @@ from numbers import Real
 
 from . import entities as _entities
 from . import notices as _notices
+from . import privateMarkets as _privateMarkets
 from . import fees
 from . import otherCharges as _otherCharges
 from . import portfolio_weights as pw
@@ -24,7 +25,8 @@ from .sleeves import VARIANTS as IMPLEMENTATION_VARIANTS, variantExists
 from .types import BasisInput, MandateInput, PortfolioKey, ValidationError
 
 MANDATE_FLOOR = 5_000_000
-PRIVATE_ASSETS_MINIMUM = 20_000_000
+# the rule before there is a private markets minimums table (D200)
+PRIVATE_ASSETS_MINIMUM = _privateMarkets.FALLBACK_MINIMUM
 MAX_PORTFOLIOS = 4
 
 HEDGING_POLICIES = ['Hedged', 'ISG Hedged', 'Unhedged', 'Equity Not Hedged']
@@ -190,7 +192,8 @@ def variantForcesExcludeRE(variant) -> bool:
 
 # Private assets mean Private Equity and Other Private Assets; hedge funds are
 # not private assets (spec 2.5). These allocations hold private assets and are
-# therefore blocked under the $20m minimum.
+# therefore gated by the private markets minimums (D200), or by the $20m
+# minimum before there is a table.
 PRIVATE_ASSET_ALLOCATIONS = {'Full', 'ex-HFs'}
 
 # Categories that carry exactly one sleeve, attached automatically whenever
@@ -637,22 +640,18 @@ def categoriesInUniverseOrder() -> list:
 
 
 def allocationsFor(mandateSize, variant=None) -> list:
-    """Allocations available at this mandate size, under this variant.
+    """Allocations a variant offers (spec 2.5, 10.5; D49): outside its own
+    list an allocation is absent. A missing variant applies no filter,
+    because a rule cannot bind before its input exists.
 
-    Two independent filters (spec 2.5, 10.5; D49), both subtractive: under
-    $20m the private-asset allocations are absent entirely - not disabled
-    options - and outside a variant's own list an allocation is absent for the
-    same reason. A missing mandate or variant applies no filter, because a
-    rule cannot bind before its input exists.
-
-    The intersection can be empty in principle; it is not for any variant
-    offered here, since every one of them offers ex-Alts, which holds no
-    private assets.
+    The mandate no longer takes an allocation away here. What it needs for
+    one that holds private markets depends on the risk level and the
+    currency too, so it is judged a portfolio at a time, in ``availability``
+    and ``validateKey``, from the private markets minimums (D200); the page
+    shows the allocation greyed out with the mandate it needs. *mandateSize*
+    is kept for the callers' sake.
     """
-    allowed = allocationsForVariant(variant)
-    if mandateSize is not None and mandateSize < PRIVATE_ASSETS_MINIMUM:
-        allowed = [a for a in allowed if a not in PRIVATE_ASSET_ALLOCATIONS]
-    return allowed
+    return allocationsForVariant(variant)
 
 
 @lru_cache(maxsize=None)
@@ -667,7 +666,7 @@ def availability(basis: BasisInput, mandateSize, variant=None,
     """The availability set as canonical key strings (spec 2.5, 3.4; D49, D54).
 
     Every portfolio the universe offers in the basis currency, filtered by the
-    $20m rule for this mandate size and by the variant's own allocation list,
+    private markets minimums for this mandate size (D200) and by the variant's own allocation list,
     and - where the variant mandates it - down to the keys that already carry
     the real-assets exclusion. An all-equity book holds no alternatives, so it
     passes every allocation filter: any variant, any mandate.
@@ -680,6 +679,7 @@ def availability(basis: BasisInput, mandateSize, variant=None,
     """
     allowed = set(allocationsFor(mandateSize, variant))
     forceExRE = variantForcesExcludeRE(variant)
+    table = _privateMarkets.current()
     out = []
     for key in _keysForCurrency(basis.currency):
         keyStr = key.toStr()
@@ -692,6 +692,9 @@ def availability(basis: BasisInput, mandateSize, variant=None,
             continue
         if forceExRE and key.allocationType in _derived()['RE_ALLOWED'] \
                 and not key.excludeRealAssets:
+            continue
+        # the mandate this portfolio's private markets need (D200)
+        if not _privateMarkets.opens(key, mandateSize, table):
             continue
         out.append(keyStr)
     return out
@@ -864,6 +867,8 @@ def validateKey(key: PortfolioKey, variant, mandateSize=None) -> None:
         raise ValidationError(
             'excludeRealAssets',
             '{} requires real assets to be excluded.'.format(variant))
+    if not _privateMarkets.opens(key, mandateSize):
+        raise ValidationError('mandateSize', _privateMarkets.closedWords(key))
 
 
 def keysInvalidForVariant(keyStrs, variant, mandateSize=None) -> list:
@@ -980,6 +985,10 @@ def schemaPayload(basis: BasisInput, mandateSize, capabilities: dict,
         'rules': {
             'mandateFloor': MANDATE_FLOOR,
             'privateAssetsMinimum': PRIVATE_ASSETS_MINIMUM,
+            # the mandate each private markets product needs at each of this
+            # currency's portfolios, and the lowest of them, which opens the
+            # allocation (D200)
+            'privateMarkets': _privateMarkets.served(basis.currency),
             'maxPortfolios': MAX_PORTFOLIOS,
             # the seeded overlays' two and every category a rule goes into (D155)
             'autoSleeveCategories': autoSleeveCategories(),

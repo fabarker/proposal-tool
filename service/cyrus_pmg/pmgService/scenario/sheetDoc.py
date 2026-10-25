@@ -1493,6 +1493,10 @@ def buildImplementationDoc(model: dict, columns, widths,
         # a portfolio built product by product names its kind (D171)
         preamble.append(['Portfolio', 'Custom, {} risk profile'.format(
             model['customPortfolio']['profileLabel'])])
+    if model.get('benchmark'):
+        # the portfolio's benchmark: its risk level, currency and hedging
+        # policy's, or the one chosen for a custom portfolio (D211)
+        preamble.append(['Benchmark', model['benchmark']])
     if model['priced']:
         preamble.append(['Fee Schedule', feeSchedule])
         preamble.append(['Fee Level', feeLevel or model.get('feeLevel') or fees.DEFAULT_LEVEL])
@@ -1609,6 +1613,9 @@ def buildImplementationDoc(model: dict, columns, widths,
             words = {'Categories & Asset Classes': '  ' + item['assetClass'],
                      'Products': item['name'], 'Style': item['style'],
                      'Vehicle': item['vehicle'], 'Share Class': item.get('shareClass'),
+                     # the listing it holds (D208)
+                     'Issue Currency': item.get('issueCurrency') or None,
+                     'Hedging': item.get('hedging') or None,
                      'Source': item['source'], 'Liquidity': item['liquidity']}
             for name, value in words.items():
                 if name in at:

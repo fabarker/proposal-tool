@@ -33,8 +33,8 @@ rule saying which portfolios that edition is for. This works that out:
     them, the largest has no rules: it serves every portfolio the others do
     not. A sleeve holding the same products everywhere is that one edition.
   - Product names are looked up in the product file (the one loaded into the
-    catalogue, or a --products-export of it), by name, ID, or any ticker it
-    is listed under, its own in a currency included.
+    catalogue, or a --products-export of it), by name, ID, or the ticker of
+    any of its listings - a row each.
 
 Nothing is written unless the whole table converts. The import checks the
 result again - categories, products, overlaps - and writes nothing if any

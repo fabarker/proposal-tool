@@ -313,10 +313,9 @@ def test_the_console_refuses_what_the_server_refuses():
     assert got[2] == ['The weights add up to 99.5000%; they must add up to exactly 100%.']
     assert any('more than 4 decimal places' in m for m in got[3])
     assert got[4] == ['Name at least one category to hold the money.']
-    # and the tab is in the console and on the landing strip, under the name
+    # and the tab is in the console's Proposals menu (D212), under the name
     # the desk gave it (D149), at #uncalled
-    assert "['uncalled', 'Uncalled Capital Allocation', onUncalled, 0]" in source
-    assert "['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation']" in source
+    assert "{ view: 'uncalled', label: 'Uncalled Capital Allocation' }" in source
     assert "if (view === 'uncalled') return '#uncalled';" in source
     assert "repo.view === 'rules'" not in source and "'#rules'" not in source, \
         'no Rules tab left behind'

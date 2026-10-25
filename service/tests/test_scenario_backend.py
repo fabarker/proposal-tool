@@ -62,7 +62,9 @@ def test_availability_matches_supplied_universe():
 def test_twenty_million_rule_removes_private_allocations():
     small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='', entity='gsi')
     schema = PORT.get_schema(BASIS, small)
-    assert schema['options']['allocations'] == ['Core', 'ex-Alts']
+    # still listed, so the page greys them out with the mandate they need (D200)
+    assert schema['options']['allocations'] == ['Full', 'Core', 'ex-Alts', 'ex-HFs']
+    assert schema['rules']['privateMarkets']['gates']['USD|Moderate|Full|0'] == 20e6
     assert len(schema['availability']) == 15          # 7 x (Core, ex-Alts) + all-equity
     assert all('|Full|' not in k and '|ex-HFs|' not in k for k in schema['availability'])
 
@@ -146,8 +148,10 @@ def test_variant_and_mandate_filters_compose():
     """Both are subtractive and independent; every variant offers Ex Alts,
     which holds no private assets, so no intersection is empty."""
     small = MandateInput(topAccountSize=15e6, mandateSize=10e6, primaryPwa='', entity='gsi')
-    esg = PORT.get_schema(BASIS, small, 'PMG ESG')['options']['allocations']
-    assert esg == ['ex-Alts']                 # ex-HFs is a private-asset allocation
+    esg = PORT.get_schema(BASIS, small, 'PMG ESG')
+    # ex-HFs is a private-asset allocation: listed, and no portfolio of it offered (D200)
+    assert esg['options']['allocations'] == ['ex-Alts', 'ex-HFs']
+    assert esg['availability'] and all('|ex-HFs|' not in k for k in esg['availability'])
     for variant in rules.IMPLEMENTATION_VARIANTS:
         assert rules.allocationsFor(10e6, variant), variant
 
@@ -1119,7 +1123,7 @@ def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
                           text=True, env=environment)
     assert done.returncode == 0, done.stderr[-600:]
     routes, asked = done.stdout.split()
-    assert int(routes) == 72, 'the whole block registered without the extract'
+    assert int(routes) == 94, 'the whole block registered without the extract'
     assert asked == 'raised', 'and the data is still required when it is wanted'
 
 
@@ -1324,9 +1328,11 @@ def test_excluding_fees_takes_the_columns_off_the_sheet():
     # the workbook keeps the product cost and weights it alone; the deck
     # carries no cost column at all (D152)
     assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS] + [COST_COLUMN]
+    # and no listing columns, which are the workbook's alone (D208)
     assert implColumns(False, deck=True) == [c for c in IMPL_COLUMNS
-                                             if c not in FEE_COLUMNS and c != 'Product Cost']
-    assert implColumns(True, deck=True) == IMPL_COLUMNS
+                                             if c not in FEE_COLUMNS and c != 'Product Cost'
+                                             and c not in ('Issue Currency', 'Hedging')]
+    assert implColumns(True, deck=True) == [c for c in IMPL_COLUMNS if c not in ('Issue Currency', 'Hedging')]
     # the columns that survive keep their order and their neighbours: the
     # notional beside the products, the product cost then its weighting last
     assert implColumns(False)[:4] == ['Categories & Asset Classes', 'Products',
@@ -1544,7 +1550,10 @@ def test_js_implementation_table_rows_are_all_the_same_width():
     assert 'Minimum Investment' not in IMPL_COLUMNS
     assert 'Exp ccy' in priced['columns']
     assert 'Exposure ccy' not in IMPL_COLUMNS and 'Exp ccy' not in IMPL_COLUMNS
-    assert len(priced['columns']) == len(IMPL_COLUMNS) + 3
+    # the listing a line holds is two columns on the sheet and a line under
+    # the ticker on the screen (D208)
+    assert 'Issue Currency' in IMPL_COLUMNS and 'Issue Currency' not in priced['columns']
+    assert len(priced['columns']) == len(IMPL_COLUMNS) + 1
 
 def test_js_price_build_up_mirror_agrees_with_python():
     """D84. The card that shows HOW a marginal blend was reached must reach
@@ -2734,7 +2743,7 @@ def test_the_fee_group_column_is_gone_but_still_prices_the_row():
 def test_the_cost_column_is_named_product_cost():
     """Item 2. Header text only - the field behind it is unchanged."""
     assert 'Product Cost' in IMPL_COLUMNS and 'Cost' not in IMPL_COLUMNS
-    assert IMPL_COLUMNS.index('Product Cost') == 9
+    assert IMPL_COLUMNS.index('Product Cost') == 11          # after the listing's two (D208)
     result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,

@@ -154,6 +154,32 @@ function availabilitySet() {
   return state._avail;
 }
 function available(k) { return !!availabilitySet()[keyStr(k)]; }
+/* The private markets minimums (D200): what a portfolio that holds private
+   markets needs - the lowest minimum any product has at it, or a gap where
+   none has one - read from the schema for the basis currency. Null for one
+   that holds none. */
+function pmGate(k) {
+  var gates = opt('rules.privateMarkets.gates', null);
+  var ks = k ? keyStr(k) : '';
+  if (!gates || !Object.prototype.hasOwnProperty.call(gates, ks)) return null;
+  return gates[ks] == null ? { gap: true, minimum: null } : { gap: false, minimum: gates[ks] };
+}
+/* whether the mandate keeps this portfolio's allocation closed */
+function pmClosed(k) {
+  var need = pmGate(k), size = state.mandate ? state.mandate.mandateSize : null;
+  if (!need || size === null || size === undefined) return false;
+  return need.gap || size < need.minimum - 1e-6;
+}
+/* $26m, as the rail says it */
+function pmMillions(n) {
+  var m = n / 1e6;
+  return '$' + (Math.round(m * 100) / 100).toLocaleString('en-US') + 'm';
+}
+function pmClosedWords(k) {
+  var need = pmGate(k);
+  if (!need) return '';
+  return need.gap ? 'no private markets minimum set yet' : 'needs a ' + pmMillions(need.minimum) + ' mandate';
+}
 /* Why a level cannot be had (C6). "Unavailable" reads as an outage; what is
    actually true is narrower and usually fixable, and the availability set
    already knows it: the same level exists with the exclusion the other way,
@@ -161,6 +187,8 @@ function available(k) { return !!availabilitySet()[keyStr(k)]; }
 function whyUnavailable(allocationType, excludeRealAssets, risk) {
   var probe = buildKey(allocationType, excludeRealAssets, risk);
   if (!probe || available(probe)) return '';
+  /* the mandate is below what its private markets need (D200) */
+  if (pmClosed(probe)) return pmClosedWords(probe);
   if (reAllowed(allocationType) && available(buildKey(allocationType, !excludeRealAssets, risk))) {
     return excludeRealAssets ? 'not offered ex-RAs' : 'only offered ex-RAs';
   }
@@ -1384,8 +1412,10 @@ function pushCustomPortfolio(change) {
   return trackWrite(apiFetch('/scenario/' + encodeURIComponent(state.scenarioId), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ customPortfolio: { active: !!next.active, profile: next.profile,
-                                              products: next.products || [] } })
+    body: JSON.stringify({ customPortfolio: Object.assign({ active: !!next.active, profile: next.profile,
+                                                            products: next.products || [] },
+                                                          /* the benchmark only when it is chosen (D211) */
+                                                          'benchmark' in (change || {}) ? { benchmark: next.benchmark || '' } : {}) })
   })).then(function (body) {
     if (seq === cpSeq && body && body.customPortfolio) state.customPortfolio = body.customPortfolio;
     refresh();
@@ -1914,7 +1944,12 @@ function renderBase() {
     ? '<option value=""' + (showCustom ? '' : ' selected') + '>—</option>'
     : (shownAllocation || showCustom ? '' : '<option value="" selected>Select…</option>')
       + allocationChoices(risk).map(function (a) {
-          return '<option' + (a === shownAllocation && !showCustom ? ' selected' : '') + '>' + esc(a) + '</option>';
+          /* greyed out, with the mandate it needs, where the private
+             markets minimums keep it closed at this risk level (D200) */
+          var probe = risk ? buildKey(a, reAllowed(a) && (exRA || forceExRA), risk) : null;
+          var shut = probe && pmClosed(probe) && !(a === shownAllocation && !showCustom);
+          return '<option value="' + esc(a) + '"' + (a === shownAllocation && !showCustom ? ' selected' : '')
+            + (shut ? ' disabled' : '') + '>' + esc(a) + (shut ? ' — ' + esc(pmClosedWords(probe)) : '') + '</option>';
         }).join(''))
     + (offerCustom ? '<optgroup label="Build it yourself"><option value="__custom__"'
         + (showCustom ? ' selected' : '') + (risk ? '' : ' disabled') + '>Custom'
@@ -1942,6 +1977,12 @@ function renderBase() {
     raNote = 'Required by ' + esc(variant) + '.';
   }
   var raEnabled = !allEquity && allocationType && canRA && canEdit() && !forceExRA;
+  /* the other side of the exclusion may need a larger mandate (D200) */
+  var raFlip = raEnabled && risk ? buildKey(allocationType, !exRA, risk) : null;
+  if (raFlip && pmClosed(raFlip)) {
+    raEnabled = false;
+    raNote = esc(allocationType) + (exRA ? '' : ' ex-RAs') + ' ' + esc(pmClosedWords(raFlip)) + '.';
+  }
 
   el.className = 'tier';
   /* Allocation, then risk level, then the exclusion: the selects are the
@@ -3853,17 +3894,19 @@ var UID_SHAPE = 'A Proposal UID is pr_ followed by twelve letters or digits.';
 
 /* The fields the user supplies. Option lists come from the schema
    (options.accountRequest), so the page never carries a list of its own; so
-   does the one default. Every field is required; the custodian's name is
-   asked for, and required, only for external custody. */
+   does the one default, and so does a field's note. Every field is required;
+   the custodian's name is asked for, and required, only for external
+   custody. */
 var AC_FIELDS = [
   { id: 'acname',   key: 'mandateName',        label: 'Mandate Name',         kind: 'text',   required: true },
   { id: 'acrel',    key: 'clientRelationship', label: 'Client Relationship',  kind: 'select', required: true, options: 'clientRelationships' },
   { id: 'actype',   key: 'accountType',        label: 'Account Type',         kind: 'select', required: true, options: 'accountTypes' },
   { id: 'acmifid',  key: 'mifidClass',         label: 'MiFID Class',          kind: 'select', required: true, options: 'mifidClasses' },
-  { id: 'acsplit',  key: 'capitalIncomeSplit', label: 'Capital Income Split Requirement', kind: 'select', required: true, options: 'yesNo' },
   { id: 'actax',    key: 'taxDomicile',        label: 'Tax Domicile',         kind: 'text',   required: true, placeholder: 'Country' },
   { id: 'acuknd',   key: 'ukRndClient',        label: 'UK RND Client',        kind: 'select', required: true, options: 'yesNo' },
   { id: 'acgs',     key: 'gsAffiliate',        label: 'GS Employee or Affiliate', kind: 'select', required: true, options: 'yesNo' },
+  { id: 'acentity', key: 'offeringEntity',     label: 'Offering Entity',      kind: 'select', required: true, options: 'offeringEntities' },
+  { id: 'acphasing', key: 'phasingTimeline',   label: 'Phasing Timeline',     kind: 'select', required: true, options: 'phasingTimelines', note: 'phasingNote' },
   { id: 'accustody', key: 'custodyPlatform',   label: 'Custody Platform',     kind: 'select', required: true, options: 'custodyPlatforms' },
   { id: 'accustodian', key: 'custodianName',   label: 'Custodian Name',       kind: 'text',   required: true, external: true }
 ];
@@ -3908,6 +3951,8 @@ function openAccountDialog(opener) {
     uid: '', status: 'idle',          /* 'idle'|'looking'|'found'|'notfound'|'malformed'|'error' */
     message: '', proposal: null, requests: [],
     fields: acBlankFields(),
+    restrictions: [], chosen: [], rq: '',   /* the list on offer, the ids picked, the search (D203) */
+    fees: {},                               /* a fee typed a row, where the proposal had none (D206) */
     err: null, dirty: false, submitting: false, receipt: null,
     seq: 0, timer: null
   };
@@ -3964,6 +4009,11 @@ async function lookupProposal(uid, seq) {
     if (!account || account.seq !== seq) return;
     account.status = 'found'; account.message = '';
     account.proposal = found.proposal; account.requests = found.requests || [];
+    /* the list on offer now; a pick no longer on it goes (D203) */
+    account.restrictions = found.restrictions || [];
+    account.chosen = account.chosen.filter(function (id) {
+      return account.restrictions.some(function (r) { return r.id === id; });
+    });
     if (account.requests.length) {
       announce('polite', 'This proposal already has an account opening request, '
         + account.requests[0].requestId + '.');
@@ -3994,12 +4044,37 @@ function accountMissing() {
     if (!spec.required || !acAsked(spec)) return false;
     var v = f[spec.key];
     return !(v && String(v).trim());
-  });
+  }).concat(accountFeesMissing());
+}
+
+/* The SMA Details' rows (D206): each fee a proposal never priced is asked
+   for in basis points, and a row without its code or benchmark stops the
+   request until an admin gives it one. */
+function accountSmaRows() {
+  var d = account.proposal && account.proposal.smaDetails;
+  return d ? d.rows || [] : [];
+}
+function accountSmaName(r) {
+  return r.kind === 'mandate' ? (String(account.fields.mandateName || '').trim() || 'the mandate') : r.name;
+}
+function acFeeOk(text) {
+  var t = String(text == null ? '' : text).trim().replace(/,/g, '').replace(/\s*bp$/i, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return false;
+  return parseFloat(t) <= 500;
+}
+function accountFeesMissing() {
+  var d = account.proposal && account.proposal.smaDetails;
+  if (!d || d.fees !== 'none') return [];
+  return d.rows.filter(function (r) { return !acFeeOk((account.fees || {})[r.key]); })
+    .map(function (r) { return { label: 'Management fee of ' + accountSmaName(r) }; });
+}
+function accountBlocked() {
+  return accountSmaRows().filter(function (r) { return r.problem; });
 }
 
 function accountReady() {
   return !!(account && account.status === 'found' && !account.requests.length
-            && !accountMissing().length);
+            && !accountMissing().length && !accountBlocked().length);
 }
 
 function accountStatusText() {
@@ -4007,11 +4082,17 @@ function accountStatusText() {
   if (a.status === 'idle') return 'Paste the UID to continue.';
   /* looking, refused or already requested: the line under the UID says it */
   if (!accountExpanded()) return '';
-  var missing = accountMissing();
+  var missing = accountMissing(), blocked = accountBlocked();
+  /* one row named, with the first of its words; several counted - each
+     says in red, in the table, what it lacks and who gives it */
+  var off = blocked.length === 1
+    ? 'Submit is off: ' + accountSmaName(blocked[0]) + ': ' + blocked[0].problem.split('. ')[0].replace(/\.?$/, '.')
+    : blocked.length ? 'Submit is off: ' + blocked.length + ' rows of the SMA Details lack a code or a benchmark, marked in red.' : '';
   if (missing.length) {
     return missing.length + ' required field' + (missing.length === 1 ? '' : 's') + ' remaining: '
-      + missing.map(function (m) { return m.label; }).join(', ') + '.';
+      + missing.map(function (m) { return m.label; }).join(', ') + '.' + (off ? ' ' + off : '');
   }
+  if (off) return off;
   /* The PWA and mandate beside the UID: the last thing read before the
      proposal's one request is spent is the thing the user would check (D111). */
   var p = a.proposal;
@@ -4032,6 +4113,7 @@ function accountExpanded() {
    was kept. A default does not count: the card wrote that. */
 function accountHasDetails() {
   var f = account.fields, blank = acBlankFields();
+  if (account.chosen.length) return true;
   return AC_FIELDS.some(function (spec) {
     return !!(f[spec.key] && String(f[spec.key]).trim()) && f[spec.key] !== blank[spec.key];
   });
@@ -4074,19 +4156,6 @@ function whenText(iso) {
   var date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   var time = String(iso).slice(11, 16);
   return /^\d\d:\d\d$/.test(time) ? date + ' ' + time : date;
-}
-
-function riskAllocationText(p) {
-  var risk = riskLabel(p.riskLevel);
-  if (!p.allocationType) return risk;
-  return risk + ' · ' + p.allocationType + (p.excludeRealAssets ? ' · ex Real Assets' : '');
-}
-
-function switchesText(p) {
-  var on = [];
-  if (p.tacticalTilt) on.push('Tactical tilt');
-  if (p.volPremium) on.push('Vol premium');
-  return on.length ? on.join(' · ') : 'None';
 }
 
 function renderAccountDialog() {
@@ -4150,11 +4219,12 @@ function accountFormMarkup() {
   }
   return '<h2 id="acTitle" class="dlg-shout">Open an Account</h2>'
     + '<p class="dlg-sub">Start from the proposal the account is for.</p>'
-    + (open ? '<div class="ac-grow">' + accountProposalMarkup(busy) + accountFieldsMarkup(busy) + '</div>'
+    + (open ? '<div class="ac-grow">' + accountProposalMarkup(busy) + accountFieldsMarkup(busy)
+              + accountRestrictionsMarkup(busy) + accountSmaMarkup(busy) + '</div>'
             : accountUidMarkup())
     + (open && a.err ? '<p class="md-err" id="acerr" role="alert">' + esc(a.err.msg) + '</p>' : '')
     + '<div class="dlg-actions split' + (open ? ' ac-foot' : '') + '">'
-    + '<span class="dlg-status' + (ready ? ' ok' : '') + '" id="acstatus" role="status">'
+    + '<span class="dlg-status' + (ready ? ' ok' : '') + (open && accountBlocked().length ? ' off' : '') + '" id="acstatus" role="status">'
     + esc(accountStatusText()) + '</span>'
     + '<div class="dlg-grp">' + actions + '</div></div>';
 }
@@ -4192,23 +4262,28 @@ function accountUidMarkup() {
 
 /* The proposal, once found: the UID locked into one line, then the terms as
    plain text rather than greyed boxes - information to check, not controls
-   switched off - with the sleeves folded behind one line (D111). */
+   switched off (D111). Then what the proposal implements, which the server
+   works out and the request records as shown: fixed, set apart, with no
+   control in it (D202). */
+function accountDigestMarkup(rows, cls, label) {
+  return '<dl class="ac-digest' + (cls ? ' ' + cls : '') + '"' + (label ? ' aria-label="' + esc(label) + '"' : '')
+    + '>' + rows.map(function (t) {
+      return '<div' + (t[2] ? ' class="wide"' : '') + '><dt>' + esc(t[0]) + '</dt><dd>'
+        + esc(t[1] || '—') + '</dd></div>';
+    }).join('') + '</dl>';
+}
+
 function accountProposalMarkup(busy) {
   var p = account.proposal;
   var terms = [
     ['Primary PWA', p.primaryPwa],
-    ['Basis', p.currency + ' · ' + p.hedging],
+    ['Base currency', p.currency],
     ['Mandate size', money(p.mandateSize)],
     ['Top account size', money(p.topAccountSize)],
     ['Implementation', p.variant],
-    ['Risk · allocation', riskAllocationText(p)],
-    ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees'],
-    ['Switches', switchesText(p)]
+    ['Fees', p.includeFees ? (p.feeSchedule || '') + ' · ' + (p.feeLevel || '') : 'No fees']
   ];
-  var sleeves = p.sleeves || [];
-  var names = sleeves.map(function (s) { return s.category; });
-  var preview = names.slice(0, 3).join(', ')
-    + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '');
+  var info = p.allocationInfo;
   return '<div class="ac-lock">'
     + '<span class="ac-tick" aria-hidden="true">✓</span>'
     + '<span class="ac-uid">' + esc(p.proposalId) + '</span>'
@@ -4217,31 +4292,42 @@ function accountProposalMarkup(busy) {
     + '<button type="button" class="btn-inline" id="acchange"' + (busy ? ' disabled' : '')
     + ' aria-label="Change the Proposal UID">Change</button></div>'
     + '<div class="dlg-sect">The proposal<span class="dlg-tag">from the register</span></div>'
-    + '<dl class="ac-digest">' + terms.map(function (t) {
-        return '<div><dt>' + esc(t[0]) + '</dt><dd>' + esc(t[1] || '—') + '</dd></div>';
-      }).join('') + '</dl>'
-    + (sleeves.length
-        ? '<details class="ac-sleeves"><summary><b>' + sleeves.length + ' sleeve'
-          + (sleeves.length === 1 ? '' : 's') + '</b><span>' + esc(preview) + '</span></summary>'
-          + '<div class="dlg-sleeves">' + sleeves.map(function (s) {
-              return '<div><span>' + esc(s.category) + '</span><span>' + esc(s.sleeve || '—')
-                + (s.revision ? '<em>r' + esc(String(s.revision)) + '</em>' : '') + '</span></div>';
-            }).join('') + '</div></details>'
-        : '<p class="ac-none">No sleeves recorded.</p>');
+    + accountDigestMarkup(terms)
+    + (info
+        ? '<div class="dlg-sect">Allocation info<span class="dlg-tag ac-fixed-tag">inferred · cannot be edited</span></div>'
+          + accountDigestMarkup([
+              ['Allocation Type', info.allocationType],
+              ['Risk Profile', info.riskProfile],
+              ['Currency Hedging Policy', info.hedgingPolicy],
+              ['Tactical Tilt Implementation', info.tacticalTilt ? 'True' : 'False'],
+              ['Equity Allocation Implementation', info.equityImplementation, true]
+            ], 'ac-fixed', 'Allocation info, inferred from the proposal')
+        : '');
 }
 
 function accountFieldsMarkup(busy) {
   var a = account;
   var errField = a.err && a.err.field;
-  function invalid(id) {
-    return (errField === id) ? ' aria-invalid="true" aria-describedby="acerr"' : '';
-  }
   return '<div class="dlg-sect">The account</div><div class="dlg-grid">' + AC_FIELDS.filter(acAsked).map(function (spec) {
     var v = a.fields[spec.key];
     var label = '<label for="' + spec.id + '">' + esc(spec.label)
       + (spec.required ? '<span class="req" aria-hidden="true">•</span>' : '') + '</label>';
+    /* A note sits behind an i beside the label: shown on hover, on focus or
+       when pressed, and read with the control it describes (D202). */
+    var note = spec.note && opt('options.accountRequest.' + spec.note, '');
+    var noteId = spec.id + 'note';
+    if (note) {
+      label = '<div class="ac-lab">' + label
+        + '<button type="button" class="ac-info" data-acnote="' + noteId + '" aria-label="About '
+        + esc(spec.label) + '" aria-expanded="false" aria-controls="' + noteId + '">i</button>'
+        + '<p class="ac-note" id="' + noteId + '" role="tooltip">' + esc(note) + '</p></div>';
+    }
+    var described = [errField === spec.id ? 'acerr' : '', note ? noteId : '']
+      .filter(Boolean).join(' ');
     var common = ' id="' + spec.id + '" data-acf="' + spec.key + '"'
-      + (spec.required ? ' aria-required="true"' : '') + invalid(spec.id)
+      + (spec.required ? ' aria-required="true"' : '')
+      + (errField === spec.id ? ' aria-invalid="true"' : '')
+      + (described ? ' aria-describedby="' + described + '"' : '')
       + (busy ? ' disabled' : '');
     var control;
     if (spec.kind === 'select') {
@@ -4260,6 +4346,121 @@ function accountFieldsMarkup(busy) {
   }).join('') + '</div>';
 }
 
+/* Investment restrictions (D203): any number of the desk's list, or none.
+   What is picked shows as chips beneath the list, each with its way out -
+   beneath, so a tick never moves the rows under the pointer; the list
+   filters once it is long. The chips and the list redraw on their own, so
+   the search box keeps its caret. */
+var AC_SEARCH_FROM = 9;
+function accountRestrictionsMarkup(busy) {
+  var list = account.restrictions || [];
+  var head = '<div class="dlg-sect">Investment Restrictions<span class="dlg-tag ac-fixed-tag">optional · pick any that apply</span></div>';
+  if (!list.length) return head + '<p class="ac-rnone">No restrictions are on offer yet.</p>';
+  return head + '<div class="ac-restr">'
+    + (list.length >= AC_SEARCH_FROM
+        ? '<input type="search" id="acrsearch" class="ac-rsearch" autocomplete="off" placeholder="Search the restrictions…"'
+          + ' aria-label="Search the restrictions" aria-controls="acrlist" value="' + esc(account.rq) + '"' + (busy ? ' disabled' : '') + '>'
+        : '')
+    + '<div class="ac-rlist" id="acrlist" role="group" aria-label="Investment restrictions">' + accountRestrictionListMarkup(busy) + '</div>'
+    + '<div class="ac-chips" id="acrchips">' + accountChipsMarkup(busy) + '</div></div>';
+}
+
+function accountChosen() {
+  return (account.restrictions || []).filter(function (r) { return account.chosen.indexOf(r.id) !== -1; });
+}
+
+function accountChipsMarkup(busy) {
+  var chosen = accountChosen();
+  if (!chosen.length) return '<span class="ac-chosen">None chosen.</span>';
+  return '<span class="ac-chosen">' + chosen.length + ' chosen:</span>' + chosen.map(function (r) {
+    return '<span class="ac-chip">' + esc(r.name)
+      + '<button type="button" class="ac-chipx" data-acrx="' + esc(r.id) + '" aria-label="Remove ' + esc(r.name) + '"'
+      + (busy ? ' disabled' : '') + '>×</button></span>';
+  }).join('');
+}
+
+function accountRestrictionListMarkup(busy) {
+  var q = (account.rq || '').trim().toLowerCase();
+  var shown = (account.restrictions || []).filter(function (r) {
+    return !q || (r.name + ' ' + (r.description || '')).toLowerCase().indexOf(q) !== -1;
+  });
+  if (!shown.length) return '<p class="ac-rnone">Nothing on the list matches “' + esc(account.rq.trim()) + '”.</p>';
+  return shown.map(function (r) {
+    var id = 'acr-' + r.id, on = account.chosen.indexOf(r.id) !== -1;
+    return '<label class="ac-ropt" for="' + esc(id) + '"><input type="checkbox" id="' + esc(id) + '" data-acr="' + esc(r.id) + '"'
+      + (on ? ' checked' : '') + (busy ? ' disabled' : '') + '>'
+      + '<span><b>' + esc(r.name) + '</b>' + (r.description ? '<small>' + esc(r.description) + '</small>' : '') + '</span></label>';
+  }).join('');
+}
+
+/* SMA Details (D206): the mandate, then each separate account the
+   implementation holds, every value worked out by the server - code,
+   benchmark, fee and funding - but a fee the proposal never priced, typed
+   here in basis points. A row missing its code or benchmark says why, and
+   who can give it one. */
+function accountSmaMarkup(busy) {
+  var d = account.proposal && account.proposal.smaDetails;
+  if (!d) return '';
+  return '<div class="dlg-sect">SMA Details<span class="dlg-tag ac-fixed-tag">the mandate, then each SMA in the implementation · inferred</span></div>'
+    + '<div class="ac-sma-wrap"><table class="ac-sma"><thead><tr><th scope="col">SMA · mandate code</th><th scope="col">Benchmark</th>'
+    + '<th scope="col" class="n">Management fee</th><th scope="col" class="n">Funding size</th></tr></thead><tbody>'
+    + d.rows.map(function (r, i) { return accountSmaRowMarkup(r, i, d.fees, busy); }).join('')
+    + '</tbody></table></div>';
+}
+
+function acBp(v) { return (Math.round(v * 100) / 100).toString() + ' bp'; }
+
+function accountSmaRowMarkup(r, i, kind, busy) {
+  var mandate = r.kind === 'mandate';
+  var typed = String(account.fields.mandateName || '').trim();
+  var name = mandate ? (typed || 'The mandate') : r.name;
+  var from = { listing: 'its listing', mandate: 'its SMA mandate', product: 'the product’s', proposal: 'the delivered proposal’s', table: 'MAP Benchmarks' }[r.benchmarkFrom] || '';
+  var fee;
+  if (kind === 'none') {
+    var v = (account.fees || {})[r.key] || '';
+    fee = '<span class="ac-bp"><input type="text" id="acfee' + i + '" data-acfee="' + esc(r.key) + '" inputmode="decimal" autocomplete="off"'
+      + ' value="' + esc(v) + '" placeholder="0" aria-required="true" aria-label="' + esc('Management fee of ' + name + ', in basis points') + '"'
+      + (v && !acFeeOk(v) ? ' aria-invalid="true"' : '') + (busy ? ' disabled' : '') + '><span>bp</span></span>'
+      + '<small>not priced: 0 to 500</small>';
+  } else if (r.feeFrom === 'n/a') {
+    fee = 'N/A<small>one rate on the whole mandate</small>';
+  } else {
+    fee = (r.feeBp === null || r.feeBp === undefined ? '—' : esc(acBp(r.feeBp)))
+      + '<small>' + (mandate ? 'the proposal’s, over the portfolio' : 'from the proposal') + '</small>';
+  }
+  return '<tr class="' + (r.problem ? 'blocked' : mandate ? 'mand' : '') + '">'
+    + '<td><span class="ac-sma-nm' + (mandate && !typed ? ' unnamed' : '') + '"' + (mandate ? ' id="acsmaname"' : '') + '>' + esc(name) + '</span>'
+    + '<small>' + (mandate ? (typed ? 'The mandate' : 'Named once the Mandate Name is given') : esc(r.category))
+    + (r.code ? ' · <code>' + esc(r.code) + '</code>' : '') + '</small>'
+    + (r.problem ? '<span class="ac-sma-gap">' + esc(r.problem) + '</span>' : '') + '</td>'
+    + '<td>' + (r.benchmark ? esc(r.benchmark) + (r.benchmarkMnemonic ? ' · <code>' + esc(r.benchmarkMnemonic) + '</code>' : '')
+        + (from ? '<small>' + esc(from) + '</small>' : '') : '<span class="ac-sma-none">—</span>') + '</td>'
+    + '<td class="n">' + fee + '</td>'
+    + '<td class="n">' + esc(money(r.funding))
+    + (mandate && r.inSmas ? '<small>of which in SMAs: ' + esc(money(r.inSmas)) + '</small>' : '')
+    + (r.initialFunding !== null && r.initialFunding !== undefined ? '<small>initially ' + esc(money(r.initialFunding)) + '</small>' : '')
+    + '</td></tr>';
+}
+
+function patchAccountRestrictions(list) {
+  var chips = document.getElementById('acrchips');
+  if (chips) chips.innerHTML = accountChipsMarkup(account.submitting);
+  var host = list && document.getElementById('acrlist');
+  if (host) host.innerHTML = accountRestrictionListMarkup(account.submitting);
+}
+
+function chooseRestriction(id, on) {
+  if (!account || account.submitting) return;
+  account.chosen = account.chosen.filter(function (x) { return x !== id; });
+  if (on) account.chosen.push(id);
+  account.dirty = true;
+  var r = (account.restrictions || []).filter(function (x) { return x.id === id; })[0];
+  patchAccountRestrictions(false);
+  var box = document.getElementById('acr-' + id);
+  if (box) box.checked = on;
+  if (r) announce('polite', r.name + (on ? ' chosen.' : ' taken off.'));
+}
+
 function accountReceiptMarkup() {
   var r = account.receipt;
   return '<div class="dlg-tick" aria-hidden="true">✓</div>'
@@ -4273,6 +4474,34 @@ function accountReceiptMarkup() {
     + '<button type="button" class="btn btn-primary" id="acdone">Done</button></div>';
 }
 
+/* A field's note stays up once pressed - a tap has no hover - until it is
+   pressed again or Escape closes it, before Escape closes the card. A note
+   Escape closed stays down while its i keeps the focus or the pointer, which
+   would otherwise show it again at once. */
+function toggleAccountNote(button) {
+  var open = button.getAttribute('aria-expanded') !== 'true';
+  closeAccountNote();
+  var lab = button.closest('.ac-lab');
+  lab.classList.remove('is-shut');
+  if (!open) { lab.classList.add('is-shut'); return; }
+  button.setAttribute('aria-expanded', 'true');
+  lab.classList.add('is-open');
+}
+
+function closeAccountNote() {
+  var shown = [].filter.call(document.querySelectorAll('#accountDialog .ac-lab:not(.is-shut)'),
+    function (lab) {
+      var note = lab.querySelector('.ac-note');
+      return note && getComputedStyle(note).display !== 'none';
+    })[0];
+  if (!shown) return false;
+  shown.classList.remove('is-open');
+  shown.classList.add('is-shut');
+  var button = shown.querySelector('[data-acnote]');
+  if (button) button.setAttribute('aria-expanded', 'false');
+  return true;
+}
+
 /* The footer alone re-renders while the user types: a full re-render would
    fight the caret in a textarea and drop a select mid-choice. */
 function patchAccountFooter() {
@@ -4282,9 +4511,15 @@ function patchAccountFooter() {
   var ready = accountReady() && !account.submitting;
   status.textContent = accountStatusText();
   status.classList.toggle('ok', ready);
+  status.classList.toggle('off', accountExpanded() && accountBlocked().length > 0);
   submit.disabled = !ready;
   var bad = document.querySelector('#accountDialog [data-acf][aria-invalid="true"]');
-  if (bad) { bad.removeAttribute('aria-invalid'); bad.removeAttribute('aria-describedby'); }
+  if (bad) {
+    bad.removeAttribute('aria-invalid');
+    var kept = (bad.getAttribute('aria-describedby') || '').split(' ')
+      .filter(function (id) { return id && id !== 'acerr'; }).join(' ');
+    if (kept) bad.setAttribute('aria-describedby', kept); else bad.removeAttribute('aria-describedby');
+  }
   var err = document.getElementById('acerr');
   if (err) err.remove();
 }
@@ -4293,6 +4528,13 @@ function onAccountInput(e) {
   var t = e.target;
   if (!t || !account || account.receipt) return false;
   if (t.id === 'acuid') { onUidInput(t.value); return true; }
+  if (t.id === 'acrsearch') { account.rq = t.value; patchAccountRestrictions(true); return true; }
+  if (t.dataset && t.dataset.acfee) {
+    account.fees[t.dataset.acfee] = t.value; account.dirty = true;
+    if (acFeeOk(t.value) || !t.value) t.removeAttribute('aria-invalid'); else t.setAttribute('aria-invalid', 'true');
+    patchAccountFooter();
+    return true;
+  }
   var key = t.dataset && t.dataset.acf;
   if (!key) return false;
   var spec = AC_FIELDS.filter(function (s) { return s.key === key; })[0];
@@ -4300,6 +4542,19 @@ function onAccountInput(e) {
   var was = acAsked({ external: true });
   account.fields[key] = t.value;
   account.err = null; account.dirty = true;
+  /* the mandate's row of the SMA Details is named as the mandate is (D206) */
+  if (key === 'mandateName') {
+    var row = document.getElementById('acsmaname');
+    if (row) {
+      row.textContent = String(t.value || '').trim() || 'The mandate';
+      row.classList.toggle('unnamed', !String(t.value || '').trim());
+      var small = row.nextElementSibling, sub = small && small.firstChild;
+      if (sub && sub.nodeType === 3) {
+        sub.nodeValue = (String(t.value || '').trim() ? 'The mandate' : 'Named once the Mandate Name is given')
+          + (small.querySelector('code') ? ' · ' : '');
+      }
+    }
+  }
   /* the custody platform decides whether the custodian is asked for, so a
      change to it that adds or takes away that field redraws the card */
   if (acAsked({ external: true }) !== was) preserveFocus(renderAccountDialog);
@@ -4313,6 +4568,8 @@ async function submitAccountRequest() {
   renderAccountDialog();
   var body = { proposalId: account.proposal.proposalId };
   AC_FIELDS.forEach(function (spec) { body[spec.key] = acAsked(spec) ? account.fields[spec.key] : ''; });
+  body.restrictions = accountChosen().map(function (r) { return r.id; });
+  body.smaFees = account.fees;
   try {
     var made = await apiFetch('/scenario/account-requests', {
       method: 'POST',
@@ -4334,8 +4591,9 @@ async function submitAccountRequest() {
     renderAccountDialog();
     var node = id ? document.getElementById(id) : null;
     if (node && !node.disabled) node.focus();
-    /* the proposal has changed under us - gone, or now requested - so ask again */
-    if (field === 'proposalId' && (err.status === 404 || err.status === 422)) {
+    /* the proposal has changed under us - gone, or now requested - or the
+       SMA Details have since the lookup, so ask again */
+    if ((field === 'proposalId' && (err.status === 404 || err.status === 422)) || field === 'smaDetails') {
       lookupProposal(account.proposal.proposalId, ++account.seq);
     }
   }
@@ -4813,6 +5071,16 @@ document.addEventListener('click', function (e) {
   if (e.target.id === 'acsubmit') { submitAccountRequest(); return; }
   if (e.target.id === 'accopy') { copyRequestReference(e.target); return; }
   if (e.target.id === 'acchange') { changeProposal(); return; }
+  if (e.target.dataset && e.target.dataset.acnote) { toggleAccountNote(e.target); return; }
+  /* a restriction ticked, or a chip's way out (D203) */
+  if (account && e.target.dataset && e.target.dataset.acr) { chooseRestriction(e.target.dataset.acr, e.target.checked); return; }
+  if (account && e.target.dataset && e.target.dataset.acrx) {
+    var gone = e.target.dataset.acrx;
+    chooseRestriction(gone, false);
+    var back = document.getElementById('acr-' + gone) || document.getElementById('acrsearch');
+    if (back) back.focus();
+    return;
+  }
   if (e.target.dataset && e.target.dataset.scrim !== undefined) {
     if (draft && !draft.dirty) closeMandateDialog();   /* spec 7.1 dialog rules */
     else if (account && !account.dirty && !account.submitting) closeAccountDialog();
@@ -4882,6 +5150,10 @@ document.addEventListener('input', function (e) {
    only for a field that has a value: a user who has not reached the mandate
    field yet must not be told it is wrong. */
 document.addEventListener('focusout', function (e) {
+  /* a note Escape closed may show again once its i is left (D202) */
+  if (e.target.dataset && e.target.dataset.acnote) {
+    e.target.closest('.ac-lab').classList.remove('is-shut');
+  }
   if (!draft) return;
   if (e.target.id === 'mdtop' || e.target.id === 'mdsize') {
     var value = parseMoney(e.target.value);
@@ -4930,6 +5202,7 @@ document.addEventListener('keydown', function (e) {
   if (account && !draft) {
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (closeAccountNote()) return;
       if (!account.submitting) closeAccountDialog();
       return;
     }
@@ -5063,6 +5336,13 @@ document.addEventListener('change', function (e) {
        nothing more - and setBase replaces column one or falls to the nearest
        risk level the combination offers (D54) */
     var key = buildKey(allocationType, exRA, risk);
+    /* a portfolio the private markets minimums keep closed is not built,
+       and nothing falls to another risk level in its place (D200) */
+    if (key && pmClosed(key)) {
+      state.baseDraft = { allocationType: allocationType, excludeRealAssets: exRA, riskLevel: risk };
+      refresh();
+      return;
+    }
     if (!base) guideFocus = true;
     var built = key ? setBase(key) : false;
     if (built || (key && base && keyEq(key, base.key))) {

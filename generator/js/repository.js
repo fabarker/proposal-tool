@@ -95,7 +95,12 @@ var cat = {
   openChip: null,                    /* 'cols' while the column picker is open */
   withdrawn: false,                  /* the withdrawn products shown instead (D165) */
   importSaid: '',                    /* what the last import did */
-  orphansOpen: false                 /* the missing products listed, not just counted */
+  orphansOpen: false,                /* the missing products listed, not just counted */
+  /* the listing each line shows (D207): a currency's, or the main ones. It
+     follows the open proposal's currency until one is picked, and a pick
+     lasts while the console is open and the proposal's currency stands */
+  viewPicked: null, viewFor: null,
+  open: []                           /* the products whose listings are opened under them */
 };
 
 /* The archive (D66, option A): the sleeves taken out of the library, as a
@@ -173,7 +178,15 @@ var CAT_FACETS = [
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
+  /* any of a product's listings (D207) */
+  { key: 'issueCurrency', label: 'Issue currency' },
+  { key: 'hedging', label: 'Hedging', order: ['Hedged', 'ISG Hedged', 'Unhedged', 'Not stated'] },
+  { key: 'listings', label: 'Listings', order: ['One listing', 'Several listings'] },
+  /* the products an admin still has to rank, by the currency left */
+  { key: 'unranked', label: 'Unranked in', order: ['USD', 'GBP', 'CHF', 'EUR', 'Nothing to rank'] },
   { key: 'book', label: 'Implementation type' },
+  /* whether it names a benchmark (D204): the products still to be given one */
+  { key: 'benchmarked', label: 'Benchmark', order: ['Has a benchmark', 'No benchmark'] },
   /* when its values last changed (D165), in bands that do not overlap */
   { key: 'edited', label: 'Last edited', order: ['Last 7 days', '8 to 30 days ago', '31 to 90 days ago', 'Over 90 days ago'] }
 ];
@@ -193,6 +206,9 @@ var CAT_COLUMNS = [
   { key: 'source', label: 'Src' },
   { key: 'exposureCurrency', label: 'Ccy' },
   { key: 'issueCurrency', label: 'Issue' },
+  /* the listing in view's hedging (D207) */
+  { key: 'hedging', label: 'Hedging' },
+  { key: 'benchmark', label: 'Benchmark' },
   { key: 'liquidity', label: 'Liq' },
   { key: 'productCost', label: 'Cost', num: true },
   { key: 'distributionYield', label: 'Yield', num: true },
@@ -258,9 +274,17 @@ function esc(s) { return App.esc(s == null ? '' : String(s)); }
    Pure functions over the fetched data, DOM-free so the suite can run them
    through node against fixture data the way it runs the rounding and tilt
    mirrors. A "row" here is a product enriched with its joins and its
-   figures: { p, used, categories, books, net, tooBig }. */
+   figures, read at the listing in view (D207): { p, v, view, listing, main,
+   matched, count, varies, lower, used, categories, books, net, tooBig } -
+   *v* the product's values at that listing, the ones its cells show. */
 /* the band of a product with no category of its own and no sleeve (D178) */
 var NO_CATEGORY = 'No category';
+/* the base currencies a product ranks its listings in, and the views of the
+   catalogue: each currency's, or every product's main listing */
+var CAT_CCYS = ['USD', 'GBP', 'CHF', 'EUR'];
+var CAT_MAIN = 'Main';
+var CAT_LISTING_FIELDS = ['ticker', 'code', 'issueCurrency', 'hedging', 'shareClass', 'exposureCurrency',
+                          'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark'];
 function catJoin(sleeves) {
   /* productId -> { used, categories, books } from the sleeves that hold it */
   var map = {};
@@ -274,38 +298,132 @@ function catJoin(sleeves) {
   });
   return map;
 }
-function catEnrich(products, sleeves, mandateSize) {
+/* a product's listings (D207), or the one its top level carries */
+function catListings(p) { return p.listings && p.listings.length ? p.listings : [p]; }
+/* the listings a proposal in *view* tries, in order: the ones ranked there,
+   else the main one alone - which is all the Main view shows */
+function catRanked(p, view) {
+  var all = catListings(p);
+  if (CAT_CCYS.indexOf(view) !== -1) {
+    var placed = all.filter(function (l) { return l.ranks && l.ranks[view]; })
+      .sort(function (a, b) { return a.ranks[view] - b.ranks[view]; });
+    if (placed.length) return placed;
+  }
+  return [all[0]];
+}
+/* every listing in the order the arrow opens them: the ones ranked in the
+   view first to last, then the rest in the product's order */
+function catOpenOrder(p, view) {
+  var all = catListings(p), ranked = CAT_CCYS.indexOf(view) !== -1
+    ? all.filter(function (l) { return l.ranks && l.ranks[view]; }).sort(function (a, b) { return a.ranks[view] - b.ranks[view]; })
+    : [];
+  return ranked.concat(all.filter(function (l) { return ranked.indexOf(l) === -1; }));
+}
+/* the product's values at *listing*: what it is, with the listing's own */
+function catAt(p, listing) {
+  var v = {};
+  for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) v[k] = p[k];
+  CAT_LISTING_FIELDS.forEach(function (f) { if (listing[f] !== undefined) v[f] = listing[f]; });
+  if (!v.ticker) v.ticker = '—';
+  return v;
+}
+/* a listing's value as a cell compares it */
+function catText(v) { return v === null || v === undefined || v === '' ? '—' : String(v); }
+/* *row* read at *listing*: its values, net yield, the values its other
+   listings differ in, the smaller minimum a lower rank has, and whether
+   every listing a proposal in the view tries is above the open mandate -
+   since one below it would step in (D208) */
+function catRowAt(row, listing, mandateSize) {
+  var p = row.p, all = catListings(p), order = catRanked(p, row.view);
+  var v = catAt(p, listing);
+  row.listing = listing; row.v = v;
+  var y = v.distributionYield, cost = v.productCost;
+  /* the yield less the listing's own cost - never a management fee (D114) */
+  row.net = (typeof y === 'number' && typeof cost === 'number') ? y - cost : null;
+  row.tooBig = typeof mandateSize === 'number' && mandateSize > 0 && order.every(function (l) {
+    return typeof l.minimumInvestment === 'number' && l.minimumInvestment > mandateSize;
+  });
+  row.varies = {};
+  if (all.length > 1) {
+    CAT_LISTING_FIELDS.forEach(function (f) {
+      var seen = [];
+      all.forEach(function (l) { var t = catText(f === 'ticker' && l[f] === '—' ? '' : l[f]); if (seen.indexOf(t) === -1) seen.push(t); });
+      if (seen.length > 1) row.varies[f] = seen;
+    });
+  }
+  row.lower = null;
+  var held = order.indexOf(listing), floor = listing.minimumInvestment;
+  if (held !== -1 && typeof floor === 'number' && floor > 0) {
+    order.slice(held + 1).forEach(function (l, k) {
+      var m = typeof l.minimumInvestment === 'number' ? l.minimumInvestment : 0;
+      if (m < floor && (row.lower === null || m < row.lower.minimum)) row.lower = { minimum: m, rank: held + k + 2 };
+    });
+  }
+  return row;
+}
+function catEnrich(products, sleeves, mandateSize, view) {
   var join = catJoin(sleeves);
+  view = view || CAT_MAIN;
   return (products || []).map(function (p) {
     var j = join[p.productId] || { used: 0, categories: [], books: [] };
-    var y = p.distributionYield;
-    var cost = p.productCost;
-    var min = p.minimumInvestment;
-    return {
-      p: p, used: j.used, categories: j.categories, books: j.books,
-      /* the yield less the product's own cost - never a management fee (D114) */
-      net: (typeof y === 'number' && typeof cost === 'number') ? y - cost : null,
-      tooBig: typeof min === 'number' && typeof mandateSize === 'number' && mandateSize > 0 && min > mandateSize
-    };
+    var all = catListings(p);
+    var row = { p: p, view: view, count: all.length, matched: false,
+                /* a currency the product has not ranked shows its main listing, said so */
+                main: view !== CAT_MAIN && all.length > 1 && !all.some(function (l) { return l.ranks && l.ranks[view]; }),
+                used: j.used, categories: j.categories, books: j.books };
+    return catRowAt(row, catRanked(p, view)[0], mandateSize);
   });
+}
+/* the base currencies a product of several listings ranks none in */
+function catUnranked(p) {
+  var all = catListings(p);
+  if (all.length < 2) return [];
+  return CAT_CCYS.filter(function (c) { return !all.some(function (l) { return l.ranks && l.ranks[c]; }); });
 }
 function catValuesOf(row, field) {
   /* the product's own category (D178); without one, the categories of the
      sleeves that hold it, as before the products had their own */
   if (field === 'category') return row.p.category ? [row.p.category] : row.categories.length ? row.categories : [NO_CATEGORY];
   if (field === 'book') return row.books.length ? row.books : ['Not yet placed'];
+  /* the products still to be given one: a listing with none (D204, D207) */
+  if (field === 'benchmarked') {
+    return [catListings(row.p).every(function (l) { return !!l.benchmark; }) ? 'Has a benchmark' : 'No benchmark'];
+  }
   if (field === 'edited') return [catEditedBucket(row.p.lastEditedAt, Date.now())];
+  if (field === 'listings') return [row.count > 1 ? 'Several listings' : 'One listing'];
+  if (field === 'unranked') { var left = catUnranked(row.p); return left.length ? left : ['Nothing to rank']; }
+  /* a listing's word: any of the product's listings (D207) */
+  if (CAT_LISTING_FIELDS.indexOf(field) !== -1) {
+    var out = [];
+    catListings(row.p).forEach(function (l) {
+      var w = l[field] || (field === 'hedging' ? 'Not stated' : field === 'issueCurrency' ? 'Not given' : '');
+      if (out.indexOf(w) === -1) out.push(w);
+    });
+    return out;
+  }
   return [row.p[field] || ''];
+}
+/* whether a listing's ticker or code holds *q* */
+function catListingHas(l, q) {
+  return [l.ticker, l.code].join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catMatches(p, q) {
   if (!q) return true;
-  /* any ticker it is listed under, its own in a currency included (D180) */
-  var own = p.currencies || {};
-  return [p.name, p.ticker, p.assetClass, p.category, p.vehicle, p.source]
-    .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
-    /* and an SMA by any of its mandate codes (D197) */
-    .concat((p.mandates || []).map(function (m) { return m.code; }))
-    .join(' ').toLowerCase().indexOf(q) !== -1;
+  /* any listing's ticker, mandate code, asset class or benchmark (D204, D207) */
+  var words = [p.name, p.category, p.vehicle, p.source];
+  catListings(p).forEach(function (l) { words.push(l.ticker || '', l.code || '', l.assetClass || '', l.benchmark || ''); });
+  return words.join(' ').toLowerCase().indexOf(q) !== -1;
+}
+/* *row* at the listing a search names, where it names one of the product's
+   other listings rather than the one in view: marked as matched (D207) */
+function catMatched(row, q, mandateSize) {
+  if (!q || row.count < 2 || catListingHas(row.listing, q)) return row;
+  var hit = catListings(row.p).filter(function (l) { return catListingHas(l, q); })[0];
+  if (!hit) return row;
+  var out = {};
+  for (var k in row) if (Object.prototype.hasOwnProperty.call(row, k)) out[k] = row[k];
+  out.matched = true; out.main = false;
+  return catRowAt(out, hit, mandateSize);
 }
 function catPasses(row, state, except) {
   var q = (state.query || '').trim().toLowerCase();
@@ -350,10 +468,12 @@ function catFacets(rows, facets, state, orders) {
   });
   return out;
 }
+/* a cell's value as a sort reads it: the listing in view's (D207) */
 function catSortValue(row, key) {
   if (key === 'used' || key === 'net') return row[key];
-  if (key === 'productCost' || key === 'distributionYield' || key === 'minimumInvestment') return row.p[key];
-  return String(row.p[key] || '').toLowerCase();
+  var v = row.v || row.p;
+  if (key === 'productCost' || key === 'distributionYield' || key === 'minimumInvestment') return v[key];
+  return String(v[key] || '').toLowerCase();
 }
 function catSort(rows, sort) {
   if (!sort) return rows.slice();                      /* the delivery's own order */
@@ -392,7 +512,7 @@ function catGroups(rows, order, chosen) {
      (D178); one without is banded by the sleeves that hold it, a join, so it
      stands in each of their categories. With a category filter in force only
      the chosen categories make bands - a band the filter did not ask for
-     would be noise. */
+     would be noise. The cost is the listing in view's (D207). */
   var at = function (key) { var i = (order || []).indexOf(key); return i === -1 ? 1e9 : i; };
   var index = {}, out = [];
   (rows || []).forEach(function (row) {
@@ -402,7 +522,7 @@ function catGroups(rows, order, chosen) {
       var g = index[key];
       if (!g) { g = index[key] = { key: key, rows: [], lo: null, hi: null, notDaily: 0 }; out.push(g); }
       g.rows.push(row);
-      var cost = row.p.productCost;
+      var cost = (row.v || row.p).productCost;
       if (typeof cost === 'number' && isFinite(cost)) {
         if (g.lo === null || cost < g.lo) g.lo = cost;
         if (g.hi === null || cost > g.hi) g.hi = cost;
@@ -418,103 +538,100 @@ function catGroups(rows, order, chosen) {
 /* catalogue-helpers-end */
 
 /* product-editor-helpers-begin
-   The product form's draft and checks (D165), DOM-free so the suite runs
-   them through node. They say what the server's own check (products.clean)
-   would, so Save is offered only for a product that can be saved; the server
-   is still the authority, and a refusal it gives lands on the same field. */
+   The product form's draft and checks (D165, D207), DOM-free so the suite
+   runs them through node. They say what the server's own check
+   (products.clean) would, so Save is offered only for a product that can be
+   saved; the server is still the authority, and a refusal it gives lands on
+   the same box. The draft is what the product is - its fields - and its
+   listings, a list of rows of text, the first the main one; a listing's
+   boxes are keyed listing0ticker, listing1rankGBP... as the server names
+   them. */
 var PRD_FIELDS = [
   { key: 'productId', label: 'Product ID', kind: 'id', wide: true },
   { key: 'name', label: 'Name', kind: 'text', wide: true },
-  { key: 'ticker', label: 'Ticker', kind: 'text', optional: true },
-  { key: 'assetClass', label: 'Asset class', kind: 'word' },
   { key: 'category', label: 'Category', kind: 'category', optional: true },
-  { key: 'style', label: 'Style', kind: 'word' },
   { key: 'vehicle', label: 'Vehicle', kind: 'word' },
-  { key: 'shareClass', label: 'Share class', kind: 'share', optional: true },
+  { key: 'style', label: 'Style', kind: 'word' },
   { key: 'source', label: 'Source', kind: 'word' },
   { key: 'liquidity', label: 'Liquidity', kind: 'word' },
-  { key: 'exposureCurrency', label: 'Exposure currency', kind: 'word' },
-  /* the currency it is issued in (D184): optional */
-  { key: 'issueCurrency', label: 'Issue currency', kind: 'text', optional: true },
-  { key: 'productCost', label: 'Product cost', kind: 'pct', unit: '%' },
-  { key: 'feeGroup', label: 'Fee group', kind: 'group' },
-  { key: 'distributionYield', label: 'Distribution yield', kind: 'pct', unit: '%', optional: true },
-  { key: 'minimumInvestment', label: 'Minimum investment', kind: 'amount', optional: true }
+  { key: 'feeGroup', label: 'Fee group', kind: 'group' }
 ];
-/* the ticker, minimum, exposure and issue currency, share class,
-   distribution yield, asset class and product cost a product has in each
-   base currency, and whether it is offered there
-   (D180, D182, D184, D189, D190, D194): flat keys in the draft
-   (tickerGBP, minimumInvestmentGBP, exposureCurrencyGBP, issueCurrencyGBP,
-   shareClassGBP, distributionYieldGBP, assetClassGBP, productCostGBP, offeredGBP),
-   the currencies table on the wire, blank where the main one holds */
+/* a listing's boxes (D207): how it is bought, and what it is, costs and
+   takes. *sma* boxes are a separate account's only, *fund* a fund's only. */
+var PRD_LISTING_FIELDS = [
+  { key: 'ticker', label: 'Ticker', short: 'Ticker', kind: 'text', optional: true },
+  { key: 'code', label: 'Mandate code', short: 'Code', kind: 'text', optional: true, sma: true },
+  { key: 'issueCurrency', label: 'Issue currency', short: 'Issue', kind: 'ccy', optional: true },
+  { key: 'hedging', label: 'Hedging', short: 'Hedging', kind: 'hedging', optional: true },
+  { key: 'shareClass', label: 'Share class', short: 'Class', kind: 'share', optional: true, fund: true },
+  { key: 'exposureCurrency', label: 'Exposure currency', short: 'Exposure', kind: 'word' },
+  { key: 'assetClass', label: 'Asset class', short: 'Asset class', kind: 'word' },
+  { key: 'productCost', label: 'Product cost', short: 'Cost %', kind: 'pct', unit: '%' },
+  { key: 'distributionYield', label: 'Distribution yield', short: 'Yield %', kind: 'pct', unit: '%', optional: true },
+  { key: 'minimumInvestment', label: 'Minimum investment', short: 'Minimum', kind: 'amount', optional: true },
+  { key: 'benchmark', label: 'Benchmark', short: 'Benchmark', kind: 'bench', optional: true }
+];
 var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
-var PRD_CCY_FIELDS = [['ticker', 'Ticker', 'text'], ['minimumInvestment', 'Minimum investment', 'amount'],
-                      ['exposureCurrency', 'Exposure currency', 'text'], ['issueCurrency', 'Issue currency', 'text'],
-                      ['shareClass', 'Share class', 'share'], ['distributionYield', 'Distribution yield', 'pct'],
-                      ['assetClass', 'Asset class', 'text'], ['productCost', 'Product cost', 'pct'],
-                      ['offered', 'Offered', 'offered']];
-PRD_CCY_FIELDS.forEach(function (b) {
-  PRD_CURRENCIES.forEach(function (c) {
-    PRD_FIELDS.push({ key: b[0] + c, label: b[1] + ' in ' + c, kind: b[2], optional: true, ccy: c, base: b[0] });
-  });
-});
-/* a field's value on a product as the server serves it: 'no' for a
-   currency it is not offered in, '' for one it is */
-function prdValueOf(p, f) {
-  if (!p) return null;
-  if (!f.ccy) return p[f.key];
-  var own = (p.currencies || {})[f.ccy] || {};
-  if (f.base === 'offered') return own.offered === false ? 'no' : '';
-  if (own.offered === false) return null;
-  return own[f.base] === undefined || own[f.base] === '' ? null : own[f.base];
-}
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
 var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
 var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240,
-                productCost: 10, distributionYield: 50, code: 40 };
-/* a separate account's SMA mandates (D197): one code a base currency and,
-   for a Public Equity SMA, a hedging version, each with figures of its own.
-   In the draft, d.mandates is a list of rows of text; the boxes are keyed
-   mandate0code, mandate0currency, mandate0hedging, mandate0productCost...
-   as the server names them */
+                productCost: 10, distributionYield: 50, code: 40, benchmark: 200 };
+/* a separate account (D197): its vehicle says so. A Public Equity SMA's
+   listing comes in three hedging versions; a fund's may be Hedged or
+   Unhedged; another SMA's has none (D207). */
 var PRD_SMA_VEHICLES = ['separate account', 'sma'];
 var PRD_EQUITY = 'Public Equity';
 var PRD_VERSIONS = ['Hedged', 'ISG Hedged', 'Unhedged'];
-var PRD_MND_FIELDS = [['code', 'Code', 'text'], ['currency', 'Currency', 'ccy'], ['hedging', 'Hedging', 'version'],
-                      ['productCost', 'Cost %', 'pct'], ['minimumInvestment', 'Minimum', 'amount'],
-                      ['distributionYield', 'Yield %', 'pct']];
-var PRD_MND_KEY = /^mandate(\d+)([a-zA-Z]+)$/;
+var PRD_FUND_HEDGING = ['Hedged', 'Unhedged'];
+var PRD_LISTING_KEY = /^listing(\d+)([a-zA-Z]+)$/;
 function prdIsSma(d) { return PRD_SMA_VEHICLES.indexOf(prdText(d && d.vehicle).toLowerCase()) !== -1; }
 function prdIsEquity(d) { return prdText(d && d.category) === PRD_EQUITY; }
-function prdMandateRow(m) {
+/* the hedging a listing of *d* may say */
+function prdHedgings(d) { return prdIsSma(d) ? (prdIsEquity(d) ? PRD_VERSIONS : []) : PRD_FUND_HEDGING; }
+/* the listings of a product as served, or the one its top level carries */
+function prdListingsOf(p) {
+  if (!p) return [];
+  return p.listings && p.listings.length ? p.listings : [p];
+}
+/* a listing as the form holds it: every box the text in it */
+function prdListingRow(l) {
   var row = {};
-  PRD_MND_FIELDS.forEach(function (f) {
-    var v = m ? m[f[0]] : '';
-    row[f[0]] = (v === null || v === undefined) ? '' : String(v);
+  PRD_LISTING_FIELDS.forEach(function (f) {
+    var v = l ? l[f.key] : '';
+    if (f.key === 'ticker' && v === '—') v = '';
+    row[f.key] = (v === null || v === undefined) ? '' : String(v);
+  });
+  PRD_CURRENCIES.forEach(function (c) {
+    var r = l && l.ranks ? l.ranks[c] : null;
+    row['rank' + c] = r ? String(r) : '';
   });
   return row;
 }
-/* the boxes of the draft's mandate rows, as the form's fields: for the
+/* the boxes of the draft's listings, as the form's fields: for the
    problems, the error boxes and the first problem's focus */
-function prdMandateFields(d) {
-  var out = [];
-  ((d && d.mandates) || []).forEach(function (m, i) {
-    PRD_MND_FIELDS.forEach(function (f) {
-      out.push({ key: 'mandate' + i + f[0], label: f[1] + ' of SMA mandate ' + (i + 1), kind: f[2], mnd: i, base: f[0] });
+function prdListingFields(d) {
+  var out = [], rows = (d && d.listings) || [];
+  rows.forEach(function (l, i) {
+    PRD_LISTING_FIELDS.forEach(function (f) {
+      out.push({ key: 'listing' + i + f.key, label: f.label + ' of listing ' + (i + 1), kind: f.kind, at: i, base: f.key });
     });
+    if (rows.length > 1) {
+      PRD_CURRENCIES.forEach(function (c) {
+        out.push({ key: 'listing' + i + 'rank' + c, label: c + ' rank of listing ' + (i + 1), kind: 'rank', at: i, base: 'rank' + c });
+      });
+    }
   });
   return out;
 }
-/* one box's text, in the draft: a product's field, or a mandate row's */
+/* one box's text, in the draft: a product's field, or a listing's */
 function prdSetDraft(key, value) {
-  var at = PRD_MND_KEY.exec(key);
-  if (at && prd.draft.mandates && prd.draft.mandates[+at[1]]) prd.draft.mandates[+at[1]][at[2]] = value;
+  var at = PRD_LISTING_KEY.exec(key);
+  if (at && prd.draft.listings && prd.draft.listings[+at[1]]) prd.draft.listings[+at[1]][at[2]] = value;
   else prd.draft[key] = value;
 }
 function prdGetDraft(d, key) {
-  var at = PRD_MND_KEY.exec(key);
-  if (at) return d.mandates && d.mandates[+at[1]] ? d.mandates[+at[1]][at[2]] : '';
+  var at = PRD_LISTING_KEY.exec(key);
+  if (at) return d.listings && d.listings[+at[1]] ? d.listings[+at[1]][at[2]] : '';
   return d[key];
 }
 
@@ -533,35 +650,39 @@ function prdSlug(name) {
   return String(name || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/g, '');
 }
-/* a product as the form holds it: every field the text in its box */
+/* a product as the form holds it: its fields, then its listings */
 function prdDraftFrom(p) {
   var d = {};
   PRD_FIELDS.forEach(function (f) {
-    var v = p ? prdValueOf(p, f) : '';
-    if (f.key === 'ticker' && v === '—') v = '';
+    var v = p ? p[f.key] : '';
     d[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
-  d.mandates = ((p && p.mandates) || []).map(prdMandateRow);
+  d.listings = p ? prdListingsOf(p).map(prdListingRow) : [prdListingRow(null)];
   return d;
 }
 function prdExample(key) {
   return key === 'productCost' ? 'a percentage, such as 0.25 for 0.25%'
     : key === 'distributionYield' ? 'a percentage, such as 3.2' : 'an amount, such as 5000000';
 }
-function prdFigureProblem(d, key, label, required) {
-  /* a currency's own figure is checked as the main one is (D190) */
-  var base = key.replace(/(USD|GBP|CHF|EUR)$/, '');
-  var v = prdNumber(d[key], base !== 'minimumInvestment');
+/* a figure's problem: *text* as typed, *base* the figure it is */
+function prdFigureText(text, base, label, required) {
+  var v = prdNumber(text, base !== 'minimumInvestment');
   if (v === null) return required ? label + ' is needed: ' + prdExample(base) + '.' : '';
-  if (isNaN(v)) return label + ' ' + JSON.stringify(String(d[key]).trim()) + ' is not a number: give ' + prdExample(base) + '.';
+  if (isNaN(v)) return label + ' ' + JSON.stringify(String(text).trim()) + ' is not a number: give ' + prdExample(base) + '.';
   if (v < 0) return label + ' cannot be negative.';
   if (PRD_MAX[base] && v >= PRD_MAX[base]) {
     return label + ' of ' + v + '% looks wrong: it is a percentage, so 0.25 means 0.25%.';
   }
   return '';
 }
+function prdFigureProblem(d, key, label, required) { return prdFigureText(d[key], key, label, required); }
+/* what makes a listing the one it is, among its product's (D207) */
+function prdListingKey(l) {
+  return [prdText(l.ticker === '—' ? '' : l.ticker).toLowerCase(), prdText(l.code).toLowerCase(),
+          prdText(l.issueCurrency).toUpperCase(), prdText(l.hedging), prdText(l.shareClass)].join('|');
+}
 /* {field: message} for a draft. ctx: { isNew, feeGroups: [], categories: [],
-   takenIds: {id: name}, withdrawnIds: {id: name} } */
+   takenIds: {id: name}, withdrawnIds: {id: name}, held: {'ticker:x': name} } */
 function prdProblems(d, ctx) {
   var out = {};
   var id = String(d.productId || '').trim();
@@ -578,8 +699,6 @@ function prdProblems(d, ctx) {
   var name = prdText(d.name);
   if (!name) out.name = 'Give the product a name.';
   else if (name.length > PRD_MAX.name) out.name = 'Keep the name to ' + PRD_MAX.name + ' characters.';
-  if (prdText(d.ticker).length > PRD_MAX.ticker) out.ticker = 'Keep the ticker to ' + PRD_MAX.ticker + ' characters.';
-  if (prdText(d.issueCurrency).length > PRD_MAX.word) out.issueCurrency = 'Keep the issue currency to ' + PRD_MAX.word + ' characters.';
   PRD_FIELDS.forEach(function (f) {
     if (f.kind !== 'word') return;
     var w = prdText(d[f.key]);
@@ -589,98 +708,98 @@ function prdProblems(d, ctx) {
   if (d.category && ctx.categories && ctx.categories.indexOf(d.category) === -1) {
     out.category = 'The category ' + d.category + ' is not one the sleeves are built for.';
   }
-  if (d.shareClass && PRD_SHARE_CLASSES.indexOf(d.shareClass) === -1) {
-    out.shareClass = 'The share class must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or none.';
-  }
-  var cost = prdFigureProblem(d, 'productCost', 'Product cost', true);
-  if (cost) out.productCost = cost;
   if (!d.feeGroup) out.feeGroup = 'Choose a fee group: it is how the fee card prices the product.';
   else if ((ctx.feeGroups || []).indexOf(d.feeGroup) === -1) {
     out.feeGroup = 'The fee group ' + d.feeGroup + ' is not on the fee card.';
   }
-  var y = prdFigureProblem(d, 'distributionYield', 'Distribution yield', false);
-  if (y) out.distributionYield = y;
-  var m = prdFigureProblem(d, 'minimumInvestment', 'Minimum investment', false);
-  if (m) out.minimumInvestment = m;
-  PRD_FIELDS.forEach(function (f) {
-    if (!f.ccy) return;
-    if (d['offered' + f.ccy] === 'no' || f.base === 'offered') return;
-    if (f.base === 'ticker') {
-      if (prdText(d[f.key]).length > PRD_MAX.ticker) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.ticker + ' characters.';
-    } else if (f.base === 'exposureCurrency' || f.base === 'issueCurrency' || f.base === 'assetClass') {
-      if (prdText(d[f.key]).length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' to ' + PRD_MAX.word + ' characters.';
-    } else if (f.base === 'shareClass') {
-      if (d[f.key] && PRD_SHARE_CLASSES.indexOf(d[f.key]) === -1) {
-        out[f.key] = 'The ' + f.label.charAt(0).toLowerCase() + f.label.slice(1) + ' must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or the main one.';
-      }
-    } else {
-      var own = prdFigureProblem(d, f.key, f.label, false);
-      if (own) out[f.key] = own;
-    }
-  });
-  prdMandateProblems(d, out);
+  prdListingProblems(d, ctx, out);
   return out;
 }
-/* the SMA mandates' problems (D197), into *out*: the server's checks in
-   miniature - only an SMA has any, a Public Equity SMA's name a version and
-   any other SMA's none, a currency is one it is offered in, and no code or
-   cell twice */
-function prdMandateProblems(d, out) {
-  var rows = d.mandates || [];
-  if (!rows.length) return;
-  if (!prdIsSma(d)) {
-    out.mandates = 'Only a separate account (an SMA) has SMA mandates: take them off, or make the vehicle Separate Account.';
-    return;
-  }
-  var equity = prdIsEquity(d), codes = {}, cells = {};
-  rows.forEach(function (m, i) {
-    var box = 'mandate' + i, code = prdText(m.code), ccy = prdText(m.currency).toUpperCase(), hedging = prdText(m.hedging);
-    if (!code) out[box + 'code'] = 'Give the SMA mandate its code.';
-    else if (code.length > PRD_MAX.code) out[box + 'code'] = 'Keep the mandate code to ' + PRD_MAX.code + ' characters.';
-    else if (codes[code.toLowerCase()]) out[box + 'code'] = 'The mandate code ' + code + ' is on the product twice.';
-    codes[code.toLowerCase()] = true;
-    if (PRD_CURRENCIES.indexOf(ccy) === -1) out[box + 'currency'] = 'Choose the base currency.';
-    else if (d['offered' + ccy] === 'no') out[box + 'currency'] = 'The product is not offered in ' + ccy + '.';
-    if (equity && !hedging) out[box + 'hedging'] = 'Choose the hedging version: a Public Equity SMA comes as ' + PRD_VERSIONS.join(', ') + '.';
-    else if (!equity && hedging) out[box + 'hedging'] = 'Only a Public Equity SMA has hedging versions: leave it blank.';
-    var cell = ccy + '|' + (equity ? hedging : '');
-    if (!out[box + 'currency'] && !out[box + 'hedging'] && code) {
-      if (cells[cell]) out[box + 'code'] = out[box + 'code'] || ('Two SMA mandates for ' + ccy + (equity ? ' · ' + hedging : '') + ': ' + cells[cell] + ' and ' + code + '. One code a cell.');
-      else cells[cell] = code;
+/* the listings' problems (D207), into *out*: the server's checks in
+   miniature - whole listings, a code only on an SMA's, the hedging its kind
+   may say, no two the same, no two ranked alike in a currency, and a ticker
+   or a code another product holds */
+function prdListingProblems(d, ctx, out) {
+  var rows = d.listings || [];
+  if (!rows.length) { out.listings = 'A product has at least one listing: its ticker, its cost and the rest.'; return; }
+  var sma = prdIsSma(d), equity = prdIsEquity(d), allowed = prdHedgings(d), seen = {};
+  var held = (ctx && ctx.held) || {};
+  rows.forEach(function (l, i) {
+    var box = 'listing' + i, n = i + 1;
+    var ticker = prdText(l.ticker), code = prdText(l.code), hedging = prdText(l.hedging);
+    if (ticker.length > PRD_MAX.ticker) out[box + 'ticker'] = 'Keep the ticker of listing ' + n + ' to ' + PRD_MAX.ticker + ' characters.';
+    else if (ticker && held['ticker:' + ticker.toLowerCase()] && ticker.toLowerCase() !== 'sma') {
+      out[box + 'ticker'] = 'The ticker ' + ticker + ' belongs to ' + held['ticker:' + ticker.toLowerCase()] + '. A ticker is one product’s.';
     }
-    ['productCost', 'minimumInvestment', 'distributionYield'].forEach(function (figure) {
-      var label = PRD_MND_FIELDS.filter(function (f) { return f[0] === figure; })[0][1];
-      var probe = {}; probe[figure] = m[figure];
-      var p = prdFigureProblem(probe, figure, label + ' of ' + (code || 'the mandate'), false);
-      if (p) out[box + figure] = p;
+    if (code && !sma) out[box + 'code'] = 'Only a separate account (an SMA) has a mandate code: take it off, or make the vehicle Separate Account.';
+    else if (code.length > PRD_MAX.code) out[box + 'code'] = 'Keep the mandate code of listing ' + n + ' to ' + PRD_MAX.code + ' characters.';
+    else if (code && held['code:' + code.toLowerCase()]) {
+      out[box + 'code'] = 'The mandate code ' + code + ' belongs to ' + held['code:' + code.toLowerCase()] + '. A code is one product’s.';
+    }
+    if (prdText(l.issueCurrency).length > PRD_MAX.word) out[box + 'issueCurrency'] = 'Keep the issue currency of listing ' + n + ' to ' + PRD_MAX.word + ' characters.';
+    if (hedging && sma && !equity) out[box + 'hedging'] = 'Only a Public Equity SMA comes in hedging versions: leave it blank.';
+    else if (hedging && allowed.indexOf(hedging) === -1) out[box + 'hedging'] = 'The hedging is ' + allowed.join(', ').replace(/, ([^,]*)$/, ' or $1') + ', or blank.';
+    if (l.shareClass && PRD_SHARE_CLASSES.indexOf(l.shareClass) === -1) {
+      out[box + 'shareClass'] = 'The share class must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or none.';
+    }
+    ['exposureCurrency', 'assetClass'].forEach(function (k) {
+      var w = prdText(l[k]), label = k === 'assetClass' ? 'Asset class' : 'Exposure currency';
+      if (!w) out[box + k] = label + ' of listing ' + n + ' is needed.';
+      else if (w.length > PRD_MAX.word) out[box + k] = 'Keep the ' + label.toLowerCase() + ' of listing ' + n + ' to ' + PRD_MAX.word + ' characters.';
     });
+    [['productCost', 'Product cost', true], ['distributionYield', 'Distribution yield', false],
+     ['minimumInvestment', 'Minimum investment', false]].forEach(function (f) {
+      var p = prdFigureText(l[f[0]], f[0], f[1] + (rows.length > 1 ? ' of listing ' + n : ''), f[2]);
+      if (p) out[box + f[0]] = p;
+    });
+    if (prdText(l.benchmark).length > PRD_MAX.benchmark) out[box + 'benchmark'] = 'Keep the benchmark of listing ' + n + ' to ' + PRD_MAX.benchmark + ' characters.';
+    if (rows.length > 1) {
+      PRD_CURRENCIES.forEach(function (c) {
+        var t = String(l['rank' + c] || '').trim();
+        if (t && !/^\d+$/.test(t)) out[box + 'rank' + c] = 'A rank is a whole number: 1 for the listing a proposal in ' + c + ' holds first, 2 for the next, or blank for none.';
+      });
+    }
+    var key = prdListingKey(l);
+    if (seen[key] !== undefined && !out[box + (code ? 'code' : 'ticker')]) {
+      out[box + (code ? 'code' : 'ticker')] = 'Listings ' + (seen[key] + 1) + ' and ' + n + ' are the same listing. Give one its own issue currency, hedging or share class.';
+    }
+    if (seen[key] === undefined) seen[key] = i;
   });
+  if (rows.length > 1) {
+    PRD_CURRENCIES.forEach(function (c) {
+      var at = {};
+      rows.forEach(function (l, i) {
+        var t = String(l['rank' + c] || '').trim();
+        if (!/^\d+$/.test(t) || +t === 0) return;
+        if (at[+t] !== undefined && !out['listing' + i + 'rank' + c]) {
+          out['listing' + i + 'rank' + c] = 'Listings ' + (at[+t] + 1) + ' and ' + (i + 1) + ' are both ranked ' + (+t) + ' for ' + c + '. Give each its own place.';
+        }
+        if (at[+t] === undefined) at[+t] = i;
+      });
+    });
+  }
 }
-/* the draft as the server reads it: words as words, figures as numbers */
+/* the draft as the server reads it: words as words, figures as numbers;
+   a single listing's ranks are nothing to keep */
 function prdPayload(d) {
-  var out = { currencies: {} };
-  out.mandates = (d.mandates || []).map(function (m) {
-    return { code: prdText(m.code), currency: prdText(m.currency).toUpperCase(), hedging: prdIsEquity(d) ? prdText(m.hedging) : '',
-             productCost: prdNumber(m.productCost, true), minimumInvestment: prdNumber(m.minimumInvestment, false),
-             distributionYield: prdNumber(m.distributionYield, true) };
-  });
+  var out = {};
   PRD_FIELDS.forEach(function (f) {
-    if (f.ccy && d['offered' + f.ccy] === 'no') {
-      /* not offered there: nothing else of its own */
-      if (f.base === 'offered') out.currencies[f.ccy] = { offered: false };
-      return;
+    out[f.key] = f.key === 'productId' ? String(d[f.key] || '').trim() : prdText(d[f.key]);
+  });
+  var rows = d.listings || [];
+  out.listings = rows.map(function (l) {
+    var ranks = {};
+    if (rows.length > 1) {
+      PRD_CURRENCIES.forEach(function (c) {
+        var t = String(l['rank' + c] || '').trim();
+        if (/^\d+$/.test(t) && +t > 0) ranks[c] = +t;
+      });
     }
-    if (f.ccy && f.base === 'offered') return;
-    if (f.ccy) {
-      var v = f.kind === 'amount' ? prdNumber(d[f.key], false) : f.kind === 'pct' ? prdNumber(d[f.key], true) : prdText(d[f.key]);
-      if (v === '' || v === null) return;
-      (out.currencies[f.ccy] = out.currencies[f.ccy] || {})[f.base] = v;
-      return;
-    }
-    if (f.kind === 'pct') out[f.key] = prdNumber(d[f.key], true);
-    else if (f.kind === 'amount') out[f.key] = prdNumber(d[f.key], false);
-    else if (f.key === 'productId') out[f.key] = String(d[f.key] || '').trim();
-    else out[f.key] = prdText(d[f.key]);
+    return { ticker: prdText(l.ticker), code: prdText(l.code), issueCurrency: prdText(l.issueCurrency),
+             hedging: prdText(l.hedging), shareClass: prdText(l.shareClass),
+             exposureCurrency: prdText(l.exposureCurrency), assetClass: prdText(l.assetClass),
+             productCost: prdNumber(l.productCost, true), distributionYield: prdNumber(l.distributionYield, true),
+             minimumInvestment: prdNumber(l.minimumInvestment, false), benchmark: prdText(l.benchmark), ranks: ranks };
   });
   return out;
 }
@@ -691,46 +810,107 @@ function prdShow(key, v) {
   if (key === 'productCost' || key === 'distributionYield') return String(parseFloat(Number(v).toPrecision(12)));
   return String(v);
 }
-/* what saving the draft would move, field by field: [{key, label, before, after}] */
+/* what a listing is called by: its code, else its ticker */
+function prdIdent(l) {
+  var t = prdText(l.ticker); if (t === '—') t = '';
+  return prdText(l.code) || t || '—';
+}
+/* a listing as a person names it (D207): its code or ticker, and where the
+   product has another of that name what tells them apart - its issue
+   currency, then its hedging, then its share class. Mirrors listingLabel. */
+function prdListingLabel(l, all) {
+  var ident = prdIdent(l);
+  var peers = (all || [l]).filter(function (x) { return prdIdent(x) === ident; });
+  if (peers.length <= 1) return ident;
+  var bits = [ident];
+  ['issueCurrency', 'hedging', 'shareClass'].some(function (f) {
+    var values = {};
+    peers.forEach(function (p) { values[prdText(p[f])] = true; });
+    if (Object.keys(values).length > 1 && prdText(l[f])) {
+      bits.push(prdText(l[f]));
+      peers = peers.filter(function (p) { return prdText(p[f]) === prdText(l[f]); });
+      return peers.length === 1;
+    }
+    return false;
+  });
+  return bits.join(' · ');
+}
+/* one listing as a history line shows it. Mirrors showListing. */
+function prdShowListing(l) {
+  var bits = ['issueCurrency', 'hedging', 'shareClass'].map(function (f) { return prdText(l[f]); }).filter(Boolean);
+  if (prdText(l.exposureCurrency)) bits.push('exposure ' + prdText(l.exposureCurrency));
+  if (prdText(l.assetClass)) bits.push('class ' + prdText(l.assetClass));
+  [['productCost', 'cost'], ['distributionYield', 'yield'], ['minimumInvestment', 'min']].forEach(function (f) {
+    var v = l[f[0]];
+    if (typeof v === 'number' && !isNaN(v)) bits.push(f[1] + ' ' + prdShow(f[0], v));
+  });
+  if (prdText(l.benchmark)) bits.push('benchmark ' + prdText(l.benchmark));
+  return bits.join(' · ') || '—';
+}
+/* a currency's ranking in words: 'GEF-GBPH, then GEF-USD · GBP' */
+function prdRankWords(all, c) {
+  return all.filter(function (l) { return l.ranks && l.ranks[c]; })
+    .sort(function (a, b) { return a.ranks[c] - b.ranks[c]; })
+    .map(function (l) { return prdListingLabel(l, all); }).join(', then ');
+}
+function prdSameValue(field, a, b) {
+  if (field === 'productCost' || field === 'distributionYield' || field === 'minimumInvestment') {
+    var x = (a === null || a === undefined || a === '' || (typeof a === 'number' && isNaN(a))) ? null : Number(a);
+    var y = (b === null || b === undefined || b === '' || (typeof b === 'number' && isNaN(b))) ? null : Number(b);
+    if (x === null || y === null) return x === y;
+    return Math.abs(x - y) <= 1e-12;
+  }
+  var p = prdText(a), q = prdText(b);
+  if (field === 'ticker') { if (p === '—') p = ''; if (q === '—') q = ''; }
+  return p === q;
+}
+/* what saving the draft would move: [{key, label, before, after}] - the
+   product's fields, then its listings matched by what makes each the one it
+   is, then each currency's ranking. Mirrors products.changes. */
 function prdChanges(before, d) {
   var now = prdPayload(d), out = [];
   PRD_FIELDS.forEach(function (f) {
     if (f.key === 'productId') return;
-    var was = before ? prdValueOf(before, f) : null, is = prdValueOf(now, f);
-    if (f.key === 'ticker' && was === '—') was = '';
-    if (f.kind === 'pct' || f.kind === 'amount') {
-      var a = (was === null || was === undefined || was === '') ? null : Number(was);
-      var b = (is === null || is === undefined || (typeof is === 'number' && isNaN(is))) ? null : is;
-      if (a === null && b === null) return;
-      if (a !== null && b !== null && Math.abs(a - b) <= 1e-12) return;
-    } else if (prdText(was) === prdText(is)) {
-      return;
-    }
-    if (f.base === 'offered') {
-      out.push({ key: f.key, label: f.label, before: was === 'no' ? 'no' : 'yes', after: is === 'no' ? 'no' : 'yes' });
-      return;
-    }
-    out.push({ key: f.key, label: f.label, before: prdShow(f.base || f.key, was), after: prdShow(f.base || f.key, is) });
+    var was = before ? before[f.key] : null;
+    if (prdText(was) === now[f.key]) return;
+    out.push({ key: f.key, label: f.label, before: prdShow(f.key, was), after: prdShow(f.key, now[f.key]) });
   });
-  /* the SMA mandates, one line a code that came, went or moved (D197) */
-  var was = {}, is = {};
-  ((before && before.mandates) || []).forEach(function (m) { was[m.code] = m; });
-  now.mandates.forEach(function (m) { if (m.code) is[m.code] = m; });
-  Object.keys(was).concat(Object.keys(is).filter(function (c) { return !was[c]; })).forEach(function (code) {
-    var a = was[code], b = is[code];
-    if (a && b && prdShowMandate(a) === prdShowMandate(b)) return;
-    out.push({ key: 'mandate:' + code, label: 'SMA mandate ' + code, before: prdShowMandate(a), after: prdShowMandate(b) });
+  var was = prdListingsOf(before), is = now.listings;
+  var one = was.length === 1 && is.length === 1, pairs = [], gone = [], left = is.map(function (_, j) { return j; });
+  if (one) pairs = [[was[0], is[0]]];
+  else {
+    was.forEach(function (a) {
+      var hit = left.filter(function (j) { return prdListingKey(is[j]) === prdListingKey(a); })[0];
+      if (hit === undefined) { gone.push(a); return; }
+      left.splice(left.indexOf(hit), 1);
+      pairs.push([a, is[hit]]);
+    });
+  }
+  var came = left.map(function (j) { return is[j]; });
+  if (one) came = [];
+  while (gone.length && came.length) pairs.push([gone.shift(), came.shift()]);
+  pairs.forEach(function (pair) {
+    var label = prdListingLabel(pair[1], is);
+    PRD_LISTING_FIELDS.forEach(function (f) {
+      var a = pair[0][f.key], b = pair[1][f.key];
+      if (prdSameValue(f.key, a, b)) return;
+      out.push({ key: one ? f.key : 'listing:' + label + ':' + f.key, label: one ? f.label : f.label + ' of ' + label,
+                 before: prdShow(f.key, f.key === 'ticker' && a === '—' ? '' : a), after: prdShow(f.key, b) });
+    });
+  });
+  came.forEach(function (l) {
+    var label = prdListingLabel(l, is);
+    out.push({ key: 'listing+:' + label, label: 'Listing ' + label, before: '—', after: prdShowListing(l) });
+  });
+  gone.forEach(function (l) {
+    var label = prdListingLabel(l, was);
+    out.push({ key: 'listing-:' + label, label: 'Listing ' + label, before: prdShowListing(l), after: 'taken off' });
+  });
+  PRD_CURRENCIES.forEach(function (c) {
+    var x = prdRankWords(was, c), y = prdRankWords(is, c);
+    if (x !== y) out.push({ key: 'rank' + c, label: c + ' ranking', before: x || '—', after: y || '—' });
   });
   return out;
-}
-/* one SMA mandate as a history line shows it: its cell, then its own figures */
-function prdShowMandate(m) {
-  if (!m) return '—';
-  var bits = [m.currency + (m.hedging ? ' · ' + m.hedging : '')];
-  if (typeof m.productCost === 'number' && !isNaN(m.productCost)) bits.push('cost ' + prdShow('productCost', m.productCost));
-  if (typeof m.minimumInvestment === 'number' && !isNaN(m.minimumInvestment)) bits.push('min ' + prdShow('minimumInvestment', m.minimumInvestment));
-  if (typeof m.distributionYield === 'number' && !isNaN(m.distributionYield)) bits.push('yield ' + prdShow('distributionYield', m.distributionYield));
-  return bits.join(' · ');
 }
 /* the word in use a typed one is most likely a slip for: the same but for
    its capitals, or one or two letters off - or null */
@@ -1135,11 +1315,31 @@ function feePasteBlock(d, schedule, rowKey, levels, cells, at) {
 /* fee-editor-helpers-end */
 
 var catRowCache = null;
+/* the open mandate, which a minimum above flags a line */
+function catMandate() {
+  var mandate = (typeof App.mandateSize === 'function') ? App.mandateSize() : null;
+  return typeof mandate === 'number' ? mandate : null;
+}
+/* the open proposal's base currency, once its PWA has chosen one */
+function catProposalCcy() {
+  var basis = (typeof App.basis === 'function') ? App.basis() : null;
+  var c = basis && basis.currency;
+  return CAT_CCYS.indexOf(c) !== -1 ? c : null;
+}
+/* the view in force (D207): one picked, while the proposal's currency is the
+   one it was picked under; else the proposal's currency; else Main */
+function catView() {
+  var ccy = catProposalCcy();
+  if (cat.viewPicked && cat.viewFor === ccy) return cat.viewPicked;
+  return ccy || CAT_MAIN;
+}
+var catRowCacheView = null;
 function catRows() {
-  if (!catRowCache) {
-    var mandate = (typeof App.mandateSize === 'function') ? App.mandateSize() : null;
+  var view = catView();
+  if (!catRowCache || catRowCacheView !== view) {
     catRowCache = catEnrich(cat.withdrawn ? (repo.data.withdrawnProducts || []) : repo.data.products,
-                            repo.data.sleeves, typeof mandate === 'number' ? mandate : null);
+                            repo.data.sleeves, catMandate(), view);
+    catRowCacheView = view;
   }
   return catRowCache;
 }
@@ -1478,8 +1678,108 @@ function hashFor(view) {
   if (view === 'fees') return '#fees';
   /* the notices (D199) */
   if (view === 'notices') return '#notices';
+  /* the private markets minimums (D200) */
+  if (view === 'minimums') return '#minimums';
+  /* the account opening lists (D203) */
+  if (view === 'accountOpening') return ao.view === 'benchmarks' ? '#map-benchmarks' : '#account-opening';
   return '#repository';
 }
+/* The console's places (D212): Models and the four menus, in the order
+   the work runs - build, propose, open the account, keep the record. An
+   item is a view, or one of the Account Opening tab's lists. */
+function repoNavGroups(d) {
+  return [
+    { label: 'Models', items: [{ view: 'sleeves', label: 'Models' }] },
+    { label: 'Products', items: [{ view: 'catalogue', label: 'Product Catalogue' }, { view: 'fees', label: 'Fees' }] },
+    { label: 'Proposals', items: [{ view: 'minimums', label: 'Private Market Minimums' },
+                                  { view: 'uncalled', label: 'Uncalled Capital Allocation' },
+                                  { view: 'overlays', label: 'Overlay Funding' }, { view: 'notices', label: 'Notices' }] },
+    { label: 'Account Opening', items: [{ view: 'accountOpening', sub: 'restrictions', label: 'Investment Restrictions' },
+                                        { view: 'accountOpening', sub: 'codes', label: 'Mandate Codes' },
+                                        { view: 'accountOpening', sub: 'benchmarks', label: 'MAP Benchmarks' }] },
+    { label: 'Records', items: [{ view: 'proposals', label: 'Proposal Register', count: d && d.register ? d.register.proposals : 0 },
+                                { view: 'archive', label: 'Archive', count: d ? archivedSleeves().length : 0 },
+                                { view: 'activity', label: 'Activity' }] }
+  ];
+}
+function repoNavOn(item) {
+  var view = ['catalogue', 'fees', 'notices', 'minimums', 'accountOpening', 'archive', 'activity', 'proposals', 'uncalled', 'overlays']
+    .indexOf(repo.view) !== -1 ? repo.view : 'sleeves';
+  return item.view === view && (!item.sub || ao.view === item.sub);
+}
+function repoNavAttrs(item) {
+  return item.sub ? ' data-repogo="' + item.view + '|' + item.sub + '"' : ' data-repoview="' + item.view + '"';
+}
+function repoNavHtml(d) {
+  return repoNavGroups(d).map(function (g) {
+    var on = g.items.filter(repoNavOn)[0];
+    var id = on ? ' id="repotab-' + on.view + '"' : '';
+    if (g.items.length === 1) {
+      var it = g.items[0];
+      return '<div class="rn-grp' + (on ? ' on' : '') + '"><button type="button" class="rn-btn"' + id + repoNavAttrs(it)
+        + (on ? ' aria-current="page"' : '') + '>' + esc(it.label) + '</button></div>';
+    }
+    return '<div class="rn-grp' + (on ? ' on' : '') + (repo.navShut === g.label ? ' shut' : '') + '" data-rngrp="' + esc(g.label) + '">'
+      + '<button type="button" class="rn-btn" aria-haspopup="true"' + id + ' data-rnopen>' + esc(g.label)
+      + (on ? '<span class="rn-cur"> · ' + esc(on.label) + (on.count ? ' <span class="n">' + on.count + '</span>' : '') + '</span>' : '')
+      + '<span class="rn-car" aria-hidden="true">▾</span></button>'
+      + '<div class="rn-menu"><div class="rn-list" role="menu" aria-label="' + esc(g.label) + '">'
+      + g.items.map(function (it) {
+          var here = repoNavOn(it);
+          return '<button type="button" role="menuitem" class="rn-item"' + repoNavAttrs(it) + (here ? ' aria-current="page"' : '') + '>'
+            + esc(it.label) + (it.count ? '<span class="n">' + it.count + '</span>' : '') + '</button>';
+        }).join('') + '</div></div></div>';
+  }).join('');
+}
+/* to one of the Account Opening tab's lists, from the menu (D212) */
+function repoGo(view, sub) {
+  if (view === 'accountOpening' && sub) ao.view = sub;
+  if (repo.view !== view) { switchView(view); syncHash(); return; }
+  if (ao.view === 'codes' && !aoc.loaded) loadMandateCodes();
+  if (ao.view === 'benchmarks' && !pbm.loaded) loadBenchmarks();
+  render(); syncHash();
+}
+/* a menu chosen from stays shut until the pointer leaves it, so the page
+   it opened is not covered by the menu still under the pointer */
+document.addEventListener('mouseover', function (e) {
+  if (!repo.navShut) return;
+  var g = e.target.closest && e.target.closest('.rn-grp.shut');
+  if (g) return;
+  repo.navShut = null;
+  document.querySelectorAll('.rn-grp.shut').forEach(function (x) { x.classList.remove('shut'); });
+});
+/* the keyboard: Enter, Space or down opens a menu at its first item, up
+   and down move in it, Escape shuts it and goes back to its button; focus
+   leaving a menu shuts it. Focus alone never opens one - the console puts
+   it on the page's button as it opens. */
+document.addEventListener('click', function (e) {
+  /* a tap or click anywhere else shuts an opened menu */
+  if (e.target.closest && e.target.closest('.rn-grp')) return;
+  document.querySelectorAll('.rn-grp.open').forEach(function (x) { x.classList.remove('open'); });
+}, true);
+document.addEventListener('focusout', function (e) {
+  var grp = e.target.closest && e.target.closest('.rn-grp.open');
+  if (grp && !(e.relatedTarget && grp.contains(e.relatedTarget))) grp.classList.remove('open');
+});
+document.addEventListener('keydown', function (e) {
+  var grp = e.target.closest && e.target.closest('.rn-grp');
+  if (!grp || !repo.open) return;
+  var items = Array.prototype.slice.call(grp.querySelectorAll('.rn-item'));
+  if (!items.length) return;
+  var at = items.indexOf(e.target);
+  if (e.key === 'Escape') {
+    e.preventDefault(); e.stopPropagation();
+    grp.classList.remove('open'); grp.classList.add('shut'); repo.navShut = grp.dataset.rngrp;
+    grp.querySelector('.rn-btn').focus();
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    grp.classList.remove('shut'); repo.navShut = null; grp.classList.add('open');
+    var next = at === -1 ? (e.key === 'ArrowDown' ? 0 : items.length - 1)
+      : (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+    items[next].focus();
+  }
+}, true);
+
 function syncHash() {
   if (!repo.open) return;
   try { window.history.replaceState(null, '', hashFor(repo.view)); } catch (e) { /* file: */ }
@@ -1489,16 +1789,22 @@ function openRepository(trigger, view, at) {
   if (!canAdmin()) return;
   repo.open = true; repo.error = null; repo.trigger = trigger || document.activeElement;
   repo.view = view === 'marketing' ? 'notices' : view;
-  repo.view = ['catalogue', 'fees', 'notices', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(repo.view) !== -1 ? repo.view : 'sleeves';
+  repo.view = ['catalogue', 'fees', 'notices', 'minimums', 'accountOpening', 'archive', 'activity', 'proposals', 'uncalled', 'overlays'].indexOf(repo.view) !== -1 ? repo.view : 'sleeves';
   /* where to land, when the caller knows: the sleeve tier's shortcut opens on
      the implementation type the proposal is already using (D62) */
   repo.pending = at || null;
   sv.level = 0; sv.drawer = false; sv.compare = false; sv.sel = []; sv.editing = false; sv.focus = null; sv.lastPlace = null;
   sv.fv = at && at.variant ? at.variant : ''; sv.fc = '';
+  /* the catalogue opens on the open proposal's currency again (D207) */
+  cat.viewPicked = null; cat.viewFor = null;
   render();
   loadRepository();
   /* opened straight onto a tab that keeps a history */
   if (repo.view === 'notices' && !ntc.history) loadNoticesHistory();
+  if (repo.view === 'minimums') loadMinimums();
+  if (repo.view === 'accountOpening') loadRestrictions();
+  if (repo.view === 'accountOpening' && ao.view === 'codes') loadMandateCodes();
+  if (repo.view === 'accountOpening' && ao.view === 'benchmarks') loadBenchmarks();
 }
 
 function switchView(view) {
@@ -1508,6 +1814,10 @@ function switchView(view) {
   if (repo.view === 'catalogue' && prdDirty()) { prd.leaving = true; render(); prdFocus('#prdSave'); return; }
   if (repo.view === 'fees' && feeDirty()) { fct.flash = 'Save or discard the changes to the card first.'; render(); return; }
   if (repo.view === 'notices' && ntcDirty()) { ntc.error = 'Save or cancel the changes to the notice first.'; render(); return; }
+  /* changes to the minimums not confirmed are discarded on leaving the tab (D200) */
+  if (repo.view === 'minimums' && view !== 'minimums') pmmForget();
+  /* and so are changes to the restrictions (D203) */
+  if (repo.view === 'accountOpening' && view !== 'accountOpening') { aorForget(); aocForget(); pbmForget(); }
   if (repo.view === 'catalogue') { prdStop(); imp = null; }
   repo.view = view; cat.openChip = null; cat.detail = null;
   repo.historyOpen = false; repo.history = null; repo.openRevision = null;
@@ -1521,6 +1831,10 @@ function switchView(view) {
   if (view === 'overlays' && !ovl.loaded) loadOverlays();
   if (view === 'fees' && !fct.loaded) loadFeeCard();
   if (view === 'notices' && !ntc.history) loadNoticesHistory();
+  if (view === 'minimums' && !pmm.loaded) loadMinimums();
+  if (view === 'accountOpening' && !aor.loaded) loadRestrictions();
+  if (view === 'accountOpening' && ao.view === 'codes' && !aoc.loaded) loadMandateCodes();
+  if (view === 'accountOpening' && ao.view === 'benchmarks' && !pbm.loaded) loadBenchmarks();
 }
 
 async function api(method, path, body) {
@@ -1557,7 +1871,7 @@ async function loadRepository() {
   } catch (err) { repo.error = err.message; }
   repo.busy = false;
   render();
-  var first = document.querySelector('#repoDialog [data-repoview][aria-selected="true"]')
+  var first = document.querySelector('#repoDialog .repo-nav .rn-grp.on .rn-btn')
            || document.getElementById('repoclose');
   if (first) first.focus();
 }
@@ -1580,6 +1894,7 @@ function chooseDefaults() {
 }
 
 function loadDraft(sleeveId, create, edition) {
+  if (!sv.order || sv.order.id !== sleeveId) sv.order = null;
   var entry = sleeveId ? sleeveById(sleeveId) : null;
   repo.sleeveId = entry ? entry.id : null;
   repo.draft = entry ? draftFrom(entry) : newDraft(create, edition);
@@ -1610,10 +1925,14 @@ function closeRepository(force) {
   if (!force && feeDirty()) { fct.flash = 'Save or discard the changes to the card first.'; repo.view = 'fees'; render(); return; }
   prdStop(); imp = null; fct.draft = null; fct.review = null; cat.importSaid = '';
   ncReset();
+  pmmForget();
+  aorForget();
+  aocForget();
+  pbmForget();
   repo.open = false; repo.data = null; repo.draft = null; repo.dirty = false;
   repo.picker = null; repo.leaving = null; repo.confirmDelete = false; forgetJoins();
   cat.openChip = null; cat.detail = null; cat.compare = false;
-  if (/^#(repository|catalogue|fees|notices|marketing|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
+  if (/^#(repository|catalogue|fees|notices|marketing|minimums|account-opening|archive|activity|proposals|uncalled|overlays)/.test(window.location.hash)) {
     try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* file: */ }
   }
   render();
@@ -2129,6 +2448,26 @@ function removeRow(i) {
   render();
   App.announce('polite', 'Removed ' + (p ? p.name : (gone && gone.productId) || 'the product') + '.');
 }
+/* A product row moved within its sleeve (D201): the implementation table,
+   the workbook and the deck list a category's rows in the sleeve's order,
+   so this is how that order is set. Its weight and the product it holds
+   below its minimum move with it. */
+function moveRow(from, to) {
+  var list = repo.draft.products;
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return false;
+  var row = list.splice(from, 1)[0];
+  list.splice(to, 0, row);
+  markDirty(); repo.picker = null;
+  var p = row && productById(row.productId);
+  App.announce('polite', (p ? p.name : row.productId || 'The product') + ' is now row ' + (to + 1) + ' of ' + list.length + '.');
+  return true;
+}
+function moveRowHtml(i, count, name) {
+  var label = esc(name || 'product');
+  return '<span class="repo-mv"><span class="repo-grip" draggable="true" data-repogrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+    + '<button type="button" class="repo-mb" data-repomove="' + i + '|-1"' + (i ? '' : ' disabled') + ' aria-label="Move ' + label + ' up">↑</button>'
+    + '<button type="button" class="repo-mb" data-repomove="' + i + '|1"' + (i < count - 1 ? '' : ' disabled') + ' aria-label="Move ' + label + ' down">↓</button></span>';
+}
 
 /* ---- rendering: the sleeve view ---------------------------------------- */
 function pickerListHtml() {
@@ -2170,7 +2509,7 @@ function productsHtml() {
     } else {
       cell = '<button type="button" class="repo-pick empty" data-repopick="' + i + '"><b>Choose a product…</b></button>';
     }
-    return '<div class="pr">' + cell
+    return '<div class="pr" data-reporow="' + i + '">' + moveRowHtml(i, d.products.length, p ? p.name : r.productId) + cell
       + '<input type="text" inputmode="decimal" class="repo-w" data-repoweight="' + i + '" aria-label="Weight, percent"'
       + (r.weightText != null && String(r.weightText).trim() !== '' && !isFinite(r.weightPct) ? ' aria-invalid="true"' : '')
       + ' value="' + (r.weightText != null ? esc(r.weightText) : isFinite(r.weightPct) ? esc(money2(r.weightPct)) : '') + '">'
@@ -2179,7 +2518,7 @@ function productsHtml() {
       + '</div>';
   }).join('');
   return '<div class="repo-prods">'
-    + '<div class="ph"><span>Product · from the catalogue</span><span style="text-align:right">Weight %</span><span></span></div>'
+    + '<div class="ph"><span><span class="sr-only">Order</span></span><span>Product · from the catalogue</span><span style="text-align:right">Weight %</span><span></span></div>'
     + rows
     + '<div class="repo-tot" id="repoTotal">' + totalHtml() + '</div>'
     + '</div>';
@@ -2192,8 +2531,8 @@ function productsHtml() {
 function altHasMinimum(p) {
   if (!p) return false;
   if (p.minimumInvestment > 0) return true;
-  var own = p.currencies || {};
-  return Object.keys(own).some(function (c) { return (own[c] || {}).minimumInvestment > 0; });
+  /* any of its listings (D207) */
+  return (p.listings || []).some(function (l) { return l.minimumInvestment > 0; });
 }
 function altOffered(p, r) { return altHasMinimum(p) || !!(r && r.alternative); }
 function altChoiceHtml(r, i, p) {
@@ -2613,6 +2952,8 @@ function sleeveHits() {
    your place and an unsaved edit carry across. */
 var SV_VIEW_KEY = 'pmg.repository.sleevesView';
 var sv = {
+  /* a sleeve's rows moved on its page and not saved yet (D201) */
+  order: null,
   mode: 'cards',            /* 'cards' | 'table', remembered per browser */
   level: 0,                 /* cards: 0 the categories, 1 one category's sleeves, 2 a sleeve */
   editing: false,           /* the sleeve page is in edit mode */
@@ -2942,7 +3283,12 @@ function svSourceRemoved(src, rows) {
 }
 function svSourceChanges(src, rows) {
   if (!src) return 0;
-  return (rows || []).filter(function (r) { return svSourceMark(src, r); }).length + svSourceRemoved(src, rows).length;
+  /* the order of what both hold counts too (D201) */
+  var both = (rows || []).map(function (r) { return r.productId; }).filter(function (id) {
+    return (src.products || []).some(function (o) { return o.productId === id; }); });
+  var was = (src.products || []).map(function (o) { return o.productId; }).filter(function (id) { return both.indexOf(id) !== -1; });
+  return (rows || []).filter(function (r) { return svSourceMark(src, r); }).length + svSourceRemoved(src, rows).length
+    + (both.join('\n') !== was.join('\n') ? 1 : 0);
 }
 function svPickAction(rowCount, unchanged, pickedId, currentId) {
   /* picking a sleeve to start from: the same one is nothing; with no
@@ -3000,9 +3346,9 @@ function svAddHits(products, f) {
     if (f.style && p.style !== f.style) return false;
     if (f.source && p.source !== f.source) return false;
     if (!q) return true;
-    var own = p.currencies || {};
+    /* and any of its listings' tickers and codes (D207) */
     return [p.name, p.assetClass, p.vehicle, p.productId, p.ticker]
-      .concat(Object.keys(own).map(function (c) { return own[c].ticker || ''; }))
+      .concat((p.listings || []).map(function (l) { return (l.ticker || '') + ' ' + (l.code || ''); }))
       .join(' ').toLowerCase().indexOf(q) !== -1;
   });
   var key = f.sort || 'cost', dir = f.dir === 'desc' ? -1 : 1;
@@ -3582,14 +3928,65 @@ function svSection(title, sub, body, cls) {
   return '<section class="sv-sect' + (cls ? ' ' + cls : '') + '"><h4 class="sv-sect-h">' + esc(title)
     + (sub ? ' <small>' + esc(sub) + '</small>' : '') + '</h4><div class="sv-sect-b">' + body + '</div></section>';
 }
-function svProductsHtml(entry) {
-  var rows = entry.products.map(function (r) {
+/* The order shown on a sleeve's page while a move there is not saved yet
+   (D201): its rows can be moved where they are read, and Save order puts
+   the new order in force as a version, as the editor's Save does. */
+function svOrdered(entry) {
+  if (!sv.order || sv.order.id !== entry.id) return entry.products;
+  return sv.order.ids.map(function (id) {
+    return entry.products.filter(function (r) { return r.productId === id; })[0];
+  }).filter(Boolean);
+}
+function svMoveRead(entry, from, to) {
+  var ids = svOrdered(entry).map(function (r) { return r.productId; });
+  if (from === to || from < 0 || to < 0 || from >= ids.length || to >= ids.length) return false;
+  var id = ids.splice(from, 1)[0];
+  ids.splice(to, 0, id);
+  var same = ids.join('\n') === entry.products.map(function (r) { return r.productId; }).join('\n');
+  sv.order = same ? null : { id: entry.id, ids: ids };
+  var p = entry.products.filter(function (r) { return r.productId === id; })[0];
+  App.announce('polite', ((p && p.product) ? p.product.name : id) + ' is now row ' + (to + 1) + ' of ' + ids.length
+    + (same ? ', the order saved.' : '. Save order to keep it.'));
+  return true;
+}
+/* held while unsaved changes kept from before are waiting to be restored
+   or discarded: a save here would put them out of reach */
+function svMoveHeld() { return repo.saving || !!repo.kept; }
+function svMoveHtml(i, count, name) {
+  var label = esc(name || 'product'), held = svMoveHeld();
+  return '<span class="repo-mv"><span class="repo-grip"' + (held ? '' : ' draggable="true"') + ' data-svgrip="' + i + '" title="'
+    + (held ? 'Restore or discard the kept changes first' : 'Drag to move') + '" aria-hidden="true">⋮⋮</span>'
+    + '<button type="button" class="repo-mb" data-svmove="' + i + '|-1"' + (i && !held ? '' : ' disabled') + ' aria-label="Move ' + label + ' up">↑</button>'
+    + '<button type="button" class="repo-mb" data-svmove="' + i + '|1"' + (i < count - 1 && !held ? '' : ' disabled') + ' aria-label="Move ' + label + ' down">↓</button></span>';
+}
+function svOrderBarHtml(entry) {
+  if (!sv.order || sv.order.id !== entry.id) return '';
+  return '<div class="sv-orderbar" role="status"><span><b>New order, not saved.</b> The implementation table, the workbook and the deck follow it once it is saved.</span>'
+    + '<button type="button" class="btn btn-primary" data-svorder="save"' + (repo.saving ? ' disabled' : '') + '>' + (repo.saving ? 'Saving\u2026' : 'Save order') + '</button>'
+    + '<button type="button" class="btn" data-svorder="undo"' + (repo.saving ? ' disabled' : '') + '>Undo</button></div>';
+}
+async function svSaveOrder() {
+  var entry = svOpenEntry(), d = repo.draft;
+  if (!entry || !d || !sv.order || sv.order.id !== entry.id || svMoveHeld()) return;
+  var ids = sv.order.ids;
+  d.products.sort(function (a, b) { return ids.indexOf(a.productId) - ids.indexOf(b.productId); });
+  sv.order = null;
+  if (draftProblems().length) { markDirty(); sv.editing = true; render(); return; }
+  await saveDraft();
+  /* what the server refused is said in the editor, with the order kept */
+  if (repo.stale || repo.error || repo.fieldError) { markDirty(); sv.editing = true; render(); }
+}
+function svProductsHtml(entry, movable) {
+  var list = svOrdered(entry);
+  var rows = list.map(function (r, i) {
     var p = r.product, row = p ? catRow(p.productId) : null;
     var facts = p ? [p.assetClass, p.vehicle, p.style, p.source, p.liquidity].filter(Boolean).join(' \u00b7 ') : 'Not in the catalogue';
     var w = r.weight * 100;
     /* the product held below its minimum (D192) */
     var alt = r.alternative ? (r.alternativeProduct ? r.alternativeProduct.name : r.alternative + ' (not in the catalogue)') : '';
-    return '<tr><td><b>' + esc(p ? p.name : r.productId) + '</b><small' + (p ? '' : ' class="warn"') + '>' + esc(facts) + '</small>'
+    return '<tr' + (movable ? ' data-svrow="' + i + '"' : '') + '>'
+      + (movable ? '<td class="nc-mvc">' + svMoveHtml(i, list.length, p ? p.name : r.productId) + '</td>' : '')
+      + '<td><b>' + esc(p ? p.name : r.productId) + '</b><small' + (p ? '' : ' class="warn"') + '>' + esc(facts) + '</small>'
       + (alt ? '<small class="sv-alt' + (r.alternativeProduct ? '' : ' warn') + '">Below its minimum, holds ' + esc(alt) + '</small>' : '') + '</td>'
       + '<td class="num">' + (p ? svPct(p.productCost) : '—') + '</td>'
       + '<td class="num">' + (p ? esc(catMoney(p.minimumInvestment)) : '—')
@@ -3598,9 +3995,10 @@ function svProductsHtml(entry) {
   }).join('');
   var t = entry.products.reduce(function (a, r) { return a + r.weight * 100; }, 0);
   var ok = entry.products.length && Math.abs(t - 100) <= 0.005;
-  return '<div class="sv-ptwrap"><table class="sv-pt"><thead><tr><th scope="col">Product</th><th scope="col" class="num">Cost</th>'
+  return (movable ? svOrderBarHtml(entry) : '') + '<div class="sv-ptwrap"><table class="sv-pt' + (movable ? ' sv-movable' : '') + '"><thead><tr>'
+    + (movable ? '<th scope="col"><span class="sr-only">Order</span></th>' : '') + '<th scope="col">Product</th><th scope="col" class="num">Cost</th>'
     + '<th scope="col" class="num">Minimum</th><th scope="col" class="num">Weight</th></tr></thead><tbody>' + rows + '</tbody>'
-    + '<tfoot><tr><td>Total <span class="sv-hint">\u00b7 weighted product cost ' + esc(svCostText(entry)) + '</span></td><td></td><td></td>'
+    + '<tfoot><tr>' + (movable ? '<td></td>' : '') + '<td>Total <span class="sv-hint">\u00b7 weighted product cost ' + esc(svCostText(entry)) + '</span></td><td></td><td></td>'
     + '<td class="num ' + (ok ? 'ok' : 'bad') + '">' + money2(t) + '% ' + (ok ? '\u2713' : '\u2717') + '</td></tr></tfoot></table></div>';
 }
 function svWhoHtml(entry) {
@@ -3720,7 +4118,8 @@ function svReadHtml(entry, inDrawer) {
           + (sv.createdFrom.name ? ' Started from ' + esc(sv.createdFrom.name) + (sv.createdFrom.variant ? ' (' + esc(sv.createdFrom.variant) + ')' : '')
               + '; it is a separate sleeve, so changes to ' + esc(sv.createdFrom.name) + ' will not change it.' : '')
           + ' <span class="sv-hint">This note shows until you leave this sleeve.</span></div>' : '')
-    + svSection('What it holds', svPlural(entry.products.length, 'product'), svProductsHtml(entry))
+    + svSection('What it holds', svPlural(entry.products.length, 'product')
+        + (entry.products.length > 1 ? (repo.kept ? ' \u00b7 restore or discard the kept changes to reorder' : ' \u00b7 drag or use the arrows to reorder') : ''), '<div id="svHolds">' + svProductsHtml(entry, entry.products.length > 1) + '</div>')
     + svSection('Who gets it', 'editions', svWhoHtml(entry))
     + svSection('Details', '', svDetailsHtml(entry))
     + historyPanelHtml(entry.id, entry.revisions);
@@ -4031,7 +4430,8 @@ function ncRowHtml(d, r, i, src, products) {
   var mark = svSourceMark(src, r);
   var why = svWeightNote(r.weightText), bad = !!why;
   var val = r.weightText != null ? r.weightText : (isFinite(r.weightPct) ? money2(r.weightPct) : '');
-  return '<tr><td><b>' + esc(p ? p.name : r.productId) + '</b><span class="nc-mark" id="ncMark' + i + '">' + ncMarkHtml(mark) + '</span>'
+  return '<tr data-reporow="' + i + '"><td class="nc-mvc">' + moveRowHtml(i, d.products.length, p ? p.name : r.productId) + '</td>'
+    + '<td><b>' + esc(p ? p.name : r.productId) + '</b><span class="nc-mark" id="ncMark' + i + '">' + ncMarkHtml(mark) + '</span>'
     + '<small' + (p ? '' : ' class="warn"') + '>' + esc(facts) + '</small></td>'
     + '<td class="num">' + (p ? svPct(p.productCost) : '—') + '</td>'
     + '<td class="num">' + (p ? esc(catMoney(p.minimumInvestment)) : '—')
@@ -4039,7 +4439,7 @@ function ncRowHtml(d, r, i, src, products) {
     + '<td class="num"><input type="text" inputmode="decimal" class="nc-w" data-repoweight="' + i + '" aria-label="Weight of ' + esc(p ? p.name : r.productId) + ', percent"'
     + (bad ? ' aria-invalid="true"' : '') + ' value="' + esc(val) + '"><span class="nc-rowerr" id="ncRowErr' + i + '">' + esc(why) + '</span></td>'
     + '<td class="num"><button type="button" class="btn nc-rm" data-reporm="' + i + '" aria-label="Remove ' + esc(p ? p.name : r.productId) + '">Remove</button></td></tr>'
-    + (p && altOffered(p, r) ? '<tr class="nc-alt"><td colspan="5">' + altChoiceHtml(r, i, p) + '</td></tr>' : '');
+    + (p && altOffered(p, r) ? '<tr class="nc-alt"><td></td><td colspan="5">' + altChoiceHtml(r, i, p) + '</td></tr>' : '');
 }
 function ncMarkHtml(mark) {
   if (!mark) return '';
@@ -4047,7 +4447,7 @@ function ncMarkHtml(mark) {
 }
 function ncFootHtml(d) {
   var products = ncProducts(), t = ncTotal(d), ok = d.products.length && svWeightsOk(t);
-  return '<tr><td>Total <span class="sv-hint">· weighted product cost ' + esc(svRowsCostText(d.products, products)) + '</span>'
+  return '<tr><td></td><td>Total <span class="sv-hint">· weighted product cost ' + esc(svRowsCostText(d.products, products)) + '</span>'
     + (d.products.length > 1 ? ' <button type="button" class="nc-link" data-ncspread>Spread evenly</button>' : '') + '</td><td></td><td></td>'
     + '<td class="num ' + (ok ? 'ok' : 'bad') + '">' + svTotalText(t) + '% ' + (ok ? '✓' : '✗') + '</td><td></td></tr>';
 }
@@ -4074,7 +4474,7 @@ function ncHoldsHtml(d) {
       + (d.startFrom === 'existing' ? 'Pick a sleeve above to copy its products, or ' : '') + add + '</div>'
       + '<p class="nc-removed" id="ncRemoved">' + ncRemovedHtml(d) + '</p>' + ncErrs(d, 'rows');
   }
-  return notes + '<div class="sv-ptwrap nc-ptwrap" id="ncRows" tabindex="-1"><table class="sv-pt nc-pt"><thead><tr><th scope="col">Product</th>'
+  return notes + '<div class="sv-ptwrap nc-ptwrap" id="ncRows" tabindex="-1"><table class="sv-pt nc-pt"><thead><tr><th scope="col"><span class="sr-only">Order</span></th><th scope="col">Product</th>'
     + '<th scope="col" class="num">Cost</th><th scope="col" class="num">Minimum</th><th scope="col" class="num">Weight %</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>'
     + '<tbody>' + d.products.map(function (r, i) { return ncRowHtml(d, r, i, src, products); }).join('') + '</tbody>'
     + '<tfoot id="ncFoot">' + ncFootHtml(d) + '</tfoot></table></div>'
@@ -5188,6 +5588,14 @@ function svCancel() {
   if (was) App.announce('polite', 'Changes discarded.');
 }
 function svEdit() {
+  /* an order moved on the page and not saved goes into the editor with it (D201) */
+  var entry = svOpenEntry();
+  if (entry && sv.order && sv.order.id === entry.id && repo.draft) {
+    var ids = sv.order.ids;
+    repo.draft.products.sort(function (a, b) { return ids.indexOf(a.productId) - ids.indexOf(b.productId); });
+    markDirty();
+  }
+  sv.order = null;
   sv.editing = true; repo.confirmDelete = false;
   sv.focus = '#repoName||#repoLabel||#repoNote';
   render();
@@ -5632,9 +6040,11 @@ function actFeedHtml() {
 }
 var ACT_AREAS = [['sleeves', 'Sleeves'], ['products', 'Products'], ['fees', 'Fee card'],
                  ['overlays', 'Overlay rules'], ['funding', 'Funding split'], ['availability', 'Sleeves offered'],
-                 ['access', 'Custom workflows for PWAs']];
+                 ['access', 'Custom workflows for PWAs'], ['minimums', 'Private markets minimums'],
+                 ['restrictions', 'Investment restrictions']];
 var ACT_AREA_WORDS = { products: 'Products', fees: 'Fee card', overlays: 'Overlay rules', funding: 'Funding split',
-                       availability: 'Sleeves offered', access: 'Custom workflows for PWAs' };
+                       availability: 'Sleeves offered', access: 'Custom workflows for PWAs',
+                       minimums: 'Private markets minimums', restrictions: 'Investment restrictions' };
 function actOtherHtml(e) {
   var label = ACTION_LABELS[e.action] || e.action;
   var who = e.actor === 'seed' || e.actor === 'system' ? '' : e.actor;
@@ -5658,11 +6068,20 @@ function actOtherHtml(e) {
       ? '<button type="button" class="btn act-btn" data-actopen="products" data-actid="' + esc(e.productId) + '">Open the product</button>'
       : '<button type="button" class="btn act-btn" data-actopen="products">Open the catalogue</button>';
   } else if (e.area === 'fees') {
-    button = '<button type="button" class="btn act-btn" data-actopen="fees">Open the Fees tab</button>';
+    button = '<button type="button" class="btn act-btn" data-actopen="fees">Open Fees</button>';
   } else if (e.area === 'overlays') {
     button = '<button type="button" class="btn act-btn" data-actopen="overlays">Open Overlay Funding</button>';
   } else if (e.area === 'access') {
-    button = '<button type="button" class="btn act-btn" data-actopen="sleeves">Open the Sleeves tab</button>';
+    button = '<button type="button" class="btn act-btn" data-actopen="sleeves">Open Models</button>';
+  } else if (e.area === 'minimums') {
+    /* the private markets minimums (D200) */
+    button = '<button type="button" class="btn act-btn" data-actopen="minimums">Open Private Market Minimums</button>';
+  } else if (e.area === 'restrictions' || e.area === 'mandateCodes') {
+    /* the investment restrictions (D203) and the mandate codes (D205) */
+    button = '<button type="button" class="btn act-btn" data-actopen="accountOpening">Open Account Opening</button>';
+  } else if (e.area === 'benchmarks') {
+    /* the MAP benchmarks (D211), under Account Opening */
+    button = '<button type="button" class="btn act-btn" data-actopen="mapBenchmarks">Open MAP Benchmarks</button>';
   } else if (e.area === 'availability') {
     button = e.live && sleeveById(e.sleeveId)
       ? '<button type="button" class="btn act-btn" data-actsleeve="' + e.sleeveId + '">Open sleeve</button>' : '';
@@ -5677,6 +6096,7 @@ function actOtherHtml(e) {
     + '<span class="a">' + button + '</span></div>';
 }
 function actOpen(area, id) {
+  if (area === 'mapBenchmarks') { ao.view = 'benchmarks'; if (repo.view === 'accountOpening') { render(); if (!pbm.loaded) loadBenchmarks(); } }
   if (area === 'products') {
     var entry = id ? prdEntry(id) : null;
     switchView('catalogue');
@@ -5685,7 +6105,9 @@ function actOpen(area, id) {
     if (entry) { cat.withdrawn = !!entry.withdrawn; forgetJoins(); cat.detail = id; cat.cursor = id; }
     render(); return;
   }
-  switchView(area === 'fees' ? 'fees' : area === 'overlays' ? 'overlays' : area === 'sleeves' ? 'sleeves' : 'uncalled');
+  switchView(area === 'fees' ? 'fees' : area === 'overlays' ? 'overlays' : area === 'sleeves' ? 'sleeves'
+             : area === 'minimums' ? 'minimums' : area === 'accountOpening' || area === 'mapBenchmarks' ? 'accountOpening'
+             : 'uncalled');
 }
 function longDate(iso) {
   if (!iso) return '';
@@ -6093,6 +6515,8 @@ function regDetailHtml() {
     + (r.includeFees ? ' · ' + esc((r.feeSchedule || '') + ' ' + (r.feeLevel || '')) : ' · no fees')
     /* the custodian / entity the account is held at (D193) */
     + (r.entityName ? ' · held at ' + esc(r.entityName) : '') + '</p>'
+    /* the portfolio's benchmark the files named (D211) */
+    + (r.benchmark ? '<p>Benchmark ' + esc(r.benchmark) + '</p>' : '')
     /* the marketing warnings its allocation raised, and who acknowledged each (D196) */
     + (r.marketing || []).map(function (w) {
         return '<p class="repo-prov reg-mkt"><b class="warn">Marketing restriction</b> '
@@ -6195,7 +6619,12 @@ function regFooterHtml() {
    someone who knows the products and is narrowing to a shortlist in a hurry:
    nothing explains itself, everything is one click or one key away, and the
    whole view is a link. */
-function catVisible() { return catSort(catFilter(catRows(), cat), cat.sort); }
+/* the rows the table shows: filtered, each at the listing a search names
+   where it names another than the one in view (D207), then sorted */
+function catVisible() {
+  var q = cat.query.trim().toLowerCase(), mandate = catMandate();
+  return catSort(catFilter(catRows(), cat).map(function (row) { return catMatched(row, q, mandate); }), cat.sort);
+}
 function catColumns() {
   return CAT_COLUMNS.filter(function (c) { return c.fixed || cat.hidden.indexOf(c.key) === -1; });
 }
@@ -6262,7 +6691,7 @@ function liqClass(v) {
    arrive as a date: every text field is quoted. The figures are the products'
    own; nothing in the file depends on a proposal's fees (D114). */
 function catCsvCell(row, c) {
-  var p = row.p;
+  var p = row.v || row.p;
   switch (c.key) {
     case 'net': return row.net === null ? '' : row.net.toFixed(2);
     case 'used': return String(row.used);
@@ -6332,6 +6761,7 @@ function catToolbarHtml() {
     + '<button type="button" role="tab" id="catFlat" data-catgroup="flat" aria-selected="' + !cat.group + '">Flat</button>'
     + '</div>'
     + '<span id="catFoldAll">' + catFoldAllHtml() + '</span>'
+    + catViewHtml()
     + '<span class="cat-chipwrap">'
     + '<button type="button" class="cat-chip' + (cat.hidden.length ? ' on' : '') + '" data-catcols aria-expanded="' + (cat.openChip === 'cols') + '">Columns'
     + (cat.hidden.length ? ' <b>' + (CAT_COLUMNS.length - cat.hidden.length) + ' of ' + CAT_COLUMNS.length + '</b>' : '') + ' <span class="car">▾</span></button>'
@@ -6354,14 +6784,26 @@ function catToolbarHtml() {
     + '<button type="button" class="btn btn-primary" data-prd="new"' + (cat.withdrawn ? ' disabled' : '') + '>+ New product</button>'
     + '<button type="button" class="btn" data-prd="import">Import a file</button>'
     + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/products.csv') + '" download>Download the product file</a>'
-    /* the SMA mandates have a file of their own (D197) */
-    + '<button type="button" class="btn" data-prd="importmandates">Import SMA mandates</button>'
-    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/mandates.csv') + '" download>Download the SMA mandate file</a>'
     + '<button type="button" class="btn' + (cat.withdrawn ? ' on' : '') + '" data-prd="withdrawn" aria-pressed="' + !!cat.withdrawn + '">'
     + (cat.withdrawn ? '← The catalogue' : 'Withdrawn · ' + ((repo.data.withdrawnProducts || []).length)) + '</button>'
     + '<span class="cat-src">' + esc(catSourceText()) + '</span>'
     + (cat.importSaid ? '<span class="prd-flash" role="status">' + esc(cat.importSaid) + '</span>' : '')
     + '</div>';
+}
+/* View as (D207): the listing each line shows - a currency's, the one a
+   proposal there holds first, or every product's main one */
+function catViewHtml() {
+  var view = catView(), ccy = catProposalCcy();
+  return '<span class="cat-view"><span class="cat-view-l" id="catViewL">View as</span>'
+    + '<span class="repo-seg cat-density" role="tablist" aria-labelledby="catViewL">'
+    + [CAT_MAIN].concat(CAT_CCYS).map(function (v) {
+        return '<button type="button" role="tab" data-catview="' + v + '" aria-selected="' + (view === v) + '"'
+          + ' title="' + esc(v === CAT_MAIN ? 'Each product’s main listing' : 'The listing a proposal in ' + v + ' holds first') + '">' + v + '</button>';
+      }).join('')
+    + '</span>'
+    + (ccy && view === ccy && !(cat.viewPicked && cat.viewFor === ccy)
+        ? '<small class="cat-view-from">from the open proposal</small>' : '')
+    + '</span>';
 }
 function catSourceText() {
   var c = repo.data.catalogue || {};
@@ -6428,27 +6870,70 @@ function catHeadHtml() {
   }).join('') + '<th class="go"></th></tr>';
 }
 
+/* A line's cells (D207): what the product is from the product, and the
+   rest from the listing in view - a cell its other listings differ in
+   carries a mark, and names their values in its title. */
 function catCellHtml(row, c, sorted) {
-  var p = row.p;
+  var p = row.p, v = row.v || row.p;
+  var vm = row.varies && row.varies[c.key];
   var td = function (cls, html) {
-    var all = (cls + (sorted ? ' srt' : '')).trim();
-    return '<td' + (all ? ' class="' + all + '"' : '') + '>' + html + '</td>';
+    var all = (cls + (vm ? ' vm' : '') + (sorted ? ' srt' : '')).trim();
+    return '<td' + (all ? ' class="' + all + '"' : '')
+      + (vm ? ' title="' + esc(catColumnLabel(c.key) + ' across its listings: ' + vm.join(' · ')) + '"' : '') + '>' + html + '</td>';
   };
+  var open = cat.open.indexOf(p.productId) !== -1;
   switch (c.key) {
-    case 'ticker': return td('tk', esc(p.ticker));
-    case 'name': return td('nm', '<b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Minimum above the open mandate">min ' + esc(catMoney(p.minimumInvestment)) + '</span>' : '') + '</b>');
+    case 'ticker': return td('tk', esc(v.ticker)
+      + (row.count > 1 ? '<span class="cat-cnt" title="' + row.count + ' listings">+' + (row.count - 1) + '</span>' : '')
+      + (row.main ? '<span class="cat-tag mn" title="No ranking for ' + esc(row.view) + ': its main listing">main</span>' : '')
+      + (row.matched ? '<span class="cat-tag mt" title="The listing the search names">matched</span>' : ''));
+    case 'name': return td('nm', (row.count > 1
+        ? '<button type="button" class="cat-lst" data-catlst="' + esc(p.productId) + '" aria-expanded="' + open + '"'
+          + ' aria-label="' + (open ? 'Fold ' : 'Open ') + row.count + ' listings of ' + esc(p.name) + '">' + (open ? '▾' : '▸') + '</button>'
+        : '<span class="cat-lst-no" aria-hidden="true"></span>')
+      + '<b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Every listing a proposal here would hold needs more than the open mandate">min '
+        + esc(catMoney(v.minimumInvestment)) + '</span>' : '') + '</b>');
     case 'vehicle': return td('', '<span class="veh">' + esc(p.vehicle) + '</span>');
     case 'liquidity': return td('', '<span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span>');
-    case 'productCost': return td('num', catFigure(p.productCost, 2));
-    case 'distributionYield': return td('num', catFigure(p.distributionYield, 2));
+    case 'productCost': return td('num', catFigure(v.productCost, 2));
+    case 'distributionYield': return td('num', catFigure(v.distributionYield, 2));
     case 'net': return td('num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')),
       row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2));
-    case 'minimumInvestment': return td('num' + (typeof p.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(p.minimumInvestment)));
+    /* a lower rank that takes less, which a line below this one steps down to (D208) */
+    case 'minimumInvestment': return td('num' + (typeof v.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(v.minimumInvestment))
+      + (row.lower ? '<span class="cat-ht">from ' + esc(catMoney(row.lower.minimum)) + ' at rank ' + row.lower.rank + '</span>' : ''));
     case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
     case 'lastEditedAt': return td('mute ed', esc(shortDate(p.lastEditedAt)));
-    case 'issueCurrency': return td('mute', esc(p.issueCurrency || '—'));
-    default: return td('mute', esc(p[c.key]));
+    case 'issueCurrency': return td('mute', esc(v.issueCurrency || '—'));
+    case 'hedging': return td('mute', esc(v.hedging || '—'));
+    case 'benchmark': return v.benchmark ? '<td class="bm' + (vm ? ' vm' : '') + (sorted ? ' srt' : '') + '" title="' + esc(v.benchmark) + '">' + esc(v.benchmark) + '</td>'
+      : td('mute', '—');
+    default: return td('mute', esc(v[c.key]));
   }
+}
+/* the listings of an opened line, a row each (D207): ranked in the view
+   first to last, then the rest, the main one said so; a click opens the
+   card as the line's does */
+function catSubRowsHtml(row, cols, band) {
+  var p = row.p, all = catListings(p), ccy = CAT_CCYS.indexOf(row.view) !== -1;
+  return catOpenOrder(p, row.view).map(function (l) {
+    var rank = ccy && l.ranks ? l.ranks[row.view] : null, at = all.indexOf(l);
+    var tag = (rank ? row.view + ' rank ' + rank : ccy ? 'not ranked' : 'listing ' + (at + 1)) + (at === 0 ? ' · main' : '');
+    var net = (typeof l.distributionYield === 'number' && typeof l.productCost === 'number') ? l.distributionYield - l.productCost : null;
+    return '<tr class="cat-sub' + (l === row.listing ? ' held' : '') + '" data-catrow="' + esc(p.productId) + '"'
+      + (band === null ? '' : ' data-catband="' + esc(band) + '"') + '><td class="pinc"></td>'
+      + cols.map(function (c) {
+          var k = c.key, txt = function (x) { return '<td class="mute">' + esc(x || '—') + '</td>'; };
+          if (k === 'name') return '<td class="nm sub' + (rank === 1 ? ' r1' : '') + '">' + esc(tag) + '</td>';
+          if (k === 'ticker') return '<td class="tk">' + (l.code ? '<b>' + esc(l.code) + '</b>' : esc(l.ticker || '—')) + '</td>';
+          if (k === 'productCost' || k === 'distributionYield') return '<td class="num">' + catFigure(l[k], 2) + '</td>';
+          if (k === 'minimumInvestment') return '<td class="num">' + esc(catMoney(l.minimumInvestment)) + '</td>';
+          if (k === 'net') return '<td class="num mute">' + (net === null ? '—' : (net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) + '</td>';
+          if (CAT_LISTING_FIELDS.indexOf(k) !== -1) return txt(l[k]);
+          return '<td></td>';
+        }).join('')
+      + '<td class="go"></td></tr>';
+  }).join('');
 }
 
 /* a band (D100): the category, and what can be said of it before a row is
@@ -6474,7 +6959,8 @@ function catRowHtml(row, cols, band, isCursor) {
     + ' title="' + (pinned ? 'Unpin' : 'Pin to compare') + '"'
     + ' aria-label="' + (pinned ? 'Unpin' : 'Pin') + ' ' + esc(row.p.name) + '" aria-pressed="' + pinned + '"></button></td>'
     + cols.map(function (c) { return catCellHtml(row, c, c.key === sortKey); }).join('')
-    + '<td class="go"><span aria-hidden="true">›</span></td></tr>';
+    + '<td class="go"><span aria-hidden="true">›</span></td></tr>'
+    + (row.count > 1 && cat.open.indexOf(id) !== -1 ? catSubRowsHtml(row, cols, band) : '');
 }
 
 /* the table's bodies: one for the flat list, or one per band, so a band's
@@ -6513,7 +6999,8 @@ function catTableHtml() {
 }
 
 function catCompareHtml() {
-  var pinned = cat.pins.map(catRow).filter(Boolean);
+  var q = cat.query.trim().toLowerCase(), mandate = catMandate();
+  var pinned = cat.pins.map(catRow).filter(Boolean).map(function (row) { return catMatched(row, q, mandate); });
   if (!pinned.length) return '<div class="cat-cmp-empty"><p>Pin two or more products to compare them.</p></div>';
   var best = catBest(pinned);
   var cell = function (row, key, text, cls) {
@@ -6523,31 +7010,35 @@ function catCompareHtml() {
   var line = function (label, fn, key) {
     return '<tr><td>' + label + '</td>' + pinned.map(function (row) { return cell(row, key, fn(row)); }).join('') + '</tr>';
   };
-  return '<div class="cat-cmpwrap"><table class="cat-cmp"><thead><tr><th></th>'
+  var view = catView();
+  return '<div class="cat-cmpwrap"><table class="cat-cmp"><thead><tr><th><small class="cat-cmp-view">'
+    + esc(view === CAT_MAIN ? 'Main listings' : 'Listings held in ' + view) + '</small></th>'
     + pinned.map(function (row) {
-        return '<th><span class="t">' + esc(row.p.ticker !== '—' ? row.p.ticker : row.p.name) + '</span><small>' + esc(row.p.name) + '</small>'
+        return '<th><span class="t">' + esc(row.v.ticker !== '—' ? row.v.ticker : row.p.name) + '</span><small>' + esc(row.p.name) + '</small>'
           + '<button type="button" class="cat-unpin" data-catunpin="' + esc(row.p.productId) + '" aria-label="Unpin ' + esc(row.p.name) + '">×</button></th>';
       }).join('')
     + '</tr></thead><tbody>'
     + section('Terms')
-    + line('Asset class', function (r) { return esc(r.p.assetClass); })
+    + line('Asset class', function (r) { return esc(r.v.assetClass); })
     + line('Category', function (r) { return esc(r.p.category || '—'); })
     + line('Vehicle · style', function (r) { return esc(r.p.vehicle) + ' · ' + esc(r.p.style); })
     + line('Source', function (r) { return esc(r.p.source); })
-    + line('Exposure', function (r) { return esc(r.p.exposureCurrency); })
-    + line('Issue currency', function (r) { return esc(r.p.issueCurrency || '—'); })
+    + line('Exposure', function (r) { return esc(r.v.exposureCurrency); })
+    + line('Issue currency', function (r) { return esc(r.v.issueCurrency || '—'); })
+    + line('Hedging', function (r) { return esc(r.v.hedging || '—'); })
+    + line('Listings', function (r) { return String(r.count); })
     + line('Liquidity', function (r) { return '<span class="liq' + liqClass(r.p.liquidity) + '">' + esc(r.p.liquidity) + '</span>'; })
-    + line('Minimum investment', function (r) { return esc(catMoney(r.p.minimumInvestment)); })
+    + line('Minimum investment', function (r) { return esc(catMoney(r.v.minimumInvestment)); })
     + section('Cost · % p.a.')
-    + line('<b>Product cost</b>', function (r) { return '<b>' + catFigure(r.p.productCost, 2) + '</b>'; }, 'productCost')
+    + line('<b>Product cost</b>', function (r) { return '<b>' + catFigure(r.v.productCost, 2) + '</b>'; }, 'productCost')
     + section('Yield · % p.a.')
-    + line('Distribution yield', function (r) { return catFigure(r.p.distributionYield, 2); }, 'distributionYield')
+    + line('Distribution yield', function (r) { return catFigure(r.v.distributionYield, 2); }, 'distributionYield')
     + line('<em>Net of product cost</em>', function (r) { return r.net === null ? '—' : (r.net >= 0 ? '+' : '−') + Math.abs(r.net).toFixed(2); }, 'net')
     + section('Placement')
     + line('Offered in', function (r) { return r.books.length ? r.books.length + ' implementation type' + (r.books.length === 1 ? '' : 's') : '—'; })
     + line('Used in sleeves', function (r) { return String(r.used); })
     + '</tbody></table>'
-    + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row. Product fees only: management fees belong to a proposal, not to the catalogue.</p>'
+    + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row, for the listing each product shows in the view. Product fees only: management fees belong to a proposal, not to the catalogue.</p>'
     + '</div>';
 }
 
@@ -6601,18 +7092,30 @@ function prdEntry(id) {
     || prdWithdrawn().filter(function (p) { return p.productId === id; })[0] || null;
 }
 function prdCtx(isNew) {
-  var taken = {}, gone = {};
+  var taken = {}, gone = {}, held = {}, self = prd.draft ? String(prd.draft.productId || '').trim() : '';
   prdLive().forEach(function (p) { taken[p.productId] = p.name; });
   prdWithdrawn().forEach(function (p) { gone[p.productId] = p.name; });
+  /* the tickers of the other live products and the codes of every other
+     product, which a listing here cannot take (D207) */
+  prdLive().concat(prdWithdrawn()).forEach(function (p) {
+    if (p.productId === self) return;
+    prdListingsOf(p).forEach(function (l) {
+      var t = prdText(l.ticker);
+      if (t && t !== '\u2014' && !p.withdrawn) held['ticker:' + t.toLowerCase()] = held['ticker:' + t.toLowerCase()] || p.name;
+      if (prdText(l.code)) held['code:' + prdText(l.code).toLowerCase()] = held['code:' + prdText(l.code).toLowerCase()] || p.name;
+    });
+  });
   return { isNew: isNew, feeGroups: (repo.data && repo.data.feeGroups) || [],
-           categories: (repo.data && repo.data.categories) || [], takenIds: taken, withdrawnIds: gone };
+           categories: (repo.data && repo.data.categories) || [], takenIds: taken, withdrawnIds: gone, held: held };
 }
 function prdProblemsNow() { return prd.draft ? prdProblems(prd.draft, prdCtx(prd.mode === 'new')) : {}; }
 function prdDirty() {
   if (!prd.mode || !prd.draft) return false;
   if (prd.mode === 'new') {
     return PRD_FIELDS.some(function (f) { return prdText(prd.draft[f.key]) !== ''; })
-      || (prd.draft.mandates || []).length > 0 || !!prd.note.trim();
+      || (prd.draft.listings || []).length > 1
+      || (prd.draft.listings || []).some(function (l) { return Object.keys(l).some(function (k) { return prdText(l[k]) !== ''; }); })
+      || !!prd.note.trim();
   }
   return prdChanges(prd.original, prd.draft).length > 0 || !!prd.note.trim();
 }
@@ -6656,6 +7159,8 @@ function prdUseCopy(id) {
   var keep = { productId: prd.idTyped ? prd.draft.productId : '', name: prd.draft.name };
   prd.draft = prdDraftFrom(p || null);
   prd.draft.productId = keep.productId; prd.draft.name = keep.name;
+  /* its listings' tickers and codes are the copied product's own (D207) */
+  if (p) prd.draft.listings.forEach(function (l) { l.ticker = ''; l.code = ''; });
   if (!prd.idTyped) prd.draft.productId = prdSlug(keep.name);
   prd.original = null;
 }
@@ -6692,7 +7197,7 @@ async function prdPost(method, path, body, after) {
     if (!r) return false;
     if (!r.ok) {
       prd.stale = r.status === 409;
-      if (r.body.field && prd.draft && prd.draft[r.body.field] !== undefined) {
+      if (r.body.field && prd.draft && prdGetDraft(prd.draft, r.body.field) !== undefined) {
         prd.serverError = { field: r.body.field, message: r.body.error };
         prd.shown[r.body.field] = true;
       } else {
@@ -6711,7 +7216,7 @@ async function prdPost(method, path, body, after) {
 
 async function prdSave() {
   var probs = prdProblemsNow();
-  PRD_FIELDS.concat(prdMandateFields(prd.draft)).forEach(function (f) { prd.shown[f.key] = true; });
+  PRD_FIELDS.concat(prdListingFields(prd.draft)).forEach(function (f) { prd.shown[f.key] = true; });
   if (Object.keys(probs).length) { render(); prdFocusFirstProblem(probs); return; }
   var payload = prdPayload(prd.draft);
   if (prd.mode === 'new') {
@@ -6733,9 +7238,9 @@ async function prdSave() {
   }
 }
 function prdFocusFirstProblem(probs) {
-  var first = PRD_FIELDS.concat(prdMandateFields(prd.draft)).filter(function (f) { return probs[f.key]; })[0];
+  var first = PRD_FIELDS.concat(prdListingFields(prd.draft)).filter(function (f) { return probs[f.key]; })[0];
   if (first) prdFocus('#prdF-' + first.key);
-  else if (probs.mandates) prdFocus('#prdF-vehicle');
+  else if (probs.listings) prdFocus('[data-prd="lstadd"]');
 }
 async function prdWithdraw(id) {
   var p = prdEntry(id); if (!p) return;
@@ -6809,8 +7314,14 @@ var PRD_ACTION_WORDS = {
   restored: 'restored', reverted: 'an earlier version put back'
 };
 
+/* The card (D207): one shell, with the Fund template or - for any vehicle
+   that makes the product a separate account - the SMA one, whose listings
+   are its mandate codes. A product of one listing reads as a product always
+   did; one of several shows its listings and how each base currency ranks
+   them, in a wider panel. The figures at the top are the listing in view's. */
 function prdViewHtml(row) {
-  var p = row.p, uses = usedIn(p.productId);
+  var p = row.p, v = row.v || p, uses = usedIn(p.productId), sma = prdIsSma(p);
+  var all = prdListingsOf(p), many = all.length > 1;
   var list = uses.map(function (u) {
     return '<div class="r"><b>' + esc(u.name) + ' · ' + money2(u.weight * 100) + '%</b>'
       + '<small>' + esc(u.variant) + ' · ' + esc(u.category) + '</small>'
@@ -6825,29 +7336,33 @@ function prdViewHtml(row) {
       + '<button type="button" class="btn" data-catpin="' + esc(p.productId) + '">' + (cat.pins.indexOf(p.productId) !== -1 ? 'Unpin' : 'Pin to compare') + '</button>'
       + '<button type="button" class="btn btn-ghost prd-wd" data-prd="askwithdraw"' + (prd.saving ? ' disabled' : '') + '>Withdraw</button>';
   }
-  return '<div class="cat-detail" role="region" aria-label="' + esc(p.name) + '">'
+  var one = all[0];
+  return '<div class="cat-detail' + (many ? ' lst' : '') + '" role="region" aria-label="' + esc(p.name) + '">'
     + '<button type="button" class="dlg-close" data-catdetailclose aria-label="Close">×</button>'
-    + '<span class="eyeb">' + (p.withdrawn ? 'Withdrawn product' : 'Product') + '</span>'
+    + '<span class="eyeb">' + (p.withdrawn ? 'Withdrawn product' : 'Product')
+    + ' <span class="prd-kind ' + (sma ? 's' : 'f') + '">' + (sma ? 'SMA card' : 'Fund card') + '</span></span>'
     + '<h4>' + esc(p.name) + '</h4>'
-    + '<span class="tk">' + esc(p.ticker) + ' · ' + esc(p.assetClass) + ' · ' + esc(p.productId) + '</span>'
+    + '<span class="tk">' + esc(v.ticker) + ' · ' + esc(v.assetClass) + ' · ' + esc(p.productId) + '</span>'
     + '<span class="cat-stamp' + (p.withdrawn ? ' gone' : '') + '">' + esc(prdStamp(p)) + '</span>'
     + (prd.flash ? '<p class="prd-flash" role="status">' + esc(prd.flash) + '</p>' : '')
     + '<div class="cat-mg">'
-    + '<div class="m"><small>Product cost</small><b>' + catFigure(p.productCost, 2) + '</b></div>'
-    + '<div class="m"><small>Yield</small><b>' + catFigure(p.distributionYield, 2) + '</b></div>'
+    + '<div class="m"><small>Product cost</small><b>' + catFigure(v.productCost, 2) + '</b></div>'
+    + '<div class="m"><small>Yield</small><b>' + catFigure(v.distributionYield, 2) + '</b></div>'
     + '<div class="m"><small>Net</small><b>' + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</b></div>'
     + '</div>'
+    + (many ? '<p class="prd-inview">The figures of ' + esc(prdListingLabel(row.listing || one, all))
+        + (row.view && row.view !== CAT_MAIN ? (row.main ? ', its main listing: nothing is ranked for ' + esc(row.view) : ', the listing a proposal in ' + esc(row.view) + ' holds first')
+           : ', its main listing') + '.</p>' : '')
     + '<dl class="cat-dl">'
     + '<dt>Category</dt><dd>' + esc(p.category || '—') + '</dd>'
     + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
-    + '<dt>Share class</dt><dd>' + esc(p.shareClass || '—') + '</dd>'
-    + '<dt>Exposure</dt><dd>' + esc(p.exposureCurrency) + '</dd><dt>Issue currency</dt><dd>' + esc(p.issueCurrency || '—') + '</dd><dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
+    + '<dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
     + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
-    + '<dt>Minimum</dt><dd>' + esc(catMoney(p.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>'
-    + prdByCurrencyHtml(p)
+    + (sma ? '<dt>On proposals</dt><dd>' + esc(p.ticker) + ' <small class="prd-none">the ticker a proposal prints; the code never shows there</small></dd>' : '')
+    + (many ? '' : prdOneListingHtml(p, one, row))
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
     + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
-    + prdMandatesHtml(p, row)
+    + (many ? prdListingsHtml(p, row) : '')
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
     + prdHistoryHtml(p)
     + (asking ? '<div class="prd-ask" role="alertdialog" aria-label="Withdraw ' + esc(p.name) + '">'
@@ -6865,38 +7380,68 @@ function prdViewHtml(row) {
     + '<div class="acts">' + acts + '</div>'
     + '</div>';
 }
-
-/* the card's SMA mandates (D197): a grid of the codes a separate account
-   holds, a row a base currency it is offered in and, for a Public Equity
-   SMA, a column a hedging version; each cell its code and the figures it
-   carries of its own. Only an SMA has the section. */
-function prdMandateCellHtml(m) {
-  if (!m) return '<td class="none">—</td>';
-  var bits = [];
-  if (typeof m.productCost === 'number') bits.push('cost ' + esc(prdShow('productCost', m.productCost)) + '%');
-  if (typeof m.minimumInvestment === 'number') bits.push('min ' + esc(catMoney(m.minimumInvestment)));
-  if (typeof m.distributionYield === 'number') bits.push('yield ' + esc(prdShow('distributionYield', m.distributionYield)) + '%');
-  return '<td><b>' + esc(m.code) + '</b>' + (bits.length ? '<small>' + bits.join(' · ') + '</small>' : '') + '</td>';
+/* a product of one listing: its listing's values, as its card always read */
+function prdOneListingHtml(p, l, row) {
+  var sma = prdIsSma(p);
+  return (sma ? '<dt>Mandate code</dt><dd>' + (l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">None yet</span>') + '</dd>' : '')
+    + '<dt>Benchmark</dt><dd>' + (l.benchmark ? esc(l.benchmark) : '<span class="prd-none">None yet</span>') + '</dd>'
+    + (sma ? '' : '<dt>Share class</dt><dd>' + esc(l.shareClass || '—') + '</dd>')
+    + '<dt>Exposure</dt><dd>' + esc(l.exposureCurrency) + '</dd>'
+    + '<dt>Issue currency</dt><dd>' + esc(l.issueCurrency || '—') + '</dd>'
+    + (!sma || prdIsEquity(p) ? '<dt>Hedging</dt><dd>' + esc(l.hedging || '—') + '</dd>' : '')
+    + '<dt>Minimum</dt><dd>' + esc(catMoney(l.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>';
 }
-function prdMandatesHtml(p, row) {
-  if (!prdIsSma(p)) return '';
-  var held = p.mandates || [], equity = prdIsEquity(p);
-  var versions = equity ? PRD_VERSIONS : [''];
-  var ccys = PRD_CURRENCIES.filter(function (c) { return !p.currencies || !p.currencies[c] || p.currencies[c].offered !== false; });
-  var head = '<div class="h">SMA mandates · ' + held.length + '</div>';
-  if (!held.length) {
-    return '<div class="prd-mnd-v">' + head + '<p class="none">No SMA mandates yet. Edit the product to add them, or import an SMA mandate file.</p></div>';
-  }
-  var grid = '<table class="prd-mnd-grid"><thead><tr><th scope="col" title="Base currency">Ccy</th>'
-    + versions.map(function (v) { return '<th scope="col">' + esc(v || 'Mandate') + '</th>'; }).join('') + '</tr></thead><tbody>'
-    + ccys.map(function (c) {
-        return '<tr><th scope="row">' + c + '</th>' + versions.map(function (v) {
-          return prdMandateCellHtml(held.filter(function (m) { return m.currency === c && (m.hedging || '') === v; })[0]);
-        }).join('') + '</tr>';
-      }).join('') + '</tbody></table>';
-  var note = equity ? 'A Public Equity SMA comes in three hedging versions; a scenario takes the one its hedging names, Equity Not Hedged the unhedged one.'
-    : 'One mandate a base currency: the scenario’s hedging plays no part.';
-  return '<div class="prd-mnd-v">' + head + grid + '<small>' + note + '</small></div>';
+/* the listing each base currency holds first (D207): its rank 1, else the
+   main listing */
+function prdHeldIn(all, c) {
+  var placed = all.filter(function (l) { return l.ranks && l.ranks[c]; })
+    .sort(function (a, b) { return a.ranks[c] - b.ranks[c]; });
+  return placed.length ? placed[0] : all[0];
+}
+/* the card's listings (D207): a row each, the main one first, with each base
+   currency's rank and, green, the one a proposal there holds first; an SMA's
+   are its mandate codes */
+function prdListingsHtml(p, row) {
+  var all = prdListingsOf(p), sma = prdIsSma(p), equity = prdIsEquity(p);
+  var cols = [
+    [sma ? 'Code' : 'Ticker', function (l) {
+      return sma ? (l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">none yet</span>')
+        : '<span class="prd-cd">' + esc(l.ticker || '—') + '</span>';
+    }],
+    ['Issue', function (l) { return esc(l.issueCurrency || '—'); }],
+    (!sma || equity) ? ['Hedging', function (l) { return esc(l.hedging || '—'); }] : null,
+    sma ? null : ['Class', function (l) { return esc(l.shareClass ? l.shareClass.slice(0, 4) + '.' : '—'); }],
+    ['Exposure', function (l) { return esc(l.exposureCurrency || '—'); }],
+    ['Cost', function (l) { return catFigure(l.productCost, 2); }, 'num'],
+    ['Yield', function (l) { return catFigure(l.distributionYield, 2); }, 'num'],
+    ['Min', function (l) { return esc(catMoney(l.minimumInvestment)); }, 'num'],
+    ['Benchmark', function (l) { return l.benchmark ? '<span class="prd-bm" title="' + esc(l.benchmark) + '">' + esc(l.benchmark) + '</span>' : '<span class="prd-none">none</span>'; }]
+  ].filter(Boolean);
+  var held = {};
+  PRD_CURRENCIES.forEach(function (c) { held[c] = prdHeldIn(all, c); });
+  return '<div class="prd-lst-v"><div class="h">' + (sma ? 'Mandate codes' : 'Listings') + ' · ' + all.length
+    + ' <small>and how each base currency ranks them</small></div>'
+    + '<div class="prd-lst-tw"><table class="prd-lst-t"><thead><tr>'
+    + cols.map(function (c) { return '<th scope="col"' + (c[2] ? ' class="num"' : '') + '>' + c[0] + '</th>'; }).join('')
+    + PRD_CURRENCIES.map(function (c) { return '<th scope="col" class="rk">' + c + '</th>'; }).join('')
+    + '</tr></thead><tbody>'
+    + all.map(function (l, i) {
+        return '<tr' + (l === row.listing ? ' class="inview"' : '') + '>'
+          + cols.map(function (c, k) {
+              return '<td' + (c[2] ? ' class="num"' : '') + '>' + c[1](l) + (k === 0 && i === 0 ? '<span class="prd-main">main</span>' : '') + '</td>';
+            }).join('')
+          + PRD_CURRENCIES.map(function (c) {
+              var r = l.ranks && l.ranks[c];
+              return '<td class="rk' + (held[c] === l ? ' pk' : '') + '"' + (held[c] === l && !r ? ' title="Nothing is ranked for ' + c + ': the main listing is held"' : '') + '>'
+                + (r ? r : held[c] === l ? 'main' : '–') + '</td>';
+            }).join('')
+          + '</tr>';
+      }).join('')
+    + '</tbody></table></div>'
+    + '<p class="prd-held">Held first in ' + PRD_CURRENCIES.map(function (c) {
+        return '<b>' + c + '</b> ' + esc(prdListingLabel(held[c], all));
+      }).join(' · ') + '. A line below a listing’s minimum steps down its currency’s ranking.</p>'
+    + '</div>';
 }
 
 /* ---- rendering: the form ---- */
@@ -6911,11 +7456,6 @@ function prdFieldHtml(f, d, probs) {
   if (f.key === 'productId' && prd.mode === 'edit') {
     input = '<span class="prd-locked" id="' + id + '">' + esc(d.productId) + '</span>';
     hint = '<small class="prd-hint">Fixed: sleeves refer to the product by its ID.</small>';
-  } else if (f.kind === 'share') {
-    input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
-      + [['', 'None']].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, s]; })).map(function (o) {
-          return '<option value="' + esc(o[0]) + '"' + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
-        }).join('') + '</select>';
   } else if (f.kind === 'category') {
     /* the library's categories (D178); one the library no longer has stays
        offered while the product holds it, so opening the form changes nothing */
@@ -6933,184 +7473,127 @@ function prdFieldHtml(f, d, probs) {
       + groups.map(function (g) { return '<option value="' + esc(g) + '"' + (d[f.key] === g ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('')
       + '</select>';
   } else {
+    /* the words in use, offered as you type */
     var words = f.kind === 'word' ? ((repo.data.productVocabulary || {})[f.key] || []) : null;
     input = '<input id="' + id + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
       + ' value="' + esc(d[f.key]) + '"' + invalid
-      + (f.kind === 'pct' || f.kind === 'amount' ? ' inputmode="decimal"' : '')
       + (words ? ' list="prdL-' + f.key + '"' : '')
-      + (f.key === 'productId' ? ' placeholder="Suggested from the name"' : '')
-      + (f.key === 'minimumInvestment' ? ' placeholder="None"' : '')
-      + (f.key === 'distributionYield' || f.key === 'issueCurrency' ? ' placeholder="None"' : '') + '>'
+      + (f.key === 'productId' ? ' placeholder="Suggested from the name"' : '') + '>'
       + (words ? '<datalist id="prdL-' + f.key + '">' + words.map(function (w) { return '<option value="' + esc(w) + '">'; }).join('') + '</datalist>' : '');
-    if (words) hint = '<small class="prd-hint" id="prdH-' + f.key + '">' + prdNewWordHint(f.key) + '</small>';
+    if (f.kind === 'word') hint = '<small class="prd-hint" id="prdH-' + f.key + '">' + prdNewWordHint(f.key) + '</small>';
+    if (f.key === 'vehicle') hint += '<small class="prd-hint">Separate Account (or SMA) makes it an SMA: its listings are its mandate codes.</small>';
   }
   return '<div class="prd-f' + (f.wide ? ' wide' : '') + '">' + label + input + hint
     + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></div>';
 }
-/* what a blank currency box reads instead: the main value itself, greyed -
-   the table's note says a blank box is the main one */
-function prdMainText(d, base) {
-  if (base === 'minimumInvestment' || base === 'distributionYield' || base === 'productCost') {
-    var m = prdNumber(d[base], base !== 'minimumInvestment');
-    return m === null || isNaN(m) ? 'None' : prdShow(base, m) + (base !== 'minimumInvestment' ? '%' : '');
-  }
-  return prdText(d[base]) || 'None';
+/* the words the listings' boxes offer as you type (D207): one list each */
+function prdListingLists() {
+  var vocab = (repo.data && repo.data.productVocabulary) || {};
+  var issue = PRD_CURRENCIES.concat((vocab.issueCurrency || []).filter(function (c) { return PRD_CURRENCIES.indexOf(c) === -1; }));
+  return [['assetClass', vocab.assetClass || []], ['exposureCurrency', vocab.exposureCurrency || []],
+          ['benchmark', vocab.benchmark || []], ['issueCurrency', issue]].map(function (l) {
+    return '<datalist id="prdL-' + l[0] + '">' + l[1].map(function (w) { return '<option value="' + esc(w) + '">'; }).join('') + '</datalist>';
+  }).join('');
 }
-/* a currency's share class choice: the first option is the main one */
-function prdMainChoice(d) {
-  return 'Main (' + (d.shareClass || 'none') + ')';
-}
-/* the ticker, minimum, exposure and issue currency, share class, yield,
-   asset class and cost by base currency, and whether it is offered there
-   (D180, D182, D184, D189, D190, D194), one row a currency */
-function prdCurrencyHtml(d, probs) {
-  function cell(c, base) {
-    var f = PRD_FIELDS.filter(function (x) { return x.key === base + c; })[0];
-    var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
-    var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
-    if (base === 'offered') {
-      return '<td><select id="prdF-' + f.key + '" data-prdf="' + f.key + '" aria-label="' + esc(f.label) + '">'
-        + '<option value=""' + (d[f.key] !== 'no' ? ' selected' : '') + '>Yes</option>'
-        + '<option value="no"' + (d[f.key] === 'no' ? ' selected' : '') + '>No</option></select>'
-        + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
-    }
-    var off = d['offered' + c] === 'no';
-    if (base === 'shareClass') {
-      /* a choice, not a box: blank is the main one, named as the box's grey is */
-      return '<td><select id="prdF-' + f.key + '" data-prdf="' + f.key + '" aria-label="' + esc(f.label) + '"'
-        + (off ? ' disabled' : '') + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '') + '>'
-        + [['', prdMainChoice(d)]].concat(PRD_SHARE_CLASSES.map(function (s) { return [s, s]; })).map(function (o) {
-            return '<option value="' + esc(o[0]) + '"' + (d[f.key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
-          }).join('') + '</select>'
-        + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
-    }
-    return '<td><input id="prdF-' + f.key + '" type="text" data-prdf="' + f.key + '" autocomplete="off" spellcheck="false"'
-      + (off ? ' disabled' : '')
-      + ' value="' + esc(d[f.key]) + '" aria-label="' + esc(f.label) + '"'
-      + (err ? ' aria-invalid="true" aria-describedby="prdE-' + f.key + '"' : '')
-      + (base === 'minimumInvestment' || base === 'distributionYield' || base === 'productCost' ? ' inputmode="decimal"' : '')
-      /* the asset classes the main box offers, offered here too */
-      + (base === 'assetClass' ? ' list="prdL-assetClass"' : '')
-      + ' placeholder="' + esc(prdMainText(d, base)) + '">'
-      + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></td>';
+/* one box of a listing (D207): its label, the box, its problem */
+function prdListingBoxHtml(d, i, f, probs, cls) {
+  var key = 'listing' + i + f.key, l = d.listings[i];
+  var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
+  var err = server || (prd.shown[key] ? probs[key] || '' : '');
+  var invalid = err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '';
+  var input;
+  if (f.kind === 'hedging' || f.kind === 'share') {
+    var options = f.kind === 'share' ? PRD_SHARE_CLASSES.slice() : prdHedgings(d).slice();
+    if (l[f.key] && options.indexOf(l[f.key]) === -1) options.push(l[f.key]);
+    input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + invalid + '>'
+      + '<option value=""' + (l[f.key] ? '' : ' selected') + '>' + (f.kind === 'share' ? 'None' : 'Not stated') + '</option>'
+      + options.map(function (o) { return '<option value="' + esc(o) + '"' + (l[f.key] === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('')
+      + '</select>';
+  } else {
+    var list = { assetClass: 1, exposureCurrency: 1, benchmark: 1, issueCurrency: 1 }[f.key] ? ' list="prdL-' + f.key + '"' : '';
+    input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
+      + ' value="' + esc(l[f.key]) + '"' + invalid + list
+      + (f.kind === 'pct' || f.kind === 'amount' ? ' inputmode="decimal"' : '')
+      + (f.optional && f.kind !== 'text' ? ' placeholder="None"' : f.key === 'ticker' ? ' placeholder="None"' : '') + '>';
   }
-  return '<div class="prd-ccy"><div class="prd-ccy-h"><b>By base currency</b>'
-    + '<small>A scenario in a currency shows its ticker, exposure and issue currency, share class and asset class, prices its product cost and checks its minimum here. A blank box uses the main value, shown in grey; a minimum or a yield of 0 is none, a ticker of - none. A product not offered in a currency stops the download of a proposal there that holds it.</small></div>'
-    + '<table class="prd-ccy-list"><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Offered</th><th scope="col">Ticker</th>'
-    + '<th scope="col" title="Minimum investment">Minimum</th><th scope="col" title="Exposure currency">Exposure</th>'
-    + '<th scope="col" title="Issue currency">Issue</th></tr></thead><tbody>'
-    + PRD_CURRENCIES.map(function (c) {
-        return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>' + cell(c, 'offered')
-          + cell(c, 'ticker') + cell(c, 'minimumInvestment') + cell(c, 'exposureCurrency')
-          + cell(c, 'issueCurrency') + '</tr>';
-      }).join('')
-    + '</tbody></table>'
-    /* the share class, what it pays out and what it costs, side by side
-       (D189, D190, D194): an accumulating class pays nothing, so its yield
-       is 0, and a hedged class may cost more */
-    + '<table class="prd-ccy-cls"><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Share class</th>'
-    + '<th scope="col" title="Distribution yield, a percentage">Yield %</th>'
-    + '<th scope="col" title="Product cost, a percentage">Cost %</th></tr></thead><tbody>'
-    + PRD_CURRENCIES.map(function (c) {
-        return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>'
-          + cell(c, 'shareClass') + cell(c, 'distributionYield') + cell(c, 'productCost') + '</tr>';
-      }).join('')
-    + '</tbody></table>'
-    /* the asset class, on a line of its own: the words are long */
-    + '<table class="prd-ccy-ac"><thead><tr><th scope="col" title="Base currency">Ccy</th><th scope="col">Asset class</th>'
-    + '</tr></thead><tbody>'
-    + PRD_CURRENCIES.map(function (c) {
-        return '<tr' + (d['offered' + c] === 'no' ? ' class="off"' : '') + '><th scope="row">' + c + '</th>'
-          + cell(c, 'assetClass') + '</tr>';
-      }).join('')
-    + '</tbody></table></div>';
+  return '<div class="prd-f' + (cls ? ' ' + cls : '') + '"><label for="prdF-' + key + '">' + esc(f.label)
+    + (f.unit ? ' <small>' + f.unit + '</small>' : '') + '</label>' + input
+    + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
 }
-/* the form's SMA mandates (D197), a row a code, shown only while the
-   vehicle makes the product a separate account; the hedging column only
-   while its category is Public Equity. A row is added blank and taken off
-   with its ×; the file is the other way in. */
-function prdMandatesFormHtml(d, probs) {
-  if (!prdIsSma(d) && !(d.mandates || []).length) return '';
-  var equity = prdIsEquity(d), rows = d.mandates || [];
-  /* the list's own problem is about the vehicle, not a box being typed in,
-     so it shows at once */
-  var listErr = probs.mandates || '';
-  /* one box: its label, the box, its problem - a mandate is two lines of
-     them, the code and its cell above the figures it carries */
-  function box(i, f, cls) {
-    var key = 'mandate' + i + f[0], m = rows[i];
-    var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
-    var err = server || (prd.shown[key] ? probs[key] || '' : '');
-    var invalid = err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '';
-    var label = ' aria-label="' + esc(f[1] + ' of SMA mandate ' + (i + 1)) + '"';
-    var input;
-    if (f[2] === 'ccy') {
-      input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + label + invalid + '>'
-        + '<option value=""' + (m.currency ? '' : ' selected') + '>Choose…</option>'
-        + PRD_CURRENCIES.map(function (c) { return '<option value="' + c + '"' + (m.currency === c ? ' selected' : '') + '>' + c + '</option>'; }).join('')
-        + '</select>';
-    } else if (f[2] === 'version') {
-      input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + label + invalid + '>'
-        + '<option value=""' + (m.hedging ? '' : ' selected') + '>Choose…</option>'
-        + PRD_VERSIONS.map(function (v) { return '<option value="' + esc(v) + '"' + (m.hedging === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('')
-        + '</select>';
-    } else {
-      input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
-        + ' value="' + esc(m[f[0]]) + '"' + label + invalid
-        + (f[2] === 'pct' || f[2] === 'amount' ? ' inputmode="decimal" placeholder="Product’s"' : '') + '>';
-    }
-    return '<div class="prd-f' + (cls ? ' ' + cls : '') + '"><label for="prdF-' + key + '">' + esc(f[1]) + '</label>' + input
-      + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
-  }
-  var by = {};
-  PRD_MND_FIELDS.forEach(function (f) { by[f[0]] = f; });
-  return '<div class="prd-mnd" id="prdMandates"><div class="prd-ccy-h"><b>SMA mandates</b>'
-    + '<small>One code a base currency' + (equity ? ' and hedging version (Hedged, ISG Hedged, Unhedged)' : '')
-    + '. A cost, minimum or yield of its own is read on that basis in place of the product’s; blank is the product’s. '
-    + 'A code belongs to one product.</small></div>'
-    + (rows.length
-        ? rows.map(function (m, i) {
-            return '<div class="prd-mnd-row" role="group" aria-label="SMA mandate ' + (i + 1) + '">'
-              + box(i, by.code, equity ? '' : 'c-wide') + box(i, by.currency) + (equity ? box(i, by.hedging) : '')
-              + '<button type="button" class="cat-link x" data-prd="mndremove" data-i="' + i + '" aria-label="Take off SMA mandate ' + (i + 1) + '" title="Take it off">×</button>'
-              + box(i, by.productCost) + box(i, by.minimumInvestment) + box(i, by.distributionYield)
-              + '</div>';
-          }).join('')
-        : '<p class="prd-hint">No SMA mandates yet.</p>')
-    + '<p class="prd-err" id="prdE-mandates" role="status">' + esc(listErr) + '</p>'
-    + '<button type="button" class="btn" data-prd="mndadd">+ Add an SMA mandate</button>'
+/* which listing each base currency holds first, as the draft stands */
+function prdHeldText(d) {
+  var rows = (prdPayload(d).listings || []);
+  if (rows.length < 2) return '';
+  return 'Held first in ' + PRD_CURRENCIES.map(function (c) {
+    return c + ' ' + prdListingLabel(prdHeldIn(rows, c), rows);
+  }).join(' · ') + '. A currency ranking none holds the main listing.';
+}
+/* The form's listings (D207), a block each, the first the main one: moved
+   by its grip or its arrows, taken off by its ×, and ranked in each base
+   currency once there are two. An SMA's are its mandate codes; a box only
+   one kind has shows for that kind, or while it still holds something. */
+function prdListingsFormHtml(d, probs) {
+  var rows = d.listings || [], sma = prdIsSma(d), equity = prdIsEquity(d), many = rows.length > 1;
+  var by = {}, named = prdPayload(d).listings;
+  PRD_LISTING_FIELDS.forEach(function (f) { by[f.key] = f; });
+  return '<div class="prd-lst" id="prdListings">'
+    + '<div class="prd-ccy-h"><b>' + (sma ? 'Mandate codes' : 'Listings') + ' · ' + rows.length + '</b>'
+    + '<small>' + (sma
+        ? 'Each code an SMA is opened under, with the currency the account is run in' + (equity ? ' and its hedging version' : '') + '. One code may be run in several currencies: a row each.'
+        : 'Each way of buying it: a share class and the currency it is dealt in. One ticker may be quoted in several currencies: a row each.')
+    + ' The first is the main one. With two or more, rank them for each base currency: a proposal holds the one ranked 1, and steps down the ranking below its minimum; a currency ranking none holds the main one.</small></div>'
+    + prdListingLists()
+    + rows.map(function (l, i) {
+        var label = prdListingLabel(named[i], named);
+        return '<div class="prd-lst-row" data-prdlrow="' + i + '" role="group" aria-label="Listing ' + (i + 1) + '">'
+          + '<div class="prd-lst-h"><span class="repo-mv"><span class="repo-grip" draggable="' + (many ? 'true' : 'false') + '" data-prdgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+          + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="-1"' + (i ? '' : ' disabled') + ' aria-label="Move listing ' + (i + 1) + ' up">↑</button>'
+          + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="1"' + (i < rows.length - 1 ? '' : ' disabled') + ' aria-label="Move listing ' + (i + 1) + ' down">↓</button></span>'
+          + '<b>Listing ' + (i + 1) + '</b>' + (i === 0 ? '<span class="prd-main">main</span>' : '')
+          + '<span class="prd-lst-n">' + esc(label === '—' ? '' : label) + '</span>'
+          + (many ? '<button type="button" class="cat-link x" data-prd="lstremove" data-i="' + i + '" aria-label="Take off listing ' + (i + 1) + '" title="Take it off">×</button>' : '')
+          + '</div>'
+          + '<div class="prd-lst-g">'
+          + (sma || l.code ? prdListingBoxHtml(d, i, by.code, probs) : '')
+          + prdListingBoxHtml(d, i, by.ticker, probs)
+          + prdListingBoxHtml(d, i, by.issueCurrency, probs)
+          + (!sma || equity || l.hedging ? prdListingBoxHtml(d, i, by.hedging, probs) : '')
+          + (!sma || l.shareClass ? prdListingBoxHtml(d, i, by.shareClass, probs) : '')
+          + prdListingBoxHtml(d, i, by.exposureCurrency, probs)
+          + prdListingBoxHtml(d, i, by.assetClass, probs, 'w2')
+          + prdListingBoxHtml(d, i, by.productCost, probs)
+          + prdListingBoxHtml(d, i, by.distributionYield, probs)
+          + prdListingBoxHtml(d, i, by.minimumInvestment, probs, 'w2')
+          + prdListingBoxHtml(d, i, by.benchmark, probs, 'wide')
+          + '</div>'
+          + (many ? '<div class="prd-rk" role="group" aria-label="Ranks of listing ' + (i + 1) + '"><span class="prd-rk-l">Rank</span>'
+              + PRD_CURRENCIES.map(function (c) {
+                  var key = 'listing' + i + 'rank' + c;
+                  var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
+                  var err = server || (prd.shown[key] ? probs[key] || '' : '');
+                  return '<label class="prd-rk-c"><span>' + c + '</span><input id="prdF-' + key + '" type="text" data-prdf="' + key + '" inputmode="numeric" autocomplete="off"'
+                    + ' value="' + esc(l['rank' + c]) + '" aria-label="' + esc(c + ' rank of listing ' + (i + 1)) + '" placeholder="–"'
+                    + (err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '') + '></label>';
+                }).join('')
+              + '<p class="prd-err prd-rk-e" role="status">' + PRD_CURRENCIES.map(function (c) {
+                  var key = 'listing' + i + 'rank' + c;
+                  var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
+                  var err = server || (prd.shown[key] ? probs[key] || '' : '');
+                  return '<span id="prdE-' + key + '">' + esc(err) + '</span>';
+                }).join('') + '</p></div>' : '')
+          + '</div>';
+      }).join('')
+    + '<p class="prd-err" id="prdE-listings" role="status">' + esc(probs.listings || '') + '</p>'
+    + '<p class="prd-hint prd-held-f" id="prdHeld">' + esc(prdHeldText(d)) + '</p>'
+    + '<button type="button" class="btn" data-prd="lstadd">+ ' + (sma ? 'Add a mandate code' : 'Add a listing') + '</button>'
     + '</div>';
-}
-/* the detail's line for them: only the currencies with a value of their own */
-function prdByCurrencyHtml(p) {
-  var own = p.currencies || {};
-  var set = PRD_CURRENCIES.filter(function (c) { return own[c]; });
-  if (!set.length) return '';
-  return '<dt>By currency</dt><dd class="prd-ccyl">' + set.map(function (c) {
-    var o = own[c], bits = [];
-    if (o.ticker) bits.push(o.ticker === '—' ? 'no ticker' : esc(o.ticker));
-    if (typeof o.minimumInvestment === 'number') {
-      bits.push(o.minimumInvestment ? 'min ' + c + ' ' + esc(catMoney(o.minimumInvestment)) : 'no minimum');
-    }
-    if (o.offered === false) bits = ['not offered'];
-    else {
-      if (o.exposureCurrency) bits.push('exposure ' + esc(o.exposureCurrency));
-      if (o.issueCurrency) bits.push('issued in ' + esc(o.issueCurrency));
-      if (o.shareClass) bits.push(esc(o.shareClass.toLowerCase()));
-      if (typeof o.distributionYield === 'number') {
-        bits.push(o.distributionYield ? 'yield ' + esc(prdShow('distributionYield', o.distributionYield)) + '%' : 'no distribution');
-      }
-      if (o.assetClass) bits.push(esc(o.assetClass));
-      if (typeof o.productCost === 'number') bits.push('cost ' + esc(prdShow('productCost', o.productCost)) + '%');
-    }
-    return '<span><b>' + c + '</b> ' + bits.join(' · ') + '</span>';
-  }).join('') + '</dd>';
 }
 /* a word nobody uses yet is said to be new, so a typo reads as one */
 function prdNewWordHint(key) {
-  var v = prdText(prd.draft && prd.draft[key]);
+  var v = prdText(prd.draft && prdGetDraft(prd.draft, key));
   if (!v) return '';
-  var words = ((repo.data && repo.data.productVocabulary) || {})[key] || [];
+  var at = PRD_LISTING_KEY.exec(key);
+  var words = ((repo.data && repo.data.productVocabulary) || {})[at ? at[2] : key] || [];
   if (words.indexOf(v) !== -1) return '';
   var same = words.filter(function (w) { return w.toLowerCase() === v.toLowerCase(); })[0];
   if (same) return 'The catalogue spells it ' + esc(same) + '.';
@@ -7120,17 +7603,19 @@ function prdNewWordHint(key) {
 function prdReachHtml() {
   if (prd.mode !== 'edit') return '';
   var reach = prdReach(prd.draft.productId);
-  var moved = prdChanges(prd.original, prd.draft);
-  var minUp = moved.some(function (c) { return c.key === 'minimumInvestment'; })
-    && prdNumber(prd.draft.minimumInvestment, false) !== null
-    && (prd.original.minimumInvestment === null || prdNumber(prd.draft.minimumInvestment, false) > prd.original.minimumInvestment);
+  var was = prdListingsOf(prd.original);
+  /* a listing's minimum raised, or a new listing with one (D207) */
+  var minUp = prd.draft.listings.some(function (l, i) {
+    var now = prdNumber(l.minimumInvestment, false), then = was[i] ? was[i].minimumInvestment : null;
+    return now !== null && !isNaN(now) && (then === null || then === undefined || now > then);
+  });
   return '<div class="prd-reach" id="prdReach">'
     + (reach.sleeves
         ? '<p>In ' + reach.sleeves + ' sleeve' + (reach.sleeves === 1 ? '' : 's') + ' across ' + reach.types + ' implementation type'
           + (reach.types === 1 ? '' : 's') + '. Proposals being built with ' + (reach.sleeves === 1 ? 'it' : 'them') + ' are re-priced at once.</p>'
         : '<p>Not in any sleeve, so no proposal uses it yet.</p>')
     + (minUp && reach.sleeves
-        ? '<p class="warn">A position below a product’s minimum stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
+        ? '<p class="warn">A position below the minimum of every listing ranked for its currency stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
     + '</div>';
 }
 function prdFormHtml() {
@@ -7138,6 +7623,7 @@ function prdFormHtml() {
   var count = Object.keys(probs).length, dirty = prdDirty();
   var moved = isNew ? [] : prdChanges(prd.original, d);
   var title = isNew ? (prdText(d.name) || 'New product') : prdText(d.name) || prd.original.name;
+  var sma = prdIsSma(d);
   var start = '';
   if (isNew) {
     var options = prdLive().slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
@@ -7148,18 +7634,17 @@ function prdFormHtml() {
       + (prd.start === 'copy'
           ? '<select id="prdCopyOf" aria-label="The product to copy"><option value="">Choose a product to copy…</option>'
             + options.map(function (p) { return '<option value="' + esc(p.productId) + '"' + (prd.copyOf === p.productId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('')
-            + '</select><small class="prd-hint">Everything but the ID and the name is filled in from it.</small>'
+            + '</select><small class="prd-hint">Everything but the ID, the name and its listings’ tickers and codes is filled in from it: those are the copied product’s own.</small>'
           : '')
       + '</div>';
   }
-  return '<div class="cat-detail prd-edit" role="region" aria-label="' + esc(isNew ? 'New product' : 'Edit ' + title) + '">'
-    + '<span class="eyeb">' + (isNew ? 'New product' : 'Editing · version ' + prd.base) + '</span>'
+  return '<div class="cat-detail prd-edit lst" role="region" aria-label="' + esc(isNew ? 'New product' : 'Edit ' + title) + '">'
+    + '<span class="eyeb">' + (isNew ? 'New product' : 'Editing · version ' + prd.base)
+    + ' <span class="prd-kind ' + (sma ? 's' : 'f') + '" id="prdKind">' + (sma ? 'SMA form' : 'Fund form') + '</span></span>'
     + '<h4 id="prdTitle">' + esc(title) + '</h4>'
     + start
-    + '<div class="prd-grid">' + PRD_FIELDS.filter(function (f) { return !f.ccy; })
-        .map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
-    + prdCurrencyHtml(d, probs)
-    + prdMandatesFormHtml(d, probs)
+    + '<div class="prd-grid">' + PRD_FIELDS.map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
+    + prdListingsFormHtml(d, probs)
     + prdReachHtml()
     + '<div class="prd-f wide"><label for="prdNote">Note <small>optional</small></label>'
     + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '"'
@@ -7185,7 +7670,7 @@ function prdUpdate() {
   if (!prd.draft) return;
   var probs = prdProblemsNow(), isNew = prd.mode === 'new';
   var moved = isNew ? [] : prdChanges(prd.original, prd.draft), dirty = prdDirty();
-  PRD_FIELDS.concat(prdMandateFields(prd.draft)).forEach(function (f) {
+  PRD_FIELDS.concat(prdListingFields(prd.draft)).forEach(function (f) {
     var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
     var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
     var box = document.getElementById('prdE-' + f.key); if (box) box.textContent = err;
@@ -7195,17 +7680,47 @@ function prdUpdate() {
       else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
     }
     var hint = document.getElementById('prdH-' + f.key); if (hint) hint.innerHTML = prdNewWordHint(f.key);
-    if (f.ccy && input && input.tagName === 'INPUT') input.placeholder = prdMainText(prd.draft, f.base);
-    if (f.ccy && input && f.base === 'shareClass') input.options[0].textContent = prdMainChoice(prd.draft);
   });
-  var listBox = document.getElementById('prdE-mandates');
-  if (listBox) listBox.textContent = probs.mandates || '';
+  var listBox = document.getElementById('prdE-listings');
+  if (listBox) listBox.textContent = probs.listings || '';
+  var heldNow = document.getElementById('prdHeld'); if (heldNow) heldNow.textContent = prdHeldText(prd.draft);
+  /* each listing's name in its head, as its boxes say it */
+  var named = prdPayload(prd.draft).listings;
+  document.querySelectorAll('#repoDialog [data-prdlrow] .prd-lst-n').forEach(function (el) {
+    var i = +el.closest('[data-prdlrow]').dataset.prdlrow;
+    if (named[i]) { var lb = prdListingLabel(named[i], named); el.textContent = lb === '—' ? '' : lb; }
+  });
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);
   var status = document.getElementById('prdStatus'); if (status) status.textContent = prdStatusText(probs, moved, dirty);
   var reach = document.getElementById('prdReach'); if (reach) reach.outerHTML = prdReachHtml();
   var title = document.getElementById('prdTitle');
   if (title) title.textContent = prdText(prd.draft.name) || (isNew ? 'New product' : prd.original.name);
+}
+/* the listings moved: each box's shown mark and the server's refusal go
+   with their listing - *to(i)* its new place, or -1 for one taken off */
+function prdRemapListings(to) {
+  var shown = {};
+  Object.keys(prd.shown).forEach(function (k) {
+    var m = PRD_LISTING_KEY.exec(k);
+    if (!m) { shown[k] = prd.shown[k]; return; }
+    var j = to(+m[1]);
+    if (j !== -1) shown['listing' + j + m[2]] = prd.shown[k];
+  });
+  prd.shown = shown; prd.serverError = null; prd.leaving = false;
+}
+function prdMoveListing(from, to) {
+  var rows = prd.draft.listings;
+  if (from === to || from < 0 || to < 0 || from >= rows.length || to >= rows.length) return false;
+  var moving = rows.splice(from, 1)[0];
+  rows.splice(to, 0, moving);
+  prdRemapListings(function (i) {
+    if (i === from) return to;
+    if (from < to && i > from && i <= to) return i - 1;
+    if (to < from && i >= to && i < from) return i + 1;
+    return i;
+  });
+  return true;
 }
 
 /* ---- the import dialog: a product file or a fee card file ---- */
@@ -7230,8 +7745,7 @@ async function impChoose(file) {
   imp.name = file.name; render();
   try {
     imp.content = await impRead(file);
-    var path = imp.kind === 'fees' ? '/scenario/repository/fees/import/preview'
-      : imp.kind === 'mandates' ? '/scenario/repository/mandates/import/preview' : '/scenario/repository/products/import/preview';
+    var path = imp.kind === 'fees' ? '/scenario/repository/fees/import/preview' : '/scenario/repository/products/import/preview';
     var r = await api('POST', path, { name: imp.name, content: imp.content });
     if (!r) return;
     if (!r.ok) { imp.error = r.body.error || ('The file could not be read (' + r.status + ')'); imp.step = 'choose'; }
@@ -7247,9 +7761,6 @@ async function impApply() {
     if (imp.kind === 'fees') {
       r = await api('POST', '/scenario/repository/fees/import',
         { name: imp.name, content: imp.content, note: imp.note, base: imp.preview.revision });
-    } else if (imp.kind === 'mandates') {
-      r = await api('POST', '/scenario/repository/mandates/import',
-        { name: imp.name, content: imp.content, note: imp.note, base: imp.preview.revision });
     } else {
       r = await api('POST', '/scenario/repository/products/import',
         { name: imp.name, content: imp.content, withdraw: imp.withdraw, note: imp.note, base: imp.preview.revision });
@@ -7262,14 +7773,6 @@ async function impApply() {
       fct.flash = 'Imported ' + imp.name + ' · the card is version ' + r.body.saved.revision;
       loadFeeHistory(); feeRefetchSchema();
       await prdRefreshData();
-    } else if (imp.kind === 'mandates') {
-      var put = r.body['import'];
-      prd.flash = '';
-      cat.importSaid = 'Imported ' + put.file + ': ' + put.added + ' SMA mandate' + (put.added === 1 ? '' : 's') + ' added, '
-        + put.changed + ' changed, on ' + put.products + ' product' + (put.products === 1 ? '' : 's')
-        + ' · the catalogue is version ' + put.revision;
-      await prdRefreshData();
-      prdHistoryForget();
     } else {
       var done = r.body['import'];
       said = [done.added + ' added', done.changed + ' changed'];
@@ -7291,10 +7794,14 @@ function impListHtml(title, items, body) {
 }
 function impProductsPreviewHtml(p) {
   var nothing = !p.added.length && !p.changed.length && !p.restored.length && !imp.withdraw.length;
-  /* products, not rows: a product may have a row per base currency (D182) */
+  /* products, not rows: a product has a row per listing (D207) */
   return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' product' + (p.rows === 1 ? '' : 's') + ': '
     + [p.added.length + ' new', p.changed.length + ' changed', p.restored.length + ' back from withdrawn',
        p.unchanged + ' unchanged', p.missing.length + ' not in the file'].join(' · ') + '</p>'
+    + (p.legacy ? '<p class="imp-note">This file is in the layout before listings, a row per base currency: each currency’s row is read as a listing ranked first there, and the All row as the main one.</p>' : '')
+    + impListHtml('keep their mandate codes - the file has no MandateCode column', p.kept || [], function (k) {
+        return '<li><b>' + esc(k.name) + '</b> <small>' + k.listings + ' listing' + (k.listings === 1 ? '' : 's') + ' kept as they are</small></li>';
+      })
     + impListHtml('new', p.added, function (a) { return '<li><b>' + esc(a.name) + '</b> <small>' + esc(a.productId) + '</small></li>'; })
     + impListHtml('changed', p.changed, function (c) {
         return '<li><b>' + esc(c.name) + '</b><ul class="rev-changes">' + c.changeWords.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></li>';
@@ -7309,21 +7816,6 @@ function impProductsPreviewHtml(p) {
           + (m.canWithdraw ? '' : ' <small>in ' + m.sleeves.length + ' sleeve' + (m.sleeves.length === 1 ? '' : 's') + ', so it stays</small>') + '</li>';
       })
     + (nothing ? '<p class="imp-same">The file matches the catalogue: there is nothing to import.</p>' : '')
-    + '<label class="prd-note-l" for="impNote">Note <small>optional</small></label>'
-    + '<input id="impNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(imp.note) + '" placeholder="Where the file came from">';
-}
-/* an SMA mandate file (D197): product by product, the codes it adds and
-   changes and the category it fills in; a file never takes a code off */
-function impMandatesPreviewHtml(p) {
-  var moving = p.products.filter(function (x) { return !x.same; });
-  return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' row' + (p.rows === 1 ? '' : 's') + ' on ' + p.products.length
-    + ' product' + (p.products.length === 1 ? '' : 's') + ': '
-    + [p.added + ' new', p.changed + ' changed', p.same + ' product' + (p.same === 1 ? '' : 's') + ' as ' + (p.same === 1 ? 'it is' : 'they are')].join(' · ') + '</p>'
-    + impListHtml('changed', moving, function (x) {
-        return '<li><b>' + esc(x.name) + '</b> <small>' + esc(x.productId) + '</small><ul class="rev-changes">'
-          + x.changeWords.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></li>';
-      })
-    + (!moving.length ? '<p class="imp-same">The file matches the catalogue: every SMA mandate in it is there already.</p>' : '')
     + '<label class="prd-note-l" for="impNote">Note <small>optional</small></label>'
     + '<input id="impNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(imp.note) + '" placeholder="Where the file came from">';
 }
@@ -7343,32 +7835,30 @@ function impCanApply() {
   if (!imp || !imp.preview || imp.busy) return false;
   var p = imp.preview;
   if (imp.kind === 'fees') return !p.same && !(p.blocked || []).length && !!imp.note.trim();
-  if (imp.kind === 'mandates') return p.touched > 0;
   return !!(p.added.length || p.changed.length || p.restored.length || imp.withdraw.length);
 }
 function impDialogHtml() {
   if (!imp) return '';
-  var fees = imp.kind === 'fees', mandates = imp.kind === 'mandates';
+  var fees = imp.kind === 'fees';
   var body;
   if (imp.step === 'choose' || !imp.preview) {
     body = '<p class="imp-lede">' + (fees
         ? 'Choose a fee card file: a CSV with one row per rate - schedule, feeGroup, tier, tierMin, tierMax, source, point, rate. '
           + 'Nothing changes until you have seen what it would move and applied it.'
-        : mandates
-        ? 'Choose an SMA mandate file: a CSV, or an Excel workbook with the mandates on its first sheet or one called mandates, '
-          + 'one row per code - ProductId, MandateCode, BaseCurrency, Hedging, Category, ProductCost, MinimumInvestment, DistributionYield. '
-          + 'Codes are added and changed by code, never taken off. Nothing changes until you have seen what it would do and applied it.'
-        : 'Choose a product file: a CSV, or an Excel workbook with the products on its first sheet or one called products, '
-          + 'with the columns the product file has always had. Nothing changes until you have seen what it would do and applied it.') + '</p>'
+        : 'Choose a product file: a CSV, or an Excel workbook with the products on its first sheet or one called products. '
+          + 'A product has a row for each listing, under the same ProductId: the columns the product file has always had, with '
+          + 'MandateCode, Hedging and a Rank column for each base currency (Rank USD, Rank GBP, Rank CHF, Rank EUR) - as the '
+          + 'downloaded file has them. A file a row per base currency, the layout before listings, is read too. '
+          + 'Nothing changes until you have seen what it would do and applied it.') + '</p>'
       + '<input type="file" id="impFile" accept="' + (fees ? '.csv' : '.csv,.xlsx') + '"' + (imp.busy ? ' disabled' : '') + '>'
       + (imp.busy ? '<p class="repo-loading">Reading ' + esc(imp.name) + '…</p>' : '');
   } else {
-    body = fees ? impFeesPreviewHtml(imp.preview) : mandates ? impMandatesPreviewHtml(imp.preview) : impProductsPreviewHtml(imp.preview);
+    body = fees ? impFeesPreviewHtml(imp.preview) : impProductsPreviewHtml(imp.preview);
   }
   return '<div class="imp-scrim" data-imp="close"></div>'
     + '<div class="imp-dlg" role="dialog" aria-modal="true" aria-labelledby="impTitle">'
     + '<button type="button" class="dlg-close" data-imp="close" aria-label="Close">×</button>'
-    + '<h3 id="impTitle">' + (fees ? 'Import a fee card file' : mandates ? 'Import an SMA mandate file' : 'Import a product file') + '</h3>'
+    + '<h3 id="impTitle">' + (fees ? 'Import a fee card file' : 'Import a product file') + '</h3>'
     + body
     + (imp.error ? '<p class="md-err" role="alert">' + esc(imp.error) + '</p>' : '')
     + '<div class="imp-acts">'
@@ -7395,26 +7885,29 @@ function prdClick(el) {
   }
   if (act === 'startblank') { prd.start = 'blank'; prdUseCopy(''); render(); return true; }
   if (act === 'startcopy') { prd.start = 'copy'; render(); prdFocus('#prdCopyOf'); return true; }
-  if (act === 'mndadd') {
-    /* a blank row (D197); the first currency the product is offered in, so one box fewer to fill */
-    var free = PRD_CURRENCIES.filter(function (c) { return prd.draft['offered' + c] !== 'no'; })[0] || '';
-    prd.draft.mandates.push(prdMandateRow({ currency: free }));
+  if (act === 'lstadd') {
+    /* a new listing (D207), its values the main one's but what makes it
+       another: its ticker or code, issue currency, hedging and ranks */
+    var row = prdListingRow(null), main = prd.draft.listings[0] || {};
+    ['shareClass', 'exposureCurrency', 'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark']
+      .forEach(function (k) { row[k] = main[k] || ''; });
+    prd.draft.listings.push(row);
     prd.leaving = false;
-    render(); prdFocus('#prdF-mandate' + (prd.draft.mandates.length - 1) + 'code'); return true;
+    render(); prdFocus('#prdF-listing' + (prd.draft.listings.length - 1) + (prdIsSma(prd.draft) ? 'code' : 'ticker')); return true;
   }
-  if (act === 'mndremove') {
+  if (act === 'lstremove') {
     var at = parseInt(el.dataset.i, 10);
-    prd.draft.mandates.splice(at, 1);
-    /* the rows after it move up a box, so their shown marks go with them */
-    var shown = {};
-    Object.keys(prd.shown).forEach(function (k) {
-      var m = PRD_MND_KEY.exec(k);
-      if (!m) { shown[k] = prd.shown[k]; return; }
-      var i = +m[1];
-      if (i < at) shown[k] = prd.shown[k]; else if (i > at) shown['mandate' + (i - 1) + m[2]] = prd.shown[k];
-    });
-    prd.shown = shown; prd.serverError = null; prd.leaving = false;
-    render(); prdFocus(prd.draft.mandates.length ? '#prdF-mandate' + Math.min(at, prd.draft.mandates.length - 1) + 'code' : '[data-prd="mndadd"]');
+    prd.draft.listings.splice(at, 1);
+    prdRemapListings(function (i) { return i === at ? -1 : i > at ? i - 1 : i; });
+    render(); prdFocus('[data-prd="lstadd"]');
+    return true;
+  }
+  if (act === 'lstmove') {
+    var from = parseInt(el.dataset.i, 10), to = from + parseInt(el.dataset.by, 10);
+    if (prdMoveListing(from, to)) {
+      render();
+      prdFocus('[data-prd="lstmove"][data-i="' + to + '"][data-by="' + el.dataset.by + '"]:not([disabled]),[data-prd="lstmove"][data-i="' + to + '"]');
+    }
     return true;
   }
   if (act === 'askwithdraw') { prd.confirm = 'withdraw'; prd.note = ''; render(); prdFocus('#prdNote'); return true; }
@@ -7438,7 +7931,6 @@ function prdClick(el) {
     render(); return true;
   }
   if (act === 'import') { impOpen('products'); return true; }
-  if (act === 'importmandates') { impOpen('mandates'); return true; }
   return false;
 }
 function impClick(el) {
@@ -7730,33 +8222,16 @@ function render() {
   var onArchive = repo.view === 'archive', onActivity = repo.view === 'activity';
   var onRegister = repo.view === 'proposals', onUncalled = repo.view === 'uncalled';
   var onOverlays = repo.view === 'overlays', onFees = repo.view === 'fees';
-  var onNotices = repo.view === 'notices';
-  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees && !onNotices;
+  var onNotices = repo.view === 'notices', onMinimums = repo.view === 'minimums';
+  var onAccount = repo.view === 'accountOpening';
+  var onSleeves = !onCatalogue && !onArchive && !onActivity && !onRegister && !onUncalled && !onOverlays && !onFees && !onNotices && !onMinimums && !onAccount;
 
-  /* One tab strip in the header, and it navigates (A1). The implementation
-     type used to sit beside it, identical in shape and selected state but
-     filtering rather than navigating - and it existed on one view of five, so
-     the header changed size as you moved. It is a property of the sleeve
-     list, so it has moved onto the sleeve list's own header. */
-  var VIEWS = [['sleeves', 'Sleeves', onSleeves, 0],
-               ['catalogue', 'Catalogue', onCatalogue, 0],
-               ['fees', 'Fees', onFees, 0],
-               ['notices', 'Notices', onNotices, 0],
-               ['archive', 'Archive', onArchive, d ? archivedSleeves().length : 0],
-               ['activity', 'Activity', onActivity, 0],
-               ['proposals', 'Proposals', onRegister, d && d.register ? d.register.proposals : 0],
-               ['uncalled', 'Uncalled Capital Allocation', onUncalled, 0],
-               ['overlays', 'Overlay Funding', onOverlays, 0]];
+  /* The header's navigation (D212): five places, the plain ones a button
+     and the rest a menu that opens on hover (or on focus, for the keyboard
+     and a touch), whose button names the page it is on. It replaced one
+     strip of eleven tabs (A1), which no longer fitted once grouped. */
   var header = '<div class="repo-h"><h2 id="repoTitle" class="dlg-shout">Repository</h2>'
-    + '<div class="repo-seg" role="tablist" aria-label="View">'
-    + VIEWS.map(function (v) {
-        /* the pair is one tab stop; the arrows move within it (G1) */
-        return '<button type="button" role="tab" id="repotab-' + v[0] + '"'
-          + ' data-repoview="' + v[0] + '" aria-selected="' + v[2] + '"'
-          + ' aria-controls="repoPanel" tabindex="' + (v[2] ? '0' : '-1') + '">' + esc(v[1])
-          + (v[3] ? '<span class="n">' + v[3] + '</span>' : '') + '</button>';
-      }).join('')
-    + '</div>';
+    + '<nav class="repo-nav" aria-label="Repository">' + repoNavHtml(d) + '</nav>';
   if (d) {
     /* what the date is OF (A3): it is the product catalogue's, and on the
        sleeves view it sat directly over a sleeve carrying its own saved-on
@@ -7784,6 +8259,10 @@ function render() {
     body = feesViewHtml();
   } else if (onNotices) {
     body = noticesViewHtml();
+  } else if (onMinimums) {
+    body = minimumsViewHtml();
+  } else if (onAccount) {
+    body = accountOpeningViewHtml();
   } else {
     body = sleevesViewHtml();
   }
@@ -7831,8 +8310,8 @@ function render() {
       + '</div>';
   }
 
-  /* the tabs name this, and it is labelled by whichever is selected (G1) */
-  body = '<div id="repoPanel" role="tabpanel" aria-labelledby="repotab-' + repo.view + '">'
+  /* the page, labelled by the header's button it is under (G1, D212) */
+  body = '<div id="repoPanel" role="region" aria-labelledby="repotab-' + repo.view + '">'
     + body + '</div>';
 
   host.innerHTML = '<div class="scrim" data-reposcrim></div>'
@@ -7943,14 +8422,9 @@ function catEdge() {
    The strip says whose session this is before it says what the session
    opens: a row that appears for some people and not others should explain
    why it is there, and on a shared machine it also answers "am I still
-   signed in as them". The five views are named rather than hidden behind one
-   "Repository" link, because the admin knows which of them they came for. */
-var LANDING_VIEWS = [
-  ['repository', 'Sleeves'], ['catalogue', 'Catalogue'], ['fees', 'Fees'], ['notices', 'Notices'], ['archive', 'Archive'],
-  ['activity', 'Activity'], ['proposals', 'Proposals'], ['uncalled', 'Uncalled Capital Allocation'],
-  ['overlays', 'Overlay Funding']
-];
-
+   signed in as them". It opens the Repository, and the header's menus take
+   the admin on from there (D212, D213): naming every view here repeated the
+   header beside it. */
 function renderLandingAdmin(show) {
   var host = document.getElementById('lpadmin'); if (!host) return;
   /* Only on the landing page: in the workspace the rail carries the same two
@@ -7964,10 +8438,9 @@ function renderLandingAdmin(show) {
            : '<span>You can maintain the library</span>')
     + '</div>'
     + '<nav class="lp-admin-links" aria-label="The library">'
-    + LANDING_VIEWS.map(function (v, i) {
-        return (i ? '<span class="lp-admin-dot" aria-hidden="true">\u00b7</span>' : '')
-          + '<a href="#' + (v[2] || v[0]) + '" data-repoopen="' + v[0] + '">' + esc(v[1]) + '</a>';
-      }).join('')
+    /* a real anchor at the hash the console answers to, so a middle click
+       opens a second tab and a copied link still works */
+    + '<a href="#repository" data-repoopen="repository">Repository</a>'
     + '</nav>';
   if (host.innerHTML !== html) host.innerHTML = html;
 }
@@ -8002,6 +8475,10 @@ function renderEntryLinks() {
     if (show && window.location.hash.indexOf('#overlays') === 0) openRepository(null, 'overlays');
     if (show && window.location.hash.indexOf('#fees') === 0) openRepository(null, 'fees');
     if (show && (window.location.hash.indexOf('#notices') === 0 || window.location.hash.indexOf('#marketing') === 0)) openRepository(null, 'notices');
+    if (show && window.location.hash.indexOf('#minimums') === 0) openRepository(null, 'minimums');
+    if (show && window.location.hash.indexOf('#account-opening') === 0) openRepository(null, 'accountOpening');
+    /* straight onto the MAP benchmarks (D211) */
+    if (show && window.location.hash.indexOf('#map-benchmarks') === 0) { ao.view = 'benchmarks'; openRepository(null, 'accountOpening'); }
   }
 }
 
@@ -8393,6 +8870,1766 @@ function ntcInput(eds, el) {
   }
   return false;
 }
+
+/* ---- the private markets minimums (D200) ----------------------------------
+   The mandate each private markets product needs, by allocation type, risk
+   level and base currency. A product at a time: its four allocation types
+   side by side as risk-by-currency grids, every value edited where it is and
+   saved together as one revision with an optional note. A file loads the
+   whole table, previewed first. A change takes effect only once it is
+   confirmed, from a list of every value it moves; one not confirmed is
+   discarded when the tab is left or the console closed. The history lists
+   every value that moved, and an earlier revision can be put back, also
+   once confirmed. */
+var pmm = { data: null, loaded: false, busy: false, error: null, flash: '', product: null, draft: null,
+            bad: {}, note: '', saving: false, history: null, imp: null, adding: null, askRemove: false,
+            openRev: null, confirming: false, askRestore: null };
+/* what is not confirmed goes: a change on screen, a file not loaded, a
+   question not answered */
+function pmmForget() {
+  pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.confirming = false; pmm.askRemove = false;
+  pmm.adding = null; pmm.imp = null; pmm.askRestore = null; pmm.error = null; pmm.flash = ''; pmm.pasted = '';
+}
+
+async function loadMinimums() {
+  pmm.busy = true; pmm.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/pm-minimums');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the minimums (' + r.status + ')'));
+    pmm.data = r.body; pmm.loaded = true;
+  } catch (err) { pmm.error = err.message; }
+  pmm.busy = false; render();
+  loadMinimumsHistory();
+}
+async function loadMinimumsHistory() {
+  var r = await api('GET', '/scenario/repository/pm-minimums/history');
+  pmm.history = r && r.ok ? (r.body.history || []) : [];
+  render();
+}
+
+function pmmCellKey(a, r, c) { return a + '|' + r + '|' + c; }
+function pmmCells() {
+  var d = pmm.data, out = [];
+  d.allocations.forEach(function (a) {
+    d.risks.forEach(function (r) { d.currencies.forEach(function (c) { out.push(pmmCellKey(a, r.id, c)); }); });
+  });
+  return out;
+}
+function pmmRiskLabel(id) {
+  var r = (pmm.data.risks || []).filter(function (x) { return x.id === id; })[0];
+  return r ? r.label : id;
+}
+function pmmWords(key) { var p = key.split('|'); return p[0] + ' · ' + pmmRiskLabel(p[1]) + ' · ' + p[2]; }
+function pmmProducts() { return pmm.draft || (pmm.data && pmm.data.products) || []; }
+function pmmSaved(pid) {
+  return ((pmm.data && pmm.data.products) || []).filter(function (p) { return p.productId === pid; })[0] || null;
+}
+function pmmDirty() {
+  return !!pmm.data && ((!!pmm.draft && JSON.stringify(pmm.draft) !== JSON.stringify(pmm.data.products))
+    || Object.keys(pmm.bad).length > 0);
+}
+function pmmEnsureDraft() {
+  if (!pmm.draft) pmm.draft = JSON.parse(JSON.stringify(pmm.data.products || []));
+  return pmm.draft;
+}
+function pmmCurrent() {
+  var list = pmmProducts();
+  var p = list.filter(function (x) { return x.productId === pmm.product; })[0];
+  if (!p && list.length) { p = list[0]; pmm.product = p.productId; }
+  return p || null;
+}
+function pmmLabel(p) { return p.type || p.productId; }
+function pmmFmt(v) { return v === null || v === undefined ? '' : String(Math.round(v * 10000) / 10000); }
+function pmmMoney(v) { return '$' + pmmFmt(v) + 'm'; }
+/* a typed value: a number of $m, blank for none, or the words saying why not */
+function pmmParse(raw) {
+  var t = String(raw || '').replace(/[$,\s]/g, '').replace(/m$/i, '');
+  if (!t) return { value: null };
+  var v = Number(t);
+  if (!isFinite(v) || v < 0 || v > (pmm.data.valueMax || 100000)) return { bad: true };
+  return { value: Math.round(v * 10000) / 10000 };
+}
+function pmmGaps(list) {
+  var cells = pmmCells();
+  return list.map(function (p) {
+    return { productId: p.productId, label: pmmLabel(p),
+             cells: cells.filter(function (c) { return p.minimums[c] === undefined || p.minimums[c] === null; }) };
+  }).filter(function (g) { return g.cells.length; });
+}
+/* what the changes on screen move, in the history's words. Mirrors
+   privateMarkets._changes. */
+function pmmChangeList() {
+  var out = [], was = {};
+  if (!pmm.draft) return out;
+  var saved = (pmm.data && pmm.data.products) || [];
+  function val(v) { return v === undefined || v === null ? '—' : pmmFmt(v); }
+  saved.forEach(function (p) { was[p.productId] = p; });
+  pmm.draft.forEach(function (p) {
+    var old = was[p.productId], label = pmmLabel(p);
+    if (!old) { out.push('Added ' + label + ' (' + Object.keys(p.minimums).length + ' values)'); return; }
+    if (old.type !== p.type) out.push(p.productId + ': short name ' + (old.type || '—') + ' → ' + (p.type || '—'));
+    pmmCells().forEach(function (c) {
+      var a = old.minimums[c] === undefined ? null : old.minimums[c], b = p.minimums[c] === undefined ? null : p.minimums[c];
+      if (a !== b) out.push(label + ' · ' + pmmWords(c) + ': ' + val(a) + ' → ' + val(b));
+    });
+  });
+  saved.forEach(function (p) {
+    if (!pmm.draft.some(function (x) { return x.productId === p.productId; })) out.push('Removed ' + pmmLabel(p));
+  });
+  return out;
+}
+function pmmChanged() { return pmmChangeList().length; }
+function pmmShade(v) {
+  if (v === null || v === undefined) return '';
+  var t = Math.max(0, Math.min(1, v / 150));
+  return ' style="background:rgba(31,95,191,' + (0.05 + t * 0.4).toFixed(2) + ')"';
+}
+
+function pmmGapsHtml() {
+  var gaps = pmmGaps(pmmProducts());
+  if (!gaps.length) return '<div id="pmmGaps"></div>';
+  return '<div id="pmmGaps" class="pmm-gaps" role="status"><b>Missing values.</b> Every product needs a minimum in all '
+    + pmmCells().length + ' cells. A proposal that needs a missing one cannot be delivered, and an allocation no product has a value for is not offered.<ul>'
+    + gaps.map(function (g) {
+        return '<li><button type="button" class="cat-link" data-pmm="prod" data-pmmarg="' + esc(g.productId) + '">' + esc(g.label) + '</button>: '
+          + g.cells.length + ' missing' + (g.cells.length <= 6 ? ' — ' + g.cells.map(pmmWords).join('; ') : ', starting ' + g.cells.slice(0, 3).map(pmmWords).join('; ')) + '</li>';
+      }).join('') + '</ul></div>';
+}
+
+function pmmMatrixHtml(p, a) {
+  var d = pmm.data, saved = pmmSaved(p.productId);
+  return '<div class="pmm-blk"><h4>' + esc(a) + '</h4><table class="pmm-g"><thead><tr><th scope="col"><span class="pmm-mut">$m</span></th>'
+    + d.currencies.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + d.risks.map(function (r) {
+        return '<tr><th scope="row">' + esc(r.label) + '</th>' + d.currencies.map(function (c) {
+          var key = pmmCellKey(a, r.id, c), bk = p.productId + '|' + key;
+          var v = p.minimums[key] === undefined ? null : p.minimums[key];
+          var was = saved ? (saved.minimums[key] === undefined ? null : saved.minimums[key]) : null;
+          var bad = Object.prototype.hasOwnProperty.call(pmm.bad, bk);
+          var cls = bad ? 'bad' : v === null ? 'gap' : (!saved || was !== v ? 'chg' : '');
+          return '<td class="' + cls + '"' + (bad ? '' : pmmShade(v)) + '><input data-pmmv="' + esc(key) + '" inputmode="decimal" autocomplete="off"'
+            + ' value="' + esc(bad ? pmm.bad[bk] : pmmFmt(v)) + '"'
+            + ' aria-label="' + esc(pmmLabel(p) + ', ' + a + ', ' + r.label + ', ' + c + ', millions of dollars') + '"'
+            + (saved && was !== v && !bad ? ' title="Was ' + esc(was === null ? 'blank' : pmmMoney(was)) + '"' : '')
+            + (pmm.confirming ? ' disabled' : '') + '></td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>';
+}
+
+function pmmSaveHtml() {
+  if (!pmmDirty()) return '<div id="pmmSave"></div>';
+  var bad = Object.keys(pmm.bad).length, list = pmmChangeList(), n = list.length;
+  if (pmm.confirming && !bad && n) {
+    return '<div id="pmmSave" class="pmm-save is-confirm" role="region" aria-label="Confirm the changes">'
+      + '<p><b>Confirm ' + n + ' change' + (n === 1 ? '' : 's') + ' to the private markets minimums.</b> '
+      + 'They apply to every proposal from the moment they are confirmed.</p>'
+      + '<ul class="rev-changes pmm-list">' + list.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>'
+      + '<div class="ent-save"><label for="pmmNote">Note <small>optional</small></label>'
+      + '<input type="text" id="pmmNote" data-pmmnote maxlength="' + (pmm.data.noteMax || 240) + '" value="' + esc(pmm.note) + '" placeholder="Why it is changing">'
+      + '<button type="button" class="btn btn-primary" id="pmmConfirm" data-pmm="save"' + (pmm.saving ? ' disabled' : '') + '>'
+      + (pmm.saving ? 'Confirming…' : 'Confirm the changes') + '</button>'
+      + '<button type="button" class="btn" data-pmm="unreview"' + (pmm.saving ? ' disabled' : '') + '>Keep editing</button></div></div>';
+  }
+  return '<div id="pmmSave" class="pmm-save">'
+    + '<p>' + (n ? n + ' change' + (n === 1 ? '' : 's') + ' not confirmed.' : 'Not confirmed.')
+    + ' Nothing takes effect until you confirm; leave the tab and the changes are discarded.'
+    + (pmm.pasted ? ' <span class="pmm-mut">' + esc(pmm.pasted) + '</span>' : '')
+    + (bad ? ' <span class="pmm-bad">Fix the ' + bad + ' value' + (bad === 1 ? '' : 's') + ' marked red: a minimum is a number of millions of dollars.</span>' : '') + '</p>'
+    + '<div class="ent-save">'
+    + '<button type="button" class="btn btn-primary" data-pmm="review"' + (bad || !n ? ' disabled' : '') + '>Review and confirm</button>'
+    + '<button type="button" class="btn" data-pmm="discard">Discard</button></div></div>';
+}
+
+function pmmImportHtml() {
+  var i = pmm.imp, pv = i.preview;
+  var html = '<div class="pmm-imp" role="region" aria-label="Import a minimums file"><h3 class="sv-h3">Import a minimums file</h3>'
+    + '<p class="pmm-mut">The desk’s long-form workbook: allocation_type, risk_level, currency, value (millions of dollars), Type and productId. '
+    + 'All in allocation_type or currency covers every one; a row that names more wins over one that says All. The file replaces the whole table.</p>'
+    + '<input type="file" id="pmmFile" accept=".xlsx,.csv"' + (i.busy ? ' disabled' : '') + '>'
+    + (i.busy ? '<p class="repo-loading">Reading ' + esc(i.name) + '…</p>' : '')
+    + (i.error ? '<p class="md-err" role="alert">' + esc(i.error) + '</p>' : '');
+  if (pv) {
+    html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · '
+      + pv.products.map(function (p) { return esc(p.type || p.productId) + ' (' + p.values + ' values)'; }).join(', ')
+      + ' · <b>' + pv.changed + ' change' + (pv.changed === 1 ? '' : 's') + '</b></p>'
+      + (pv.problems.length ? '<div class="pmm-gaps"><b>Problems: fix them in the file and choose it again.</b><ul>'
+          + pv.problems.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('')
+          + (pv.problems.length > 12 ? '<li>and ' + (pv.problems.length - 12) + ' more</li>' : '') + '</ul></div>' : '')
+      + (pv.gaps.length ? '<p class="pmm-bad">Missing values: ' + pv.gaps.map(function (g) {
+          return esc(g.type || g.productId) + ' ' + g.cells.length; }).join(', ') + '. They are listed on the tab once loaded.</p>' : '')
+      + (pv.unknown.length ? '<p class="pmm-mut">Not in the catalogue yet: ' + pv.unknown.map(esc).join(', ')
+          + '. Their minimums are kept, and apply once the product is added.</p>' : '')
+      + (pv.changes.length ? '<ul class="rev-changes">' + pv.changes.slice(0, 12).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+          + (pv.changed > 12 ? '<li class="mut">and ' + (pv.changed - 12) + ' more</li>' : '') + '</ul>' : '')
+      + (pmmDirty() ? '<p class="pmm-bad">Loading it discards the changes on screen.</p>' : '')
+      + '<div class="ent-save"><label for="pmmImpNote">Note <small>optional</small></label>'
+      + '<input type="text" id="pmmImpNote" data-pmmimpnote maxlength="' + (pmm.data.noteMax || 240) + '" value="' + esc(i.note) + '" placeholder="Loaded ' + esc(pv.name) + '">'
+      + '<button type="button" class="btn btn-primary" data-pmm="apply"' + (pv.problems.length || !pv.changed || pmm.saving ? ' disabled' : '') + '>'
+      + (pmm.saving ? 'Loading…' : 'Load the file') + '</button>'
+      + '<button type="button" class="btn" data-pmm="impcancel">Cancel</button></div>';
+  } else {
+    html += '<div class="ent-save"><button type="button" class="btn" data-pmm="impcancel">Cancel</button></div>';
+  }
+  return html + '</div>';
+}
+
+function pmmHistoryHtml() {
+  if (pmm.history === null) return '<p class="repo-loading">Loading the history…</p>';
+  if (!pmm.history.length) return '<p class="sv-hint">Nothing saved yet: until a table is loaded, private markets need a $20m mandate.</p>';
+  var words = { imported: 'file loaded', updated: 'edited', reverted: 'restored' };
+  return '<ol class="ent-hist pmm-hist">' + pmm.history.map(function (h) {
+    var open = pmm.openRev === h.revision, shown = open ? h.changes : h.changes.slice(0, 6);
+    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(words[h.action] || h.action) + ' · ' + esc(shortDateTime(h.at))
+      + (h.actor ? ' · ' + esc(h.actor) : '')
+      + (h.current ? ' <span class="ntc-pill live">in force</span>'
+         : ' <button type="button" class="cat-link" data-pmm="restore" data-pmmarg="' + h.revision + '"' + (pmm.saving ? ' disabled' : '') + '>Restore this revision</button>')
+      + (pmm.askRestore === h.revision ? '<div class="prd-ask" role="alertdialog" aria-label="Restore revision ' + h.revision + '"><p>Put revision '
+          + h.revision + ' back in force? Its minimums replace the ones in force now, for every proposal'
+          + (pmmDirty() ? ', and the changes on screen are discarded' : '') + '. It is kept as a new revision.</p>'
+          + '<button type="button" class="btn btn-primary" data-pmm="restoreyes" data-pmmarg="' + h.revision + '"' + (pmm.saving ? ' disabled' : '') + '>Confirm the restore</button>'
+          + '<button type="button" class="btn" data-pmm="restoreno">Cancel</button></div>' : '')
+      + (h.note ? '<p class="act-note">“' + esc(h.note) + '”</p>' : '')
+      + (shown.length ? '<ul class="rev-changes">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '')
+      + (h.changes.length > 6 ? '<button type="button" class="cat-link" data-pmm="rev" data-pmmarg="' + h.revision + '">'
+          + (open ? 'Show fewer' : 'Show all ' + h.changed + ' changes') + '</button>' : '')
+      + '</li>';
+  }).join('') + '</ol>';
+}
+
+function minimumsViewHtml() {
+  if (!pmm.data) {
+    return '<div class="repo-b ent-b pmm-b"><p class="repo-loading">' + (pmm.error ? esc(pmm.error) : 'Loading the minimums…') + '</p></div>';
+  }
+  var d = pmm.data, list = pmmProducts(), p = pmmCurrent();
+  var status = d.inForce
+    ? 'Revision ' + d.revision + (d.updatedBy ? ' · saved by ' + esc(d.updatedBy) : '') + (d.updatedAt ? ' ' + esc(shortDate(d.updatedAt)) : '')
+      + ' · ' + d.products.length + ' product' + (d.products.length === 1 ? '' : 's')
+    : 'No table yet: until one is loaded, private markets need a ' + pmmMoney((d.fallback || 20000000) / 1e6) + ' mandate, whatever the currency or risk level.';
+  var unknown = list.filter(function (x) { return !d.names[x.productId]; });
+  var html = '<div class="repo-b ent-b pmm-b">'
+    + '<p class="pmm-lede">The mandate each private markets product needs, in millions of dollars whatever the currency, by allocation type, risk level and base currency. '
+    + 'For a currency and risk level, an allocation holding private markets is offered from the lowest minimum of any product; above that, each product is held only from its own, '
+    + 'and one below it is marked in the implementation table and stops the download. Custom portfolios are checked product by product against the Full minimums at their risk profile.</p>'
+    + '<p class="pmm-mut">Type into a grid, or paste a block copied in Excel into the cell where it starts. Copy its row of currencies or its column of risk levels with it and the values go in by name, whatever order they are in.</p>'
+    + (pmm.flash ? '<p class="prd-flash" role="status">' + esc(pmm.flash) + '</p>' : '')
+    + (pmm.error ? '<p class="md-err" role="alert">' + esc(pmm.error) + '</p>' : '')
+    + '<div class="pmm-bar"><button type="button" class="btn btn-primary" data-pmm="import"' + (pmm.imp ? ' disabled' : '') + '>Import Excel</button>'
+    + (d.inForce ? '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/pm-minimums.xlsx') + '" download>Download as Excel</a>' : '')
+    + '<span class="pmm-mut">' + status + '</span></div>'
+    + (pmm.imp ? pmmImportHtml() : '')
+    + pmmGapsHtml()
+    + (unknown.length ? '<p class="pmm-mut">Not in the catalogue: ' + unknown.map(function (x) { return esc(pmmLabel(x)) + ' (' + esc(x.productId) + ')'; }).join(', ')
+        + '. Their minimums are kept, and apply once the product is added.</p>' : '')
+    + ((d.unchecked || []).length ? '<p class="pmm-mut">In the catalogue as private markets but not in this table, so not checked: '
+        + d.unchecked.map(function (x) { return esc(x.name); }).join(', ') + '.</p>' : '')
+    + '<div class="pmm-prods" role="tablist" aria-label="Product">'
+    + list.map(function (x) {
+        var on = p && x.productId === p.productId;
+        return '<button type="button" role="tab" aria-selected="' + on + '" data-pmm="prod" data-pmmarg="' + esc(x.productId) + '">' + esc(pmmLabel(x)) + '</button>';
+      }).join('')
+    + (list.length < (d.maxProducts || 40) ? '<button type="button" class="pmm-addp" data-pmm="add"' + (pmm.confirming ? ' disabled' : '') + '>+ Add a product</button>' : '') + '</div>';
+  if (pmm.adding) {
+    html += '<div class="pmm-adding"><label for="pmmAddId">ProductId</label><input id="pmmAddId" list="pmmIds" autocomplete="off" value="' + esc(pmm.adding.id) + '">'
+      + '<datalist id="pmmIds">' + Object.keys(d.names).filter(function (id) { return !list.some(function (x) { return x.productId === id; }); })
+          .map(function (id) { return '<option value="' + esc(id) + '">' + esc(d.names[id]) + '</option>'; }).join('') + '</datalist>'
+      + '<label for="pmmAddType">Short name</label><input id="pmmAddType" maxlength="' + (d.typeMax || 24) + '" autocomplete="off" value="' + esc(pmm.adding.type) + '" placeholder="APS">'
+      + '<button type="button" class="btn btn-primary" data-pmm="addyes">Add</button><button type="button" class="btn" data-pmm="addno">Cancel</button>'
+      + (pmm.adding.error ? '<p class="md-err" role="alert">' + esc(pmm.adding.error) + '</p>' : '') + '</div>';
+  }
+  if (p) {
+    html += '<div class="pmm-ph"><div><h3>' + esc(d.names[p.productId] || pmmLabel(p)) + '</h3><code>' + esc(p.productId) + '</code></div>'
+      + '<label for="pmmType">Short name</label><input id="pmmType" data-pmmtype maxlength="' + (d.typeMax || 24) + '" autocomplete="off" value="' + esc(p.type) + '"'
+      + (pmm.confirming ? ' disabled' : '') + '>'
+      + '<button type="button" class="btn btn-ghost" data-pmm="remove"' + (pmm.confirming ? ' disabled' : '') + '>Remove the product</button></div>'
+      + (pmm.askRemove ? '<div class="prd-ask" role="alertdialog" aria-label="Remove ' + esc(pmmLabel(p)) + '"><p>Take ' + esc(pmmLabel(p))
+          + ' out of the table? Its minimums stop applying once you save; they stay in the history, where they can be restored.</p>'
+          + '<button type="button" class="btn btn-danger" data-pmm="removeyes">Remove</button><button type="button" class="btn" data-pmm="unask">Keep it</button></div>' : '')
+      + '<div class="pmm-blocks">' + d.allocations.map(function (a) { return pmmMatrixHtml(p, a); }).join('') + '</div>';
+  } else if (!pmm.adding) {
+    html += '<p class="sv-hint">No products yet. Import the desk’s file, or add a product and type its minimums in.</p>';
+  }
+  return html + pmmSaveHtml() + '<h3 class="sv-h3">History</h3>' + pmmHistoryHtml() + '</div>';
+}
+
+/* a typed value changes the draft, its cell, the gaps and the save bar -
+   never the grid under the caret */
+function pmmRefreshParts() {
+  ['pmmSave', 'pmmGaps'].forEach(function (id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var html = id === 'pmmSave' ? pmmSaveHtml() : pmmGapsHtml();
+    var wasFocus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.id : null;
+    host.outerHTML = html;
+    if (wasFocus) { var back = document.getElementById(wasFocus); if (back) { back.focus(); if (back.setSelectionRange && back.value) back.setSelectionRange(back.value.length, back.value.length); } }
+  });
+}
+function pmmTypeValue(el) {
+  var key = el.dataset.pmmv, p = pmmCurrent();
+  if (!p) return;
+  var draft = pmmEnsureDraft(), dp = draft.filter(function (x) { return x.productId === p.productId; })[0];
+  var bk = dp.productId + '|' + key, got = pmmParse(el.value);
+  if (got.bad) pmm.bad[bk] = el.value;
+  else {
+    delete pmm.bad[bk];
+    if (got.value === null) delete dp.minimums[key]; else dp.minimums[key] = got.value;
+  }
+  var saved = pmmSaved(dp.productId), td = el.parentNode;
+  var v = dp.minimums[key] === undefined ? null : dp.minimums[key];
+  var was = saved ? (saved.minimums[key] === undefined ? null : saved.minimums[key]) : null;
+  td.className = got.bad ? 'bad' : v === null ? 'gap' : (!saved || was !== v ? 'chg' : '');
+  td.style.background = '';
+  if (!got.bad && v !== null) { var t = Math.max(0, Math.min(1, v / 150)); td.style.background = 'rgba(31,95,191,' + (0.05 + t * 0.4).toFixed(2) + ')'; }
+  pmmRefreshParts();
+}
+
+/* A block copied in Excel and pasted into a grid (D200). A row of
+   currencies over it, or a column of risk levels beside it, places the
+   values by name - the desk's sheets order currencies alphabetically, the
+   grid does not - and what has neither goes in by position from the cell
+   pasted into. A blank cell clears its value; one that is not a number is
+   marked red, as if typed. What falls outside the grid is left out, and
+   said. One figure pastes into its cell as typed. */
+function pmmPasteInto(at, text) {
+  var d = pmm.data, p = pmmCurrent();
+  if (!d || !p || pmm.confirming) return;
+  var parts = at.split('|'), allocation = parts[0];
+  var rows = String(text).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(function (line) {
+    return line.split('\t').map(function (c) { return c.replace(/^"|"$/g, '').trim(); });
+  });
+  function riskOf(word) {
+    var said = String(word || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!said) return null;
+    var hit = d.risks.filter(function (r) {
+      return said === r.id.toLowerCase().replace(/[^a-z0-9]/g, '') || said === r.label.toLowerCase().replace(/[^a-z0-9]/g, '');
+    })[0];
+    return hit ? hit.id : null;
+  }
+  function currencyOf(word) {
+    var said = String(word || '').toUpperCase().trim();
+    return d.currencies.indexOf(said) !== -1 ? said : null;
+  }
+  /* a header row: its cells, the first aside, are currencies */
+  var head = rows[0].map(currencyOf);
+  var hasHead = head.filter(Boolean).length > 0
+    && rows[0].every(function (c, i) { return !c || head[i] || (i === 0 && !pmmParse(c).value && pmmParse(c).value !== 0); });
+  var body = hasHead ? rows.slice(1) : rows;
+  /* a risk column: the first cell of every row a risk level */
+  var hasRisk = body.length > 0 && body.every(function (r) { return riskOf(r[0]); });
+  var startRisk = d.risks.map(function (r) { return r.id; }).indexOf(parts[1]);
+  var startCcy = d.currencies.indexOf(parts[2]);
+  var draft = pmmEnsureDraft(), dp = draft.filter(function (x) { return x.productId === p.productId; })[0];
+  var put = 0, out = 0, bad = 0;
+  body.forEach(function (r, ri) {
+    var risk = hasRisk ? riskOf(r[0]) : (d.risks[startRisk + ri] || {}).id;
+    var cells = hasRisk ? r.slice(1) : r;
+    cells.forEach(function (raw, ci) {
+      var col = hasHead ? head[ci + (hasRisk ? 1 : 0)] : d.currencies[startCcy + ci];
+      if (hasHead && !col) { if (raw) out += 1; return; }
+      if (!risk || !col) { if (raw) out += 1; return; }
+      var key = pmmCellKey(allocation, risk, col), bk = dp.productId + '|' + key, got = pmmParse(raw);
+      if (got.bad) { pmm.bad[bk] = raw; bad += 1; }
+      else {
+        delete pmm.bad[bk];
+        if (got.value === null) delete dp.minimums[key]; else dp.minimums[key] = got.value;
+      }
+      put += 1;
+    });
+  });
+  pmm.pasted = 'Pasted ' + put + ' value' + (put === 1 ? '' : 's') + ' into ' + pmmLabel(dp) + ' · ' + allocation
+    + (hasHead || hasRisk ? ', placed by ' + (hasHead && hasRisk ? 'currency and risk level' : hasHead ? 'currency' : 'risk level') : '')
+    + (out ? '; ' + out + ' outside the grid left out' : '') + (bad ? '; ' + bad + ' not a number, marked red' : '') + '.';
+  sv.focus = '[data-pmmv="' + at + '"]';
+  render();
+}
+
+async function pmmWrite(method, path, body, done) {
+  if (pmm.saving) return false;
+  pmm.saving = true; pmm.error = null; render();
+  var ok = false;
+  try {
+    var r = await api(method, '/scenario/repository/pm-minimums' + path, Object.assign({ base: pmm.data.revision }, body));
+    if (r && !r.ok) pmm.error = r.body.error || ('Could not save the minimums (' + r.status + ')');
+    else if (r) {
+      pmm.data = r.body.minimums; pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.askRemove = false; pmm.confirming = false; pmm.pasted = '';
+      pmm.flash = done + ' Revision ' + pmm.data.revision + '.';
+      pmm.history = null; loadMinimumsHistory();
+      ok = true;
+    }
+  } catch (err) { pmm.error = err.message; }
+  pmm.saving = false; render();
+  return ok;
+}
+async function pmmPreview(file) {
+  var i = pmm.imp;
+  if (!i || !file) return;
+  i.busy = true; i.error = null; i.preview = null; i.name = file.name; render();
+  try {
+    i.content = await impRead(file);
+    var r = await api('POST', '/scenario/repository/pm-minimums/import/preview', { name: file.name, content: i.content });
+    if (r && !r.ok) i.error = r.body.error || ('Could not read the file (' + r.status + ')');
+    else if (r) i.preview = r.body;
+  } catch (err) { i.error = err.message; }
+  i.busy = false; render();
+}
+
+function pmmClick(ds) {
+  if (ds.pmm === undefined) return false;
+  var what = ds.pmm, arg = ds.pmmarg;
+  pmm.flash = '';
+  if (what === 'prod') { pmm.product = arg; pmm.askRemove = false; render(); sv.focus = null; return true; }
+  if (what === 'add') { pmm.adding = { id: '', type: '', error: '' }; sv.focus = '#pmmAddId'; render(); return true; }
+  if (what === 'addno') { pmm.adding = null; render(); return true; }
+  if (what === 'addyes') {
+    var id = (pmm.adding.id || '').trim(), type = (pmm.adding.type || '').trim();
+    if (!id || /\s/.test(id)) { pmm.adding.error = 'Name the product by its ProductId.'; render(); return true; }
+    if (pmmProducts().some(function (x) { return x.productId === id; })) { pmm.adding.error = id + ' is in the table already.'; render(); return true; }
+    pmmEnsureDraft().push({ productId: id, type: type, minimums: {} });
+    pmm.product = id; pmm.adding = null; render(); return true;
+  }
+  if (what === 'remove') { pmm.askRemove = true; render(); return true; }
+  if (what === 'unask') { pmm.askRemove = false; render(); return true; }
+  if (what === 'removeyes') {
+    var gone = pmm.product;
+    pmm.draft = pmmEnsureDraft().filter(function (x) { return x.productId !== gone; });
+    Object.keys(pmm.bad).forEach(function (k) { if (k.indexOf(gone + '|') === 0) delete pmm.bad[k]; });
+    pmm.product = null; pmm.askRemove = false; render(); return true;
+  }
+  /* nothing takes effect until it is confirmed (D200) */
+  if (what === 'review') { pmm.confirming = true; sv.focus = '#pmmConfirm'; render(); return true; }
+  if (what === 'unreview') { pmm.confirming = false; render(); return true; }
+  if (what === 'save') {
+    if (!pmm.confirming) return true;
+    pmmWrite('PUT', '', { products: pmm.draft, note: pmm.note.trim() }, 'Changes confirmed.');
+    return true;
+  }
+  if (what === 'discard') { pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.error = null; pmm.askRemove = false; pmm.confirming = false; pmm.pasted = ''; render(); return true; }
+  if (what === 'import') { pmm.imp = { name: '', content: '', preview: null, note: '', busy: false, error: null }; sv.focus = '#pmmFile'; render(); return true; }
+  if (what === 'impcancel') { pmm.imp = null; render(); return true; }
+  if (what === 'apply') {
+    var i = pmm.imp;
+    pmmWrite('POST', '/import', { name: i.preview.name, content: i.content, note: (i.note || '').trim() },
+             i.preview.name + ' loaded.').then(function (ok) { if (ok) { pmm.imp = null; render(); } });
+    return true;
+  }
+  if (what === 'restore') { pmm.askRestore = parseInt(arg, 10); render(); return true; }
+  if (what === 'restoreno') { pmm.askRestore = null; render(); return true; }
+  if (what === 'restoreyes') {
+    pmm.askRestore = null;
+    pmmWrite('POST', '/revert', { revision: parseInt(arg, 10) }, 'Revision ' + arg + ' restored.');
+    return true;
+  }
+  if (what === 'rev') { var n = parseInt(arg, 10); pmm.openRev = pmm.openRev === n ? null : n; render(); return true; }
+  return false;
+}
+function pmmChange(el) {
+  if (repo.view !== 'minimums') return false;
+  if (el.id === 'pmmFile' && el.files && el.files[0]) { pmmPreview(el.files[0]); return true; }
+  return false;
+}
+function pmmInput(eds, el) {
+  if (repo.view !== 'minimums') return false;
+  if (eds.pmmv !== undefined) { pmmTypeValue(el); return true; }
+  if (eds.pmmnote !== undefined) { pmm.note = el.value; return true; }
+  if (eds.pmmimpnote !== undefined) { if (pmm.imp) pmm.imp.note = el.value; return true; }
+  if (eds.pmmtype !== undefined) {
+    var p = pmmCurrent(), dp = pmmEnsureDraft().filter(function (x) { return x.productId === p.productId; })[0];
+    dp.type = el.value.trim();
+    var tab = document.querySelector('[data-pmm="prod"][aria-selected="true"]');
+    if (tab) tab.textContent = pmmLabel(dp);
+    pmmRefreshParts(); return true;
+  }
+  if (el.id === 'pmmAddId' && pmm.adding) { pmm.adding.id = el.value; return true; }
+  if (el.id === 'pmmAddType' && pmm.adding) { pmm.adding.type = el.value; return true; }
+  return false;
+}
+
+/* ---- the Account Opening tab: investment restrictions (D203) -------------
+   The restrictions a PWA may pick on the account opening request, in the
+   order the form shows them. Added, renamed, described, moved and retired
+   here; nothing takes effect until it is confirmed, from a list of every
+   change, with an optional note, and what is not confirmed is discarded
+   when the tab is left or the console closed. Nothing is taken out: a
+   retired restriction stays, greyed, and may be put back, because a request
+   may name it. */
+var aor = { data: null, loaded: false, busy: false, error: null, flash: '', draft: null, editing: null,
+            form: null, note: '', saving: false, history: null, confirming: false, askRestore: null,
+            openRev: null, made: 0, drag: null };
+function aorForget() {
+  aor.draft = null; aor.editing = null; aor.form = null; aor.note = ''; aor.confirming = false;
+  aor.askRestore = null; aor.error = null; aor.flash = ''; aor.drag = null;
+}
+
+async function loadRestrictions() {
+  aor.busy = true; aor.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/restrictions');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the restrictions (' + r.status + ')'));
+    aor.data = r.body; aor.loaded = true;
+  } catch (err) { aor.error = err.message; }
+  aor.busy = false; render();
+  loadRestrictionsHistory();
+}
+async function loadRestrictionsHistory() {
+  var r = await api('GET', '/scenario/repository/restrictions/history');
+  aor.history = r && r.ok ? (r.body.history || []) : [];
+  render();
+}
+
+/* a row's key: its id, or the key it was given when added on screen */
+function aorKey(r) { return r.id || r.key; }
+function aorList() { return aor.draft || (aor.data ? aor.data.restrictions : []); }
+function aorEnsureDraft() {
+  if (!aor.draft) aor.draft = aor.data.restrictions.map(function (r) { return Object.assign({}, r); });
+  return aor.draft;
+}
+function aorRow(key) { return aorList().filter(function (r) { return aorKey(r) === key; })[0]; }
+
+/* what the draft changes, in the words the history uses - the server's own */
+function aorChangeList() {
+  if (!aor.draft || !aor.data) return [];
+  var had = {}, out = [];
+  aor.data.restrictions.forEach(function (r) { had[r.id] = r; });
+  aor.draft.forEach(function (r) {
+    var old = r.id && had[r.id];
+    if (!old) { out.push('Added ' + r.name + (r.active ? '' : ', retired')); return; }
+    if (old.name !== r.name) out.push(old.name + ' renamed ' + r.name);
+    if (old.description !== r.description) {
+      out.push(r.name + ': ' + (r.description && old.description ? 'description changed'
+        : r.description ? 'description added' : 'description taken off'));
+    }
+    if (old.active !== r.active) out.push(r.name + ' ' + (r.active ? 'put back' : 'retired'));
+  });
+  var kept = aor.draft.filter(function (r) { return r.id && had[r.id]; }).map(function (r) { return r.id; });
+  if (kept.length > 1 && kept.join('|') !== aor.data.restrictions.map(function (r) { return r.id; }).join('|')) {
+    out.push('Order now: ' + aor.draft.map(function (r) { return r.name; }).join(', '));
+  }
+  return out;
+}
+function aorDirty() { return aorChangeList().length > 0; }
+
+function aorRowHtml(r, i, count) {
+  var key = aorKey(r), saved = r.id && aor.data.restrictions.filter(function (x) { return x.id === r.id; })[0];
+  var changed = !saved || saved.name !== r.name || saved.description !== r.description || saved.active !== r.active;
+  if (aor.editing === key) {
+    var f = aor.form, d = aor.data;
+    return '<div class="aor-row is-edit" data-aorrow="' + i + '">'
+      + '<div class="aor-form" role="group" aria-label="' + esc(r.name ? 'Edit ' + r.name : 'A new restriction') + '">'
+      + '<label for="aorName">Name</label><input id="aorName" data-aorname maxlength="' + (d.nameMax || 120) + '" autocomplete="off" value="' + esc(f.name) + '">'
+      + '<label for="aorDesc">Description <small>optional</small></label>'
+      + '<textarea id="aorDesc" data-aordesc rows="2" maxlength="' + (d.descriptionMax || 400) + '">' + esc(f.description) + '</textarea>'
+      + (f.error ? '<p class="md-err" role="alert">' + esc(f.error) + '</p>' : '')
+      + '<div class="ent-save"><button type="button" class="btn btn-primary" data-aor="done">Done</button>'
+      + '<button type="button" class="btn" data-aor="cancel">Cancel</button></div></div></div>';
+  }
+  var pill = !r.active ? '<span class="ntc-pill off">Retired</span>'
+    : !saved ? '<span class="ntc-pill act">New</span>'
+    : changed ? '<span class="ntc-pill act">Edited</span>' : '<span class="ntc-pill live">On offer</span>';
+  var held = aor.confirming || aor.saving || aor.editing !== null;
+  var label = esc(r.name || 'restriction');
+  return '<div class="aor-row' + (r.active ? '' : ' is-off') + (changed ? ' is-chg' : '') + '" data-aorrow="' + i + '">'
+    + '<span class="repo-mv"><span class="repo-grip" draggable="' + (held ? 'false' : 'true') + '" data-aorgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+    + '<button type="button" class="repo-mb" data-aormove="' + i + '|-1"' + (i && !held ? '' : ' disabled') + ' aria-label="Move ' + label + ' up">↑</button>'
+    + '<button type="button" class="repo-mb" data-aormove="' + i + '|1"' + (i < count - 1 && !held ? '' : ' disabled') + ' aria-label="Move ' + label + ' down">↓</button></span>'
+    + '<div class="aor-txt"><b>' + esc(r.name) + '</b>' + (r.description ? '<span>' + esc(r.description) + '</span>' : '') + '</div>'
+    + pill
+    + '<span class="aor-acts">'
+    + '<button type="button" class="cat-link" data-aor="edit" data-aorarg="' + esc(key) + '"' + (held ? ' disabled' : '') + ' aria-label="Edit ' + label + '">Edit</button>'
+    + (!saved ? '<button type="button" class="cat-link" data-aor="remove" data-aorarg="' + esc(key) + '"' + (held ? ' disabled' : '') + ' aria-label="Remove ' + label + '">Remove</button>'
+       : r.active ? '<button type="button" class="cat-link" data-aor="retire" data-aorarg="' + esc(key) + '"' + (held ? ' disabled' : '') + ' aria-label="Retire ' + label + '">Retire</button>'
+       : '<button type="button" class="cat-link" data-aor="putback" data-aorarg="' + esc(key) + '"' + (held ? ' disabled' : '') + ' aria-label="Put ' + label + ' back">Put back</button>')
+    + '</span></div>';
+}
+
+function aorSaveHtml() {
+  if (!aorDirty()) return '<div id="aorSave"></div>';
+  var list = aorChangeList(), n = list.length;
+  if (aor.confirming) {
+    return '<div id="aorSave" class="pmm-save is-confirm" role="region" aria-label="Confirm the changes">'
+      + '<p><b>Confirm ' + n + ' change' + (n === 1 ? '' : 's') + ' to the investment restrictions.</b> '
+      + 'The account opening request offers the list as it stands from the moment they are confirmed.</p>'
+      + '<ul class="rev-changes pmm-list">' + list.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>'
+      + '<div class="ent-save"><label for="aorNote">Note <small>optional</small></label>'
+      + '<input type="text" id="aorNote" data-aornote maxlength="' + (aor.data.noteMax || 240) + '" value="' + esc(aor.note) + '" placeholder="Why it is changing">'
+      + '<button type="button" class="btn btn-primary" id="aorConfirm" data-aor="save"' + (aor.saving ? ' disabled' : '') + '>'
+      + (aor.saving ? 'Confirming…' : 'Confirm the changes') + '</button>'
+      + '<button type="button" class="btn" data-aor="unreview"' + (aor.saving ? ' disabled' : '') + '>Keep editing</button></div></div>';
+  }
+  var editing = aor.editing !== null;
+  return '<div id="aorSave" class="pmm-save">'
+    + '<p>' + n + ' change' + (n === 1 ? '' : 's') + ' not confirmed. Nothing takes effect until you confirm; leave the tab and the changes are discarded.'
+    + (editing ? ' <span class="pmm-bad">Finish the restriction being edited first.</span>' : '') + '</p>'
+    + '<div class="ent-save">'
+    + '<button type="button" class="btn btn-primary" data-aor="review"' + (editing ? ' disabled' : '') + '>Review and confirm</button>'
+    + '<button type="button" class="btn" data-aor="discard">Discard</button></div></div>';
+}
+
+function aorHistoryHtml() {
+  if (aor.history === null) return '<p class="repo-loading">Loading the history…</p>';
+  var words = { updated: 'edited', reverted: 'restored' };
+  var top = aor.data ? aor.data.revision : 0;
+  var ask = function (rev) {
+    return aor.askRestore === rev ? '<div class="prd-ask" role="alertdialog" aria-label="Restore revision ' + rev + '"><p>Put revision '
+      + rev + ' back in force? Its list is what the account opening request offers from then on'
+      + (aorDirty() ? ', and the changes on screen are discarded' : '')
+      + '. A restriction added since stays, retired. It is kept as a new revision.</p>'
+      + '<button type="button" class="btn btn-primary" data-aor="restoreyes" data-aorarg="' + rev + '"' + (aor.saving ? ' disabled' : '') + '>Confirm the restore</button>'
+      + '<button type="button" class="btn" data-aor="restoreno">Cancel</button></div>' : '';
+  };
+  var restore = function (rev) {
+    return ' <button type="button" class="cat-link" data-aor="restore" data-aorarg="' + rev + '"' + (aor.saving ? ' disabled' : '') + '>Restore this revision</button>';
+  };
+  return '<ol class="ent-hist pmm-hist">' + aor.history.map(function (h) {
+    var open = aor.openRev === h.revision, shown = open ? h.changes : h.changes.slice(0, 6);
+    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(words[h.action] || h.action) + ' · ' + esc(shortDateTime(h.at))
+      + (h.actor ? ' · ' + esc(h.actor) : '')
+      + (h.current ? ' <span class="ntc-pill live">in force</span>' : restore(h.revision))
+      + ask(h.revision)
+      + (h.note ? '<p class="act-note">“' + esc(h.note) + '”</p>' : '')
+      + (shown.length ? '<ul class="rev-changes">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '')
+      + (h.changes.length > 6 ? '<button type="button" class="cat-link" data-aor="rev" data-aorarg="' + h.revision + '">'
+          + (open ? 'Show fewer' : 'Show all ' + h.changes.length + ' changes') + '</button>' : '')
+      + '</li>';
+  }).join('')
+    + '<li><b>Revision 0</b> · the list as it started: ' + esc((aor.data && aor.data.seed || []).join(', '))
+    + (top === 0 ? ' <span class="ntc-pill live">in force</span>' : restore(0)) + ask(0) + '</li></ol>';
+}
+
+/* The Account Opening tab holds the lists the account opening request
+   reads: the investment restrictions (D203), the mandate codes (D205) and
+   the MAP benchmarks (D211), each a view of its own, chosen from the
+   header's Account Opening menu (D212). */
+var ao = { view: 'restrictions' };
+function accountOpeningViewHtml() {
+  /* the lists are chosen from the header's Account Opening menu (D212) */
+  var subs = '';
+  return ao.view === 'codes' ? mandateCodesViewHtml(subs) : ao.view === 'benchmarks' ? benchmarksViewHtml(subs)
+    : restrictionsViewHtml(subs);
+}
+function restrictionsViewHtml(subs) {
+  if (!aor.data) {
+    return '<div class="repo-b ent-b aor-b">' + subs + '<p class="repo-loading">' + (aor.error ? esc(aor.error) : 'Loading the restrictions…') + '</p></div>';
+  }
+  var d = aor.data, list = aorList();
+  var on = list.filter(function (r) { return r.active; }).length, off = list.length - on;
+  var status = 'Revision ' + d.revision + (d.updatedBy ? ' · saved by ' + esc(d.updatedBy) : '')
+    + (d.updatedAt ? ' ' + esc(shortDate(d.updatedAt)) : '') + ' · ' + on + ' on offer' + (off ? ' · ' + off + ' retired' : '');
+  var held = aor.confirming || aor.saving || aor.editing !== null;
+  var html = '<div class="repo-b ent-b aor-b">' + subs
+    + '<h3 class="sv-h3">Investment restrictions</h3>'
+    + '<p class="pmm-lede">What a PWA can choose under <i>Investment Restrictions</i> on the account opening request, in this order: any number of them, or none. '
+    + 'A request keeps each restriction it chose as it read then, so a rename does not change what was asked. '
+    + 'Retire a restriction to take it off the form; it stays here, greyed, and can be put back.</p>'
+    + (aor.flash ? '<p class="prd-flash" role="status">' + esc(aor.flash) + '</p>' : '')
+    + (aor.error ? '<p class="md-err" role="alert">' + esc(aor.error) + '</p>' : '')
+    + '<div class="pmm-bar"><button type="button" class="btn btn-primary" data-aor="add"'
+    + (held || list.length >= (d.maxRestrictions || 100) ? ' disabled' : '') + '>+ Add a restriction</button>'
+    + '<span class="pmm-mut">' + status + '</span></div>'
+    + '<div class="aor-list" role="list" aria-label="Investment restrictions">'
+    + (list.length ? list.map(function (r, i) { return aorRowHtml(r, i, list.length); }).join('')
+       : '<p class="sv-hint">No restrictions yet. Add one, and it is offered on the account opening request once confirmed.</p>')
+    + '</div>';
+  return html + aorSaveHtml() + '<h3 class="sv-h3">History</h3>' + aorHistoryHtml() + '</div>';
+}
+
+function aorMove(from, to) {
+  var list = aorEnsureDraft();
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return false;
+  var row = list.splice(from, 1)[0];
+  list.splice(to, 0, row);
+  App.announce('polite', row.name + ' is now ' + (to + 1) + ' of ' + list.length + '.');
+  return true;
+}
+
+async function aorWrite(method, path, body, done) {
+  if (aor.saving) return false;
+  aor.saving = true; aor.error = null; render();
+  var ok = false;
+  try {
+    var r = await api(method, '/scenario/repository/restrictions' + path, Object.assign({ base: aor.data.revision }, body));
+    if (r && !r.ok) aor.error = r.body.error || ('Could not save the restrictions (' + r.status + ')');
+    else if (r) {
+      aor.data = r.body.restrictions; aor.draft = null; aor.note = ''; aor.confirming = false; aor.editing = null; aor.form = null;
+      aor.flash = done + ' Revision ' + aor.data.revision + '.';
+      aor.history = null; loadRestrictionsHistory();
+      ok = true;
+    }
+  } catch (err) { aor.error = err.message; }
+  aor.saving = false; render();
+  return ok;
+}
+
+function aorClick(ds) {
+  if (ds.aormove !== undefined) {
+    var mv = ds.aormove.split('|'), from = parseInt(mv[0], 10), to = from + parseInt(mv[1], 10);
+    if (aorMove(from, to)) {
+      sv.focus = '[data-aormove="' + to + '|' + mv[1] + '"]:not([disabled])||[data-aormove="' + to + '|' + (-mv[1]) + '"]';
+      render();
+    }
+    return true;
+  }
+  if (ds.aor === undefined) return false;
+  var what = ds.aor, arg = ds.aorarg;
+  aor.flash = '';
+  if (what === 'add') {
+    var key = 'new' + (++aor.made);
+    aorEnsureDraft().push({ id: '', key: key, name: '', description: '', active: true });
+    aor.editing = key; aor.form = { name: '', description: '', error: '', fresh: true };
+    sv.focus = '#aorName'; render(); return true;
+  }
+  if (what === 'edit') {
+    var r = aorRow(arg);
+    if (!r) return true;
+    aor.editing = arg; aor.form = { name: r.name, description: r.description || '', error: '', fresh: false };
+    sv.focus = '#aorName'; render(); return true;
+  }
+  if (what === 'cancel') {
+    var was = aor.editing;
+    if (aor.form && aor.form.fresh) aor.draft = aorEnsureDraft().filter(function (x) { return aorKey(x) !== was; });
+    aor.editing = null; aor.form = null;
+    sv.focus = '[data-aor="add"]'; render(); return true;
+  }
+  if (what === 'done') {
+    var f = aor.form, name = ' '.concat(f.name).split(/\s+/).join(' ').trim(), desc = (f.description || '').split(/\s+/).join(' ').trim();
+    var clash = aorList().some(function (x) { return aorKey(x) !== aor.editing && x.name.toLowerCase() === name.toLowerCase(); });
+    if (!name) { f.error = 'Give the restriction a name.'; sv.focus = '#aorName'; render(); return true; }
+    if (clash) { f.error = 'There is already a restriction called ' + name + '.'; sv.focus = '#aorName'; render(); return true; }
+    var row = aorEnsureDraft().filter(function (x) { return aorKey(x) === aor.editing; })[0];
+    row.name = name; row.description = desc;
+    var done = aor.editing;
+    aor.editing = null; aor.form = null;
+    sv.focus = '[data-aor="edit"][data-aorarg="' + done + '"]'; render(); return true;
+  }
+  if (what === 'remove') {
+    aor.draft = aorEnsureDraft().filter(function (x) { return aorKey(x) !== arg; });
+    sv.focus = '[data-aor="add"]'; render(); return true;
+  }
+  if (what === 'retire' || what === 'putback') {
+    var t = aorEnsureDraft().filter(function (x) { return aorKey(x) === arg; })[0];
+    if (t) t.active = what === 'putback';
+    sv.focus = '[data-aor="' + (what === 'retire' ? 'putback' : 'retire') + '"][data-aorarg="' + arg + '"]';
+    render(); return true;
+  }
+  /* nothing takes effect until it is confirmed (D203) */
+  if (what === 'review') { aor.confirming = true; sv.focus = '#aorConfirm'; render(); return true; }
+  if (what === 'unreview') { aor.confirming = false; render(); return true; }
+  if (what === 'save') {
+    if (!aor.confirming) return true;
+    aorWrite('PUT', '', {
+      restrictions: aor.draft.map(function (x) { return { id: x.id, name: x.name, description: x.description, active: x.active }; }),
+      note: aor.note.trim()
+    }, 'Changes confirmed.');
+    return true;
+  }
+  if (what === 'discard') { aorForget(); render(); return true; }
+  if (what === 'restore') { aor.askRestore = parseInt(arg, 10); render(); return true; }
+  if (what === 'restoreno') { aor.askRestore = null; render(); return true; }
+  if (what === 'restoreyes') {
+    aor.askRestore = null;
+    aorWrite('POST', '/revert', { revision: parseInt(arg, 10) }, 'Revision ' + arg + ' restored.');
+    return true;
+  }
+  if (what === 'rev') { var n = parseInt(arg, 10); aor.openRev = aor.openRev === n ? null : n; render(); return true; }
+  return false;
+}
+function aorInput(eds, el) {
+  if (repo.view !== 'accountOpening') return false;
+  if (eds.aornote !== undefined) { aor.note = el.value; return true; }
+  if (eds.aorname !== undefined && aor.form) { aor.form.name = el.value; return true; }
+  if (eds.aordesc !== undefined && aor.form) { aor.form.description = el.value; return true; }
+  return false;
+}
+
+/* a restriction dragged by its grip (D203) */
+document.addEventListener('dragstart', function (e) {
+  var grip = e.target.closest && e.target.closest('[data-aorgrip]');
+  if (!grip || !repo.open || repo.view !== 'accountOpening' || grip.getAttribute('draggable') !== 'true') return;
+  aor.drag = parseInt(grip.dataset.aorgrip, 10);
+  var row = grip.closest('[data-aorrow]');
+  if (row) row.classList.add('dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(aor.drag)); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (err) { /* old engines */ }
+  }
+});
+function aorDropMark(row, after) {
+  document.querySelectorAll('[data-aorrow].drop-before, [data-aorrow].drop-after').forEach(function (r) {
+    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
+}
+document.addEventListener('dragover', function (e) {
+  if (aor.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-aorrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect();
+  aorDropMark(row, e.clientY > box.top + box.height / 2);
+});
+document.addEventListener('drop', function (e) {
+  if (aor.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-aorrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect(), over = parseInt(row.dataset.aorrow, 10);
+  var from = aor.drag, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
+  if (from < to) to -= 1;
+  aor.drag = null; aorDropMark(null);
+  if (aorMove(from, to)) { sv.focus = '[data-aormove="' + to + '|-1"]:not([disabled])||[data-aormove="' + to + '|1"]'; render(); }
+});
+document.addEventListener('dragend', function () {
+  if (aor.drag == null) return;
+  aor.drag = null; aorDropMark(null);
+  document.querySelectorAll('[data-aorrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+});
+
+/* a product's listing dragged by its grip, in the form (D207): the first
+   place is the main listing */
+document.addEventListener('dragstart', function (e) {
+  var grip = e.target.closest && e.target.closest('[data-prdgrip]');
+  if (!grip || !repo.open || !prd.draft || grip.getAttribute('draggable') !== 'true') return;
+  prd.drag = parseInt(grip.dataset.prdgrip, 10);
+  var row = grip.closest('[data-prdlrow]');
+  if (row) row.classList.add('dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(prd.drag)); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (err) { /* old engines */ }
+  }
+});
+function prdDropMark(row, after) {
+  document.querySelectorAll('[data-prdlrow].drop-before, [data-prdlrow].drop-after').forEach(function (r) {
+    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
+}
+document.addEventListener('dragover', function (e) {
+  if (prd.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-prdlrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect();
+  prdDropMark(row, e.clientY > box.top + box.height / 2);
+});
+document.addEventListener('drop', function (e) {
+  if (prd.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-prdlrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect(), over = parseInt(row.dataset.prdlrow, 10);
+  var from = prd.drag, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
+  if (from < to) to -= 1;
+  prd.drag = null; prdDropMark(null);
+  if (prdMoveListing(from, to)) { render(); prdFocus('[data-prd="lstmove"][data-i="' + to + '"]'); }
+});
+document.addEventListener('dragend', function () {
+  if (prd.drag == null) return;
+  prd.drag = null; prdDropMark(null);
+  document.querySelectorAll('[data-prdlrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+});
+
+/* ---- the Account Opening tab: mandate codes (D205) ------------------------
+   A code for each portfolio a PWA can be offered, which the account opening
+   request names for the mandate's own row; its benchmark is the Benchmarks
+   tab's (D211). A type and a hedging policy at a time: a block for each
+   allocation it offers, risk levels down and currencies across.
+   Typed or pasted from Excel, or loaded whole from a file, previewed first;
+   copied from one hedging policy to the others. Nothing takes effect until
+   it is confirmed, from a list of every change, and what is not confirmed
+   is discarded when the tab is left or the console closed. */
+var aoc = { data: null, loaded: false, busy: false, error: null, flash: '', type: null, hedging: null,
+            draft: null, note: '', saving: false, history: null, confirming: false,
+            askRestore: null, openRev: null, imp: null, showGaps: false, pasted: '' };
+function aocForget() {
+  aoc.draft = null; aoc.note = ''; aoc.confirming = false; aoc.askRestore = null; aoc.imp = null;
+  aoc.error = null; aoc.flash = ''; aoc.pasted = '';
+}
+
+async function loadMandateCodes() {
+  aoc.busy = true; aoc.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/mandate-codes');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the mandate codes (' + r.status + ')'));
+    aoc.data = r.body; aoc.loaded = true;
+    if (!aoc.type) aoc.type = r.body.layout[0].type;
+    if (!aoc.hedging) aoc.hedging = r.body.hedgings[0];
+  } catch (err) { aoc.error = err.message; }
+  aoc.busy = false; render();
+  loadMandateCodesHistory();
+}
+async function loadMandateCodesHistory() {
+  var r = await api('GET', '/scenario/repository/mandate-codes/history');
+  aoc.history = r && r.ok ? (r.body.history || []) : [];
+  render();
+}
+
+function aocKey(type, form, risk, ccy, hedging) { return [type, form, risk, ccy, hedging].join('|'); }
+function aocFormLabel(form) { return String(form).replace(' ex-RA', ' · ex Real Assets'); }
+function aocRiskLabels() {
+  var out = {};
+  aoc.data.layout.forEach(function (t) { t.forms.forEach(function (f) { f.risks.forEach(function (r) { out[r.risk] = r.label; }); }); });
+  return out;
+}
+function aocCellWords(key, labels) {
+  var p = key.split('|');
+  return [p[0], aocFormLabel(p[1]), (labels || aocRiskLabels())[p[2]] || p[2], p[3], p[4]].join(' · ');
+}
+/* every portfolio on offer, in the server's order: type, hedging, form, risk, currency */
+function aocAllCells() {
+  var out = [];
+  aoc.data.layout.forEach(function (t) {
+    aoc.data.hedgings.forEach(function (h) {
+      t.forms.forEach(function (f) {
+        f.risks.forEach(function (r) { r.currencies.forEach(function (c) { out.push(aocKey(t.type, f.form, r.risk, c, h)); }); });
+      });
+    });
+  });
+  return out;
+}
+function aocCodes() { return aoc.draft || (aoc.data ? aoc.data.codes : {}); }
+function aocEnsureDraft() {
+  if (!aoc.draft) aoc.draft = Object.assign({}, aoc.data.codes);
+  return aoc.draft;
+}
+function aocTidy(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+function aocAt(codes, key) { return aocTidy(codes[key]); }
+/* what the draft moves, in the history's words - the server's own */
+function aocChangeList() {
+  if (!aoc.draft || !aoc.data) return [];
+  var out = [], labels = aocRiskLabels();
+  aocAllCells().forEach(function (k) {
+    var a = aocAt(aoc.data.codes, k), b = aocAt(aoc.draft, k);
+    if (a !== b) out.push(aocCellWords(k, labels) + ': code ' + (a || '—') + ' → ' + (b || '—'));
+  });
+  return out;
+}
+function aocDirty() { return aocChangeList().length > 0; }
+function aocTooLong(v) { return aocTidy(v).length > (aoc.data.codeMax || 40); }
+function aocBadCount() {
+  var codes = aocCodes();
+  return Object.keys(codes).filter(function (k) { return aocTooLong(codes[k]); }).length;
+}
+/* the portfolios without a code, counted by type, hedging and allocation */
+function aocGaps() {
+  var codes = aocCodes(), noCode = 0, groups = {}, order = [];
+  aocAllCells().forEach(function (k) {
+    var p = k.split('|'), g = p[0] + '|' + p[4] + '|' + p[1];
+    if (aocAt(codes, k)) return;
+    if (!groups[g]) { groups[g] = { type: p[0], hedging: p[4], form: p[1], noCode: 0 }; order.push(g); }
+    noCode += 1; groups[g].noCode += 1;
+  });
+  return { noCode: noCode, groups: order.map(function (g) { return groups[g]; }) };
+}
+function aocCellClass(key) {
+  if (aocTooLong(aocCodes()[key])) return 'bad';
+  var cls = aocAt(aocCodes(), key) ? '' : 'gap';
+  if (aocAt(aoc.data.codes, key) !== aocAt(aocCodes(), key)) cls += (cls ? ' ' : '') + 'chg';
+  return cls;
+}
+
+function aocBlockHtml(type, f) {
+  var ccys = aoc.data.currencies, codes = aocCodes();
+  return '<div class="pmm-blk aoc-blk"><h4>' + esc(f.label)
+    + (f.form === 'Custom' ? ' <small class="pmm-mut">custom portfolios, by risk profile</small>' : '') + '</h4>'
+    + '<table class="pmm-g aoc-g"><thead><tr><th scope="col">Risk</th>'
+    + ccys.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + f.risks.map(function (r) {
+        return '<tr><th scope="row">' + esc(r.label) + '</th>' + ccys.map(function (c) {
+          if (r.currencies.indexOf(c) === -1) return '<td class="no">not offered</td>';
+          var key = aocKey(type, f.form, r.risk, c, aoc.hedging), v = codes[key] || '';
+          return '<td class="' + aocCellClass(key) + '"><input data-aocv="' + esc(key) + '" autocomplete="off" spellcheck="false"'
+            + ' value="' + esc(v) + '"'
+            + ' aria-label="' + esc([type, f.label, r.label, c, aoc.hedging, 'mandate code'].join(', ')) + '"'
+            /* the whole value on hover, as a long one is cut by its box */
+            + (v ? ' title="' + esc(aocTidy(v)) + '"' : '')
+            + (aoc.confirming ? ' disabled' : '') + '></td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>';
+}
+
+function aocGapsHtml() {
+  var g = aocGaps();
+  if (!g.noCode) return '<div id="aocGaps"><p class="pmm-mut">Every portfolio on offer has a code.</p></div>';
+  return '<div id="aocGaps" class="pmm-gaps aoc-gaps"><p><b>' + g.noCode + ' portfolio' + (g.noCode === 1 ? '' : 's') + ' on offer '
+    + (g.noCode === 1 ? 'has' : 'have') + ' no code.</b> '
+    + 'An account opening request for any of them cannot be submitted. '
+    + '<button type="button" class="cat-link" data-aoc="gaps">' + (aoc.showGaps ? 'Hide them' : 'Show them') + '</button></p>'
+    + (aoc.showGaps ? '<ul class="aoc-gaplist">' + g.groups.map(function (x) {
+        return '<li><button type="button" class="cat-link" data-aoc="goto" data-aocarg="' + esc(x.type + '|' + x.hedging) + '">'
+          + esc(x.type + ' · ' + x.hedging + ' · ' + aocFormLabel(x.form)) + '</button> ' + x.noCode + ' without a code</li>';
+      }).join('') + '</ul>' : '') + '</div>';
+}
+
+function aocSaveHtml() {
+  if (!aocDirty()) return '<div id="aocSave"></div>';
+  var bad = aocBadCount(), list = aocChangeList(), n = list.length;
+  if (aoc.confirming && !bad) {
+    var shown = list.slice(0, 60);
+    return '<div id="aocSave" class="pmm-save is-confirm" role="region" aria-label="Confirm the changes">'
+      + '<p><b>Confirm ' + n + ' change' + (n === 1 ? '' : 's') + ' to the mandate codes.</b> '
+      + 'The account opening request reads them from the moment they are confirmed.</p>'
+      + '<ul class="rev-changes pmm-list">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+      + (n > shown.length ? '<li class="mut">and ' + (n - shown.length) + ' more</li>' : '') + '</ul>'
+      + '<div class="ent-save"><label for="aocNote">Note <small>optional</small></label>'
+      + '<input type="text" id="aocNote" data-aocnote maxlength="' + (aoc.data.noteMax || 240) + '" value="' + esc(aoc.note) + '" placeholder="Why it is changing">'
+      + '<button type="button" class="btn btn-primary" id="aocConfirm" data-aoc="save"' + (aoc.saving ? ' disabled' : '') + '>'
+      + (aoc.saving ? 'Confirming…' : 'Confirm the changes') + '</button>'
+      + '<button type="button" class="btn" data-aoc="unreview"' + (aoc.saving ? ' disabled' : '') + '>Keep editing</button></div></div>';
+  }
+  return '<div id="aocSave" class="pmm-save">'
+    + '<p>' + n + ' change' + (n === 1 ? '' : 's') + ' not confirmed. Nothing takes effect until you confirm; leave the tab and the changes are discarded.'
+    + (aoc.pasted ? ' <span class="pmm-mut">' + esc(aoc.pasted) + '</span>' : '')
+    + (bad ? ' <span class="pmm-bad">Shorten the ' + bad + ' marked red: a code is at most ' + (aoc.data.codeMax || 40)
+        + ' characters.</span>' : '') + '</p>'
+    + '<div class="ent-save">'
+    + '<button type="button" class="btn btn-primary" data-aoc="review"' + (bad ? ' disabled' : '') + '>Review and confirm</button>'
+    + '<button type="button" class="btn" data-aoc="discard">Discard</button></div></div>';
+}
+
+function aocImportHtml() {
+  var i = aoc.imp, pv = i.preview;
+  var html = '<div class="pmm-imp" role="region" aria-label="Import a mandate codes file"><h3 class="sv-h3">Import a mandate codes file</h3>'
+    + '<p class="pmm-mut">A long table, one row a code: ImplementationType, Currency, RiskLevel, AllocationType, Hedging and MandateCode. '
+    + 'All in any of the first five covers every one, and a row that names more wins over one that says All. The file replaces the whole table. '
+    + 'A Benchmark column is not read: the benchmarks are the MAP Benchmarks.</p>'
+    + '<input type="file" id="aocFile" accept=".xlsx,.csv"' + (i.busy ? ' disabled' : '') + '>'
+    + (i.busy ? '<p class="repo-loading">Reading ' + esc(i.name) + '…</p>' : '')
+    + (i.error ? '<p class="md-err" role="alert">' + esc(i.error) + '</p>' : '');
+  if (pv) {
+    html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · ' + pv.cells + ' portfolios given a code'
+      + (pv.benchmarkColumn ? ' · its Benchmark column is not read' : '')
+      + ' · <b>' + pv.changed + ' change' + (pv.changed === 1 ? '' : 's') + '</b></p>'
+      + (pv.problems.length ? '<div class="pmm-gaps"><b>Problems: fix them in the file and choose it again.</b><ul>'
+          + pv.problems.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('')
+          + (pv.problems.length > 12 ? '<li>and ' + (pv.problems.length - 12) + ' more</li>' : '') + '</ul></div>' : '')
+      + (pv.noCode ? '<p class="pmm-bad">Once loaded, ' + pv.noCode + (pv.noCode === 1 ? ' portfolio has' : ' portfolios have') + ' no code.</p>' : '')
+      + (pv.changes.length ? '<ul class="rev-changes">' + pv.changes.slice(0, 12).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+          + (pv.changed > 12 ? '<li class="mut">and ' + (pv.changed - 12) + ' more</li>' : '') + '</ul>' : '')
+      + (aocDirty() ? '<p class="pmm-bad">Loading it discards the changes on screen.</p>' : '')
+      + '<div class="ent-save"><label for="aocImpNote">Note <small>optional</small></label>'
+      + '<input type="text" id="aocImpNote" data-aocimpnote maxlength="' + (aoc.data.noteMax || 240) + '" value="' + esc(i.note) + '" placeholder="Loaded ' + esc(pv.name) + '">'
+      + '<button type="button" class="btn btn-primary" data-aoc="apply"' + (pv.problems.length || !pv.changed || aoc.saving ? ' disabled' : '') + '>'
+      + (aoc.saving ? 'Loading…' : 'Load the file') + '</button>'
+      + '<button type="button" class="btn" data-aoc="impcancel">Cancel</button></div>';
+  } else {
+    html += '<div class="ent-save"><button type="button" class="btn" data-aoc="impcancel">Cancel</button></div>';
+  }
+  return html + '</div>';
+}
+
+function aocHistoryHtml() {
+  if (aoc.history === null) return '<p class="repo-loading">Loading the history…</p>';
+  if (!aoc.history.length) return '<p class="sv-hint">Nothing saved yet: every portfolio is without a code.</p>';
+  var words = { imported: 'file loaded', updated: 'edited', reverted: 'restored' };
+  return '<ol class="ent-hist pmm-hist">' + aoc.history.map(function (h) {
+    var open = aoc.openRev === h.revision, shown = open ? h.changes : h.changes.slice(0, 6);
+    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(words[h.action] || h.action) + ' · ' + esc(shortDateTime(h.at))
+      + (h.actor ? ' · ' + esc(h.actor) : '') + ' · ' + h.cells + ' with a code'
+      + (h.current ? ' <span class="ntc-pill live">in force</span>'
+         : ' <button type="button" class="cat-link" data-aoc="restore" data-aocarg="' + h.revision + '"' + (aoc.saving ? ' disabled' : '') + '>Restore this revision</button>')
+      + (aoc.askRestore === h.revision ? '<div class="prd-ask" role="alertdialog" aria-label="Restore revision ' + h.revision + '"><p>Put revision '
+          + h.revision + ' back in force? Its codes replace the ones in force now' + (aocDirty() ? ', and the changes on screen are discarded' : '')
+          + '. It is kept as a new revision.</p>'
+          + '<button type="button" class="btn btn-primary" data-aoc="restoreyes" data-aocarg="' + h.revision + '"' + (aoc.saving ? ' disabled' : '') + '>Confirm the restore</button>'
+          + '<button type="button" class="btn" data-aoc="restoreno">Cancel</button></div>' : '')
+      + (h.note ? '<p class="act-note">“' + esc(h.note) + '”</p>' : '')
+      + (shown.length ? '<ul class="rev-changes">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '')
+      + (h.changes.length > 6 ? '<button type="button" class="cat-link" data-aoc="rev" data-aocarg="' + h.revision + '">'
+          + (open ? 'Show fewer' : 'Show all ' + h.changes.length + (h.changed > h.changes.length ? ' of ' + h.changed : '') + ' changes') + '</button>' : '')
+      + '</li>';
+  }).join('') + '</ol>';
+}
+
+function aocSegHtml(label, what, values, current, words) {
+  return '<div class="aoc-seg"><span class="pmm-mut">' + esc(label) + '</span><div class="pmm-prods" role="tablist" aria-label="' + esc(label) + '">'
+    + values.map(function (v, i) {
+        return '<button type="button" role="tab" aria-selected="' + (v === current) + '" data-aoc="' + what + '" data-aocarg="' + esc(v) + '"'
+          + (aoc.confirming ? ' disabled' : '') + '>' + esc(words ? words[i] : v) + '</button>';
+      }).join('') + '</div></div>';
+}
+
+function mandateCodesViewHtml(subs) {
+  if (!aoc.data) {
+    return '<div class="repo-b ent-b pmm-b aoc-b">' + subs + '<p class="repo-loading">' + (aoc.error ? esc(aoc.error) : 'Loading the mandate codes…') + '</p></div>';
+  }
+  var d = aoc.data, t = d.layout.filter(function (x) { return x.type === aoc.type; })[0] || d.layout[0];
+  var held = Object.keys(d.codes).filter(function (k) { return d.codes[k][0]; }).length;
+  var status = d.revision
+    ? 'Revision ' + d.revision + (d.updatedBy ? ' · saved by ' + esc(d.updatedBy) : '') + (d.updatedAt ? ' ' + esc(shortDate(d.updatedAt)) : '')
+      + ' · ' + held + ' of ' + d.cells + ' portfolios with a code'
+    : 'No codes yet: ' + d.cells + ' portfolios on offer.';
+  return '<div class="repo-b ent-b pmm-b aoc-b">' + subs
+    + '<h3 class="sv-h3">Mandate codes</h3>'
+    + '<p class="pmm-lede">The code the account opening request names for the mandate’s own row of its SMA Details, '
+    + 'one for each portfolio a PWA can be offered: an implementation type, a currency, a risk level, an allocation and a hedging policy. '
+    + 'The mandate’s benchmark is in MAP Benchmarks, and a separate account’s own code and benchmark come from the Catalogue. '
+    + 'A portfolio with no code stops an account opening request for it, and nothing else.</p>'
+    + '<p class="pmm-mut">Type into a grid, or paste a block copied in Excel into the cell where it starts. Copy its row of currencies or its column of risk levels with it and the values go in by name.</p>'
+    + (aoc.flash ? '<p class="prd-flash" role="status">' + esc(aoc.flash) + '</p>' : '')
+    + (aoc.error ? '<p class="md-err" role="alert">' + esc(aoc.error) + '</p>' : '')
+    + '<div class="pmm-bar"><button type="button" class="btn btn-primary" data-aoc="import"' + (aoc.imp || aoc.confirming ? ' disabled' : '') + '>Import Excel</button>'
+    + (d.revision ? '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/mandate-codes.xlsx') + '" download>Download as Excel</a>' : '')
+    + '<span class="pmm-mut">' + status + '</span></div>'
+    + (aoc.imp ? aocImportHtml() : '')
+    + aocGapsHtml()
+    + '<div class="aoc-pick">'
+    + aocSegHtml('Implementation type', 'type', d.layout.map(function (x) { return x.type; }), t.type)
+    + aocSegHtml('Hedging', 'hedging', d.hedgings, aoc.hedging)
+    + '<button type="button" class="btn aoc-copy" data-aoc="copy"' + (aoc.confirming ? ' disabled' : '') + '>Copy to the other hedging policies</button>'
+    + '</div>'
+    + '<div class="pmm-blocks aoc-blocks">' + t.forms.map(function (f) { return aocBlockHtml(t.type, f); }).join('') + '</div>'
+    + aocSaveHtml() + '<h3 class="sv-h3">History</h3>' + aocHistoryHtml() + '</div>';
+}
+
+/* a typed value changes the draft, its cell, the gaps and the save bar -
+   never the grid under the caret */
+function aocRefreshParts() {
+  ['aocSave', 'aocGaps'].forEach(function (id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var wasFocus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.id : null;
+    host.outerHTML = id === 'aocSave' ? aocSaveHtml() : aocGapsHtml();
+    if (wasFocus) { var back = document.getElementById(wasFocus); if (back) back.focus(); }
+  });
+}
+function aocPut(key, value) {
+  var draft = aocEnsureDraft(), v = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  if (v) draft[key] = v; else delete draft[key];
+}
+function aocTypeValue(el) {
+  aocPut(el.dataset.aocv, el.value);
+  el.parentNode.className = aocCellClass(el.dataset.aocv);
+  aocRefreshParts();
+}
+
+/* A block copied in Excel and pasted into a grid. A row of currencies over
+   it, or a column of risk levels beside it, places the values by name;
+   without, they go in from the cell pasted into, across and down. */
+function aocPasteInto(at, text) {
+  var d = aoc.data;
+  if (!d || aoc.confirming) return;
+  var parts = at.split('|'), t = d.layout.filter(function (x) { return x.type === parts[0]; })[0];
+  var f = t && t.forms.filter(function (x) { return x.form === parts[1]; })[0];
+  if (!f) return;
+  var rows = String(text).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(function (line) {
+    return line.split('\t').map(function (c) { return c.replace(/^"|"$/g, '').trim(); });
+  });
+  function squash(w) { return String(w || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function riskOf(word) {
+    var said = squash(word);
+    if (!said) return null;
+    var hit = f.risks.filter(function (r) { return said === squash(r.risk) || said === squash(r.label); })[0];
+    return hit ? hit.risk : null;
+  }
+  function currencyOf(word) {
+    var said = String(word || '').toUpperCase().trim();
+    return d.currencies.indexOf(said) !== -1 ? said : null;
+  }
+  var head = rows[0].map(currencyOf);
+  var hasHead = head.filter(Boolean).length > 0 && rows[0].every(function (c, i) { return !c || head[i] || (i === 0 && !currencyOf(c)); });
+  var body = hasHead ? rows.slice(1) : rows;
+  var hasRisk = body.length > 0 && body.every(function (r) { return riskOf(r[0]); });
+  var risks = f.risks.map(function (r) { return r.risk; });
+  var startRisk = risks.indexOf(parts[2]), startCcy = d.currencies.indexOf(parts[3]);
+  var put = 0, out = 0;
+  body.forEach(function (r, ri) {
+    var risk = hasRisk ? riskOf(r[0]) : risks[startRisk + ri];
+    var cells = hasRisk ? r.slice(1) : r;
+    cells.forEach(function (raw, ci) {
+      var col = hasHead ? head[ci + (hasRisk ? 1 : 0)] : d.currencies[startCcy + ci];
+      var row = f.risks.filter(function (x) { return x.risk === risk; })[0];
+      if (!risk || !col || !row || row.currencies.indexOf(col) === -1) { if (raw) out += 1; return; }
+      aocPut(aocKey(parts[0], parts[1], risk, col, parts[4]), raw);
+      put += 1;
+    });
+  });
+  aoc.pasted = 'Pasted ' + put + ' code' + (put === 1 ? '' : 's') + ' into ' + aocFormLabel(parts[1])
+    + (hasHead || hasRisk ? ', placed by ' + (hasHead && hasRisk ? 'currency and risk level' : hasHead ? 'currency' : 'risk level') : '')
+    + (out ? '; ' + out + ' outside the portfolios on offer left out' : '') + '.';
+  sv.focus = '[data-aocv="' + at + '"]';
+  render();
+}
+
+async function aocWrite(method, path, body, done) {
+  if (aoc.saving) return false;
+  aoc.saving = true; aoc.error = null; render();
+  var ok = false;
+  try {
+    var r = await api(method, '/scenario/repository/mandate-codes' + path, Object.assign({ base: aoc.data.revision }, body));
+    if (r && !r.ok) aoc.error = r.body.error || ('Could not save the mandate codes (' + r.status + ')');
+    else if (r) {
+      aoc.data = r.body.mandateCodes; aoc.draft = null; aoc.note = ''; aoc.confirming = false; aoc.pasted = '';
+      aoc.flash = done + ' Revision ' + aoc.data.revision + '.';
+      aoc.history = null; loadMandateCodesHistory();
+      ok = true;
+    }
+  } catch (err) { aoc.error = err.message; }
+  aoc.saving = false; render();
+  return ok;
+}
+async function aocPreview(file) {
+  var i = aoc.imp;
+  if (!i || !file) return;
+  i.busy = true; i.error = null; i.preview = null; i.name = file.name; render();
+  try {
+    i.content = await impRead(file);
+    var r = await api('POST', '/scenario/repository/mandate-codes/import/preview', { name: file.name, content: i.content });
+    if (r && !r.ok) i.error = r.body.error || ('Could not read the file (' + r.status + ')');
+    else if (r) i.preview = r.body;
+  } catch (err) { i.error = err.message; }
+  i.busy = false; render();
+}
+
+function aocClick(ds) {
+  if (ds.aosub !== undefined) {
+    ao.view = ds.aosub;
+    if (ao.view === 'codes' && !aoc.loaded) loadMandateCodes();
+    if (ao.view === 'benchmarks' && !pbm.loaded) loadBenchmarks();
+    render(); return true;
+  }
+  if (ds.aoc === undefined) return false;
+  var what = ds.aoc, arg = ds.aocarg;
+  aoc.flash = '';
+  if (what === 'type') { aoc.type = arg; render(); return true; }
+  if (what === 'hedging') { aoc.hedging = arg; render(); return true; }
+  if (what === 'gaps') { aoc.showGaps = !aoc.showGaps; render(); return true; }
+  if (what === 'goto') { var g = arg.split('|'); aoc.type = g[0]; aoc.hedging = g[1]; render(); return true; }
+  if (what === 'copy') {
+    var t = aoc.data.layout.filter(function (x) { return x.type === aoc.type; })[0], codes = aocCodes(), n = 0, others = [];
+    var draft = aocEnsureDraft();
+    aoc.data.hedgings.forEach(function (h) {
+      if (h === aoc.hedging) return;
+      others.push(h);
+      t.forms.forEach(function (f) {
+        f.risks.forEach(function (r) {
+          r.currencies.forEach(function (c) {
+            var from = codes[aocKey(t.type, f.form, r.risk, c, aoc.hedging)], to = aocKey(t.type, f.form, r.risk, c, h);
+            if (from) draft[to] = from; else delete draft[to];
+            n += 1;
+          });
+        });
+      });
+    });
+    aoc.pasted = 'Copied ' + aoc.hedging + ' to ' + others.join(', ') + ' for ' + t.type + ', ' + (n / others.length) + ' portfolios each.';
+    render(); return true;
+  }
+  /* nothing takes effect until it is confirmed (D205) */
+  if (what === 'review') { aoc.confirming = true; sv.focus = '#aocConfirm'; render(); return true; }
+  if (what === 'unreview') { aoc.confirming = false; render(); return true; }
+  if (what === 'save') {
+    if (!aoc.confirming) return true;
+    var codes2 = {};
+    Object.keys(aoc.draft).forEach(function (k) { var v = aocAt(aoc.draft, k); if (v) codes2[k] = v; });
+    aocWrite('PUT', '', { codes: codes2, note: aoc.note.trim() }, 'Changes confirmed.');
+    return true;
+  }
+  if (what === 'discard') { aoc.draft = null; aoc.note = ''; aoc.error = null; aoc.confirming = false; aoc.pasted = ''; render(); return true; }
+  if (what === 'import') { aoc.imp = { name: '', content: '', preview: null, note: '', busy: false, error: null }; sv.focus = '#aocFile'; render(); return true; }
+  if (what === 'impcancel') { aoc.imp = null; render(); return true; }
+  if (what === 'apply') {
+    var i = aoc.imp;
+    aocWrite('POST', '/import', { name: i.preview.name, content: i.content, note: (i.note || '').trim() },
+             i.preview.name + ' loaded.').then(function (ok) { if (ok) { aoc.imp = null; render(); } });
+    return true;
+  }
+  if (what === 'restore') { aoc.askRestore = parseInt(arg, 10); render(); return true; }
+  if (what === 'restoreno') { aoc.askRestore = null; render(); return true; }
+  if (what === 'restoreyes') {
+    aoc.askRestore = null;
+    aocWrite('POST', '/revert', { revision: parseInt(arg, 10) }, 'Revision ' + arg + ' restored.');
+    return true;
+  }
+  if (what === 'rev') { var n2 = parseInt(arg, 10); aoc.openRev = aoc.openRev === n2 ? null : n2; render(); return true; }
+  return false;
+}
+function aocChange(el) {
+  if (repo.view !== 'accountOpening') return false;
+  if (el.id === 'aocFile' && el.files && el.files[0]) { aocPreview(el.files[0]); return true; }
+  return false;
+}
+function aocInput(eds, el) {
+  if (repo.view !== 'accountOpening') return false;
+  if (eds.aocv !== undefined) { aocTypeValue(el); return true; }
+  if (eds.aocnote !== undefined) { aoc.note = el.value; return true; }
+  if (eds.aocimpnote !== undefined) { if (aoc.imp) aoc.imp.note = el.value; return true; }
+  return false;
+}
+
+/* a block copied in Excel, pasted into a grid of mandate codes (D205) */
+document.addEventListener('paste', function (e) {
+  if (!repo.open || repo.view !== 'accountOpening') return;
+  var el = e.target;
+  if (!el || !el.dataset || el.dataset.aocv === undefined) return;
+  var text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (!/[\t\n]/.test(String(text).replace(/\r/g, '\n').trim())) return;
+  e.preventDefault();
+  aocPasteInto(el.dataset.aocv, text);
+});
+
+/* ---- the Account Opening tab: MAP benchmarks (D211) ----------------------
+   One table: a row a benchmark, with its currency, risk level, hedging
+   policy and mnemonic. A proposal's portfolio - its risk level, currency
+   and hedging policy - finds its row; the workbook and deck name the
+   benchmark, the account opening request names it and its mnemonic, and a
+   custom portfolio chooses its own from the benchmarks held. Rows are typed,
+   added in the blank row at the foot, deleted, pasted from Excel or loaded
+   whole from a file. Nothing takes effect until it is confirmed, and what
+   is not confirmed is discarded when the tab is left or the console
+   closed. */
+var pbm = { data: null, loaded: false, busy: false, error: null, flash: '', draft: null, note: '',
+            saving: false, history: null, confirming: false, askRestore: null, openRev: null,
+            imp: null, showGaps: false, pasted: '', filter: '' };
+var PBM_FIELDS = ['benchmark', 'currency', 'risk', 'hedging', 'mnemonic'];
+var PBM_HEADS = { benchmark: 'Benchmark', currency: 'Currency', risk: 'Risk', hedging: 'Hedging', mnemonic: 'Mnemonic' };
+function pbmForget() {
+  pbm.draft = null; pbm.note = ''; pbm.confirming = false; pbm.askRestore = null; pbm.imp = null;
+  pbm.error = null; pbm.flash = ''; pbm.pasted = '';
+}
+
+async function loadBenchmarks() {
+  pbm.busy = true; pbm.error = null; render();
+  try {
+    var r = await api('GET', '/scenario/repository/portfolio-benchmarks');
+    if (!r) return;
+    if (!r.ok) throw new Error(r.body.error || ('Could not load the MAP benchmarks (' + r.status + ')'));
+    pbm.data = r.body; pbm.loaded = true;
+  } catch (err) { pbm.error = err.message; }
+  pbm.busy = false; render();
+  loadBenchmarksHistory();
+}
+async function loadBenchmarksHistory() {
+  var r = await api('GET', '/scenario/repository/portfolio-benchmarks/history');
+  pbm.history = r && r.ok ? (r.body.history || []) : [];
+  render();
+}
+
+function pbmSquash(w) { return String(w == null ? '' : w).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+/* the option a typed or pasted word names, as the server reads it: its
+   name, its label, or the start of only one; null where none */
+function pbmMatch(field, word) {
+  var d = pbm.data, said = pbmSquash(word);
+  if (!said) return null;
+  var opts = field === 'currency' ? d.currencies.map(function (c) { return [c, c]; })
+    : field === 'risk' ? d.risks.map(function (r) { return [r.risk, r.label]; })
+    : d.hedgings.map(function (h) { return [h, h]; });
+  var hit = opts.filter(function (o) { return pbmSquash(o[0]) === said || pbmSquash(o[1]) === said; })[0];
+  if (hit) return hit[0];
+  var starts = opts.filter(function (o) { return pbmSquash(o[0]).indexOf(said) === 0; });
+  return starts.length === 1 ? starts[0][0] : null;
+}
+function pbmRiskLabel(risk) {
+  var hit = pbm.data.risks.filter(function (r) { return r.risk === risk; })[0];
+  return hit ? hit.label : risk;
+}
+function pbmRows() { return pbm.draft || (pbm.data ? pbm.data.rows : []); }
+function pbmEnsureDraft() {
+  if (!pbm.draft) pbm.draft = pbm.data.rows.map(function (r) { return Object.assign({}, r); });
+  return pbm.draft;
+}
+function pbmBlank(r) { return PBM_FIELDS.every(function (f) { return !aocTidy(r[f]); }); }
+function pbmCellKey(r) { return r.risk + '|' + r.currency + '|' + r.hedging; }
+function pbmCellWords(key) { var p = key.split('|'); return pbmRiskLabel(p[0]) + ' · ' + p[1] + ' · ' + p[2]; }
+/* each row checked as the server checks it: {row: canonical, bad: {field: words}} */
+function pbmChecked() {
+  var seen = {}, out = pbmRows().map(function (r) {
+    if (pbmBlank(r)) return { blank: true, bad: {} };
+    var row = { benchmark: aocTidy(r.benchmark), mnemonic: aocTidy(r.mnemonic),
+                currency: pbmMatch('currency', r.currency), risk: pbmMatch('risk', r.risk), hedging: pbmMatch('hedging', r.hedging) };
+    var bad = {};
+    ['currency', 'risk', 'hedging'].forEach(function (f) {
+      if (!row[f]) bad[f] = aocTidy(r[f]) ? '“' + aocTidy(r[f]) + '” is not one on offer' : 'Choose one';
+    });
+    if (!row.benchmark) bad.benchmark = 'Name the benchmark';
+    else if (row.benchmark.length > (pbm.data.benchmarkMax || 200)) bad.benchmark = 'At most ' + (pbm.data.benchmarkMax || 200) + ' characters';
+    if (row.mnemonic.length > (pbm.data.mnemonicMax || 40)) bad.mnemonic = 'At most ' + (pbm.data.mnemonicMax || 40) + ' characters';
+    return { row: row, bad: bad };
+  });
+  out.forEach(function (c, i) {
+    if (c.blank || c.bad.currency || c.bad.risk || c.bad.hedging) return;
+    var k = pbmCellKey(c.row);
+    if (seen[k] !== undefined) {
+      var why = 'Another row is for ' + pbmCellWords(k);
+      c.bad.dup = why; out[seen[k]].bad.dup = why;
+    } else seen[k] = i;
+  });
+  return out;
+}
+function pbmBadCount(checked) {
+  return checked.filter(function (c) { return Object.keys(c.bad).length; }).length;
+}
+function pbmByCell(rows) {
+  var out = {};
+  rows.forEach(function (r) { out[pbmCellKey(r)] = r; });
+  return out;
+}
+function pbmDraftRows(checked) {
+  return checked.filter(function (c) { return !c.blank && !Object.keys(c.bad).length; }).map(function (c) { return c.row; });
+}
+/* what the draft moves, in the history's words - the server's own */
+function pbmChangeList(checked) {
+  if (!pbm.draft || !pbm.data) return [];
+  checked = checked || pbmChecked();
+  var was = pbmByCell(pbm.data.rows), now = pbmByCell(pbmDraftRows(checked)), out = [];
+  function words(r) { return r.benchmark + (r.mnemonic ? ' (' + r.mnemonic + ')' : ''); }
+  pbm.data.portfolios.forEach(function (k) {
+    var a = was[k], b = now[k];
+    if (!a && !b) return;
+    if (!a) out.push(pbmCellWords(k) + ': added ' + words(b));
+    else if (!b) out.push(pbmCellWords(k) + ': removed ' + words(a));
+    else {
+      if (a.benchmark !== b.benchmark) out.push(pbmCellWords(k) + ': ' + a.benchmark + ' → ' + b.benchmark);
+      if ((a.mnemonic || '') !== (b.mnemonic || '')) out.push(pbmCellWords(k) + ': mnemonic ' + (a.mnemonic || '—') + ' → ' + (b.mnemonic || '—'));
+    }
+  });
+  return out;
+}
+function pbmDirty() {
+  if (!pbm.draft) return false;
+  var c = pbmChecked();
+  return pbmBadCount(c) > 0 || pbmChangeList(c).length > 0;
+}
+function pbmGaps(checked) {
+  var held = pbmByCell(pbm.draft ? pbmDraftRows(checked || pbmChecked()) : pbm.data.rows);
+  return pbm.data.portfolios.filter(function (k) { return !held[k]; });
+}
+
+function pbmSelect(i, field, value, label) {
+  var d = pbm.data, canon = pbmMatch(field, value), raw = aocTidy(value);
+  var opts = field === 'currency' ? d.currencies.map(function (c) { return [c, c]; })
+    : field === 'risk' ? d.risks.map(function (r) { return [r.risk, r.label]; })
+    : d.hedgings.map(function (h) { return [h, h]; });
+  return '<select data-pbmrow="' + i + '" data-pbmf="' + field + '" aria-label="' + esc(label) + '"' + (pbm.confirming ? ' disabled' : '') + '>'
+    + '<option value=""' + (!raw ? ' selected' : '') + '>—</option>'
+    + (raw && !canon ? '<option value="' + esc(raw) + '" selected>' + esc(raw) + ' ?</option>' : '')
+    + opts.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (canon === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('')
+    + '</select>';
+}
+function pbmTableHtml() {
+  var rows = pbmRows(), checked = pbmChecked(), q = pbmSquash(pbm.filter);
+  var saved = pbmByCell(pbm.data.rows);
+  var shown = rows.map(function (r, i) { return i; }).filter(function (i) {
+    if (!q) return true;
+    var r = rows[i];
+    return PBM_FIELDS.some(function (f) { return pbmSquash(f === 'risk' ? pbmRiskLabel(pbmMatch('risk', r.risk) || r.risk) : r[f]).indexOf(q) !== -1; });
+  });
+  function rowHtml(i, r, c) {
+    var label = 'Row ' + (i + 1);
+    var was = c && c.row && !Object.keys(c.bad).length ? saved[pbmCellKey(c.row)] : null;
+    var changed = !!(pbm.draft && c && c.row && !Object.keys(c.bad).length
+      && (!was || was.benchmark !== c.row.benchmark || (was.mnemonic || '') !== c.row.mnemonic));
+    function cls(f) { return c && c.bad[f] ? ' class="bad" title="' + esc(c.bad[f]) + '"' : ''; }
+    return '<tr class="' + (c && c.bad.dup ? 'pbm-dup' : '') + (changed ? ' pbm-chg' : '') + '"' + (c && c.bad.dup ? ' title="' + esc(c.bad.dup) + '"' : '') + '>'
+      + '<td' + cls('benchmark') + '><input data-pbmrow="' + i + '" data-pbmf="benchmark" autocomplete="off" spellcheck="false" value="' + esc(r.benchmark || '') + '"'
+      + ' aria-label="' + esc(label + ', benchmark') + '"' + (r.benchmark ? ' title="' + esc(r.benchmark) + '"' : '') + (pbm.confirming ? ' disabled' : '') + '></td>'
+      + '<td' + cls('currency') + '>' + pbmSelect(i, 'currency', r.currency, label + ', currency') + '</td>'
+      + '<td' + cls('risk') + '>' + pbmSelect(i, 'risk', r.risk, label + ', risk') + '</td>'
+      + '<td' + cls('hedging') + '>' + pbmSelect(i, 'hedging', r.hedging, label + ', hedging') + '</td>'
+      + '<td' + cls('mnemonic') + '><input data-pbmrow="' + i + '" data-pbmf="mnemonic" autocomplete="off" spellcheck="false" value="' + esc(r.mnemonic || '') + '"'
+      + ' aria-label="' + esc(label + ', mnemonic') + '"' + (pbm.confirming ? ' disabled' : '') + '></td>'
+      + '<td class="pbm-x">' + (i < rows.length ? '<button type="button" class="cp-x" data-pbm="del" data-pbmarg="' + i + '" aria-label="Delete ' + esc(label) + '"'
+          + (pbm.confirming ? ' disabled' : '') + '>×</button>' : '') + '</td></tr>';
+  }
+  return '<div class="pbm-wrap"><table class="pmm-g aoc-g pbm-t"><thead><tr>'
+    + PBM_FIELDS.map(function (f) { return '<th scope="col" class="pbm-' + f + '">' + PBM_HEADS[f] + '</th>'; }).join('')
+    + '<th scope="col" class="pbm-x"><span class="sr-only">Delete</span></th></tr></thead><tbody>'
+    + shown.map(function (i) { return rowHtml(i, rows[i], checked[i]); }).join('')
+    /* the blank row at the foot: typing or pasting into it adds rows */
+    + (q ? '' : rowHtml(rows.length, {}, null).replace('<tr class="', '<tr class="pbm-new '))
+    + '</tbody></table></div>';
+}
+
+function pbmGapsHtml() {
+  var g = pbmGaps();
+  if (!g.length) return '<div id="pbmGaps"><p class="pmm-mut">Every portfolio on offer has a benchmark.</p></div>';
+  var byH = {};
+  g.forEach(function (k) { var h = k.split('|')[2]; byH[h] = (byH[h] || 0) + 1; });
+  return '<div id="pbmGaps" class="pmm-gaps aoc-gaps"><p><b>' + g.length + ' portfolio' + (g.length === 1 ? '' : 's')
+    + ' on offer ' + (g.length === 1 ? 'has' : 'have') + ' no benchmark.</b> '
+    + 'Their proposals are delivered without one, and an account opening request for them cannot be submitted. '
+    + '<button type="button" class="cat-link" data-pbm="gaps">' + (pbm.showGaps ? 'Hide them' : 'Show them') + '</button></p>'
+    + (pbm.showGaps ? '<ul class="aoc-gaplist">' + g.slice(0, 200).map(function (k) { return '<li>' + esc(pbmCellWords(k)) + '</li>'; }).join('')
+        + (g.length > 200 ? '<li>and ' + (g.length - 200) + ' more</li>' : '') + '</ul>' : '') + '</div>';
+}
+
+function pbmSaveHtml() {
+  if (!pbmDirty()) return '<div id="pbmSave"></div>';
+  var checked = pbmChecked(), bad = pbmBadCount(checked), list = pbmChangeList(checked), n = list.length;
+  if (pbm.confirming && !bad) {
+    var shown = list.slice(0, 60);
+    return '<div id="pbmSave" class="pmm-save is-confirm" role="region" aria-label="Confirm the changes">'
+      + '<p><b>Confirm ' + n + ' change' + (n === 1 ? '' : 's') + ' to the MAP benchmarks.</b> '
+      + 'Proposals delivered from the moment they are confirmed name them.</p>'
+      + '<ul class="rev-changes pmm-list">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+      + (n > shown.length ? '<li class="mut">and ' + (n - shown.length) + ' more</li>' : '') + '</ul>'
+      + '<div class="ent-save"><label for="pbmNote">Note <small>optional</small></label>'
+      + '<input type="text" id="pbmNote" data-pbmnote maxlength="' + (pbm.data.noteMax || 240) + '" value="' + esc(pbm.note) + '" placeholder="Why it is changing">'
+      + '<button type="button" class="btn btn-primary" id="pbmConfirm" data-pbm="save"' + (pbm.saving ? ' disabled' : '') + '>'
+      + (pbm.saving ? 'Confirming…' : 'Confirm the changes') + '</button>'
+      + '<button type="button" class="btn" data-pbm="unreview"' + (pbm.saving ? ' disabled' : '') + '>Keep editing</button></div></div>';
+  }
+  return '<div id="pbmSave" class="pmm-save">'
+    + '<p>' + n + ' change' + (n === 1 ? '' : 's') + ' not confirmed. Nothing takes effect until you confirm; leave the tab and the changes are discarded.'
+    + (pbm.pasted ? ' <span class="pmm-mut">' + esc(pbm.pasted) + '</span>' : '')
+    + (bad ? ' <span class="pmm-bad">Correct the ' + bad + ' row' + (bad === 1 ? '' : 's') + ' marked red - hover a cell to see why.</span>' : '') + '</p>'
+    + '<div class="ent-save">'
+    + '<button type="button" class="btn btn-primary" data-pbm="review"' + (bad || !n ? ' disabled' : '') + '>Review and confirm</button>'
+    + '<button type="button" class="btn" data-pbm="discard">Discard</button></div></div>';
+}
+
+function pbmImportHtml() {
+  var i = pbm.imp, pv = i.preview;
+  var html = '<div class="pmm-imp" role="region" aria-label="Import a MAP benchmarks file"><h3 class="sv-h3">Import a MAP benchmarks file</h3>'
+    + '<p class="pmm-mut">One row a benchmark: Benchmark, Currency, Risk, Hedging and Mnemonic, matched by their headings. The file replaces the whole table.</p>'
+    + '<input type="file" id="pbmFile" accept=".xlsx,.csv"' + (i.busy ? ' disabled' : '') + '>'
+    + (i.busy ? '<p class="repo-loading">Reading ' + esc(i.name) + '…</p>' : '')
+    + (i.error ? '<p class="md-err" role="alert">' + esc(i.error) + '</p>' : '');
+  if (pv) {
+    html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · <b>' + pv.changed + ' change' + (pv.changed === 1 ? '' : 's') + '</b></p>'
+      + (pv.problems.length ? '<div class="pmm-gaps"><b>Problems: fix them in the file and choose it again.</b><ul>'
+          + pv.problems.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('')
+          + (pv.problems.length > 12 ? '<li>and ' + (pv.problems.length - 12) + ' more</li>' : '') + '</ul></div>' : '')
+      + (pv.gaps && !pv.problems.length ? '<p class="pmm-bad">Once loaded, ' + pv.gaps + (pv.gaps === 1 ? ' portfolio has' : ' portfolios have') + ' no benchmark.</p>' : '')
+      + (pv.changes.length ? '<ul class="rev-changes">' + pv.changes.slice(0, 12).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+          + (pv.changed > 12 ? '<li class="mut">and ' + (pv.changed - 12) + ' more</li>' : '') + '</ul>' : '')
+      + (pbmDirty() ? '<p class="pmm-bad">Loading it discards the changes on screen.</p>' : '')
+      + '<div class="ent-save"><label for="pbmImpNote">Note <small>optional</small></label>'
+      + '<input type="text" id="pbmImpNote" data-pbmimpnote maxlength="' + (pbm.data.noteMax || 240) + '" value="' + esc(i.note) + '" placeholder="Loaded ' + esc(pv.name) + '">'
+      + '<button type="button" class="btn btn-primary" data-pbm="apply"' + (pv.problems.length || !pv.changed || pbm.saving ? ' disabled' : '') + '>'
+      + (pbm.saving ? 'Loading…' : 'Load the file') + '</button>'
+      + '<button type="button" class="btn" data-pbm="impcancel">Cancel</button></div>';
+  } else {
+    html += '<div class="ent-save"><button type="button" class="btn" data-pbm="impcancel">Cancel</button></div>';
+  }
+  return html + '</div>';
+}
+
+function pbmHistoryHtml() {
+  if (pbm.history === null) return '<p class="repo-loading">Loading the history…</p>';
+  if (!pbm.history.length) return '<p class="sv-hint">Nothing saved yet: every portfolio is without a benchmark.</p>';
+  var words = { imported: 'file loaded', updated: 'edited', reverted: 'restored' };
+  return '<ol class="ent-hist pmm-hist">' + pbm.history.map(function (h) {
+    var open = pbm.openRev === h.revision, shown = open ? h.changes : h.changes.slice(0, 6);
+    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(words[h.action] || h.action) + ' · ' + esc(shortDateTime(h.at))
+      + (h.actor ? ' · ' + esc(h.actor) : '') + ' · ' + h.cells + ' row' + (h.cells === 1 ? '' : 's')
+      + (h.current ? ' <span class="ntc-pill live">in force</span>'
+         : ' <button type="button" class="cat-link" data-pbm="restore" data-pbmarg="' + h.revision + '"' + (pbm.saving ? ' disabled' : '') + '>Restore this revision</button>')
+      + (pbm.askRestore === h.revision ? '<div class="prd-ask" role="alertdialog" aria-label="Restore revision ' + h.revision + '"><p>Put revision '
+          + h.revision + ' back in force? Its rows replace the ones in force now' + (pbmDirty() ? ', and the changes on screen are discarded' : '')
+          + '. It is kept as a new revision.</p>'
+          + '<button type="button" class="btn btn-primary" data-pbm="restoreyes" data-pbmarg="' + h.revision + '"' + (pbm.saving ? ' disabled' : '') + '>Confirm the restore</button>'
+          + '<button type="button" class="btn" data-pbm="restoreno">Cancel</button></div>' : '')
+      + (h.note ? '<p class="act-note">“' + esc(h.note) + '”</p>' : '')
+      + (shown.length ? '<ul class="rev-changes">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '')
+      + (h.changes.length > 6 ? '<button type="button" class="cat-link" data-pbm="rev" data-pbmarg="' + h.revision + '">'
+          + (open ? 'Show fewer' : 'Show all ' + h.changes.length + (h.changed > h.changes.length ? ' of ' + h.changed : '') + ' changes') + '</button>' : '')
+      + '</li>';
+  }).join('') + '</ol>';
+}
+
+function benchmarksViewHtml(subs) {
+  if (!pbm.data) {
+    return '<div class="repo-b ent-b pmm-b aoc-b pbm-b">' + subs + '<p class="repo-loading">' + (pbm.error ? esc(pbm.error) : 'Loading the MAP benchmarks…') + '</p></div>';
+  }
+  var d = pbm.data, n = d.rows.length;
+  var status = d.revision
+    ? 'Revision ' + d.revision + (d.updatedBy ? ' · saved by ' + esc(d.updatedBy) : '') + (d.updatedAt ? ' ' + esc(shortDate(d.updatedAt)) : '')
+      + ' · ' + n + ' row' + (n === 1 ? '' : 's') + ' · ' + (d.cells - d.gaps.length) + ' of ' + d.cells + ' portfolios with a benchmark'
+    : 'No benchmarks yet: ' + d.cells + ' portfolios on offer.';
+  return '<div class="repo-b ent-b pmm-b aoc-b pbm-b">' + subs
+    + '<h3 class="sv-h3">MAP Benchmarks</h3>'
+    + '<p class="pmm-lede">The benchmark of a multi-asset portfolio and its mnemonic, one row for each currency, risk level and hedging policy: '
+    + 'the allocation and the implementation type play no part. A strategic proposal’s workbook and deck name its portfolio’s benchmark, and the account '
+    + 'opening request names it with its mnemonic for the mandate. A custom portfolio’s benchmark is chosen on the proposal from the ones held here.</p>'
+    + '<p class="pmm-mut">Edit a cell, type into the blank row at the foot to add one, or paste a block copied in Excel into the cell where it starts - '
+    + 'with its heading row, the columns go in by name. To seed the whole table, import a file.</p>'
+    + (pbm.flash ? '<p class="prd-flash" role="status">' + esc(pbm.flash) + '</p>' : '')
+    + (pbm.error ? '<p class="md-err" role="alert">' + esc(pbm.error) + '</p>' : '')
+    + '<div class="pmm-bar"><button type="button" class="btn btn-primary" data-pbm="import"' + (pbm.imp || pbm.confirming ? ' disabled' : '') + '>Import Excel</button>'
+    + (d.revision ? '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/portfolio-benchmarks.xlsx') + '" download>Download as Excel</a>' : '')
+    + '<span class="pmm-mut">' + status + '</span></div>'
+    + (pbm.imp ? pbmImportHtml() : '')
+    + pbmGapsHtml()
+    + '<div class="pbm-tools"><label for="pbmFilter" class="pmm-mut">Filter</label>'
+    + '<input type="search" id="pbmFilter" data-pbmfilter value="' + esc(pbm.filter) + '" placeholder="A benchmark, currency, risk level, hedging or mnemonic">'
+    + '<button type="button" class="btn" data-pbm="add"' + (pbm.confirming ? ' disabled' : '') + '>Add a row</button></div>'
+    + '<div id="pbmTable">' + pbmTableHtml() + '</div>'
+    + pbmSaveHtml() + '<h3 class="sv-h3">History</h3>' + pbmHistoryHtml() + '</div>';
+}
+
+/* a change redraws the table, keeping the caret where it was */
+function pbmRedraw(keep) {
+  var host = document.getElementById('pbmTable');
+  if (!host) { render(); return; }
+  var active = document.activeElement, sel = null, pos = null;
+  if (keep && active && active.dataset && active.dataset.pbmrow !== undefined) {
+    sel = '[data-pbmrow="' + active.dataset.pbmrow + '"][data-pbmf="' + active.dataset.pbmf + '"]';
+    try { pos = active.selectionStart; } catch (e) { pos = null; }
+  }
+  host.innerHTML = pbmTableHtml();
+  ['pbmSave', 'pbmGaps'].forEach(function (id) {
+    var h = document.getElementById(id);
+    if (h) h.outerHTML = id === 'pbmSave' ? pbmSaveHtml() : pbmGapsHtml();
+  });
+  if (sel) {
+    var back = document.querySelector(sel);
+    if (back) { back.focus(); try { if (pos != null) back.setSelectionRange(pos, pos); } catch (e) { /* a select */ } }
+  }
+}
+function pbmPut(i, field, value) {
+  var draft = pbmEnsureDraft();
+  while (draft.length <= i) draft.push({ benchmark: '', currency: '', risk: '', hedging: '', mnemonic: '' });
+  draft[i][field] = String(value == null ? '' : value);
+}
+
+/* A block copied in Excel and pasted into the table: from the row pasted
+   into, down - rows beyond the foot are added. A heading row naming the
+   columns places them by name; without, they go in in the table's order
+   from the column pasted into. */
+function pbmPasteInto(el, text) {
+  if (!pbm.data || pbm.confirming) return;
+  var lines = String(text).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(function (line) {
+    return line.split('\t').map(function (c) { return c.replace(/^"|"$/g, '').trim(); });
+  });
+  var names = { benchmark: 'benchmark', benchmarkname: 'benchmark', name: 'benchmark', currency: 'currency', ccy: 'currency',
+                basecurrency: 'currency', risk: 'risk', risklevel: 'risk', riskprofile: 'risk', hedging: 'hedging',
+                hedgingpolicy: 'hedging', mnemonic: 'mnemonic', ticker: 'mnemonic', code: 'mnemonic' };
+  var head = lines[0].map(function (h) { return names[pbmSquash(h)] || null; });
+  var byName = head.filter(Boolean).length >= 2;
+  var body = byName ? lines.slice(1) : lines;
+  var at = parseInt(el.dataset.pbmrow, 10), from = PBM_FIELDS.indexOf(el.dataset.pbmf), put = 0;
+  body.forEach(function (cells, ri) {
+    if (cells.every(function (c) { return !c; })) return;
+    cells.forEach(function (raw, ci) {
+      var field = byName ? head[ci] : PBM_FIELDS[from + ci];
+      if (field) pbmPut(at + ri, field, raw);
+    });
+    put += 1;
+  });
+  pbm.pasted = 'Pasted ' + put + ' row' + (put === 1 ? '' : 's') + (byName ? ', columns placed by their headings' : '') + '.';
+  pbm.filter = '';
+  render();
+}
+
+async function pbmWrite(method, path, body, done) {
+  if (pbm.saving) return false;
+  pbm.saving = true; pbm.error = null; render();
+  var ok = false;
+  try {
+    var r = await api(method, '/scenario/repository/portfolio-benchmarks' + path, Object.assign({ base: pbm.data.revision }, body));
+    if (r && !r.ok) pbm.error = r.body.error || ('Could not save the MAP benchmarks (' + r.status + ')');
+    else if (r) {
+      pbm.data = r.body.portfolioBenchmarks; pbm.draft = null; pbm.note = ''; pbm.confirming = false; pbm.pasted = '';
+      pbm.flash = done + ' Revision ' + pbm.data.revision + '.';
+      pbm.history = null; loadBenchmarksHistory();
+      ok = true;
+    }
+  } catch (err) { pbm.error = err.message; }
+  pbm.saving = false; render();
+  return ok;
+}
+async function pbmPreview(file) {
+  var i = pbm.imp;
+  if (!i || !file) return;
+  i.busy = true; i.error = null; i.preview = null; i.name = file.name; render();
+  try {
+    i.content = await impRead(file);
+    var r = await api('POST', '/scenario/repository/portfolio-benchmarks/import/preview', { name: file.name, content: i.content });
+    if (r && !r.ok) i.error = r.body.error || ('Could not read the file (' + r.status + ')');
+    else if (r) i.preview = r.body;
+  } catch (err) { i.error = err.message; }
+  i.busy = false; render();
+}
+
+function pbmClick(ds) {
+  if (ds.pbm === undefined) return false;
+  var what = ds.pbm, arg = ds.pbmarg;
+  pbm.flash = '';
+  if (what === 'gaps') { pbm.showGaps = !pbm.showGaps; render(); return true; }
+  if (what === 'add') {
+    var draft = pbmEnsureDraft();
+    draft.push({ benchmark: '', currency: '', risk: '', hedging: '', mnemonic: '' });
+    pbm.filter = ''; sv.focus = '[data-pbmrow="' + (draft.length - 1) + '"][data-pbmf="benchmark"]';
+    render(); return true;
+  }
+  if (what === 'del') {
+    pbmEnsureDraft().splice(parseInt(arg, 10), 1);
+    render(); return true;
+  }
+  /* nothing takes effect until it is confirmed (D211) */
+  if (what === 'review') { pbm.confirming = true; sv.focus = '#pbmConfirm'; render(); return true; }
+  if (what === 'unreview') { pbm.confirming = false; render(); return true; }
+  if (what === 'save') {
+    if (!pbm.confirming) return true;
+    pbmWrite('PUT', '', { rows: pbmDraftRows(pbmChecked()), note: pbm.note.trim() }, 'Changes confirmed.');
+    return true;
+  }
+  if (what === 'discard') { pbm.draft = null; pbm.note = ''; pbm.error = null; pbm.confirming = false; pbm.pasted = ''; render(); return true; }
+  if (what === 'import') { pbm.imp = { name: '', content: '', preview: null, note: '', busy: false, error: null }; sv.focus = '#pbmFile'; render(); return true; }
+  if (what === 'impcancel') { pbm.imp = null; render(); return true; }
+  if (what === 'apply') {
+    var i = pbm.imp;
+    pbmWrite('POST', '/import', { name: i.preview.name, content: i.content, note: (i.note || '').trim() },
+             i.preview.name + ' loaded.').then(function (ok) { if (ok) { pbm.imp = null; render(); } });
+    return true;
+  }
+  if (what === 'restore') { pbm.askRestore = parseInt(arg, 10); render(); return true; }
+  if (what === 'restoreno') { pbm.askRestore = null; render(); return true; }
+  if (what === 'restoreyes') {
+    pbm.askRestore = null;
+    pbmWrite('POST', '/revert', { revision: parseInt(arg, 10) }, 'Revision ' + arg + ' restored.');
+    return true;
+  }
+  if (what === 'rev') { var n2 = parseInt(arg, 10); pbm.openRev = pbm.openRev === n2 ? null : n2; render(); return true; }
+  return false;
+}
+function pbmOn() { return repo.view === 'accountOpening' && ao.view === 'benchmarks'; }
+function pbmChange(el) {
+  if (!pbmOn()) return false;
+  if (el.id === 'pbmFile' && el.files && el.files[0]) { pbmPreview(el.files[0]); return true; }
+  if (el.dataset && el.dataset.pbmrow !== undefined && el.tagName === 'SELECT') {
+    pbmPut(parseInt(el.dataset.pbmrow, 10), el.dataset.pbmf, el.value);
+    pbmRedraw(true); return true;
+  }
+  /* a typed cell left: its row's marks are redrawn once the caret has
+     settled in the next cell, and the caret kept there */
+  if (el.dataset && el.dataset.pbmrow !== undefined) { setTimeout(function () { if (pbmOn()) pbmRedraw(true); }, 0); return true; }
+  return false;
+}
+function pbmInput(eds, el) {
+  if (!pbmOn()) return false;
+  if (eds.pbmrow !== undefined && el.tagName === 'INPUT') {
+    var i = parseInt(eds.pbmrow, 10), grew = i >= pbmRows().length;
+    pbmPut(i, eds.pbmf, el.value);
+    /* the blank row became a row: a new blank row beneath it */
+    if (grew) pbmRedraw(true);
+    else {
+      ['pbmSave', 'pbmGaps'].forEach(function (id) {
+        var h = document.getElementById(id);
+        if (h) h.outerHTML = id === 'pbmSave' ? pbmSaveHtml() : pbmGapsHtml();
+      });
+    }
+    return true;
+  }
+  if (eds.pbmfilter !== undefined) {
+    pbm.filter = el.value;
+    var host = document.getElementById('pbmTable');
+    if (host) host.innerHTML = pbmTableHtml();
+    return true;
+  }
+  if (eds.pbmnote !== undefined) { pbm.note = el.value; return true; }
+  if (eds.pbmimpnote !== undefined) { if (pbm.imp) pbm.imp.note = el.value; return true; }
+  return false;
+}
+
+/* a block copied in Excel, pasted into the MAP benchmarks (D211) */
+document.addEventListener('paste', function (e) {
+  if (!repo.open || !pbmOn()) return;
+  var el = e.target;
+  if (!el || !el.dataset || el.dataset.pbmrow === undefined) return;
+  var text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (!/[\t\n]/.test(String(text).replace(/\r/g, '\n').trim())) return;
+  e.preventDefault();
+  pbmPasteInto(el, text);
+});
 
 function uncalledViewHtml() {
   if (!fund.data) {
@@ -9526,6 +11763,56 @@ document.addEventListener('dragend', function () {
 });
 
 
+/* a product row dragged by its grip within the sleeve being edited (D201) */
+document.addEventListener('dragstart', function (e) {
+  var grip = e.target.closest && e.target.closest('[data-repogrip],[data-svgrip]');
+  if (!grip || !repo.open || !repo.draft) return;
+  /* on a sleeve's page, or in its editor */
+  repo.dragRead = grip.dataset.svgrip !== undefined;
+  repo.drag = parseInt(repo.dragRead ? grip.dataset.svgrip : grip.dataset.repogrip, 10);
+  var row = grip.closest('[data-reporow],[data-svrow]');
+  if (row) row.classList.add('dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(repo.drag)); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (err) { /* old engines */ }
+  }
+});
+function repoDropMark(row, after) {
+  document.querySelectorAll('[data-reporow].drop-before, [data-reporow].drop-after, [data-svrow].drop-before, [data-svrow].drop-after').forEach(function (r) {
+    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
+}
+document.addEventListener('dragover', function (e) {
+  if (repo.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest(repo.dragRead ? '[data-svrow]' : '[data-reporow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect();
+  repoDropMark(row, e.clientY > box.top + box.height / 2);
+});
+document.addEventListener('drop', function (e) {
+  if (repo.drag == null || !repo.open) return;
+  var read = repo.dragRead;
+  var row = e.target.closest && e.target.closest(read ? '[data-svrow]' : '[data-reporow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect(), over = parseInt(read ? row.dataset.svrow : row.dataset.reporow, 10);
+  var from = repo.drag, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
+  if (from < to) to -= 1;
+  repo.drag = null; repoDropMark(null);
+  if (read) {
+    var entry = svOpenEntry();
+    if (entry && svMoveRead(entry, from, to)) { sv.focus = '[data-svmove="' + to + '|-1"]:not([disabled])||[data-svmove="' + to + '|1"]'; render(); }
+    return;
+  }
+  if (moveRow(from, to)) { sv.focus = '[data-repomove="' + to + '|-1"]:not([disabled])||[data-repomove="' + to + '|1"]'; render(); }
+});
+document.addEventListener('dragend', function () {
+  if (repo.drag == null) return;
+  repo.drag = null; repo.dragRead = false; repoDropMark(null);
+  document.querySelectorAll('[data-reporow].dragging, [data-svrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+});
+
 /* ---- the Fees tab (D166, D168) -------------------------------------------
    The fee card every priced proposal reads, kept in the repository. Laid
    out as group cards - CASP's and each fee group's, its tiers down and its
@@ -10185,8 +12472,8 @@ document.addEventListener('input', function (e) {
       var idBox = document.getElementById('prdF-productId'); if (idBox) idBox.value = prd.draft.productId;
     }
     if (key === 'vehicle' && prdIsSma(prd.draft) !== wasSma) {
-      /* the SMA mandates' table comes and goes with the vehicle (D197): a
-         redraw, with the caret put back where it was */
+      /* the SMA template comes and goes with the vehicle (D207): a redraw,
+         with the caret put back where it was */
       var caret = el.selectionStart;
       render();
       window.setTimeout(function () {
@@ -10254,9 +12541,8 @@ document.addEventListener('change', function (e) {
     prdSetDraft(el.dataset.prdf, el.value);
     prd.shown[el.dataset.prdf] = true;
     if (prd.serverError && prd.serverError.field === el.dataset.prdf) prd.serverError = null;
-    /* a currency's boxes open or close with whether it is offered there;
-       the SMA mandates' hedging column with the category (D197) */
-    if (el.dataset.prdf.indexOf('offered') === 0 || (el.dataset.prdf === 'category' && prdIsSma(prd.draft))) { render(); return; }
+    /* an SMA's hedging boxes come and go with its category (D207) */
+    if (el.dataset.prdf === 'category' && prdIsSma(prd.draft)) { render(); return; }
     prdUpdate(); return;
   }
   if (el.id === 'feeAddLike') { fct.addLike = el.value; return; }
@@ -10273,6 +12559,17 @@ document.addEventListener('paste', function (e) {
   if (!/[\t\n]/.test(String(text).replace(/\r/g, '\n').trim())) return;
   e.preventDefault();
   feePasteInto(el.dataset.feecell, text);
+});
+
+/* a block copied in Excel, pasted into a grid of the PM Minimums tab (D200) */
+document.addEventListener('paste', function (e) {
+  if (!repo.open || repo.view !== 'minimums') return;
+  var el = e.target;
+  if (!el || !el.dataset || el.dataset.pmmv === undefined) return;
+  var text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (!/[\t\n]/.test(String(text).replace(/\r/g, '\n').trim())) return;
+  e.preventDefault();
+  pmmPasteInto(el.dataset.pmmv, text);
 });
 
 /* a field's problem shows once it has been left, not while it is first typed */
@@ -10302,13 +12599,13 @@ document.addEventListener('click', function (e) {
   var host = document.getElementById('repoDialog');
   if (!host || !repo.open || !host.contains(e.target)) return;
   var el = e.target.closest ? e.target.closest(
-    '[data-repoclose],[data-reposcrim],[data-repoview],[data-repovariant],'
+    '[data-repoclose],[data-reposcrim],[data-repoview],[data-repogo],[data-rnopen],[data-repovariant],'
     + '[data-ntcnew],[data-ntcedit],[data-ntctoggle],[data-ntcfilter],[data-ntcback],[data-ntcsave],[data-ntcremove],[data-ntcunask],'
-    + '[data-ntcremoveyes],[data-ntcrestore],[data-ntcadd],[data-ntcrm],'
+    + '[data-ntcremoveyes],[data-ntcrestore],[data-ntcadd],[data-ntcrm],[data-pmm],[data-aor],[data-aormove],[data-aoc],[data-aosub],'
     + '[data-svmode],[data-svtile],[data-svcard],[data-svcrumb],[data-svedit],[data-svcancel],[data-svrow],[data-svclose],'
     + '[data-svsort],[data-svcompare],[data-svcmpclose],[data-svclearticks],[data-svshare],[data-svsplit],[data-svunshare],[data-svopen],'
     + '[data-svkeptopen],[data-svkeptdrop],[data-svreload],[data-repomenukeep],[data-reporemoveyes],[data-svoffer],[data-svaccess],'
-    + '[data-reponew],[data-repoadd],[data-reporm],[data-repopick],[data-repochoose],[data-reposave],'
+    + '[data-reponew],[data-repoadd],[data-reporm],[data-repomove],[data-svmove],[data-svorder],[data-repopick],[data-repochoose],[data-reposave],'
     + '[data-ncstart],[data-nccat],[data-ncsrc],[data-nckeepmine],[data-ncreplace],[data-ncadd],[data-ncspread],[data-nccreate],[data-nccancel],'
     + '[data-ncdlgclose],[data-ncdlgscrim],[data-ncusename],[data-ncdscope],[data-ncdclear],[data-ncdsort],[data-ncdrow],[data-ncdadd],'
     + '[data-nemode],[data-negcell],[data-negcol],[data-negrow],[data-nealloc],[data-neentity],[data-negridreset],[data-negridundo],[data-repoappliesall],[data-neclashall],[data-newhich],[data-necreate],[data-necancel],'
@@ -10316,7 +12613,7 @@ document.addEventListener('click', function (e) {
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
-    + '[data-catrow],[data-catopen],[data-catorphans],[data-catgroup],[data-catfold],[data-catfoldall],'
+    + '[data-catrow],[data-catopen],[data-catorphans],[data-catgroup],[data-catfold],[data-catfoldall],[data-catview],[data-catlst],'
     + '[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
@@ -10339,9 +12636,32 @@ document.addEventListener('click', function (e) {
   /* only the close button closes it: a click beside the dialog does nothing */
   if (ds.reposcrim !== undefined) return;
   if (ds.repoclose !== undefined) { if (!repo.saving) closeRepository(false); return; }
-  if (ds.repoview !== undefined) { switchView(ds.repoview); return; }
+  /* the header's menus (D212): a menu's own button only opens it */
+  if (ds.rnopen !== undefined) {
+    var g = el.closest('.rn-grp'), opening = g && !g.classList.contains('open');
+    document.querySelectorAll('.rn-grp.open').forEach(function (x) { x.classList.remove('open'); });
+    if (g && opening) {
+      g.classList.remove('shut'); repo.navShut = null; g.classList.add('open');
+      /* from the keyboard, straight onto the first item */
+      if (e.detail === 0) { var first = g.querySelector('.rn-item'); if (first) first.focus(); }
+    }
+    return;
+  }
+  if (ds.repoview !== undefined || ds.repogo !== undefined) {
+    var grp = el.closest('.rn-grp');
+    repo.navShut = grp && grp.dataset.rngrp ? grp.dataset.rngrp : null;
+    if (ds.repogo !== undefined) { var go = ds.repogo.split('|'); repoGo(go[0], go[1]); }
+    else switchView(ds.repoview);
+    return;
+  }
   if (fundClick(ds)) return;
   if (ntcClick(ds)) return;
+  /* the PM Minimums tab (D200) */
+  if (pmmClick(ds)) return;
+  /* the Account Opening tab (D203) */
+  if (aorClick(ds)) return;
+  if (aocClick(ds)) return;
+  if (pbmClick(ds)) return;
   if (ovlClick(el)) return;
   if (impClick(el)) return;
   if (prdClick(el)) return;
@@ -10362,6 +12682,17 @@ document.addEventListener('click', function (e) {
     goTo({ sv: { level: lvl } }); return;
   }
   if (ds.svedit !== undefined) { svEdit(); return; }
+  /* a row moved on a sleeve's page (D201) */
+  if (ds.svmove !== undefined) {
+    var me = svOpenEntry(), sm = ds.svmove.split('|'), sat = parseInt(sm[0], 10), sby = parseInt(sm[1], 10);
+    if (me && svMoveRead(me, sat, sat + sby)) {
+      sv.focus = '[data-svmove="' + (sat + sby) + '|' + sby + '"]:not([disabled])||[data-svmove="' + (sat + sby) + '|' + (-sby) + '"]';
+      render();
+    }
+    return;
+  }
+  if (ds.svorder === 'save') { svSaveOrder(); return; }
+  if (ds.svorder === 'undo') { sv.order = null; sv.focus = '[data-svmove="0|1"]'; render(); App.announce('polite', 'Back to the order saved.'); return; }
   if (ds.svcancel !== undefined) { svCancel(); return; }
   if (ds.svrow !== undefined) {
     if (e.target.closest('input')) return;                 /* the compare box has its own handler */
@@ -10591,6 +12922,15 @@ document.addEventListener('click', function (e) {
   if (ds.regmore !== undefined) { loadRegister(false); return; }
   if (ds.repoadd !== undefined) { addRow(); return; }
   if (ds.reporm !== undefined) { removeRow(parseInt(ds.reporm, 10)); return; }
+  /* a row moved up or down its sleeve (D201) */
+  if (ds.repomove !== undefined && repo.draft) {
+    var mv = ds.repomove.split('|'), at = parseInt(mv[0], 10), by = parseInt(mv[1], 10);
+    if (moveRow(at, at + by)) {
+      sv.focus = '[data-repomove="' + (at + by) + '|' + by + '"]:not([disabled])||[data-repomove="' + (at + by) + '|' + (-by) + '"]';
+      render();
+    }
+    return;
+  }
   if (ds.repopick !== undefined) { openPicker(parseInt(ds.repopick, 10)); return; }
   if (ds.repochoose !== undefined) { choose(ds.repochoose); return; }
   if (ds.reposave !== undefined) { saveDraft(); return; }
@@ -10617,6 +12957,21 @@ document.addEventListener('click', function (e) {
   if (ds.catshowall !== undefined) { cat.hidden = []; render(); return; }
   if (ds.catdensity !== undefined) { cat.density = ds.catdensity === 'comfortable' ? 'comfortable' : 'dense'; render(); return; }
   if (ds.catgroup !== undefined) { catSetGroup(ds.catgroup === 'category'); return; }
+  /* View as (D207): a pick holds while the proposal's currency stands */
+  if (ds.catview !== undefined) {
+    cat.viewPicked = ds.catview; cat.viewFor = catProposalCcy();
+    render(); return;
+  }
+  if (ds.catlst !== undefined) {
+    var opened = cat.open.indexOf(ds.catlst);
+    if (opened === -1) cat.open.push(ds.catlst); else cat.open.splice(opened, 1);
+    render();
+    var lstId = ds.catlst;
+    window.setTimeout(function () {
+      var again = document.querySelector('#repoDialog [data-catlst="' + svCssEscape(lstId) + '"]'); if (again) again.focus();
+    }, 0);
+    return;
+  }
   if (ds.catfoldall !== undefined) { catFoldAll(ds.catfoldall === 'shut'); return; }
   if (ds.catfold !== undefined) { catFold(ds.catfold); return; }
   if (ds.catclearall !== undefined) { cat.query = ''; cat.filters = {}; cat.openChip = null; render(); return; }
@@ -10688,6 +13043,9 @@ document.addEventListener('change', function (e) {
   if (ds.svsplittype !== undefined) { sv.splitType = e.target.value; return; }
   /* the Notices tab (D199) */
   if (ntcChange(ds, e.target)) return;
+  if (pmmChange(e.target)) return;
+  if (aocChange(e.target)) return;
+  if (pbmChange(e.target)) return;
   /* the product held below a row's minimum (D192) */
   if (ds.repoalt !== undefined && repo.draft) {
     var arow = repo.draft.products[parseInt(ds.repoalt, 10)];
@@ -10781,6 +13139,11 @@ document.addEventListener('input', function (e) {
      not the page under the caret */
   var eds = el.dataset || {};
   if (ntcInput(eds, el)) return;
+  /* the PM Minimums tab (D200): a value typed changes its cell, not the grid */
+  if (pmmInput(eds, el)) return;
+  if (aorInput(eds, el)) return;
+  if (aocInput(eds, el)) return;
+  if (pbmInput(eds, el)) return;
   if (!repo.draft) return;
   if (el.id === 'repoName') {
     repo.draft.name = el.value;

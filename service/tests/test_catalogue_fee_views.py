@@ -49,8 +49,10 @@ CTX = {'isNew': True, 'feeGroups': ['Passive', 'Core Active'],
        'takenIds': {'gs-taken': 'GS Taken Fund'}, 'withdrawnIds': {'gs-gone': 'GS Gone Fund'}}
 GOOD = {'productId': 'probe-etf', 'name': 'Probe ETF', 'ticker': 'PRB', 'assetClass': 'Equity',
         'style': 'Passive', 'vehicle': 'ETF', 'shareClass': 'Accumulating', 'source': 'Internal',
-        'liquidity': 'Daily', 'exposureCurrency': 'USD', 'productCost': '0.12',
-        'feeGroup': 'Passive', 'distributionYield': '', 'minimumInvestment': ''}
+        'liquidity': 'Daily', 'exposureCurrency': 'USD', 'productCost': 0.12,
+        'feeGroup': 'Passive', 'distributionYield': None, 'minimumInvestment': None}
+#: what the product is, the rest being its one listing's (D207)
+PRODUCT = ('productId', 'name', 'category', 'vehicle', 'style', 'source', 'liquidity', 'feeGroup')
 
 
 def test_the_product_form_refuses_what_the_server_refuses_naming_the_same_field():
@@ -72,21 +74,28 @@ def test_the_product_form_refuses_what_the_server_refuses_naming_the_same_field(
         'noId': {'productId': ''},
     }
     got = _node(_products() + '''
-var good = %s, ctx = %s, cases = %s, out = {};
-Object.keys(cases).forEach(function (k) { out[k] = prdProblems(Object.assign({}, good, cases[k]), ctx); });
-out.editIgnoresTheId = prdProblems(Object.assign({}, good, { productId: 'gs-taken' }), Object.assign({}, ctx, { isNew: false }));
+var good = prdDraftFrom(%s), ctx = %s, cases = %s, product = %s, out = {};
+function probe(change) {
+  var d = JSON.parse(JSON.stringify(good));
+  Object.keys(change).forEach(function (k) {
+    if (product.indexOf(k) !== -1) d[k] = change[k]; else d.listings[0][k] = change[k];
+  });
+  return d;
+}
+Object.keys(cases).forEach(function (k) { out[k] = prdProblems(probe(cases[k]), ctx); });
+out.editIgnoresTheId = prdProblems(probe({ productId: 'gs-taken' }), Object.assign({}, ctx, { isNew: false }));
 process.stdout.write(JSON.stringify(out));
-''' % (json.dumps(GOOD), json.dumps(CTX), json.dumps(cases)))
+''' % (json.dumps(GOOD), json.dumps(CTX), json.dumps(cases), json.dumps(list(PRODUCT))))
     assert got['good'] == {} and got['pctSign'] == {} and got['commas'] == {}
     assert list(got['noName']) == ['name']
-    assert 'not a number' in got['freeCost']['productCost']
-    assert 'cannot be negative' in got['negative']['productCost']
-    assert 'looks wrong' in got['slip']['productCost']
+    assert 'not a number' in got['freeCost']['listing0productCost']
+    assert 'cannot be negative' in got['negative']['listing0productCost']
+    assert 'looks wrong' in got['slip']['listing0productCost']
     assert 'not on the fee card' in got['group']['feeGroup']
     assert 'Choose a fee group' in got['noGroup']['feeGroup']
-    assert list(got['share']) == ['shareClass']
+    assert list(got['share']) == ['listing0shareClass']
     assert got['word'] == {'style': 'Style is needed.'}
-    assert 'not a number' in got['minimum']['minimumInvestment']
+    assert 'not a number' in got['minimum']['listing0minimumInvestment']
     assert 'GS Taken Fund' in got['taken']['productId']
     assert 'never reused' in got['gone']['productId']
     assert 'Give the product an ID' in got['noId']['productId']
@@ -101,7 +110,7 @@ var p = { productId: 'x', name: 'Probe', ticker: '—', assetClass: 'Equity', st
           distributionYield: null, minimumInvestment: 5000000 };
 var d = prdDraftFrom(p);
 var same = prdChanges(p, d);
-d.productCost = '0.25%'; d.liquidity = 'Weekly'; d.minimumInvestment = ''; d.name = 'Probe  ';
+d.listings[0].productCost = '0.25%'; d.liquidity = 'Weekly'; d.listings[0].minimumInvestment = ''; d.name = 'Probe  ';
 process.stdout.write(JSON.stringify({
   draft: prdDraftFrom(p), same: same, moved: prdChanges(p, d), payload: prdPayload(d),
   slug: [prdSlug('GS Access Green Bond ETF'), prdSlug('S&P 500  Index (USD)'), prdSlug('  ')],
@@ -114,13 +123,17 @@ process.stdout.write(JSON.stringify({
             catEditedBucket('', Date.parse('2026-10-16T09:00:00'))]
 }));
 ''')
-    assert got['draft']['ticker'] == '' and got['draft']['shareClass'] == '' and got['draft']['minimumInvestment'] == '5000000'
+    one = got['draft']['listings'][0]
+    assert one['ticker'] == '' and one['shareClass'] == '' and one['minimumInvestment'] == '5000000'
+    assert len(got['draft']['listings']) == 1, 'a product served without listings is its one'
     assert got['same'] == []
     assert [(c['key'], c['before'], c['after']) for c in got['moved']] == [
         ('liquidity', 'Daily', 'Weekly'), ('productCost', '0.2', '0.25'),
         ('minimumInvestment', '5,000,000', '—')]
-    assert got['payload']['productCost'] == 0.25 and got['payload']['minimumInvestment'] is None
-    assert got['payload']['name'] == 'Probe' and got['payload']['distributionYield'] is None
+    listing = got['payload']['listings'][0]
+    assert listing['productCost'] == 0.25 and listing['minimumInvestment'] is None
+    assert got['payload']['name'] == 'Probe' and listing['distributionYield'] is None
+    assert listing['ranks'] == {}, 'one listing has nothing to rank'
     assert got['slug'] == ['gs-access-green-bond-etf', 's-and-p-500-index-usd', '']
     assert got['near'] == ['Daily', 'Mutual Fund', None, 'Quarterly']
     assert got['buckets'] == ['Last 7 days', '8 to 30 days ago', '31 to 90 days ago', 'Over 90 days ago',
@@ -271,179 +284,88 @@ def test_an_open_form_or_card_is_not_lost_to_a_stray_move():
     assert 'e.stopImmediatePropagation()' in source
 
 
-def test_the_form_holds_a_ticker_and_a_minimum_per_currency_as_the_server_does():
-    """D180: the boxes by base currency are flat in the draft, a table by
-    currency on the wire with only what was typed, checked as the server
-    checks them and named in what moved by their currency."""
+LISTED = {'productId': 'gef', 'name': 'Global Equity Fund', 'ticker': 'GEF-USD', 'assetClass': 'Equity',
+          'style': 'Active', 'vehicle': 'UCITS', 'shareClass': 'Accumulating', 'source': 'Internal',
+          'liquidity': 'Daily', 'exposureCurrency': 'USD', 'productCost': 0.45, 'feeGroup': 'Passive',
+          'distributionYield': None, 'minimumInvestment': 1000, 'category': '',
+          'listings': [
+              {'ticker': 'GEF-USD', 'code': '', 'issueCurrency': 'USD', 'hedging': 'Unhedged',
+               'shareClass': 'Accumulating', 'exposureCurrency': 'USD', 'assetClass': 'Equity', 'productCost': 0.45,
+               'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World',
+               'ranks': {'USD': 1, 'CHF': 1}},
+              {'ticker': 'GEF-USD', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Unhedged',
+               'shareClass': 'Accumulating', 'exposureCurrency': 'USD', 'assetClass': 'Equity', 'productCost': 0.45,
+               'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World', 'ranks': {'GBP': 2}},
+              {'ticker': 'GEF-GBPH', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Hedged',
+               'shareClass': 'Accumulating', 'exposureCurrency': 'GBP', 'assetClass': 'Equity', 'productCost': 0.5,
+               'distributionYield': None, 'minimumInvestment': 1000000, 'benchmark': 'MSCI World (GBP hedged)',
+               'ranks': {'GBP': 1}}]}
+
+
+def test_the_form_holds_a_products_listings_and_their_ranks_as_the_server_does():
+    """D207: the listings are a list of rows of text, their boxes keyed as the
+    server names them; the payload sends each whole with its ranks, and what
+    moved is named by listing, as the history names it."""
     got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: 'MAIN', assetClass: 'Equity', style: 'Active',
-          vehicle: 'SMA', shareClass: null, source: 'Internal', liquidity: 'Daily',
-          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
-          distributionYield: null, minimumInvestment: 5000000,
-          currencies: { GBP: { ticker: 'GBX1', minimumInvestment: 250000 } } };
-var d = prdDraftFrom(p), ctx = %s;
-var before = { payload: prdPayload(d), same: prdChanges(p, d), draft: [d.tickerGBP, d.minimumInvestmentGBP, d.tickerUSD] };
-d.tickerEUR = 'E1'; d.minimumInvestmentGBP = ''; d.minimumInvestmentCHF = '0';
+var p = %s, d = prdDraftFrom(p), ctx = %s;
+var before = { rows: d.listings.length, rank: [d.listings[0].rankUSD, d.listings[2].rankGBP, d.listings[1].rankCHF],
+               same: prdChanges(p, d), labels: p.listings.map(function (l) { return prdListingLabel(l, p.listings); }) };
+d.listings[2].productCost = '0.55';
+d.listings[1].rankGBP = '';
+d.listings.push(Object.assign(prdListingRow(p.listings[0]), { ticker: 'GEF-EURH', issueCurrency: 'EUR', hedging: 'Hedged',
+                                                              rankUSD: '', rankCHF: '', rankEUR: '1' }));
 var moved = prdChanges(p, d), payload = prdPayload(d);
-var bad = prdProblems(Object.assign({}, d, { minimumInvestmentUSD: 'lots', tickerCHF: 'X'.repeat(30) }), ctx);
-process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload, bad: bad }));
-''' % json.dumps(dict(CTX, isNew=False)))
-    assert got['before']['draft'] == ['GBX1', '250000', '']
+process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload,
+  fields: prdListingFields(d).length }));
+''' % (json.dumps(LISTED), json.dumps(dict(CTX, isNew=False))))
+    assert got['before']['rows'] == 3 and got['before']['rank'] == ['1', '1', '']
     assert got['before']['same'] == []
-    assert got['before']['payload']['currencies'] == {'GBP': {'ticker': 'GBX1', 'minimumInvestment': 250000}}
-    assert [(c['key'], c['label'], c['before'], c['after']) for c in got['moved']] == [
-        ('tickerEUR', 'Ticker in EUR', '—', 'E1'),
-        ('minimumInvestmentGBP', 'Minimum investment in GBP', '250,000', '—'),
-        ('minimumInvestmentCHF', 'Minimum investment in CHF', '—', '0')]
-    assert got['payload']['currencies'] == {'GBP': {'ticker': 'GBX1'}, 'EUR': {'ticker': 'E1'},
-                                            'CHF': {'minimumInvestment': 0}}
-    assert sorted(got['bad']) == ['minimumInvestmentUSD', 'tickerCHF']
-    assert got['bad']['minimumInvestmentUSD'].startswith('Minimum investment in USD')
-    assert 'ticker in CHF' in got['bad']['tickerCHF']
+    assert got['before']['labels'] == ['GEF-USD · USD', 'GEF-USD · GBP', 'GEF-GBPH']
+    assert [(c['label'], c['before'], c['after']) for c in got['moved']] == [
+        ('Product cost of GEF-GBPH', '0.5', '0.55'),
+        ('Listing GEF-EURH', '—', 'EUR · Hedged · Accumulating · exposure USD · class Equity · cost 0.45 · min 1,000 · benchmark MSCI World'),
+        ('GBP ranking', 'GEF-GBPH, then GEF-USD · GBP', 'GEF-GBPH'),
+        ('EUR ranking', '—', 'GEF-EURH')]
+    assert [l['ranks'] for l in got['payload']['listings']] == [{'USD': 1, 'CHF': 1}, {}, {'GBP': 1}, {'EUR': 1}]
+    assert got['payload']['listings'][3]['ticker'] == 'GEF-EURH'
+    assert got['fields'] == 4 * (11 + 4), 'eleven boxes and four ranks a listing'
 
 
-def test_the_form_holds_an_exposure_and_whether_it_is_offered_per_currency():
-    """D182: a currency's exposure is a box like its ticker; Not offered
-    sends that alone, whatever its other boxes hold, and reads in what moved
-    as yes and no."""
+def test_the_form_checks_listings_as_the_server_does():
+    """The same listing twice, two listings ranked alike, a rank that is not a
+    whole number, a code on a fund, hedging a fund cannot say and a ticker
+    another product holds are each refused on their box."""
     got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: 'MAIN', assetClass: 'Equity', style: 'Active',
-          vehicle: 'SMA', shareClass: null, source: 'Internal', liquidity: 'Daily',
-          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
-          distributionYield: null, minimumInvestment: 5000000,
-          currencies: { GBP: { ticker: 'GBX1', minimumInvestment: null, exposureCurrency: 'GBP', offered: true },
-                        CHF: { ticker: '', minimumInvestment: null, exposureCurrency: '', offered: false } } };
-var d = prdDraftFrom(p), ctx = %s;
-var before = { draft: [d.exposureCurrencyGBP, d.offeredGBP, d.offeredCHF], same: prdChanges(p, d),
-               payload: prdPayload(d) };
-d.offeredGBP = 'no'; d.offeredCHF = ''; d.tickerCHF = 'C1'; d.exposureCurrencyEUR = 'EUR';
-var moved = prdChanges(p, d), payload = prdPayload(d);
-var bad = prdProblems(Object.assign({}, d, { exposureCurrencyUSD: 'X'.repeat(61), tickerGBP: 'X'.repeat(30) }), ctx);
-process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload, bad: bad }));
-''' % json.dumps(dict(CTX, isNew=False)))
-    assert got['before']['draft'] == ['GBP', '', 'no']
-    assert got['before']['same'] == []
-    assert got['before']['payload']['currencies'] == {
-        'GBP': {'ticker': 'GBX1', 'exposureCurrency': 'GBP'}, 'CHF': {'offered': False}}
-    assert [(c['key'], c['before'], c['after']) for c in got['moved']] == [
-        ('tickerGBP', 'GBX1', '—'), ('tickerCHF', '—', 'C1'),
-        ('exposureCurrencyGBP', 'GBP', '—'), ('exposureCurrencyEUR', '—', 'EUR'),
-        ('offeredGBP', 'yes', 'no'), ('offeredCHF', 'no', 'yes')]
-    assert got['payload']['currencies'] == {'GBP': {'offered': False}, 'CHF': {'ticker': 'C1'},
-                                            'EUR': {'exposureCurrency': 'EUR'}}
-    assert list(got['bad']) == ['exposureCurrencyUSD'], 'a currency not offered is not checked'
-
-
-def test_the_form_holds_the_issue_currency_main_and_per_currency():
-    """D184: the issue currency is an optional box of its own, and a box in
-    each base currency like the exposure, sent only where it is typed."""
-    got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: 'MAIN', assetClass: 'Equity', style: 'Active',
-          vehicle: 'SMA', shareClass: null, source: 'Internal', liquidity: 'Daily',
-          exposureCurrency: 'USD', issueCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
-          distributionYield: null, minimumInvestment: 5000000,
-          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '',
-                               issueCurrency: 'GBP', offered: true } } };
-var d = prdDraftFrom(p), ctx = %s;
-var before = { draft: [d.issueCurrency, d.issueCurrencyGBP], same: prdChanges(p, d) };
-d.issueCurrency = ''; d.issueCurrencyEUR = 'EUR';
-var moved = prdChanges(p, d), payload = prdPayload(d);
-var bad = prdProblems(Object.assign({}, d, { issueCurrency: 'X'.repeat(61), issueCurrencyCHF: 'X'.repeat(61) }), ctx);
-process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload, bad: bad,
-                                      blank: prdProblems(d, ctx) }));
-''' % json.dumps(dict(CTX, isNew=False)))
-    assert got['before']['draft'] == ['USD', 'GBP'] and got['before']['same'] == []
-    assert [(c['key'], c['before'], c['after']) for c in got['moved']] == [
-        ('issueCurrency', 'USD', '—'), ('issueCurrencyEUR', '—', 'EUR')]
-    assert got['payload']['issueCurrency'] == ''
-    assert got['payload']['currencies'] == {'GBP': {'issueCurrency': 'GBP'}, 'EUR': {'issueCurrency': 'EUR'}}
-    assert sorted(got['bad']) == ['issueCurrency', 'issueCurrencyCHF']
-    assert 'issueCurrency' not in got['blank'], 'it is optional'
-
-
-def test_the_form_gives_each_currency_a_share_class_of_its_own():
-    """D189: a currency's share class is a choice, blank for the main one,
-    checked as the server checks it and sent in the currencies table."""
-    got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: 'PRB', assetClass: 'Equity', style: 'Active',
-          vehicle: 'SMA', shareClass: 'Distributing', source: 'Internal', liquidity: 'Daily',
-          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
-          distributionYield: null, minimumInvestment: null,
-          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '', issueCurrency: '',
-                               shareClass: 'Accumulating', offered: true } } };
-var d = prdDraftFrom(p);
-var out = { gbp: d.shareClassGBP, eur: d.shareClassEUR, same: prdChanges(p, d) };
-d.shareClassEUR = 'Accumulating'; d.shareClassGBP = '';
-out.payload = prdPayload(d).currencies;
-out.moved = prdChanges(p, d).map(function (c) { return [c.key, c.label, c.before, c.after]; });
-d.shareClassCHF = 'Income';
-out.problems = prdProblems(d, { isNew: false, feeGroups: ['Passive'] });
+var p = %s, ctx = %s, out = {};
+function draft(change) { var d = prdDraftFrom(p); change(d); return prdProblems(d, ctx); }
+out.same = draft(function (d) { d.listings[1].issueCurrency = 'USD'; });
+out.twice = draft(function (d) { d.listings[1].rankGBP = '1'; });
+out.rank = draft(function (d) { d.listings[0].rankEUR = 'first'; });
+out.code = draft(function (d) { d.listings[0].code = 'M1'; });
+out.isg = draft(function (d) { d.listings[0].hedging = 'ISG Hedged'; });
+out.held = draft(function (d) { d.listings[2].ticker = 'TAKEN'; });
+out.smaIsg = (function () { var d = prdDraftFrom(p); d.vehicle = 'Separate Account'; d.category = 'Public Equity';
+  d.listings[0].hedging = 'ISG Hedged'; d.listings[0].code = 'M34'; return prdProblems(d, ctx); })();
+out.bondHedged = (function () { var d = prdDraftFrom(p); d.vehicle = 'SMA'; d.category = 'Investment Grade Fixed Income';
+  return prdProblems(d, ctx); })();
 process.stdout.write(JSON.stringify(out));
-''')
-    assert got['gbp'] == 'Accumulating' and got['eur'] == '' and got['same'] == []
-    assert got['payload'] == {'EUR': {'shareClass': 'Accumulating'}}
-    assert got['moved'] == [['shareClassGBP', 'Share class in GBP', 'Accumulating', '—'],
-                            ['shareClassEUR', 'Share class in EUR', '—', 'Accumulating']]
-    assert got['problems'] == {'shareClassCHF': 'The share class in CHF must be Distributing or '
-                                                'Accumulating, or the main one.'}
+''' % (json.dumps(LISTED), json.dumps(dict(CTX, isNew=False, categories=['Public Equity', 'Investment Grade Fixed Income'],
+                                             held={'ticker:taken': 'Another Fund'}))))
+    assert 'same listing' in got['same']['listing1ticker']
+    assert 'both ranked 1 for GBP' in got['twice']['listing2rankGBP']
+    assert 'whole number' in got['rank']['listing0rankEUR']
+    assert 'Only a separate account' in got['code']['listing0code']
+    assert 'Hedged or Unhedged' in got['isg']['listing0hedging']
+    assert 'Another Fund' in got['held']['listing2ticker']
+    assert 'listing0hedging' not in got['smaIsg'] and 'listing0code' not in got['smaIsg']
+    assert 'Only a Public Equity SMA' in got['bondHedged']['listing0hedging']
 
 
-def test_the_form_gives_each_currency_a_yield_of_its_own():
-    """D190: a currency's distribution yield is a percentage box, blank for the
-    main one and 0 for none, checked as the main yield is."""
-    got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: 'PRB', assetClass: 'Equity', style: 'Active',
-          vehicle: 'SMA', shareClass: 'Distributing', source: 'Internal', liquidity: 'Daily',
-          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
-          distributionYield: 3.2, minimumInvestment: null,
-          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '', issueCurrency: '',
-                               shareClass: 'Accumulating', distributionYield: 0, offered: true } } };
-var d = prdDraftFrom(p);
-var out = { gbp: d.distributionYieldGBP, eur: d.distributionYieldEUR, same: prdChanges(p, d) };
-d.distributionYieldEUR = '2.9%';
-out.payload = prdPayload(d).currencies;
-out.moved = prdChanges(p, d).map(function (c) { return [c.key, c.before, c.after]; });
-d.distributionYieldCHF = '75'; d.distributionYieldUSD = 'lots';
-out.problems = prdProblems(d, { isNew: false, feeGroups: ['Passive'] });
-process.stdout.write(JSON.stringify(out));
-''')
-    assert got['gbp'] == '0' and got['eur'] == '' and got['same'] == []
-    assert got['payload'] == {'GBP': {'shareClass': 'Accumulating', 'distributionYield': 0},
-                              'EUR': {'distributionYield': 2.9}}
-    assert got['moved'] == [['distributionYieldEUR', '—', '2.9']]
-    assert 'looks wrong' in got['problems']['distributionYieldCHF']
-    assert got['problems']['distributionYieldUSD'] == ('Distribution yield in USD "lots" is not a number: '
-                                                       'give a percentage, such as 3.2.')
-
-
-def test_the_form_gives_each_currency_an_asset_class_and_a_cost_of_its_own():
-    """D194: a currency's asset class is a box, blank for the main one; its
-    product cost a percentage box, blank for the main one, checked as the
-    main cost is - and not needed, as the main asset class and cost are."""
-    got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: 'PRB', assetClass: 'Equity', style: 'Active',
-          vehicle: 'SMA', shareClass: 'Distributing', source: 'Internal', liquidity: 'Daily',
-          exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
-          distributionYield: null, minimumInvestment: null,
-          currencies: { GBP: { ticker: '', minimumInvestment: null, exposureCurrency: '', issueCurrency: '',
-                               shareClass: '', distributionYield: null, assetClass: 'Hedged Equity',
-                               productCost: 0.35, offered: true } } };
-var d = prdDraftFrom(p);
-var out = { gbp: [d.assetClassGBP, d.productCostGBP], eur: [d.assetClassEUR, d.productCostEUR],
-            same: prdChanges(p, d), blank: prdProblems(d, { isNew: false, feeGroups: ['Passive'] }) };
-d.productCostEUR = '0.3%'; d.assetClassEUR = 'Euro Equity';
-out.payload = prdPayload(d).currencies;
-out.moved = prdChanges(p, d).map(function (c) { return [c.key, c.before, c.after]; });
-d.productCostCHF = '12'; d.productCostUSD = 'lots'; d.assetClassUSD = new Array(62).join('x');
-out.problems = prdProblems(d, { isNew: false, feeGroups: ['Passive'] });
-process.stdout.write(JSON.stringify(out));
-''')
-    assert got['gbp'] == ['Hedged Equity', '0.35'] and got['eur'] == ['', '']
-    assert got['same'] == [] and got['blank'] == {}
-    assert got['payload'] == {'GBP': {'assetClass': 'Hedged Equity', 'productCost': 0.35},
-                              'EUR': {'assetClass': 'Euro Equity', 'productCost': 0.3}}
-    assert got['moved'] == [['assetClassEUR', '—', 'Euro Equity'], ['productCostEUR', '—', '0.3']]
-    assert 'looks wrong' in got['problems']['productCostCHF']
-    assert got['problems']['productCostUSD'] == ('Product cost in USD "lots" is not a number: '
-                                                 'give a percentage, such as 0.25 for 0.25%.')
-    assert got['problems']['assetClassUSD'] == 'Keep the asset class in USD to 60 characters.'
+def test_the_card_and_the_form_follow_the_vehicle_and_the_listings_move():
+    """D207: the template is the vehicle's - an SMA's listings are its mandate
+    codes - and a listing moves by its grip or its arrows, taken off by its x."""
+    source = _source()
+    assert "(sma ? 'SMA card' : 'Fund card')" in source and "(sma ? 'SMA form' : 'Fund form')" in source
+    assert "data-prd=\"lstmove\"" in source and "act === 'lstremove'" in source and "act === 'lstadd'" in source
+    assert 'data-prdgrip' in source and 'prdMoveListing(from, to)' in source
+    assert "'importmandates'" not in source and 'mandates.csv' not in source

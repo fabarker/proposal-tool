@@ -24,7 +24,9 @@ points with an admin's approval, and no further. No product may hold more
 than ``concentration`` percent of the portfolio, and at most ``illiquid``
 percent may sit in products that do not deal daily. A portfolio holds at most
 ``maxProducts`` products, every position meets its product's minimum, and
-private markets need the $20m mandate a strategic book does.
+each private markets product the mandate its private markets minimum gives
+at the profile's Full portfolio - or, before there is a table, the $20m a
+strategic book needs (D200).
 
 Who builds one. An admin, always. A PWA, only while an admin has opened the
 custom workflows to PWAs - one switch for custom portfolios and custom
@@ -45,7 +47,7 @@ import hashlib
 import json
 import math
 
-from . import assetEstimates, customAccess, products, rules, sleeveRepo
+from . import assetEstimates, customAccess, privateMarkets, products, rules, sleeveRepo
 from .types import PortfolioKey, ValidationError
 
 #: the implemented portfolio adds to 100 within half a hundredth of a point
@@ -78,7 +80,9 @@ def forCaller(admin: bool) -> dict:
     checks again."""
     variants = list(rules.VARIANT_ALLOCATIONS) if customAccess.may(admin) else []
     return {'mayBuild': variants, 'admin': bool(admin), 'limits': dict(LIMITS),
-            'privateMinimum': rules.PRIVATE_ASSETS_MINIMUM,
+            # the $20m rule, until there is a private markets minimums
+            # table; then each product is checked against its own (D200)
+            'privateMinimum': None if privateMarkets.current()['inForce'] else rules.PRIVATE_ASSETS_MINIMUM,
             'privateLine': rules.PRIVATE_FUNDED_FROM, 'countedIn': countedIn(),
             'balanceTolerance': BALANCE_TOLERANCE, 'noteMax': NOTE_MAX}
 
@@ -474,7 +478,8 @@ def checks(definition, variant, mandateSize, anchor: dict, entry=None) -> dict:
         problems.append('{:.2f}% is not daily-dealing; at most {:g}%.'.format(
             illiquid, entry['illiquid']))
     private = weights.get(rules.PRIVATE_FUNDED_FROM, 0.0)
-    if private > 0 and mandateSize is not None and mandateSize < rules.PRIVATE_ASSETS_MINIMUM:
+    if (private > 0 and mandateSize is not None and not privateMarkets.current()['inForce']
+            and mandateSize < rules.PRIVATE_ASSETS_MINIMUM):
         problems.append('Private markets need a mandate of ${:,.0f} or more.'.format(
             rules.PRIVATE_ASSETS_MINIMUM))
     status = 'bad' if problems else 'warn' if wide else 'ok'

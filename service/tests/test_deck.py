@@ -487,7 +487,7 @@ def test_the_deck_indents_a_quarter_less_and_follows_the_sheets_columns():
                        for c in row.cells))
     rows = list(impl.rows)
     head = [c.text for c in rows[0].cells]
-    assert head == implColumns(True)                # the initial allocation has its own (D141)
+    assert head == implColumns(True, deck=True)     # the initial allocation has its own (D141); no listing columns (D208)
     assert head[:3] == ['Categories & Asset Classes', 'Products', 'Notional']
     assert 'Exposure ccy' not in head
     titles = [shape.chart.chart_title.text_frame.text for s in prs.slides

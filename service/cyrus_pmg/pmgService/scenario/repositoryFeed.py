@@ -4,8 +4,11 @@ Every change the repository keeps a history of, newest first, in one place:
 the sleeves (sleeveRepo), the products of the catalogue (products, D165),
 the fee card (feeCard, D166), the overlay rules (overlayRules, D155) and the
 private-markets funding split (fundingSplit, D148), the sleeves disabled
-and enabled again (sleeveRepo's switches, D169), and the switch that opens
-the custom workflows to PWAs (customAccess, D172). Each keeps its own
+and enabled again (sleeveRepo's switches, D169), the switch that opens
+the custom workflows to PWAs (customAccess, D172), the private markets
+minimums (privateMarkets, D200), the investment restrictions
+(restrictions, D203), the mandate codes (mandateCodes, D205) and the
+portfolio benchmarks (portfolioBenchmarks, D211). Each keeps its own
 history and is the authority on it; this reads them side by side, filtered
 and paged together, so the console's Activity tab and its CSV answer "what
 happened, who did it and when" for everything at once.
@@ -32,13 +35,16 @@ from __future__ import annotations
 
 import json
 
-from . import (customAccess, feeCard, fundingSplit, overlayRules, products, sleeveRepo,
-               sleeveRules)
+from . import (customAccess, feeCard, fundingSplit, mandateCodes, overlayRules, portfolioBenchmarks,
+               privateMarkets, products, restrictions, sleeveRepo, sleeveRules)
 
-AREAS = ['sleeves', 'products', 'fees', 'overlays', 'funding', 'availability', 'access']
+AREAS = ['sleeves', 'products', 'fees', 'overlays', 'funding', 'availability', 'access', 'minimums',
+         'restrictions', 'mandateCodes', 'benchmarks']
 AREA_LABELS = {'sleeves': 'Sleeves', 'products': 'Products', 'fees': 'Fee card',
                'overlays': 'Overlay rules', 'funding': 'Funding split',
-               'availability': 'Sleeves offered', 'access': 'Custom workflows for PWAs'}
+               'availability': 'Sleeves offered', 'access': 'Custom workflows for PWAs',
+               'minimums': 'Private markets minimums', 'restrictions': 'Investment restrictions',
+               'mandateCodes': 'Mandate codes', 'benchmarks': 'Portfolio benchmarks'}
 _RANK = {a: i for i, a in enumerate(AREAS)}
 #: every action any area records, in the order the feed's chips offer them
 ACTIONS = ['created', 'updated', 'imported', 'reverted', 'deleted', 'withdrawn', 'removed',
@@ -233,9 +239,55 @@ def _accessEntries(conn) -> list:
             for r in rows]
 
 
+def _minimumEntries(conn) -> list:
+    """Every revision of the private markets minimums (D200), with each value that moved."""
+    rows = privateMarkets.feedRows(conn)
+    top = rows[-1]['revision'] if rows else None
+    return [{'area': 'minimums', 'feedId': r['id'], 'at': r['at'], 'action': r['action'],
+             'actor': r['actor'], 'name': 'Private markets minimums', 'variant': '',
+             'revision': r['revision'], 'note': r['note'], 'changes': r['changes'],
+             'current': r['revision'] == top}
+            for r in rows]
+
+
+def _restrictionEntries(conn) -> list:
+    """Every revision of the investment restrictions (D203), with what changed."""
+    rows = restrictions.feedRows(conn)
+    top = rows[-1]['revision'] if rows else None
+    return [{'area': 'restrictions', 'feedId': r['id'], 'at': r['at'], 'action': r['action'],
+             'actor': r['actor'], 'name': 'Investment restrictions', 'variant': '',
+             'revision': r['revision'], 'note': r['note'], 'changes': r['changes'],
+             'current': r['revision'] == top}
+            for r in rows]
+
+
+def _mandateCodeEntries(conn) -> list:
+    """Every revision of the mandate codes (D205), with what moved."""
+    rows = mandateCodes.feedRows(conn)
+    top = rows[-1]['revision'] if rows else None
+    return [{'area': 'mandateCodes', 'feedId': r['id'], 'at': r['at'], 'action': r['action'],
+             'actor': r['actor'], 'name': 'Mandate codes', 'variant': '',
+             'revision': r['revision'], 'note': r['note'], 'changes': r['changes'],
+             'current': r['revision'] == top}
+            for r in rows]
+
+
+def _benchmarkEntries(conn) -> list:
+    """Every revision of the portfolio benchmarks (D211), with what moved."""
+    rows = portfolioBenchmarks.feedRows(conn)
+    top = rows[-1]['revision'] if rows else None
+    return [{'area': 'benchmarks', 'feedId': r['id'], 'at': r['at'], 'action': r['action'],
+             'actor': r['actor'], 'name': 'Portfolio benchmarks', 'variant': '',
+             'revision': r['revision'], 'note': r['note'], 'changes': r['changes'],
+             'current': r['revision'] == top}
+            for r in rows]
+
+
 def _others(conn) -> list:
     return (_productEntries(conn) + _feeEntries(conn) + _overlayEntries(conn)
-            + _fundingEntries(conn) + _switchEntries(conn) + _accessEntries(conn))
+            + _fundingEntries(conn) + _switchEntries(conn) + _accessEntries(conn)
+            + _minimumEntries(conn) + _restrictionEntries(conn) + _mandateCodeEntries(conn)
+            + _benchmarkEntries(conn))
 
 
 # ------------------------------------------------------------ filtering ---

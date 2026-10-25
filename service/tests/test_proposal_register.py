@@ -418,7 +418,7 @@ def test_minted_uids_have_one_shape_and_do_not_repeat():
     assert not proposalRegister.isProposalId('sc_0123456789ab')
 
 
-def test_saved_views_count_and_filter_the_whole_register():
+def test_saved_views_count_and_filter_the_whole_register(monkeypatch):
     """D116. The register answers questions about a set, not only about a row:
     each saved view carries a count over the whole register, and the two that
     cannot be a WHERE on a column - sleeves the library has moved past, and
@@ -446,13 +446,17 @@ def test_saved_views_count_and_filter_the_whole_register():
     assert summary['mandate'] == pytest.approx(sum(e['mandateSize'] for e in page['entries']))
     assert summary['earliest'] <= summary['latest']
 
-    # a request moves it out of noAccount, and the row says so
+    # a request moves it out of noAccount, and the row says so - its SMA
+    # Details (D206) are another test's, so none are asked of it here
+    monkeypatch.setattr(accountRequests, 'smaRecord', lambda entry, fields: [])
     accountRequests.record('viewer', {
         'proposalId': proposalId,
         'mandateName': 'View Test', 'clientRelationship': 'New',
         'accountType': accountRequests.ACCOUNT_TYPES[0], 'mifidClass': 'Retail',
         'capitalIncomeSplit': 'No', 'taxDomicile': 'CH', 'ukRndClient': 'No',
-        'gsAffiliate': 'No', 'custodyPlatform': accountRequests.CUSTODY_PLATFORMS[0]})
+        'gsAffiliate': 'No', 'offeringEntity': accountRequests.OFFERING_ENTITIES[0],
+        'phasingTimeline': accountRequests.PHASING_TIMELINES[0],
+        'custodyPlatform': accountRequests.CUSTODY_PLATFORMS[0]})
     after = proposalRegister.listProposals(limit=500)
     assert [e for e in after['entries'] if e['proposalId'] == proposalId][0]['accountRequested'] is True
     assert proposalId not in {e['proposalId'] for e in
@@ -592,7 +596,7 @@ def test_a_register_from_before_decks_gains_the_columns_and_keeps_its_rows():
         version = opened.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]
         opened.close()
         assert {'deck', 'deckName', 'deckSha', 'deckBytes', 'fundingSplit', 'overlays'} <= columns
-        assert version == str(proposalRegister.SCHEMA_VERSION) == '13'     # D148, D155, D165, D170, D171, D177, D193, D196, D198, D199
+        assert version == str(proposalRegister.SCHEMA_VERSION) == '14'     # D148, D155, D165, D170, D171, D177, D193, D196, D198, D199, D211
         assert proposalRegister.deck('pr_00000000abcd') is None, 'an old row keeps its NULLs'
         assert proposalRegister.workbook('pr_00000000abcd')['name'] == 'old.xlsx'
     finally:
