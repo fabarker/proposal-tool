@@ -32,7 +32,7 @@ revision can be put back.
 
 Storage. The ``policies`` and ``policyHistory`` tables (sleeveRepo, schema 4)
 under the kind 'mandateCodes' and the one scope '*', each cell's code under
-its key - a revision from before D211 holds [code, benchmark], and is read
+its key - an older revision holds [code, benchmark] (D211), and is read
 for its code. Until the first save there is no table. A
 read never writes.
 """
@@ -213,8 +213,8 @@ def _row(conn):
 
 
 def _code(held) -> str:
-    """A stored cell's code: the code itself, or the first of a revision
-    from before D211's [code, benchmark]."""
+    """A stored cell's code: the code itself, or the first of an older
+    revision's [code, benchmark] (D211)."""
     if isinstance(held, (list, tuple)):
         held = held[0] if held else ''
     return str(held or '')
