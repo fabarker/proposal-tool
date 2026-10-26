@@ -1,16 +1,11 @@
 {
-  "from": "a046f68",
-  "to": "460b05c",
+  "from": "460b05c",
+  "to": "34722c2",
   "write": [
-    "package/accountRequests.py",
-    "package/mandateCodes.py",
-    "package/products.py",
-    "package/proposalRegister.py",
-    "package/workbook.py",
-    "page/static/css/proposalTool.css",
+    "package/portfolioBenchmarks.py",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
-  "routerBlock": true,
-  "bytes": 112497
+  "routerBlock": false,
+  "bytes": 48496
 }
