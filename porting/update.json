@@ -1,11 +1,12 @@
 {
-  "from": "460b05c",
-  "to": "34722c2",
+  "from": "34722c2",
+  "to": "e75be67",
   "write": [
-    "package/portfolioBenchmarks.py",
+    "package/privateMarkets.py",
+    "page/static/css/proposalTool.css",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
-  "routerBlock": false,
-  "bytes": 48496
+  "routerBlock": true,
+  "bytes": 89114
 }
