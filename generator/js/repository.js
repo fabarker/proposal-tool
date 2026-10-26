@@ -8766,23 +8766,25 @@ function ntcInput(eds, el) {
 }
 
 /* ---- the private markets minimums (D200) ----------------------------------
-   The mandate each private markets product needs, by allocation type, risk
-   level and base currency. A product at a time: its four allocation types
-   side by side as risk-by-currency grids, every value edited where it is and
+   The mandate a private markets product needs, by allocation type, risk
+   level and base currency, in two sets, a tab each (D217): APS, for
+   Alternatives Portfolio Services, and Other, for every other product in
+   Private Equity & Other Private Assets. A set's four allocation types side
+   by side as risk-by-currency grids, every value edited where it is and
    saved together as one revision with an optional note. A file loads the
    whole table, previewed first. A change takes effect only once it is
    confirmed, from a list of every value it moves; one not confirmed is
    discarded when the tab is left or the console closed. The history lists
    every value that moved, and an earlier revision can be put back, also
    once confirmed. */
-var pmm = { data: null, loaded: false, busy: false, error: null, flash: '', product: null, draft: null,
-            bad: {}, note: '', saving: false, history: null, imp: null, adding: null, askRemove: false,
-            openRev: null, confirming: false, askRestore: null };
+var pmm = { data: null, loaded: false, busy: false, error: null, flash: '', set: 'aps', draft: null,
+            bad: {}, note: '', saving: false, history: null, imp: null, openRev: null, confirming: false,
+            askRestore: null };
 /* what is not confirmed goes: a change on screen, a file not loaded, a
    question not answered */
 function pmmForget() {
-  pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.confirming = false; pmm.askRemove = false;
-  pmm.adding = null; pmm.imp = null; pmm.askRestore = null; pmm.error = null; pmm.flash = ''; pmm.pasted = '';
+  pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.confirming = false;
+  pmm.imp = null; pmm.askRestore = null; pmm.error = null; pmm.flash = ''; pmm.pasted = '';
 }
 
 async function loadMinimums() {
@@ -8815,25 +8817,36 @@ function pmmRiskLabel(id) {
   return r ? r.label : id;
 }
 function pmmWords(key) { var p = key.split('|'); return p[0] + ' · ' + pmmRiskLabel(p[1]) + ' · ' + p[2]; }
-function pmmProducts() { return pmm.draft || (pmm.data && pmm.data.products) || []; }
-function pmmSaved(pid) {
-  return ((pmm.data && pmm.data.products) || []).filter(function (p) { return p.productId === pid; })[0] || null;
+function pmmSets() { return (pmm.data && pmm.data.sets) || []; }
+function pmmSaved() {
+  var d = pmm.data || {}, out = {};
+  pmmSets().forEach(function (s) { out[s.id] = d[s.id] || {}; });
+  return out;
 }
+/* the table on screen: {aps: {cell: $m}, other: {cell: $m}} */
+function pmmTable() { return pmm.draft || pmmSaved(); }
 function pmmDirty() {
-  return !!pmm.data && ((!!pmm.draft && JSON.stringify(pmm.draft) !== JSON.stringify(pmm.data.products))
+  return !!pmm.data && ((!!pmm.draft && JSON.stringify(pmm.draft) !== JSON.stringify(pmmSaved()))
     || Object.keys(pmm.bad).length > 0);
 }
 function pmmEnsureDraft() {
-  if (!pmm.draft) pmm.draft = JSON.parse(JSON.stringify(pmm.data.products || []));
+  if (!pmm.draft) pmm.draft = JSON.parse(JSON.stringify(pmmSaved()));
   return pmm.draft;
 }
+/* the set in view: {id, label, name, minimums} */
 function pmmCurrent() {
-  var list = pmmProducts();
-  var p = list.filter(function (x) { return x.productId === pmm.product; })[0];
-  if (!p && list.length) { p = list[0]; pmm.product = p.productId; }
-  return p || null;
+  var sets = pmmSets(), s = sets.filter(function (x) { return x.id === pmm.set; })[0] || sets[0];
+  if (!s) return null;
+  pmm.set = s.id;
+  return Object.assign({}, s, { minimums: pmmTable()[s.id] || {} });
 }
-function pmmLabel(p) { return p.type || p.productId; }
+function pmmLabel(id) {
+  var s = pmmSets().filter(function (x) { return x.id === id; })[0];
+  return s ? s.label : id;
+}
+/* a set's tab: Alternatives Portfolio Services (APS), and Other by its name,
+   Private Equity Managers (PEM) */
+function pmmTab(s) { return s.id === 'aps' ? s.name + ' (' + s.label + ')' : s.name; }
 function pmmFmt(v) { return v === null || v === undefined ? '' : String(Math.round(v * 10000) / 10000); }
 function pmmMoney(v) { return '$' + pmmFmt(v) + 'm'; }
 /* a typed value: a number of $m, blank for none, or the words saying why not */
@@ -8844,32 +8857,32 @@ function pmmParse(raw) {
   if (!isFinite(v) || v < 0 || v > (pmm.data.valueMax || 100000)) return { bad: true };
   return { value: Math.round(v * 10000) / 10000 };
 }
-function pmmGaps(list) {
-  var cells = pmmCells();
-  return list.map(function (p) {
-    return { productId: p.productId, label: pmmLabel(p),
-             cells: cells.filter(function (c) { return p.minimums[c] === undefined || p.minimums[c] === null; }) };
+/* each set's missing cells, once the table holds any value. Mirrors
+   privateMarkets.gaps. */
+function pmmGaps(table) {
+  var cells = pmmCells(), sets = pmmSets();
+  if (!sets.some(function (s) { return Object.keys(table[s.id] || {}).length; })) return [];
+  return sets.map(function (s) {
+    var m = table[s.id] || {};
+    return { set: s.id, label: s.label, cells: cells.filter(function (c) { return m[c] === undefined || m[c] === null; }) };
   }).filter(function (g) { return g.cells.length; });
 }
 /* what the changes on screen move, in the history's words. Mirrors
    privateMarkets._changes. */
 function pmmChangeList() {
-  var out = [], was = {};
+  var out = [];
   if (!pmm.draft) return out;
-  var saved = (pmm.data && pmm.data.products) || [];
+  var saved = pmmSaved();
   function val(v) { return v === undefined || v === null ? '—' : pmmFmt(v); }
-  saved.forEach(function (p) { was[p.productId] = p; });
-  pmm.draft.forEach(function (p) {
-    var old = was[p.productId], label = pmmLabel(p);
-    if (!old) { out.push('Added ' + label + ' (' + Object.keys(p.minimums).length + ' values)'); return; }
-    if (old.type !== p.type) out.push(p.productId + ': short name ' + (old.type || '—') + ' → ' + (p.type || '—'));
+  pmmSets().forEach(function (s) {
+    var was = saved[s.id] || {}, now = pmm.draft[s.id] || {};
+    var nWas = Object.keys(was).length, nNow = Object.keys(now).length;
+    if (!nWas && nNow) { out.push(s.label + ': ' + nNow + ' values set'); return; }
+    if (nWas && !nNow) { out.push(s.label + ': its ' + nWas + ' values cleared'); return; }
     pmmCells().forEach(function (c) {
-      var a = old.minimums[c] === undefined ? null : old.minimums[c], b = p.minimums[c] === undefined ? null : p.minimums[c];
-      if (a !== b) out.push(label + ' · ' + pmmWords(c) + ': ' + val(a) + ' → ' + val(b));
+      var a = was[c] === undefined ? null : was[c], b = now[c] === undefined ? null : now[c];
+      if (a !== b) out.push(s.label + ' · ' + pmmWords(c) + ': ' + val(a) + ' → ' + val(b));
     });
-  });
-  saved.forEach(function (p) {
-    if (!pmm.draft.some(function (x) { return x.productId === p.productId; })) out.push('Removed ' + pmmLabel(p));
   });
   return out;
 }
@@ -8881,31 +8894,32 @@ function pmmShade(v) {
 }
 
 function pmmGapsHtml() {
-  var gaps = pmmGaps(pmmProducts());
+  var gaps = pmmGaps(pmmTable());
   if (!gaps.length) return '<div id="pmmGaps"></div>';
-  return '<div id="pmmGaps" class="pmm-gaps" role="status"><b>Missing values.</b> Every product needs a minimum in all '
-    + pmmCells().length + ' cells. A proposal that needs a missing one cannot be delivered, and an allocation no product has a value for is not offered.<ul>'
+  return '<div id="pmmGaps" class="pmm-gaps" role="status"><b>Missing values.</b> Both tabs need a minimum in all '
+    + pmmCells().length + ' cells. A proposal that needs a missing one cannot be delivered, and an allocation neither has a value for is not offered.<ul>'
     + gaps.map(function (g) {
-        return '<li><button type="button" class="cat-link" data-pmm="prod" data-pmmarg="' + esc(g.productId) + '">' + esc(g.label) + '</button>: '
+        var s = pmmSets().filter(function (x) { return x.id === g.set; })[0];
+        return '<li><button type="button" class="cat-link" data-pmm="set" data-pmmarg="' + esc(g.set) + '">' + esc(s ? pmmTab(s) : g.label) + '</button>: '
           + g.cells.length + ' missing' + (g.cells.length <= 6 ? ' — ' + g.cells.map(pmmWords).join('; ') : ', starting ' + g.cells.slice(0, 3).map(pmmWords).join('; ')) + '</li>';
       }).join('') + '</ul></div>';
 }
 
-function pmmMatrixHtml(p, a) {
-  var d = pmm.data, saved = pmmSaved(p.productId);
+function pmmMatrixHtml(s, a) {
+  var d = pmm.data, saved = pmmSaved()[s.id] || {};
   return '<div class="pmm-blk"><h4>' + esc(a) + '</h4><table class="pmm-g"><thead><tr><th scope="col"><span class="pmm-mut">$m</span></th>'
     + d.currencies.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>'
     + d.risks.map(function (r) {
         return '<tr><th scope="row">' + esc(r.label) + '</th>' + d.currencies.map(function (c) {
-          var key = pmmCellKey(a, r.id, c), bk = p.productId + '|' + key;
-          var v = p.minimums[key] === undefined ? null : p.minimums[key];
-          var was = saved ? (saved.minimums[key] === undefined ? null : saved.minimums[key]) : null;
+          var key = pmmCellKey(a, r.id, c), bk = s.id + '|' + key;
+          var v = s.minimums[key] === undefined ? null : s.minimums[key];
+          var was = saved[key] === undefined ? null : saved[key];
           var bad = Object.prototype.hasOwnProperty.call(pmm.bad, bk);
-          var cls = bad ? 'bad' : v === null ? 'gap' : (!saved || was !== v ? 'chg' : '');
+          var cls = bad ? 'bad' : v === null ? 'gap' : (was !== v ? 'chg' : '');
           return '<td class="' + cls + '"' + (bad ? '' : pmmShade(v)) + '><input data-pmmv="' + esc(key) + '" inputmode="decimal" autocomplete="off"'
             + ' value="' + esc(bad ? pmm.bad[bk] : pmmFmt(v)) + '"'
-            + ' aria-label="' + esc(pmmLabel(p) + ', ' + a + ', ' + r.label + ', ' + c + ', millions of dollars') + '"'
-            + (saved && was !== v && !bad ? ' title="Was ' + esc(was === null ? 'blank' : pmmMoney(was)) + '"' : '')
+            + ' aria-label="' + esc(s.label + ', ' + a + ', ' + r.label + ', ' + c + ', millions of dollars') + '"'
+            + (was !== v && !bad ? ' title="Was ' + esc(was === null ? 'blank' : pmmMoney(was)) + '"' : '')
             + (pmm.confirming ? ' disabled' : '') + '></td>';
         }).join('') + '</tr>';
       }).join('') + '</tbody></table></div>';
@@ -8936,24 +8950,24 @@ function pmmSaveHtml() {
 }
 
 function pmmImportHtml() {
-  var i = pmm.imp, pv = i.preview;
+  var i = pmm.imp, pv = i.preview, d = pmm.data;
   var html = '<div class="pmm-imp" role="region" aria-label="Import a minimums file"><h3 class="sv-h3">Import a minimums file</h3>'
-    + '<p class="pmm-mut">The desk’s long-form workbook: allocation_type, risk_level, currency, value (millions of dollars), Type and productId. '
+    + '<p class="pmm-mut">The desk’s long-form workbook: allocation_type, risk_level, currency, value (millions of dollars), Type and productId - '
+    + '<code>' + esc(d.apsProduct) + '</code> for APS, <code>' + esc(d.otherId || 'Other') + '</code> for Private Equity Managers (PEM). '
     + 'All in allocation_type or currency covers every one; a row that names more wins over one that says All. The file replaces the whole table.</p>'
     + '<input type="file" id="pmmFile" accept=".xlsx,.csv"' + (i.busy ? ' disabled' : '') + '>'
     + (i.busy ? '<p class="repo-loading">Reading ' + esc(i.name) + '…</p>' : '')
     + (i.error ? '<p class="md-err" role="alert">' + esc(i.error) + '</p>' : '');
   if (pv) {
     html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · '
-      + pv.products.map(function (p) { return esc(p.type || p.productId) + ' (' + p.values + ' values)'; }).join(', ')
+      + pv.sets.map(function (s) { return esc(s.label) + ' ' + s.values + ' values'; }).join(', ')
       + ' · <b>' + pv.changed + ' change' + (pv.changed === 1 ? '' : 's') + '</b></p>'
       + (pv.problems.length ? '<div class="pmm-gaps"><b>Problems: fix them in the file and choose it again.</b><ul>'
           + pv.problems.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('')
           + (pv.problems.length > 12 ? '<li>and ' + (pv.problems.length - 12) + ' more</li>' : '') + '</ul></div>' : '')
       + (pv.gaps.length ? '<p class="pmm-bad">Missing values: ' + pv.gaps.map(function (g) {
-          return esc(g.type || g.productId) + ' ' + g.cells.length; }).join(', ') + '. They are listed on the tab once loaded.</p>' : '')
-      + (pv.unknown.length ? '<p class="pmm-mut">Not in the catalogue yet: ' + pv.unknown.map(esc).join(', ')
-          + '. Their minimums are kept, and apply once the product is added.</p>' : '')
+          return esc(g.label) + ' ' + g.cells.length; }).join(', ') + '. They are listed on the tab once loaded.</p>' : '')
+      + (pv.unknown.length ? '<p class="pmm-mut">' + esc(d.apsProduct) + ' is not in the catalogue yet. APS’s minimums are kept, and apply once it is added.</p>' : '')
       + (pv.changes.length ? '<ul class="rev-changes">' + pv.changes.slice(0, 12).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
           + (pv.changed > 12 ? '<li class="mut">and ' + (pv.changed - 12) + ' more</li>' : '') + '</ul>' : '')
       + (pmmDirty() ? '<p class="pmm-bad">Loading it discards the changes on screen.</p>' : '')
@@ -8995,15 +9009,14 @@ function minimumsViewHtml() {
   if (!pmm.data) {
     return '<div class="repo-b ent-b pmm-b"><p class="repo-loading">' + (pmm.error ? esc(pmm.error) : 'Loading the minimums…') + '</p></div>';
   }
-  var d = pmm.data, list = pmmProducts(), p = pmmCurrent();
+  var d = pmm.data, s = pmmCurrent();
   var status = d.inForce
     ? 'Revision ' + d.revision + (d.updatedBy ? ' · saved by ' + esc(d.updatedBy) : '') + (d.updatedAt ? ' ' + esc(shortDate(d.updatedAt)) : '')
-      + ' · ' + d.products.length + ' product' + (d.products.length === 1 ? '' : 's')
     : 'No table yet: until one is loaded, private markets need a ' + pmmMoney((d.fallback || 20000000) / 1e6) + ' mandate, whatever the currency or risk level.';
-  var unknown = list.filter(function (x) { return !d.names[x.productId]; });
   var html = '<div class="repo-b ent-b pmm-b">'
-    + '<p class="pmm-lede">The mandate each private markets product needs, in millions of dollars whatever the currency, by allocation type, risk level and base currency. '
-    + 'For a currency and risk level, an allocation holding private markets is offered from the lowest minimum of any product; above that, each product is held only from its own, '
+    + '<p class="pmm-lede">The mandate a private markets product needs, in millions of dollars whatever the currency, by allocation type, risk level and base currency. '
+    + '<b>Alternatives Portfolio Services (APS)</b> holds APS’s own; <b>Private Equity Managers (PEM)</b> holds those of every other product in Private Equity & Other Private Assets. '
+    + 'For a currency and risk level, an allocation holding private markets is offered from the lower of the two; above that, each product is held only from its own set’s, '
     + 'and one below it is marked in the implementation table and stops the download. Custom portfolios are checked product by product against the Full minimums at their risk profile.</p>'
     + '<p class="pmm-mut">Type into a grid, or paste a block copied in Excel into the cell where it starts. Copy its row of currencies or its column of risk levels with it and the values go in by name, whatever order they are in.</p>'
     + (pmm.flash ? '<p class="prd-flash" role="status">' + esc(pmm.flash) + '</p>' : '')
@@ -9013,35 +9026,19 @@ function minimumsViewHtml() {
     + '<span class="pmm-mut">' + status + '</span></div>'
     + (pmm.imp ? pmmImportHtml() : '')
     + pmmGapsHtml()
-    + (unknown.length ? '<p class="pmm-mut">Not in the catalogue: ' + unknown.map(function (x) { return esc(pmmLabel(x)) + ' (' + esc(x.productId) + ')'; }).join(', ')
-        + '. Their minimums are kept, and apply once the product is added.</p>' : '')
-    + ((d.unchecked || []).length ? '<p class="pmm-mut">In the catalogue as private markets but not in this table, so not checked: '
-        + d.unchecked.map(function (x) { return esc(x.name); }).join(', ') + '.</p>' : '')
-    + '<div class="pmm-prods" role="tablist" aria-label="Product">'
-    + list.map(function (x) {
-        var on = p && x.productId === p.productId;
-        return '<button type="button" role="tab" aria-selected="' + on + '" data-pmm="prod" data-pmmarg="' + esc(x.productId) + '">' + esc(pmmLabel(x)) + '</button>';
-      }).join('')
-    + (list.length < (d.maxProducts || 40) ? '<button type="button" class="pmm-addp" data-pmm="add"' + (pmm.confirming ? ' disabled' : '') + '>+ Add a product</button>' : '') + '</div>';
-  if (pmm.adding) {
-    html += '<div class="pmm-adding"><label for="pmmAddId">ProductId</label><input id="pmmAddId" list="pmmIds" autocomplete="off" value="' + esc(pmm.adding.id) + '">'
-      + '<datalist id="pmmIds">' + Object.keys(d.names).filter(function (id) { return !list.some(function (x) { return x.productId === id; }); })
-          .map(function (id) { return '<option value="' + esc(id) + '">' + esc(d.names[id]) + '</option>'; }).join('') + '</datalist>'
-      + '<label for="pmmAddType">Short name</label><input id="pmmAddType" maxlength="' + (d.typeMax || 24) + '" autocomplete="off" value="' + esc(pmm.adding.type) + '" placeholder="APS">'
-      + '<button type="button" class="btn btn-primary" data-pmm="addyes">Add</button><button type="button" class="btn" data-pmm="addno">Cancel</button>'
-      + (pmm.adding.error ? '<p class="md-err" role="alert">' + esc(pmm.adding.error) + '</p>' : '') + '</div>';
-  }
-  if (p) {
-    html += '<div class="pmm-ph"><div><h3>' + esc(d.names[p.productId] || pmmLabel(p)) + '</h3><code>' + esc(p.productId) + '</code></div>'
-      + '<label for="pmmType">Short name</label><input id="pmmType" data-pmmtype maxlength="' + (d.typeMax || 24) + '" autocomplete="off" value="' + esc(p.type) + '"'
-      + (pmm.confirming ? ' disabled' : '') + '>'
-      + '<button type="button" class="btn btn-ghost" data-pmm="remove"' + (pmm.confirming ? ' disabled' : '') + '>Remove the product</button></div>'
-      + (pmm.askRemove ? '<div class="prd-ask" role="alertdialog" aria-label="Remove ' + esc(pmmLabel(p)) + '"><p>Take ' + esc(pmmLabel(p))
-          + ' out of the table? Its minimums stop applying once you save; they stay in the history, where they can be restored.</p>'
-          + '<button type="button" class="btn btn-danger" data-pmm="removeyes">Remove</button><button type="button" class="btn" data-pmm="unask">Keep it</button></div>' : '')
-      + '<div class="pmm-blocks">' + d.allocations.map(function (a) { return pmmMatrixHtml(p, a); }).join('') + '</div>';
-  } else if (!pmm.adding) {
-    html += '<p class="sv-hint">No products yet. Import the desk’s file, or add a product and type its minimums in.</p>';
+    + '<div class="pmm-prods" role="tablist" aria-label="Minimums">'
+    + pmmSets().map(function (x) {
+        var on = s && x.id === s.id;
+        return '<button type="button" role="tab" aria-selected="' + on + '" data-pmm="set" data-pmmarg="' + esc(x.id) + '">'
+          + esc(pmmTab(x)) + '</button>';
+      }).join('') + '</div>';
+  if (s) {
+    html += '<div class="pmm-ph"><div><h3>' + esc(s.id === 'aps' ? (d.apsName || s.name) : s.name) + '</h3>'
+      + (s.id === 'aps'
+          ? '<code>' + esc(d.apsProduct) + '</code>' + (d.apsName ? '' : ' <span class="pmm-mut">not in the catalogue yet: these apply once it is added</span>')
+          : '<span class="pmm-mut">Minimum required mandate size for a Multi-Asset Portfolio (MAP) that includes Private Equity Managers (PEMs) or other private markets, excluding Alternatives Portfolio Services (APS)</span>')
+      + '</div></div>'
+      + '<div class="pmm-blocks">' + d.allocations.map(function (a) { return pmmMatrixHtml(s, a); }).join('') + '</div>';
   }
   return html + pmmSaveHtml() + '<h3 class="sv-h3">History</h3>' + pmmHistoryHtml() + '</div>';
 }
@@ -9059,19 +9056,19 @@ function pmmRefreshParts() {
   });
 }
 function pmmTypeValue(el) {
-  var key = el.dataset.pmmv, p = pmmCurrent();
-  if (!p) return;
-  var draft = pmmEnsureDraft(), dp = draft.filter(function (x) { return x.productId === p.productId; })[0];
-  var bk = dp.productId + '|' + key, got = pmmParse(el.value);
+  var key = el.dataset.pmmv, s = pmmCurrent();
+  if (!s) return;
+  var mins = pmmEnsureDraft()[s.id];
+  var bk = s.id + '|' + key, got = pmmParse(el.value);
   if (got.bad) pmm.bad[bk] = el.value;
   else {
     delete pmm.bad[bk];
-    if (got.value === null) delete dp.minimums[key]; else dp.minimums[key] = got.value;
+    if (got.value === null) delete mins[key]; else mins[key] = got.value;
   }
-  var saved = pmmSaved(dp.productId), td = el.parentNode;
-  var v = dp.minimums[key] === undefined ? null : dp.minimums[key];
-  var was = saved ? (saved.minimums[key] === undefined ? null : saved.minimums[key]) : null;
-  td.className = got.bad ? 'bad' : v === null ? 'gap' : (!saved || was !== v ? 'chg' : '');
+  var saved = pmmSaved()[s.id] || {}, td = el.parentNode;
+  var v = mins[key] === undefined ? null : mins[key];
+  var was = saved[key] === undefined ? null : saved[key];
+  td.className = got.bad ? 'bad' : v === null ? 'gap' : (was !== v ? 'chg' : '');
   td.style.background = '';
   if (!got.bad && v !== null) { var t = Math.max(0, Math.min(1, v / 150)); td.style.background = 'rgba(31,95,191,' + (0.05 + t * 0.4).toFixed(2) + ')'; }
   pmmRefreshParts();
@@ -9085,8 +9082,8 @@ function pmmTypeValue(el) {
    marked red, as if typed. What falls outside the grid is left out, and
    said. One figure pastes into its cell as typed. */
 function pmmPasteInto(at, text) {
-  var d = pmm.data, p = pmmCurrent();
-  if (!d || !p || pmm.confirming) return;
+  var d = pmm.data, s = pmmCurrent();
+  if (!d || !s || pmm.confirming) return;
   var parts = at.split('|'), allocation = parts[0];
   var rows = String(text).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(function (line) {
     return line.split('\t').map(function (c) { return c.replace(/^"|"$/g, '').trim(); });
@@ -9112,7 +9109,7 @@ function pmmPasteInto(at, text) {
   var hasRisk = body.length > 0 && body.every(function (r) { return riskOf(r[0]); });
   var startRisk = d.risks.map(function (r) { return r.id; }).indexOf(parts[1]);
   var startCcy = d.currencies.indexOf(parts[2]);
-  var draft = pmmEnsureDraft(), dp = draft.filter(function (x) { return x.productId === p.productId; })[0];
+  var mins = pmmEnsureDraft()[s.id];
   var put = 0, out = 0, bad = 0;
   body.forEach(function (r, ri) {
     var risk = hasRisk ? riskOf(r[0]) : (d.risks[startRisk + ri] || {}).id;
@@ -9121,16 +9118,16 @@ function pmmPasteInto(at, text) {
       var col = hasHead ? head[ci + (hasRisk ? 1 : 0)] : d.currencies[startCcy + ci];
       if (hasHead && !col) { if (raw) out += 1; return; }
       if (!risk || !col) { if (raw) out += 1; return; }
-      var key = pmmCellKey(allocation, risk, col), bk = dp.productId + '|' + key, got = pmmParse(raw);
+      var key = pmmCellKey(allocation, risk, col), bk = s.id + '|' + key, got = pmmParse(raw);
       if (got.bad) { pmm.bad[bk] = raw; bad += 1; }
       else {
         delete pmm.bad[bk];
-        if (got.value === null) delete dp.minimums[key]; else dp.minimums[key] = got.value;
+        if (got.value === null) delete mins[key]; else mins[key] = got.value;
       }
       put += 1;
     });
   });
-  pmm.pasted = 'Pasted ' + put + ' value' + (put === 1 ? '' : 's') + ' into ' + pmmLabel(dp) + ' · ' + allocation
+  pmm.pasted = 'Pasted ' + put + ' value' + (put === 1 ? '' : 's') + ' into ' + s.label + ' · ' + allocation
     + (hasHead || hasRisk ? ', placed by ' + (hasHead && hasRisk ? 'currency and risk level' : hasHead ? 'currency' : 'risk level') : '')
     + (out ? '; ' + out + ' outside the grid left out' : '') + (bad ? '; ' + bad + ' not a number, marked red' : '') + '.';
   sv.focus = '[data-pmmv="' + at + '"]';
@@ -9145,7 +9142,7 @@ async function pmmWrite(method, path, body, done) {
     var r = await api(method, '/scenario/repository/pm-minimums' + path, Object.assign({ base: pmm.data.revision }, body));
     if (r && !r.ok) pmm.error = r.body.error || ('Could not save the minimums (' + r.status + ')');
     else if (r) {
-      pmm.data = r.body.minimums; pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.askRemove = false; pmm.confirming = false; pmm.pasted = '';
+      pmm.data = r.body.minimums; pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.confirming = false; pmm.pasted = '';
       pmm.flash = done + ' Revision ' + pmm.data.revision + '.';
       pmm.history = null; loadMinimumsHistory();
       ok = true;
@@ -9171,33 +9168,16 @@ function pmmClick(ds) {
   if (ds.pmm === undefined) return false;
   var what = ds.pmm, arg = ds.pmmarg;
   pmm.flash = '';
-  if (what === 'prod') { pmm.product = arg; pmm.askRemove = false; render(); sv.focus = null; return true; }
-  if (what === 'add') { pmm.adding = { id: '', type: '', error: '' }; sv.focus = '#pmmAddId'; render(); return true; }
-  if (what === 'addno') { pmm.adding = null; render(); return true; }
-  if (what === 'addyes') {
-    var id = (pmm.adding.id || '').trim(), type = (pmm.adding.type || '').trim();
-    if (!id || /\s/.test(id)) { pmm.adding.error = 'Name the product by its ProductId.'; render(); return true; }
-    if (pmmProducts().some(function (x) { return x.productId === id; })) { pmm.adding.error = id + ' is in the table already.'; render(); return true; }
-    pmmEnsureDraft().push({ productId: id, type: type, minimums: {} });
-    pmm.product = id; pmm.adding = null; render(); return true;
-  }
-  if (what === 'remove') { pmm.askRemove = true; render(); return true; }
-  if (what === 'unask') { pmm.askRemove = false; render(); return true; }
-  if (what === 'removeyes') {
-    var gone = pmm.product;
-    pmm.draft = pmmEnsureDraft().filter(function (x) { return x.productId !== gone; });
-    Object.keys(pmm.bad).forEach(function (k) { if (k.indexOf(gone + '|') === 0) delete pmm.bad[k]; });
-    pmm.product = null; pmm.askRemove = false; render(); return true;
-  }
+  if (what === 'set') { pmm.set = arg; render(); sv.focus = null; return true; }
   /* nothing takes effect until it is confirmed (D200) */
   if (what === 'review') { pmm.confirming = true; sv.focus = '#pmmConfirm'; render(); return true; }
   if (what === 'unreview') { pmm.confirming = false; render(); return true; }
   if (what === 'save') {
     if (!pmm.confirming) return true;
-    pmmWrite('PUT', '', { products: pmm.draft, note: pmm.note.trim() }, 'Changes confirmed.');
+    pmmWrite('PUT', '', { aps: pmm.draft.aps, other: pmm.draft.other, note: pmm.note.trim() }, 'Changes confirmed.');
     return true;
   }
-  if (what === 'discard') { pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.error = null; pmm.askRemove = false; pmm.confirming = false; pmm.pasted = ''; render(); return true; }
+  if (what === 'discard') { pmm.draft = null; pmm.bad = {}; pmm.note = ''; pmm.error = null; pmm.confirming = false; pmm.pasted = ''; render(); return true; }
   if (what === 'import') { pmm.imp = { name: '', content: '', preview: null, note: '', busy: false, error: null }; sv.focus = '#pmmFile'; render(); return true; }
   if (what === 'impcancel') { pmm.imp = null; render(); return true; }
   if (what === 'apply') {
@@ -9226,15 +9206,6 @@ function pmmInput(eds, el) {
   if (eds.pmmv !== undefined) { pmmTypeValue(el); return true; }
   if (eds.pmmnote !== undefined) { pmm.note = el.value; return true; }
   if (eds.pmmimpnote !== undefined) { if (pmm.imp) pmm.imp.note = el.value; return true; }
-  if (eds.pmmtype !== undefined) {
-    var p = pmmCurrent(), dp = pmmEnsureDraft().filter(function (x) { return x.productId === p.productId; })[0];
-    dp.type = el.value.trim();
-    var tab = document.querySelector('[data-pmm="prod"][aria-selected="true"]');
-    if (tab) tab.textContent = pmmLabel(dp);
-    pmmRefreshParts(); return true;
-  }
-  if (el.id === 'pmmAddId' && pmm.adding) { pmm.adding.id = el.value; return true; }
-  if (el.id === 'pmmAddType' && pmm.adding) { pmm.adding.type = el.value; return true; }
   return false;
 }
 

@@ -1144,9 +1144,10 @@ def revertNotices(payload: dict = Body(...), caller=Depends(requireAdmin)):
 
 
 # ---- the private markets minimums (D200) -----------------------------------
-# The console's PM Minimums tab: the mandate each private markets product
-# needs, by allocation type, risk level and currency, loaded from the desk's
-# file or edited on screen. Admin only, like the rest of the repository.
+# The console's PM Minimums tab: the mandate a private markets product needs,
+# by allocation type, risk level and currency - APS's, and Other's for every
+# other product (D217) - loaded from the desk's file or edited on screen.
+# Admin only, like the rest of the repository.
 
 @router.get('/scenario/repository/pm-minimums')
 def getPrivateMarketMinimums(caller=Depends(requireAdmin)):
@@ -1156,11 +1157,11 @@ def getPrivateMarketMinimums(caller=Depends(requireAdmin)):
 
 @router.put('/scenario/repository/pm-minimums')
 def savePrivateMarketMinimums(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put a table edited on screen in force: {products: [{productId, type,
-    minimums: {cell: $m}}], note?, base?}. Refused (422) when it is not a
-    table; 409 when *base* is no longer the revision in force."""
+    """Put a table edited on screen in force: {aps: {cell: $m}, other:
+    {cell: $m}, note?, base?}. Refused (422) when it is not a table; 409
+    when *base* is no longer the revision in force."""
     try:
-        privateMarkets.save({'products': payload.get('products')}, payload.get('note'),
+        privateMarkets.save({s: payload.get(s) for s in privateMarkets.SETS}, payload.get('note'),
                             user=caller.kerberos, base=payload.get('base'))
         return {'minimums': privateMarkets.describe()}
     except ValidationError as exc:

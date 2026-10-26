@@ -1,11 +1,13 @@
 """D200: the private markets minimums.
 
-The mandate each private markets product needs, by allocation type (Full,
+The mandate a private markets product needs, by allocation type (Full,
 ex-HFs, ex-RA, ex-HFs ex-RA), risk level and base currency, in millions of
-dollars. An allocation holding private markets is offered at a risk level and
-in a currency only from the lowest minimum any product has there; above it,
-a product below its own minimum stops the download, as a position below its
-product's minimum does. A custom portfolio is checked product by product at
+dollars - in two sets (D217): APS's, for Alternatives Portfolio Services, and
+Other's, for every other product in Private Equity & Other Private Assets.
+An allocation holding private markets is offered at a risk level and in a
+currency only from the lower of the two there; above it, a product below its
+set's minimum stops the download, as a position below its product's minimum
+does. A custom portfolio is checked product by product at
 its profile's Full. Loaded from the desk's long-form file or edited on
 screen; every change a revision, with what moved. Before the first table, the
 $20m rule stands.
@@ -14,6 +16,9 @@ $20m rule stands.
 import base64
 import io
 import json
+import os
+import shutil
+import subprocess
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -28,6 +33,7 @@ MA = 'PMG Multi-Asset Portfolio'
 USD = BasisInput(currency='USD', hedging='Hedged')
 APS = 'gs-alternatives-portfolio-services'
 BUYOUT = 'gs-private-markets-buyout'
+PRIVATE = 'Private Equity & Other Private Assets'
 #: the desk's APS figures under Full (CHF, EUR, GBP, USD)
 APS_FULL = {'Low Vol': [96, 111, 101, 84], 'Conservative': [59, 65, 48, 44],
             'Conservative-Moderate': [47, 41, 36, 34], 'Moderate': [35, 29, 27, 26],
@@ -105,7 +111,7 @@ def _scenario(mandate=1e9):
 # ------------------------------------------------------- before a table ---
 
 def test_before_a_table_the_twenty_million_rule_stands(store):
-    assert pm.current() == {'products': [], 'revision': 0, 'inForce': False, 'updatedBy': '',
+    assert pm.current() == {'aps': {}, 'other': {}, 'revision': 0, 'inForce': False, 'updatedBy': '',
                             'updatedAt': ''}
     assert rules.PRIVATE_ASSETS_MINIMUM == pm.FALLBACK_MINIMUM == 20_000_000
     assert pm.gate('USD|Moderate|Full|0') == {'minimum': 20e6, 'gap': False}
@@ -120,43 +126,85 @@ def test_before_a_table_the_twenty_million_rule_stands(store):
     assert refused.value.field == 'mandateSize'
     assert 'Full needs a mandate of $20,000,000 in USD Moderate' in refused.value.message
     assert customPortfolio.forCaller(True)['privateMinimum'] == 20_000_000
+    assert pm.gaps() == [], 'no table, no gaps: the $20m rule stands'
+
+
+# ----------------------------------------------------------- APS and Other ---
+
+def test_aps_is_the_aps_product_and_other_every_other_private_markets_product(store, monkeypatch):
+    assert pm.SETS == ('aps', 'other') and pm.APS_PRODUCT == APS
+    assert pm.privateCategories() == [PRIVATE, 'Private Equity', 'Other Private Assets']
+    assert pm.setOf(APS, 'Public Equity') == 'aps', 'APS is APS wherever it is held'
+    assert pm.setOf(BUYOUT, PRIVATE) == pm.setOf(BUYOUT, 'Private Equity') == 'other'
+    assert pm.setOf(BUYOUT, 'Public Equity') == '' and pm.setOf('', PRIVATE) == ''
+    assert pm.setOf('gs-pe-fund', 'Public Equity', ownCategory=PRIVATE) == 'other', 'the catalogue\'s category counts too'
+    view = dashboardRouter.getPrivateMarketMinimums(caller=_caller())
+    assert [s['label'] for s in view['sets']] == ['APS', 'Other'] and view['apsProduct'] == APS
+    assert [s['name'] for s in view['sets']] == ['Alternatives Portfolio Services',
+                                               'Private Equity Managers (PEM)']
+
+
+def test_a_table_saved_as_products_reads_as_aps_and_other(store):
+    """A revision from before the two sets: APS the APS product's, Other the
+    highest of the rest in each cell."""
+    body = {'products': [{'productId': APS, 'type': 'APS', 'minimums': {'Full|Moderate|USD': 26}},
+                         {'productId': 'pem', 'type': 'PEM', 'minimums': {'Full|Moderate|USD': 30, 'Full|Moderate|GBP': 20}},
+                         {'productId': 'bespoke', 'type': 'Bespoke', 'minimums': {'Full|Moderate|USD': 50}}]}
+    conn = sleeveRepo.connection()
+    conn.execute('INSERT INTO policies (kind, scope, body, revision, updatedBy, updatedAt) VALUES (?, ?, ?, 1, ?, ?)',
+                 ('privateMarkets', '*', json.dumps(body), 'alice', '2026-10-24T09:00:00'))
+    conn.execute('INSERT INTO policyHistory (kind, scope, revision, action, body, note, actor, at) '
+                 'VALUES (?, ?, 1, ?, ?, ?, ?, ?)', ('privateMarkets', '*', 'imported', json.dumps(body), '', 'alice',
+                                                     '2026-10-24T09:00:00'))
+    conn.commit()
+    conn.close()
+    now = pm.current()
+    assert now['aps'] == {'Full|Moderate|USD': 26} and now['inForce']
+    assert now['other'] == {'Full|Moderate|GBP': 20, 'Full|Moderate|USD': 50}
+    assert pm.history()[0]['changes'] == ['APS: 1 values set', 'Other: 2 values set']
+    with pytest.raises(ValidationError, match='already in force'):
+        pm.save({'aps': now['aps'], 'other': now['other']}, user='alice', base=1)
 
 
 # --------------------------------------------------------------- the file ---
 
 def test_the_desks_workbook_is_read_from_its_long_form_sheet(store):
     preview = pm.preview('private-market-mins.xlsx', _xlsx(_rows()))
-    assert preview['rows'] == 112 and preview['problems'] == [] and preview['gaps'] == []
-    assert preview['products'] == [{'productId': APS, 'type': 'APS', 'values': 112}]
+    assert preview['rows'] == 112 and preview['problems'] == []
+    assert preview['sets'] == [{'set': 'aps', 'label': 'APS', 'values': 112}, {'set': 'other', 'label': 'Other', 'values': 0}]
+    assert [(g['set'], len(g['cells'])) for g in preview['gaps']] == [('other', 112)], 'Other is needed too'
     assert preview['unknown'] == [APS] and preview['changed'] == 1 and preview['base'] == 0
-    done = _load(_rows(), name='private-market-mins.xlsx')
+    assert preview['changes'] == ['APS: 112 values set']
+    done = _load(_rows() + _rows('Other', 'Other', scale=2.0), name='private-market-mins.xlsx')
     assert done['revision'] == 1 and done['inForce'] and done['updatedBy'] == 'alice'
-    p = done['products'][0]
-    assert p['minimums']['Full|LowVol|EUR'] == 111 and p['minimums']['Full|Moderate|USD'] == 26
-    assert p['minimums']['ex-HFs ex-RA|Higher Risk|USD'] == 16.5
+    assert done['aps']['Full|LowVol|EUR'] == 111 and done['aps']['Full|Moderate|USD'] == 26
+    assert done['aps']['ex-HFs ex-RA|Higher Risk|USD'] == 16.5
+    assert done['other']['Full|Moderate|USD'] == 52 and pm.gaps() == []
     assert pm.history()[0]['action'] == 'imported' and pm.history()[0]['note'] == 'Loaded private-market-mins.xlsx'
 
 
 def test_all_covers_every_one_and_the_row_naming_more_wins(store):
-    rows = [['All', 'Moderate', 'All', 40, 'BUY', BUYOUT], ['Full', 'Moderate', 'USD', 30, 'BUY', BUYOUT],
-            ['ex-HFs ex-RAs', 'moderate', 'gbp', 45, '', BUYOUT]]
+    rows = [['All', 'Moderate', 'All', 40, 'Other', 'Other'], ['Full', 'Moderate', 'USD', 30, 'Other', 'other'],
+            ['ex-HFs ex-RAs', 'moderate', 'gbp', 45, 'Other', ''], ['Full', 'Moderate', 'USD', 25, 'APS', '']]
     read = pm.readFile('m.csv', _csv(rows))
-    assert read['problems'] == [] and read['unknown'] == []
-    got = read['table']['products'][0]['minimums']
+    assert read['problems'] == []
+    got = read['table']['other']
     assert len(got) == 16 and got['Full|Moderate|USD'] == 30 and got['ex-HFs ex-RA|Moderate|GBP'] == 45
     assert got['ex-RA|Moderate|CHF'] == 40
-    assert len(read['gaps'][0]['cells']) == 112 - 16
+    assert read['table']['aps'] == {'Full|Moderate|USD': 25}, 'a row with no productId is named by its Type'
+    assert [(g['set'], len(g['cells'])) for g in read['gaps']] == [('aps', 111), ('other', 112 - 16)]
 
 
 @pytest.mark.parametrize('rows, words', [
     ([['Full', 'Moderate', 'USD', 30, '', APS], ['Full', 'Moderate', 'USD', 31, '', APS]],
-     'Rows 2 and 3 both give'),
+     'Rows 2 and 3 both give APS Full'),
     ([['Fully', 'Moderate', 'USD', 30, '', APS]], 'allocation_type "Fully" is not one the table takes'),
     ([['Full', 'Medium', 'USD', 30, '', APS]], 'risk_level "Medium" is not one'),
     ([['Full', 'Moderate', 'JPY', 30, '', APS]], 'currency "JPY" is not one'),
     ([['Full', 'Moderate', 'USD', 'lots', '', APS]], '"lots" is not a number of millions of dollars'),
     ([['Full', 'Moderate', 'USD', -1, '', APS]], 'between 0 and'),
-    ([['Full', 'Moderate', 'USD', 30, '', '']], 'name the product by its ProductId'),
+    ([['Full', 'Moderate', 'USD', 30, 'PEM', BUYOUT]], f'Row 2: "{BUYOUT}" is neither - the minimums are APS\'s'),
+    ([['Full', 'Moderate', 'USD', 30, '', '']], 'Row 2: no productId'),
 ])
 def test_a_file_with_a_problem_is_shown_and_refused(store, rows, words):
     preview = pm.preview('m.csv', _csv(rows))
@@ -181,18 +229,18 @@ def test_a_file_missing_a_column_or_not_a_file_is_refused(store):
 
 
 def test_the_download_is_the_desks_long_form_and_loads_back_unchanged(store):
-    _load(_rows(skip={('Full', 'Moderate', 'GBP')}))
+    _load(_rows(skip={('Full', 'Moderate', 'GBP')}) + _rows('Other', 'Other', scale=2.0))
     rows = list(load_workbook(io.BytesIO(pm.exportWorkbook())).worksheets[0].iter_rows(values_only=True))
-    assert rows[0] == pm.COLUMNS and len(rows) == 1 + 111
-    assert ('Full', 'Low Vol', 'CHF', 96, 'APS', APS) in rows
+    assert rows[0] == pm.COLUMNS and len(rows) == 1 + 111 + 112
+    assert ('Full', 'Low Vol', 'CHF', 96, 'APS', APS) in rows and ('Full', 'Low Vol', 'CHF', 192, 'Other', 'Other') in rows
     again = pm.preview('back.xlsx', base64.b64encode(pm.exportWorkbook()).decode())
     assert again['changed'] == 0 and again['problems'] == []
 
 
 # ------------------------------------------------------------- the gates ---
 
-def test_an_allocation_opens_from_the_lowest_minimum_of_any_product(store):
-    _load(_rows() + _rows(BUYOUT, 'BUY', scale=2.0))
+def test_an_allocation_opens_from_the_lower_of_aps_and_other(store):
+    _load(_rows() + _rows('Other', 'Other', scale=2.0))
     assert pm.gate('USD|Moderate|Full|0') == {'minimum': 26e6, 'gap': False}
     assert pm.gate('USD|Moderate|Full|1') == {'minimum': 28.6e6, 'gap': False}     # ex-RA
     assert pm.gate('GBP|LowVol|ex-HFs|0')['minimum'] == 111.1e6
@@ -203,32 +251,40 @@ def test_an_allocation_opens_from_the_lowest_minimum_of_any_product(store):
         rules.validateKey(PortfolioKey('USD', 'Conservative', 'Full', False), MA, 30e6)
     served = rules.schemaPayload(USD, 30e6, {}, {}, MA)['rules']['privateMarkets']
     assert served['inForce'] and served['gates']['USD|Moderate|Full|0'] == 26e6
-    assert served['minimums'][BUYOUT]['USD|Moderate|Full|0'] == 52e6
-    assert 'USD|Moderate|Core|0' not in served['gates'] and served['types'][BUYOUT] == 'BUY'
+    assert served['minimums']['other']['USD|Moderate|Full|0'] == 52e6
+    assert served['minimums']['aps']['USD|Moderate|Full|0'] == 26e6
+    assert served['apsProduct'] == APS and served['categories'][0] == PRIVATE
+    assert 'USD|Moderate|Core|0' not in served['gates']
     assert customPortfolio.forCaller(True)['privateMinimum'] is None
 
 
 def test_a_gap_is_never_read_as_no_minimum(store):
-    _load(_rows(skip={('Full', 'Moderate', 'USD')}))
+    skip = {('Full', 'Moderate', 'USD')}
+    _load(_rows(skip=skip) + _rows('Other', 'Other', skip=skip))
     assert pm.gate('USD|Moderate|Full|0') == {'minimum': None, 'gap': True}
     assert 'USD|Moderate|Full|0' not in rules.availability(USD, 1e9, MA)
     assert pm.closedWords('USD|Moderate|Full|0') == 'No private markets minimum is set for USD Moderate Full yet.'
-    assert pm.gaps()[0]['cells'] == ['Full|Moderate|USD']
+    assert [(g['set'], g['cells']) for g in pm.gaps()] == [('aps', ['Full|Moderate|USD']), ('other', ['Full|Moderate|USD'])]
     assert rules.schemaPayload(USD, 1e9, {}, {}, MA)['rules']['privateMarkets']['gates']['USD|Moderate|Full|0'] is None
 
 
-def test_each_product_below_its_minimum_or_without_one_is_a_shortfall(store):
-    _load(_rows() + _rows(BUYOUT, 'BUY', scale=2.0, skip={('Full', 'Aggressive', 'USD')}))
-    groups = [{'category': 'Private Equity', 'items': [
+def test_each_product_below_its_sets_minimum_or_without_one_is_a_shortfall(store, monkeypatch):
+    _load(_rows() + _rows('Other', 'Other', scale=2.0, skip={('Full', 'Aggressive', 'USD')}))
+    monkeypatch.setattr(pm, '_ownCategory', lambda pid: PRIVATE if pid == 'gs-pe-fund' else '')
+    groups = [{'category': PRIVATE, 'items': [
         {'productId': APS, 'name': 'APS', 'printedPct': 3.0},
         {'productId': BUYOUT, 'name': 'Buyout', 'printedPct': 0.0, 'initialPct': 2.0},
-        {'productId': 'gs-not-in-the-table', 'name': 'Other', 'printedPct': 5.0}]}]
+        {'productId': 'gs-not-weighed', 'name': 'Idle', 'printedPct': 0.0}]},
+        {'category': 'Public Equity', 'items': [
+            {'productId': 'gs-equity', 'name': 'Equity', 'printedPct': 40.0},
+            {'productId': 'gs-pe-fund', 'name': 'PE fund', 'printedPct': 2.0}]}]
     at = pm.cellOf('USD|Moderate|Full|0')
-    assert [(s['name'], s['minimum']) for s in pm.shortfalls(groups, at, 30e6)] == [('Buyout', 52e6)]
+    assert [(s['name'], s['minimum']) for s in pm.shortfalls(groups, at, 30e6)] == [('Buyout', 52e6), ('PE fund', 52e6)]
+    assert [s['name'] for s in pm.shortfalls(groups, at, 20e6)] == ['APS', 'Buyout', 'PE fund']
     assert pm.shortfalls(groups, at, 60e6) == []
     assert pm.shortfalls(groups, pm.cellOf('USD|Moderate|Core|0'), 1e6) == []
     gap = pm.shortfalls(groups, pm.cellOf('USD|Agg|Full|0'), 1e9)
-    assert [(s['name'], s['gap']) for s in gap] == [('Buyout', True)]
+    assert [(s['name'], s['gap']) for s in gap] == [('Buyout', True), ('PE fund', True)]
     assert 'no minimum is set for Full · Aggressive · USD' in pm.shortfallText(gap, pm.cellOf('USD|Agg|Full|0'), 1e9)
     assert pm.customCell('USD', 'Moderate') == 'Full|Moderate|USD' and pm.customCell('USD', 'All Equity') is None
 
@@ -237,55 +293,57 @@ def test_the_download_refuses_a_product_below_its_minimum(store):
     scenarioId = _scenario()
     first = dashboardRouter.exportScenario(scenarioId, caller=_caller())
     assert first.status_code == 200, first.body
-    _load(_rows() + _rows(BUYOUT, 'BUY', scale=50.0))              # Buyout needs $1.3bn here
+    _load(_rows(scale=50.0) + _rows('Other', 'Other', scale=50.0))          # $1.3bn here
     refused = dashboardRouter.exportScenario(scenarioId, caller=_caller())
     said = json.loads(refused.body)
     assert refused.status_code == 422 and said['field'] == 'privateMarkets'
     assert said['error'].startswith('Below the private markets minimum for Full · Moderate · USD at a $1,000,000,000 mandate: ')
     assert '(needs a $1,300,000,000 mandate)' in said['error']
-    _load(_rows() + _rows(BUYOUT, 'BUY', scale=1.0), base=1)        # now $26m
+    _load(_rows() + _rows('Other', 'Other'), base=1)                        # now $26m
     assert dashboardRouter.exportScenario(scenarioId, caller=_caller()).status_code == 200
 
 
 # ------------------------------------------------------- editing, record ---
 
 def test_an_edit_on_screen_is_a_revision_with_each_value_that_moved(store):
-    _load(_rows())
+    _load(_rows() + _rows('Other', 'Other', scale=2.0))
     table = pm.current()
-    edited = json.loads(json.dumps(table['products']))
-    edited[0]['minimums']['Full|Moderate|USD'] = 28
-    del edited[0]['minimums']['Full|Moderate|GBP']
-    edited[0]['type'] = 'APS2'
-    edited.append({'productId': BUYOUT, 'type': 'BUY', 'minimums': {'Full|Moderate|USD': 40}})
-    body = dashboardRouter.savePrivateMarketMinimums({'products': edited, 'note': 'desk review', 'base': 1},
-                                                     caller=_caller('bob'))
+    edited = {'aps': dict(table['aps']), 'other': dict(table['other'])}
+    edited['aps']['Full|Moderate|USD'] = 28
+    del edited['aps']['Full|Moderate|GBP']
+    edited['other']['Full|Moderate|USD'] = 40
+    body = dashboardRouter.savePrivateMarketMinimums(dict(edited, note='desk review', base=1), caller=_caller('bob'))
     now = body['minimums']
-    assert now['revision'] == 2 and now['updatedBy'] == 'bob' and len(now['products']) == 2
-    assert [g['productId'] for g in now['gaps']] == [APS, BUYOUT]
+    assert now['revision'] == 2 and now['updatedBy'] == 'bob'
+    assert [(g['set'], g['cells']) for g in now['gaps']] == [('aps', ['Full|Moderate|GBP'])]
     top = dashboardRouter.getPrivateMarketMinimumsHistory(caller=_caller())['history'][0]
-    assert top['note'] == 'desk review' and top['current'] and top['actor'] == 'bob'
-    assert top['changes'] == [f'{APS}: short name APS → APS2', 'APS2 · Full · Moderate · USD: 26 → 28',
-                              'APS2 · Full · Moderate · GBP: 27 → —', 'Added BUY (1 values)']
-    same = dashboardRouter.savePrivateMarketMinimums({'products': edited, 'base': 2}, caller=_caller())
+    assert top['note'] == 'desk review' and top['current'] and top['actor'] == 'bob' and top['values'] == 223
+    assert top['changes'] == ['APS · Full · Moderate · USD: 26 → 28', 'APS · Full · Moderate · GBP: 27 → —',
+                              'Other · Full · Moderate · USD: 52 → 40']
+    same = dashboardRouter.savePrivateMarketMinimums(dict(edited, base=2), caller=_caller())
     assert same.status_code == 422 and 'already in force' in json.loads(same.body)['error']
-    stale = dashboardRouter.savePrivateMarketMinimums({'products': [], 'base': 1}, caller=_caller())
+    stale = dashboardRouter.savePrivateMarketMinimums({'aps': {}, 'other': {}, 'base': 1}, caller=_caller())
     assert stale.status_code == 409
-    back = dashboardRouter.revertPrivateMarketMinimums({'revision': 1, 'base': 2}, caller=_caller())
-    assert back['minimums']['revision'] == 3 and back['minimums']['products'] == table['products']
+    cleared = dashboardRouter.savePrivateMarketMinimums({'aps': edited['aps'], 'other': {}, 'base': 2}, caller=_caller())
+    assert pm.history()[0]['changes'] == ['Other: its 112 values cleared']
+    assert [g['set'] for g in cleared['minimums']['gaps']] == ['aps', 'other']
+    back = dashboardRouter.revertPrivateMarketMinimums({'revision': 1, 'base': 3}, caller=_caller())
+    assert back['minimums']['revision'] == 4 and back['minimums']['aps'] == table['aps']
     assert pm.history()[0]['action'] == 'reverted' and pm.history()[0]['note'] == 'Restored revision 1'
     feed = [e for e in repositoryFeed.activity(limit=50)['entries'] if e['area'] == 'minimums']
-    assert [e['revision'] for e in feed] == [3, 2, 1] and feed[1]['note'] == 'desk review'
+    assert [e['revision'] for e in feed] == [4, 3, 2, 1] and feed[2]['note'] == 'desk review'
 
 
-@pytest.mark.parametrize('products, words', [
-    ([{'productId': APS, 'minimums': {'Full|Moderate|USD': 'x'}}], 'not a number of millions'),
-    ([{'productId': APS, 'minimums': {'Full|Moderate|JPY': 1}}], 'is not a cell of the table'),
-    ([{'productId': 'two words', 'minimums': {}}], 'is not a ProductId'),
-    ([{'productId': APS, 'minimums': {}}, {'productId': APS, 'minimums': {}}], 'is in the table twice'),
+@pytest.mark.parametrize('body, words', [
+    ({'aps': {'Full|Moderate|USD': 'x'}, 'other': {}}, 'not a number of millions'),
+    ({'aps': {}, 'other': {'Full|Moderate|JPY': 1}}, 'Other: "Full|Moderate|JPY" is not a cell of the table'),
+    ({'aps': {}}, "APS's and Other's"),
+    ({'products': [{'productId': APS, 'minimums': {}}]}, "APS's and Other's"),
 ])
-def test_a_table_that_is_not_one_is_refused(store, products, words):
+def test_a_table_that_is_not_one_is_refused(store, body, words):
     with pytest.raises(ValidationError, match=words):
-        pm.save({'products': products}, user='alice', base=0)
+        pm.save(body, user='alice', base=0)
+    assert pm.current()['revision'] == 0
 
 
 def test_the_console_routes_preview_load_and_download(store):
@@ -301,3 +359,47 @@ def test_the_console_routes_preview_load_and_download(store):
     bad = dashboardRouter.importPrivateMarketMinimums({'name': 'm.csv', 'content': _csv([['Full', 'x', 'USD', 1, '', APS]]),
                                                        'base': 1}, caller=_caller())
     assert bad.status_code == 422 and json.loads(bad.body)['field'] == 'file'
+
+
+# ------------------------------------------------------------- the pages ---
+
+def _js(path, names, body):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'generator', 'js', path),
+              encoding='utf-8') as fh:
+        source = fh.read()
+
+    def fn(name):
+        start = source.index('function ' + name + '(')
+        return source[start:source.index('\n}\n', start)] + '\n}\n'
+    script = ''.join(fn(n) for n in names) + body
+    return json.loads(subprocess.run([node, '-e', script], capture_output=True, text=True, check=True).stdout)
+
+
+def test_the_proposal_page_holds_each_line_to_the_set_the_server_does(store):
+    """pmSetOf mirrors privateMarkets.setOf."""
+    rule = pm.served('USD')
+    lines = [(APS, 'Public Equity', ''), (BUYOUT, PRIVATE, ''), (BUYOUT, 'Private Equity', ''),
+             ('gs-equity', 'Public Equity', ''), ('gs-pe-fund', 'Public Equity', PRIVATE), ('', PRIVATE, '')]
+    got = _js('implementation.js', ['pmSetOf'], 'var rule = %s, lines = %s;\nprocess.stdout.write(JSON.stringify('
+              'lines.map(function (l) { return pmSetOf({ productId: l[0], ownCategory: l[2] }, l[1], rule); })));'
+              % (json.dumps(rule), json.dumps(lines)))
+    assert got == [pm.setOf(*l) or None for l in lines]
+
+
+def test_the_console_lists_the_changes_and_gaps_the_server_does(store):
+    """pmmChangeList and pmmGaps mirror privateMarkets._changes and gaps."""
+    _load(_rows() + _rows('Other', 'Other', scale=2.0))
+    data = pm.describe()
+    draft = {'aps': dict(data['aps']), 'other': {}}
+    draft['aps']['Full|Moderate|USD'] = 28
+    del draft['aps']['Full|Moderate|GBP']
+    names = ['pmmCellKey', 'pmmCells', 'pmmRiskLabel', 'pmmWords', 'pmmSets', 'pmmSaved', 'pmmTable', 'pmmFmt',
+             'pmmChangeList', 'pmmGaps']
+    got = _js('repository.js', names, 'var pmm = { data: %s, draft: %s };\n'
+              'process.stdout.write(JSON.stringify({ changes: pmmChangeList(), gaps: pmmGaps(pmmTable()) }));'
+              % (json.dumps(data), json.dumps(draft)))
+    assert got['changes'] == pm._changes(pm.current(), draft)
+    assert got['gaps'] == pm.gaps(draft)

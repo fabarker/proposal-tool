@@ -670,6 +670,7 @@ function implItem(product, level) {
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
     issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
     listing: product.listing || '',
+    ownCategory: product.ownCategory || '',
     cost: product.productCost, feeGroup: product.feeGroup,
     minimumInvestment: product.minimumInvestment,
     mgmt: managementFee(product.feeGroup, level)
@@ -808,15 +809,19 @@ function rows() {
     });
   }
   /* A private markets product the mandate does not reach the minimum of at
-     this portfolio, or which has none set there (D200). Mirrors
-     privateMarkets.shortfalls. */
-  var pmAt = pmKeyStr(), pmTable = App.opt('rules.privateMarkets.minimums', {}) || {};
-  all.forEach(function (item) {
-    var mins = pmAt && pmTable[item.productId];
-    if (!mins || !Object.prototype.hasOwnProperty.call(mins, pmAt)) { item.pmShort = false; return; }
-    item.pmMinimum = mins[pmAt];
-    item.pmShort = (item.weight > 0 || (item.initialWeight || 0) > 0)
-      && (item.pmMinimum === null || App.mandateSize() < item.pmMinimum - 1e-6);
+     this portfolio, or which has none set there (D200): APS by its own
+     minimums, every other product in Private Equity & Other Private Assets
+     by Other's (D217). Mirrors privateMarkets.shortfalls. */
+  var pmAt = pmKeyStr(), pmRule = App.opt('rules.privateMarkets', {}) || {};
+  groups.forEach(function (group) {
+    group.items.forEach(function (item) {
+      var which = pmSetOf(item, group.category, pmRule);
+      var mins = pmAt && which && (pmRule.minimums || {})[which];
+      if (!mins || !Object.prototype.hasOwnProperty.call(mins, pmAt)) { item.pmShort = false; return; }
+      item.pmMinimum = mins[pmAt];
+      item.pmShort = (item.weight > 0 || (item.initialWeight || 0) > 0)
+        && (item.pmMinimum === null || App.mandateSize() < item.pmMinimum - 1e-6);
+    });
   });
   /* Nothing that prints as zero earns a line (D68). Dropped after the
      rounding, so the column still closes on 100.00 exactly - a row worth
@@ -877,6 +882,15 @@ function initialOf(groups) {
 
 /* The portfolio the private markets minimums are read at (D200): the base
    portfolio's, or a custom portfolio's Full at its risk profile. */
+/* the minimums a line is held to: 'aps' for the APS product, 'other' for any
+   other in Private Equity & Other Private Assets - its line's category or
+   the product's own - else null. Mirrors privateMarkets.setOf. */
+function pmSetOf(item, category, rule) {
+  if (!item.productId) return null;
+  if (item.productId === rule.apsProduct) return 'aps';
+  var private_ = rule.categories || [];
+  return private_.indexOf(category) !== -1 || (!!item.ownCategory && private_.indexOf(item.ownCategory) !== -1) ? 'other' : null;
+}
 function pmKeyStr() {
   if (App.cpActive()) {
     var cp = App.customPortfolio();

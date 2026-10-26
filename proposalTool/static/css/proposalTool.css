@@ -3388,17 +3388,13 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .pmm-prods{display:flex;flex-wrap:wrap;gap:0;align-items:stretch}
 .pmm-prods button{font:inherit;font-size:12.5px;padding:6px 12px;border:1px solid var(--line-strong);margin-left:-1px;background:var(--surface);color:var(--ink);cursor:pointer}
 .pmm-prods button:first-child{margin-left:0;border-radius:var(--radius-sm) 0 0 var(--radius-sm)}
+.pmm-prods button:last-child{border-radius:0 var(--radius-sm) var(--radius-sm) 0}
 .pmm-prods button[aria-selected="true"]{background:#0B2545;border-color:#0B2545;color:#fff}
-.pmm-prods .pmm-addp{margin-left:10px;border-style:dashed;border-radius:var(--radius-sm)}
-.pmm-adding{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;font-size:13px}
-.pmm-adding input,.pmm-ph input{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface)}
-.pmm-adding #pmmAddId{width:300px}
-.pmm-adding .md-err{flex-basis:100%;margin:0}
 .pmm-ph{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
 .pmm-ph > div{margin-right:auto}
 .pmm-ph h3{margin:0;font-size:15px}
 .pmm-ph code{font-size:12px;color:var(--sv-ink2,var(--ink-3))}
-.pmm-ph #pmmType{width:110px}
+.pmm-ph .pmm-mut{display:block;margin-top:2px}
 .pmm-blocks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
 @media (max-width:900px){.pmm-blocks{grid-template-columns:minmax(0,1fr)}}
 .pmm-blk h4{margin:0 0 6px;font-size:13px}

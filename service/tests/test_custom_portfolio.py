@@ -471,14 +471,15 @@ def test_each_private_markets_product_is_held_to_its_minimum_at_the_profiles_ful
     assert _put(client, admin, sid, build).status_code == 200
     client.put('/api/v1/scenario/' + sid, headers=pwa, json={'noticeAction': {'notice': 'n1', 'action': 'confirm', 'ticked': True}})
     held = next(p['productId'] for p in build['products'] if p['category'] == PRIVATE)
+    assert privateMarkets.setOf(held, PRIVATE), 'held to APS\'s minimums or Other\'s'
     every = {privateMarkets.cell(a, r, c): 2000 for a in privateMarkets.ALLOCATIONS
              for r in privateMarkets.RISKS for c in privateMarkets.CURRENCIES}
-    privateMarkets.save({'products': [{'productId': held, 'type': 'PE', 'minimums': every}]}, user='alice', base=0)
+    privateMarkets.save({'aps': every, 'other': every}, user='alice', base=0)
     assert client.get('/api/v1/scenario/schema', headers=admin).json()['customPortfolio']['privateMinimum'] is None
     refused = client.post('/api/v1/scenario/' + sid + '/export', headers=pwa)
     assert refused.status_code == 422 and refused.json()['field'] == 'privateMarkets'
     assert 'for Full · Moderate · USD at a $1,000,000,000 mandate' in refused.json()['error']
     assert 'or take the product out' in refused.json()['error']
-    privateMarkets.save({'products': [{'productId': held, 'type': 'PE', 'minimums': dict(every, **{'Full|Moderate|USD': 900})}]},
-                        user='alice', base=1)
+    lower = dict(every, **{'Full|Moderate|USD': 900})
+    privateMarkets.save({'aps': lower, 'other': lower}, user='alice', base=1)
     assert client.post('/api/v1/scenario/' + sid + '/export', headers=pwa).status_code == 200

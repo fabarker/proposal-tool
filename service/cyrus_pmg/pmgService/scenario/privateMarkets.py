@@ -1,10 +1,15 @@
-"""The private markets minimums: the mandate each private markets product
+"""The private markets minimums: the mandate a private markets product
 needs, by allocation type, risk level and base currency (D200).
 
+There are two sets of minimums (D217). APS's are for the one product
+Alternatives Portfolio Services; Other's are for every other product in
+Private Equity & Other Private Assets - a product held in that category, or
+one the catalogue puts in it. A product in no other category is not checked.
+
 A ROW of the table reads: under this allocation type, at this risk level and
-in this base currency, this product needs a mandate of at least this many
-millions of dollars - dollars whatever the currency, as every amount in the
-tool is. The allocation types are the four that hold private markets: Full,
+in this base currency, APS (or any other product) needs a mandate of at
+least this many millions of dollars - dollars whatever the currency, as
+every amount in the tool is. The allocation types are the four that hold private markets: Full,
 ex-HFs, and each of them with real assets excluded, which the desk's file
 calls ex-RA and ex-HFs ex-RA. Core, ex-Alts and an all-equity level hold no
 private markets, so the table never gates them.
@@ -13,31 +18,35 @@ The table is read twice, against the proposal's mandate:
 
 * choosing the portfolio - an allocation that holds private markets is
   offered at a risk level and in a currency only where the mandate reaches
-  the LOWEST minimum any product has there; below it the page shows the
+  the LOWER of APS's and Other's minimums there; below it the page shows the
   allocation greyed out with the mandate it needs;
-* the implementation table - each product in the table is held only where
-  the mandate reaches its own minimum; below it the line is marked and the
+* the implementation table - each private markets product is held only where
+  the mandate reaches its set's minimum; below it the line is marked and the
   download refused, as for a position below its product's minimum. A custom
   portfolio is checked the same way, product by product, against the Full
   minimums at its risk profile.
 
-Every product is meant to have a minimum for every one of the 112 cells (4
+Each set is meant to have a minimum for every one of the 112 cells (4
 allocation types x 7 risk levels x 4 currencies). A cell left without one is
 a GAP: the console lists every gap, and a proposal never reads a gap as no
 minimum - a product with none where the proposal needs one is refused, and
-an allocation no product has a minimum for is not offered.
+an allocation neither set has a minimum for is not offered.
 
-The admin keeps the table in the console's PM Minimums tab: loaded whole from
-the desk's Excel file (long form: allocation_type, risk_level, currency,
-value, Type, productId - All in the first or the third means every one), or
-edited a value at a time on screen. Every change is a revision with who,
+The admin keeps the table in the console's PM Minimums tab, a tab a set:
+loaded whole from the desk's Excel file (long form: allocation_type,
+risk_level, currency, value, Type, productId - All in the first or the third
+means every one, and the productId the APS product's or Other), or edited a
+value at a time on screen. Every change is a revision with who,
 when, an optional note and what moved, and an earlier revision can be put
 back.
 
 Storage. The ``policies`` and ``policyHistory`` tables (sleeveRepo, schema 4)
-under the kind 'privateMarkets' and the one scope '*'. Until the first save
-there is no table, and the one rule before it stands: no private markets
-below a $20m mandate. A read never writes.
+under the kind 'privateMarkets' and the one scope '*', as {aps: {cell: $m},
+other: {cell: $m}}. A revision from before the two sets, a list of products,
+reads as APS for the APS product and, cell by cell, the highest of the other
+products' as Other. Until the first save there is no table, and the one rule
+before it stands: no private markets below a $20m mandate. A read never
+writes.
 """
 
 from __future__ import annotations
@@ -57,10 +66,17 @@ SCOPE = '*'
 FALLBACK_MINIMUM = 20_000_000
 MILLION = 1_000_000
 NOTE_MAX = 240
-ID_MAX = 120
-TYPE_MAX = 24
 VALUE_MAX = 100_000              # $m: a typing slip, not a minimum
-MAX_PRODUCTS = 40
+#: the product APS's minimums are for; every other private markets product
+#: takes Other's (D217)
+APS_PRODUCT = 'gs-alternatives-portfolio-services'
+#: the two sets, in the console's order, with their tab labels and names
+SETS = ('aps', 'other')
+LABELS = {'aps': 'APS', 'other': 'Other'}
+NAMES = {'aps': 'Alternatives Portfolio Services',
+         'other': 'Private Equity Managers (PEM)'}
+#: what the file's productId says for Other
+OTHER_ID = 'Other'
 #: changes listed for one revision before the rest are counted
 CHANGES_SHOWN = 40
 
@@ -138,11 +154,37 @@ def _row(conn):
                         (KIND, SCOPE)).fetchone()
 
 
+def _ordered(minimums) -> dict:
+    return {c: minimums[c] for c in cells() if minimums.get(c) is not None}
+
+
+def _fromProducts(listed) -> dict:
+    """A table stored as a list of products, before the two sets: APS the APS
+    product's, Other the highest of every other product's in each cell, so
+    none is held below the minimum it had."""
+    aps, other = {}, {}
+    for p in listed:
+        minimums = (p or {}).get('minimums') or {}
+        if (p or {}).get('productId') == APS_PRODUCT:
+            aps = dict(minimums)
+            continue
+        for c, v in minimums.items():
+            if v is not None and (other.get(c) is None or v > other[c]):
+                other[c] = v
+    return {'aps': _ordered(aps), 'other': _ordered(other)}
+
+
 def _parse(text) -> dict:
+    """A stored body as {aps: {cell: $m}, other: {cell: $m}}."""
     body = json.loads(text) if isinstance(text, str) else (text or {})
-    return {'products': [{'productId': p['productId'], 'type': p.get('type') or '',
-                          'minimums': dict(p.get('minimums') or {})}
-                         for p in body.get('products') or []]}
+    if isinstance(body.get('products'), list):
+        return _fromProducts(body['products'])
+    return {s: dict(body.get(s) or {}) for s in SETS}
+
+
+def _holds(table) -> bool:
+    """Whether a table holds any minimum at all."""
+    return any(table.get(s) for s in SETS)
 
 
 _lock = threading.Lock()
@@ -177,28 +219,60 @@ def _stored(path):
 
 
 def current() -> dict:
-    """The table in force: {revision, products, inForce, updatedBy,
+    """The table in force: {aps, other, revision, inForce, updatedBy,
     updatedAt}, a fresh copy on every call. Revision 0 is no table: the $20m
-    rule stands. A table that holds no product leaves it standing too."""
+    rule stands. A table that holds no minimum leaves it standing too."""
     path = sleeveRepo.dbPath()
     row = _stored(path) if os.path.exists(path) else None
     if row is None:
-        return {'products': [], 'revision': 0, 'inForce': False, 'updatedBy': '', 'updatedAt': ''}
+        return {'aps': {}, 'other': {}, 'revision': 0, 'inForce': False, 'updatedBy': '', 'updatedAt': ''}
     body = _parse(row['body'])
-    return dict(body, revision=row['revision'], inForce=bool(body['products']),
+    return dict(body, revision=row['revision'], inForce=_holds(body),
                 updatedBy=row['updatedBy'], updatedAt=row['updatedAt'])
 
 
 def gaps(table=None) -> list:
-    """Every cell a product in the table has no minimum for:
-    [{productId, type, cells: [cell, ...]}], the products with none left out."""
+    """Every cell a set has no minimum for, once the table holds any:
+    [{set, label, cells: [cell, ...]}], a set with none missing left out."""
     table = current() if table is None else table
+    if not _holds(table):
+        return []
     out = []
-    for p in table['products']:
-        missing = [c for c in cells() if p['minimums'].get(c) is None]
+    for s in SETS:
+        missing = [c for c in cells() if table[s].get(c) is None]
         if missing:
-            out.append({'productId': p['productId'], 'type': p['type'], 'cells': missing})
+            out.append({'set': s, 'label': LABELS[s], 'cells': missing})
     return out
+
+
+def privateCategories() -> list:
+    """The categories whose products take Other's minimums: Private Equity &
+    Other Private Assets, and the two it stands for."""
+    from .rules import PRIVATE_FUNDED_FROM, SLEEVE_GROUPS
+    members = [c for g in SLEEVE_GROUPS if g['name'] == PRIVATE_FUNDED_FROM for c in g['categories']]
+    return [PRIVATE_FUNDED_FROM] + members
+
+
+def setOf(productId, category='', ownCategory='') -> str:
+    """Which minimums a product is held to: APS's for the APS product,
+    Other's for any other in Private Equity & Other Private Assets - the
+    line's category or the product's own - and none ('') for the rest."""
+    if not productId:
+        return ''
+    if productId == APS_PRODUCT:
+        return 'aps'
+    private = privateCategories()
+    return 'other' if (category in private or ownCategory in private) else ''
+
+
+def _ownCategory(productId) -> str:
+    """The category the catalogue puts a product in, blank where none."""
+    from . import products
+    try:
+        found = products.get(productId) or {}
+    except products.BadCatalogue:
+        return ''
+    return found.get('ownCategory') or found.get('category') or ''
 
 
 # ------------------------------------------------------------ the rules ---
@@ -208,9 +282,9 @@ def _dollars(value):
 
 
 def gate(key, table=None):
-    """What an allocation needs at this key: {minimum, gap} - the lowest
-    minimum, in dollars, of any product in the table at the key's cell, and
-    whether no product has one there. None for a key that holds no private
+    """What an allocation needs at this key: {minimum, gap} - the lower of
+    APS's and Other's minimums, in dollars, at the key's cell, and whether
+    neither has one there. None for a key that holds no private
     markets. Before the first table, $20m for every key that holds them."""
     from .rules import PRIVATE_ASSET_ALLOCATIONS
     if isinstance(key, str):
@@ -221,7 +295,7 @@ def gate(key, table=None):
     if not table['inForce']:
         return {'minimum': float(FALLBACK_MINIMUM), 'gap': False}
     at = cellOf(key)
-    values = [p['minimums'].get(at) for p in table['products']] if at else []
+    values = [table[s].get(at) for s in SETS] if at else []
     values = [v for v in values if v is not None]
     if not values:
         return {'minimum': None, 'gap': True}
@@ -256,8 +330,8 @@ def closedWords(key, table=None) -> str:
 
 def served(currency) -> dict:
     """What the page reads for one base currency: whether a table is in
-    force, each private key's gate and each product's minimum by key, in
-    dollars (None for a gap), and each product's short name."""
+    force, each private key's gate, each set's minimum by key, in dollars
+    (None for a gap), the APS product and the categories Other covers."""
     table = current()
     keys = [keyStrOf(cell(a, r, currency)) for a in ALLOCATIONS for r in RISKS] \
         if currency in CURRENCIES else []
@@ -267,36 +341,38 @@ def served(currency) -> dict:
         gates[k] = None if need is None or need['gap'] else need['minimum']
     minimums = {}
     if table['inForce']:
-        for p in table['products']:
-            minimums[p['productId']] = {k: _dollars(p['minimums'].get(cellOf(k))) for k in keys}
+        for s in SETS:
+            minimums[s] = {k: _dollars(table[s].get(cellOf(k))) for k in keys}
     return {'inForce': table['inForce'], 'revision': table['revision'], 'gates': gates,
-            'minimums': minimums, 'types': {p['productId']: p['type'] for p in table['products']},
+            'minimums': minimums, 'apsProduct': APS_PRODUCT, 'categories': privateCategories(),
             'fallback': FALLBACK_MINIMUM}
 
 
 def shortfalls(groups, cellKey, mandateSize, table=None) -> list:
-    """Every line of an implemented model whose product is in the table and
-    whose minimum at *cellKey* the mandate does not reach, or which has no
-    minimum there: [{category, name, productId, minimum, gap}]. A line the
-    book holds no weight in, long term or initially, is not a position."""
+    """Every line of an implemented model whose product is APS or another
+    private markets product and whose set's minimum at *cellKey* the mandate
+    does not reach, or which has no minimum there: [{category, name,
+    productId, minimum, gap}]. A line the book holds no weight in, long term
+    or initially, is not a position."""
     table = current() if table is None else table
     if not table['inForce'] or not cellKey or mandateSize is None:
         return []
-    byId = {p['productId']: p for p in table['products']}
     out = []
     for group in groups or []:
         for item in group.get('items') or []:
-            p = byId.get(item.get('productId'))
-            if p is None or not (item.get('printedPct') or item.get('initialPct')
-                                 or item.get('weightPct')):
+            pid = item.get('productId')
+            if not pid or not (item.get('printedPct') or item.get('initialPct') or item.get('weightPct')):
                 continue
-            value = p['minimums'].get(cellKey)
+            which = setOf(pid, group.get('category') or '') or setOf(pid, ownCategory=_ownCategory(pid))
+            if not which:
+                continue
+            value = table[which].get(cellKey)
             if value is None:
                 out.append({'category': group.get('category'), 'name': item.get('name'),
-                            'productId': p['productId'], 'minimum': None, 'gap': True})
+                            'productId': pid, 'minimum': None, 'gap': True})
             elif float(mandateSize) < _dollars(value) - 1e-6:
                 out.append({'category': group.get('category'), 'name': item.get('name'),
-                            'productId': p['productId'], 'minimum': _dollars(value), 'gap': False})
+                            'productId': pid, 'minimum': _dollars(value), 'gap': False})
     return out
 
 
@@ -332,47 +408,35 @@ def _value(raw, where):
     return round(value, 4)
 
 
-def _productId(raw, where) -> str:
-    pid = str(raw or '').strip()
-    if not pid:
-        raise ValidationError('productId', '{}: name the product by its ProductId.'.format(where))
-    if len(pid) > ID_MAX or any(ch.isspace() for ch in pid):
-        raise ValidationError('productId', '{}: "{}" is not a ProductId.'.format(where, pid[:ID_MAX]))
-    return pid
-
-
-def _type(raw) -> str:
-    return ' '.join(str(raw or '').split())[:TYPE_MAX]
+def _setNamed(productId, typ):
+    """The set a file's row is for, by its productId - the APS product's, or
+    Other - or, where it gives none, by its Type; None for anything else."""
+    said = _squash(productId)
+    if not said:
+        said = _squash(typ)
+        return {'aps': 'aps', _squash(OTHER_ID): 'other'}.get(said)
+    if said == _squash(APS_PRODUCT):
+        return 'aps'
+    return 'other' if said == _squash(OTHER_ID) else None
 
 
 def normalise(body) -> dict:
-    """A table from the console: {products: [{productId, type, minimums:
-    {cell: $m or None}}]}. A blank value is a gap. Refused, naming the
-    field, when it is not a table."""
-    if not isinstance(body, dict) or not isinstance(body.get('products'), list):
-        raise ValidationError('products', 'The minimums are a list of products.')
-    if len(body['products']) > MAX_PRODUCTS:
-        raise ValidationError('products', 'At most {} products.'.format(MAX_PRODUCTS))
-    known, out = set(cells()), []
-    for n, p in enumerate(body['products'], start=1):
-        if not isinstance(p, dict):
-            raise ValidationError('products', 'Product {} is not a product.'.format(n))
-        pid = _productId(p.get('productId'), 'Product {}'.format(n))
-        if pid in {x['productId'] for x in out}:
-            raise ValidationError('productId', '{} is in the table twice.'.format(pid))
-        raw = p.get('minimums') or {}
-        if not isinstance(raw, dict):
-            raise ValidationError('minimums', '{}: the minimums are by cell.'.format(pid))
+    """A table from the console: {aps: {cell: $m or None}, other: {...}}. A
+    blank value is a gap. Refused, naming the field, when it is not a
+    table."""
+    if not isinstance(body, dict) or any(not isinstance(body.get(s), dict) for s in SETS):
+        raise ValidationError('minimums', 'The minimums are APS\'s and Other\'s, each by cell.')
+    known, out = set(cells()), {}
+    for s in SETS:
         minimums = {}
-        for key, value in raw.items():
+        for key, value in body[s].items():
             if key not in known:
-                raise ValidationError('minimums', '{}: "{}" is not a cell of the table.'.format(pid, key))
-            value = _value(value, '{} {}'.format(pid, cellWords(key)))
+                raise ValidationError('minimums', '{}: "{}" is not a cell of the table.'.format(LABELS[s], key))
+            value = _value(value, '{} {}'.format(LABELS[s], cellWords(key)))
             if value is not None:
                 minimums[key] = value
-        out.append({'productId': pid, 'type': _type(p.get('type')),
-                    'minimums': {c: minimums[c] for c in cells() if c in minimums}})
-    return {'products': out}
+        out[s] = _ordered(minimums)
+    return out
 
 
 # -------------------------------------------------------------- the file ---
@@ -426,11 +490,12 @@ def _choice(raw, options, labels=None):
 
 
 def readFile(name, content) -> dict:
-    """The table a file holds, with what is wrong with it:
-    {table, rows, problems: [words], unknown: [ProductIds the catalogue
-    lacks], gaps}. A row's All means every allocation type, risk level or
-    currency; where two rows give a product's cell, the one naming more
-    wins, and two that name as much and disagree are a problem."""
+    """The table a file holds, with what is wrong with it: {table, rows,
+    problems: [words], gaps}. A row is APS's where its productId is the APS
+    product's, Other's where it is Other (or, with none, where its Type is
+    APS or Other). A row's All means every allocation type, risk level or
+    currency; where two rows give a set's cell, the one naming more wins,
+    and two that name as much and disagree are a problem."""
     from . import products
     from .rules import RISK_LEVEL_LABELS
     name = _fileName(name)
@@ -448,15 +513,21 @@ def readFile(name, content) -> dict:
         i = at.get(key)
         return row[i] if i is not None and i < len(row) else ''
 
-    problems, order, types, claimed = [], [], {}, {}
+    problems, claimed = [], {}
     count = 0
     for n, row in enumerate(rows, start=2):
         if not any(str(v).strip() for v in row):
             continue
         count += 1
         where = 'Row {}'.format(n)
+        pid = ' '.join(str(field(row, 'productid') or '').split())
+        which = _setNamed(pid, field(row, 'type'))
+        if which is None:
+            problems.append('{}: {} - the minimums are APS\'s ({}) and Other\'s, for every other '
+                            'product: name one of them.'.format(
+                                where, '"{}" is neither'.format(pid) if pid else 'no productId', APS_PRODUCT))
+            continue
         try:
-            pid = _productId(field(row, 'productid'), where)
             value = _value(field(row, 'value'), where)
         except ValidationError as exc:
             problems.append(exc.message)
@@ -474,58 +545,46 @@ def readFile(name, content) -> dict:
         if value is None:
             problems.append('{}: no value.'.format(where))
             continue
-        if pid not in order:
-            order.append(pid)
-        if _type(field(row, 'type')) and not types.get(pid):
-            types[pid] = _type(field(row, 'type'))
         rank = sum(1 for v in (alloc, risk, cur) if v != ALL)
         for a in ALLOCATIONS if alloc == ALL else [alloc]:
             for r in RISKS if risk == ALL else [risk]:
                 for c in CURRENCIES if cur == ALL else [cur]:
-                    key = (pid, cell(a, r, c))
+                    key = (which, cell(a, r, c))
                     had = claimed.get(key)
                     if had is None or rank > had[0]:
                         claimed[key] = (rank, value, n)
                     elif rank == had[0] and value != had[1]:
                         problems.append('Rows {} and {} both give {} {}: {:g} and {:g}.'.format(
-                            had[2], n, pid, cellWords(key[1]), had[1], value))
+                            had[2], n, LABELS[which], cellWords(key[1]), had[1], value))
     if count == 0:
         problems.append('{} holds no rows.'.format(name))
-    if len(order) > MAX_PRODUCTS:
-        problems.append('{} products; at most {}.'.format(len(order), MAX_PRODUCTS))
-    table = {'products': [{'productId': pid, 'type': types.get(pid, ''),
-                           'minimums': {c: claimed[(pid, c)][1] for c in cells() if (pid, c) in claimed}}
-                          for pid in order]}
+    table = {s: {c: claimed[(s, c)][1] for c in cells() if (s, c) in claimed} for s in SETS}
     try:
-        unknown = [pid for pid in order if not products.has(pid)]
+        apsKnown = products.has(APS_PRODUCT)
     except products.BadCatalogue:
-        unknown = []
-    return {'name': name, 'table': table, 'rows': count, 'problems': problems, 'unknown': unknown,
-            'gaps': gaps(dict(table, inForce=True))}
+        apsKnown = True
+    return {'name': name, 'table': table, 'rows': count, 'problems': problems,
+            'unknown': [] if apsKnown or not table['aps'] else [APS_PRODUCT], 'gaps': gaps(table)}
 
 
 def _changes(before, after) -> list:
-    """What moved between two tables, in the words the console shows."""
-    had = {p['productId']: p for p in (before or {'products': []})['products']}
-    now = {p['productId']: p for p in after['products']}
+    """What moved between two tables, in the words the console shows: a set
+    filled from nothing or emptied in one line, else each value."""
     out = []
-    for p in after['products']:
-        label = p['type'] or p['productId']
-        old = had.get(p['productId'])
-        if old is None:
-            out.append('Added {} ({} values)'.format(label, len(p['minimums'])))
+    for s in SETS:
+        was, now = (before or {}).get(s) or {}, after.get(s) or {}
+        if not was and now:
+            out.append('{}: {} values set'.format(LABELS[s], len(now)))
             continue
-        if old['type'] != p['type']:
-            out.append('{}: short name {} → {}'.format(p['productId'], old['type'] or '—', p['type'] or '—'))
+        if was and not now:
+            out.append('{}: its {} values cleared'.format(LABELS[s], len(was)))
+            continue
         for c in cells():
-            a, b = old['minimums'].get(c), p['minimums'].get(c)
+            a, b = was.get(c), now.get(c)
             if a != b:
-                out.append('{} · {}: {} → {}'.format(label, cellWords(c),
+                out.append('{} · {}: {} → {}'.format(LABELS[s], cellWords(c),
                                                      '—' if a is None else '{:g}'.format(a),
                                                      '—' if b is None else '{:g}'.format(b)))
-    for p in (before or {'products': []})['products']:
-        if p['productId'] not in now:
-            out.append('Removed {}'.format(p['type'] or p['productId']))
     return out
 
 
@@ -539,11 +598,10 @@ def preview(name, content) -> dict:
     """What a file would do, before anything moves."""
     read = readFile(name, content)
     now = current()
-    changes = _changes({'products': now['products']}, read['table'])
+    changes = _changes(now, read['table'])
     return {'name': read['name'], 'rows': read['rows'], 'problems': read['problems'],
             'unknown': read['unknown'], 'gaps': read['gaps'],
-            'products': [{'productId': p['productId'], 'type': p['type'], 'values': len(p['minimums'])}
-                         for p in read['table']['products']],
+            'sets': [{'set': s, 'label': LABELS[s], 'values': len(read['table'][s])} for s in SETS],
             'changes': _summary(changes), 'changed': len(changes), 'base': now['revision']}
 
 
@@ -589,7 +647,7 @@ def _refuseStale(conn, base) -> None:
 
 def _previous(conn) -> dict:
     existing = _row(conn)
-    return _parse(existing['body']) if existing is not None else {'products': []}
+    return _parse(existing['body']) if existing is not None else {s: {} for s in SETS}
 
 
 def _put(cleaned, action, note, user, base) -> dict:
@@ -599,8 +657,8 @@ def _put(cleaned, action, note, user, base) -> dict:
         conn.execute('BEGIN IMMEDIATE')
         try:
             _refuseStale(conn, base)
-            if cleaned['products'] == _previous(conn)['products']:
-                raise ValidationError('products', 'Those are the minimums already in force.')
+            if cleaned == _previous(conn):
+                raise ValidationError('minimums', 'Those are the minimums already in force.')
             _write(conn, cleaned, action, note, user)
             conn.commit()
         except Exception:
@@ -619,9 +677,8 @@ def save(body, note='', user='', base=None) -> dict:
 
 
 def importFile(name, content, note='', user='', base=None) -> dict:
-    """Put a file's table in force, whole: a product or a value the file
-    leaves out is gone, and stays in the history. Refused while the file has
-    a problem."""
+    """Put a file's table in force, whole: a value the file leaves out is
+    gone, and stays in the history. Refused while the file has a problem."""
     note = _note(note)
     read = readFile(name, content)
     if read['problems']:
@@ -639,14 +696,14 @@ def history() -> list:
                             'ORDER BY revision', (KIND, SCOPE)).fetchall()
     finally:
         conn.close()
-    out, previous = [], {'products': []}
+    out, previous = [], {s: {} for s in SETS}
     top = rows[-1]['revision'] if rows else None
     for r in rows:
         body = _parse(r['body'])
         changes = _changes(previous, body)
         out.append({'revision': r['revision'], 'action': r['action'], 'note': r['note'],
                     'actor': r['actor'], 'at': r['at'], 'id': r['id'], 'changes': _summary(changes),
-                    'changed': len(changes), 'products': len(body['products']),
+                    'changed': len(changes), 'values': sum(len(body[s]) for s in SETS),
                     'current': r['revision'] == top})
         previous = body
     return list(reversed(out))
@@ -673,15 +730,17 @@ def revert(revision, note='', user='', base=None) -> dict:
 
 def exportRows() -> list:
     """The table in force as the desk's long-form file: the header, then a
-    row a product and cell, gaps left out."""
+    row a set and cell, gaps left out - APS's under the APS product, Other's
+    under Other."""
     out = [list(COLUMNS)]
-    for p in current()['products']:
+    table = current()
+    for s in SETS:
         for a in ALLOCATIONS:
             for r in RISKS:
                 for c in sorted(CURRENCIES):
-                    v = p['minimums'].get(cell(a, r, c))
+                    v = table[s].get(cell(a, r, c))
                     if v is not None:
-                        out.append([a, riskLabel(r), c, v, p['type'], p['productId']])
+                        out.append([a, riskLabel(r), c, v, LABELS[s], APS_PRODUCT if s == 'aps' else OTHER_ID])
     return out
 
 
@@ -711,7 +770,7 @@ def feedRows(conn) -> list:
     """The record as the Activity feed reads it."""
     rows = conn.execute('SELECT * FROM policyHistory WHERE kind = ? AND scope = ? ORDER BY revision',
                         (KIND, SCOPE)).fetchall()
-    out, previous = [], {'products': []}
+    out, previous = [], {s: {} for s in SETS}
     for r in rows:
         body = _parse(r['body'])
         out.append({'id': r['id'], 'revision': r['revision'], 'action': r['action'], 'note': r['note'],
@@ -726,15 +785,14 @@ def describe() -> dict:
     from .rules import RISK_LEVEL_LABELS
     table = current()
     try:
-        live = products.entries()
-        names = {p['productId']: p['name'] for p in live}
-        unchecked = [{'productId': p['productId'], 'name': p['name'], 'category': p.get('category') or ''}
-                     for p in live if (p.get('category') or '') in ('Private Equity', 'Other Private Assets')
-                     and p['productId'] not in {x['productId'] for x in table['products']}]
+        found = products.get(APS_PRODUCT)
+        apsName = found['name'] if found else ''
     except products.BadCatalogue:
-        names, unchecked = {}, []
-    return dict(table, gaps=gaps(table), names=names, unchecked=unchecked,
+        apsName = ''
+    return dict(table, gaps=gaps(table),
+                sets=[{'id': s, 'label': LABELS[s], 'name': NAMES[s]} for s in SETS],
+                apsProduct=APS_PRODUCT, apsName=apsName, otherId=OTHER_ID,
                 allocations=list(ALLOCATIONS),
                 risks=[{'id': r, 'label': RISK_LEVEL_LABELS.get(r, r)} for r in RISKS],
                 currencies=list(CURRENCIES), cells=len(cells()), fallback=FALLBACK_MINIMUM,
-                noteMax=NOTE_MAX, maxProducts=MAX_PRODUCTS, valueMax=VALUE_MAX, typeMax=TYPE_MAX)
+                noteMax=NOTE_MAX, valueMax=VALUE_MAX)
