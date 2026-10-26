@@ -33,6 +33,13 @@ THE PRODUCTS ARE STUB DATA. They are the ones the authored sleeve library
 carried (deviation D9, D29): real-looking, not real. products.csv is the
 authored file; this script validates it and writes products.xlsx beside it,
 so both shapes of extract exist for the reader to be tried against.
+
+products-listings.csv is the same products in the layout a product file
+takes since listings (D207) and the catalogue holding facts only (D214):
+nineteen columns, a row for each listing, a product's rows in its listings'
+order, no Rank columns - what the catalogue's Download the product file
+writes. This script validates it too and writes products-listings.xlsx
+beside it, for an admin who starts a product file in Excel.
 """
 
 import csv
@@ -49,31 +56,48 @@ COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Category', 'Style', 'Ve
 COST, GROUP, YIELD, MINIMUM = (COLUMNS.index(c) for c in
                                ('ProductCost', 'FeeGroup', 'DistributionYield', 'MinimumInvestment'))
 
+LISTINGS_CSV = os.path.join(HERE, 'products-listings.csv')
+LISTINGS_XLSX = os.path.join(HERE, 'products-listings.xlsx')
+LISTINGS_COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Category', 'Style', 'Vehicle',
+                    'ShareClass', 'Source', 'Liquidity', 'ExposureCurrency', 'IssueCurrency',
+                    'ProductCost', 'FeeGroup', 'DistributionYield', 'MinimumInvestment',
+                    'Benchmark', 'MandateCode', 'Hedging']
 
-def readCsv():
-    with open(CSV_PATH, newline='', encoding='utf-8') as fh:
+
+def readCsv(path=CSV_PATH, columns=COLUMNS):
+    with open(path, newline='', encoding='utf-8') as fh:
         reader = csv.reader(fh)
         head = next(reader)
-        if head != COLUMNS:
-            sys.exit('products.csv header is {!r}, expected {!r}'.format(head, COLUMNS))
+        if head != columns:
+            sys.exit('{} header is {!r}, expected {!r}'.format(os.path.basename(path), head, columns))
         return [row for row in reader if row and row[0]]
 
 
-def validate(rows):
+def validate(rows, columns=COLUMNS, listings=False):
+    """The checks a row must pass. In the listings layout a product's id
+    repeats, a row for each listing, but its rows must be together."""
+    cost, group, yield_, minimum = (columns.index(c) for c in
+                                    ('ProductCost', 'FeeGroup', 'DistributionYield', 'MinimumInvestment'))
     ids = [row[0] for row in rows]
-    dup = sorted({i for i in ids if ids.count(i) > 1})
-    if dup:
-        sys.exit('duplicate ProductId: {}'.format(', '.join(dup)))
+    if listings:
+        seen = [i for n, i in enumerate(ids) if n == 0 or ids[n - 1] != i]
+        dup = sorted({i for i in seen if seen.count(i) > 1})
+        if dup:
+            sys.exit('listings not together: {}'.format(', '.join(dup)))
+    else:
+        dup = sorted({i for i in ids if ids.count(i) > 1})
+        if dup:
+            sys.exit('duplicate ProductId: {}'.format(', '.join(dup)))
     for row in rows:
         if not row[1].strip():
             sys.exit('{}: empty Name'.format(row[0]))
         try:
-            float(row[COST])
+            float(row[cost])
         except ValueError:
-            sys.exit('{}: ProductCost {!r} is not a number'.format(row[0], row[COST]))
-        if not row[GROUP].strip():
+            sys.exit('{}: ProductCost {!r} is not a number'.format(row[0], row[cost]))
+        if not row[group].strip():
             sys.exit('{}: empty FeeGroup'.format(row[0]))
-        for i, label in ((YIELD, 'DistributionYield'), (MINIMUM, 'MinimumInvestment')):
+        for i, label in ((yield_, 'DistributionYield'), (minimum, 'MinimumInvestment')):
             if row[i].strip():
                 try:
                     if float(row[i]) < 0:
@@ -82,19 +106,21 @@ def validate(rows):
                     sys.exit('{}: {} {!r} is not a number'.format(row[0], label, row[i]))
 
 
-def writeXlsx(rows):
+def writeXlsx(rows, path=XLSX_PATH, columns=COLUMNS):
+    """The rows as a workbook, one sheet named Products, the figures as
+    numbers and every other cell as text."""
     from openpyxl import Workbook
     book = Workbook()
     sheet = book.active
     sheet.title = 'Products'
-    sheet.append(COLUMNS)
+    sheet.append(columns)
+    numbers = [columns.index(c) for c in ('ProductCost', 'DistributionYield', 'MinimumInvestment')]
     for row in rows:
         out = list(row)
-        out[COST] = float(out[COST])
-        out[YIELD] = float(out[YIELD]) if out[YIELD].strip() else None
-        out[MINIMUM] = float(out[MINIMUM]) if out[MINIMUM].strip() else None
+        for i in numbers:
+            out[i] = float(out[i]) if out[i].strip() else None
         sheet.append(out)
-    book.save(XLSX_PATH)
+    book.save(path)
 
 
 def main():
@@ -106,6 +132,13 @@ def main():
     print('products.xlsx written')
     print('fee groups    {}'.format(', '.join(groups)))
     print('no ticker     {}'.format(sum(1 for row in rows if not row[2].strip())))
+
+    listings = readCsv(LISTINGS_CSV, LISTINGS_COLUMNS)
+    validate(listings, LISTINGS_COLUMNS, listings=True)
+    writeXlsx(listings, LISTINGS_XLSX, LISTINGS_COLUMNS)
+    print('products-listings.csv  {} listings of {} products'.format(
+        len(listings), len({row[0] for row in listings})))
+    print('products-listings.xlsx written')
 
 
 if __name__ == '__main__':
