@@ -6,8 +6,9 @@ A ROW is a benchmark, its mnemonic, and the currency, risk level and hedging
 policy it is the benchmark for. A PORTFOLIO is a risk level, a currency and a
 hedging policy - the allocation and the implementation type play no part -
 and has at most one row. The risk levels and currencies are the ones the
-strategic universe holds a portfolio at, each under every hedging policy. A
-portfolio on offer with no row is a GAP: the console counts them, its
+strategic universe holds a portfolio at, each under every hedging policy but
+Equity Not Hedged: a portfolio under it takes the Unhedged row, so the table
+holds no rows for it (D216). A portfolio on offer with no row is a GAP: the console counts them, its
 proposal is delivered without a benchmark, and an account opening request
 for it cannot be submitted until the gap is filled.
 
@@ -27,8 +28,9 @@ what moved, and an earlier revision can be put back.
 Storage. The ``policies`` and ``policyHistory`` tables (sleeveRepo, schema 4)
 under the kind 'portfolioBenchmarks' and the one scope '*', as {rows:
 [{currency, risk, hedging, benchmark, mnemonic}]} in the table's order. A
-revision from before, in another shape, reads as no rows. Until the first
-save there is no table. A read never writes.
+revision from before, in another shape, reads as no rows, and a row stored
+for Equity Not Hedged is not read. Until the first save there is no table.
+A read never writes.
 """
 
 from __future__ import annotations
@@ -61,6 +63,8 @@ _HEADS = {'benchmark': 'benchmark', 'benchmarkname': 'benchmark', 'name': 'bench
           'mnemonic': 'mnemonic', 'benchmarkmnemonic': 'mnemonic', 'ticker': 'mnemonic', 'code': 'mnemonic'}
 _REQUIRED = ('benchmark', 'currency', 'risk', 'hedging')
 FIELDS = ('benchmark', 'currency', 'risk', 'hedging', 'mnemonic')
+#: a hedging policy whose portfolios take another policy's row (D216)
+READS_AS = {'Equity Not Hedged': 'Unhedged'}
 
 
 def _now() -> str:
@@ -79,9 +83,20 @@ def _text(value) -> str:
 
 # ------------------------------------------------------------- the cells ---
 
-def hedgings() -> list:
+def allHedgings() -> list:
     from . import rules
     return list(rules.HEDGING_POLICIES)
+
+
+def hedgings() -> list:
+    """The hedging policies the table holds rows for: each but the ones
+    that take another's."""
+    return [h for h in allHedgings() if h not in READS_AS]
+
+
+def readsAs(hedging) -> str:
+    """The hedging policy whose row a portfolio under *hedging* takes."""
+    return READS_AS.get(hedging, hedging)
 
 
 def risks() -> list:
@@ -136,9 +151,9 @@ def cells() -> list:
 
 def keyOf(keyStr, hedging) -> str:
     """The portfolio a strategic proposal reads, by its key and its hedging
-    policy."""
+    policy: Equity Not Hedged reads the Unhedged one."""
     key = PortfolioKey.fromStr(keyStr) if isinstance(keyStr, str) else keyStr
-    return cell(key.riskLevel, key.currency, hedging)
+    return cell(key.riskLevel, key.currency, readsAs(hedging))
 
 
 def rowKey(row) -> str:
@@ -156,7 +171,8 @@ def _parse(text) -> dict:
     """A stored body; one in another shape reads as no rows."""
     body = json.loads(text) if isinstance(text, str) else (text or {})
     rows = body.get('rows') if isinstance(body.get('rows'), list) else []
-    return {'rows': [{f: str((r or {}).get(f) or '') for f in FIELDS} for r in rows if isinstance(r, dict)]}
+    return {'rows': [{f: str((r or {}).get(f) or '') for f in FIELDS} for r in rows
+                     if isinstance(r, dict) and r.get('hedging') not in READS_AS]}
 
 
 _lock = threading.Lock()
@@ -268,6 +284,13 @@ def _pick(raw, options, labels=None):
     return starts[0] if len(starts) == 1 else None
 
 
+def _takesAnother(raw):
+    """The policy a row's hedging names when it is one that takes another's
+    row, else None."""
+    named = _pick((raw or {}).get('hedging'), allHedgings())
+    return named if named in READS_AS else None
+
+
 def _clean(raw, where) -> tuple:
     """(row, [problems]) for one row as given: each part named, the
     currency, risk level and hedging policy ones on offer, the benchmark and
@@ -278,10 +301,13 @@ def _clean(raw, where) -> tuple:
     currency = _pick(raw.get('currency'), offeredCurrencies())
     risk = _pick(raw.get('risk'), offeredRisks(), RISK_LEVEL_LABELS)
     hedging = _pick(raw.get('hedging'), hedgings())
+    other = _takesAnother(raw)
     benchmark, mnemonic = _text(raw.get('benchmark')), _text(raw.get('mnemonic'))
+    if other:
+        problems.append('{}: {} takes the {} benchmark - leave the row out.'.format(where, other, READS_AS[other]))
     for word, said, got in (('Currency', raw.get('currency'), currency), ('Risk', raw.get('risk'), risk),
                             ('Hedging', raw.get('hedging'), hedging)):
-        if got is None:
+        if got is None and not (other and word == 'Hedging'):
             problems.append('{}: {}.'.format(where, 'no {}'.format(word) if not _text(said)
                                              else '{} "{}" is not one on offer'.format(word, _text(said))))
     if not benchmark:
@@ -384,12 +410,15 @@ def readFile(name, content) -> dict:
     if missing:
         raise ValidationError('file', '{}: missing column(s) {}.'.format(name, ', '.join(missing)))
     given = [{f: (r[at[f]] if f in at and at[f] < len(r) else '') for f in FIELDS} for r in rows]
+    # a row for Equity Not Hedged is left out, blanked so the rows keep their numbers
+    leftOut = sum(1 for g in given if _takesAnother(g))
+    given = [{f: '' for f in FIELDS} if _takesAnother(g) else g for g in given]
     # the file's own row numbers, the header being row 1
     checked, problems = _check(given, lambda n: 'Row {}'.format(n + 1))
     count = sum(1 for g in given if any(_text(v) for v in g.values()))
     if count == 0:
-        problems.append('{} holds no rows.'.format(name))
-    return {'name': name, 'table': {'rows': checked}, 'rows': count, 'problems': problems}
+        problems.append('{} holds no rows{}.'.format(name, ' but ones for Equity Not Hedged' if leftOut else ''))
+    return {'name': name, 'table': {'rows': checked}, 'rows': count, 'leftOut': leftOut, 'problems': problems}
 
 
 def _words(row) -> str:
@@ -427,7 +456,7 @@ def preview(name, content) -> dict:
     read = readFile(name, content)
     now = current()
     changes = _changes(now, read['table'])
-    return {'name': read['name'], 'rows': read['rows'], 'problems': read['problems'],
+    return {'name': read['name'], 'rows': read['rows'], 'leftOut': read['leftOut'], 'problems': read['problems'],
             'cells': len(read['table']['rows']), 'changes': _summary(changes), 'changed': len(changes),
             'gaps': len(gaps(read['table'])), 'base': now['revision']}
 
@@ -605,7 +634,7 @@ def exportWorkbook() -> bytes:
 def describe() -> dict:
     """Everything the console's MAP Benchmarks view shows."""
     table = current()
-    return dict(table, currencies=offeredCurrencies(), hedgings=hedgings(),
+    return dict(table, currencies=offeredCurrencies(), hedgings=hedgings(), readsAs=dict(READS_AS),
                 risks=[{'risk': r, 'label': riskLabel(r)} for r in offeredRisks()],
                 gaps=gaps(table), cells=len(cells()), portfolios=cells(), benchmarkMax=BENCHMARK_MAX,
                 mnemonicMax=MNEMONIC_MAX, noteMax=NOTE_MAX, maxRows=MAX_ROWS)

@@ -7,11 +7,18 @@ edited on screen, pasted from Excel or loaded whole from a file. A portfolio
 on offer with no row is a gap. A strategic proposal's workbook and deck name
 its portfolio's benchmark, and the register records it with its mnemonic; a
 custom portfolio's is chosen from the ones the table holds.
+
+D216: a portfolio under Equity Not Hedged takes the Unhedged row; the table
+holds no rows for it.
 """
 
 import base64
 import csv
 import io
+import json
+import os
+import shutil
+import subprocess
 import zipfile
 
 import pytest
@@ -52,7 +59,7 @@ def _full():
 
 def test_a_portfolio_is_a_risk_level_a_currency_and_a_hedging_policy(store):
     cells = pb.cells()
-    assert len(cells) == len(set(cells)) == 4 * len(pb._offered())
+    assert len(cells) == len(set(cells)) == 3 * len(pb._offered()), 'Equity Not Hedged takes Unhedged'
     assert cells[0] == 'LowVol|USD|Hedged', 'by currency, then risk, then hedging'
     assert pb.offeredRisks()[-1] == 'All Equity' and pb.offeredCurrencies() == ['USD', 'GBP', 'CHF', 'EUR']
     # the allocation plays no part: every allocation at a risk level reads one portfolio
@@ -82,6 +89,74 @@ def test_rows_edited_on_screen_name_each_portfolios_benchmark(store):
     assert pb.history()[0]['changes'] == ['Conservative-Moderate · EUR · ISG Hedged: added Cons-Mod EUR (CM)']
     feed = [e for e in repositoryFeed.activity(limit=50)['entries'] if e['area'] == 'benchmarks']
     assert {e['name'] for e in feed} == {'Portfolio benchmarks'}
+
+
+def test_equity_not_hedged_takes_the_unhedged_row(store, tmp_path):
+    assert pb.hedgings() == ['Hedged', 'ISG Hedged', 'Unhedged']
+    assert not any(c.endswith('|Equity Not Hedged') for c in pb.cells()), 'no portfolio of its own, so no gap'
+    assert pb.keyOf('USD|Moderate|Full|0', 'Equity Not Hedged') == 'Moderate|USD|Unhedged'
+    pb.save({'rows': [_row('60/40 USD', 'USD', 'Moderate', 'Unhedged', 'U60')]}, user='alice', base=0)
+    assert pb.entryForPortfolio('USD|Moderate|Core|1', 'Equity Not Hedged') == {'benchmark': '60/40 USD',
+                                                                                'mnemonic': 'U60'}
+    assert pb.forPortfolio('USD|Moderate|Full|0', 'Hedged') == ''
+    from cyrus_pmg.pmgService.scenario import accountRequests
+    assert accountRequests.mandateBenchmark({'baseKey': 'USD|Moderate|Full|0', 'hedging': 'Equity Not Hedged'}) == (
+        '60/40 USD', 'U60', 'table'), 'an account opening request for one delivered before reads it too'
+    # a row for it is refused on screen, and left out of a file
+    with pytest.raises(ValidationError, match='Row 1: Equity Not Hedged takes the Unhedged benchmark'):
+        pb.save({'rows': [_row('X', 'USD', 'Moderate', 'equity not hedged')]}, user='alice', base=1)
+    rows = [HEAD, ['A', 'USD', 'Moderate', 'Unhedged', 'U60'], ['X', 'GBP', 'Moderate', 'Equity Not Hedged', ''],
+            ['B', 'GBP', 'Aggressive', 'Hedged', '']]
+    preview = pb.preview('b.csv', _upload(tmp_path, rows))
+    assert preview['problems'] == [] and preview['leftOut'] == 1 and preview['rows'] == 2
+    pb.importFile('b.csv', _upload(tmp_path, rows), user='alice', base=1)
+    assert [r['benchmark'] for r in pb.current()['rows']] == ['A', 'B']
+    only = pb.preview('b.csv', _upload(tmp_path, [HEAD, ['X', 'GBP', 'Moderate', 'Equity Not Hedged', '']]))
+    assert only['problems'] == ['b.csv holds no rows but ones for Equity Not Hedged.']
+    # a table saved with rows for it reads without them
+    conn = sleeveRepo.connection()
+    conn.execute("UPDATE policies SET body = ? WHERE kind = 'portfolioBenchmarks'",
+                 (json.dumps({'rows': [_row('A', 'USD', 'Moderate', 'Unhedged'),
+                                       _row('Z', 'USD', 'Moderate', 'Equity Not Hedged')]}),))
+    conn.commit()
+    conn.close()
+    assert [r['benchmark'] for r in pb.current()['rows']] == ['A']
+    assert pb.forPortfolio('USD|Moderate|Full|0', 'Equity Not Hedged') == 'A'
+    assert dashboardRouter.getPortfolioBenchmarks(caller=_caller('alice'))['readsAs'] == {
+        'Equity Not Hedged': 'Unhedged'}
+
+
+def test_the_console_leaves_a_pasted_row_for_equity_not_hedged_out():
+    """The page's paste (pbmPasteInto) and its check of a row (pbmChecked)
+    read Equity Not Hedged as the server does."""
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'generator', 'js', 'repository.js')
+    with open(path, encoding='utf-8') as fh:
+        source = fh.read()
+
+    def fn(name):
+        start = source.index('function ' + name + '(')
+        return source[start:source.index('\n}\n', start)] + '\n}\n'
+    data = {'currencies': pb.offeredCurrencies(), 'hedgings': pb.hedgings(), 'readsAs': pb.READS_AS,
+            'risks': [{'risk': r, 'label': pb.riskLabel(r)} for r in pb.offeredRisks()], 'rows': []}
+    script = ('var PBM_FIELDS = %s; var pbm = { data: %s, draft: null, confirming: false };\n'
+              'function render() {}\nfunction aocTidy(v) { return String(v == null ? "" : v).trim(); }\n' % (
+                  json.dumps(list(pb.FIELDS)), json.dumps(data))
+              + ''.join(fn(n) for n in ('pbmSquash', 'pbmMatch', 'pbmTakesAnother', 'pbmRiskLabel', 'pbmRows',
+                                        'pbmEnsureDraft', 'pbmBlank', 'pbmCellKey', 'pbmCellWords', 'pbmChecked',
+                                        'pbmPut', 'pbmPasteInto')) + '''
+pbmPasteInto({ dataset: { pbmrow: '0', pbmf: 'benchmark' } },
+  'Benchmark\\tCurrency\\tRisk\\tHedging\\nA\\tUSD\\tModerate\\tUnhedged\\nX\\tUSD\\tModerate\\tEquity Not Hedged\\nB\\tGBP\\tModerate\\tHedged');
+var pasted = pbm.draft.map(function (r) { return r.benchmark; });
+pbm.draft.push({ benchmark: 'Y', currency: 'USD', risk: 'Moderate', hedging: 'Equity Not Hedged', mnemonic: '' });
+process.stdout.write(JSON.stringify({ pasted: pasted, note: pbm.pasted, bad: pbmChecked()[2].bad }));
+''')
+    got = json.loads(subprocess.run([node, '-e', script], capture_output=True, text=True, check=True).stdout)
+    assert got['pasted'] == ['A', 'B']
+    assert got['note'].endswith('1 row for Equity Not Hedged left out: it takes the Unhedged benchmark.')
+    assert got['bad'] == {'hedging': 'Equity Not Hedged takes the Unhedged benchmark: delete the row'}
 
 
 @pytest.mark.parametrize('row, words', [

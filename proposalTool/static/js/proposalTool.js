@@ -21373,7 +21373,8 @@ document.addEventListener('click', function (e) {
 /* ---- the Account Opening tab: MAP benchmarks (D211) ----------------------
    One table: a row a benchmark, with its currency, risk level, hedging
    policy and mnemonic. A proposal's portfolio - its risk level, currency
-   and hedging policy - finds its row; the workbook and deck name the
+   and hedging policy - finds its row, Equity Not Hedged the Unhedged one
+   (D216), so the table holds no rows for it; the workbook and deck name the
    benchmark, the account opening request names it and its mnemonic, and a
    custom portfolio chooses its own from the benchmarks held. Rows are typed,
    added in the blank row at the foot, deleted, pasted from Excel or loaded
@@ -21421,6 +21422,19 @@ function pbmMatch(field, word) {
   var starts = opts.filter(function (o) { return pbmSquash(o[0]).indexOf(said) === 0; });
   return starts.length === 1 ? starts[0][0] : null;
 }
+/* the policy a word names when it is one whose portfolios take another's
+   row - Equity Not Hedged takes Unhedged - else null */
+function pbmTakesAnother(word) {
+  var d = pbm.data, takes = d.readsAs || {}, said = pbmSquash(word);
+  if (!said) return null;
+  var all = d.hedgings.concat(Object.keys(takes));
+  var hit = all.filter(function (h) { return pbmSquash(h) === said; })[0];
+  if (!hit) {
+    var starts = all.filter(function (h) { return pbmSquash(h).indexOf(said) === 0; });
+    hit = starts.length === 1 ? starts[0] : null;
+  }
+  return hit && takes[hit] ? hit : null;
+}
 function pbmRiskLabel(risk) {
   var hit = pbm.data.risks.filter(function (r) { return r.risk === risk; })[0];
   return hit ? hit.label : risk;
@@ -21443,6 +21457,8 @@ function pbmChecked() {
     ['currency', 'risk', 'hedging'].forEach(function (f) {
       if (!row[f]) bad[f] = aocTidy(r[f]) ? '“' + aocTidy(r[f]) + '” is not one on offer' : 'Choose one';
     });
+    var other = pbmTakesAnother(r.hedging);
+    if (other) bad.hedging = other + ' takes the ' + pbm.data.readsAs[other] + ' benchmark: delete the row';
     if (!row.benchmark) bad.benchmark = 'Name the benchmark';
     else if (row.benchmark.length > (pbm.data.benchmarkMax || 200)) bad.benchmark = 'At most ' + (pbm.data.benchmarkMax || 200) + ' characters';
     if (row.mnemonic.length > (pbm.data.mnemonicMax || 40)) bad.mnemonic = 'At most ' + (pbm.data.mnemonicMax || 40) + ' characters';
@@ -21589,6 +21605,8 @@ function pbmImportHtml() {
     + (i.error ? '<p class="md-err" role="alert">' + esc(i.error) + '</p>' : '');
   if (pv) {
     html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · <b>' + pv.changed + ' change' + (pv.changed === 1 ? '' : 's') + '</b></p>'
+      + (pv.leftOut ? '<p class="pmm-mut">' + pv.leftOut + ' row' + (pv.leftOut === 1 ? '' : 's') + ' for Equity Not Hedged left out: '
+          + 'a portfolio under it takes the Unhedged benchmark.</p>' : '')
       + (pv.problems.length ? '<div class="pmm-gaps"><b>Problems: fix them in the file and choose it again.</b><ul>'
           + pv.problems.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('')
           + (pv.problems.length > 12 ? '<li>and ' + (pv.problems.length - 12) + ' more</li>' : '') + '</ul></div>' : '')
@@ -21642,7 +21660,7 @@ function benchmarksViewHtml(subs) {
   return '<div class="repo-b ent-b pmm-b aoc-b pbm-b">' + subs
     + '<h3 class="sv-h3">MAP Benchmarks</h3>'
     + '<p class="pmm-lede">The benchmark of a multi-asset portfolio and its mnemonic, one row for each currency, risk level and hedging policy: '
-    + 'the allocation and the implementation type play no part. A strategic proposal’s workbook and deck name its portfolio’s benchmark, and the account '
+    + 'the allocation and the implementation type play no part. A portfolio under Equity Not Hedged takes the Unhedged row, so there are no rows for it. A strategic proposal’s workbook and deck name its portfolio’s benchmark, and the account '
     + 'opening request names it with its mnemonic for the mandate. A custom portfolio’s benchmark is chosen on the proposal from the ones held here.</p>'
     + '<p class="pmm-mut">Edit a cell, type into the blank row at the foot to add one, or paste a block copied in Excel into the cell where it starts - '
     + 'with its heading row, the columns go in by name. To seed the whole table, import a file.</p>'
@@ -21700,16 +21718,23 @@ function pbmPasteInto(el, text) {
   var head = lines[0].map(function (h) { return names[pbmSquash(h)] || null; });
   var byName = head.filter(Boolean).length >= 2;
   var body = byName ? lines.slice(1) : lines;
-  var at = parseInt(el.dataset.pbmrow, 10), from = PBM_FIELDS.indexOf(el.dataset.pbmf), put = 0;
+  var at = parseInt(el.dataset.pbmrow, 10), from = PBM_FIELDS.indexOf(el.dataset.pbmf), put = 0, left = 0;
   body.forEach(function (cells, ri) {
     if (cells.every(function (c) { return !c; })) return;
+    var given = {};
     cells.forEach(function (raw, ci) {
       var field = byName ? head[ci] : PBM_FIELDS[from + ci];
-      if (field) pbmPut(at + ri, field, raw);
+      if (field) given[field] = raw;
     });
+    /* a row for Equity Not Hedged is left out: it takes the Unhedged one */
+    if (pbmTakesAnother(given.hedging)) { left += 1; return; }
+    Object.keys(given).forEach(function (f) { pbmPut(at + ri - left, f, given[f]); });
     put += 1;
   });
-  pbm.pasted = 'Pasted ' + put + ' row' + (put === 1 ? '' : 's') + (byName ? ', columns placed by their headings' : '') + '.';
+  pbm.pasted = 'Pasted ' + put + ' row' + (put === 1 ? '' : 's') + (byName ? ', columns placed by their headings' : '') + '.'
+    + (left ? ' ' + left + ' row' + (left === 1 ? '' : 's') + ' for Equity Not Hedged left out: it takes the Unhedged benchmark.' : '');
+  /* nothing else pasted: say so where it shows without a change */
+  if (left && !put) pbm.flash = pbm.pasted.replace(/^Pasted 0 rows[^.]*\. /, '');
   pbm.filter = '';
   render();
 }
