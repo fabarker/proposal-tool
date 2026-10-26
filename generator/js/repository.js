@@ -96,10 +96,6 @@ var cat = {
   withdrawn: false,                  /* the withdrawn products shown instead (D165) */
   importSaid: '',                    /* what the last import did */
   orphansOpen: false,                /* the missing products listed, not just counted */
-  /* the listing each line shows (D207): a currency's, or the main ones. It
-     follows the open proposal's currency until one is picked, and a pick
-     lasts while the console is open and the proposal's currency stands */
-  viewPicked: null, viewFor: null,
   open: []                           /* the products whose listings are opened under them */
 };
 
@@ -182,8 +178,6 @@ var CAT_FACETS = [
   { key: 'issueCurrency', label: 'Issue currency' },
   { key: 'hedging', label: 'Hedging', order: ['Hedged', 'ISG Hedged', 'Unhedged', 'Not stated'] },
   { key: 'listings', label: 'Listings', order: ['One listing', 'Several listings'] },
-  /* the products an admin still has to rank, by the currency left */
-  { key: 'unranked', label: 'Unranked in', order: ['USD', 'GBP', 'CHF', 'EUR', 'Nothing to rank'] },
   { key: 'book', label: 'Implementation type' },
   /* whether it names a benchmark (D204): the products still to be given one */
   { key: 'benchmarked', label: 'Benchmark', order: ['Has a benchmark', 'No benchmark'] },
@@ -274,15 +268,12 @@ function esc(s) { return App.esc(s == null ? '' : String(s)); }
    Pure functions over the fetched data, DOM-free so the suite can run them
    through node against fixture data the way it runs the rounding and tilt
    mirrors. A "row" here is a product enriched with its joins and its
-   figures, read at the listing in view (D207): { p, v, view, listing, main,
-   matched, count, varies, lower, used, categories, books, net, tooBig } -
-   *v* the product's values at that listing, the ones its cells show. */
+   figures, read at the listing it shows - the first, the one a proposal
+   holds, or another a search matched (D207, D214): { p, v, listing,
+   matched, count, varies, used, categories, books, net, tooBig } - *v* the
+   product's values at that listing, the ones its cells show. */
 /* the band of a product with no category of its own and no sleeve (D178) */
 var NO_CATEGORY = 'No category';
-/* the base currencies a product ranks its listings in, and the views of the
-   catalogue: each currency's, or every product's main listing */
-var CAT_CCYS = ['USD', 'GBP', 'CHF', 'EUR'];
-var CAT_MAIN = 'Main';
 var CAT_LISTING_FIELDS = ['ticker', 'code', 'issueCurrency', 'hedging', 'shareClass', 'exposureCurrency',
                           'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark'];
 function catJoin(sleeves) {
@@ -298,27 +289,9 @@ function catJoin(sleeves) {
   });
   return map;
 }
-/* a product's listings (D207), or the one its top level carries */
+/* a product's listings (D207), or the one its top level carries, in their
+   order: the first is the one a proposal holds (D214) */
 function catListings(p) { return p.listings && p.listings.length ? p.listings : [p]; }
-/* the listings a proposal in *view* tries, in order: the ones ranked there,
-   else the main one alone - which is all the Main view shows */
-function catRanked(p, view) {
-  var all = catListings(p);
-  if (CAT_CCYS.indexOf(view) !== -1) {
-    var placed = all.filter(function (l) { return l.ranks && l.ranks[view]; })
-      .sort(function (a, b) { return a.ranks[view] - b.ranks[view]; });
-    if (placed.length) return placed;
-  }
-  return [all[0]];
-}
-/* every listing in the order the arrow opens them: the ones ranked in the
-   view first to last, then the rest in the product's order */
-function catOpenOrder(p, view) {
-  var all = catListings(p), ranked = CAT_CCYS.indexOf(view) !== -1
-    ? all.filter(function (l) { return l.ranks && l.ranks[view]; }).sort(function (a, b) { return a.ranks[view] - b.ranks[view]; })
-    : [];
-  return ranked.concat(all.filter(function (l) { return ranked.indexOf(l) === -1; }));
-}
 /* the product's values at *listing*: what it is, with the listing's own */
 function catAt(p, listing) {
   var v = {};
@@ -330,19 +303,17 @@ function catAt(p, listing) {
 /* a listing's value as a cell compares it */
 function catText(v) { return v === null || v === undefined || v === '' ? '—' : String(v); }
 /* *row* read at *listing*: its values, net yield, the values its other
-   listings differ in, the smaller minimum a lower rank has, and whether
-   every listing a proposal in the view tries is above the open mandate -
-   since one below it would step in (D208) */
+   listings differ in, and whether the listing a proposal holds - the
+   first (D214) - is above the open mandate */
 function catRowAt(row, listing, mandateSize) {
-  var p = row.p, all = catListings(p), order = catRanked(p, row.view);
+  var p = row.p, all = catListings(p), held = all[0];
   var v = catAt(p, listing);
   row.listing = listing; row.v = v;
   var y = v.distributionYield, cost = v.productCost;
   /* the yield less the listing's own cost - never a management fee (D114) */
   row.net = (typeof y === 'number' && typeof cost === 'number') ? y - cost : null;
-  row.tooBig = typeof mandateSize === 'number' && mandateSize > 0 && order.every(function (l) {
-    return typeof l.minimumInvestment === 'number' && l.minimumInvestment > mandateSize;
-  });
+  row.tooBig = typeof mandateSize === 'number' && mandateSize > 0
+    && typeof held.minimumInvestment === 'number' && held.minimumInvestment > mandateSize;
   row.varies = {};
   if (all.length > 1) {
     CAT_LISTING_FIELDS.forEach(function (f) {
@@ -351,34 +322,18 @@ function catRowAt(row, listing, mandateSize) {
       if (seen.length > 1) row.varies[f] = seen;
     });
   }
-  row.lower = null;
-  var held = order.indexOf(listing), floor = listing.minimumInvestment;
-  if (held !== -1 && typeof floor === 'number' && floor > 0) {
-    order.slice(held + 1).forEach(function (l, k) {
-      var m = typeof l.minimumInvestment === 'number' ? l.minimumInvestment : 0;
-      if (m < floor && (row.lower === null || m < row.lower.minimum)) row.lower = { minimum: m, rank: held + k + 2 };
-    });
-  }
   return row;
 }
-function catEnrich(products, sleeves, mandateSize, view) {
+/* each product's line, at the listing a proposal holds: its first (D214) */
+function catEnrich(products, sleeves, mandateSize) {
   var join = catJoin(sleeves);
-  view = view || CAT_MAIN;
   return (products || []).map(function (p) {
     var j = join[p.productId] || { used: 0, categories: [], books: [] };
     var all = catListings(p);
-    var row = { p: p, view: view, count: all.length, matched: false,
-                /* a currency the product has not ranked shows its main listing, said so */
-                main: view !== CAT_MAIN && all.length > 1 && !all.some(function (l) { return l.ranks && l.ranks[view]; }),
+    var row = { p: p, count: all.length, matched: false,
                 used: j.used, categories: j.categories, books: j.books };
-    return catRowAt(row, catRanked(p, view)[0], mandateSize);
+    return catRowAt(row, all[0], mandateSize);
   });
-}
-/* the base currencies a product of several listings ranks none in */
-function catUnranked(p) {
-  var all = catListings(p);
-  if (all.length < 2) return [];
-  return CAT_CCYS.filter(function (c) { return !all.some(function (l) { return l.ranks && l.ranks[c]; }); });
 }
 function catValuesOf(row, field) {
   /* the product's own category (D178); without one, the categories of the
@@ -391,7 +346,6 @@ function catValuesOf(row, field) {
   }
   if (field === 'edited') return [catEditedBucket(row.p.lastEditedAt, Date.now())];
   if (field === 'listings') return [row.count > 1 ? 'Several listings' : 'One listing'];
-  if (field === 'unranked') { var left = catUnranked(row.p); return left.length ? left : ['Nothing to rank']; }
   /* a listing's word: any of the product's listings (D207) */
   if (CAT_LISTING_FIELDS.indexOf(field) !== -1) {
     var out = [];
@@ -422,7 +376,7 @@ function catMatched(row, q, mandateSize) {
   if (!hit) return row;
   var out = {};
   for (var k in row) if (Object.prototype.hasOwnProperty.call(row, k)) out[k] = row[k];
-  out.matched = true; out.main = false;
+  out.matched = true;
   return catRowAt(out, hit, mandateSize);
 }
 function catPasses(row, state, except) {
@@ -543,9 +497,9 @@ function catGroups(rows, order, chosen) {
    (products.clean) would, so Save is offered only for a product that can be
    saved; the server is still the authority, and a refusal it gives lands on
    the same box. The draft is what the product is - its fields - and its
-   listings, a list of rows of text, the first the main one; a listing's
-   boxes are keyed listing0ticker, listing1rankGBP... as the server names
-   them. */
+   listings, a list of rows of text in their order, the first the one a
+   proposal holds (D214); a listing's boxes are keyed listing0ticker,
+   listing1hedging... as the server names them. */
 var PRD_FIELDS = [
   { key: 'productId', label: 'Product ID', kind: 'id', wide: true },
   { key: 'name', label: 'Name', kind: 'text', wide: true },
@@ -601,10 +555,6 @@ function prdListingRow(l) {
     if (f.key === 'ticker' && v === '—') v = '';
     row[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
-  PRD_CURRENCIES.forEach(function (c) {
-    var r = l && l.ranks ? l.ranks[c] : null;
-    row['rank' + c] = r ? String(r) : '';
-  });
   return row;
 }
 /* the boxes of the draft's listings, as the form's fields: for the
@@ -615,11 +565,6 @@ function prdListingFields(d) {
     PRD_LISTING_FIELDS.forEach(function (f) {
       out.push({ key: 'listing' + i + f.key, label: f.label + ' of listing ' + (i + 1), kind: f.kind, at: i, base: f.key });
     });
-    if (rows.length > 1) {
-      PRD_CURRENCIES.forEach(function (c) {
-        out.push({ key: 'listing' + i + 'rank' + c, label: c + ' rank of listing ' + (i + 1), kind: 'rank', at: i, base: 'rank' + c });
-      });
-    }
   });
   return out;
 }
@@ -717,8 +662,7 @@ function prdProblems(d, ctx) {
 }
 /* the listings' problems (D207), into *out*: the server's checks in
    miniature - whole listings, a code only on an SMA's, the hedging its kind
-   may say, no two the same, no two ranked alike in a currency, and a ticker
-   or a code another product holds */
+   may say, no two the same, and a ticker or a code another product holds */
 function prdListingProblems(d, ctx, out) {
   var rows = d.listings || [];
   if (!rows.length) { out.listings = 'A product has at least one listing: its ticker, its cost and the rest.'; return; }
@@ -753,34 +697,15 @@ function prdListingProblems(d, ctx, out) {
       if (p) out[box + f[0]] = p;
     });
     if (prdText(l.benchmark).length > PRD_MAX.benchmark) out[box + 'benchmark'] = 'Keep the benchmark of listing ' + n + ' to ' + PRD_MAX.benchmark + ' characters.';
-    if (rows.length > 1) {
-      PRD_CURRENCIES.forEach(function (c) {
-        var t = String(l['rank' + c] || '').trim();
-        if (t && !/^\d+$/.test(t)) out[box + 'rank' + c] = 'A rank is a whole number: 1 for the listing a proposal in ' + c + ' holds first, 2 for the next, or blank for none.';
-      });
-    }
     var key = prdListingKey(l);
     if (seen[key] !== undefined && !out[box + (code ? 'code' : 'ticker')]) {
       out[box + (code ? 'code' : 'ticker')] = 'Listings ' + (seen[key] + 1) + ' and ' + n + ' are the same listing. Give one its own issue currency, hedging or share class.';
     }
     if (seen[key] === undefined) seen[key] = i;
   });
-  if (rows.length > 1) {
-    PRD_CURRENCIES.forEach(function (c) {
-      var at = {};
-      rows.forEach(function (l, i) {
-        var t = String(l['rank' + c] || '').trim();
-        if (!/^\d+$/.test(t) || +t === 0) return;
-        if (at[+t] !== undefined && !out['listing' + i + 'rank' + c]) {
-          out['listing' + i + 'rank' + c] = 'Listings ' + (at[+t] + 1) + ' and ' + (i + 1) + ' are both ranked ' + (+t) + ' for ' + c + '. Give each its own place.';
-        }
-        if (at[+t] === undefined) at[+t] = i;
-      });
-    });
-  }
 }
-/* the draft as the server reads it: words as words, figures as numbers;
-   a single listing's ranks are nothing to keep */
+/* the draft as the server reads it: words as words, figures as numbers,
+   the listings in their order */
 function prdPayload(d) {
   var out = {};
   PRD_FIELDS.forEach(function (f) {
@@ -788,18 +713,11 @@ function prdPayload(d) {
   });
   var rows = d.listings || [];
   out.listings = rows.map(function (l) {
-    var ranks = {};
-    if (rows.length > 1) {
-      PRD_CURRENCIES.forEach(function (c) {
-        var t = String(l['rank' + c] || '').trim();
-        if (/^\d+$/.test(t) && +t > 0) ranks[c] = +t;
-      });
-    }
     return { ticker: prdText(l.ticker), code: prdText(l.code), issueCurrency: prdText(l.issueCurrency),
              hedging: prdText(l.hedging), shareClass: prdText(l.shareClass),
              exposureCurrency: prdText(l.exposureCurrency), assetClass: prdText(l.assetClass),
              productCost: prdNumber(l.productCost, true), distributionYield: prdNumber(l.distributionYield, true),
-             minimumInvestment: prdNumber(l.minimumInvestment, false), benchmark: prdText(l.benchmark), ranks: ranks };
+             minimumInvestment: prdNumber(l.minimumInvestment, false), benchmark: prdText(l.benchmark) };
   });
   return out;
 }
@@ -847,11 +765,19 @@ function prdShowListing(l) {
   if (prdText(l.benchmark)) bits.push('benchmark ' + prdText(l.benchmark));
   return bits.join(' · ') || '—';
 }
-/* a currency's ranking in words: 'GEF-GBPH, then GEF-USD · GBP' */
-function prdRankWords(all, c) {
-  return all.filter(function (l) { return l.ranks && l.ranks[c]; })
-    .sort(function (a, b) { return a.ranks[c] - b.ranks[c]; })
-    .map(function (l) { return prdListingLabel(l, all); }).join(', then ');
+/* listings in their order, in words: 'GEF-GBPH, then GEF-USD · GBP' */
+function prdOrderWords(all) {
+  return all.map(function (l) { return prdListingLabel(l, all); }).join(', then ') || '—';
+}
+/* whether the listings two versions share stand in another order, or
+   another is now the first, the one a proposal holds (D214). Mirrors
+   products._orderMoved. */
+function prdOrderMoved(was, is, pairs) {
+  var placed = pairs.slice().sort(function (x, y) { return was.indexOf(x[0]) - was.indexOf(y[0]); })
+    .map(function (pair) { return is.indexOf(pair[1]); });
+  var sorted = placed.slice().sort(function (x, y) { return x - y; });
+  var held = pairs.filter(function (pair) { return pair[0] === was[0]; })[0];
+  return placed.join() !== sorted.join() || (is.length > 0 && (!held || held[1] !== is[0]));
 }
 function prdSameValue(field, a, b) {
   if (field === 'productCost' || field === 'distributionYield' || field === 'minimumInvestment') {
@@ -866,7 +792,7 @@ function prdSameValue(field, a, b) {
 }
 /* what saving the draft would move: [{key, label, before, after}] - the
    product's fields, then its listings matched by what makes each the one it
-   is, then each currency's ranking. Mirrors products.changes. */
+   is, then their order where it moved (D214). Mirrors products.changes. */
 function prdChanges(before, d) {
   var now = prdPayload(d), out = [];
   PRD_FIELDS.forEach(function (f) {
@@ -906,10 +832,9 @@ function prdChanges(before, d) {
     var label = prdListingLabel(l, was);
     out.push({ key: 'listing-:' + label, label: 'Listing ' + label, before: prdShowListing(l), after: 'taken off' });
   });
-  PRD_CURRENCIES.forEach(function (c) {
-    var x = prdRankWords(was, c), y = prdRankWords(is, c);
-    if (x !== y) out.push({ key: 'rank' + c, label: c + ' ranking', before: x || '—', after: y || '—' });
-  });
+  if (!one && prdOrderMoved(was, is, pairs)) {
+    out.push({ key: 'order', label: 'Listing order', before: prdOrderWords(was), after: prdOrderWords(is) });
+  }
   return out;
 }
 /* the word in use a typed one is most likely a slip for: the same but for
@@ -1320,26 +1245,10 @@ function catMandate() {
   var mandate = (typeof App.mandateSize === 'function') ? App.mandateSize() : null;
   return typeof mandate === 'number' ? mandate : null;
 }
-/* the open proposal's base currency, once its PWA has chosen one */
-function catProposalCcy() {
-  var basis = (typeof App.basis === 'function') ? App.basis() : null;
-  var c = basis && basis.currency;
-  return CAT_CCYS.indexOf(c) !== -1 ? c : null;
-}
-/* the view in force (D207): one picked, while the proposal's currency is the
-   one it was picked under; else the proposal's currency; else Main */
-function catView() {
-  var ccy = catProposalCcy();
-  if (cat.viewPicked && cat.viewFor === ccy) return cat.viewPicked;
-  return ccy || CAT_MAIN;
-}
-var catRowCacheView = null;
 function catRows() {
-  var view = catView();
-  if (!catRowCache || catRowCacheView !== view) {
+  if (!catRowCache) {
     catRowCache = catEnrich(cat.withdrawn ? (repo.data.withdrawnProducts || []) : repo.data.products,
-                            repo.data.sleeves, catMandate(), view);
-    catRowCacheView = view;
+                            repo.data.sleeves, catMandate());
   }
   return catRowCache;
 }
@@ -1795,8 +1704,6 @@ function openRepository(trigger, view, at) {
   repo.pending = at || null;
   sv.level = 0; sv.drawer = false; sv.compare = false; sv.sel = []; sv.editing = false; sv.focus = null; sv.lastPlace = null;
   sv.fv = at && at.variant ? at.variant : ''; sv.fc = '';
-  /* the catalogue opens on the open proposal's currency again (D207) */
-  cat.viewPicked = null; cat.viewFor = null;
   render();
   loadRepository();
   /* opened straight onto a tab that keeps a history */
@@ -6761,7 +6668,6 @@ function catToolbarHtml() {
     + '<button type="button" role="tab" id="catFlat" data-catgroup="flat" aria-selected="' + !cat.group + '">Flat</button>'
     + '</div>'
     + '<span id="catFoldAll">' + catFoldAllHtml() + '</span>'
-    + catViewHtml()
     + '<span class="cat-chipwrap">'
     + '<button type="button" class="cat-chip' + (cat.hidden.length ? ' on' : '') + '" data-catcols aria-expanded="' + (cat.openChip === 'cols') + '">Columns'
     + (cat.hidden.length ? ' <b>' + (CAT_COLUMNS.length - cat.hidden.length) + ' of ' + CAT_COLUMNS.length + '</b>' : '') + ' <span class="car">▾</span></button>'
@@ -6789,21 +6695,6 @@ function catToolbarHtml() {
     + '<span class="cat-src">' + esc(catSourceText()) + '</span>'
     + (cat.importSaid ? '<span class="prd-flash" role="status">' + esc(cat.importSaid) + '</span>' : '')
     + '</div>';
-}
-/* View as (D207): the listing each line shows - a currency's, the one a
-   proposal there holds first, or every product's main one */
-function catViewHtml() {
-  var view = catView(), ccy = catProposalCcy();
-  return '<span class="cat-view"><span class="cat-view-l" id="catViewL">View as</span>'
-    + '<span class="repo-seg cat-density" role="tablist" aria-labelledby="catViewL">'
-    + [CAT_MAIN].concat(CAT_CCYS).map(function (v) {
-        return '<button type="button" role="tab" data-catview="' + v + '" aria-selected="' + (view === v) + '"'
-          + ' title="' + esc(v === CAT_MAIN ? 'Each product’s main listing' : 'The listing a proposal in ' + v + ' holds first') + '">' + v + '</button>';
-      }).join('')
-    + '</span>'
-    + (ccy && view === ccy && !(cat.viewPicked && cat.viewFor === ccy)
-        ? '<small class="cat-view-from">from the open proposal</small>' : '')
-    + '</span>';
 }
 function catSourceText() {
   var c = repo.data.catalogue || {};
@@ -6871,8 +6762,9 @@ function catHeadHtml() {
 }
 
 /* A line's cells (D207): what the product is from the product, and the
-   rest from the listing in view - a cell its other listings differ in
-   carries a mark, and names their values in its title. */
+   rest from the listing it shows - the first, the one a proposal holds
+   (D214) - where a cell its other listings differ in carries a mark, and
+   names their values in its title. */
 function catCellHtml(row, c, sorted) {
   var p = row.p, v = row.v || row.p;
   var vm = row.varies && row.varies[c.key];
@@ -6885,23 +6777,20 @@ function catCellHtml(row, c, sorted) {
   switch (c.key) {
     case 'ticker': return td('tk', esc(v.ticker)
       + (row.count > 1 ? '<span class="cat-cnt" title="' + row.count + ' listings">+' + (row.count - 1) + '</span>' : '')
-      + (row.main ? '<span class="cat-tag mn" title="No ranking for ' + esc(row.view) + ': its main listing">main</span>' : '')
       + (row.matched ? '<span class="cat-tag mt" title="The listing the search names">matched</span>' : ''));
     case 'name': return td('nm', (row.count > 1
         ? '<button type="button" class="cat-lst" data-catlst="' + esc(p.productId) + '" aria-expanded="' + open + '"'
           + ' aria-label="' + (open ? 'Fold ' : 'Open ') + row.count + ' listings of ' + esc(p.name) + '">' + (open ? '▾' : '▸') + '</button>'
         : '<span class="cat-lst-no" aria-hidden="true"></span>')
-      + '<b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="Every listing a proposal here would hold needs more than the open mandate">min '
-        + esc(catMoney(v.minimumInvestment)) + '</span>' : '') + '</b>');
+      + '<b>' + esc(p.name) + (row.tooBig ? ' <span class="flag" title="The listing a proposal holds, its first, needs more than the open mandate">min '
+        + esc(catMoney(catListings(p)[0].minimumInvestment)) + '</span>' : '') + '</b>');
     case 'vehicle': return td('', '<span class="veh">' + esc(p.vehicle) + '</span>');
     case 'liquidity': return td('', '<span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span>');
     case 'productCost': return td('num', catFigure(v.productCost, 2));
     case 'distributionYield': return td('num', catFigure(v.distributionYield, 2));
     case 'net': return td('num' + (row.net === null ? ' mute' : (row.net < 0 ? ' neg' : ' pos')),
       row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2));
-    /* a lower rank that takes less, which a line below this one steps down to (D208) */
-    case 'minimumInvestment': return td('num' + (typeof v.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(v.minimumInvestment))
-      + (row.lower ? '<span class="cat-ht">from ' + esc(catMoney(row.lower.minimum)) + ' at rank ' + row.lower.rank + '</span>' : ''));
+    case 'minimumInvestment': return td('num' + (typeof v.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(v.minimumInvestment)));
     case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
     case 'lastEditedAt': return td('mute ed', esc(shortDate(p.lastEditedAt)));
     case 'issueCurrency': return td('mute', esc(v.issueCurrency || '—'));
@@ -6911,20 +6800,19 @@ function catCellHtml(row, c, sorted) {
     default: return td('mute', esc(v[c.key]));
   }
 }
-/* the listings of an opened line, a row each (D207): ranked in the view
-   first to last, then the rest, the main one said so; a click opens the
-   card as the line's does */
+/* the listings of an opened line, a row each (D207), in their order, the
+   first said to be the one held (D214); a click opens the card as the
+   line's does */
 function catSubRowsHtml(row, cols, band) {
-  var p = row.p, all = catListings(p), ccy = CAT_CCYS.indexOf(row.view) !== -1;
-  return catOpenOrder(p, row.view).map(function (l) {
-    var rank = ccy && l.ranks ? l.ranks[row.view] : null, at = all.indexOf(l);
-    var tag = (rank ? row.view + ' rank ' + rank : ccy ? 'not ranked' : 'listing ' + (at + 1)) + (at === 0 ? ' · main' : '');
+  var p = row.p, all = catListings(p);
+  return all.map(function (l, at) {
+    var tag = 'listing ' + (at + 1) + (at === 0 ? ' · held' : '');
     var net = (typeof l.distributionYield === 'number' && typeof l.productCost === 'number') ? l.distributionYield - l.productCost : null;
     return '<tr class="cat-sub' + (l === row.listing ? ' held' : '') + '" data-catrow="' + esc(p.productId) + '"'
       + (band === null ? '' : ' data-catband="' + esc(band) + '"') + '><td class="pinc"></td>'
       + cols.map(function (c) {
           var k = c.key, txt = function (x) { return '<td class="mute">' + esc(x || '—') + '</td>'; };
-          if (k === 'name') return '<td class="nm sub' + (rank === 1 ? ' r1' : '') + '">' + esc(tag) + '</td>';
+          if (k === 'name') return '<td class="nm sub' + (at === 0 ? ' r1' : '') + '">' + esc(tag) + '</td>';
           if (k === 'ticker') return '<td class="tk">' + (l.code ? '<b>' + esc(l.code) + '</b>' : esc(l.ticker || '—')) + '</td>';
           if (k === 'productCost' || k === 'distributionYield') return '<td class="num">' + catFigure(l[k], 2) + '</td>';
           if (k === 'minimumInvestment') return '<td class="num">' + esc(catMoney(l.minimumInvestment)) + '</td>';
@@ -7010,9 +6898,8 @@ function catCompareHtml() {
   var line = function (label, fn, key) {
     return '<tr><td>' + label + '</td>' + pinned.map(function (row) { return cell(row, key, fn(row)); }).join('') + '</tr>';
   };
-  var view = catView();
   return '<div class="cat-cmpwrap"><table class="cat-cmp"><thead><tr><th><small class="cat-cmp-view">'
-    + esc(view === CAT_MAIN ? 'Main listings' : 'Listings held in ' + view) + '</small></th>'
+    + 'The listings held</small></th>'
     + pinned.map(function (row) {
         return '<th><span class="t">' + esc(row.v.ticker !== '—' ? row.v.ticker : row.p.name) + '</span><small>' + esc(row.p.name) + '</small>'
           + '<button type="button" class="cat-unpin" data-catunpin="' + esc(row.p.productId) + '" aria-label="Unpin ' + esc(row.p.name) + '">×</button></th>';
@@ -7317,8 +7204,10 @@ var PRD_ACTION_WORDS = {
 /* The card (D207): one shell, with the Fund template or - for any vehicle
    that makes the product a separate account - the SMA one, whose listings
    are its mandate codes. A product of one listing reads as a product always
-   did; one of several shows its listings and how each base currency ranks
-   them, in a wider panel. The figures at the top are the listing in view's. */
+   did; one of several shows its listings in their order, in a wider panel,
+   where they are dragged into another (D214). The figures at the top are
+   the first listing's, the one a proposal holds, or the one a search
+   matched. */
 function prdViewHtml(row) {
   var p = row.p, v = row.v || p, uses = usedIn(p.productId), sma = prdIsSma(p);
   var all = prdListingsOf(p), many = all.length > 1;
@@ -7351,8 +7240,7 @@ function prdViewHtml(row) {
     + '<div class="m"><small>Net</small><b>' + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</b></div>'
     + '</div>'
     + (many ? '<p class="prd-inview">The figures of ' + esc(prdListingLabel(row.listing || one, all))
-        + (row.view && row.view !== CAT_MAIN ? (row.main ? ', its main listing: nothing is ranked for ' + esc(row.view) : ', the listing a proposal in ' + esc(row.view) + ' holds first')
-           : ', its main listing') + '.</p>' : '')
+        + ((row.listing || one) === one ? ', the first listing, which a proposal holds' : ', the listing the search names') + '.</p>' : '')
     + '<dl class="cat-dl">'
     + '<dt>Category</dt><dd>' + esc(p.category || '—') + '</dd>'
     + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
@@ -7391,18 +7279,14 @@ function prdOneListingHtml(p, l, row) {
     + (!sma || prdIsEquity(p) ? '<dt>Hedging</dt><dd>' + esc(l.hedging || '—') + '</dd>' : '')
     + '<dt>Minimum</dt><dd>' + esc(catMoney(l.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>';
 }
-/* the listing each base currency holds first (D207): its rank 1, else the
-   main listing */
-function prdHeldIn(all, c) {
-  var placed = all.filter(function (l) { return l.ranks && l.ranks[c]; })
-    .sort(function (a, b) { return a.ranks[c] - b.ranks[c]; });
-  return placed.length ? placed[0] : all[0];
-}
-/* the card's listings (D207): a row each, the main one first, with each base
-   currency's rank and, green, the one a proposal there holds first; an SMA's
-   are its mandate codes */
+/* the card's listings (D207): a row each in their order, an SMA's its
+   mandate codes. The first is the one a proposal holds, whatever its base
+   currency (D214); a row is dragged by its grip, or moved by its arrows,
+   and the order is saved as it is dropped. A withdrawn product's are read
+   only. */
 function prdListingsHtml(p, row) {
   var all = prdListingsOf(p), sma = prdIsSma(p), equity = prdIsEquity(p);
+  var movable = !p.withdrawn, busy = prd.saving ? ' disabled' : '';
   var cols = [
     [sma ? 'Code' : 'Ticker', function (l) {
       return sma ? (l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">none yet</span>')
@@ -7417,31 +7301,50 @@ function prdListingsHtml(p, row) {
     ['Min', function (l) { return esc(catMoney(l.minimumInvestment)); }, 'num'],
     ['Benchmark', function (l) { return l.benchmark ? '<span class="prd-bm" title="' + esc(l.benchmark) + '">' + esc(l.benchmark) + '</span>' : '<span class="prd-none">none</span>'; }]
   ].filter(Boolean);
-  var held = {};
-  PRD_CURRENCIES.forEach(function (c) { held[c] = prdHeldIn(all, c); });
   return '<div class="prd-lst-v"><div class="h">' + (sma ? 'Mandate codes' : 'Listings') + ' · ' + all.length
-    + ' <small>and how each base currency ranks them</small></div>'
+    + ' <small>in order: a proposal holds the first</small></div>'
     + '<div class="prd-lst-tw"><table class="prd-lst-t"><thead><tr>'
+    + '<th scope="col" class="mv"><span class="sr-only">Order</span></th>'
     + cols.map(function (c) { return '<th scope="col"' + (c[2] ? ' class="num"' : '') + '>' + c[0] + '</th>'; }).join('')
-    + PRD_CURRENCIES.map(function (c) { return '<th scope="col" class="rk">' + c + '</th>'; }).join('')
     + '</tr></thead><tbody>'
     + all.map(function (l, i) {
-        return '<tr' + (l === row.listing ? ' class="inview"' : '') + '>'
+        var name = prdListingLabel(l, all);
+        return '<tr data-prdcrow="' + i + '" class="' + (i === 0 ? 'held' : '') + (l === row.listing ? ' inview' : '') + '">'
+          + '<td class="mv">' + (movable
+              ? '<span class="repo-mv"><span class="repo-grip" draggable="' + (prd.saving ? 'false' : 'true') + '" data-prdcgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+                + '<button type="button" class="repo-mb" data-prd="cardmove" data-i="' + i + '" data-by="-1"' + (i ? busy : ' disabled') + ' aria-label="Move ' + esc(name) + ' up">↑</button>'
+                + '<button type="button" class="repo-mb" data-prd="cardmove" data-i="' + i + '" data-by="1"' + (i < all.length - 1 ? busy : ' disabled') + ' aria-label="Move ' + esc(name) + ' down">↓</button></span>'
+              : '<span class="prd-ord">' + (i + 1) + '</span>') + '</td>'
           + cols.map(function (c, k) {
-              return '<td' + (c[2] ? ' class="num"' : '') + '>' + c[1](l) + (k === 0 && i === 0 ? '<span class="prd-main">main</span>' : '') + '</td>';
-            }).join('')
-          + PRD_CURRENCIES.map(function (c) {
-              var r = l.ranks && l.ranks[c];
-              return '<td class="rk' + (held[c] === l ? ' pk' : '') + '"' + (held[c] === l && !r ? ' title="Nothing is ranked for ' + c + ': the main listing is held"' : '') + '>'
-                + (r ? r : held[c] === l ? 'main' : '–') + '</td>';
+              return '<td' + (c[2] ? ' class="num"' : '') + '>' + c[1](l) + (k === 0 && i === 0 ? '<span class="prd-main">held</span>' : '') + '</td>';
             }).join('')
           + '</tr>';
       }).join('')
     + '</tbody></table></div>'
-    + '<p class="prd-held">Held first in ' + PRD_CURRENCIES.map(function (c) {
-        return '<b>' + c + '</b> ' + esc(prdListingLabel(held[c], all));
-      }).join(' · ') + '. A line below a listing’s minimum steps down its currency’s ranking.</p>'
+    + '<p class="prd-held">A proposal holds <b>' + esc(prdListingLabel(all[0], all)) + '</b>, the first, whatever its base currency or its amount.'
+    + (movable ? ' Drag a row by its grip, or move it with its arrows, to put another first: the order is saved as it moves.' : '') + '</p>'
     + '</div>';
+}
+/* the card's listings put in a new order (D214), saved as a new version;
+   *order* their places now, in the order wanted */
+async function prdReorder(id, order, focusAt) {
+  var p = prdEntry(id); if (!p || prd.saving || !order) return;
+  await prdPost('POST', '/scenario/repository/products/order', { productId: id, order: order, base: p.revision },
+    function (body) {
+      var now = prdListingsOf(body.product);
+      prd.flash = 'Order saved · version ' + body.product.revision + '. A proposal holds ' + prdListingLabel(now[0], now) + '.';
+      prdHistoryForget();
+      if (prd.historyOpen) loadProductHistory(id);
+    });
+  if (focusAt != null) prdFocus('[data-prdcrow="' + focusAt + '"] [data-prd="cardmove"]:not([disabled])');
+}
+/* the order that moves the listing at *from* to *to* */
+function prdOrderMoving(count, from, to) {
+  var order = [];
+  for (var i = 0; i < count; i += 1) order.push(i);
+  if (from === to || from < 0 || to < 0 || from >= count || to >= count) return null;
+  order.splice(to, 0, order.splice(from, 1)[0]);
+  return order;
 }
 
 /* ---- rendering: the form ---- */
@@ -7520,18 +7423,16 @@ function prdListingBoxHtml(d, i, f, probs, cls) {
     + (f.unit ? ' <small>' + f.unit + '</small>' : '') + '</label>' + input
     + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
 }
-/* which listing each base currency holds first, as the draft stands */
+/* which listing a proposal holds, as the draft stands: its first (D214) */
 function prdHeldText(d) {
   var rows = (prdPayload(d).listings || []);
   if (rows.length < 2) return '';
-  return 'Held first in ' + PRD_CURRENCIES.map(function (c) {
-    return c + ' ' + prdListingLabel(prdHeldIn(rows, c), rows);
-  }).join(' · ') + '. A currency ranking none holds the main listing.';
+  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + ', the first, whatever its base currency or its amount.';
 }
-/* The form's listings (D207), a block each, the first the main one: moved
-   by its grip or its arrows, taken off by its ×, and ranked in each base
-   currency once there are two. An SMA's are its mandate codes; a box only
-   one kind has shows for that kind, or while it still holds something. */
+/* The form's listings (D207), a block each in their order, the first the
+   one a proposal holds (D214): moved by its grip or its arrows, taken off
+   by its ×. An SMA's are its mandate codes; a box only one kind has shows
+   for that kind, or while it still holds something. */
 function prdListingsFormHtml(d, probs) {
   var rows = d.listings || [], sma = prdIsSma(d), equity = prdIsEquity(d), many = rows.length > 1;
   var by = {}, named = prdPayload(d).listings;
@@ -7541,7 +7442,7 @@ function prdListingsFormHtml(d, probs) {
     + '<small>' + (sma
         ? 'Each code an SMA is opened under, with the currency the account is run in' + (equity ? ' and its hedging version' : '') + '. One code may be run in several currencies: a row each.'
         : 'Each way of buying it: a share class and the currency it is dealt in. One ticker may be quoted in several currencies: a row each.')
-    + ' The first is the main one. With two or more, rank them for each base currency: a proposal holds the one ranked 1, and steps down the ranking below its minimum; a currency ranking none holds the main one.</small></div>'
+    + ' A proposal holds the first, whatever its base currency: drag another to the top to hold it instead.</small></div>'
     + prdListingLists()
     + rows.map(function (l, i) {
         var label = prdListingLabel(named[i], named);
@@ -7549,7 +7450,7 @@ function prdListingsFormHtml(d, probs) {
           + '<div class="prd-lst-h"><span class="repo-mv"><span class="repo-grip" draggable="' + (many ? 'true' : 'false') + '" data-prdgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
           + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="-1"' + (i ? '' : ' disabled') + ' aria-label="Move listing ' + (i + 1) + ' up">↑</button>'
           + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="1"' + (i < rows.length - 1 ? '' : ' disabled') + ' aria-label="Move listing ' + (i + 1) + ' down">↓</button></span>'
-          + '<b>Listing ' + (i + 1) + '</b>' + (i === 0 ? '<span class="prd-main">main</span>' : '')
+          + '<b>Listing ' + (i + 1) + '</b>' + (i === 0 && many ? '<span class="prd-main">held</span>' : '')
           + '<span class="prd-lst-n">' + esc(label === '—' ? '' : label) + '</span>'
           + (many ? '<button type="button" class="cat-link x" data-prd="lstremove" data-i="' + i + '" aria-label="Take off listing ' + (i + 1) + '" title="Take it off">×</button>' : '')
           + '</div>'
@@ -7566,21 +7467,7 @@ function prdListingsFormHtml(d, probs) {
           + prdListingBoxHtml(d, i, by.minimumInvestment, probs, 'w2')
           + prdListingBoxHtml(d, i, by.benchmark, probs, 'wide')
           + '</div>'
-          + (many ? '<div class="prd-rk" role="group" aria-label="Ranks of listing ' + (i + 1) + '"><span class="prd-rk-l">Rank</span>'
-              + PRD_CURRENCIES.map(function (c) {
-                  var key = 'listing' + i + 'rank' + c;
-                  var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
-                  var err = server || (prd.shown[key] ? probs[key] || '' : '');
-                  return '<label class="prd-rk-c"><span>' + c + '</span><input id="prdF-' + key + '" type="text" data-prdf="' + key + '" inputmode="numeric" autocomplete="off"'
-                    + ' value="' + esc(l['rank' + c]) + '" aria-label="' + esc(c + ' rank of listing ' + (i + 1)) + '" placeholder="–"'
-                    + (err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '') + '></label>';
-                }).join('')
-              + '<p class="prd-err prd-rk-e" role="status">' + PRD_CURRENCIES.map(function (c) {
-                  var key = 'listing' + i + 'rank' + c;
-                  var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
-                  var err = server || (prd.shown[key] ? probs[key] || '' : '');
-                  return '<span id="prdE-' + key + '">' + esc(err) + '</span>';
-                }).join('') + '</p></div>' : '')
+
           + '</div>';
       }).join('')
     + '<p class="prd-err" id="prdE-listings" role="status">' + esc(probs.listings || '') + '</p>'
@@ -7615,7 +7502,7 @@ function prdReachHtml() {
           + (reach.types === 1 ? '' : 's') + '. Proposals being built with ' + (reach.sleeves === 1 ? 'it' : 'them') + ' are re-priced at once.</p>'
         : '<p>Not in any sleeve, so no proposal uses it yet.</p>')
     + (minUp && reach.sleeves
-        ? '<p class="warn">A position below the minimum of every listing ranked for its currency stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
+        ? '<p class="warn">A position below the minimum of the first listing, the one a proposal holds, stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
     + '</div>';
 }
 function prdFormHtml() {
@@ -7798,7 +7685,8 @@ function impProductsPreviewHtml(p) {
   return '<p class="imp-sum"><b>' + esc(p.file) + '</b> · ' + p.rows + ' product' + (p.rows === 1 ? '' : 's') + ': '
     + [p.added.length + ' new', p.changed.length + ' changed', p.restored.length + ' back from withdrawn',
        p.unchanged + ' unchanged', p.missing.length + ' not in the file'].join(' · ') + '</p>'
-    + (p.legacy ? '<p class="imp-note">This file is in the layout before listings, a row per base currency: each currency’s row is read as a listing ranked first there, and the All row as the main one.</p>' : '')
+    + (p.legacy ? '<p class="imp-note">This file is in the layout before listings, a row per base currency: the All row is read as the first listing, the one a proposal holds, and each currency’s row as a listing after it.</p>' : '')
+    + (p.ranksIgnored ? '<p class="imp-note">The file’s Rank columns are not read: a proposal holds each product’s first listing, its first row in the file.</p>' : '')
     + impListHtml('keep their mandate codes - the file has no MandateCode column', p.kept || [], function (k) {
         return '<li><b>' + esc(k.name) + '</b> <small>' + k.listings + ' listing' + (k.listings === 1 ? '' : 's') + ' kept as they are</small></li>';
       })
@@ -7846,9 +7734,9 @@ function impDialogHtml() {
         ? 'Choose a fee card file: a CSV with one row per rate - schedule, feeGroup, tier, tierMin, tierMax, source, point, rate. '
           + 'Nothing changes until you have seen what it would move and applied it.'
         : 'Choose a product file: a CSV, or an Excel workbook with the products on its first sheet or one called products. '
-          + 'A product has a row for each listing, under the same ProductId: the columns the product file has always had, with '
-          + 'MandateCode, Hedging and a Rank column for each base currency (Rank USD, Rank GBP, Rank CHF, Rank EUR) - as the '
-          + 'downloaded file has them. A file a row per base currency, the layout before listings, is read too. '
+          + 'A product has a row for each listing, under the same ProductId, in their order - a proposal holds the first: the '
+          + 'columns the product file has always had, with MandateCode and Hedging, as the downloaded file has them. Rank columns '
+          + 'are not read. A file a row per base currency, the layout before listings, is read too. '
           + 'Nothing changes until you have seen what it would do and applied it.') + '</p>'
       + '<input type="file" id="impFile" accept="' + (fees ? '.csv' : '.csv,.xlsx') + '"' + (imp.busy ? ' disabled' : '') + '>'
       + (imp.busy ? '<p class="repo-loading">Reading ' + esc(imp.name) + '…</p>' : '');
@@ -7886,8 +7774,8 @@ function prdClick(el) {
   if (act === 'startblank') { prd.start = 'blank'; prdUseCopy(''); render(); return true; }
   if (act === 'startcopy') { prd.start = 'copy'; render(); prdFocus('#prdCopyOf'); return true; }
   if (act === 'lstadd') {
-    /* a new listing (D207), its values the main one's but what makes it
-       another: its ticker or code, issue currency, hedging and ranks */
+    /* a new listing (D207), at the end, its values the first one's but
+       what makes it another: its ticker or code, issue currency and hedging */
     var row = prdListingRow(null), main = prd.draft.listings[0] || {};
     ['shareClass', 'exposureCurrency', 'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark']
       .forEach(function (k) { row[k] = main[k] || ''; });
@@ -7908,6 +7796,12 @@ function prdClick(el) {
       render();
       prdFocus('[data-prd="lstmove"][data-i="' + to + '"][data-by="' + el.dataset.by + '"]:not([disabled]),[data-prd="lstmove"][data-i="' + to + '"]');
     }
+    return true;
+  }
+  if (act === 'cardmove') {
+    /* the card's listings, one place up or down, saved as it moves (D214) */
+    var at2 = parseInt(el.dataset.i, 10), p2 = prdEntry(id);
+    if (p2) prdReorder(id, prdOrderMoving(prdListingsOf(p2).length, at2, at2 + parseInt(el.dataset.by, 10)), at2 + parseInt(el.dataset.by, 10));
     return true;
   }
   if (act === 'askwithdraw') { prd.confirm = 'withdraw'; prd.note = ''; render(); prdFocus('#prdNote'); return true; }
@@ -9726,21 +9620,73 @@ document.addEventListener('dragend', function () {
   document.querySelectorAll('[data-prdlrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
 });
 
-/* ---- the Account Opening tab: mandate codes (D205) ------------------------
-   A code for each portfolio a PWA can be offered, which the account opening
-   request names for the mandate's own row; its benchmark is the Benchmarks
-   tab's (D211). A type and a hedging policy at a time: a block for each
-   allocation it offers, risk levels down and currencies across.
-   Typed or pasted from Excel, or loaded whole from a file, previewed first;
-   copied from one hedging policy to the others. Nothing takes effect until
+/* a listing dragged by its grip on the product's card (D214): dropped, the
+   new order is saved, its first the one a proposal holds */
+var prdCardDrag = null;
+function prdCardDropMark(row, after) {
+  document.querySelectorAll('[data-prdcrow].drop-before, [data-prdcrow].drop-after').forEach(function (r) {
+    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
+}
+document.addEventListener('dragstart', function (e) {
+  var grip = e.target.closest && e.target.closest('[data-prdcgrip]');
+  if (!grip || !repo.open || !cat.detail || prd.saving || grip.getAttribute('draggable') !== 'true') return;
+  prdCardDrag = { id: cat.detail, from: parseInt(grip.dataset.prdcgrip, 10) };
+  var row = grip.closest('[data-prdcrow]');
+  if (row) row.classList.add('dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(prdCardDrag.from)); if (row) e.dataTransfer.setDragImage(row, 20, 12); } catch (err) { /* old engines */ }
+  }
+});
+document.addEventListener('dragover', function (e) {
+  if (!prdCardDrag || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-prdcrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect();
+  prdCardDropMark(row, e.clientY > box.top + box.height / 2);
+});
+document.addEventListener('drop', function (e) {
+  if (!prdCardDrag || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-prdcrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect(), over = parseInt(row.dataset.prdcrow, 10);
+  var from = prdCardDrag.from, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0), id = prdCardDrag.id;
+  if (from < to) to -= 1;
+  prdCardDrag = null; prdCardDropMark(null);
+  var p = prdEntry(id);
+  if (p) prdReorder(id, prdOrderMoving(prdListingsOf(p).length, from, to), null);
+});
+document.addEventListener('dragend', function () {
+  if (!prdCardDrag) return;
+  prdCardDrag = null; prdCardDropMark(null);
+  document.querySelectorAll('[data-prdcrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+});
+
+/* ---- the Account Opening tab: mandate codes (D205, D215) -----------------
+   The code the account opening request names for the mandate's own row,
+   given by GROUP: a name, a code, and the portfolios it holds - the
+   implementation types, allocations, risk levels, currencies and hedging
+   policies chosen in it, All where none is. A portfolio takes the code of
+   the first group in the list that holds it, so the groups are dragged (or
+   moved by their arrows) into order: a narrow group above a wide one, a last
+   group of All for everything else. Each says how many portfolios it gives
+   their code; one that gives none is flagged and stops the save. Below,
+   each portfolio's code, a type and a hedging policy at a time, read only.
+   Loaded whole from a file too, previewed first. Nothing takes effect until
    it is confirmed, from a list of every change, and what is not confirmed
    is discarded when the tab is left or the console closed. */
 var aoc = { data: null, loaded: false, busy: false, error: null, flash: '', type: null, hedging: null,
             draft: null, note: '', saving: false, history: null, confirming: false,
-            askRestore: null, openRev: null, imp: null, showGaps: false, pasted: '' };
+            askRestore: null, openRev: null, imp: null, showGaps: false, pick: null, drag: null, look: false };
+var AOC_DIMS = ['types', 'forms', 'risks', 'currencies', 'hedgings'];
+var AOC_DIM_LABEL = { types: 'Implementation type', forms: 'Allocation', risks: 'Risk level', currencies: 'Currency', hedgings: 'Hedging' };
+var AOC_WORDS = { types: 'implementation types', forms: 'allocations', risks: 'risk levels', currencies: 'currencies', hedgings: 'hedging policies' };
 function aocForget() {
   aoc.draft = null; aoc.note = ''; aoc.confirming = false; aoc.askRestore = null; aoc.imp = null;
-  aoc.error = null; aoc.flash = ''; aoc.pasted = '';
+  aoc.error = null; aoc.flash = ''; aoc.pick = null; aoc.drag = null;
 }
 
 async function loadMandateCodes() {
@@ -9766,15 +9712,16 @@ function aocKey(type, form, risk, ccy, hedging) { return [type, form, risk, ccy,
 function aocFormLabel(form) { return String(form).replace(' ex-RA', ' · ex Real Assets'); }
 function aocRiskLabels() {
   var out = {};
-  aoc.data.layout.forEach(function (t) { t.forms.forEach(function (f) { f.risks.forEach(function (r) { out[r.risk] = r.label; }); }); });
+  aoc.data.options.risks.forEach(function (o) { out[o.value] = o.label; });
   return out;
 }
 function aocCellWords(key, labels) {
   var p = key.split('|');
   return [p[0], aocFormLabel(p[1]), (labels || aocRiskLabels())[p[2]] || p[2], p[3], p[4]].join(' · ');
 }
-/* every portfolio on offer, in the server's order: type, hedging, form, risk, currency */
+/* every portfolio on offer, in the console's order (mandateCodes.cells) */
 function aocAllCells() {
+  if (aoc.data._cells) return aoc.data._cells;
   var out = [];
   aoc.data.layout.forEach(function (t) {
     aoc.data.hedgings.forEach(function (h) {
@@ -9783,92 +9730,199 @@ function aocAllCells() {
       });
     });
   });
+  aoc.data._cells = out;
   return out;
-}
-function aocCodes() { return aoc.draft || (aoc.data ? aoc.data.codes : {}); }
-function aocEnsureDraft() {
-  if (!aoc.draft) aoc.draft = Object.assign({}, aoc.data.codes);
-  return aoc.draft;
 }
 function aocTidy(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
-function aocAt(codes, key) { return aocTidy(codes[key]); }
-/* what the draft moves, in the history's words - the server's own */
-function aocChangeList() {
-  if (!aoc.draft || !aoc.data) return [];
-  var out = [], labels = aocRiskLabels();
-  aocAllCells().forEach(function (k) {
-    var a = aocAt(aoc.data.codes, k), b = aocAt(aoc.draft, k);
-    if (a !== b) out.push(aocCellWords(k, labels) + ': code ' + (a || '—') + ' → ' + (b || '—'));
+function aocCopy(groups) {
+  return groups.map(function (g) {
+    var c = { name: g.name, code: g.code };
+    AOC_DIMS.forEach(function (d) { c[d] = (g[d] || []).slice(); });
+    return c;
   });
-  return out;
 }
-function aocDirty() { return aocChangeList().length > 0; }
-function aocTooLong(v) { return aocTidy(v).length > (aoc.data.codeMax || 40); }
-function aocBadCount() {
-  var codes = aocCodes();
-  return Object.keys(codes).filter(function (k) { return aocTooLong(codes[k]); }).length;
+function aocGroups() { return aoc.draft || (aoc.data ? aoc.data.groups : []); }
+function aocEnsureDraft() {
+  if (!aoc.draft) aoc.draft = aocCopy(aoc.data.groups);
+  return aoc.draft;
 }
-/* the portfolios without a code, counted by type, hedging and allocation */
+/* whether *g* holds the portfolio at *key*: each of its five All, or
+   naming the portfolio's. Mirrors mandateCodes.holds. */
+function aocHolds(g, key) {
+  var parts = key.split('|');
+  for (var at = 0; at < AOC_DIMS.length; at += 1) {
+    var chosen = g[AOC_DIMS[at]] || [];
+    if (chosen.length && chosen.indexOf(parts[at]) === -1) return false;
+  }
+  return true;
+}
+/* {key: index of the group that gives it its code}, and how many each
+   gives and holds - for the groups as they stand, worked out once a change */
+function aocResolved() {
+  var groups = aocGroups(), sig = JSON.stringify(groups);
+  if (aoc._memo && aoc._memo.sig === sig) return aoc._memo;
+  var given = {}, counts = groups.map(function () { return { gives: 0, holds: 0 }; });
+  aocAllCells().forEach(function (key) {
+    var first = -1;
+    groups.forEach(function (g, n) {
+      if (!aocHolds(g, key)) return;
+      counts[n].holds += 1;
+      if (first === -1) { first = n; counts[n].gives += 1; }
+    });
+    if (first !== -1) given[key] = first;
+  });
+  aoc._memo = { sig: sig, given: given, counts: counts };
+  return aoc._memo;
+}
+function aocCodeAt(key) {
+  var n = aocResolved().given[key];
+  return n === undefined ? '' : aocTidy(aocGroups()[n].code);
+}
 function aocGaps() {
-  var codes = aocCodes(), noCode = 0, groups = {}, order = [];
+  var given = aocResolved().given, noCode = 0, groups = {}, order = [];
   aocAllCells().forEach(function (k) {
+    if (given[k] !== undefined) return;
+    noCode += 1;
     var p = k.split('|'), g = p[0] + '|' + p[4] + '|' + p[1];
-    if (aocAt(codes, k)) return;
     if (!groups[g]) { groups[g] = { type: p[0], hedging: p[4], form: p[1], noCode: 0 }; order.push(g); }
-    noCode += 1; groups[g].noCode += 1;
+    groups[g].noCode += 1;
   });
   return { noCode: noCode, groups: order.map(function (g) { return groups[g]; }) };
 }
-function aocCellClass(key) {
-  if (aocTooLong(aocCodes()[key])) return 'bad';
-  var cls = aocAt(aocCodes(), key) ? '' : 'gap';
-  if (aocAt(aoc.data.codes, key) !== aocAt(aocCodes(), key)) cls += (cls ? ' ' : '') + 'chg';
-  return cls;
+/* each group's problems, keyed by its place: {name, code, idle}. Mirrors
+   mandateCodes.normalise */
+function aocProblems() {
+  var groups = aocGroups(), d = aoc.data, out = {}, names = {}, counts = aocResolved().counts;
+  groups.forEach(function (g, n) {
+    var p = {}, name = aocTidy(g.name), code = aocTidy(g.code);
+    if (!name) p.name = 'Give the group a name.';
+    else if (name.length > (d.nameMax || 60)) p.name = 'Keep the name to ' + (d.nameMax || 60) + ' characters.';
+    else if (names[name.toLowerCase()] !== undefined) p.name = 'Group ' + (names[name.toLowerCase()] + 1) + ' is called ' + name + ' too: give each a name of its own.';
+    if (name && names[name.toLowerCase()] === undefined) names[name.toLowerCase()] = n;
+    if (!code) p.code = 'Give the group its mandate code.';
+    else if (code.length > (d.codeMax || 40)) p.code = 'Keep the code to ' + (d.codeMax || 40) + ' characters.';
+    if (!counts[n].gives) {
+      if (!counts[n].holds) p.idle = 'It holds no portfolio on offer: choose again, or take it off.';
+      else {
+        var above = groups.slice(0, n).filter(function (h) {
+          return aocAllCells().some(function (k) { return aocHolds(h, k) && aocHolds(g, k); });
+        })[0];
+        p.idle = 'Every portfolio it holds is taken by a group above it' + (above ? ', ' + (aocTidy(above.name) || 'unnamed') : '') + ': move it up, or take it off.';
+      }
+    }
+    if (Object.keys(p).length) out[n] = p;
+  });
+  return out;
 }
+function aocDimWords(dim, values) {
+  if (!values || !values.length) return 'All ' + AOC_WORDS[dim];
+  var labels = {};
+  aoc.data.options[dim].forEach(function (o) { labels[o.value] = o.label; });
+  return values.map(function (v) { return labels[v] || v; }).join(', ');
+}
+function aocGroupWords(g) { return AOC_DIMS.map(function (d) { return aocDimWords(d, g[d]); }).join(' · '); }
+/* what confirming would move, in the words the history uses. Mirrors
+   mandateCodes._changes */
+function aocChangeList() {
+  if (!aoc.draft || !aoc.data) return [];
+  var was = aoc.data.groups, now = aoc.draft.map(function (g) {
+    var c = { name: aocTidy(g.name), code: aocTidy(g.code) };
+    AOC_DIMS.forEach(function (d) { c[d] = g[d]; });
+    return c;
+  });
+  var by = function (list) { var m = {}; list.forEach(function (g) { m[g.name.toLowerCase()] = g; }); return m; };
+  var wasBy = by(was), nowBy = by(now), out = [];
+  now.forEach(function (g) {
+    var old = wasBy[g.name.toLowerCase()];
+    if (!old) { out.push('Group ' + (g.name || 'unnamed') + ' added: ' + (g.code || '—') + ' · ' + aocGroupWords(g)); return; }
+    if (old.name !== g.name) out.push('Group ' + old.name + ' renamed ' + g.name);
+    if (old.code !== g.code) out.push(g.name + ': code ' + (old.code || '—') + ' → ' + (g.code || '—'));
+    AOC_DIMS.forEach(function (d) {
+      if ((old[d] || []).join('|') !== (g[d] || []).join('|')) {
+        out.push(g.name + ': ' + AOC_WORDS[d] + ' ' + aocDimWords(d, old[d]) + ' → ' + aocDimWords(d, g[d]));
+      }
+    });
+  });
+  was.forEach(function (g) { if (!nowBy[g.name.toLowerCase()]) out.push('Group ' + g.name + ' taken off (' + g.code + ' · ' + aocGroupWords(g) + ')'); });
+  var shared = was.filter(function (g) { return nowBy[g.name.toLowerCase()]; }).map(function (g) { return g.name.toLowerCase(); });
+  var order = now.filter(function (g) { return wasBy[g.name.toLowerCase()]; }).map(function (g) { return g.name.toLowerCase(); });
+  if (shared.join('|') !== order.join('|')) {
+    out.push('Group order: ' + was.map(function (g) { return g.name; }).join(', then ') + ' → ' + now.map(function (g) { return g.name; }).join(', then '));
+  }
+  var moved = 0;
+  aocAllCells().forEach(function (k) { if ((aoc.data.codes[k] || '') !== aocCodeAt(k)) moved += 1; });
+  if (moved) out.push(moved + ' portfolio' + (moved === 1 ? ' takes' : 's take') + ' another code');
+  return out;
+}
+function aocDirty() { return !!aoc.draft && JSON.stringify(aocCopy(aoc.draft)) !== JSON.stringify(aocCopy(aoc.data.groups)) && aocChangeList().length > 0; }
 
-function aocBlockHtml(type, f) {
-  var ccys = aoc.data.currencies, codes = aocCodes();
-  return '<div class="pmm-blk aoc-blk"><h4>' + esc(f.label)
-    + (f.form === 'Custom' ? ' <small class="pmm-mut">custom portfolios, by risk profile</small>' : '') + '</h4>'
-    + '<table class="pmm-g aoc-g"><thead><tr><th scope="col">Risk</th>'
-    + ccys.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>'
-    + f.risks.map(function (r) {
-        return '<tr><th scope="row">' + esc(r.label) + '</th>' + ccys.map(function (c) {
-          if (r.currencies.indexOf(c) === -1) return '<td class="no">not offered</td>';
-          var key = aocKey(type, f.form, r.risk, c, aoc.hedging), v = codes[key] || '';
-          return '<td class="' + aocCellClass(key) + '"><input data-aocv="' + esc(key) + '" autocomplete="off" spellcheck="false"'
-            + ' value="' + esc(v) + '"'
-            + ' aria-label="' + esc([type, f.label, r.label, c, aoc.hedging, 'mandate code'].join(', ')) + '"'
-            /* the whole value on hover, as a long one is cut by its box */
-            + (v ? ' title="' + esc(aocTidy(v)) + '"' : '')
-            + (aoc.confirming ? ' disabled' : '') + '></td>';
-        }).join('') + '</tr>';
-      }).join('') + '</tbody></table></div>';
+/* one of a group's five: a chip naming what it holds, opening a list to
+   choose from - All, or any of them */
+function aocDimHtml(g, i, dim) {
+  var at = i + '|' + dim, open = aoc.pick === at, chosen = g[dim] || [], held = aoc.confirming || aoc.saving;
+  var words = aocDimWords(dim, chosen), opts = aoc.data.options[dim];
+  var shown = !chosen.length ? 'All' : chosen.length > 2 ? chosen.length + ' of ' + opts.length : words;
+  return '<span class="cat-chipwrap aoc-dim"><span class="aoc-dl" id="aocDl-' + i + dim + '">' + AOC_DIM_LABEL[dim] + '</span>'
+    + '<button type="button" class="cat-chip' + (chosen.length ? ' on' : '') + '" data-aoc="pick" data-aocarg="' + at + '"'
+    + ' aria-expanded="' + open + '" aria-labelledby="aocDl-' + i + dim + ' aocDv-' + i + dim + '" title="' + esc(words) + '"' + (held ? ' disabled' : '') + '>'
+    + '<span id="aocDv-' + i + dim + '">' + esc(shown) + '</span> <span class="car">▾</span></button>'
+    + (open ? '<div class="cat-menu aoc-menu" role="group" aria-label="' + esc(AOC_DIM_LABEL[dim] + ' of ' + (aocTidy(g.name) || 'the group')) + '">'
+        + '<label class="cat-opt aoc-all"><input type="checkbox" data-aocall="' + at + '"' + (chosen.length ? '' : ' checked') + '> <span>All ' + AOC_WORDS[dim] + '</span></label>'
+        + opts.map(function (o) {
+            return '<label class="cat-opt"><input type="checkbox" data-aocopt="' + esc(at + '|' + o.value) + '"'
+              + (chosen.indexOf(o.value) !== -1 ? ' checked' : '') + '> <span>' + esc(o.label) + '</span></label>';
+          }).join('')
+        + '<button type="button" class="cat-clear" data-aoc="pickdone">Done</button></div>' : '')
+    + '</span>';
+}
+function aocGroupHtml(g, i, count, probs) {
+  var counts = aocResolved().counts[i] || { gives: 0, holds: 0 }, p = probs[i] || {}, held = aoc.confirming || aoc.saving;
+  var saved = aoc.data.groups.filter(function (x) { return x.name.toLowerCase() === aocTidy(g.name).toLowerCase(); })[0];
+  var changed = !saved || JSON.stringify(aocCopy([saved])) !== JSON.stringify(aocCopy([{ name: aocTidy(g.name), code: aocTidy(g.code), types: g.types, forms: g.forms, risks: g.risks, currencies: g.currencies, hedgings: g.hedgings }]));
+  var label = esc(aocTidy(g.name) || 'group ' + (i + 1));
+  var taken = counts.holds - counts.gives;
+  return '<div class="aoc-grp' + (aoc.draft && changed ? ' is-chg' : '') + (p.idle ? ' is-idle' : '') + '" data-aocrow="' + i + '" role="listitem">'
+    + '<span class="repo-mv"><span class="repo-grip" draggable="' + (held ? 'false' : 'true') + '" data-aocgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+    + '<button type="button" class="repo-mb" data-aoc="move" data-aocarg="' + i + '|-1"' + (i && !held ? '' : ' disabled') + ' aria-label="Move ' + label + ' up">↑</button>'
+    + '<button type="button" class="repo-mb" data-aoc="move" data-aocarg="' + i + '|1"' + (i < count - 1 && !held ? '' : ' disabled') + ' aria-label="Move ' + label + ' down">↓</button></span>'
+    + '<div class="aoc-gm">'
+    + '<div class="aoc-gt">'
+    + '<label class="aoc-f"><span>Group ' + (i + 1) + '</span><input type="text" id="aocName-' + i + '" data-aocname="' + i + '" autocomplete="off" maxlength="' + (aoc.data.nameMax || 60) + '"'
+    + ' value="' + esc(g.name) + '"' + (p.name ? ' aria-invalid="true"' : '') + (held ? ' disabled' : '') + '></label>'
+    + '<label class="aoc-f aoc-fc"><span>Mandate code</span><input type="text" id="aocCode-' + i + '" data-aoccode="' + i + '" autocomplete="off" spellcheck="false" maxlength="' + (aoc.data.codeMax || 40) + '"'
+    + ' value="' + esc(g.code) + '"' + (p.code ? ' aria-invalid="true"' : '') + (held ? ' disabled' : '') + '></label>'
+    + '<span class="aoc-gives' + (p.idle ? ' none' : '') + '">' + (counts.gives
+        ? '<span>Gives <b>' + counts.gives + '</b> portfolio' + (counts.gives === 1 ? ' its' : 's their') + ' code</span>'
+          + (taken ? '<small>' + taken + ' more it holds take' + (taken === 1 ? 's' : '') + ' a code from a group above</small>' : '')
+        : '<span>Gives no portfolio its code</span>') + '</span>'
+    + '<button type="button" class="cat-link x" data-aoc="remove" data-aocarg="' + i + '"' + (held ? ' disabled' : '') + ' aria-label="Take off ' + label + '" title="Take it off">×</button>'
+    + '</div>'
+    + '<div class="aoc-dims">' + AOC_DIMS.map(function (d) { return aocDimHtml(g, i, d); }).join('') + '</div>'
+    + '<p class="prd-err aoc-gerr" id="aocGErr-' + i + '" role="status">' + esc([p.name, p.code, p.idle].filter(Boolean).join(' ')) + '</p>'
+    + '</div></div>';
 }
 
 function aocGapsHtml() {
   var g = aocGaps();
   if (!g.noCode) return '<div id="aocGaps"><p class="pmm-mut">Every portfolio on offer has a code.</p></div>';
   return '<div id="aocGaps" class="pmm-gaps aoc-gaps"><p><b>' + g.noCode + ' portfolio' + (g.noCode === 1 ? '' : 's') + ' on offer '
-    + (g.noCode === 1 ? 'has' : 'have') + ' no code.</b> '
-    + 'An account opening request for any of them cannot be submitted. '
+    + (g.noCode === 1 ? 'is' : 'are') + ' in no group, so ' + (g.noCode === 1 ? 'has' : 'have') + ' no code.</b> '
+    + 'An account opening request for any of them cannot be submitted. A last group of All gives everything else a code. '
     + '<button type="button" class="cat-link" data-aoc="gaps">' + (aoc.showGaps ? 'Hide them' : 'Show them') + '</button></p>'
     + (aoc.showGaps ? '<ul class="aoc-gaplist">' + g.groups.map(function (x) {
         return '<li><button type="button" class="cat-link" data-aoc="goto" data-aocarg="' + esc(x.type + '|' + x.hedging) + '">'
           + esc(x.type + ' · ' + x.hedging + ' · ' + aocFormLabel(x.form)) + '</button> ' + x.noCode + ' without a code</li>';
       }).join('') + '</ul>' : '') + '</div>';
 }
-
 function aocSaveHtml() {
   if (!aocDirty()) return '<div id="aocSave"></div>';
-  var bad = aocBadCount(), list = aocChangeList(), n = list.length;
+  var probs = aocProblems(), bad = Object.keys(probs).length, list = aocChangeList(), n = list.length;
   if (aoc.confirming && !bad) {
-    var shown = list.slice(0, 60);
     return '<div id="aocSave" class="pmm-save is-confirm" role="region" aria-label="Confirm the changes">'
       + '<p><b>Confirm ' + n + ' change' + (n === 1 ? '' : 's') + ' to the mandate codes.</b> '
-      + 'The account opening request reads them from the moment they are confirmed.</p>'
-      + '<ul class="rev-changes pmm-list">' + shown.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
-      + (n > shown.length ? '<li class="mut">and ' + (n - shown.length) + ' more</li>' : '') + '</ul>'
+      + 'An account opening request names the codes as they stand from the moment they are confirmed.</p>'
+      + '<ul class="rev-changes">' + list.slice(0, 40).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
+      + (n > 40 ? '<li>and ' + (n - 40) + ' more</li>' : '') + '</ul>'
       + '<div class="ent-save"><label for="aocNote">Note <small>optional</small></label>'
       + '<input type="text" id="aocNote" data-aocnote maxlength="' + (aoc.data.noteMax || 240) + '" value="' + esc(aoc.note) + '" placeholder="Why it is changing">'
       + '<button type="button" class="btn btn-primary" id="aocConfirm" data-aoc="save"' + (aoc.saving ? ' disabled' : '') + '>'
@@ -9876,10 +9930,8 @@ function aocSaveHtml() {
       + '<button type="button" class="btn" data-aoc="unreview"' + (aoc.saving ? ' disabled' : '') + '>Keep editing</button></div></div>';
   }
   return '<div id="aocSave" class="pmm-save">'
-    + '<p>' + n + ' change' + (n === 1 ? '' : 's') + ' not confirmed. Nothing takes effect until you confirm; leave the tab and the changes are discarded.'
-    + (aoc.pasted ? ' <span class="pmm-mut">' + esc(aoc.pasted) + '</span>' : '')
-    + (bad ? ' <span class="pmm-bad">Shorten the ' + bad + ' marked red: a code is at most ' + (aoc.data.codeMax || 40)
-        + ' characters.</span>' : '') + '</p>'
+    + '<p><b>' + n + ' unconfirmed change' + (n === 1 ? '' : 's') + '.</b> Nothing takes effect until it is confirmed.'
+    + (bad ? ' <span class="pmm-bad">Put right the group' + (bad === 1 ? '' : 's') + ' marked red first.</span>' : '') + '</p>'
     + '<div class="ent-save">'
     + '<button type="button" class="btn btn-primary" data-aoc="review"' + (bad ? ' disabled' : '') + '>Review and confirm</button>'
     + '<button type="button" class="btn" data-aoc="discard">Discard</button></div></div>';
@@ -9888,20 +9940,21 @@ function aocSaveHtml() {
 function aocImportHtml() {
   var i = aoc.imp, pv = i.preview;
   var html = '<div class="pmm-imp" role="region" aria-label="Import a mandate codes file"><h3 class="sv-h3">Import a mandate codes file</h3>'
-    + '<p class="pmm-mut">A long table, one row a code: ImplementationType, Currency, RiskLevel, AllocationType, Hedging and MandateCode. '
-    + 'All in any of the first five covers every one, and a row that names more wins over one that says All. The file replaces the whole table. '
-    + 'A Benchmark column is not read: the benchmarks are the MAP Benchmarks.</p>'
+    + '<p class="pmm-mut">A row a group, in order: Group, MandateCode, ImplementationType, AllocationType, RiskLevel, Currency and Hedging, '
+    + 'each of the last five All, blank, or the ones the group holds separated by commas - as Download as Excel gives them. The file replaces every group. '
+    + 'A file in the layout before groups, a row a portfolio with All for every one, is read too: each row a group, the rows naming more first.</p>'
     + '<input type="file" id="aocFile" accept=".xlsx,.csv"' + (i.busy ? ' disabled' : '') + '>'
     + (i.busy ? '<p class="repo-loading">Reading ' + esc(i.name) + '…</p>' : '')
     + (i.error ? '<p class="md-err" role="alert">' + esc(i.error) + '</p>' : '');
   if (pv) {
-    html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · ' + pv.cells + ' portfolios given a code'
-      + (pv.benchmarkColumn ? ' · its Benchmark column is not read' : '')
+    html += '<p><b>' + esc(pv.name) + '</b> · ' + pv.rows + ' rows read · ' + pv.groups + ' group' + (pv.groups === 1 ? '' : 's')
+      + ' · ' + pv.cells + ' portfolios given a code'
+      + (pv.before ? ' · in the layout before groups' : '') + (pv.benchmarkColumn ? ' · its Benchmark column is not read' : '')
       + ' · <b>' + pv.changed + ' change' + (pv.changed === 1 ? '' : 's') + '</b></p>'
       + (pv.problems.length ? '<div class="pmm-gaps"><b>Problems: fix them in the file and choose it again.</b><ul>'
           + pv.problems.slice(0, 12).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('')
           + (pv.problems.length > 12 ? '<li>and ' + (pv.problems.length - 12) + ' more</li>' : '') + '</ul></div>' : '')
-      + (pv.noCode ? '<p class="pmm-bad">Once loaded, ' + pv.noCode + (pv.noCode === 1 ? ' portfolio has' : ' portfolios have') + ' no code.</p>' : '')
+      + (pv.noCode ? '<p class="pmm-bad">Once loaded, ' + pv.noCode + (pv.noCode === 1 ? ' portfolio is' : ' portfolios are') + ' in no group.</p>' : '')
       + (pv.changes.length ? '<ul class="rev-changes">' + pv.changes.slice(0, 12).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('')
           + (pv.changed > 12 ? '<li class="mut">and ' + (pv.changed - 12) + ' more</li>' : '') + '</ul>' : '')
       + (aocDirty() ? '<p class="pmm-bad">Loading it discards the changes on screen.</p>' : '')
@@ -9918,16 +9971,19 @@ function aocImportHtml() {
 
 function aocHistoryHtml() {
   if (aoc.history === null) return '<p class="repo-loading">Loading the history…</p>';
-  if (!aoc.history.length) return '<p class="sv-hint">Nothing saved yet: every portfolio is without a code.</p>';
-  var words = { imported: 'file loaded', updated: 'edited', reverted: 'restored' };
-  return '<ol class="ent-hist pmm-hist">' + aoc.history.map(function (h) {
+  if (!aoc.history.length) return '<p class="sv-hint">Nothing saved yet: the starting groups are in force.</p>';
+  var words = { imported: 'file loaded', updated: 'edited', reverted: 'restored', seeded: 'the starting groups' };
+  /* revision 0: the desk's groups before any save, which can be put back */
+  var seed = { revision: 0, action: 'seeded', at: '', actor: '', groups: (aoc.data.seed || []).length, current: false, note: '',
+               changes: (aoc.data.seed || []).map(function (g) { return g.name + ': ' + g.code + ' · ' + aocGroupWords(g); }), changed: 0 };
+  return '<ol class="ent-hist pmm-hist">' + aoc.history.concat([seed]).map(function (h) {
     var open = aoc.openRev === h.revision, shown = open ? h.changes : h.changes.slice(0, 6);
-    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(words[h.action] || h.action) + ' · ' + esc(shortDateTime(h.at))
-      + (h.actor ? ' · ' + esc(h.actor) : '') + ' · ' + h.cells + ' with a code'
+    return '<li><b>Revision ' + h.revision + '</b> · ' + esc(words[h.action] || h.action) + (h.at ? ' · ' + esc(shortDateTime(h.at)) : '')
+      + (h.actor ? ' · ' + esc(h.actor) : '') + ' · ' + h.groups + ' group' + (h.groups === 1 ? '' : 's')
       + (h.current ? ' <span class="ntc-pill live">in force</span>'
          : ' <button type="button" class="cat-link" data-aoc="restore" data-aocarg="' + h.revision + '"' + (aoc.saving ? ' disabled' : '') + '>Restore this revision</button>')
       + (aoc.askRestore === h.revision ? '<div class="prd-ask" role="alertdialog" aria-label="Restore revision ' + h.revision + '"><p>Put revision '
-          + h.revision + ' back in force? Its codes replace the ones in force now' + (aocDirty() ? ', and the changes on screen are discarded' : '')
+          + h.revision + ' back in force? Its groups replace the ones in force now' + (aocDirty() ? ', and the changes on screen are discarded' : '')
           + '. It is kept as a new revision.</p>'
           + '<button type="button" class="btn btn-primary" data-aoc="restoreyes" data-aocarg="' + h.revision + '"' + (aoc.saving ? ' disabled' : '') + '>Confirm the restore</button>'
           + '<button type="button" class="btn" data-aoc="restoreno">Cancel</button></div>' : '')
@@ -9942,111 +9998,107 @@ function aocHistoryHtml() {
 function aocSegHtml(label, what, values, current, words) {
   return '<div class="aoc-seg"><span class="pmm-mut">' + esc(label) + '</span><div class="pmm-prods" role="tablist" aria-label="' + esc(label) + '">'
     + values.map(function (v, i) {
-        return '<button type="button" role="tab" aria-selected="' + (v === current) + '" data-aoc="' + what + '" data-aocarg="' + esc(v) + '"'
-          + (aoc.confirming ? ' disabled' : '') + '>' + esc(words ? words[i] : v) + '</button>';
+        return '<button type="button" role="tab" aria-selected="' + (v === current) + '" data-aoc="' + what + '" data-aocarg="' + esc(v) + '">'
+          + esc(words ? words[i] : v) + '</button>';
       }).join('') + '</div></div>';
+}
+/* each portfolio's code as the groups stand, a type and a hedging policy
+   at a time: read only, its group named on hover */
+function aocBlockHtml(type, f) {
+  var ccys = aoc.data.currencies, groups = aocGroups(), given = aocResolved().given;
+  return '<div class="pmm-blk aoc-blk"><h4>' + esc(f.label)
+    + (f.form === 'Custom' ? ' <small class="pmm-mut">custom portfolios, by risk profile</small>' : '') + '</h4>'
+    + '<table class="pmm-g aoc-g"><thead><tr><th scope="col">Risk</th>'
+    + ccys.map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>'
+    + f.risks.map(function (r) {
+        return '<tr><th scope="row">' + esc(r.label) + '</th>' + ccys.map(function (c) {
+          if (r.currencies.indexOf(c) === -1) return '<td class="no">not offered</td>';
+          var key = aocKey(type, f.form, r.risk, c, aoc.hedging), n = given[key];
+          if (n === undefined) return '<td class="gap" title="In no group">—</td>';
+          var g = groups[n], changed = (aoc.data.codes[key] || '') !== aocTidy(g.code);
+          return '<td class="aoc-v' + (changed ? ' chg' : '') + '" title="' + esc('From ' + (aocTidy(g.name) || 'group ' + (n + 1))) + '">'
+            + esc(aocTidy(g.code) || '—') + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div>';
 }
 
 function mandateCodesViewHtml(subs) {
   if (!aoc.data) {
     return '<div class="repo-b ent-b pmm-b aoc-b">' + subs + '<p class="repo-loading">' + (aoc.error ? esc(aoc.error) : 'Loading the mandate codes…') + '</p></div>';
   }
-  var d = aoc.data, t = d.layout.filter(function (x) { return x.type === aoc.type; })[0] || d.layout[0];
-  var held = Object.keys(d.codes).filter(function (k) { return d.codes[k][0]; }).length;
-  var status = d.revision
+  var d = aoc.data, groups = aocGroups(), probs = aocProblems(), held = aoc.confirming || aoc.saving;
+  var t = d.layout.filter(function (x) { return x.type === aoc.type; })[0] || d.layout[0];
+  var status = (d.revision
     ? 'Revision ' + d.revision + (d.updatedBy ? ' · saved by ' + esc(d.updatedBy) : '') + (d.updatedAt ? ' ' + esc(shortDate(d.updatedAt)) : '')
-      + ' · ' + held + ' of ' + d.cells + ' portfolios with a code'
-    : 'No codes yet: ' + d.cells + ' portfolios on offer.';
+    : 'The starting groups, not yet saved')
+    + ' · ' + d.groups.length + ' group' + (d.groups.length === 1 ? '' : 's') + ' · ' + d.cells + ' portfolios on offer';
   return '<div class="repo-b ent-b pmm-b aoc-b">' + subs
     + '<h3 class="sv-h3">Mandate codes</h3>'
-    + '<p class="pmm-lede">The code the account opening request names for the mandate’s own row of its SMA Details, '
-    + 'one for each portfolio a PWA can be offered: an implementation type, a currency, a risk level, an allocation and a hedging policy. '
-    + 'The mandate’s benchmark is in MAP Benchmarks, and a separate account’s own code and benchmark come from the Catalogue. '
-    + 'A portfolio with no code stops an account opening request for it, and nothing else.</p>'
-    + '<p class="pmm-mut">Type into a grid, or paste a block copied in Excel into the cell where it starts. Copy its row of currencies or its column of risk levels with it and the values go in by name.</p>'
+    + '<p class="pmm-lede">The code the account opening request names for the mandate’s own row of its SMA Details. '
+    + 'Mandates share codes by group: a group holds the portfolios its five choices name - implementation type, allocation, risk level, currency and hedging, All where none is chosen. '
+    + 'A portfolio takes the code of the <b>first</b> group that holds it, so put a narrow group above a wide one, and a last group of All for everything else. '
+    + 'The mandate’s benchmark is in MAP Benchmarks, and a separate account’s own code and benchmark come from the Catalogue.</p>'
     + (aoc.flash ? '<p class="prd-flash" role="status">' + esc(aoc.flash) + '</p>' : '')
     + (aoc.error ? '<p class="md-err" role="alert">' + esc(aoc.error) + '</p>' : '')
-    + '<div class="pmm-bar"><button type="button" class="btn btn-primary" data-aoc="import"' + (aoc.imp || aoc.confirming ? ' disabled' : '') + '>Import Excel</button>'
-    + (d.revision ? '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/mandate-codes.xlsx') + '" download>Download as Excel</a>' : '')
+    + '<div class="pmm-bar"><button type="button" class="btn btn-primary" data-aoc="add"' + (held || groups.length >= (d.groupsMax || 2000) ? ' disabled' : '') + '>+ Add a group</button>'
+    + '<button type="button" class="btn" data-aoc="import"' + (aoc.imp || held ? ' disabled' : '') + '>Import Excel</button>'
+    + '<a class="btn arc-export" href="' + esc(window.API_BASE + '/scenario/repository/mandate-codes.xlsx') + '" download>Download as Excel</a>'
     + '<span class="pmm-mut">' + status + '</span></div>'
     + (aoc.imp ? aocImportHtml() : '')
     + aocGapsHtml()
-    + '<div class="aoc-pick">'
-    + aocSegHtml('Implementation type', 'type', d.layout.map(function (x) { return x.type; }), t.type)
-    + aocSegHtml('Hedging', 'hedging', d.hedgings, aoc.hedging)
-    + '<button type="button" class="btn aoc-copy" data-aoc="copy"' + (aoc.confirming ? ' disabled' : '') + '>Copy to the other hedging policies</button>'
+    + '<div class="aoc-list" role="list" aria-label="Mandate code groups, first first">'
+    + (groups.length ? groups.map(function (g, i) { return aocGroupHtml(g, i, groups.length, probs); }).join('')
+       : '<p class="sv-hint">No groups: every portfolio is without a code. Add one.</p>')
     + '</div>'
-    + '<div class="pmm-blocks aoc-blocks">' + t.forms.map(function (f) { return aocBlockHtml(t.type, f); }).join('') + '</div>'
-    + aocSaveHtml() + '<h3 class="sv-h3">History</h3>' + aocHistoryHtml() + '</div>';
+    + aocSaveHtml()
+    + '<h3 class="sv-h3">Each portfolio’s code ' + '<button type="button" class="cat-link" data-aoc="look" aria-expanded="' + aoc.look + '">' + (aoc.look ? 'Hide' : 'Show') + '</button></h3>'
+    + (aoc.look
+        ? '<p class="pmm-mut">As the groups above stand' + (aoc.draft ? ', with the changes not yet confirmed' : '') + '. Hover a code for the group it comes from.</p>'
+          + '<div class="aoc-pick">'
+          + aocSegHtml('Implementation type', 'type', d.layout.map(function (x) { return x.type; }), t.type)
+          + aocSegHtml('Hedging', 'hedging', d.hedgings, aoc.hedging)
+          + '</div>'
+          + '<div class="pmm-blocks aoc-blocks">' + t.forms.map(function (f) { return aocBlockHtml(t.type, f); }).join('') + '</div>'
+        : '')
+    + '<h3 class="sv-h3">History</h3>' + aocHistoryHtml() + '</div>';
 }
 
-/* a typed value changes the draft, its cell, the gaps and the save bar -
-   never the grid under the caret */
-function aocRefreshParts() {
-  ['aocSave', 'aocGaps'].forEach(function (id) {
-    var host = document.getElementById(id);
-    if (!host) return;
-    var wasFocus = document.activeElement && host.contains(document.activeElement) ? document.activeElement.id : null;
-    host.outerHTML = id === 'aocSave' ? aocSaveHtml() : aocGapsHtml();
-    if (wasFocus) { var back = document.getElementById(wasFocus); if (back) back.focus(); }
+/* a typed name or code changes the draft, its group's message and the save
+   bar - never the list under the caret */
+function aocRefreshParts(i) {
+  var probs = aocProblems(), p = probs[i] || {};
+  var err = document.getElementById('aocGErr-' + i);
+  if (err) err.textContent = [p.name, p.code, p.idle].filter(Boolean).join(' ');
+  ['aocName-' + i, 'aocCode-' + i].forEach(function (id, k) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (k === 0 ? p.name : p.code) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid');
   });
+  var host = document.getElementById('aocSave');
+  if (host) host.outerHTML = aocSaveHtml();
 }
-function aocPut(key, value) {
-  var draft = aocEnsureDraft(), v = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-  if (v) draft[key] = v; else delete draft[key];
+function aocMove(from, to) {
+  var list = aocEnsureDraft();
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return false;
+  var g = list.splice(from, 1)[0];
+  list.splice(to, 0, g);
+  aoc.pick = null;
+  App.announce('polite', (aocTidy(g.name) || 'The group') + ' is now ' + (to + 1) + ' of ' + list.length + '.');
+  return true;
 }
-function aocTypeValue(el) {
-  aocPut(el.dataset.aocv, el.value);
-  el.parentNode.className = aocCellClass(el.dataset.aocv);
-  aocRefreshParts();
-}
-
-/* A block copied in Excel and pasted into a grid. A row of currencies over
-   it, or a column of risk levels beside it, places the values by name;
-   without, they go in from the cell pasted into, across and down. */
-function aocPasteInto(at, text) {
-  var d = aoc.data;
-  if (!d || aoc.confirming) return;
-  var parts = at.split('|'), t = d.layout.filter(function (x) { return x.type === parts[0]; })[0];
-  var f = t && t.forms.filter(function (x) { return x.form === parts[1]; })[0];
-  if (!f) return;
-  var rows = String(text).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(function (line) {
-    return line.split('\t').map(function (c) { return c.replace(/^"|"$/g, '').trim(); });
-  });
-  function squash(w) { return String(w || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-  function riskOf(word) {
-    var said = squash(word);
-    if (!said) return null;
-    var hit = f.risks.filter(function (r) { return said === squash(r.risk) || said === squash(r.label); })[0];
-    return hit ? hit.risk : null;
-  }
-  function currencyOf(word) {
-    var said = String(word || '').toUpperCase().trim();
-    return d.currencies.indexOf(said) !== -1 ? said : null;
-  }
-  var head = rows[0].map(currencyOf);
-  var hasHead = head.filter(Boolean).length > 0 && rows[0].every(function (c, i) { return !c || head[i] || (i === 0 && !currencyOf(c)); });
-  var body = hasHead ? rows.slice(1) : rows;
-  var hasRisk = body.length > 0 && body.every(function (r) { return riskOf(r[0]); });
-  var risks = f.risks.map(function (r) { return r.risk; });
-  var startRisk = risks.indexOf(parts[2]), startCcy = d.currencies.indexOf(parts[3]);
-  var put = 0, out = 0;
-  body.forEach(function (r, ri) {
-    var risk = hasRisk ? riskOf(r[0]) : risks[startRisk + ri];
-    var cells = hasRisk ? r.slice(1) : r;
-    cells.forEach(function (raw, ci) {
-      var col = hasHead ? head[ci + (hasRisk ? 1 : 0)] : d.currencies[startCcy + ci];
-      var row = f.risks.filter(function (x) { return x.risk === risk; })[0];
-      if (!risk || !col || !row || row.currencies.indexOf(col) === -1) { if (raw) out += 1; return; }
-      aocPut(aocKey(parts[0], parts[1], risk, col, parts[4]), raw);
-      put += 1;
-    });
-  });
-  aoc.pasted = 'Pasted ' + put + ' code' + (put === 1 ? '' : 's') + ' into ' + aocFormLabel(parts[1])
-    + (hasHead || hasRisk ? ', placed by ' + (hasHead && hasRisk ? 'currency and risk level' : hasHead ? 'currency' : 'risk level') : '')
-    + (out ? '; ' + out + ' outside the portfolios on offer left out' : '') + '.';
-  sv.focus = '[data-aocv="' + at + '"]';
-  render();
+/* a new group goes above a last group of All, where it takes what it
+   holds from that one, else at the end; its implementation types open */
+function aocAdd() {
+  var list = aocEnsureDraft(), names = {}, n = 1;
+  list.forEach(function (g) { names[aocTidy(g.name).toLowerCase()] = true; });
+  while (names[('New group ' + n).toLowerCase()]) n += 1;
+  var g = { name: 'New group ' + n, code: '' };
+  AOC_DIMS.forEach(function (d) { g[d] = []; });
+  var last = list[list.length - 1];
+  var at = last && AOC_DIMS.every(function (d) { return !(last[d] || []).length; }) ? list.length - 1 : list.length;
+  list.splice(at, 0, g);
+  aoc.pick = at + '|types';
+  return at;
 }
 
 async function aocWrite(method, path, body, done) {
@@ -10057,7 +10109,7 @@ async function aocWrite(method, path, body, done) {
     var r = await api(method, '/scenario/repository/mandate-codes' + path, Object.assign({ base: aoc.data.revision }, body));
     if (r && !r.ok) aoc.error = r.body.error || ('Could not save the mandate codes (' + r.status + ')');
     else if (r) {
-      aoc.data = r.body.mandateCodes; aoc.draft = null; aoc.note = ''; aoc.confirming = false; aoc.pasted = '';
+      aoc.data = r.body.mandateCodes; aoc.draft = null; aoc.note = ''; aoc.confirming = false; aoc.pick = null;
       aoc.flash = done + ' Revision ' + aoc.data.revision + '.';
       aoc.history = null; loadMandateCodesHistory();
       ok = true;
@@ -10091,38 +10143,55 @@ function aocClick(ds) {
   aoc.flash = '';
   if (what === 'type') { aoc.type = arg; render(); return true; }
   if (what === 'hedging') { aoc.hedging = arg; render(); return true; }
+  if (what === 'look') { aoc.look = !aoc.look; render(); return true; }
   if (what === 'gaps') { aoc.showGaps = !aoc.showGaps; render(); return true; }
-  if (what === 'goto') { var g = arg.split('|'); aoc.type = g[0]; aoc.hedging = g[1]; render(); return true; }
-  if (what === 'copy') {
-    var t = aoc.data.layout.filter(function (x) { return x.type === aoc.type; })[0], codes = aocCodes(), n = 0, others = [];
-    var draft = aocEnsureDraft();
-    aoc.data.hedgings.forEach(function (h) {
-      if (h === aoc.hedging) return;
-      others.push(h);
-      t.forms.forEach(function (f) {
-        f.risks.forEach(function (r) {
-          r.currencies.forEach(function (c) {
-            var from = codes[aocKey(t.type, f.form, r.risk, c, aoc.hedging)], to = aocKey(t.type, f.form, r.risk, c, h);
-            if (from) draft[to] = from; else delete draft[to];
-            n += 1;
-          });
-        });
-      });
-    });
-    aoc.pasted = 'Copied ' + aoc.hedging + ' to ' + others.join(', ') + ' for ' + t.type + ', ' + (n / others.length) + ' portfolios each.';
+  if (what === 'goto') { var g = arg.split('|'); aoc.type = g[0]; aoc.hedging = g[1]; aoc.look = true; render(); return true; }
+  if (what === 'pick') {
+    aoc.pick = aoc.pick === arg ? null : arg;
+    render();
+    var first = aoc.pick && document.querySelector('[data-aocall="' + arg + '"]'); if (first) first.focus();
+    return true;
+  }
+  if (what === 'pickdone') {
+    var was = aoc.pick; aoc.pick = null; render();
+    if (was) { var back = document.querySelector('[data-aoc="pick"][data-aocarg="' + was + '"]'); if (back) back.focus(); }
+    return true;
+  }
+  if (what === 'add') {
+    var at = aocAdd(); render();
+    var box = document.getElementById('aocName-' + at); if (box) { box.focus(); box.select(); }
+    return true;
+  }
+  if (what === 'remove') {
+    var list = aocEnsureDraft(), n = parseInt(arg, 10), gone = list.splice(n, 1)[0];
+    aoc.pick = null;
+    App.announce('polite', (aocTidy(gone && gone.name) || 'The group') + ' taken off. Confirm to keep it so.');
     render(); return true;
   }
+  if (what === 'move') {
+    var m = arg.split('|'), from = parseInt(m[0], 10), to = from + parseInt(m[1], 10);
+    if (aocMove(from, to)) {
+      render();
+      var mb = document.querySelector('[data-aoc="move"][data-aocarg="' + to + '|' + m[1] + '"]:not([disabled])')
+        || document.querySelector('[data-aocrow="' + to + '"] [data-aoc="move"]:not([disabled])');
+      if (mb) mb.focus();
+    }
+    return true;
+  }
   /* nothing takes effect until it is confirmed (D205) */
-  if (what === 'review') { aoc.confirming = true; sv.focus = '#aocConfirm'; render(); return true; }
+  if (what === 'review') { aoc.confirming = true; aoc.pick = null; sv.focus = '#aocConfirm'; render(); return true; }
   if (what === 'unreview') { aoc.confirming = false; render(); return true; }
   if (what === 'save') {
     if (!aoc.confirming) return true;
-    var codes2 = {};
-    Object.keys(aoc.draft).forEach(function (k) { var v = aocAt(aoc.draft, k); if (v) codes2[k] = v; });
-    aocWrite('PUT', '', { codes: codes2, note: aoc.note.trim() }, 'Changes confirmed.');
+    var groups = aoc.draft.map(function (x) {
+      var c = { name: aocTidy(x.name), code: aocTidy(x.code) };
+      AOC_DIMS.forEach(function (d2) { c[d2] = (x[d2] || []).slice(); });
+      return c;
+    });
+    aocWrite('PUT', '', { groups: groups, note: aoc.note.trim() }, 'Changes confirmed.');
     return true;
   }
-  if (what === 'discard') { aoc.draft = null; aoc.note = ''; aoc.error = null; aoc.confirming = false; aoc.pasted = ''; render(); return true; }
+  if (what === 'discard') { aoc.draft = null; aoc.note = ''; aoc.error = null; aoc.confirming = false; aoc.pick = null; render(); return true; }
   if (what === 'import') { aoc.imp = { name: '', content: '', preview: null, note: '', busy: false, error: null }; sv.focus = '#aocFile'; render(); return true; }
   if (what === 'impcancel') { aoc.imp = null; render(); return true; }
   if (what === 'apply') {
@@ -10141,29 +10210,102 @@ function aocClick(ds) {
   if (what === 'rev') { var n2 = parseInt(arg, 10); aoc.openRev = aoc.openRev === n2 ? null : n2; render(); return true; }
   return false;
 }
+/* a choice ticked in a group's list: All clears the rest; every one ticked
+   is All again */
 function aocChange(el) {
   if (repo.view !== 'accountOpening') return false;
   if (el.id === 'aocFile' && el.files && el.files[0]) { aocPreview(el.files[0]); return true; }
-  return false;
+  var ds = el.dataset || {};
+  if (ds.aocall === undefined && ds.aocopt === undefined) return false;
+  var parts = (ds.aocall !== undefined ? ds.aocall : ds.aocopt).split('|');
+  var g = aocEnsureDraft()[parseInt(parts[0], 10)], dim = parts[1];
+  if (!g) return true;
+  if (ds.aocall !== undefined) g[dim] = [];
+  else {
+    var value = parts.slice(2).join('|'), chosen = (g[dim] || []).slice(), at = chosen.indexOf(value);
+    if (el.checked && at === -1) chosen.push(value);
+    if (!el.checked && at !== -1) chosen.splice(at, 1);
+    var order = aoc.data.options[dim].map(function (o) { return o.value; });
+    chosen = order.filter(function (v) { return chosen.indexOf(v) !== -1; });
+    g[dim] = chosen.length === order.length ? [] : chosen;
+  }
+  var focusSel = ds.aocall !== undefined ? '[data-aocall="' + ds.aocall + '"]' : '[data-aocopt="' + ds.aocopt.replace(/"/g, '\\"') + '"]';
+  render();
+  var back = document.querySelector(focusSel); if (back) back.focus();
+  return true;
 }
 function aocInput(eds, el) {
   if (repo.view !== 'accountOpening') return false;
-  if (eds.aocv !== undefined) { aocTypeValue(el); return true; }
+  if (eds.aocname !== undefined || eds.aoccode !== undefined) {
+    var i = parseInt(eds.aocname !== undefined ? eds.aocname : eds.aoccode, 10), g = aocEnsureDraft()[i];
+    if (!g) return true;
+    if (eds.aocname !== undefined) g.name = el.value; else g.code = el.value;
+    aocRefreshParts(i);
+    return true;
+  }
   if (eds.aocnote !== undefined) { aoc.note = el.value; return true; }
   if (eds.aocimpnote !== undefined) { if (aoc.imp) aoc.imp.note = el.value; return true; }
   return false;
 }
 
-/* a block copied in Excel, pasted into a grid of mandate codes (D205) */
-document.addEventListener('paste', function (e) {
-  if (!repo.open || repo.view !== 'accountOpening') return;
-  var el = e.target;
-  if (!el || !el.dataset || el.dataset.aocv === undefined) return;
-  var text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
-  if (!/[\t\n]/.test(String(text).replace(/\r/g, '\n').trim())) return;
-  e.preventDefault();
-  aocPasteInto(el.dataset.aocv, text);
+/* a group dragged by its grip (D215): dropped above or below another */
+function aocDropMark(row, after) {
+  document.querySelectorAll('[data-aocrow].drop-before, [data-aocrow].drop-after').forEach(function (r) {
+    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
+}
+document.addEventListener('dragstart', function (e) {
+  var grip = e.target.closest && e.target.closest('[data-aocgrip]');
+  if (!grip || !repo.open || repo.view !== 'accountOpening' || grip.getAttribute('draggable') !== 'true') return;
+  aoc.drag = parseInt(grip.dataset.aocgrip, 10);
+  var row = grip.closest('[data-aocrow]');
+  if (row) row.classList.add('dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(aoc.drag)); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (err) { /* old engines */ }
+  }
 });
+document.addEventListener('dragover', function (e) {
+  if (aoc.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-aocrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect();
+  aocDropMark(row, e.clientY > box.top + box.height / 2);
+});
+document.addEventListener('drop', function (e) {
+  if (aoc.drag == null || !repo.open) return;
+  var row = e.target.closest && e.target.closest('[data-aocrow]');
+  if (!row) return;
+  e.preventDefault();
+  var box = row.getBoundingClientRect(), over = parseInt(row.dataset.aocrow, 10);
+  var from = aoc.drag, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
+  if (from < to) to -= 1;
+  aoc.drag = null; aocDropMark(null);
+  if (aocMove(from, to)) render();
+});
+document.addEventListener('dragend', function () {
+  if (aoc.drag == null) return;
+  aoc.drag = null; aocDropMark(null);
+  document.querySelectorAll('[data-aocrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+});
+/* a group's open list shuts on Escape, or a click outside it */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || !aoc.pick || !repo.open || repo.view !== 'accountOpening') return;
+  var was = aoc.pick; aoc.pick = null; render();
+  var back = document.querySelector('[data-aoc="pick"][data-aocarg="' + was + '"]'); if (back) back.focus();
+  e.stopPropagation();
+}, true);
+document.addEventListener('click', function (e) {
+  if (!aoc.pick || !repo.open || repo.view !== 'accountOpening') return;
+  if (e.target.closest && e.target.closest('.aoc-dim')) return;
+  aoc.pick = null;
+  /* a button's own handler draws the page again; a box keeps its focus */
+  if (e.target.closest && e.target.closest('button, a')) return;
+  var box = e.target.closest && e.target.closest('input[id], textarea[id]');
+  render();
+  if (box) { var again = document.getElementById(box.id); if (again) again.focus(); }
+}, true);
 
 /* ---- the Account Opening tab: MAP benchmarks (D211) ----------------------
    One table: a row a benchmark, with its currency, risk level, hedging
@@ -12613,7 +12755,7 @@ document.addEventListener('click', function (e) {
     + '[data-repokeptrestore],[data-repokeptdrop],'
     + '[data-catcols],[data-catshowall],[data-catdensity],[data-catclearall],[data-catsort],[data-catcsv],'
     + '[data-catpin],[data-catunpin],[data-catclearpins],[data-catcompare],[data-catdetailclose],'
-    + '[data-catrow],[data-catopen],[data-catorphans],[data-catgroup],[data-catfold],[data-catfoldall],[data-catview],[data-catlst],'
+    + '[data-catrow],[data-catopen],[data-catorphans],[data-catgroup],[data-catfold],[data-catfoldall],[data-catlst],'
     + '[data-repocopy],[data-reporemove],[data-repoedition],[data-reporuleadd],[data-reporulerm],'
     + '[data-repohistory],[data-reporev],[data-reporevert],'
     + '[data-arcsort],[data-arcrow],[data-arcclear],[data-arcclearsel],[data-arcrestore],[data-arcrestoresel],[data-arcdetailclose],'
@@ -12957,11 +13099,6 @@ document.addEventListener('click', function (e) {
   if (ds.catshowall !== undefined) { cat.hidden = []; render(); return; }
   if (ds.catdensity !== undefined) { cat.density = ds.catdensity === 'comfortable' ? 'comfortable' : 'dense'; render(); return; }
   if (ds.catgroup !== undefined) { catSetGroup(ds.catgroup === 'category'); return; }
-  /* View as (D207): a pick holds while the proposal's currency stands */
-  if (ds.catview !== undefined) {
-    cat.viewPicked = ds.catview; cat.viewFor = catProposalCcy();
-    render(); return;
-  }
   if (ds.catlst !== undefined) {
     var opened = cat.open.indexOf(ds.catlst);
     if (opened === -1) cat.open.push(ds.catlst); else cat.open.splice(opened, 1);

@@ -511,6 +511,7 @@ def test_every_repository_route_requires_the_admin_role():
         # the product catalogue (D165)
         ('/scenario/repository/products', ('POST',)),
         ('/scenario/repository/products', ('PUT',)),
+        ('/scenario/repository/products/order', ('POST',)),
         ('/scenario/repository/products/withdraw', ('POST',)),
         ('/scenario/repository/products/restore', ('POST',)),
         ('/scenario/repository/products/revert', ('POST',)),
@@ -673,8 +674,8 @@ process.stdout.write(JSON.stringify({
     a, b, c = got['enriched']
     # product fees only (D114): net is the yield less the product's own cost,
     # and a row carries no management or all-in figure at all
-    assert a['keys'] == ['books', 'categories', 'count', 'listing', 'lower', 'main', 'matched', 'net', 'p',
-                         'tooBig', 'used', 'v', 'varies', 'view'], 'each line read at the listing in view (D207)'
+    assert a['keys'] == ['books', 'categories', 'count', 'listing', 'matched', 'net', 'p',
+                         'tooBig', 'used', 'v', 'varies'], 'each line read at its first listing (D207, D214)'
     assert a['net'] == 4.48
     assert (b['net'], b['tooBig']) == (4.57, True), 'a $5m minimum is above a $2m mandate'
     assert (c['net'], c['used'], c['cats'], c['books']) == (None, 0, [], []), 'no yield means no net; unplaced means empty joins'

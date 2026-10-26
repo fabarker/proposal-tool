@@ -215,15 +215,15 @@ def listCategoryProducts(category: str, variant: str = None, currency: str = Non
                          caller=Depends(requireAuth)):
     """The products a custom sleeve in *category* may hold under *variant*
     (D170): those the category's library sleeves hold under the type, whole
-    as the catalogue has them, each at the listing it holds in *currency*
-    (D207). Any signed-in user may read it; whether they may build is
+    as the catalogue has them, each at the listing it holds, its first
+    (D214). Any signed-in user may read it; whether they may build is
     ``mayBuild``."""
     try:
         validateVariant(variant)
         if category not in sleeveRepo.categories():
             raise ValidationError('category', 'There is no category {!r}.'.format(category))
         return {'category': category, 'variant': variant,
-                'products': [products.inCurrency(p, currency)
+                'products': [products.asHeld(p)
                              for p in customSleeves.categoryProducts(category, variant)],
                 'mayBuild': customSleeves.mayBuild(category, isAdmin(caller))}
     except ValidationError as exc:
@@ -250,8 +250,8 @@ def getCustomPortfolioCatalogue(variant: str = None, currency: str = 'USD',
         basis = BasisInput(currency=currency, hedging=hedging)
         validateBasis(basis)
         body = customPortfolio.catalogue(variant)
-        # each product at the listing it holds in the portfolio's currency (D207)
-        body['products'] = [products.inCurrency(p, basis.currency) for p in body['products']]
+        # each product at the listing it holds, its first (D214)
+        body['products'] = [products.asHeld(p) for p in body['products']]
         body.update(customPortfolio.profiles(getScenarioPort(), basis, variant))
         body['library'] = customPortfolio.library(variant)
         body['mayBuild'] = customPortfolio.mayBuild(variant, isAdmin(caller))
@@ -323,8 +323,8 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
     *key* is the base column's key string. A name that has an edition for
     that portfolio is served as that edition, and nothing in the response
     says so - the PWA sees names. Without a key only fallback editions are
-    offered. Each product carries the listing it holds in *currency* and
-    the ones it may step down to below that one's minimum (D207). *entity* is the custodian chosen under PMG ESG
+    offered. Each product carries the listing it holds, its first (D214).
+    *entity* is the custodian chosen under PMG ESG
     (D193, D195): a name with an edition for it is served as that edition.
     """
     basis = BasisInput(currency=currency, hedging=hedging)
@@ -334,7 +334,7 @@ def listSleeves(category: str, variant: str = None, currency: str = 'USD',
         entity = entities.effective(entity, variant) or None
         served = list(getScenarioPort().list_sleeves(category, basis, variant, baseKey, entity))
         for sleeve in served:
-            sleeve['products'] = [products.inCurrency(p, basis.currency)
+            sleeve['products'] = [products.asHeld(p)
                                   for p in sleeve.get('products') or []]
         return {'category': category, 'variant': variant, 'sleeves': served}
     except ValidationError as exc:
@@ -665,6 +665,21 @@ def updateRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdm
     except ValidationError as exc:
         return _validationError(exc)
     except (products.BadCatalogue, fees.BadRateCard) as exc:
+        return _catalogueError(exc)
+
+
+@router.post('/scenario/repository/products/order')
+def reorderRepositoryProduct(payload: dict = Body(...), caller=Depends(requireAdmin)):
+    """Put a product's listings in a new order, the first the one a proposal
+    holds: {productId, order: [their places now, in the order wanted],
+    note?, base}."""
+    try:
+        return _productAnswer(products.reorder(
+            str(payload.get('productId') or ''), payload.get('order'), user=caller.kerberos,
+            note=payload.get('note', ''), base=payload.get('base')))
+    except ValidationError as exc:
+        return _validationError(exc)
+    except products.BadCatalogue as exc:
         return _catalogueError(exc)
 
 
@@ -1243,23 +1258,26 @@ def revertRestrictions(payload: dict = Body(...), caller=Depends(requireAdmin)):
         return _validationError(exc)
 
 
-# ---- the mandate codes (D205) ---------------------------------------------
-# The console's Account Opening tab: a code for each portfolio on offer,
-# which the account opening request names for the mandate's own row. Admin only, like the rest of the repository.
+# ---- the mandate codes (D205, D215) ---------------------------------------
+# The console's Account Opening tab: groups of the portfolios on offer, each
+# with the code the account opening request names for the mandate's own row.
+# Admin only, like the rest of the repository.
 
 @router.get('/scenario/repository/mandate-codes')
 def getMandateCodes(caller=Depends(requireAdmin)):
-    """The table in force, its gaps, and the portfolios on offer."""
+    """The groups in force, the code each portfolio takes, its gaps, and
+    the portfolios on offer."""
     return mandateCodes.describe()
 
 
 @router.put('/scenario/repository/mandate-codes')
 def saveMandateCodes(payload: dict = Body(...), caller=Depends(requireAdmin)):
-    """Put a table edited on screen in force: {codes: {cell: code}, note?,
-    base?}. Refused (422) when it is not a table; 409
-    when *base* is no longer the revision in force."""
+    """Put groups edited on screen in force: {groups: [{name, code, types,
+    forms, risks, currencies, hedgings}], note?, base?}. Refused (422),
+    naming the box, when a group is wrong; 409 when *base* is no longer the
+    revision in force."""
     try:
-        mandateCodes.save({'codes': payload.get('codes')}, payload.get('note'), user=caller.kerberos,
+        mandateCodes.save({'groups': payload.get('groups')}, payload.get('note'), user=caller.kerberos,
                           base=payload.get('base'))
         return {'mandateCodes': mandateCodes.describe()}
     except ValidationError as exc:
@@ -2162,7 +2180,7 @@ def _assembleCustomExport(state, port):
     for p in built.get('products') or []:
         found = products.get(p.get('productId'))
         if found:
-            held.append(dict(products.inCurrency(found, basis.currency), category=p.get('category') or ''))
+            held.append(dict(products.asHeld(found), category=p.get('category') or ''))
     implementation['raisedNotices'] = notices.raisedByProducts(held)
     _refuseUnconfirmedNotices(state, implementation['raisedNotices'])
     # every other check first: the charges are what the page asks for last,

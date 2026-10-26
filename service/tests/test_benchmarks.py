@@ -27,11 +27,10 @@ def test_each_listing_names_its_benchmark(store):
     pid, _, _ = _held()
     saved = _list(pid, {'benchmark': '  MSCI  World '},
                   {'ticker': 'GBX', 'issueCurrency': 'GBP', 'hedging': 'Hedged',
-                   'benchmark': 'MSCI World (GBP hedged)', 'ranks': {'GBP': 1}})
-    assert saved['benchmark'] == 'MSCI World', 'spacing tidied, and the main listing\'s at the top'
+                   'benchmark': 'MSCI World (GBP hedged)'})
+    assert saved['benchmark'] == 'MSCI World', 'spacing tidied, and the first listing\'s at the top'
     assert [l['benchmark'] for l in saved['listings']] == ['MSCI World', 'MSCI World (GBP hedged)']
-    assert products.inCurrency(products.get(pid), 'GBP')['benchmark'] == 'MSCI World (GBP hedged)'
-    assert products.inCurrency(products.get(pid), 'USD')['benchmark'] == 'MSCI World'
+    assert products.asHeld(products.get(pid))['benchmark'] == 'MSCI World', 'the first listing\'s (D214)'
     assert 'MSCI World (GBP hedged)' in products.vocabulary()['benchmark']
     with pytest.raises(ValidationError) as caught:
         _list(pid, {}, {'ticker': 'GBX', 'issueCurrency': 'GBP', 'benchmark': 'x' * 201})
@@ -41,20 +40,19 @@ def test_each_listing_names_its_benchmark(store):
 def test_an_smas_mandate_code_names_its_own(store):
     sma = next(p for p in products.all() if products.isSma(p) and p['ownCategory'] != products.EQUITY_CATEGORY)
     saved = _list(sma['productId'], {'code': 'MUNI-USD', 'issueCurrency': 'USD',
-                                     'benchmark': 'Bloomberg Municipal 1-10 Year', 'ranks': {'USD': 1}},
-                  {'code': 'MUNI-GBP', 'issueCurrency': 'GBP', 'benchmark': '', 'ranks': {'GBP': 1}})
+                                     'benchmark': 'Bloomberg Municipal 1-10 Year'},
+                  {'code': 'MUNI-GBP', 'issueCurrency': 'GBP', 'benchmark': ''})
     assert [(l['code'], l['benchmark']) for l in saved['listings']] == [
         ('MUNI-USD', 'Bloomberg Municipal 1-10 Year'), ('MUNI-GBP', '')]
-    _list(sma['productId'], {'code': 'MUNI-USD', 'issueCurrency': 'USD', 'benchmark': 'Bloomberg Municipal Bond',
-                             'ranks': {'USD': 1}},
-          {'code': 'MUNI-GBP', 'issueCurrency': 'GBP', 'benchmark': '', 'ranks': {'GBP': 1}})
+    _list(sma['productId'], {'code': 'MUNI-USD', 'issueCurrency': 'USD', 'benchmark': 'Bloomberg Municipal Bond'},
+          {'code': 'MUNI-GBP', 'issueCurrency': 'GBP', 'benchmark': ''})
     assert products.history(sma['productId'])[0]['changeWords'] == [
         'Benchmark of MUNI-USD Bloomberg Municipal 1-10 Year → Bloomberg Municipal Bond']
 
 
 def test_the_product_file_carries_the_benchmark_and_an_export_loads_back(store, tmp_path):
     head = products.exportRows()[0]
-    assert head.index('Benchmark') < head.index('Rank USD')
+    assert head.index('Benchmark') == head.index('MinimumInvestment') + 1
     pid, _, _ = _held()
     rows = products.exportRows()
     at = rows[0].index('Benchmark')
@@ -75,7 +73,7 @@ def test_a_product_file_without_the_column_leaves_the_benchmarks_as_they_are(sto
     pid, _, _ = _held()
     name = products.get(pid)['name']
     _list(pid, {'benchmark': 'FTSE All-World'},
-          {'ticker': 'GBX', 'issueCurrency': 'GBP', 'benchmark': 'FTSE All-World (GBP)', 'ranks': {'GBP': 1}})
+          {'ticker': 'GBX', 'issueCurrency': 'GBP', 'benchmark': 'FTSE All-World (GBP)'})
     rows = products.exportRows()
     at = rows[0].index('Benchmark')
     old = [r[:at] + r[at + 1:] for r in rows]          # a file from before there were benchmarks

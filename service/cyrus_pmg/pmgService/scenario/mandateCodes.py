@@ -16,25 +16,37 @@ These are the mandate's codes alone. A separate account's own code and
 benchmark are the Catalogue's (D197, D204), and the implementation type plays
 no part in them.
 
-A CELL is a portfolio's code. A portfolio on offer with no code is a GAP: the
-console counts and lists them, and an account opening request for that
-portfolio cannot be submitted until the gap is filled. Nothing else reads the
-table: a proposal and its download are untouched by it.
+Most mandates share a code, so the codes are given by GROUP (D215). A group
+is a name, a code, and the mandates it holds: the implementation types,
+allocations, risk levels, currencies and hedging policies chosen in it, All
+where it chooses none. The groups are kept in order, and a mandate takes
+the code of the FIRST group that holds it - so a narrow group goes above a
+wide one, and a last group of All holds everything else. A group that gives
+no mandate its code - every one it holds taken by a group above it - is
+refused, since it would only mislead. Until the first save the groups are
+the desk's two, at revision 0: PMG ESG, every mandate of that type, G3; and
+everything else, 7L. Nothing is written: a read never writes.
 
-The admin keeps the table in the console's Account Opening tab: loaded whole
-from a file - a long table, ImplementationType, Currency, RiskLevel,
-AllocationType, Hedging and MandateCode, any of the first five All for every
-one, the row naming more winning where two give a portfolio - or edited, a
-cell at a time or pasted from Excel, on screen. A Benchmark column is not
-read: the benchmarks are the MAP benchmarks' (D211). Every change is a
-revision with who, when, an optional note and what moved, and an earlier
-revision can be put back.
+A mandate on offer that no group holds is a GAP: the console counts and
+lists them, and an account opening request for that portfolio cannot be
+submitted until the gap is filled. Nothing else reads the codes: a proposal
+and its download are untouched by them.
+
+The admin keeps the groups in the console's Account Opening tab - added,
+named, coded, chosen, dragged into order, taken off - or loads them whole
+from a file: a row a group, in order, with the columns Group, MandateCode,
+ImplementationType, AllocationType, RiskLevel, Currency and Hedging, each of
+the last five All, blank, or the ones it holds separated by commas. A file
+in the layout before groups - a row a portfolio, any of its five All, the
+row naming more winning - is still read, each row a group, the ones naming
+more first. Every change is a revision with who, when, an optional note and
+what moved, and an earlier revision can be put back.
 
 Storage. The ``policies`` and ``policyHistory`` tables (sleeveRepo, schema 4)
-under the kind 'mandateCodes' and the one scope '*', each cell's code under
-its key - an older revision holds [code, benchmark] (D211), and is read
-for its code. Until the first save there is no table. A
-read never writes.
+under the kind 'mandateCodes' and the one scope '*', the groups in order. A
+revision from before groups holds each portfolio's code under its key - an
+older one still [code, benchmark] (D211) - and reads as groups giving each
+portfolio that code, the portfolios of one code folded together.
 """
 
 from __future__ import annotations
@@ -43,6 +55,7 @@ import datetime
 import io
 import json
 import os
+import re
 import threading
 from functools import lru_cache
 
@@ -63,16 +76,34 @@ CUSTOM = 'Custom'
 #: own name: the desk's 'ex-RA' is Full with real assets left out
 _ALIASES = {'exra': 'Full ex-RA', 'fullexrealassets': 'Full ex-RA',
             'exhfsexrealassets': 'ex-HFs ex-RA', 'na': ALL_EQUITY, 'none': ALL_EQUITY}
-#: the file's columns, matched by name whatever the case or spacing
-COLUMNS = ('ImplementationType', 'Currency', 'RiskLevel', 'AllocationType', 'Hedging', 'MandateCode')
-_HEADS = {'implementationtype': 'type', 'implementation': 'type', 'type': 'type', 'variant': 'type',
+#: a group's name; one read from a portfolio's words runs to about a hundred
+NAME_MAX = 120
+GROUPS_MAX = 2000
+#: what a group holds, in the order a portfolio's key gives them: its
+#: implementation types, allocations, risk levels, currencies and hedging
+#: policies, each [] for All (D215)
+GROUP_DIMENSIONS = ('types', 'forms', 'risks', 'currencies', 'hedgings')
+_WORDS = {'types': 'implementation types', 'forms': 'allocations', 'risks': 'risk levels',
+          'currencies': 'currencies', 'hedgings': 'hedging policies'}
+_ALL_WORDS = {d: 'All ' + w for d, w in _WORDS.items()}
+#: the groups before the first save: the desk's two codes
+SEED = ({'name': 'PMG ESG', 'code': 'G3', 'types': ['PMG ESG']},
+        {'name': 'Everything else', 'code': '7L'})
+#: the file's columns, in the order an export writes them, matched by name
+#: whatever the case or spacing
+COLUMNS = ('Group', 'MandateCode', 'ImplementationType', 'AllocationType', 'RiskLevel', 'Currency', 'Hedging')
+_HEADS = {'group': 'name', 'groupname': 'name', 'name': 'name',
+          'implementationtype': 'type', 'implementation': 'type', 'type': 'type', 'variant': 'type',
           'currency': 'currency', 'basecurrency': 'currency', 'ccy': 'currency',
           'risklevel': 'risk', 'risk': 'risk', 'riskprofile': 'risk',
           'allocationtype': 'form', 'allocation': 'form',
           'hedging': 'hedging', 'hedgingpolicy': 'hedging', 'currencyhedgingpolicy': 'hedging',
           'mandatecode': 'code', 'code': 'code'}
+_COLUMN_OF = {'name': 'Group', 'code': 'MandateCode', 'type': 'ImplementationType', 'form': 'AllocationType',
+              'risk': 'RiskLevel', 'currency': 'Currency', 'hedging': 'Hedging'}
+#: what a file in the layout before groups must have: a row a portfolio
 _REQUIRED = ('type', 'currency', 'risk', 'form', 'hedging', 'code')
-_DIMENSIONS = ('type', 'form', 'risk', 'currency', 'hedging')
+_DIM_FIELD = {'types': 'type', 'forms': 'form', 'risks': 'risk', 'currencies': 'currency', 'hedgings': 'hedging'}
 
 
 def _now() -> str:
@@ -205,6 +236,80 @@ def keyOf(variant, keyStr=None, profile=None, currency=None, hedging=None):
     return cell(variant, CUSTOM, profile, currency, hedging)
 
 
+# --------------------------------------------------------------- the groups ---
+
+def forms() -> list:
+    """Every allocation form on offer, in the console's order."""
+    out = []
+    for o in _offered():
+        if o[1] not in out:
+            out.append(o[1])
+    return out
+
+
+def options() -> dict:
+    """What each of a group's five may hold, in order."""
+    return {'types': types(), 'forms': forms(), 'risks': risks(), 'currencies': list(CURRENCIES),
+            'hedgings': hedgings()}
+
+
+def _label(dim, value) -> str:
+    return formLabel(value) if dim == 'forms' else riskLabel(value) if dim == 'risks' else value
+
+
+def _seeded() -> list:
+    return [dict(g, **{d: list(g.get(d) or []) for d in GROUP_DIMENSIONS}) for g in SEED]
+
+
+def holds(group, key) -> bool:
+    """Whether *group* holds the portfolio at *key*: each of its five All,
+    or naming the portfolio's."""
+    parts = key.split('|')
+    return not any(group.get(d) and parts[at] not in group[d] for at, d in enumerate(GROUP_DIMENSIONS))
+
+
+def resolve(groups) -> dict:
+    """{cell: index of the group that gives it its code}: the first group
+    that holds it, for every portfolio on offer that one holds."""
+    out = {}
+    for key in cells():
+        for n, group in enumerate(groups):
+            if holds(group, key):
+                out[key] = n
+                break
+    return out
+
+
+def _codesOf(groups, given=None) -> dict:
+    given = resolve(groups) if given is None else given
+    return {key: groups[n]['code'] for key, n in given.items()}
+
+
+def _given(groups, given=None) -> list:
+    """How many portfolios each group gives their code, and how many it
+    holds that a group above it takes: [{gives, holds}]."""
+    given = resolve(groups) if given is None else given
+    out = [{'gives': 0, 'holds': 0} for _ in groups]
+    for n in given.values():
+        out[n]['gives'] += 1
+    for key in cells():
+        for n, group in enumerate(groups):
+            if holds(group, key):
+                out[n]['holds'] += 1
+    return out
+
+
+def _dimWords(dim, values) -> str:
+    if not values:
+        return _ALL_WORDS[dim]
+    return ', '.join(_label(dim, v) for v in values)
+
+
+def groupWords(group) -> str:
+    """A group as a history line shows it: 'PMG ESG · All allocations · ...'."""
+    return ' · '.join(_dimWords(d, group.get(d)) for d in GROUP_DIMENSIONS)
+
+
 # --------------------------------------------------------------- storage ---
 
 def _row(conn):
@@ -221,17 +326,79 @@ def _code(held) -> str:
 
 
 def _parse(text) -> dict:
+    """A stored body as groups: its own, or - for a revision from before
+    groups - the portfolios it gave a code, as groups (``_fromCodes``)."""
     body = json.loads(text) if isinstance(text, str) else (text or {})
+    if isinstance(body.get('groups'), list):
+        return {'groups': [{'name': str(g.get('name') or ''), 'code': str(g.get('code') or ''),
+                            **{d: [str(v) for v in g.get(d) or []] for d in GROUP_DIMENSIONS}}
+                           for g in body['groups'] if isinstance(g, dict)]}
     codes = {k: _code(v) for k, v in (body.get('codes') or {}).items()}
-    return {'codes': {k: v for k, v in codes.items() if v}}
+    return {'groups': _fromCodes({k: codes[k] for k in cells() if codes.get(k)})}
+
+
+def _fromCodes(codes) -> list:
+    """Groups that give each portfolio of *codes* - {cell: code}, as a
+    revision from before groups kept them - its code and no other: the
+    portfolios of one code folded together wherever they differ in one of
+    their five alone, so a code given across the table reads as a few
+    groups, not a group a portfolio. No two groups hold one portfolio, so
+    their order is the console's; a code's groups are named by it - M34, or
+    M34 (1), M34 (2)."""
+    opts = options()
+    boxes = {}
+    for key, code in codes.items():
+        parts = key.split('|')
+        box = tuple(frozenset([parts[at]]) for at in range(len(GROUP_DIMENSIONS)))
+        boxes[(code, box)] = True
+    moved = True
+    while moved:
+        moved = False
+        for at in reversed(range(len(GROUP_DIMENSIONS))):
+            joined = {}
+            for code, box in boxes:
+                rest = (code,) + box[:at] + box[at + 1:]
+                joined.setdefault(rest, set()).update(box[at])
+            folded = {}
+            for rest, values in joined.items():
+                box = rest[1:at + 1] + (frozenset(values),) + rest[at + 1:]
+                folded[(rest[0], box)] = True
+            if len(folded) < len(boxes):
+                moved = True
+            boxes = folded
+    order = {key: n for n, key in enumerate(cells())}
+
+    def first(item):
+        code, box = item
+        return min(order[k] for k in codes if codes[k] == code and all(
+            part in box[at] for at, part in enumerate(k.split('|'))))
+    placed = sorted(boxes, key=first)
+    count = {}
+    for code, _ in placed:
+        count[code] = count.get(code, 0) + 1
+    seen, out = {}, []
+    for code, box in placed:
+        seen[code] = seen.get(code, 0) + 1
+        group = {'name': code if count[code] == 1 else '{} ({})'.format(code, seen[code]), 'code': code}
+        for at, dim in enumerate(GROUP_DIMENSIONS):
+            chosen = [v for v in opts[dim] if v in box[at]]
+            group[dim] = [] if len(chosen) == len(opts[dim]) else chosen
+        out.append(group)
+    return out
 
 
 _lock = threading.Lock()
-_cache = None            # (file stamp, the row as read, or None for none)
+_cache = None            # (file stamp, the table as read)
+_seedTable = None
+
+
+def _table(groups, **stamp) -> dict:
+    given = resolve(groups)
+    return dict({'groups': groups, 'codes': _codesOf(groups, given), 'given': _given(groups, given)}, **stamp)
 
 
 def _stored(path):
-    """The row in force, kept against the file's stamp: the account card
+    """The table in force, kept against the file's stamp: the account card
     reads it on every lookup."""
     global _cache
     stamp = sleeveRepo.fileStamp(path)
@@ -245,8 +412,9 @@ def _stored(path):
     if conn is not None:
         try:
             row = _row(conn)
-            found = ({k: row[k] for k in ('body', 'revision', 'updatedBy', 'updatedAt')}
-                     if row is not None else None)
+            if row is not None:
+                found = _table(_parse(row['body'])['groups'], revision=row['revision'],
+                               updatedBy=row['updatedBy'], updatedAt=row['updatedAt'])
         except Exception:                      # noqa: BLE001 - an older file: nothing yet
             found = None
         finally:
@@ -256,57 +424,123 @@ def _stored(path):
     return found
 
 
+def _copy(table) -> dict:
+    return dict(table, groups=[dict(g, **{d: list(g[d]) for d in GROUP_DIMENSIONS}) for g in table['groups']],
+                codes=dict(table['codes']), given=[dict(x) for x in table['given']])
+
+
 def current() -> dict:
-    """The table in force: {revision, codes: {cell: code}, updatedBy,
-    updatedAt}, a fresh copy on every call. Revision 0 is no
-    table. A read never writes."""
+    """The table in force: {revision, groups, codes: {cell: code}, given:
+    [{gives, holds}] a group, updatedBy, updatedAt}, a fresh copy on every
+    call. Revision 0 is the desk's two groups, before any save. A read never
+    writes."""
+    global _seedTable
     path = sleeveRepo.dbPath()
-    row = _stored(path) if os.path.exists(path) else None
-    if row is None:
-        return {'codes': {}, 'revision': 0, 'updatedBy': '', 'updatedAt': ''}
-    return dict(_parse(row['body']), revision=row['revision'], updatedBy=row['updatedBy'],
-                updatedAt=row['updatedAt'])
+    table = _stored(path) if os.path.exists(path) else None
+    if table is None:
+        if _seedTable is None:
+            _seedTable = _table(_seeded(), revision=0, updatedBy='', updatedAt='')
+        table = _seedTable
+    return _copy(table)
 
 
 def codeFor(cellKey, table=None):
-    """The code at a cell, or None where it has none - a gap."""
+    """The code at a cell, or None where no group holds it - a gap."""
     table = current() if table is None else table
     return table['codes'].get(cellKey) or None
 
 
 def gaps(table=None) -> dict:
-    """{noCode: [cell]}: the portfolios on offer with no code."""
+    """{noCode: [cell]}: the portfolios on offer no group holds."""
     table = current() if table is None else table
     return {'noCode': [c for c in cells() if not table['codes'].get(c)]}
 
 
-# ------------------------------------------------------------ the table ---
+# ------------------------------------------------------------ the groups ---
 
-def _entry(raw, where) -> str:
+def _entry(raw, where, field='codes') -> str:
     if raw is not None and not isinstance(raw, (str, int, float)):
-        raise ValidationError('codes', '{}: a code is a word.'.format(where))
+        raise ValidationError(field, '{}: a code is a word.'.format(where))
     code = _text(raw)
     if len(code) > CODE_MAX:
-        raise ValidationError('codes', '{}: keep the code to {} characters.'.format(where, CODE_MAX))
+        raise ValidationError(field, '{}: keep the code to {} characters.'.format(where, CODE_MAX))
     return code
 
 
+def _chosen(dim, given, field, where, opts) -> list:
+    """A group's choice of one of its five, as stored: the ones it holds in
+    the console's order, or [] for All - which every one of them is too."""
+    if given is None or given == '' or given == ALL:
+        return []
+    if isinstance(given, str):
+        given = [given]
+    if not isinstance(given, list):
+        raise ValidationError(field, '{}: send the {} as a list.'.format(where, _WORDS[dim]))
+    allowed = opts[dim]
+    picked = set()
+    for value in given:
+        if value == ALL:
+            return []
+        if value not in allowed:
+            raise ValidationError(field, '{}: {!r} is not one of the {} on offer.'.format(
+                where, value, _WORDS[dim]))
+        picked.add(value)
+    out = [v for v in allowed if v in picked]
+    return [] if len(out) == len(allowed) else out
+
+
+def _idle(groups) -> list:
+    """[(index, words)] for each group that gives no portfolio its code."""
+    counts = _given(groups)
+    out = []
+    for n, (group, count) in enumerate(zip(groups, counts)):
+        if count['gives']:
+            continue
+        if not count['holds']:
+            out.append((n, '{} holds no portfolio on offer: choose again, or take it off.'.format(group['name'])))
+            continue
+        above = next(g['name'] for g in groups[:n] if any(holds(g, k) and holds(group, k) for k in cells()))
+        out.append((n, 'Every portfolio {} holds is taken by a group above it, {}: move it up, or take it '
+                       'off.'.format(group['name'], above)))
+    return out
+
+
 def normalise(body) -> dict:
-    """The canonical table, or a ValidationError naming ``codes``: every
-    cell one on offer, each code within its length, and a blank cell left
-    out."""
-    if not isinstance(body, dict) or not isinstance(body.get('codes'), dict):
-        raise ValidationError('codes', 'Send the codes as a table, a portfolio to a code.')
-    offered = set(cells())
-    out = {}
-    for key, raw in body['codes'].items():
-        if key not in offered:
-            raise ValidationError('codes', '{} is not a portfolio on offer.'.format(
-                cellWords(key) if key.count('|') == 4 else repr(key)))
-        code = _entry(raw, cellWords(key))
-        if code:
-            out[key] = code
-    return {'codes': {k: out[k] for k in cells() if k in out}}
+    """The canonical groups, in order, or a ValidationError naming the box:
+    each with a name of its own and a code within their lengths, each of its
+    five All or ones on offer, and each giving at least one portfolio its
+    code."""
+    if not isinstance(body, dict) or not isinstance(body.get('groups'), list):
+        raise ValidationError('groups', 'Send the mandate codes as a list of groups.')
+    if len(body['groups']) > GROUPS_MAX:
+        raise ValidationError('groups', 'Keep it to {} groups.'.format(GROUPS_MAX))
+    opts = options()
+    out, names = [], {}
+    for n, raw in enumerate(body['groups']):
+        where = 'Group {}'.format(n + 1)
+        if not isinstance(raw, dict):
+            raise ValidationError('groups', '{}: send it as a group.'.format(where))
+        name = _text(raw.get('name'))
+        if not name:
+            raise ValidationError('group{}name'.format(n), '{} needs a name.'.format(where))
+        if len(name) > NAME_MAX:
+            raise ValidationError('group{}name'.format(n), '{}: keep the name to {} characters.'.format(
+                where, NAME_MAX))
+        if name.lower() in names:
+            raise ValidationError('group{}name'.format(n), 'Groups {} and {} are both called {}: give each a '
+                                  'name of its own.'.format(names[name.lower()] + 1, n + 1, name))
+        names[name.lower()] = n
+        code = _entry(raw.get('code'), name, 'group{}code'.format(n))
+        if not code:
+            raise ValidationError('group{}code'.format(n), '{} needs a mandate code.'.format(name))
+        group = {'name': name, 'code': code}
+        for dim in GROUP_DIMENSIONS:
+            group[dim] = _chosen(dim, raw.get(dim), 'group{}{}'.format(n, dim), name, opts)
+        out.append(group)
+    idle = _idle(out)
+    if idle:
+        raise ValidationError('group{}name'.format(idle[0][0]), idle[0][1])
+    return {'groups': out}
 
 
 # ------------------------------------------------------------- the file ---
@@ -320,7 +554,8 @@ def _fileName(name) -> str:
 
 def _readSheet(name, data):
     """(header, rows) of the sheet that holds the table: a CSV's only one, or
-    the first sheet of a workbook whose header names every required column."""
+    the first sheet of a workbook whose header names a code and, for the
+    layout before groups, every one of the five."""
     if name.lower().endswith('.csv'):
         import csv
         from .csvText import unwrapRows
@@ -339,11 +574,10 @@ def _readSheet(name, data):
         rows = sheet.iter_rows(values_only=True)
         head = next(rows, None) or []
         heads = {_HEADS.get(_squash(h)) for h in head}
-        if all(r in heads for r in _REQUIRED):
+        if 'code' in heads and ('name' in heads or all(r in heads for r in _REQUIRED)):
             return ([('' if h is None else str(h)) for h in head],
                     [['' if v is None else v for v in r] for r in rows])
-    raise ValidationError('file', 'No sheet in {} has the columns {}.'.format(
-        name, ', '.join(COLUMNS[:6])))
+    raise ValidationError('file', 'No sheet in {} has the columns {}.'.format(name, ', '.join(COLUMNS)))
 
 
 def _pick(raw, options, labels=None, aliases=None):
@@ -361,14 +595,24 @@ def _pick(raw, options, labels=None, aliases=None):
     return starts[0] if len(starts) == 1 else None
 
 
-def readFile(name, content) -> dict:
-    """The table a file holds, with what is wrong with it: {table, rows,
-    problems: [words]}. A row's All means every one; where two rows give a
-    portfolio, the one naming more wins, and two that name as much and
-    disagree are a problem. A row naming a portfolio not on offer is a
-    problem too. A Benchmark column is not read (D211)."""
-    from . import products
+def _picker(dim):
     from .rules import RISK_LEVEL_LABELS
+    opts = options()[dim]
+    if dim == 'forms':
+        return lambda raw: _pick(raw, opts, {f: formLabel(f) for f in opts}, _ALIASES)
+    if dim == 'risks':
+        return lambda raw: _pick(raw, opts, RISK_LEVEL_LABELS)
+    return lambda raw: _pick(raw, opts)
+
+
+def readFile(name, content) -> dict:
+    """The groups a file holds, with what is wrong with it: {table, rows,
+    problems: [words], before}. A row a group, in order - or, a file in the
+    layout before groups (*before*), a row a portfolio, any of its five All:
+    each row a group, the ones naming more first, two naming as much that
+    give one portfolio two codes a problem. A Benchmark column is not read
+    (D211)."""
+    from . import products
     name = _fileName(name)
     data = products._decode(content)
     head, rows = _readSheet(name, data)
@@ -377,13 +621,13 @@ def readFile(name, content) -> dict:
         field = _HEADS.get(_squash(h))
         if field is not None:
             at.setdefault(field, i)
-    missing = [c for c, f in zip(COLUMNS, _REQUIRED) if f not in at]
+    before = 'name' not in at
+    needed = _REQUIRED if before else ('name', 'code')
+    missing = [_COLUMN_OF[f] for f in needed if f not in at]
     if missing:
         raise ValidationError('file', '{}: missing column(s) {}.'.format(name, ', '.join(missing)))
-    forms = sorted({o[1] for o in _offered()}, key=lambda f: [o[1] for o in _offered()].index(f))
-    offered = cells()
-    known = set(offered)
-    claimed, problems, count = {}, [], 0
+    pickers = {d: _picker(d) for d in GROUP_DIMENSIONS}
+    groups, problems, count, names = [], [], 0, {}
 
     def field(row, key):
         i = at.get(key)
@@ -393,20 +637,22 @@ def readFile(name, content) -> dict:
             continue
         count += 1
         where = 'Row {}'.format(n)
-        given = {'type': _pick(field(row, 'type'), types()),
-                 'currency': _pick(field(row, 'currency'), CURRENCIES),
-                 'risk': _pick(field(row, 'risk'), risks(), RISK_LEVEL_LABELS),
-                 'form': _pick(field(row, 'form'), forms, {f: formLabel(f) for f in forms}, _ALIASES),
-                 'hedging': _pick(field(row, 'hedging'), hedgings())}
+        said = {}
+        for dim in GROUP_DIMENSIONS:
+            raw = field(row, _DIM_FIELD[dim])
+            words = [raw] if before else [w for w in re.split(r'[,;\n]', _text(raw)) if w.strip()]
+            said[dim] = [(w, pickers[dim](w)) for w in words]
         # an all-equity level is its own allocation: blank says so
-        if given['risk'] == ALL_EQUITY and not _text(field(row, 'form')):
-            given['form'] = ALL_EQUITY
-        words = {'type': 'ImplementationType', 'currency': 'Currency', 'risk': 'RiskLevel',
-                 'form': 'AllocationType', 'hedging': 'Hedging'}
-        bad = [(words[k], field(row, k)) for k in _DIMENSIONS if given[k] is None]
+        if before and [p for _, p in said['risks']] == [ALL_EQUITY] and not _text(field(row, 'form')):
+            said['forms'] = [('', ALL_EQUITY)]
+        chosen, bad = {}, []
+        for dim in GROUP_DIMENSIONS:
+            picked = [p for _, p in said[dim]]
+            bad += ['{} "{}" is not one the table takes'.format(_COLUMN_OF[_DIM_FIELD[dim]], _text(w))
+                    for w, p in said[dim] if p is None]
+            chosen[dim] = [] if ALL in picked else [p for p in picked if p is not None]
         if bad:
-            problems.append('{}: {}.'.format(where, '; '.join(
-                '{} "{}" is not one the table takes'.format(c, _text(v)) for c, v in bad)))
+            problems.append('{}: {}.'.format(where, '; '.join(bad)))
             continue
         try:
             code = _entry(field(row, 'code'), where)
@@ -416,40 +662,84 @@ def readFile(name, content) -> dict:
         if not code:
             problems.append('{}: no MandateCode.'.format(where))
             continue
-        rank = sum(1 for k in _DIMENSIONS if given[k] != ALL)
-        if rank == len(_DIMENSIONS):
-            one = cell(*(given[k] for k in _DIMENSIONS))
-            hit = [one] if one in known else []
-        else:
-            hit = [c for c in offered if all(given[k] == ALL or given[k] == part
-                                             for k, part in zip(_DIMENSIONS, c.split('|')))]
-        if not hit:
-            problems.append('{}: {} is not a portfolio on offer.'.format(where, ' · '.join(
-                formLabel(given[k]) if k == 'form' else riskLabel(given[k]) if k == 'risk' else given[k]
-                for k in _DIMENSIONS)))
+        opts = options()
+        for dim in GROUP_DIMENSIONS:
+            chosen[dim] = [] if len(set(chosen[dim])) == len(opts[dim]) else \
+                [v for v in opts[dim] if v in chosen[dim]]
+        label = _text(field(row, 'name')) if not before else \
+            ' · '.join(_label(d, chosen[d][0]) for d in GROUP_DIMENSIONS if chosen[d]) or 'Every portfolio'
+        if not label:
+            problems.append('{}: no Group name.'.format(where))
             continue
-        for c in hit:
-            had = claimed.get(c)
-            if had is None or rank > had[0]:
-                claimed[c] = (rank, code, n)
-            elif rank == had[0] and code != had[1]:
-                problems.append('Rows {} and {} both give {}: codes {} and {}.'.format(
-                    had[2], n, cellWords(c), had[1], code))
+        group = dict({'name': label, 'code': code, 'row': n}, **chosen)
+        held = names.get(label.lower())
+        if held is not None:
+            if before and held['code'] == code:
+                continue
+            problems.append('Rows {} and {} both give {}: codes {} and {}.'.format(
+                held['row'], n, label, held['code'], code) if before else
+                'Rows {} and {} are both the group {}.'.format(held['row'], n, label))
+            continue
+        if len(label) > NAME_MAX:
+            problems.append('{}: keep the group name to {} characters.'.format(where, NAME_MAX))
+            continue
+        names[label.lower()] = group
+        groups.append(group)
+    if before:
+        # the row naming more wins: it goes first
+        groups.sort(key=lambda g: -sum(1 for d in GROUP_DIMENSIONS if g[d]))
+        for i, a in enumerate(groups):
+            for b in groups[i + 1:]:
+                if sum(1 for d in GROUP_DIMENSIONS if a[d]) != sum(1 for d in GROUP_DIMENSIONS if b[d]):
+                    break
+                if a['code'] != b['code']:
+                    both = next((k for k in cells() if holds(a, k) and holds(b, k)), None)
+                    if both:
+                        problems.append('Rows {} and {} both give {}: codes {} and {}.'.format(
+                            a['row'], b['row'], cellWords(both), a['code'], b['code']))
     if count == 0:
         problems.append('{} holds no rows.'.format(name))
-    table = {'codes': {c: claimed[c][1] for c in offered if c in claimed}}
-    return {'name': name, 'table': table, 'rows': count, 'problems': problems,
+    table = {'groups': [{k: g[k] for k in ('name', 'code') + GROUP_DIMENSIONS} for g in groups]}
+    for n, words in _idle(table['groups']):
+        problems.append('Row {}: {}'.format(groups[n]['row'], words))
+    return {'name': name, 'table': table, 'rows': count, 'problems': problems, 'before': before,
             'benchmarkColumn': 'benchmark' in {_squash(h) for h in head}}
 
 
 def _changes(before, after) -> list:
-    """What moved between two tables, in the words the console shows."""
-    was, now = before['codes'], after['codes']
+    """What moved between two tables, in the words the console shows: each
+    group that came, went or changed, their order, and how many portfolios
+    take another code."""
+    was, now = before['groups'], after['groups']
+    wasBy = {g['name'].lower(): g for g in was}
+    nowBy = {g['name'].lower(): g for g in now}
     out = []
-    for c in cells():
-        a, b = was.get(c) or '', now.get(c) or ''
-        if a != b:
-            out.append('{}: code {} → {}'.format(cellWords(c), a or '—', b or '—'))
+    for g in now:
+        old = wasBy.get(g['name'].lower())
+        if old is None:
+            out.append('Group {} added: {} · {}'.format(g['name'], g['code'], groupWords(g)))
+            continue
+        if old['name'] != g['name']:
+            out.append('Group {} renamed {}'.format(old['name'], g['name']))
+        if old['code'] != g['code']:
+            out.append('{}: code {} → {}'.format(g['name'], old['code'] or '—', g['code'] or '—'))
+        for dim in GROUP_DIMENSIONS:
+            if list(old[dim]) != list(g[dim]):
+                out.append('{}: {} {} → {}'.format(g['name'], _WORDS[dim], _dimWords(dim, old[dim]),
+                                                  _dimWords(dim, g[dim])))
+    for g in was:
+        if g['name'].lower() not in nowBy:
+            out.append('Group {} taken off ({} · {})'.format(g['name'], g['code'], groupWords(g)))
+    shared = [g['name'].lower() for g in was if g['name'].lower() in nowBy]
+    order = [g['name'].lower() for g in now if g['name'].lower() in wasBy]
+    if shared != order:
+        out.append('Group order: {} → {}'.format(', then '.join(g['name'] for g in was),
+                                                  ', then '.join(g['name'] for g in now)))
+    a, b = _codesOf(was), _codesOf(now)
+    moved = sum(1 for c in cells() if a.get(c) != b.get(c))
+    if moved:
+        out.append('{} portfolio{} take{} another code'.format(moved, '' if moved == 1 else 's',
+                                                              's' if moved == 1 else ''))
     return out
 
 
@@ -464,11 +754,12 @@ def preview(name, content) -> dict:
     read = readFile(name, content)
     now = current()
     changes = _changes(now, read['table'])
-    gap = gaps(dict(read['table']))
+    table = _table(read['table']['groups'])
     return {'name': read['name'], 'rows': read['rows'], 'problems': read['problems'],
-            'benchmarkColumn': read['benchmarkColumn'], 'cells': len(read['table']['codes']),
+            'before': read['before'], 'benchmarkColumn': read['benchmarkColumn'],
+            'groups': len(read['table']['groups']), 'cells': len(table['codes']),
             'changes': _summary(changes), 'changed': len(changes),
-            'noCode': len(gap['noCode']), 'base': now['revision']}
+            'noCode': len(gaps(table)['noCode']), 'base': now['revision']}
 
 
 # ------------------------------------------------------------ the record ---
@@ -513,7 +804,7 @@ def _refuseStale(conn, base) -> None:
 
 def _previous(conn) -> dict:
     existing = _row(conn)
-    return _parse(existing['body']) if existing is not None else {'codes': {}}
+    return _parse(existing['body']) if existing is not None else {'groups': _seeded()}
 
 
 def _put(cleaned, action, note, user, base) -> dict:
@@ -523,8 +814,8 @@ def _put(cleaned, action, note, user, base) -> dict:
         conn.execute('BEGIN IMMEDIATE')
         try:
             _refuseStale(conn, base)
-            if cleaned['codes'] == _previous(conn)['codes']:
-                raise ValidationError('codes', 'Those are the mandate codes already in force.')
+            if cleaned['groups'] == _previous(conn)['groups']:
+                raise ValidationError('groups', 'Those are the mandate codes already in force.')
             _write(conn, cleaned, action, note, user)
             conn.commit()
         except Exception:
@@ -536,15 +827,14 @@ def _put(cleaned, action, note, user, base) -> dict:
 
 
 def save(body, note='', user='', base=None) -> dict:
-    """Put a table edited on screen in force. Refused, naming the field, when
-    it is not a table, someone saved in between (*base*) or nothing would
+    """Put groups edited on screen in force. Refused, naming the box, when a
+    group is wrong, someone saved in between (*base*) or nothing would
     change."""
     return _put(normalise(body), 'updated', _note(note), user, base)
 
 
 def importFile(name, content, note='', user='', base=None) -> dict:
-    """Put a file's table in force, whole: a cell the file leaves out loses
-    its code, and stays in the history. Refused while the file has a
+    """Put a file's groups in force, whole. Refused while the file has a
     problem."""
     note = _note(note)
     read = readFile(name, content)
@@ -560,69 +850,76 @@ def _rows(conn) -> list:
                         'ORDER BY revision', (KIND, SCOPE)).fetchall()
 
 
+def _revisions(conn) -> list:
+    """[(row, groups, changes)] oldest first, the first against what was in
+    force before it: the desk's groups, or - for a revision from before
+    groups - nothing."""
+    out, previous = [], None
+    for r in _rows(conn):
+        raw = json.loads(r['body']) if r['body'] else {}
+        body = _parse(raw)
+        if previous is None:
+            previous = {'groups': _seeded()} if isinstance(raw.get('groups'), list) else {'groups': []}
+        out.append((r, body, _changes(previous, body)))
+        previous = body
+    return out
+
+
 def history() -> list:
     """Every revision, newest first, each with what it changed."""
     conn = sleeveRepo.connection()
     try:
-        rows = _rows(conn)
+        revisions = _revisions(conn)
     finally:
         conn.close()
-    out, previous = [], {'codes': {}}
-    top = rows[-1]['revision'] if rows else None
-    for r in rows:
-        body = _parse(r['body'])
-        changes = _changes(previous, body)
-        out.append({'revision': r['revision'], 'action': r['action'], 'note': r['note'],
-                    'actor': r['actor'], 'at': r['at'], 'changes': _summary(changes),
-                    'changed': len(changes), 'cells': len(body['codes']),
-                    'current': r['revision'] == top})
-        previous = body
+    top = revisions[-1][0]['revision'] if revisions else None
+    out = [{'revision': r['revision'], 'action': r['action'], 'note': r['note'], 'actor': r['actor'],
+            'at': r['at'], 'changes': _summary(changes), 'changed': len(changes),
+            'groups': len(body['groups']), 'current': r['revision'] == top}
+           for r, body, changes in revisions]
     return list(reversed(out))
 
 
 def feedRows(conn) -> list:
     """The record as the Activity feed reads it."""
-    out, previous = [], {'codes': {}}
-    for r in _rows(conn):
-        body = _parse(r['body'])
-        out.append({'id': r['id'], 'revision': r['revision'], 'action': r['action'], 'note': r['note'],
-                    'actor': r['actor'], 'at': r['at'], 'changes': _summary(_changes(previous, body))})
-        previous = body
-    return out
+    return [{'id': r['id'], 'revision': r['revision'], 'action': r['action'], 'note': r['note'],
+             'actor': r['actor'], 'at': r['at'], 'changes': _summary(changes)}
+            for r, body, changes in _revisions(conn)]
 
 
 def revert(revision, note='', user='', base=None) -> dict:
-    """Put an earlier revision's table back in force, as a new revision. A
-    cell no longer on offer is left out."""
+    """Put an earlier revision's groups back in force, as a new revision -
+    revision 0 the desk's two. A portfolio no longer on offer is left out."""
     note = _note(note)
     try:
         number = int(revision)
     except (TypeError, ValueError):
         raise ValidationError('revision', 'Name the revision by its number.')
-    conn = sleeveRepo.connection()
-    try:
-        row = conn.execute('SELECT * FROM policyHistory WHERE kind = ? AND scope = ? AND '
-                           'revision = ?', (KIND, SCOPE, number)).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        raise ValidationError('revision', 'There is no revision {} of the mandate codes.'.format(number))
-    offered = set(cells())
-    body = _parse(row['body'])
-    return _put(normalise({'codes': {k: v for k, v in body['codes'].items() if k in offered}}), 'reverted',
-                note or 'Restored revision {}'.format(number), user, base)
+    if number == 0:
+        body = {'groups': _seeded()}
+    else:
+        conn = sleeveRepo.connection()
+        try:
+            row = conn.execute('SELECT * FROM policyHistory WHERE kind = ? AND scope = ? AND '
+                               'revision = ?', (KIND, SCOPE, number)).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise ValidationError('revision', 'There is no revision {} of the mandate codes.'.format(number))
+        body = _parse(row['body'])
+    opts = options()
+    body = {'groups': [dict(g, **{d: [v for v in g[d] if v in opts[d]] for d in GROUP_DIMENSIONS})
+                       for g in body['groups']]}
+    return _put(normalise(body), 'reverted', note or 'Restored revision {}'.format(number), user, base)
 
 
 def exportRows() -> list:
-    """The table in force as the file it loads from: the header, then a row
-    a cell that has a code, in the console's order."""
+    """The groups in force as the file they load from: the header, then a
+    row a group, in order."""
     out = [list(COLUMNS)]
-    codes = current()['codes']
-    for c in cells():
-        held = codes.get(c)
-        if held:
-            variant, form, risk, currency, hedging = c.split('|')
-            out.append([variant, currency, riskLabel(risk), form, hedging, held])
+    for g in current()['groups']:
+        out.append([g['name'], g['code']] + [', '.join(_label(d, v) if d == 'risks' else v for v in g[d]) or ALL
+                                             for d in GROUP_DIMENSIONS])
     return out
 
 
@@ -630,7 +927,7 @@ def exportWorkbook() -> bytes:
     """``exportRows`` as an .xlsx with one sheet, Mandate Codes, ready to
     edit and load again."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
+    from openpyxl.styles import Alignment, Font, PatternFill
     book = Workbook()
     sheet = book.active
     sheet.title = 'Mandate Codes'
@@ -639,8 +936,11 @@ def exportWorkbook() -> bytes:
     for c in sheet[1]:
         c.font = Font(bold=True, color='FFFFFF')
         c.fill = PatternFill('solid', fgColor='0B2545')
-    for letter, width in zip('ABCDEF', (26, 10, 22, 16, 18, 26)):
+    for letter, width in zip('ABCDEFG', (28, 16, 30, 30, 30, 16, 30)):
         sheet.column_dimensions[letter].width = width
+    for row in sheet.iter_rows(min_row=2):
+        for c in row:
+            c.alignment = Alignment(wrap_text=True, vertical='top')
     sheet.freeze_panes = 'A2'
     sheet.auto_filter.ref = sheet.dimensions
     buf = io.BytesIO()
@@ -652,5 +952,8 @@ def describe() -> dict:
     """Everything the console's Mandate Codes view shows."""
     table = current()
     gap = gaps(table)
+    opts = options()
     return dict(table, layout=layout(), hedgings=hedgings(), currencies=list(CURRENCIES),
-                gaps=gap, cells=len(cells()), codeMax=CODE_MAX, noteMax=NOTE_MAX)
+                options={d: [{'value': v, 'label': _label(d, v)} for v in opts[d]] for d in GROUP_DIMENSIONS},
+                seed=_seeded(), gaps=gap, cells=len(cells()), codeMax=CODE_MAX, nameMax=NAME_MAX,
+                groupsMax=GROUPS_MAX, noteMax=NOTE_MAX)

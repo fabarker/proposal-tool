@@ -37,7 +37,7 @@ def _noGaps(tmp_path_factory):
     sleeveRepo.describe()
     path = tmp_path_factory.mktemp('codesfile') / 'codes.csv'
     with open(path, 'w', newline='', encoding='utf-8') as fh:
-        csv.writer(fh).writerows([list(mandateCodes.COLUMNS), ['All', 'All', 'All', 'All', 'All', 'PMG-TEST']])
+        csv.writer(fh).writerows([list(mandateCodes.COLUMNS), ['Every portfolio', 'PMG-TEST', 'All', 'All', 'All', 'All', 'All']])
     mandateCodes.importFile('codes.csv', base64.b64encode(path.read_bytes()).decode('ascii'), user='seed')
     portfolioBenchmarks.save({'rows': [
         {'benchmark': 'Test benchmark {} {}'.format(c.split('|')[1], c.split('|')[0]), 'mnemonic': 'TB-' + c.split('|')[1],
@@ -397,7 +397,7 @@ def test_the_proposal_flow_needs_only_the_allowlist_and_the_repository_needs_the
             assert set(names) <= {'requireAuth'}, (route.path, names)
     # 32, the funding split's five (D148), the overlays' five (D155), the
     # catalogue's nine (D165), the fee card's seven (D166), the sleeve switch (D169) and custom sleeves' one (D170)
-    assert seen == 94                      # custom portfolios' three (D171), the switch (D172), sharing (D179), the notices' four where the marketing lists' were (D196, D199); the entities' four gone (D195); the SMA mandate file's three (D197) gone again (D207); the private markets minimums' seven (D200); the restrictions' four (D203); the mandate codes' seven (D205); the MAP benchmarks' seven (D211)
+    assert seen == 95                      # custom portfolios' three (D171), the switch (D172), sharing (D179), the notices' four where the marketing lists' were (D196, D199); the entities' four gone (D195); the SMA mandate file's three (D197) gone again (D207); the private markets minimums' seven (D200); the restrictions' four (D203); the mandate codes' seven (D205); the MAP benchmarks' seven (D211); the listings' order (D214)
 
 
 def test_a_pwa_runs_the_flow_end_to_end_and_only_an_admin_reaches_the_repository(monkeypatch):
@@ -767,14 +767,16 @@ def test_a_missing_code_or_benchmark_stops_the_request_and_says_who_gives_it():
     # the mandate's own code
     cell = mandateCodes.keyOf('PMG Multi-Asset Portfolio', 'USD|Moderate|Full|0', hedging='Hedged')
     before = mandateCodes.current()
-    mandateCodes.save({'codes': {k: v for k, v in before['codes'].items() if k != cell}}, user='alice',
+    assert mandateCodes.codeFor(cell) == 'PMG-TEST'
+    mandateCodes.save({'groups': [{'name': 'GBP only', 'code': 'PMG-GBP', 'currencies': ['GBP']}]}, user='alice',
                       base=before['revision'])
     try:
         rows = dashboardRouter.lookupProposal(uid)['proposal']['smaDetails']['rows']
         assert rows[0]['problem'] == ('No mandate code for PMG Multi-Asset Portfolio · Full · Moderate · USD · '
-                                      'Hedged. An admin adds it in Account Opening, Mandate codes.')
+                                      'Hedged: no group in Account Opening, Mandate Codes holds it. An admin adds it '
+                                      'to a group there.')
     finally:
-        mandateCodes.save({'codes': before['codes']}, user='alice', base=before['revision'] + 1)
+        mandateCodes.save({'groups': before['groups']}, user='alice', base=before['revision'] + 1)
     # and its benchmark (D211): delivered without one, the Benchmarks tab's for its portfolio
     before = portfolioBenchmarks.current()
     portfolioBenchmarks.save({'rows': [r for r in before['rows'] if portfolioBenchmarks.rowKey(r) != 'Moderate|USD|Hedged']},

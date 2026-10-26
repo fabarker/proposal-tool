@@ -492,8 +492,8 @@ def test_the_new_routes_are_admin_only_and_the_count_is_thirty_seven():
     # custom portfolios' three (D171) and the custom workflows' switch (D172); no settings routes (D173);
     # where a sleeve is offered (D179); the SMA mandate file's three (D197), gone again (D207); the private
     # markets minimums' seven (D200); the restrictions' four (D203); the mandate codes' seven (D205);
-    # the MAP benchmarks' seven (D211)
-    assert len(found) == 94
+    # the MAP benchmarks' seven (D211); the listings' order (D214)
+    assert len(found) == 95
     assert ('/scenario/repository/mandates/import', ('POST',)) not in found
     assert 'requireAdmin' in found[('/scenario/repository/sleeves/{sleeveId}/editions', ('POST',))]
     assert 'requireAdmin' in found[('/scenario/repository/applicability', ('POST',))]

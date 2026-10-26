@@ -133,7 +133,7 @@ process.stdout.write(JSON.stringify({
     listing = got['payload']['listings'][0]
     assert listing['productCost'] == 0.25 and listing['minimumInvestment'] is None
     assert got['payload']['name'] == 'Probe' and listing['distributionYield'] is None
-    assert listing['ranks'] == {}, 'one listing has nothing to rank'
+    assert 'ranks' not in listing, 'a listing is facts only (D214)'
     assert got['slug'] == ['gs-access-green-bond-etf', 's-and-p-500-index-usd', '']
     assert got['near'] == ['Daily', 'Mutual Fund', None, 'Quarterly']
     assert got['buckets'] == ['Last 7 days', '8 to 30 days ago', '31 to 90 days ago', 'Over 90 days ago',
@@ -291,56 +291,52 @@ LISTED = {'productId': 'gef', 'name': 'Global Equity Fund', 'ticker': 'GEF-USD',
           'listings': [
               {'ticker': 'GEF-USD', 'code': '', 'issueCurrency': 'USD', 'hedging': 'Unhedged',
                'shareClass': 'Accumulating', 'exposureCurrency': 'USD', 'assetClass': 'Equity', 'productCost': 0.45,
-               'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World',
-               'ranks': {'USD': 1, 'CHF': 1}},
+               'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World'},
               {'ticker': 'GEF-USD', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Unhedged',
                'shareClass': 'Accumulating', 'exposureCurrency': 'USD', 'assetClass': 'Equity', 'productCost': 0.45,
-               'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World', 'ranks': {'GBP': 2}},
+               'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World'},
               {'ticker': 'GEF-GBPH', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Hedged',
                'shareClass': 'Accumulating', 'exposureCurrency': 'GBP', 'assetClass': 'Equity', 'productCost': 0.5,
-               'distributionYield': None, 'minimumInvestment': 1000000, 'benchmark': 'MSCI World (GBP hedged)',
-               'ranks': {'GBP': 1}}]}
+               'distributionYield': None, 'minimumInvestment': 1000000, 'benchmark': 'MSCI World (GBP hedged)'}]}
 
 
-def test_the_form_holds_a_products_listings_and_their_ranks_as_the_server_does():
-    """D207: the listings are a list of rows of text, their boxes keyed as the
-    server names them; the payload sends each whole with its ranks, and what
-    moved is named by listing, as the history names it."""
+def test_the_form_holds_a_products_listings_in_their_order_as_the_server_does():
+    """D207, D214: the listings are a list of rows of text in their order,
+    their boxes keyed as the server names them; the payload sends each
+    whole, and what moved is named by listing, as the history names it -
+    the order too, where another listing is put first."""
     got = _node(_products() + '''
 var p = %s, d = prdDraftFrom(p), ctx = %s;
-var before = { rows: d.listings.length, rank: [d.listings[0].rankUSD, d.listings[2].rankGBP, d.listings[1].rankCHF],
-               same: prdChanges(p, d), labels: p.listings.map(function (l) { return prdListingLabel(l, p.listings); }) };
+var before = { rows: d.listings.length, same: prdChanges(p, d),
+               labels: p.listings.map(function (l) { return prdListingLabel(l, p.listings); }) };
 d.listings[2].productCost = '0.55';
-d.listings[1].rankGBP = '';
-d.listings.push(Object.assign(prdListingRow(p.listings[0]), { ticker: 'GEF-EURH', issueCurrency: 'EUR', hedging: 'Hedged',
-                                                              rankUSD: '', rankCHF: '', rankEUR: '1' }));
+d.listings.push(Object.assign(prdListingRow(p.listings[0]), { ticker: 'GEF-EURH', issueCurrency: 'EUR', hedging: 'Hedged' }));
 var moved = prdChanges(p, d), payload = prdPayload(d);
+var d2 = prdDraftFrom(p);
+d2.listings.unshift(d2.listings.splice(2, 1)[0]);
 process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload,
-  fields: prdListingFields(d).length }));
+  fields: prdListingFields(d).length, reordered: prdChanges(p, d2) }));
 ''' % (json.dumps(LISTED), json.dumps(dict(CTX, isNew=False))))
-    assert got['before']['rows'] == 3 and got['before']['rank'] == ['1', '1', '']
-    assert got['before']['same'] == []
+    assert got['before']['rows'] == 3 and got['before']['same'] == []
     assert got['before']['labels'] == ['GEF-USD · USD', 'GEF-USD · GBP', 'GEF-GBPH']
     assert [(c['label'], c['before'], c['after']) for c in got['moved']] == [
         ('Product cost of GEF-GBPH', '0.5', '0.55'),
-        ('Listing GEF-EURH', '—', 'EUR · Hedged · Accumulating · exposure USD · class Equity · cost 0.45 · min 1,000 · benchmark MSCI World'),
-        ('GBP ranking', 'GEF-GBPH, then GEF-USD · GBP', 'GEF-GBPH'),
-        ('EUR ranking', '—', 'GEF-EURH')]
-    assert [l['ranks'] for l in got['payload']['listings']] == [{'USD': 1, 'CHF': 1}, {}, {'GBP': 1}, {'EUR': 1}]
+        ('Listing GEF-EURH', '—', 'EUR · Hedged · Accumulating · exposure USD · class Equity · cost 0.45 · min 1,000 · benchmark MSCI World')]
+    assert not any('ranks' in l for l in got['payload']['listings'])
     assert got['payload']['listings'][3]['ticker'] == 'GEF-EURH'
-    assert got['fields'] == 4 * (11 + 4), 'eleven boxes and four ranks a listing'
+    assert got['fields'] == 4 * 11, 'eleven boxes a listing, and no ranks'
+    assert [(c['label'], c['before'], c['after']) for c in got['reordered']] == [
+        ('Listing order', 'GEF-USD · USD, then GEF-USD · GBP, then GEF-GBPH',
+         'GEF-GBPH, then GEF-USD · USD, then GEF-USD · GBP')]
 
 
 def test_the_form_checks_listings_as_the_server_does():
-    """The same listing twice, two listings ranked alike, a rank that is not a
-    whole number, a code on a fund, hedging a fund cannot say and a ticker
-    another product holds are each refused on their box."""
+    """The same listing twice, a code on a fund, hedging a fund cannot say
+    and a ticker another product holds are each refused on their box."""
     got = _node(_products() + '''
 var p = %s, ctx = %s, out = {};
 function draft(change) { var d = prdDraftFrom(p); change(d); return prdProblems(d, ctx); }
 out.same = draft(function (d) { d.listings[1].issueCurrency = 'USD'; });
-out.twice = draft(function (d) { d.listings[1].rankGBP = '1'; });
-out.rank = draft(function (d) { d.listings[0].rankEUR = 'first'; });
 out.code = draft(function (d) { d.listings[0].code = 'M1'; });
 out.isg = draft(function (d) { d.listings[0].hedging = 'ISG Hedged'; });
 out.held = draft(function (d) { d.listings[2].ticker = 'TAKEN'; });
@@ -352,8 +348,6 @@ process.stdout.write(JSON.stringify(out));
 ''' % (json.dumps(LISTED), json.dumps(dict(CTX, isNew=False, categories=['Public Equity', 'Investment Grade Fixed Income'],
                                              held={'ticker:taken': 'Another Fund'}))))
     assert 'same listing' in got['same']['listing1ticker']
-    assert 'both ranked 1 for GBP' in got['twice']['listing2rankGBP']
-    assert 'whole number' in got['rank']['listing0rankEUR']
     assert 'Only a separate account' in got['code']['listing0code']
     assert 'Hedged or Unhedged' in got['isg']['listing0hedging']
     assert 'Another Fund' in got['held']['listing2ticker']
@@ -363,8 +357,11 @@ process.stdout.write(JSON.stringify(out));
 
 def test_the_card_and_the_form_follow_the_vehicle_and_the_listings_move():
     """D207: the template is the vehicle's - an SMA's listings are its mandate
-    codes - and a listing moves by its grip or its arrows, taken off by its x."""
+    codes - and a listing moves by its grip or its arrows, taken off by its x.
+    On the card too (D214), where the order is saved as it moves."""
     source = _source()
+    assert 'data-prdcgrip' in source and 'data-prd="cardmove"' in source
+    assert "'/scenario/repository/products/order'" in source and 'Rank USD' not in source
     assert "(sma ? 'SMA card' : 'Fund card')" in source and "(sma ? 'SMA form' : 'Fund form')" in source
     assert "data-prd=\"lstmove\"" in source and "act === 'lstremove'" in source and "act === 'lstadd'" in source
     assert 'data-prdgrip' in source and 'prdMoveListing(from, to)' in source

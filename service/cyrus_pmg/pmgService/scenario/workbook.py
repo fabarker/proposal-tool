@@ -144,52 +144,30 @@ def implColumns(includeFees: bool = True, deck: bool = False) -> list:
     return kept + [COST_COLUMN]
 
 
-def _stepDown(item, order):
-    """*item* holding the first listing of *order* its notional meets (D208),
-    with what it steps down from named, or None when it meets none."""
-    listing = _products.pickListing(order, item['notional'])
-    if listing is None:
-        return None
-    held = _products.holdListing(item, listing)
-    held.pop('steppedFrom', None)
-    if listing is not order[0]:
-        held['steppedFrom'] = {'listing': order[0].get('listing') or '',
-                               'minimumInvestment': float(order[0].get('minimumInvestment') or 0)}
-    return held
-
-
 def _holdAlternatives(groups, currency, mandateSize) -> list:
     """Put what a line can hold in place of a listing the amount reaching it
     falls short of, group by group; returns the line items as they now
-    stand. First the next listing of the same product in the currency's
-    ranking whose minimum the amount meets (D208); failing that, the product
-    a sleeve names below the minimum (D192), at its own listing for the
-    amount; failing both, the line keeps its first listing and is flagged
-    below its minimum, as before.
+    stand. The product a sleeve names below the minimum (D192) steps in, at
+    its own first listing (D214); failing that, the line keeps its listing
+    and is flagged below its minimum, as before.
 
     The amount is the line's long-term notional, from its printed weight -
     the figure the minimum check has always read - so the switches and a
     custom weight count, and the initial allocation holds the same product
     and listing. The alternative takes the whole line: its weight, its share
     of the sleeve. Where the sleeve holds the alternative too, the two lines
-    are one, at the first one's place, at the listing the two amounts
-    together meet. ``standsIn`` names the product each held line stands in
-    for, and ``steppedFrom`` the listing."""
+    are one, at the first one's place. ``standsIn`` names the product each
+    held line stands in for."""
     out = []
     for group in groups:
         lines = []
         for item in group['items']:
             alternative = item.pop('alternative', None)
-            order = item.get('ranked') or []
             minimum = item.get('minimumInvestment')
             short = (minimum and item['printedPct'] > 0
                      and item['notional'] < float(minimum))
             if not short:
                 lines.append(item)
-                continue
-            stepped = _stepDown(item, order) if len(order) > 1 else None
-            if stepped is not None:
-                lines.append(stepped)
                 continue
             if not alternative:
                 lines.append(item)
@@ -198,7 +176,6 @@ def _holdAlternatives(groups, currency, mandateSize) -> list:
             held.pop('alternative', None)
             for field in ('weight', 'exactPct', 'printedPct', 'notional'):
                 held[field] = item[field]
-            held = _stepDown(held, held.get('ranked') or []) or held
             held['standsIn'] = [{'productId': item['productId'], 'name': item.get('name'),
                                  'minimumInvestment': float(minimum),
                                  'notional': item['notional']}]
@@ -216,15 +193,6 @@ def _holdAlternatives(groups, currency, mandateSize) -> list:
             first['printedPct'] = round(float(first['printedPct']) + float(line['printedPct']), 2)
             first['notional'] = round(mandateSize * first['printedPct'] / 100.0 / 100.0) * 100.0
             first['standsIn'] = (first.get('standsIn') or []) + (line.get('standsIn') or [])
-            # the listing the two amounts together meet, from the top
-            order = first.get('ranked') or []
-            if len(order) > 1:
-                again = _stepDown(first, order)
-                if again is None:
-                    again = _products.holdListing(first, order[0])
-                    again.pop('steppedFrom', None)
-                first.clear()
-                first.update(again)
         group['items'] = merged
         out.extend(merged)
     return out
@@ -341,9 +309,8 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         items = []
         if sleeve:
             for product in sleeve['products']:
-                # the listing it holds in the portfolio's currency, and the
-                # ones it may step down to below that one's minimum (D207)
-                item = _products.inCurrency(product, currency)
+                # the listing it holds: its first (D214)
+                item = _products.asHeld(product)
                 item['exactPct'] = catWeight * float(product['weight'])
                 items.append(item)
                 lineItems.append(item)

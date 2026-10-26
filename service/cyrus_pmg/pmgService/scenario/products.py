@@ -16,20 +16,21 @@ fund, a mandate code of a separate account - each with its own ticker, issue
 currency, hedging, share class, exposure currency, asset class, product cost,
 distribution yield, minimum and benchmark. What the product is - its id,
 name, category, style, vehicle, source, liquidity and fee group - is the same
-whichever listing is held. The first listing is the MAIN one, whose values
-the product carries at its top level. A base currency is not a property of a
-product, and any proposal may hold any product: for each base currency a
-product ranks its listings, and a proposal in that currency holds the one
-ranked first (``inCurrency``), or the next one ranked whose minimum its line
-meets (``pickListing``). A currency the product has not ranked holds the main
-listing, and a product with one listing always holds it. A ticker may repeat
-across a product's listings - one ISIN quoted in several currencies is one
-ticker - but belongs to that product alone, and so does a mandate code. The
-file gives a product one row per listing under the same ProductId, with a
-MandateCode, a Hedging and a Rank column for each base currency. A file in
-the layout before listings is still read (D182): one row per base currency,
-named in a BaseCurrency column, each currency's row a listing ranked first
-there and the All row the main one.
+whichever listing is held. A base currency is not a property of a product,
+and any proposal may hold any product. The catalogue holds facts only
+(D214): nothing on a product or a listing speaks of a proposal - the
+rankings by base currency it once kept (D207, D208) are gone. Its listings
+are kept in an order the console sets by dragging them, and until the rules
+for choosing between them are settled a proposal holds the FIRST one,
+whatever its currency and its amount (``asHeld``); the product carries the
+first one's values at its top level. A ticker may repeat across a product's
+listings - one ISIN quoted in several currencies is one ticker - but
+belongs to that product alone, and so does a mandate code. The file gives a
+product one row per listing under the same ProductId, in their order, with
+a MandateCode and a Hedging column; Rank columns a file kept before are
+not read. A file in the layout before listings is still read (D182): one
+row per base currency, named in a BaseCurrency column, the All row first
+and each currency's row a listing after it.
 
 The catalogue now lives in the repository's file beside the
 sleeves (sleeveRepo, schema 7). That extract is read twice in its life: once,
@@ -73,16 +74,16 @@ the account is opened under, the currency it is run in as its issue
 currency and, for a Public Equity SMA, the hedging version it comes in
 (Hedged, ISG Hedged, Unhedged). A fund's listing may be Hedged or Unhedged,
 or say nothing. The proposal's hedging policy plays no part in which one is
-held: only the ranking does. The code shows nowhere in a proposal's files;
+held. The code shows nowhere in a proposal's files;
 the account opening request reads it. The word "mandate" on its own is the
 client's mandate everywhere else in the tool.
 
 Each listing names its BENCHMARK (D204), which the account opening request
 reads for an SMA. A file without a Benchmark column leaves the benchmarks
 the catalogue holds as they are, since a file the desk kept before there
-were benchmarks must not wipe the ones typed since; one without the Rank
-columns leaves the rankings, one without a Hedging column the hedging, and
-one without a MandateCode column leaves an SMA's coded listings whole.
+were benchmarks must not wipe the ones typed since; one without a Hedging
+column leaves the hedging, and one without a MandateCode column leaves an
+SMA's coded listings whole.
 """
 
 from __future__ import annotations
@@ -182,12 +183,10 @@ LISTING_FIGURES = ('productCost', 'distributionYield', 'minimumInvestment')
 PRODUCT_FIELDS = [k for k in KEYS if k not in LISTING_FIELDS]
 #: what makes two listings of a product the same one: two the same are refused
 LISTING_KEY = ('ticker', 'code', 'issueCurrency', 'hedging', 'shareClass')
-#: a listing's place in each base currency's ranking: {currency: 1, 2, ...}
+#: what a listing kept before the catalogue held facts only (D214): its
+#: place in each base currency's ranking, dropped wherever it is read
 RANKS = 'ranks'
-#: the columns a file gives the rankings in, one a base currency
-RANK_COLUMNS = ['Rank ' + c for c in CURRENCIES]
-LABELS.update({'listings': 'Listings', RANKS: 'Ranking'})
-LABELS.update({'rank' + c: '{} ranking'.format(c) for c in CURRENCIES})
+LABELS.update({'listings': 'Listings', 'order': 'Listing order'})
 #: The layout before listings (D182): the same ProductId on one row per base
 #: currency, named in a BaseCurrency column - USD, GBP, CHF, EUR, or All (or
 #: blank) for the main row. Still read, each currency's row a listing.
@@ -196,8 +195,8 @@ BASE_COLUMN = 'BaseCurrency'
 #: letters and digits
 _BASE_HEADERS = ('basecurrency', 'baseccy')
 ALL = 'All'
-#: what an export writes: the file's columns, then a rank column a currency
-EXPORT_COLUMNS = FILE_COLUMNS + RANK_COLUMNS
+#: what an export writes: the file's columns
+EXPORT_COLUMNS = list(FILE_COLUMNS)
 _COLUMN_OF = {k: c for k, c, _ in _FIELDS}
 #: the six words a product is described by: free values, which the console
 #: keeps consistent by offering the ones already in use
@@ -314,8 +313,8 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
     must be one of. *strict* is the check a save gets
     (``clean``); without it, what the tool has always accepted from a file.
     *found*, when given, is a set the optional columns the file has are
-    added to - 'Rank' for the rank columns, BaseCurrency for the layout
-    before listings."""
+    added to - 'Rank' for rank columns, which are not read (D214),
+    BaseCurrency for the layout before listings."""
     rows = _readRows(path, data)
     head = next(rows)
     name = os.path.basename(path)
@@ -330,7 +329,7 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
         if c in head:
             index['Category'] = head.index(c)
             break
-    rankAt = {}
+    ranked = False
     for at, column in enumerate(head):
         key = _norm(column)
         if key in _ISSUE_HEADERS and 'IssueCurrency' not in index:
@@ -339,17 +338,12 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
             index['MandateCode'] = at
         elif key in _HEDGING_HEADERS and 'Hedging' not in index:
             index['Hedging'] = at
-        for currency in CURRENCIES:
-            if key in ('rank' + currency.lower(), currency.lower() + 'rank'):
-                rankAt[currency] = at
+        if any(key in ('rank' + c.lower(), c.lower() + 'rank') for c in CURRENCIES):
+            ranked = True
     baseAt = next((at for at, column in enumerate(head) if _norm(column) in _BASE_HEADERS), None)
-    if baseAt is not None and rankAt:
-        raise BadCatalogue('{}: the file has a {} column and Rank columns. Give the listings and their '
-                           'ranks, or the layout before listings, one row per base currency - not '
-                           'both.'.format(name, BASE_COLUMN))
     if found is not None:
         found.update(c for c in OPTIONAL if c in index)
-        if rankAt:
+        if ranked:
             found.add('Rank')
         if baseAt is not None:
             found.add(BASE_COLUMN)
@@ -370,22 +364,13 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
             if currency not in CURRENCIES + (ALL,):
                 raise BadCatalogue('{}: row {} ({}): the {} {!r} is not one of {} or All.'.format(
                     name, n, pid or 'no ProductId', BASE_COLUMN, given, ', '.join(CURRENCIES)))
-            same = [m for m, c, _, _ in rowsOf.get(pid, []) if c == currency]
+            same = [m for m, c, _ in rowsOf.get(pid, []) if c == currency]
             if same:
                 raise BadCatalogue('{}: row {}: {} already has a row for {}, row {}.'.format(
                     name, n, pid, 'All' if currency == ALL else currency, same[0]))
             if currency != ALL:
                 # 'Green Bond ETF (GBP)' on the GBP row is the product's name
                 fields['name'] = _withoutCurrency(fields['name'], currency)
-        ranks = {}
-        for c, at in rankAt.items():
-            try:
-                rank = _rank(row[at] if at < len(row) else '', 'rank' + c, c)
-            except ValidationError as exc:
-                raise BadCatalogue('{}: row {} ({}): {}'.format(name, n, pid or 'no ProductId',
-                                                                exc.message))
-            if rank:
-                ranks[c] = rank
         try:
             record = clean(fields, feeGroups, strict=strict, categories=categories)
         except ValidationError as exc:
@@ -393,7 +378,7 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
                                                             exc.message))
         if pid not in rowsOf:
             order.append(pid)
-        rowsOf.setdefault(pid, []).append((n, currency, record, ranks))
+        rowsOf.setdefault(pid, []).append((n, currency, record))
     byId = {pid: _assemble(name, pid, rowsOf[pid], baseAt is not None, feeGroups, strict,
                            categories) for pid in order}
     _refuseShared(name, byId, order)
@@ -412,16 +397,16 @@ def _withoutCurrency(value, currency):
 
 def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories):
     """One product from its rows in a file (D207): each row a listing, in the
-    file's order, the first the main one, with the ranks its row gives. What
-    the product is must read the same on every row; only a listing's values
-    may differ. A file in the layout before listings (*legacy*, D182) gives a
+    file's order, the first the one a proposal holds (D214). What the
+    product is must read the same on every row; only a listing's values may
+    differ. A file in the layout before listings (*legacy*, D182) gives a
     row per base currency instead: its All row - else the row of the first
-    currency - is the main listing, and each currency's row a listing ranked
-    first there, two rows alike being one listing."""
+    currency - is the first listing, and each currency's row a listing after
+    it, two rows alike being one listing."""
     if legacy:
         rows = sorted(rows, key=lambda r: -1 if r[1] == ALL else CURRENCIES.index(r[1]))
-    mainRow, _, main, _ = rows[0]
-    for n, currency, record, _ in rows[1:]:
+    mainRow, _, main = rows[0]
+    for n, currency, record in rows[1:]:
         for key in PRODUCT_FIELDS:
             if key == 'productId' or _same(record[key], main[key]):
                 continue
@@ -432,19 +417,15 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories):
                 'differ between them.'.format(fileName, n, pid, LABELS[key].lower(),
                                               show(key, record[key]), mainRow, show(key, main[key])))
     listings, rowOf = [], []
-    for n, currency, record, ranks in rows:
-        listing = dict(record['listings'][0], ranks=dict(ranks))
+    for n, currency, record in rows:
+        listing = dict(record['listings'][0])
         if legacy:
             # a currency's row read as it always was: a word it leaves blank
             # is the main row's
             for word in ('exposureCurrency', 'assetClass', 'issueCurrency', 'benchmark', 'shareClass'):
                 if not listing[word] and listings:
                     listing[word] = listings[0][word]
-            if currency != ALL:
-                listing[RANKS] = {currency: 1}
-            same = next((at for at, held in enumerate(listings) if _sameListing(held, listing)), None)
-            if same is not None:
-                listings[same][RANKS].update(listing[RANKS])
+            if any(_sameListing(held, listing) for held in listings):
                 continue
             if not listing['issueCurrency'] and currency != ALL and any(
                     _listingKey(held) == _listingKey(listing) for held in listings):
@@ -635,20 +616,19 @@ def _listingsGiven(fields):
         return value, False
     if fields.get('currencies') or fields.get('mandates'):
         return legacyListings(fields), False
-    return [dict({f: fields.get(f) for f in LISTING_FIELDS}, ranks=fields.get(RANKS))], True
+    return [{f: fields.get(f) for f in LISTING_FIELDS}], True
 
 
 def _listings(value, record, strict=True, bare=False) -> list:
     """The listings as stored (D207): [{ticker, code, issueCurrency, hedging,
     shareClass, exposureCurrency, assetClass, productCost, distributionYield,
-    minimumInvestment, benchmark, ranks}], each whole and checked as a
-    product's values always were, and the list against *record*: only an
-    SMA's listing has a mandate code; a fund's may be Hedged or Unhedged, a
-    Public Equity SMA's any of its three versions, another SMA's none; no
-    two listings are the same one; and no two hold one rank in a currency.
-    The ranks are kept as 1, 2, 3 in each currency's order, and dropped
-    where there is one listing. A refusal names the listing's box -
-    listing0ticker, listing2rankGBP - or, for a product given its values at
+    minimumInvestment, benchmark}], in the order given, each whole and
+    checked as a product's values always were, and the list against
+    *record*: only an SMA's listing has a mandate code; a fund's may be
+    Hedged or Unhedged, a Public Equity SMA's any of its three versions,
+    another SMA's none; and no two listings are the same one. Ranks given
+    with a listing are not kept (D214). A refusal names the listing's box -
+    listing0ticker, listing2hedging - or, for a product given its values at
     the top level (*bare*), the field."""
     if not isinstance(value, list) or not value or any(not isinstance(l, dict) for l in value):
         raise ValidationError('listings', 'A product has at least one listing: its ticker, its cost '
@@ -691,7 +671,6 @@ def _listings(value, record, strict=True, bare=False) -> list:
             raise ValidationError(box('benchmark'), 'Keep the benchmark{} to {} characters.'.format(
                 where, BENCHMARK_MAX))
         listing['benchmark'] = benchmark
-        listing[RANKS] = _ranks(given.get(RANKS), box)
         key = _listingKey(listing)
         if key in seen:
             first = seen[key]
@@ -700,21 +679,6 @@ def _listings(value, record, strict=True, bare=False) -> list:
                                   'class.'.format(first + 1, n + 1, name, showListing(listing, ident=True)))
         seen[key] = n
         out.append(listing)
-    if len(out) == 1:
-        out[0][RANKS] = {}
-        return out
-    for currency in CURRENCIES:
-        placed = sorted((l[RANKS][currency], n) for n, l in enumerate(out) if currency in l[RANKS])
-        for (rank, n), (other, m) in zip(placed, placed[1:]):
-            if rank == other:
-                raise ValidationError('listing{}rank{}'.format(m, currency), 'Listings {} and {} are both '
-                                      'ranked {} for {}. Give each its own place: 1 is the one a '
-                                      'proposal in {} holds first.'.format(n + 1, m + 1, rank, currency,
-                                                                          currency))
-        for place, (_, n) in enumerate(placed, start=1):
-            out[n][RANKS][currency] = place
-    for listing in out:
-        listing[RANKS] = {c: listing[RANKS][c] for c in CURRENCIES if c in listing[RANKS]}
     return out
 
 
@@ -728,47 +692,6 @@ def _listingKey(listing) -> tuple:
 def _sameListing(a, b) -> bool:
     # (all() here is the catalogue, not the builtin)
     return not any(not _same(a.get(f), b.get(f)) for f in LISTING_FIELDS)
-
-
-def _rank(value, key, currency) -> int:
-    """A rank as stored: a whole number from 1, or 0 for none."""
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return 0
-    if isinstance(value, bool):
-        number = None
-    elif isinstance(value, (int, float)):
-        number = value
-    else:
-        try:
-            number = float(str(value).strip())
-        except ValueError:
-            number = None
-    if number is None or math.isnan(number) or number < 0 or number != int(number):
-        raise ValidationError(key, 'A rank is a whole number: 1 for the listing a proposal in {} holds '
-                                   'first, 2 for the next, or blank for none.'.format(currency))
-    return int(number)
-
-
-def _ranks(value, box) -> dict:
-    """A listing's ranks as given: {currency: rank} for each it is ranked in."""
-    if value is None or value == '' or value == {}:
-        return {}
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except ValueError:
-            raise ValidationError(box(RANKS), 'The ranks could not be read.')
-    if not isinstance(value, dict):
-        raise ValidationError(box(RANKS), 'The ranks are one a base currency.')
-    out = {}
-    for currency, given in value.items():
-        if currency not in CURRENCIES:
-            raise ValidationError(box(RANKS), '{!r} is not a base currency: {}.'.format(
-                currency, ', '.join(CURRENCIES)))
-        rank = _rank(given, box('rank' + currency), currency)
-        if rank:
-            out[currency] = rank
-    return out
 
 
 def _hedging(value, record, sma, equity, key, where) -> str:
@@ -832,14 +755,14 @@ def _legacyCurrencies(value) -> dict:
 def legacyListings(record) -> list:
     """The listings a product stored before them reads as (D207). Its main
     values are the main listing; each base currency it had values of its
-    own in is a listing of those values over the main ones, ranked first
-    there - two currencies alike sharing one, and one that would be the same
-    listing as another dealt in that currency. A currency it was not offered
-    in is nothing: every product is offered in every currency now. An SMA
-    with mandates (D197) is listed under them instead: each code a listing
-    of the values its currency had, run in that currency, with the figures
-    and the benchmark it carried of its own, and ranked in each currency
-    Hedged, ISG Hedged, then Unhedged."""
+    own in is a listing of those values over the main ones, after them in
+    the currencies' order - two currencies alike sharing one, and one that
+    would be the same listing as another dealt in that currency. A currency
+    it was not offered in is nothing: every product is offered in every
+    currency now. An SMA with mandates (D197) is listed under them instead:
+    each code a listing of the values its currency had, run in that
+    currency, with the figures and the benchmark it carried of its own, in
+    the currencies' order and in each Hedged, ISG Hedged, then Unhedged."""
     main = {f: record.get(f) for f in LISTING_FIELDS}
     main['ticker'] = _ticker(main['ticker'], 'ticker', strict=False)
     main['code'], main['hedging'] = '', ''
@@ -873,7 +796,7 @@ def legacyListings(record) -> list:
                     else len(CURRENCIES),
                     MANDATE_VERSIONS.index(m.get('hedging')) if m.get('hedging') in MANDATE_VERSIONS
                     else -1)
-        listings, places = [], {}
+        listings = []
         for m in sorted(mandates, key=order):
             currency = _text(m.get('currency')).upper()
             values = inCcy(currency)
@@ -884,26 +807,20 @@ def legacyListings(record) -> list:
                 values['benchmark'] = m['benchmark']
             values.update(code=_text(m.get('code')), issueCurrency=currency,
                           hedging=_text(m.get('hedging')))
-            places[currency] = places.get(currency, 0) + 1
-            values[RANKS] = {currency: places[currency]} if currency in CURRENCIES else {}
             listings.append(values)
     else:
-        listings = [dict(main, ranks={})]
+        listings = [dict(main)]
         for currency in CURRENCIES:
             mine = own.get(currency)
             if not mine or mine.get('offered') is False:
                 continue
-            values = dict(inCcy(currency), ranks={currency: 1})
-            same = next((l for l in listings if _sameListing(l, values)), None)
-            if same is not None:
-                same[RANKS][currency] = 1
+            values = inCcy(currency)
+            if any(_sameListing(l, values) for l in listings):
                 continue
             if not values['issueCurrency'] and any(_listingKey(l) == _listingKey(values)
                                                    for l in listings):
                 values['issueCurrency'] = currency
             listings.append(values)
-    if len(listings) == 1:
-        listings[0][RANKS] = {}
     return listings
 
 
@@ -912,10 +829,16 @@ def _listingsOf(record) -> list:
     if not record:
         return []
     if isinstance(record.get('listings'), list) and record['listings']:
-        return record['listings']
+        return [_facts(l) for l in record['listings']]
     if record.get('currencies') or record.get('mandates'):
         return legacyListings(record)
-    return [dict({f: record.get(f) for f in LISTING_FIELDS}, ranks={})]
+    return [{f: record.get(f) for f in LISTING_FIELDS}]
+
+
+def _facts(listing) -> dict:
+    """A listing as the catalogue keeps it (D214): its facts, without the
+    rankings by base currency a listing stored before carried."""
+    return {k: v for k, v in listing.items() if k != RANKS}
 
 
 def isSma(product) -> bool:
@@ -973,21 +896,6 @@ def showListing(listing, ident=False) -> str:
     return ' · '.join(bits) or '—'
 
 
-def ranked(product, currency) -> list:
-    """The listings of *product* a proposal in *currency* may hold, in the
-    order it tries them (D207): the ones ranked there, first to last, or the
-    main one alone where none is - and where there is no currency."""
-    listings = (product or {}).get('listings') or []
-    if not listings:
-        return []
-    if currency in CURRENCIES:
-        placed = sorted((l for l in listings if (l.get(RANKS) or {}).get(currency)),
-                        key=lambda l: l[RANKS][currency])
-        if placed:
-            return placed
-    return [listings[0]]
-
-
 def _held(listing, listings) -> dict:
     """A listing's values as a proposal's line carries them."""
     out = {f: listing.get(f) for f in LISTING_FIELDS}
@@ -996,34 +904,21 @@ def _held(listing, listings) -> dict:
     return out
 
 
-def inCurrency(product, currency):
-    """*product* as a proposal in *currency* holds it (D207): with the values
-    of the listing ranked first there - or of its main listing, where it
-    ranks none, and for no currency - and, as ``ranked``, each listing it
-    tries in turn, the first of them included, for the line to step down to
-    below the first one's minimum (``pickListing``). A sleeve's product
+def asHeld(product):
+    """*product* as a proposal holds it (D214): with the values of its first
+    listing, whatever the proposal's currency or the line's amount, until
+    the rules for choosing between listings are settled. A sleeve's product
     carries the one held instead below its minimum (D192), read the same way."""
     if not product:
         return product
     out = dict(product)
-    listings = product.get('listings') or [dict({f: product.get(f) for f in LISTING_FIELDS},
-                                                ranks={})]
-    order = ranked({'listings': listings}, currency)
-    out.update(_held(order[0], listings))
-    out['ranked'] = [_held(l, listings) for l in order]
+    out.pop('ranked', None)
+    listings = _listingsOf(product)
+    out['listings'] = listings
+    out.update(_held(listings[0], listings))
     if isinstance(product.get('alternative'), dict):
-        out['alternative'] = inCurrency(product['alternative'], currency)
+        out['alternative'] = asHeld(product['alternative'])
     return out
-
-
-def pickListing(order, notional):
-    """The first listing of *order* whose minimum *notional* meets - one with
-    no minimum always does - or None when it meets none (D208)."""
-    for listing in order or []:
-        minimum = listing.get('minimumInvestment')
-        if not minimum or notional >= float(minimum):
-            return listing
-    return None
 
 
 def holdListing(item, listing) -> dict:
@@ -1083,10 +978,10 @@ def changes(before, after) -> list:
     """Field by field, what moved between two records: [{field, label,
     before, after}] - what the product is, then its listings (D207), matched
     by what makes each the one it is: each value that moved in one that
-    stayed, one that came or went, and each base currency whose ranking
-    moved. A product of one listing before and after reads as a product
-    always did, field by field; a record stored before listings reads as it
-    is listed."""
+    stayed, one that came or went, and their order where it moved (D214) -
+    the first being the one a proposal holds. A product of one listing
+    before and after reads as a product always did, field by field; a
+    record stored before listings reads as it is listed."""
     if before is None:
         return []
     out = []
@@ -1121,12 +1016,20 @@ def changes(before, after) -> list:
         label = listingLabel(a, was)
         out.append({'field': 'listing-:' + label, 'label': 'Listing ' + label,
                     'before': showListing(a), 'after': 'taken off'})
-    for currency in CURRENCIES:
-        x, y = _rankWords(was, currency), _rankWords(now, currency)
-        if x != y:
-            out.append({'field': 'rank' + currency, 'label': LABELS['rank' + currency],
-                        'before': x or '—', 'after': y or '—'})
+    if not one and _orderMoved(was, now, pairs):
+        out.append({'field': 'order', 'label': LABELS['order'],
+                    'before': _orderWords(was), 'after': _orderWords(now)})
     return out
+
+
+def _orderMoved(was, now, pairs) -> bool:
+    """Whether the listings two records share stand in another order, or
+    another listing is now the first, the one a proposal holds (D214)."""
+    at = {id(b): j for j, b in enumerate(now)}
+    first = {id(a): i for i, a in enumerate(was)}
+    placed = [at[id(b)] for a, b in sorted(pairs, key=lambda p: first[id(p[0])])]
+    held = next((b for a, b in pairs if was and a is was[0]), None)
+    return placed != sorted(placed) or (bool(now) and held is not now[0])
 
 
 def _pairListings(was, now):
@@ -1147,11 +1050,9 @@ def _pairListings(was, now):
     return pairs, gone, came
 
 
-def _rankWords(listings, currency) -> str:
-    """A currency's ranking in words: 'GEF-GBPH, then GEF-USD · GBP'."""
-    placed = sorted((l for l in listings if (l.get(RANKS) or {}).get(currency)),
-                    key=lambda l: l[RANKS][currency])
-    return ', then '.join(listingLabel(l, listings) for l in placed)
+def _orderWords(listings) -> str:
+    """Listings in their order, in words: 'GEF-GBPH, then GEF-USD · GBP'."""
+    return ', then '.join(listingLabel(l, listings) for l in listings) or '—'
 
 
 def changeWords(entries) -> list:
@@ -1186,7 +1087,7 @@ def _record(row) -> dict:
     }
     text = row['listings'] if 'listings' in keys else ''
     if text:
-        listings = json.loads(text)
+        listings = [_facts(l) for l in json.loads(text)]
     else:
         listings = legacyListings(dict(
             base, currencies=row['currencies'] if 'currencies' in keys else '',
@@ -1205,7 +1106,7 @@ def _served(record) -> dict:
     category is its sleeve's, so it is not served beside it."""
     out = dict(record)
     out['ticker'] = record['ticker'] or NO_TICKER
-    out['listings'] = [dict(l, ranks=dict(l.get(RANKS) or {})) for l in record['listings']]
+    out['listings'] = [dict(l) for l in record['listings']]
     # its own category, which a notice may be about (D199): served under its
     # own name, since the category a sleeve's product is served under is the
     # sleeve's
@@ -1723,6 +1624,39 @@ def update(productId, fields, user='', note='', base=None) -> dict:
     return _writing(work)
 
 
+def reorder(productId, order, user='', note='', base=None) -> dict:
+    """Put a product's listings in a new order (D214), the console's drag:
+    *order* the listings' places as they stand, in the order wanted. The
+    first is the one a proposal holds. Nothing else about them moves, so
+    nothing is checked again. Refused when *order* is not each listing once,
+    nothing would change, or - as STALE - *base* is not the version in
+    force."""
+    note = _note(note)
+    base = _base(base)
+
+    def work(conn):
+        row = _live(conn, productId)
+        _refuseStale(row, base)
+        stored = _record(row)
+        count = len(stored['listings'])
+        if (not isinstance(order, list) or any(isinstance(i, bool) or not isinstance(i, int)
+                                               for i in order)
+                or sorted(order) != list(range(count))):
+            raise ValidationError('order', 'Give each of the {} listings of {} once, in the order '
+                                           'wanted.'.format(count, row['name']))
+        if order == list(range(count)):
+            raise ValidationError('order', 'That is the order the listings are in.')
+        record = _mirrored(dict(stored, listings=[stored['listings'][i] for i in order]))
+        revision = row['revision'] + 1
+        stamp = _now()
+        _update(conn, record, revision, user or '', stamp)
+        _history(conn, productId, revision, 'updated', record, user or '', stamp, note=note)
+        _bump(conn)
+        return _entryOn(conn, productId)
+
+    return _writing(work)
+
+
 def _refuseHeld(conn, row) -> None:
     held = _holders(conn, row['productId'])
     if held:
@@ -1875,9 +1809,9 @@ def _keepStored(incoming, stored, found):
     """*incoming*, a product as a file gives it, with what the catalogue
     holds of it kept where the file has no column for it (D204, D207):
     (record, whether its listings were kept whole). A file without a
-    Benchmark column leaves each listing's benchmark, one without the Rank
-    columns the rankings and one without a Hedging column the hedging - each
-    listing matched to the one it is in the catalogue. One without a
+    Benchmark column leaves each listing's benchmark and one without a
+    Hedging column the hedging - each listing matched to the one it is in
+    the catalogue. The file's order is the listings' order (D214). One without a
     MandateCode column leaves an SMA whose listings carry codes listed as it
     is, since the file cannot say which row is which code; it takes what the
     product is from the file. A ValidationError says the listings kept are
@@ -1885,8 +1819,7 @@ def _keepStored(incoming, stored, found):
     if 'MandateCode' not in found and isSma(incoming) and any(l.get('code') for l in stored['listings']):
         return clean(dict(incoming, listings=stored['listings']), strict=False), True
     missing = [f for f, column in (('benchmark', 'Benchmark'), ('hedging', 'Hedging')) if column not in found]
-    keepRanks = 'Rank' not in found and BASE_COLUMN not in found
-    if not missing and not keepRanks:
+    if not missing:
         return incoming, False
     was, now = stored['listings'], [dict(l) for l in incoming['listings']]
     fields = [f for f in LISTING_KEY if f not in missing]
@@ -1899,8 +1832,6 @@ def _keepStored(incoming, stored, found):
             continue
         for f in missing:
             listing[f] = match.get(f) or ''
-        if keepRanks:
-            listing[RANKS] = dict(match.get(RANKS) or {})
     return clean(dict(incoming, listings=now), strict=False), False
 
 
@@ -1971,6 +1902,7 @@ def importPreview(name, content) -> dict:
         byId, order = _load(name, groups, strict=True, data=data, categories=known, found=found)
         out = _compare(conn, byId, order, name, found)
         out.update(file=name, rows=len(order), legacy=BASE_COLUMN in found,
+                   ranksIgnored='Rank' in found,
                    revision=int(_meta(conn, 'catalogueRevision', '0') or 0))
         return out
     finally:
@@ -2065,14 +1997,13 @@ def _cell(value):
 
 def exportRows() -> list:
     """The live catalogue as the file it can be loaded from again (D207): the
-    header and, in catalogue order, a row for each listing of each product -
-    what the product is on every one, the listing's own values, and its rank
-    in each base currency, blank where it has none."""
+    header and, in catalogue order, a row for each listing of each product
+    in the listings' order - what the product is on every one, and the
+    listing's own values."""
     out = [list(EXPORT_COLUMNS)]
     for p in entries():
         for listing in p['listings']:
-            out.append([_cell(listing[key] if key in LISTING_FIELDS else p.get(key)) for key in KEYS]
-                       + [(listing.get(RANKS) or {}).get(c, '') for c in CURRENCIES])
+            out.append([_cell(listing[key] if key in LISTING_FIELDS else p.get(key)) for key in KEYS])
     return out
 
 

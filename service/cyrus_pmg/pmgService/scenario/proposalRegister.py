@@ -155,8 +155,9 @@ _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
                 # minimum (D192); None on anything delivered before it
                 'standsIn',
                 # the listing it held (D207, D208): its issue currency, hedging
-                # and mandate code, its name, and the one it stepped down from
-                # below that one's minimum; None on anything delivered before
+                # and mandate code, its name, and - while lines stepped down
+                # below a minimum - the one it stepped down from; None on
+                # anything delivered before
                 'issueCurrency', 'hedging', 'code', 'listing', 'steppedFrom')
 
 _lock = threading.Lock()

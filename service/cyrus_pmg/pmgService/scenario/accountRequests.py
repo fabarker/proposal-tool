@@ -274,23 +274,21 @@ def _amount(value):
     return None if value is None else float(value)
 
 
-def _heldListing(product, item, currency):
+def _heldListing(product, item):
     """The listing of *product* a proposal's line held, as the Catalogue has
     it now (D207, D208): the one the register recorded, matched by its
     ticker, issue currency, hedging and share class - its code too where it
-    had one - or, for a line delivered before listings, the one a proposal in
-    *currency* holds for the line's amount. None for a product no longer in
-    the Catalogue."""
+    had one - or, for a line delivered before listings, the one a proposal
+    holds now, its first (D214). None for a product no longer in the
+    Catalogue."""
     if product is None:
         return None
     if item.get('issueCurrency') is not None:
         found = products.findListing(product, item)
         if found is not None:
             return found
-    order = products.ranked(product, currency)
-    if not order:
-        return None
-    return products.pickListing(order, float(item.get('notional') or 0)) or order[0]
+    listings = product.get('listings') or []
+    return listings[0] if listings else None
 
 
 def mandateBenchmark(entry: dict):
@@ -329,7 +327,7 @@ def smaDetails(entry: dict) -> dict:
         if not products.isSma(item):
             continue
         product = products.entry(item['productId'])
-        listing = _heldListing(product, item, currency)
+        listing = _heldListing(product, item)
         where = ' · '.join(w for w in ((listing or {}).get('issueCurrency'), (listing or {}).get('hedging'))
                            if w) or 'the listing it holds'
         problem = ''
@@ -362,8 +360,8 @@ def smaDetails(entry: dict) -> dict:
     benchmark, mnemonic, benchmarkFrom = mandateBenchmark(entry)
     problem = ''
     if code is None:
-        problem = 'No mandate code for {}. An admin adds it in Account Opening, Mandate codes.'.format(
-            mandateCodes.cellWords(cellKey))
+        problem = ('No mandate code for {}: no group in Account Opening, Mandate Codes holds it. An admin '
+                   'adds it to a group there.'.format(mandateCodes.cellWords(cellKey)))
     elif not benchmark and custom:
         problem = ('No benchmark was chosen for this custom portfolio. Choose one on the proposal and '
                    'download it again.')

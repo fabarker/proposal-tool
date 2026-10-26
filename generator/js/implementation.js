@@ -660,8 +660,7 @@ function complete() {
 
 /* ---- rows: every printed figure from the printed weight (spec 8.4) ------ */
 /* one line of the table, as the library serves its product: at the
-   listing it holds in the portfolio's currency, with the ones it may step
-   down to below that one's minimum (D207) */
+   listing it holds, its first (D214) */
 function implItem(product, level) {
   return {
     productId: product.productId,
@@ -671,50 +670,19 @@ function implItem(product, level) {
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
     issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
     listing: product.listing || '',
-    ranked: product.ranked || [],
     cost: product.productCost, feeGroup: product.feeGroup,
     minimumInvestment: product.minimumInvestment,
     mgmt: managementFee(product.feeGroup, level)
   };
 }
 
-/* *item* holding *listing* of its product (D208) */
-function holdListing(item, listing) {
-  var held = {};
-  for (var k in item) if (Object.prototype.hasOwnProperty.call(item, k)) held[k] = item[k];
-  held.ticker = listing.ticker || '\u2014';
-  held.assetClass = listing.assetClass; held.shareClass = listing.shareClass || null;
-  held.exposureCurrency = listing.exposureCurrency;
-  held.issueCurrency = listing.issueCurrency || ''; held.hedging = listing.hedging || '';
-  held.listing = listing.listing || '';
-  held.cost = listing.productCost; held.minimumInvestment = listing.minimumInvestment;
-  delete held.steppedFrom;
-  return held;
-}
-
-/* the first listing of *order* the line's notional meets, or null (D208);
-   one stepped to from the first names it */
-function stepDown(item, order) {
-  for (var i = 0; i < order.length; i += 1) {
-    var min = order[i].minimumInvestment;
-    if (!min || item.notional >= min) {
-      var held = holdListing(item, order[i]);
-      if (i > 0) held.steppedFrom = { listing: order[0].listing || '', minimum: order[0].minimumInvestment };
-      return held;
-    }
-  }
-  return null;
-}
-
 /* What a line can hold in place of a listing the amount reaching it falls
-   short of: first the next listing of the same product in the currency's
-   ranking whose minimum the amount meets (D208); failing that, the product
-   its sleeve names below its minimum (D192), at its own listing for the
-   amount; failing both, the first listing, flagged as before. The
-   alternative takes the whole line, joining its own line where the sleeve
-   holds it too, at the listing the two together meet. Decided on the
-   long-term notional, so the initial allocation holds the same product.
-   Returns the lines as they now stand. Mirrors buildImplementationRows. */
+   short of: the product its sleeve names below its minimum (D192), at its
+   own first listing (D214); failing that, the line as it is, flagged as
+   before. The alternative takes the whole line, joining its own line where
+   the sleeve holds it too. Decided on the long-term notional, so the
+   initial allocation holds the same product. Returns the lines as they now
+   stand. Mirrors buildImplementationRows. */
 function holdAlternatives(groups, level) {
   var out = [];
   groups.forEach(function (group) {
@@ -725,13 +693,10 @@ function holdAlternatives(groups, level) {
       var short = item.minimumInvestment && item.weight > 0
         && item.notional < item.minimumInvestment;
       if (!short) { lines.push(item); return; }
-      var stepped = (item.ranked || []).length > 1 ? stepDown(item, item.ranked) : null;
-      if (stepped) { lines.push(stepped); return; }
       if (!alt) { lines.push(item); return; }
       var held = implItem(alt, level);
       held.share = item.share; held.exact = item.exact;
       held.weight = item.weight; held.notional = item.notional;
-      held = stepDown(held, held.ranked || []) || held;
       held.standsIn = [{ productId: item.productId, name: item.name,
                          minimum: item.minimumInvestment, notional: item.notional }];
       lines.push(held);
@@ -744,13 +709,6 @@ function holdAlternatives(groups, level) {
       first.weight = Math.round((first.weight + line.weight) * 100) / 100;
       first.notional = Math.round(App.mandateSize() * first.weight / 100 / ROUND_TO) * ROUND_TO;
       first.standsIn = (first.standsIn || []).concat(line.standsIn || []);
-      /* the listing the two amounts together meet, from the top */
-      var order = first.ranked || [];
-      if (order.length > 1) {
-        var again = stepDown(first, order) || holdListing(first, order[0]);
-        for (var k in again) if (Object.prototype.hasOwnProperty.call(again, k)) first[k] = again[k];
-        if (!again.steppedFrom) delete first.steppedFrom;
-      }
     });
     group.items = merged;
     out = out.concat(merged);
@@ -772,14 +730,6 @@ function standsInText(item) {
 function listingSub(item) {
   var bits = [item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
   return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
-}
-
-/* what a line steps down from (D208): "In place of GEF-GBPH, which needs
-   $1,000,000 and would hold $400,000 here." */
-function steppedText(item) {
-  var s = item.steppedFrom;
-  return 'In place of ' + (s.listing || 'the first listing') + ', which needs ' + money(s.minimum)
-    + ' and would hold ' + money(item.notional) + ' here.';
 }
 
 function rows() {
@@ -3657,10 +3607,6 @@ function renderView() {
         + (item.standsIn && item.standsIn.length
             ? ' <span class="bdg b-slack sm">alternative</span><span class="stands-in">'
               + App.esc(standsInText(item)) + '</span>' : '')
-        /* a listing further down the currency's ranking (D208) */
-        + (item.steppedFrom
-            ? ' <span class="bdg b-slack sm">next listing</span><span class="stands-in">'
-              + App.esc(steppedText(item)) + '</span>' : '')
         + (custom ? App.cpNameExtras(item, group) : '')
         + '</td>'
         + '<td class="num">' + (custom ? App.cpWeightCell(item) : App.num(item.weight, 2, '%')) + '</td>'

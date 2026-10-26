@@ -195,8 +195,7 @@ def test_the_page_makes_the_same_swap_as_the_files():
         return [[(i['productId'], round(i['printedPct'], 2), [s['productId'] for s in i.get('standsIn') or []])
                  for i in g['items']] for g in groups]
 
-    script = ('var ROUND_TO = 100, MANDATE = 0;\n' + _js('implItem') + _js('holdListing') + _js('stepDown')
-              + _js('holdAlternatives') + '''
+    script = ('var ROUND_TO = 100, MANDATE = 0;\n' + _js('implItem') + _js('holdAlternatives') + '''
 var App = { mandateSize: function () { return MANDATE; } };
 function managementFee() { return null; }
 var fund = %s, sma = %s, other = %s;
