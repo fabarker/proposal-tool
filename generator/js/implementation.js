@@ -397,7 +397,7 @@ function effectiveFee() {
    The screen's list is not the sheet's and is not meant to be: the sheet
    spells three headers out (D74) and drops Ticker and Minimum Investment
    (D78). Each states its own. */
-var IMPL_TEXT_COLUMNS = ['Ticker', 'Style', 'Vehicle', 'Share class',
+var IMPL_TEXT_COLUMNS = ['ISIN', 'Style', 'Vehicle', 'Income', 'Share class', 'UK rep.',
                          'Source', 'Liquidity', 'Exp ccy'];
 
 /* Every column of the screen's table, in order - the thing both spans below
@@ -666,7 +666,11 @@ function implItem(product, level) {
     productId: product.productId,
     name: product.name, ticker: product.ticker, assetClass: product.assetClass,
     style: product.style, vehicle: product.vehicle,
-    shareClass: product.shareClass || null, source: product.source,
+    /* the share class it holds (D218): its ISIN, income, letter and UK
+       reporting status */
+    isin: product.isin || '', income: product.income || '',
+    shareClass: product.shareClass || null, ukReporting: product.ukReporting || '',
+    source: product.source,
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
     issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
     listing: product.listing || '',
@@ -726,11 +730,19 @@ function standsInText(item) {
   }).join(' ');
 }
 
-/* the listing a line holds, under its ticker: the currency it is dealt in
-   and its hedging (D208) */
+/* what a line holds, under its ISIN: the listing's ticker, the currency it
+   is dealt in and its hedging (D208, D218) */
 function listingSub(item) {
-  var bits = [item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
+  var ticker = item.ticker && item.ticker !== '\u2014' ? item.ticker : '';
+  var bits = [item.isin ? ticker : '', item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
   return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
+}
+/* the ISIN column: the class's ISIN, else the listing's ticker as before */
+function heldIdent(item) {
+  return item.isin || item.ticker || '\u2014';
+}
+function textOrDash(value) {
+  return value ? App.esc(value) : '<span class="mut">&mdash;</span>';
 }
 
 function rows() {
@@ -2586,7 +2598,7 @@ function cslAddHtml() {
   var q = cslPanel.query.trim().toLowerCase();
   var free = lib.products.filter(function (p) { return held.indexOf(p.productId) === -1; });
   var shown = free.filter(function (p) {
-    return !q || [p.name, p.ticker, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
+    return !q || [p.name, p.isin, p.ticker, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
   });
   return '<div class="csl-add-h"><h3>Products in ' + App.esc(cslPanel.under) + '</h3>'
     + '<span class="mut">' + lib.products.length + ' held by its sleeves under ' + App.esc(App.variant() || '')
@@ -2596,7 +2608,7 @@ function cslAddHtml() {
     + (shown.length
         ? '<ul class="csl-list">' + shown.map(function (p) {
             return '<li><span class="csl-pn"><b>' + App.esc(p.name) + '</b><small>'
-              + App.esc([p.assetClass, p.style, p.vehicle].filter(Boolean).join(' · ')) + ' · cost '
+              + App.esc([p.isin, p.assetClass, p.style, p.vehicle, p.income].filter(Boolean).join(' · ')) + ' · cost '
               + App.num(p.productCost, 2, '%') + (p.minimumInvestment ? ' · minimum ' + money(p.minimumInvestment) : '')
               + '</small></span><button type="button" class="btn btn-ghost" data-csladd="' + App.esc(p.productId) + '"'
               + ' aria-label="Add ' + App.esc(p.name) + '">Add</button></li>';
@@ -3636,11 +3648,12 @@ function renderView() {
               + money(item.initialNotional) + '</span>'
               + (item.initialBelowMinimum
                   ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')) : '')
-        + '<td class="txt tick">' + App.esc(item.ticker) + listingSub(item) + '</td>'
+        + '<td class="txt tick">' + App.esc(heldIdent(item)) + listingSub(item) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
-        + '<td class="txt">' + (item.shareClass
-            ? App.esc(item.shareClass) : '<span class="mut">&mdash;</span>') + '</td>'
+        + '<td class="txt">' + textOrDash(item.income) + '</td>'
+        + '<td class="txt">' + textOrDash(item.shareClass) + '</td>'
+        + '<td class="txt">' + textOrDash(item.ukReporting) + '</td>'
         + '<td class="txt">' + pillFor(item.source) + '</td>'
         + '<td class="txt">' + App.esc(item.liquidity) + '</td>'
         + '<td class="txt tick">' + App.esc(item.exposureCurrency) + '</td>'

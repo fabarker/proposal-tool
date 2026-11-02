@@ -107,6 +107,6 @@ def test_a_store_from_before_the_benchmark_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 17
+    assert sleeveRepo.describe()['schemaVersion'] == sleeveRepo.SCHEMA_VERSION
     after = products.entry(pid)
     assert after['benchmark'] == '' and after['name'] == before['name']

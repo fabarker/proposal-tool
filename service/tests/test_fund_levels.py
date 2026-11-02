@@ -1,0 +1,636 @@
+"""A fund in three levels (D218): the product, its share classes and their
+listings. A listing as stored carries the three together, the rows of one
+ISIN are one share class and must agree on its values, a class with no ISIN
+is the rows that agree on all of them, and within a class a listing is its
+exchange and issue currency. The file has the levels' 29 columns, still
+reads the layouts before it, and a store from before the levels is moved
+on its first open."""
+import base64
+import csv
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+
+import pytest
+
+from cyrus_pmg.pmgService.scenario import products, proposalRegister, rules, sleeveRepo, sleeves
+from cyrus_pmg.pmgService.scenario.fixturesAdapter import FixturesScenarioPort
+from cyrus_pmg.pmgService.scenario.types import BasisInput, PortfolioKey, ValidationError
+from cyrus_pmg.pmgService.scenario.workbook import buildImplementationRows, writeImplementationSheet
+
+MA = sleeves.VARIANTS[0]
+
+
+@pytest.fixture()
+def store(tmp_path, monkeypatch):
+    monkeypatch.setenv('SCENARIO_SLEEVES_DB', str(tmp_path / 'sleeves.db'))
+    monkeypatch.setenv('SCENARIO_REGISTER_DB', str(tmp_path / 'proposals.db'))
+    monkeypatch.setenv('SCENARIO_STORE_DIR', str(tmp_path / 'store'))
+    products.reload()
+    yield tmp_path
+    products.reload()
+
+
+def _held():
+    """A fund an ordinary Multi-Asset sleeve holds."""
+    for entry in sleeveRepo.listAll(MA):
+        if (entry['products'] and not entry.get('problems') and not entry.get('label')
+                and entry['category'] not in rules.AUTO_SLEEVE_CATEGORIES
+                and entry['category'] == rules.sleeveCategory(entry['category'])):
+            for row in entry['products']:
+                if not products.isSma(products.get(row['productId'])):
+                    return row['productId']
+    raise AssertionError('no sleeve holds a fund')
+
+
+def _fund(vehicle=None):
+    """A fund of the catalogue, of *vehicle* when given."""
+    return next(p['productId'] for p in products.all()
+                if not products.isSma(p) and (vehicle is None or p['vehicle'] == vehicle))
+
+
+def _main(pid):
+    entry = products.entry(pid)
+    return {k: entry['listings'][0][k] for k in products.LISTING_FIELDS}
+
+
+def _list(pid, *listings, **over):
+    """Save *pid* with *listings*, each its main listing's values but those
+    given, and the product's values but *over*."""
+    entry = products.entry(pid)
+    fields = {k: entry[k] for k in products.PRODUCT_FIELDS}
+    fields['category'] = entry['category']
+    fields.update(over)
+    main = _main(pid)
+    fields['listings'] = [dict(main, **l) for l in listings]
+    return products.update(pid, fields, user='alice', base=entry['revision'])
+
+
+def _file(tmp_path, rows, name='products.csv'):
+    path = tmp_path / name
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        csv.writer(fh).writerows(rows)
+    return str(path)
+
+
+def _upload(path):
+    with open(path, 'rb') as fh:
+        return base64.b64encode(fh.read()).decode('ascii')
+
+
+def _rowsFor(pid, listings):
+    """The export with *pid*'s rows replaced by one per entry of *listings*:
+    [{column: value}], the rest of each row as the export wrote it."""
+    rows = products.exportRows()
+    head = rows[0]
+    at = next(n for n, r in enumerate(rows) if r[0] == pid)
+    end = at
+    while end < len(rows) and rows[end][0] == pid:
+        end += 1
+    lines = []
+    for columns in listings:
+        line = list(rows[at])
+        for column, value in columns.items():
+            line[head.index(column)] = value
+        lines.append(line)
+    return rows[:at] + lines + rows[end:]
+
+
+ETF = [
+    {'ISIN': 'IE0000000021', 'Income': 'Distributing', 'Hedging': 'Unhedged', 'ClassCurrency': 'USD',
+     'ExposureCurrency': 'USD', 'Domicile': 'IE', 'Regulation': 'UCITS', 'Replication': 'Physical',
+     'UKReporting': 'Yes', 'ProductCost': '0.12', 'Exchange': 'LSE', 'Ticker': 'PRBL', 'IssueCurrency': 'USD'},
+    {'ISIN': 'IE0000000021', 'Income': 'Distributing', 'Hedging': 'Unhedged', 'ClassCurrency': 'USD',
+     'ExposureCurrency': 'USD', 'Domicile': 'IE', 'Regulation': 'UCITS', 'Replication': 'Physical',
+     'UKReporting': 'Yes', 'ProductCost': '0.12', 'Exchange': 'LSE', 'Ticker': 'PRBP', 'IssueCurrency': 'GBP',
+     'QuotationUnit': 'GBX'},
+    {'ISIN': 'IE0000000021', 'Income': 'Distributing', 'Hedging': 'Unhedged', 'ClassCurrency': 'USD',
+     'ExposureCurrency': 'USD', 'Domicile': 'IE', 'Regulation': 'UCITS', 'Replication': 'Physical',
+     'UKReporting': 'Yes', 'ProductCost': '0.12', 'Exchange': 'Xetra', 'Ticker': 'PRBE', 'IssueCurrency': 'EUR'},
+    {'ISIN': 'IE0000000039', 'Income': 'Distributing', 'Hedging': 'Hedged', 'ClassCurrency': 'GBP',
+     'ExposureCurrency': 'GBP', 'Domicile': 'IE', 'Regulation': 'UCITS', 'Replication': 'Physical',
+     'UKReporting': 'Yes', 'ProductCost': '0.15', 'Exchange': 'LSE', 'Ticker': 'PRBH', 'IssueCurrency': 'GBP',
+     'QuotationUnit': 'GBX'},
+]
+
+
+# ------------------------------------------------------------------ the file ---
+
+def test_the_file_has_the_levels_columns_and_an_export_loads_back(store, tmp_path):
+    columns = products.EXPORT_COLUMNS
+    assert columns[:10] == ['ProductId', 'Name', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
+                            'Source', 'Liquidity', 'FeeGroup'], 'the product'
+    assert columns[10:24] == ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
+                              'Domicile', 'Regulation', 'Replication', 'UKReporting', 'ProductCost',
+                              'DistributionYield', 'MinimumInvestment', 'Benchmark'], 'the share class'
+    assert columns[24:] == ['Exchange', 'Ticker', 'IssueCurrency', 'QuotationUnit', 'MandateCode']
+    assert len(columns) == 29
+    rows = products.exportRows()
+    assert len(rows) == 74
+    path = _file(tmp_path, rows)
+    preview = products.importPreview(path, _upload(path))
+    assert not preview['added'] and not preview['changed'] and not preview['restored']
+    assert preview['isinsFromTickers'] == 0 and preview['vehiclesMoved'] == []
+
+
+def test_the_sample_file_is_in_the_levels_layout_with_the_worked_examples(store):
+    here = os.path.join(os.path.dirname(__file__), '..', '..', 'productSource')
+    with open(os.path.join(here, 'products-listings.csv'), newline='', encoding='utf-8') as fh:
+        assert next(csv.reader(fh)) == products.EXPORT_COLUMNS
+    for name in ('products-listings.csv', 'products-listings.xlsx'):
+        byId, order = products.readFile(os.path.join(here, name))
+        assert len(order) == 73
+        fund = byId['gs-global-credit-portfolio-ucits']
+        assert fund['vehicle'] == 'Mutual Fund'
+        assert [(l['isin'], l['shareClass'], l['issueCurrency']) for l in fund['listings']] == [
+            ('LU0000000011', 'I', 'EUR'), ('LU0000000011', 'I', 'USD'), ('LU0000000029', 'I', 'EUR'),
+            ('LU0000000037', 'I', 'GBP'), ('LU0000000045', 'A', 'EUR')]
+        assert fund['listings'][3]['exposureCurrency'] == 'GBP', 'the GBP-hedged class'
+        etf = byId['gs-access-treasury-0-1-etf']
+        assert [(l['isin'], l['exchange'], l['ticker'], l['quotationUnit']) for l in etf['listings']] == [
+            ('IE0000000021', 'LSE', 'GBIL', ''), ('IE0000000021', 'LSE', 'GBIP', 'GBX'),
+            ('IE0000000021', 'Xetra', 'GBIE', ''), ('IE0000000039', 'LSE', 'GBIH', 'GBX')]
+
+
+def test_a_fund_in_a_file_is_its_classes_and_their_listings_in_order(store, tmp_path):
+    pid = _fund('ETF')
+    path = _file(tmp_path, _rowsFor(pid, ETF))
+    byId, _ = products.readFile(path)
+    listed = byId[pid]['listings']
+    assert [(l['isin'], l['exchange'], l['ticker'], l['issueCurrency'], l['quotationUnit']) for l in listed] == [
+        ('IE0000000021', 'LSE', 'PRBL', 'USD', ''), ('IE0000000021', 'LSE', 'PRBP', 'GBP', 'GBX'),
+        ('IE0000000021', 'Xetra', 'PRBE', 'EUR', ''), ('IE0000000039', 'LSE', 'PRBH', 'GBP', 'GBX')]
+    assert [l['productCost'] for l in listed] == [0.12, 0.12, 0.12, 0.15], 'each row carries its class'
+    assert listed[3]['hedging'] == 'Hedged' and listed[3]['classCurrency'] == listed[3]['exposureCurrency'] == 'GBP'
+    assert byId[pid]['assetClass'] and 'assetClass' not in listed[0], 'the asset class is the product\'s'
+    preview = products.importPreview(path, _upload(path))
+    products.importFile(path, _upload(path), user='alice', base=preview['revision'])
+    held = products.asHeld(products.get(pid))
+    assert (held['isin'], held['ticker'], held['issueCurrency'], held['listing']) == (
+        'IE0000000021', 'PRBL', 'USD', 'PRBL'), 'a proposal holds the first listing of the first class'
+    words = products.history(pid)[0]['changeWords']
+    assert any(w.startswith('Listing PRBH') for w in words), words
+
+
+def test_the_rows_of_one_isin_must_agree_on_the_class(store, tmp_path):
+    pid = _fund('ETF')
+    rows = [dict(ETF[0]), dict(ETF[1], ProductCost='0.15')]
+    with pytest.raises(products.BadCatalogue) as caught:
+        products.readFile(_file(tmp_path, _rowsFor(pid, rows)))
+    said = str(caught.value)
+    assert 'IE0000000021 has product cost 0.12 on row' in said and 'one ISIN is one share class' in said
+    assert 'listing' not in said, said
+    # and the form says the same on the listing's box
+    with pytest.raises(ValidationError, match='one ISIN is one share class') as refused:
+        _list(pid, {'isin': 'IE0000000021', 'issueCurrency': 'USD', 'income': 'Distributing'},
+              {'isin': 'IE0000000021', 'issueCurrency': 'GBP', 'income': 'Accumulating'})
+    assert refused.value.field == 'listing1income'
+    # UK reporting and domicile are the class's too
+    with pytest.raises(ValidationError) as refused:
+        _list(pid, {'isin': 'IE0000000021', 'issueCurrency': 'USD', 'ukReporting': 'Yes'},
+              {'isin': 'IE0000000021', 'issueCurrency': 'GBP', 'ukReporting': 'No'})
+    assert refused.value.field == 'listing1ukReporting'
+
+
+def test_within_a_class_a_listing_is_its_exchange_and_issue_currency(store, tmp_path):
+    pid = _fund('ETF')
+    # the same class, exchange and currency twice, under two tickers: one listing
+    rows = [dict(ETF[0]), dict(ETF[0], Ticker='PRBL2')]
+    with pytest.raises(products.BadCatalogue, match='same listing'):
+        products.readFile(_file(tmp_path, _rowsFor(pid, rows)))
+    with pytest.raises(ValidationError, match='same listing') as refused:
+        _list(pid, {'isin': 'IE0000000021', 'exchange': 'LSE', 'issueCurrency': 'USD'},
+              {'isin': 'IE0000000021', 'exchange': 'lse', 'issueCurrency': 'usd', 'ticker': 'OTHER'})
+    assert refused.value.field == 'listing1exchange'
+    # with no ISIN, the rows that agree on every class value are one class
+    out = _list(pid, {'isin': '', 'issueCurrency': 'EUR'}, {'isin': '', 'issueCurrency': 'USD'})
+    assert len(out['listings']) == 2
+    # and rows that differ in the class are two classes, listed in the same place
+    out = _list(pid, {'isin': '', 'issueCurrency': 'EUR', 'productCost': 0.2},
+                {'isin': '', 'issueCurrency': 'EUR', 'productCost': 0.3})
+    assert [l['productCost'] for l in out['listings']] == [0.2, 0.3]
+    with pytest.raises(ValidationError, match='same listing'):
+        _list(pid, {'isin': '', 'issueCurrency': 'EUR', 'productCost': 0.2},
+              {'isin': '', 'issueCurrency': 'EUR', 'productCost': 0.2})
+
+
+def test_a_mutual_fund_class_is_dealt_in_each_currency_with_no_exchange(store, tmp_path):
+    pid = _fund('Mutual Fund')
+    out = _list(pid, {'isin': 'LU0000000011', 'ticker': '', 'shareClass': 'I', 'income': 'Accumulating',
+                      'classCurrency': 'EUR', 'issueCurrency': 'EUR', 'exposureCurrency': 'MUL', 'domicile': 'LU',
+                      'regulation': 'UCITS'},
+                {'isin': 'LU0000000011', 'ticker': '', 'shareClass': 'I', 'income': 'Accumulating', 'classCurrency': 'EUR',
+                 'issueCurrency': 'USD', 'exposureCurrency': 'MUL', 'domicile': 'LU', 'regulation': 'UCITS'},
+                {'isin': 'LU0000000037', 'ticker': '', 'shareClass': 'I', 'income': 'Accumulating', 'hedging': 'Hedged',
+                 'classCurrency': 'GBP', 'issueCurrency': 'GBP', 'exposureCurrency': '', 'domicile': 'LU',
+                 'regulation': 'UCITS', 'productCost': 0.55},
+                {'isin': 'LU0000000045', 'ticker': '', 'shareClass': 'A', 'income': 'Accumulating', 'classCurrency': 'EUR',
+                 'issueCurrency': 'EUR', 'exposureCurrency': 'MUL', 'domicile': 'LU', 'regulation': 'UCITS',
+                 'productCost': 1.2})
+    assert [(l['isin'], l['shareClass'], l['issueCurrency'], l['exposureCurrency']) for l in out['listings']] == [
+        ('LU0000000011', 'I', 'EUR', 'MUL'), ('LU0000000011', 'I', 'USD', 'MUL'),
+        ('LU0000000037', 'I', 'GBP', 'GBP'), ('LU0000000045', 'A', 'EUR', 'MUL')]
+    assert out['listings'][2]['exposureCurrency'] == 'GBP', 'a hedged class left blank is its class currency'
+    assert products.listingLabel(out['listings'][1], out['listings']) == 'LU0000000011 · USD'
+    # a class letter is a Mutual Fund's alone
+    etf = _fund('ETF')
+    with pytest.raises(ValidationError, match='Only a Mutual Fund has a share class letter') as refused:
+        _list(etf, {'shareClass': 'A'})
+    assert refused.value.field == 'listing0shareClass'
+    with pytest.raises(ValidationError, match='Keep the share class'):
+        _list(pid, {'shareClass': 'A' * 21})
+
+
+# --------------------------------------------------------------- the checks ---
+
+def test_a_hedged_class_gives_its_class_currencys_exposure(store, tmp_path):
+    pid = _fund('ETF')
+    with pytest.raises(ValidationError, match='hedged to GBP gives GBP exposure, not USD') as refused:
+        _list(pid, {'hedging': 'Hedged', 'classCurrency': 'GBP', 'exposureCurrency': 'USD'})
+    assert refused.value.field == 'listing0exposureCurrency'
+    out = _list(pid, {'hedging': 'Hedged', 'classCurrency': 'gbp', 'exposureCurrency': ''})
+    assert (out['classCurrency'], out['exposureCurrency']) == ('GBP', 'GBP')
+    out = _list(pid, {'hedging': 'Unhedged', 'classCurrency': 'GBP', 'exposureCurrency': 'USD'})
+    assert out['exposureCurrency'] == 'USD', 'unhedged, the class gives what it holds'
+    # in a file with its own ClassCurrency column the same is refused on the row
+    rows = _rowsFor(pid, [{'Hedging': 'Hedged', 'ClassCurrency': 'GBP', 'ExposureCurrency': 'USD'}])
+    with pytest.raises(products.BadCatalogue, match='hedged to GBP'):
+        products.readFile(_file(tmp_path, rows))
+    # a file without one gives each class its first row's issue currency, and
+    # a hedged class's exposure follows it
+    rows = _rowsFor(pid, [{'Hedging': 'Hedged', 'IssueCurrency': 'GBP', 'ExposureCurrency': 'USD', 'ClassCurrency': ''},
+                          {'Hedging': 'Unhedged', 'IssueCurrency': 'EUR', 'ClassCurrency': ''}])
+    head = rows[0]
+    at = head.index('ClassCurrency')
+    rows = [[v for i, v in enumerate(r) if i != at] for r in rows]
+    byId, _ = products.readFile(_file(tmp_path, rows))
+    first, second = byId[pid]['listings']
+    assert (first['classCurrency'], first['exposureCurrency']) == ('GBP', 'GBP')
+    assert second['classCurrency'] == 'EUR'
+
+
+@pytest.mark.parametrize('over, field, words', [
+    ({'domicile': 'LUX'}, 'domicile', 'not a country code'),
+    ({'domicile': 'XX'}, 'domicile', 'not a country code'),
+    ({'isin': 'IE00B4L5Y98'}, 'isin', 'not one: two letters'),
+    ({'classCurrency': 'GBPX'}, 'classCurrency', 'not a currency code'),
+    ({'replication': 'Swap'}, 'replication', 'not one of Physical, Sampled or Synthetic'),
+    ({'ukReporting': 'Maybe'}, 'ukReporting', 'Yes, No or blank'),
+    ({'income': 'Growth'}, 'income', 'not one of Distributing, Accumulating'),
+    ({'exchange': 'X' * 41}, 'exchange', 'Keep the exchange'),
+    ({'quotationUnit': 'X' * 13}, 'quotationUnit', 'Keep the quotation unit'),
+])
+def test_a_class_value_that_cannot_be_is_refused_on_its_box(store, over, field, words):
+    pid = _fund('ETF')
+    with pytest.raises(ValidationError, match=words) as refused:
+        _list(pid, over)
+    assert refused.value.field == 'listing0' + field
+
+
+def test_values_are_read_as_people_type_them(store):
+    pid = _fund('ETF')
+    out = _list(pid, {'isin': 'ie0000000021', 'domicile': 'ie', 'replication': 'physical', 'ukReporting': 'y',
+                      'income': 'Dist', 'classCurrency': 'usd', 'exchange': 'LSE', 'quotationUnit': 'GBX'})
+    one = out['listings'][0]
+    assert (one['isin'], one['domicile'], one['replication'], one['ukReporting'], one['income'],
+            one['classCurrency']) == ('IE0000000021', 'IE', 'Physical', 'Yes', 'Distributing', 'USD')
+    assert out['isin'] == 'IE0000000021', 'the first listing\'s values are at the top'
+    assert _list(pid, {'ukReporting': False})['ukReporting'] == 'No'
+    assert _list(pid, {'ukReporting': ''})['ukReporting'] == ''
+    # an income word typed where the class letter goes is the income, as
+    # the field was called before the levels
+    out = _list(pid, {'shareClass': 'Accumulating', 'income': ''})
+    assert (out['income'], out['shareClass']) == ('Accumulating', '')
+
+
+def test_the_vehicles_are_three_and_older_words_are_read(store, tmp_path):
+    pid = _fund('ETF')
+    assert _list(pid, {}, vehicle='separate account', category='Public Equity')['vehicle'] == 'SMA'
+    assert _list(pid, {}, vehicle='mutual fund')['vehicle'] == 'Mutual Fund'
+    with pytest.raises(ValidationError, match='not one of ETF, Mutual Fund or SMA') as refused:
+        _list(pid, {}, vehicle='Trust')
+    assert refused.value.field == 'vehicle'
+    # UCITS and ICAV are a fund's regulation: an ETF where the name says so
+    out = _list(pid, {'regulation': ''}, vehicle='UCITS', name='Probe Treasury ETF')
+    assert out['vehicle'] == 'ETF' and out['listings'][0]['regulation'] == 'UCITS'
+    out = _list(pid, {'regulation': ''}, vehicle='ICAV', name='Probe Credit Portfolio')
+    assert out['vehicle'] == 'Mutual Fund' and out['listings'][0]['regulation'] == 'ICAV'
+    out = _list(pid, {'regulation': 'AIF'}, vehicle='UCITS', name='Probe Credit Portfolio')
+    assert out['listings'][0]['regulation'] == 'AIF', 'a regulation given is kept'
+    # the seeded catalogue has none left, and the preview says what a file's are read as
+    assert {p['vehicle'] for p in products.all()} <= set(products.VEHICLES)
+    _list(pid, {'regulation': ''}, vehicle='ETF', name='Probe Treasury ETF')
+    rows = _rowsFor(pid, [{'Vehicle': 'UCITS', 'Regulation': ''}])
+    path = _file(tmp_path, rows)
+    preview = products.importPreview(path, _upload(path))
+    assert preview['vehiclesMoved'] == [{'productId': pid, 'name': 'Probe Treasury ETF', 'was': 'UCITS',
+                                         'now': 'ETF', 'regulation': 'UCITS'}]
+    assert any('Vehicle' in w or 'Regulation' in w for c in preview['changed'] for w in c['changeWords'])
+    vocab = products.vocabulary()
+    assert vocab['vehicle'] == ['ETF', 'Mutual Fund', 'SMA'] and vocab['income'] == ['Distributing', 'Accumulating']
+    assert vocab['replication'] == ['Physical', 'Sampled', 'Synthetic'] and vocab['ukReporting'] == ['Yes', 'No']
+    assert 'IE' in products.vocabulary()['domicile'] or _list(pid, {'domicile': 'IE'}) and 'IE' in products.vocabulary()['domicile']
+
+
+def test_an_sma_keeps_its_rows_and_refuses_the_levels_fields(store):
+    sma = next(p['productId'] for p in products.all() if products.isSma(p)
+               and p['ownCategory'] == products.EQUITY_CATEGORY)
+    out = _list(sma, {'code': 'PMG-CG-USD-U', 'issueCurrency': 'USD', 'hedging': 'Unhedged'},
+                {'code': 'PMG-CG-GBP-H', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'productCost': 0.6})
+    assert [l['code'] for l in out['listings']] == ['PMG-CG-USD-U', 'PMG-CG-GBP-H']
+    assert all(l['isin'] == '' and l['classCurrency'] == '' for l in out['listings'])
+    for field in ('isin', 'domicile', 'exchange'):
+        with pytest.raises(ValidationError, match='A separate account has no') as refused:
+            _list(sma, {'code': 'PMG-CG-USD-U', 'issueCurrency': 'USD',
+                        field: {'isin': 'IE0000000021', 'domicile': 'IE', 'exchange': 'LSE'}[field]})
+        assert refused.value.field == 'listing0' + field
+    with pytest.raises(ValidationError, match='is an SMA') as refused:
+        _list(sma, {'code': 'PMG-CG-USD-U', 'issueCurrency': 'USD', 'shareClass': 'A'})
+    assert refused.value.field == 'listing0shareClass'
+    assert _list(sma, {'code': 'PMG-CG-USD-U', 'issueCurrency': 'USD', 'income': 'Distributing'})['income'] == 'Distributing'
+
+
+def test_an_isin_is_one_products(store, tmp_path):
+    pid, other = _fund('ETF'), _fund('Mutual Fund')
+    _list(pid, {'isin': 'IE0000000021'})
+    with pytest.raises(ValidationError, match='The ISIN IE0000000021 belongs to') as refused:
+        _list(other, {'isin': 'ie0000000021'})
+    assert refused.value.field == 'listing0isin'
+    rows = _rowsFor(other, [{'ISIN': 'IE0000000021'}])
+    with pytest.raises(products.BadCatalogue, match='the ISIN IE0000000021 is on'):
+        products.readFile(_file(tmp_path, rows))
+
+
+# ----------------------------------------------------- the layouts before ---
+
+def _oldLayout(rows):
+    """The export in the layout before the levels: Ticker holding the ISIN
+    where the listing has one, the income under ShareClass, and none of the
+    levels' other columns."""
+    head = rows[0]
+    old = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Category', 'Style', 'Vehicle', 'ShareClass', 'Source',
+           'Liquidity', 'ExposureCurrency', 'IssueCurrency', 'ProductCost', 'FeeGroup', 'DistributionYield',
+           'MinimumInvestment', 'Benchmark', 'MandateCode', 'Hedging']
+    out = [old]
+    for r in rows[1:]:
+        cell = dict(zip(head, r))
+        line = [cell.get(c, '') for c in old]
+        line[2] = cell['ISIN'] or cell['Ticker']
+        line[7] = cell['Income']
+        out.append(line)
+    return out
+
+
+def test_the_file_before_the_levels_still_imports_and_keeps_what_it_cannot_say(store, tmp_path):
+    pid = _fund('Mutual Fund')
+    _list(pid, {'isin': 'LU0000000011', 'ticker': '', 'shareClass': 'I', 'income': 'Accumulating',
+                'classCurrency': 'EUR', 'issueCurrency': 'EUR', 'domicile': 'LU', 'regulation': 'UCITS',
+                'ukReporting': 'Yes'},
+          {'isin': 'LU0000000011', 'ticker': '', 'shareClass': 'I', 'income': 'Accumulating', 'classCurrency': 'EUR',
+           'issueCurrency': 'USD', 'domicile': 'LU', 'regulation': 'UCITS', 'ukReporting': 'Yes'})
+    rows = _oldLayout(products.exportRows())
+    path = _file(tmp_path, rows, 'old.csv')
+    preview = products.importPreview(path, _upload(path))
+    assert preview['isinsFromTickers'] == 2, 'the ISINs under Ticker are read as ISINs'
+    assert not preview['changed'] and not preview['added'], [c['changeWords'] for c in preview['changed']]
+    byId, _ = products.readFile(path)
+    one = byId[pid]['listings'][0]
+    assert (one['isin'], one['ticker'], one['income'], one['classCurrency']) == ('LU0000000011', '', 'Accumulating', 'EUR')
+    assert one['shareClass'] == '' and one['domicile'] == '', 'read alone, the file says nothing of them'
+    # a change the file does make is read, and the rest still kept
+    for r in rows:
+        if r[0] == pid:
+            r[12] = '0.99'
+    path = _file(tmp_path, rows, 'old2.csv')
+    preview = products.importPreview(path, _upload(path))
+    products.importFile(path, _upload(path), user='alice', base=preview['revision'])
+    after = products.entry(pid)
+    assert after['productCost'] == 0.99
+    assert (after['listings'][0]['shareClass'], after['listings'][0]['domicile'], after['listings'][0]['ukReporting']) == ('I', 'LU', 'Yes')
+    assert after['listings'][1]['issueCurrency'] == 'USD' and after['listings'][1]['shareClass'] == 'I'
+
+
+def test_the_layout_before_listings_is_still_read(store, tmp_path):
+    pid = _fund('ETF')
+    name = products.get(pid)['name']
+    rows = _oldLayout(products.exportRows())
+    head = rows[0] + ['BaseCurrency']
+    at = next(n for n, r in enumerate(rows) if r[0] == pid)
+    main = rows[at] + ['All']
+    gbp = list(rows[at]) + ['GBP']
+    gbp[1] = name + ' (GBP)'
+    gbp[11] = 'GBP'
+    gbp[2] = 'IE0000000039'
+    out = [head] + [r + [''] for r in rows[1:at]] + [main, gbp] + [r + [''] for r in rows[at + 1:]]
+    found = set()
+    byId, _ = products._load(_file(tmp_path, out), strict=False, found=found)
+    assert 'BaseCurrency' in found
+    listed = byId[pid]['listings']
+    assert [(l['isin'], l['issueCurrency']) for l in listed] == [(products.get(pid)['isin'] or '', products.get(pid)['issueCurrency'] or ''), ('IE0000000039', 'GBP')]
+    assert byId[pid]['name'] == name
+
+
+# ------------------------------------------------- a store from before them ---
+
+def _rawStore(path):
+    conn = sleeveRepo.connection()
+    conn.close()
+    raw = sqlite3.connect(str(path))
+    raw.row_factory = sqlite3.Row
+    return raw
+
+
+def test_a_store_from_before_the_levels_is_moved_on_its_first_open(store):
+    """17 -> 18: each product rewritten as the levels read it, one revision
+    by the upgrade, what moved on the revision and in the report."""
+    pid = _fund('ETF')
+    before = products.entry(pid)
+    fundName = before['name']
+    old = {'ticker': 'IE0000000021', 'code': '', 'issueCurrency': 'USD', 'hedging': 'Unhedged',
+           'shareClass': 'Accumulating', 'exposureCurrency': 'USD', 'assetClass': before['assetClass'],
+           'productCost': 0.12, 'distributionYield': None, 'minimumInvestment': None, 'benchmark': 'Bench'}
+    hedged = dict(old, ticker='IE0000000039', issueCurrency='GBP', hedging='Hedged', productCost=0.15)
+    raw = _rawStore(store / 'sleeves.db')
+    with raw:
+        raw.execute("UPDATE products SET listings = ?, vehicle = 'UCITS', ticker = 'IE0000000021' WHERE productId = ?",
+                    (json.dumps([old, hedged]), pid))
+        revision = int(raw.execute("SELECT value FROM meta WHERE key = 'catalogueRevision'").fetchone()[0])
+        raw.execute('ALTER TABLE products DROP COLUMN provider')
+        raw.execute("UPDATE meta SET value = '17' WHERE key = 'schemaVersion'")
+    raw.close()
+    products.reload()
+    # the first read moves the file rather than read it as it was, so the
+    # report is there from the start
+    early = products.get(pid)
+    assert early['isin'] == 'IE0000000021' and early['ticker'] == products.NO_TICKER
+    assert early['vehicle'] == ('ETF' if 'ETF' in fundName else 'Mutual Fund') and early['regulation'] == 'UCITS'
+    assert any(r['productId'] == pid for r in products.describeSource()['levelsReport'])
+    # the move
+    conn = sleeveRepo.connection()
+    try:
+        assert int(conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]) == 18
+        stored = conn.execute('SELECT listings, provider, vehicle FROM products WHERE productId = ?', (pid,)).fetchone()
+        listed = json.loads(stored['listings'])
+        assert (listed[0]['isin'], listed[0]['ticker'], listed[0]['income'], listed[0]['shareClass']) == (
+            'IE0000000021', '', 'Accumulating', '')
+        assert (listed[1]['classCurrency'], listed[1]['exposureCurrency']) == ('GBP', 'GBP'), 'hedged to GBP'
+        assert 'assetClass' not in listed[0] and stored['provider'] == '' and stored['vehicle'] != 'UCITS'
+        assert int(conn.execute("SELECT value FROM meta WHERE key = 'catalogueRevision'").fetchone()[0]) == revision + 1
+    finally:
+        conn.close()
+    products.reload()
+    after = products.entry(pid)
+    assert after['revision'] == before['revision'] + 1 and after['lastEditedBy'] == 'upgrade'
+    top = products.history(pid)[0]
+    assert top['action'] == 'upgraded' and 'three levels' in top['note']
+    assert 'IE0000000021' in top['note'] and 'hedged to' in top['note']
+    # a product the move rebuilt without a value moving: its version before
+    # reads as the levels read it, so nothing moved
+    other = products.history(_fund('Mutual Fund'))[0]
+    assert other['action'] == 'upgraded' and other['changeWords'] == [], other['changeWords']
+    report = products.describeSource()['levelsReport']
+    mine = next(r for r in report if r['productId'] == pid)
+    assert mine['name'] == fundName and any('ISIN' in n for n in mine['notes'])
+    assert all(p['vehicle'] in products.VEHICLES for p in products.all())
+    # the next save writes the levels alone, and the old version restores as they read it
+    out = _list(pid, {'isin': 'IE0000000021', 'ticker': 'PRBL', 'exchange': 'LSE'})
+    assert out['listings'][0]['ticker'] == 'PRBL'
+    back = products.revert(pid, before['revision'], user='alice', base=out['revision'])
+    assert back['listings'][0]['isin'] == before['listings'][0]['isin'] and back['vehicle'] == before['vehicle']
+
+
+def test_a_line_recorded_before_the_levels_finds_its_listing(store):
+    pid = _fund('ETF')
+    out = _list(pid, {'isin': 'IE0000000021', 'ticker': 'PRBL', 'income': 'Distributing', 'issueCurrency': 'USD'},
+                {'isin': 'IE0000000021', 'ticker': 'PRBP', 'income': 'Distributing', 'issueCurrency': 'GBP'})
+    # as the register kept it then: the ISIN as the ticker, the income as the share class
+    found = products.findListing(out, {'ticker': 'IE0000000021', 'shareClass': 'Distributing',
+                                       'issueCurrency': 'GBP', 'hedging': ''})
+    assert found == out['listings'][1]
+    # and as it keeps it now
+    found = products.findListing(out, {'isin': 'IE0000000021', 'ticker': 'PRBL', 'income': 'Distributing',
+                                       'shareClass': '', 'issueCurrency': 'USD', 'hedging': ''})
+    assert found == out['listings'][0]
+    assert products.findListing(out, {'ticker': 'NOPE', 'issueCurrency': 'USD', 'hedging': ''}) is None
+
+
+# ------------------------------------------------------------- the outputs ---
+
+def _heldIn():
+    """A fund an ordinary Multi-Asset sleeve holds, its category and the
+    sleeve's name."""
+    for entry in sleeveRepo.listAll(MA):
+        if (entry['products'] and not entry.get('problems') and not entry.get('label')
+                and entry['category'] not in rules.AUTO_SLEEVE_CATEGORIES
+                and entry['category'] == rules.sleeveCategory(entry['category'])):
+            for row in entry['products']:
+                if not products.isSma(products.get(row['productId'])):
+                    return row['productId'], entry['category'], entry['name']
+    raise AssertionError('no sleeve holds a fund')
+
+
+def _model(category, name, currency='USD', mandate=5e7):
+    basis = BasisInput(currency=currency, hedging='Hedged')
+    result = FixturesScenarioPort().resolve_portfolio(basis, PortfolioKey(currency, 'Moderate', 'Full', False))
+    chosen = {}
+    for c in result['categories']:
+        if c['name'] in rules.AUTO_SLEEVE_CATEGORIES:
+            continue
+        under = rules.sleeveCategory(c['name'])
+        chosen.setdefault(under, name if under == category else sleeves.listSleeves(under, MA)[0]['name'])
+    model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES, mandate, MA,
+                                    False, None, None, mandate, False, currency)
+    return result, chosen, model
+
+
+_CLASSES = ({'isin': 'LU0000000011', 'shareClass': 'I', 'income': 'Accumulating', 'hedging': 'Hedged',
+             'classCurrency': 'GBP', 'exposureCurrency': '', 'ukReporting': 'Yes', 'domicile': 'LU',
+             'regulation': 'UCITS', 'exchange': '', 'ticker': '', 'issueCurrency': 'GBP'},
+            {'isin': 'LU0000000011', 'shareClass': 'I', 'income': 'Accumulating', 'hedging': 'Hedged',
+             'classCurrency': 'GBP', 'exposureCurrency': '', 'ukReporting': 'Yes', 'domicile': 'LU',
+             'regulation': 'UCITS', 'exchange': '', 'ticker': '', 'issueCurrency': 'USD'},
+            {'isin': 'LU0000000029', 'shareClass': 'P', 'income': 'Distributing', 'hedging': 'Unhedged',
+             'classCurrency': 'USD', 'exposureCurrency': 'USD', 'ukReporting': 'No', 'domicile': 'LU',
+             'regulation': 'UCITS', 'exchange': '', 'ticker': '', 'issueCurrency': 'USD'})
+
+
+def test_a_line_holds_its_first_class_and_the_sheet_names_it(store):
+    pid, category, name = _heldIn()
+    _list(pid, *_CLASSES, vehicle='Mutual Fund')
+    result, chosen, model = _model(category, name)
+    line = next(i for g in model['groups'] for i in g['items'] if i['productId'] == pid)
+    # the first listing of the first class, whatever the proposal's currency
+    assert (line['isin'], line['income'], line['shareClass'], line['ukReporting'], line['issueCurrency']) == (
+        'LU0000000011', 'Accumulating', 'I', 'Yes', 'GBP')
+    # its exposure is the class's: hedged to GBP, it counts as GBP
+    assert line['exposureCurrency'] == 'GBP'
+    from openpyxl import Workbook
+    book = Workbook()
+    writeImplementationSheet(book, result, chosen, rules.AUTO_SLEEVE_CATEGORIES, 5e7, MA,
+                             currency='USD', model=model)
+    rows = list(book['Implementation'].iter_rows(values_only=True))
+    head = next(r for r in rows if r and 'ISIN' in r)
+    row = next(r for r in rows if r and r[head.index('Products')] == line['name'])
+    got = {c: row[head.index(c)] for c in ('ISIN', 'Income', 'Share Class', 'Issue Currency', 'Hedging',
+                                           'UK Reporting')}
+    assert got == {'ISIN': 'LU0000000011', 'Income': 'Accumulating', 'Share Class': 'I',
+                   'Issue Currency': 'GBP', 'Hedging': 'Hedged', 'UK Reporting': 'Yes'}
+    # an SMA's line has no ISIN, nor a code: the code is the account opening's
+    sma = next(i for g in model['groups'] for i in g['items'] if products.isSma(i))
+    smaRow = next(r for r in rows if r and r[head.index('Products')] == sma['name'])
+    assert smaRow[head.index('ISIN')] is None and smaRow[head.index('Share Class')] is None
+
+
+def test_the_register_keeps_the_class_and_reads_a_line_from_before_as_now(store):
+    pid, category, name = _heldIn()
+    _list(pid, *_CLASSES, vehicle='Mutual Fund')
+    _, _, model = _model(category, name)
+    picture = proposalRegister.implementedPicture(model, MA)
+    kept = next(i for g in picture for i in g['items'] if i['productId'] == pid)
+    assert (kept['isin'], kept['income'], kept['shareClass'], kept['ukReporting'], kept['domicile'],
+            kept['regulation'], kept['classCurrency']) == (
+        'LU0000000011', 'Accumulating', 'I', 'Yes', 'LU', 'UCITS', 'GBP')
+    assert 'productCost' not in kept and 'minimumInvestment' not in kept
+    assert proposalRegister._heldAsNow(kept) == kept, 'a line from the levels on reads as kept'
+    # a line kept before the levels: its income as its share class, its ISIN
+    # as its ticker
+    old = {'productId': pid, 'name': 'X', 'ticker': 'ie00b4l5y983', 'shareClass': 'Acc',
+           'issueCurrency': 'USD', 'hedging': ''}
+    now = proposalRegister._heldAsNow(old)
+    assert (now['income'], now['shareClass'], now['isin'], now['ticker']) == (
+        'Accumulating', None, 'IE00B4L5Y983', products.NO_TICKER)
+    assert old['shareClass'] == 'Acc', 'the record itself is not changed'
+    # a ticker that is a ticker stays one; a share class that is no income
+    # stays the class
+    now = proposalRegister._heldAsNow({'ticker': 'IWDA', 'shareClass': 'I'})
+    assert (now['ticker'], now.get('isin'), now['income'], now['shareClass']) == ('IWDA', None, None, 'I')
+
+
+def test_the_screen_shows_the_isin_with_the_ticker_beneath(store):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'generator', 'js', 'implementation.js')
+    with open(path, encoding='utf-8') as fh:
+        source = fh.read()
+    fn = source[source.index('function listingSub('):source.index('function rows()')]
+    probe = (
+        "var App = {esc: function (s) { return String(s); }};\n" + fn
+        + "process.stdout.write(JSON.stringify([\n"
+        "  [heldIdent({isin: 'IE00B4L5Y983', ticker: 'IWDA'}), listingSub({isin: 'IE00B4L5Y983', ticker: 'IWDA', issueCurrency: 'USD', hedging: 'Unhedged'})],\n"
+        "  [heldIdent({isin: '', ticker: 'GEF-USD'}), listingSub({isin: '', ticker: 'GEF-USD', issueCurrency: 'USD'})],\n"
+        "  [heldIdent({isin: 'LU0000000011', ticker: '\u2014'}), listingSub({isin: 'LU0000000011', ticker: '\u2014', issueCurrency: 'GBP'})],\n"
+        "  [textOrDash(''), textOrDash('Yes')]]));\n")
+    got = json.loads(subprocess.run([node, '-e', probe], capture_output=True, text=True, check=True).stdout)
+    assert got[0] == ['IE00B4L5Y983', '<small class="lst-sub">IWDA \u00b7 USD \u00b7 Unhedged</small>']
+    assert got[1] == ['GEF-USD', '<small class="lst-sub">USD</small>'], 'no ISIN: the ticker, as before'
+    assert got[2] == ['LU0000000011', '<small class="lst-sub">GBP</small>']
+    assert got[1][0] and 'mdash' in got[3][0] and got[3][1] == 'Yes'
+    # the line carries what the columns show
+    item = source[source.index('function implItem('):source.index('function holdAlternatives(')]
+    for field in ('isin: product.isin', 'income: product.income', 'ukReporting: product.ukReporting'):
+        assert field in item
+    row = source[source.index("'<td class=\"txt tick\">' + App.esc(heldIdent(item))"):]
+    assert row.index('item.income') < row.index('item.shareClass') < row.index('item.ukReporting')

@@ -275,7 +275,7 @@ def test_an_overlap_that_arrives_after_the_fact_withholds_the_name_and_flags_bot
 
 def test_the_old_seed_loads_unchanged_as_fallbacks():
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 17     # D152, D155, D165, D169, D178, D179, D180, D184, D197, D204, D207
+    assert store['schemaVersion'] == sleeveRepo.SCHEMA_VERSION == 18     # D152, D155, D165, D169, D178, D179, D180, D184, D197, D204, D207, D218
     entries = sleeveRepo.listAll()
     assert len(entries) == 102 and all(e['fallback'] for e in entries)
     assert sleeveRepo.census()['editions'] == 0
@@ -393,7 +393,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     monkeypatch.setenv('SCENARIO_SLEEVES_SEED', str(tmp_path / 'absent.csv'))
 
     store = sleeveRepo.describe()
-    assert store['schemaVersion'] == 17 and store['sleeves'] == 1      # to 17 in one open (D152, D155, D165, D169, D178, D179, D180, D184, D192, D193, D197, D204, D207)
+    assert store['schemaVersion'] == 18 and store['sleeves'] == 1      # to 18 in one open (D152, D155, D165, D169, D178, D179, D180, D184, D192, D193, D197, D204, D207, D218)
     conn = sqlite3.connect(str(path))
     columns = {r[1] for r in conn.execute('PRAGMA table_info(sleeves)')}
     history = {r[1] for r in conn.execute('PRAGMA table_info(sleeveHistory)')}
@@ -410,7 +410,7 @@ def test_a_version_two_store_migrates_in_place_and_its_sleeves_become_fallbacks(
     # and the migrated store takes an edition like any other
     made = sleeveRepo.addEdition(7, 'GBP', [{'currency': 'GBP'}], _products(), user='desk')
     assert made['applies'] == 43
-    assert sleeveRepo.describe()['schemaVersion'] == 17, 'opening again is a no-op'
+    assert sleeveRepo.describe()['schemaVersion'] == 18, 'opening again is a no-op'
 
 
 # ---- the endpoints ---------------------------------------------------------------

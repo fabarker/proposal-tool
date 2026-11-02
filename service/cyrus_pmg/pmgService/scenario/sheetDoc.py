@@ -1611,11 +1611,15 @@ def buildImplementationDoc(model: dict, columns, widths,
             # by column name, so the order of the columns is theirs alone
             # to decide (D134); a figure is written below with its format
             words = {'Categories & Asset Classes': '  ' + item['assetClass'],
-                     'Products': item['name'], 'Style': item['style'],
-                     'Vehicle': item['vehicle'], 'Share Class': item.get('shareClass'),
-                     # the listing it holds (D208)
+                     'Products': item['name'], 'ISIN': item.get('isin') or None,
+                     'Style': item['style'],
+                     'Vehicle': item['vehicle'],
+                     # the share class and the listing it holds (D208, D218)
+                     'Income': item.get('income') or None,
+                     'Share Class': item.get('shareClass') or None,
                      'Issue Currency': item.get('issueCurrency') or None,
                      'Hedging': item.get('hedging') or None,
+                     'UK Reporting': item.get('ukReporting') or None,
                      'Source': item['source'], 'Liquidity': item['liquidity']}
             for name, value in words.items():
                 if name in at:

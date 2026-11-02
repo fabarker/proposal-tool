@@ -456,7 +456,7 @@ function cpBlankHtml() {
   if (editable()) {
     html += '<div class="cp-ways">'
       + way('add', '+ Add products', 'Search ' + esc(App.variant()) + '’s products and tick the ones you want; each lands in its category, ready for a weight.')
-      + way('paste', 'Paste from Excel', 'Product names, tickers or ids and their weights of the portfolio, checked line by line.')
+      + way('paste', 'Paste from Excel', 'Product names, ISINs, tickers or ids and their weights of the portfolio, checked line by line.')
       + way('sleeve', 'Insert a sleeve', 'A library sleeve’s products at a weight of the portfolio you choose. After that they are ordinary rows.')
       + '</div>';
   } else {
@@ -718,11 +718,18 @@ var ADD_FILTERS = [['assetClass', 'Asset class'], ['vehicle', 'Vehicle'], ['styl
                    ['source', 'Source'], ['liquidity', 'Liquidity'], ['category', 'Category']];
 function lineFor(product) { return product.category || suggestedLine(product); }
 
+/* what a product is held as (D218): its first class's ISIN, else the
+   ticker, and its income */
+function heldWords(p) {
+  var ticker = p.ticker && p.ticker !== '—' ? p.ticker : '';
+  return [p.isin || ticker, p.income].filter(Boolean);
+}
+
 function addDlg(d) {
   var l = lib(), held = products().map(function (p) { return p.productId; });
   var q = (d.q || '').trim().toLowerCase();
   var list = l.products.filter(function (p) {
-    if (q && [p.name, p.ticker, p.productId, p.assetClass, p.vehicle].join(' ').toLowerCase().indexOf(q) === -1) return false;
+    if (q && [p.name, p.isin, p.ticker, p.productId, p.assetClass, p.vehicle].join(' ').toLowerCase().indexOf(q) === -1) return false;
     return ADD_FILTERS.every(function (f) {
       var want = d.f[f[0]];
       return !want || (f[0] === 'category' ? lineFor(p) : p[f[0]]) === want;
@@ -752,7 +759,7 @@ function addDlg(d) {
   return '<div class="rc-head"><h2 id="cpDlgTitle">Add products</h2><p class="rc-meta"><span>'
     + esc(App.variant()) + '’s products'
     + '</span><span><b>' + l.products.length + '</b> products</span><span>' + held.length + ' in the portfolio</span></p></div>'
-    + '<div class="cp-pick-h"><input type="search" id="cpAddQ" data-first placeholder="Search names, tickers, asset classes…" value="'
+    + '<div class="cp-pick-h"><input type="search" id="cpAddQ" data-first placeholder="Search names, ISINs, tickers, asset classes…" value="'
     + esc(d.q || '') + '" aria-label="Search the products">'
     + ADD_FILTERS.map(function (f) {
         return '<select data-cpfilter="' + f[0] + '" aria-label="' + f[1] + '"><option value="">' + f[1] + ': any</option>' + options(f[0]) + '</select>';
@@ -765,7 +772,7 @@ function addDlg(d) {
         return '<tr' + (isHeld ? ' class="held"' : '') + '><td>' + (isHeld ? ''
             : '<input type="checkbox" data-cptick="' + esc(p.productId) + '"' + (on ? ' checked' : '')
               + (!on && n >= room ? ' disabled' : '') + ' aria-label="Add ' + esc(p.name) + '">') + '</td>'
-          + '<td><b>' + esc(p.name) + '</b><small>' + esc(p.ticker && p.ticker !== '—' ? p.ticker + ' · ' : '')
+          + '<td><b>' + esc(p.name) + '</b><small>' + esc(heldWords(p).map(function (w) { return w + ' · '; }).join(''))
           + esc(p.style) + ' · ' + esc(p.source) + '</small>' + (isHeld ? '<span class="cp-held">In the portfolio</span>' : '')
           + '</td>'
           + '<td>' + esc(lineFor(p)) + (p.category ? '' : '<span class="cp-sug">suggested</span>') + '</td>'
@@ -798,7 +805,8 @@ function parsePaste(text) {
     var key = name.toLowerCase();
     var p = l.products.filter(function (x) {
       return x.name.toLowerCase() === key || x.productId.toLowerCase() === key
-        || (x.ticker && x.ticker !== '—' && x.ticker.toLowerCase() === key);
+        || (x.ticker && x.ticker !== '—' && x.ticker.toLowerCase() === key)
+        || (x.isin && x.isin.toLowerCase() === key);
     })[0];
     if (!p) {
       errors.push('Line ' + (i + 1) + ': no product a custom portfolio here may hold is called “' + name + '”.');
@@ -821,7 +829,7 @@ function pasteDlg(d) {
   var r = parsePaste(d.text), good = r.rows.filter(function (x) { return x.p; });
   var any = products().length > 0, ok = good.length && !r.errors.length;
   return '<div class="rc-head"><h2 id="cpDlgTitle">Paste from Excel</h2><p class="rc-meta"><span>Two columns: product and weight of the portfolio</span></p></div>'
-    + '<p class="cp-sub">Copy the block in Excel and paste it here. Products are matched by name, ticker or id; headings and % signs are fine. '
+    + '<p class="cp-sub">Copy the block in Excel and paste it here. Products are matched by name, ISIN, ticker or id; headings and % signs are fine. '
     + 'A block that does not read cleanly is not taken in.</p>'
     + '<textarea class="cp-paste" id="cpPaste" data-first aria-label="The pasted block">' + esc(d.text) + '</textarea>'
     + (r.rows.length ? '<table class="cp-prev"><thead><tr><th>Line</th><th>Product</th><th>Category</th><th class="n">Weight</th><th></th></tr></thead><tbody>'

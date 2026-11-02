@@ -78,6 +78,22 @@ held. The code shows nowhere in a proposal's files;
 the account opening request reads it. The word "mandate" on its own is the
 client's mandate everywhere else in the tool.
 
+A fund has THREE LEVELS (D218): the product, its share classes and their
+listings. A listing as stored carries the three together - what the product
+is at the top, the share class's values (its ISIN, class letter, income,
+hedging, class and exposure currency, domicile, regulation, replication, UK
+reporting, cost, yield, minimum and benchmark) and the listing's own (its
+exchange, ticker, issue currency and quotation unit) - and the rows of one
+ISIN are one share class: they must agree on every one of the class's
+values, and that is checked wherever a product is read. A class with no ISIN
+is the rows that agree on all of them. Within a class a listing is its
+exchange and issue currency. An SMA keeps its rows, a mandate code each, and
+refuses the class's and the listing's fields. A product stored or recorded
+before the levels reads as they read it (``modernise``): a ticker shaped
+like an ISIN is the ISIN, Accumulating or Distributing where the class letter
+goes is the income, the asset class moves up to the product, and a hedged
+class's exposure is the currency it is hedged to.
+
 Each listing names its BENCHMARK (D204), which the account opening request
 reads for an SMA. A file without a Benchmark column leaves the benchmarks
 the catalogue holds as they are, since a file the desk kept before there
@@ -104,85 +120,119 @@ from .types import ValidationError
 _DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         '..', '..', '..', '..', 'productSource', 'products.csv')
 
-COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Style', 'Vehicle', 'Source',
-           'Liquidity', 'ExposureCurrency', 'ProductCost', 'FeeGroup']
+COLUMNS = ['ProductId', 'Name', 'AssetClass', 'Style', 'Vehicle', 'Source', 'Liquidity',
+           'ExposureCurrency', 'ProductCost', 'FeeGroup']
 # Columns a delivery may leave out entirely, or leave blank on a row: each is
-# served as None when it is absent, so an older extract still loads (D63, D81).
-# Of these, the last two are figures the catalogue view compares on and must
-# parse as numbers; the first is a word from a closed pair.
-OPTIONAL = ['Category', 'ShareClass', 'IssueCurrency', 'DistributionYield', 'MinimumInvestment',
-            'Benchmark', 'MandateCode', 'Hedging']
+# served as blank when it is absent, so an older extract still loads (D63,
+# D81, D218). DistributionYield and MinimumInvestment are figures the
+# catalogue view compares on and must parse as numbers.
+OPTIONAL = ['Category', 'Provider', 'ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency',
+            'Domicile', 'Regulation', 'Replication', 'UKReporting', 'DistributionYield',
+            'MinimumInvestment', 'Benchmark', 'Exchange', 'Ticker', 'IssueCurrency', 'QuotationUnit',
+            'MandateCode']
 #: The product's own category (D178), the sleeve category the catalogue bands
 #: it under: a file may head the column with any of these.
 CATEGORY_HEADERS = ('Category', 'Catagory', 'Group')
-#: The currency the product is issued in (D184): a file may head the column
-#: with any of these, lower-cased and stripped of all but letters and digits.
-_ISSUE_HEADERS = ('issuecurrency', 'issueccy', 'issuercurrency', 'issuerccy', 'quotecurrency',
-                  'quoteccy', 'dealingcurrency')
-#: A listing's mandate code and its hedging (D207), headed any of these ways
-_CODE_HEADERS = ('mandatecode', 'mandate')
-_HEDGING_HEADERS = ('hedging', 'hedgingversion')
+#: Other headings a file may give a column, lower-cased and stripped of all
+#: but letters and digits (D184, D207, D218).
+_HEADINGS = {
+    'IssueCurrency': ('issuecurrency', 'issueccy', 'issuercurrency', 'issuerccy', 'quotecurrency',
+                      'quoteccy', 'dealingcurrency', 'tradingcurrency'),
+    'MandateCode': ('mandatecode', 'mandate'),
+    'Hedging': ('hedging', 'hedgingversion', 'currencyhedging'),
+    'Income': ('income', 'incometreatment', 'dividendtreatment'),
+    'UKReporting': ('ukreporting', 'ukreportingstatus', 'ukreportingfund'),
+    'Exchange': ('exchange', 'listingexchange'),
+    'ClassCurrency': ('classcurrency', 'classccy', 'shareclasscurrency'),
+    'QuotationUnit': ('quotationunit', 'quoteunit', 'unit'),
+    'Domicile': ('domicile', 'domicilecountry'),
+    'Replication': ('replication', 'replicationmethod'),
+    'Provider': ('provider', 'fundprovider'),
+    'ISIN': ('isin',),
+}
 
-#: What a share class can be: distributing, or accumulating (D81). Two values
-#: and a blank, checked on load - a typo is refused rather than printed.
-SHARE_CLASSES = ('Distributing', 'Accumulating')
+#: What a class's income can be: distributing, or accumulating - the field
+#: that was the share class (D81, D218). Two values and a blank, checked on
+#: load - a typo is refused rather than printed.
+INCOMES = ('Distributing', 'Accumulating')
+SHARE_CLASSES = INCOMES
 #: The short forms a delivery used before the words were spelled out (D164),
 #: still read, and served as the word.
-SHARE_CLASS_SHORT = {'Dis': 'Distributing', 'Acc': 'Accumulating'}
-
-# the field names the rest of the package has always used for a product
-FIELDS = ['name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass', 'source',
-          'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup']
+INCOME_SHORT = {'Dis': 'Distributing', 'Dist': 'Distributing', 'Acc': 'Accumulating'}
+SHARE_CLASS_SHORT = INCOME_SHORT
 
 NO_TICKER = '—'
 
 #: Every field a product carries, in the order the file and the console give
-#: them: the key the package uses, the file's column, and the words a message
-#: or a history line uses for it.
+#: them - the product, then the share class, then the listing, then an SMA's
+#: code (D218): the key the package uses, the file's column, and the words a
+#: message or a history line uses for it.
 _FIELDS = [
     ('productId', 'ProductId', 'Product ID'),
     ('name', 'Name', 'Name'),
-    ('ticker', 'Ticker', 'Ticker'),
-    ('assetClass', 'AssetClass', 'Asset class'),
+    ('provider', 'Provider', 'Provider'),
     ('category', 'Category', 'Category'),
+    ('assetClass', 'AssetClass', 'Asset class'),
     ('style', 'Style', 'Style'),
     ('vehicle', 'Vehicle', 'Vehicle'),
-    ('shareClass', 'ShareClass', 'Share class'),
     ('source', 'Source', 'Source'),
     ('liquidity', 'Liquidity', 'Liquidity'),
-    ('exposureCurrency', 'ExposureCurrency', 'Exposure currency'),
-    ('issueCurrency', 'IssueCurrency', 'Issue currency'),
-    ('productCost', 'ProductCost', 'Product cost'),
     ('feeGroup', 'FeeGroup', 'Fee group'),
+    # the share class (D218)
+    ('isin', 'ISIN', 'ISIN'),
+    ('shareClass', 'ShareClass', 'Share class'),
+    ('income', 'Income', 'Income'),
+    ('hedging', 'Hedging', 'Hedging'),
+    ('classCurrency', 'ClassCurrency', 'Class currency'),
+    ('exposureCurrency', 'ExposureCurrency', 'Exposure currency'),
+    ('domicile', 'Domicile', 'Domicile'),
+    ('regulation', 'Regulation', 'Regulation'),
+    ('replication', 'Replication', 'Replication'),
+    ('ukReporting', 'UKReporting', 'UK reporting'),
+    ('productCost', 'ProductCost', 'Product cost'),
     ('distributionYield', 'DistributionYield', 'Distribution yield'),
     ('minimumInvestment', 'MinimumInvestment', 'Minimum investment'),
     # what it is measured against (D204): optional, blank for not given
     ('benchmark', 'Benchmark', 'Benchmark'),
-    # an SMA listing's code and a listing's hedging (D197, D207)
+    # the listing (D218): where and in what the class is bought
+    ('exchange', 'Exchange', 'Exchange'),
+    ('ticker', 'Ticker', 'Ticker'),
+    ('issueCurrency', 'IssueCurrency', 'Issue currency'),
+    ('quotationUnit', 'QuotationUnit', 'Quotation unit'),
+    # an SMA listing's code (D197, D207)
     ('code', 'MandateCode', 'Mandate code'),
-    ('hedging', 'Hedging', 'Hedging'),
 ]
 KEYS = [k for k, _, _ in _FIELDS]
-#: the file's columns in the order an export writes them - the packaged
-#: file's own order
+#: the file's columns in the order an export writes them
 FILE_COLUMNS = [c for _, c, _ in _FIELDS]
 LABELS = {k: label for k, _, label in _FIELDS}
 
-#: What belongs to a LISTING rather than to the product (D207): the ticker it
-#: is bought under, an SMA's mandate code, the currency it is dealt in, its
-#: hedging, its share class, the currency exposure of what it holds, its asset
-#: class, what it costs and yields, the least it takes and the index it is
-#: measured against. A listing holds all of them whole: nothing in one is
-#: read from another.
-LISTING_FIELDS = ('ticker', 'code', 'issueCurrency', 'hedging', 'shareClass', 'exposureCurrency',
-                  'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark')
+#: What belongs to the SHARE CLASS (D218), the same on every listing of one
+#: ISIN: what the class is, its figures and its benchmark.
+CLASS_FIELDS = ('isin', 'shareClass', 'income', 'hedging', 'classCurrency', 'exposureCurrency',
+                'domicile', 'regulation', 'replication', 'ukReporting', 'productCost',
+                'distributionYield', 'minimumInvestment', 'benchmark')
+#: what belongs to the LISTING alone: where and in what the class is bought
+PLACE_FIELDS = ('exchange', 'ticker', 'issueCurrency', 'quotationUnit')
+#: Every field a listing carries (D207, D218): its class's values and its
+#: own, and an SMA's mandate code. A listing holds all of them whole:
+#: nothing in one is read from another.
+LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code',)
 #: the ones of those that are figures
 LISTING_FIGURES = ('productCost', 'distributionYield', 'minimumInvestment')
 #: what the product is, whichever listing is held: the same on every one of
 #: its rows in a file
 PRODUCT_FIELDS = [k for k in KEYS if k not in LISTING_FIELDS]
-#: what makes two listings of a product the same one: two the same are refused
-LISTING_KEY = ('ticker', 'code', 'issueCurrency', 'hedging', 'shareClass')
+#: what a listing is told apart by, where a file names it: the fields an
+#: import matches a file's row to the catalogue's listing on
+LISTING_KEY = ('isin', 'code', 'exchange', 'ticker', 'issueCurrency', 'hedging', 'shareClass', 'income')
+#: the class's and the listing's fields a separate account has none of
+SMA_REFUSED = ('isin', 'shareClass', 'classCurrency', 'domicile', 'regulation', 'replication',
+               'ukReporting', 'exchange', 'quotationUnit')
+#: the fields a listing carried before the three levels (D207), read once
+#: to list a product stored or recorded then
+_OLD_LISTING_FIELDS = ('ticker', 'code', 'issueCurrency', 'hedging', 'shareClass', 'exposureCurrency',
+                       'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark')
 #: what a listing kept before the catalogue held facts only (D214): its
 #: place in each base currency's ranking, dropped wherever it is read
 RANKS = 'ranks'
@@ -198,12 +248,21 @@ ALL = 'All'
 #: what an export writes: the file's columns
 EXPORT_COLUMNS = list(FILE_COLUMNS)
 _COLUMN_OF = {k: c for k, c, _ in _FIELDS}
-#: the six words a product is described by: free values, which the console
-#: keeps consistent by offering the ones already in use
+#: the six words a product is described by: free values but the vehicle,
+#: which the console keeps consistent by offering the ones already in use
 WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency']
 #: the figures, all percentages but the minimum, which is currency units
 _PERCENT = ('productCost', 'distributionYield')
 
+#: The three vehicles (D218): a product is one of these, and the vehicle
+#: picks its card. A file may write SMA as Separate Account, as Poros does.
+VEHICLES = ('ETF', 'Mutual Fund', 'SMA')
+_VEHICLE_WORDS = {'etf': 'ETF', 'mutual fund': 'Mutual Fund', 'mutualfund': 'Mutual Fund',
+                  'sma': 'SMA', 'separate account': 'SMA'}
+#: The vehicles a file wrote before the levels (UCITS, ICAV): read as a fund
+#: - an ETF where the name says ETF, else a Mutual Fund - with the word kept
+#: as the share class's regulation.
+REGULATED_VEHICLES = ('UCITS', 'ICAV')
 #: What marks a product as a separate account, an SMA (D197): its vehicle,
 #: which reads Separate Account on Poros and SMA in the sample file here,
 #: compared without regard to case.
@@ -215,9 +274,16 @@ HEDGE_FUND_CATEGORY = 'Hedge Funds'
 #: the hedging versions a Public Equity SMA's listing comes in, in order; an
 #: SMA in any other category has none, stored as ''
 MANDATE_VERSIONS = ('Hedged', 'ISG Hedged', 'Unhedged')
-#: what a fund's listing may say of its hedging (D207): a hedged share class
-#: is hedged to the currency it is issued in
+#: what a fund's share class may say of its hedging (D207, D218): a hedged
+#: class is hedged to its class currency, which is then its exposure
 FUND_HEDGING = ('Hedged', 'Unhedged')
+HEDGED = 'Hedged'
+#: how an ETF's class tracks its index, or blank for not said
+REPLICATIONS = ('Physical', 'Sampled', 'Synthetic')
+#: whether a class has UK reporting status, or blank for not said
+UK_REPORTING = ('Yes', 'No')
+_UK_WORDS = {'yes': 'Yes', 'y': 'Yes', 'true': 'Yes', '1': 'Yes', 'no': 'No', 'n': 'No', 'false': 'No',
+             '0': 'No'}
 #: a ticker every SMA reads (D197), and so no one product's
 SHARED_TICKERS = ('sma',)
 CODE_MAX = 40
@@ -230,14 +296,31 @@ ID_MAX = 80
 NAME_MAX = 120
 TICKER_MAX = 24
 WORD_MAX = 60
+#: a share class letter, as the fund names it: A, I, R, IX…
+SHARE_CLASS_MAX = 20
+EXCHANGE_MAX = 40
+UNIT_MAX = 12
 #: a benchmark is an index's whole name, so it may run longer than a word
 BENCHMARK_MAX = 200
 NOTE_MAX = 240
 #: a figure at or above these is one typed in the wrong unit - 45 for 0.45
 PERCENT_MAX = {'productCost': 10.0, 'distributionYield': 50.0}
+#: the shape of an ISIN: two letters, nine letters or digits, a check digit
+ISIN_RE = re.compile(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$')
+#: the country codes a domicile may be (ISO 3166-1 alpha-2)
+COUNTRY_CODES = frozenset("""
+AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV
+BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES
+ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE
+IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY
+MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU
+NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM
+SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE
+VG VI VN VU WF WS YE YT ZA ZM ZW
+""".split())
 
 #: what a revision's action can say
-ACTIONS = ['seeded', 'created', 'updated', 'imported', 'withdrawn', 'restored', 'reverted']
+ACTIONS = ['seeded', 'created', 'updated', 'imported', 'withdrawn', 'restored', 'reverted', 'upgraded']
 
 
 class BadCatalogue(ValueError):
@@ -304,7 +387,7 @@ def _norm(column) -> str:
 
 
 def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categories=None,
-          found=None):
+          found=None, moved=None):
     """The extract at *path* (or the upload *data* named *path*) as
     ({id: record}, [ids in file order]). Refuses the whole file with
     BadCatalogue at the first bad row, naming the row and the product: a
@@ -314,7 +397,10 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
     (``clean``); without it, what the tool has always accepted from a file.
     *found*, when given, is a set the optional columns the file has are
     added to - 'Rank' for rank columns, which are not read (D214),
-    BaseCurrency for the layout before listings."""
+    BaseCurrency for the layout before listings. *moved*, when given, is a
+    dict told what the file's older layout was read as (D218): how many
+    tickers shaped like an ISIN were read as the ISIN, and the products
+    whose UCITS or ICAV vehicle was read as a fund's."""
     rows = _readRows(path, data)
     head = next(rows)
     name = os.path.basename(path)
@@ -332,21 +418,27 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
     ranked = False
     for at, column in enumerate(head):
         key = _norm(column)
-        if key in _ISSUE_HEADERS and 'IssueCurrency' not in index:
-            index['IssueCurrency'] = at
-        elif key in _CODE_HEADERS and 'MandateCode' not in index:
-            index['MandateCode'] = at
-        elif key in _HEDGING_HEADERS and 'Hedging' not in index:
-            index['Hedging'] = at
+        for c, headings in _HEADINGS.items():
+            if key in headings and c not in index:
+                index[c] = at
         if any(key in ('rank' + c.lower(), c.lower() + 'rank') for c in CURRENCIES):
             ranked = True
     baseAt = next((at for at, column in enumerate(head) if _norm(column) in _BASE_HEADERS), None)
+    rows = list(rows)
+    if 'ShareClass' in index and 'Income' not in index:
+        # a file from before the levels (D218): a ShareClass column that says
+        # only Accumulating or Distributing is the Income column
+        at = index['ShareClass']
+        said = {_text(row[at] if at < len(row) else '') for row in rows}
+        if said - {''} and not any(v and not _incomeWord(v) for v in said):
+            index['Income'] = index.pop('ShareClass')
     if found is not None:
         found.update(c for c in OPTIONAL if c in index)
         if ranked:
             found.add('Rank')
         if baseAt is not None:
             found.add(BASE_COLUMN)
+    isinsFromTickers, vehiclesMoved = 0, []
     rowsOf, order = {}, []
     for n, row in enumerate(rows, start=2):
         fields = {}
@@ -357,6 +449,14 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
             at = index[column]
             fields[key] = row[at] if at < len(row) else ''
         pid = _text(fields['productId'], keepSpaces=True)
+        if 'ISIN' not in index and _isinShaped(fields.get('ticker')):
+            # a file from before the ISIN had a column of its own (D218)
+            fields['isin'], fields['ticker'] = _text(fields['ticker']).upper(), ''
+            isinsFromTickers += 1
+        vehicle = _text(fields.get('vehicle'))
+        if vehicle.upper() in REGULATED_VEHICLES and pid not in {m['productId'] for m in vehiclesMoved}:
+            vehiclesMoved.append({'productId': pid, 'name': _text(fields.get('name')), 'was': vehicle,
+                                  'now': _fundVehicle(fields.get('name')), 'regulation': vehicle.upper()})
         currency = ALL
         if baseAt is not None:
             given = _text(row[baseAt] if baseAt < len(row) else '')
@@ -371,6 +471,12 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
             if currency != ALL:
                 # 'Green Bond ETF (GBP)' on the GBP row is the product's name
                 fields['name'] = _withoutCurrency(fields['name'], currency)
+            if pid in rowsOf:
+                # a currency's row says what the product is only where it differs
+                first = rowsOf[pid][0][2]
+                for key in PRODUCT_FIELDS:
+                    if key != 'productId' and not _text(fields.get(key)):
+                        fields[key] = first.get(key)
         try:
             record = clean(fields, feeGroups, strict=strict, categories=categories)
         except ValidationError as exc:
@@ -379,8 +485,10 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
         if pid not in rowsOf:
             order.append(pid)
         rowsOf.setdefault(pid, []).append((n, currency, record))
+    if moved is not None:
+        moved.update(isinsFromTickers=isinsFromTickers, vehicles=vehiclesMoved)
     byId = {pid: _assemble(name, pid, rowsOf[pid], baseAt is not None, feeGroups, strict,
-                           categories) for pid in order}
+                           categories, 'ClassCurrency' in index) for pid in order}
     _refuseShared(name, byId, order)
     return byId, order
 
@@ -395,14 +503,17 @@ def _withoutCurrency(value, currency):
     return text
 
 
-def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories):
-    """One product from its rows in a file (D207): each row a listing, in the
-    file's order, the first the one a proposal holds (D214). What the
-    product is must read the same on every row; only a listing's values may
-    differ. A file in the layout before listings (*legacy*, D182) gives a
-    row per base currency instead: its All row - else the row of the first
-    currency - is the first listing, and each currency's row a listing after
-    it, two rows alike being one listing."""
+def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories, classCurrencyGiven=True):
+    """One product from its rows in a file (D207, D218): each row a listing,
+    in the file's order, the first the one a proposal holds (D214). What the
+    product is must read the same on every row; only a share class's and a
+    listing's values may differ, and the rows of one ISIN must agree on the
+    class's. A file with no ClassCurrency column gives each class the issue
+    currency of its first row, and a hedged class's exposure follows it. A
+    file in the layout before listings (*legacy*, D182) gives a row per base
+    currency instead: its All row - else the row of the first currency - is
+    the first listing, and each currency's row a listing after it, two rows
+    alike being one listing."""
     if legacy:
         rows = sorted(rows, key=lambda r: -1 if r[1] == ALL else CURRENCIES.index(r[1]))
     mainRow, _, main = rows[0]
@@ -412,32 +523,55 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories):
                 continue
             raise BadCatalogue(
                 '{}: row {} ({}): it gives {} {} where row {} gives {} - a product\'s rows are its '
-                'listings, and only a listing\'s ticker, mandate code, issue currency, hedging, '
-                'share class, exposure currency, asset class, cost, yield, minimum and benchmark may '
-                'differ between them.'.format(fileName, n, pid, LABELS[key].lower(),
-                                              show(key, record[key]), mainRow, show(key, main[key])))
+                'listings, and only a share class\'s values (its ISIN, class, income, hedging, '
+                'currencies, domicile, regulation, replication, UK reporting, cost, yield, minimum '
+                'and benchmark) and a listing\'s (its exchange, ticker, issue currency, unit and '
+                'mandate code) may differ between them.'.format(
+                    fileName, n, pid, LABELS[key].lower(), show(key, record[key]), mainRow,
+                    show(key, main[key])))
     listings, rowOf = [], []
     for n, currency, record in rows:
         listing = dict(record['listings'][0])
         if legacy:
             # a currency's row read as it always was: a word it leaves blank
             # is the main row's
-            for word in ('exposureCurrency', 'assetClass', 'issueCurrency', 'benchmark', 'shareClass'):
+            for word in ('exposureCurrency', 'issueCurrency', 'benchmark', 'income', 'shareClass',
+                         'classCurrency', 'domicile', 'regulation', 'replication', 'ukReporting'):
                 if not listing[word] and listings:
                     listing[word] = listings[0][word]
             if any(_sameListing(held, listing) for held in listings):
                 continue
             if not listing['issueCurrency'] and currency != ALL and any(
-                    _listingKey(held) == _listingKey(listing) for held in listings):
+                    _sameIdentity(held, listing) for held in listings):
                 listing['issueCurrency'] = currency
         listings.append(listing)
         rowOf.append(n)
+    if not classCurrencyGiven and not isSma(main):
+        _fillClassCurrency(listings)
     try:
         return clean(dict(main, listings=listings), feeGroups, strict=strict, categories=categories)
     except ValidationError as exc:
         at = re.match(r'listing(\d+)', exc.field or '')
         row = rowOf[int(at.group(1))] if at and int(at.group(1)) < len(rowOf) else mainRow
-        raise BadCatalogue('{}: row {} ({}): {}'.format(fileName, row, pid, exc.message))
+        message = re.sub(r'\blisting (\d+)\b', lambda m: 'row {}'.format(
+            rowOf[int(m.group(1)) - 1] if 0 < int(m.group(1)) <= len(rowOf) else m.group(1)), exc.message)
+        raise BadCatalogue('{}: row {} ({}): {}'.format(fileName, row, pid, message))
+
+
+def _fillClassCurrency(listings) -> None:
+    """A file with no ClassCurrency column (D218): each class is given the
+    issue currency of its first row, and a hedged class's exposure follows
+    it, since hedged means hedged to the class currency."""
+    firstOf = {}
+    for listing in listings:
+        key = ('isin', _text(listing.get('isin')).upper()) if _text(listing.get('isin')) else \
+            tuple(_text(listing.get(f)).lower() if f != 'classCurrency' else '' for f in CLASS_FIELDS)
+        first = firstOf.setdefault(key, listing)
+        if listing.get('classCurrency'):
+            continue
+        listing['classCurrency'] = (first.get('classCurrency') or _text(first.get('issueCurrency'))).upper()
+        if listing['classCurrency'] and _text(listing.get('hedging')) == HEDGED:
+            listing['exposureCurrency'] = listing['classCurrency']
 
 
 def _refuseShared(fileName, byId, order) -> None:
@@ -448,8 +582,8 @@ def _refuseShared(fileName, byId, order) -> None:
         for kind, value in _identifiers(byId[pid]):
             other = seen.get((kind, value.lower()))
             if other is not None and other != pid:
-                raise BadCatalogue('{}: the {} {} is on {} and on {}. A {} is one product\'s.'.format(
-                    fileName, LABELS[kind].lower(), value, other, pid, LABELS[kind].lower()))
+                raise BadCatalogue('{}: the {} {} is on {} and on {}. {} is one product\'s.'.format(
+                    fileName, _kindWords(kind)[0], value, other, pid, _kindWords(kind)[1]))
             seen[(kind, value.lower())] = pid
 
 
@@ -532,7 +666,7 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
     given its values at the top level alone has one listing, and one given
     them by base currency, as products were stored before listings, is
     listed as it reads (``legacyListings``). A ticker is '' when there is
-    none, and so is a category, and a share class None."""
+    none, and so is a category, and an income None."""
     fields = fields or {}
     pid = _text(fields.get('productId'), keepSpaces=True)
     if not pid:
@@ -548,8 +682,13 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
     if strict and len(name) > NAME_MAX:
         raise ValidationError('name', 'Keep the name to {} characters.'.format(NAME_MAX))
     record = {'productId': pid, 'name': name}
-    for key in ('style', 'vehicle', 'source', 'liquidity'):
+    # who runs it (D218): optional, a word
+    record['provider'] = _word(fields.get('provider'), 'provider', LABELS['provider'], strict,
+                               required=False)
+    record['assetClass'] = _word(fields.get('assetClass'), 'assetClass', LABELS['assetClass'], strict)
+    for key in ('style', 'source', 'liquidity'):
         record[key] = _word(fields.get(key), key, LABELS[key], strict)
+    record['vehicle'], regulation = _vehicle(fields.get('vehicle'), name, strict)
     # the sleeve category the catalogue bands the product under (D178): blank
     # for none, else one the library knows, spelled as it spells it
     category = _text(fields.get('category'))
@@ -575,8 +714,32 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
                                           'prices {}.'.format(group, ', '.join(sorted(feeGroups))))
     record['feeGroup'] = group
     given, bare = _listingsGiven(fields)
-    record['listings'] = _listings(given, record, strict, bare)
+    record['listings'] = _listings(given, record, strict, bare, regulation)
     return _mirrored(record)
+
+
+def _vehicle(value, name, strict):
+    """A product's vehicle as stored (D218): ETF, Mutual Fund or SMA, however
+    a file spells it (Separate Account is an SMA), with the regulation a
+    UCITS or ICAV vehicle is read as - (vehicle, regulation)."""
+    word = _text(value)
+    if not word:
+        if strict:
+            raise ValidationError('vehicle', 'Vehicle is needed: ETF, Mutual Fund or SMA.')
+        return '', ''
+    if word.lower() in _VEHICLE_WORDS:
+        return _VEHICLE_WORDS[word.lower()], ''
+    if word.upper() in REGULATED_VEHICLES:
+        return _fundVehicle(name), word.upper()
+    raise ValidationError('vehicle', 'The vehicle {!r} is not one of ETF, Mutual Fund or SMA. Separate '
+                                     'Account is read as SMA, and UCITS or ICAV as a fund\'s '
+                                     'regulation.'.format(word))
+
+
+def _fundVehicle(name) -> str:
+    """The vehicle a UCITS or ICAV product is (D218): an ETF where its name
+    says so, else a Mutual Fund."""
+    return 'ETF' if re.search(r'\bETFs?\b', _text(name), flags=re.IGNORECASE) else 'Mutual Fund'
 
 
 def _mirrored(record) -> dict:
@@ -619,46 +782,84 @@ def _listingsGiven(fields):
     return [{f: fields.get(f) for f in LISTING_FIELDS}], True
 
 
-def _listings(value, record, strict=True, bare=False) -> list:
-    """The listings as stored (D207): [{ticker, code, issueCurrency, hedging,
-    shareClass, exposureCurrency, assetClass, productCost, distributionYield,
-    minimumInvestment, benchmark}], in the order given, each whole and
+def _listings(value, record, strict=True, bare=False, regulation='') -> list:
+    """The listings as stored (D207, D218): [{the share class's values, the
+    listing's own, and an SMA's code}], in the order given, each whole and
     checked as a product's values always were, and the list against
-    *record*: only an SMA's listing has a mandate code; a fund's may be
-    Hedged or Unhedged, a Public Equity SMA's any of its three versions,
-    another SMA's none; and no two listings are the same one. Ranks given
-    with a listing are not kept (D214). A refusal names the listing's box -
-    listing0ticker, listing2hedging - or, for a product given its values at
-    the top level (*bare*), the field."""
+    *record*: only an SMA's listing has a mandate code, and an SMA has none
+    of the class's or the listing's other fields; only a Mutual Fund's
+    class has a letter; a fund's hedging may be Hedged or Unhedged, a
+    Public Equity SMA's any of its three versions, another SMA's none; a
+    hedged class's exposure is its class currency; the rows of one ISIN
+    agree on the class's values; and no two listings are the same one.
+    *regulation* is what a UCITS or ICAV vehicle gave a class that says
+    none. Ranks given with a listing are not kept (D214). A refusal names
+    the listing's box - listing0ticker, listing2hedging - or, for a product
+    given its values at the top level (*bare*), the field."""
     if not isinstance(value, list) or not value or any(not isinstance(l, dict) for l in value):
-        raise ValidationError('listings', 'A product has at least one listing: its ticker, its cost '
-                                          'and the rest.')
+        raise ValidationError('listings', 'A product has at least one listing: its share class, its '
+                                          'cost and the rest.')
     sma = isSma(record)
     equity = record.get('category') == EQUITY_CATEGORY
+    vehicle = record.get('vehicle') or ''
     name = record.get('name') or record.get('productId') or 'the product'
     out, seen = [], {}
     for n, given in enumerate(value):
         def box(field, n=n):
             return field if bare else 'listing{}{}'.format(n, field)
-        named = _text(given.get('code')) or _ticker(given.get('ticker'), 'ticker', strict=False)
+        named = (_text(given.get('code')) or _ticker(given.get('ticker'), 'ticker', strict=False)
+                 or _text(given.get('isin')).upper())
         where = '' if bare else ' of listing {}{}'.format(n + 1, ' ({})'.format(named) if named else '')
-        listing = {'ticker': _ticker(given.get('ticker'), box('ticker'), strict, where)}
+        listing = {'isin': _isin(given.get('isin'), box('isin'), strict, where)}
         code = _text(given.get('code'))
         if code and not sma:
             raise ValidationError(box('code'), 'Only a separate account (an SMA) has a mandate code: '
-                                  '{} is {}. Take the code off{}, or make the vehicle Separate '
-                                  'Account.'.format(name, _an(record.get('vehicle')), where))
+                                  '{} is {}. Take the code off{}, or make the vehicle SMA.'.format(
+                                      name, _an(record.get('vehicle')), where))
         if strict and len(code) > CODE_MAX:
             raise ValidationError(box('code'), 'Keep the mandate code{} to {} characters.'.format(
                 where, CODE_MAX))
         listing['code'] = code
-        listing['issueCurrency'] = _word(given.get('issueCurrency'), box('issueCurrency'),
-                                         LABELS['issueCurrency'] + where, strict, required=False)
+        letter, income = _text(given.get('shareClass')), _text(given.get('income'))
+        if letter and _incomeWord(letter) and (not income or _incomeWord(income)
+                                               and INCOME_SHORT.get(income, income) == INCOME_SHORT.get(letter, letter)):
+            # Accumulating or Distributing where the class letter goes: the
+            # income, as the field was called before the two were apart
+            income, letter = letter, ''
+        if strict and len(letter) > SHARE_CLASS_MAX:
+            raise ValidationError(box('shareClass'), 'Keep the share class{} to {} characters: the letter '
+                                  'or letters the fund names it by, such as A or I.'.format(where, SHARE_CLASS_MAX))
+        if letter and vehicle != 'Mutual Fund':
+            raise ValidationError(box('shareClass'), 'Only a Mutual Fund has a share class letter: {} is '
+                                  '{}. Take the share class{} off, or make the vehicle Mutual '
+                                  'Fund.'.format(name, _an(vehicle), where))
+        listing['shareClass'] = letter
+        listing['income'] = _income(income, box('income'), where) or None
         listing['hedging'] = _hedging(given.get('hedging'), record, sma, equity, box('hedging'), where)
-        listing['shareClass'] = _shareClass(_text(given.get('shareClass')), box('shareClass'),
-                                            where) or None
-        for word in ('exposureCurrency', 'assetClass'):
-            listing[word] = _word(given.get(word), box(word), LABELS[word] + where, strict)
+        listing['classCurrency'] = _currencyCode(given.get('classCurrency'), box('classCurrency'), strict, where)
+        exposure = _word(given.get('exposureCurrency'), box('exposureCurrency'),
+                         LABELS['exposureCurrency'] + where, strict, required=False)
+        if not sma and listing['hedging'] == HEDGED and listing['classCurrency']:
+            # hedged to the class currency means that currency's exposure
+            if not exposure:
+                exposure = listing['classCurrency']
+            elif exposure.upper() != listing['classCurrency']:
+                if strict:
+                    raise ValidationError(box('exposureCurrency'), 'A class hedged to {} gives {} exposure, '
+                                          'not {}: leave the exposure currency{} blank to fill it in, or '
+                                          'make the class unhedged.'.format(listing['classCurrency'],
+                                                                            listing['classCurrency'],
+                                                                            exposure, where))
+                exposure = listing['classCurrency']
+        if strict and not exposure:
+            raise ValidationError(box('exposureCurrency'), '{}{} is needed.'.format(
+                LABELS['exposureCurrency'], where))
+        listing['exposureCurrency'] = exposure
+        listing['domicile'] = _domicile(given.get('domicile'), box('domicile'), strict, where)
+        listing['regulation'] = _word(given.get('regulation'), box('regulation'), LABELS['regulation'] + where,
+                                      strict, required=False) or ('' if sma else regulation)
+        listing['replication'] = _replication(given.get('replication'), box('replication'), where)
+        listing['ukReporting'] = _ukReporting(given.get('ukReporting'), box('ukReporting'), where)
         for figure in LISTING_FIGURES:
             try:
                 listing[figure] = _figure(given.get(figure), figure, required=figure == 'productCost',
@@ -671,22 +872,92 @@ def _listings(value, record, strict=True, bare=False) -> list:
             raise ValidationError(box('benchmark'), 'Keep the benchmark{} to {} characters.'.format(
                 where, BENCHMARK_MAX))
         listing['benchmark'] = benchmark
-        key = _listingKey(listing)
+        exchange = _text(given.get('exchange'))
+        if strict and len(exchange) > EXCHANGE_MAX:
+            raise ValidationError(box('exchange'), 'Keep the exchange{} to {} characters, as you name '
+                                  'it: LSE, Xetra.'.format(where, EXCHANGE_MAX))
+        listing['exchange'] = exchange
+        listing['ticker'] = _ticker(given.get('ticker'), box('ticker'), strict, where)
+        listing['issueCurrency'] = _word(given.get('issueCurrency'), box('issueCurrency'),
+                                         LABELS['issueCurrency'] + where, strict, required=False)
+        unit = _text(given.get('quotationUnit'))
+        if strict and len(unit) > UNIT_MAX:
+            raise ValidationError(box('quotationUnit'), 'Keep the quotation unit{} to {} characters: GBX '
+                                  'for pence, or blank for the main unit.'.format(where, UNIT_MAX))
+        listing['quotationUnit'] = unit
+        if sma:
+            wrong = next((f for f in SMA_REFUSED if listing[f]), None)
+            if wrong is not None:
+                raise ValidationError(box(wrong), 'A separate account has no {}: {} is an SMA, listed under '
+                                      'its mandate codes. Take it off{}.'.format(_lower(LABELS[wrong]), name,
+                                                                                  where))
+        key = _listingKey(listing, sma)
         if key in seen:
             first = seen[key]
-            raise ValidationError(box('code' if code else 'ticker'), 'Listings {} and {} of {} are the '
-                                  'same listing: {}. Give one its own issue currency, hedging or share '
-                                  'class.'.format(first + 1, n + 1, name, showListing(listing, ident=True)))
+            if sma:
+                raise ValidationError(box('code' if code else 'ticker'), 'Listings {} and {} of {} are the '
+                                      'same listing: {}. Give one its own issue currency or '
+                                      'hedging.'.format(first + 1, n + 1, name, showListing(listing, ident=True)))
+            raise ValidationError(box('exchange'), 'Listings {} and {} of {} are the same listing: {}. A '
+                                  'share class is listed once on an exchange in a currency, so give one '
+                                  'its own exchange or issue currency{}.'.format(
+                                      first + 1, n + 1, name, showListing(listing, ident=True),
+                                      '' if listing['isin'] else ', or its own share class values'))
         seen[key] = n
         out.append(listing)
+    _refuseDisagreeing(out, bare)
     return out
 
 
-def _listingKey(listing) -> tuple:
-    """What makes a listing the one it is, among its product's (D207)."""
-    return (_text(listing.get('ticker')).lower(), _text(listing.get('code')).lower(),
-            _text(listing.get('issueCurrency')).upper(), _text(listing.get('hedging')),
-            _text(listing.get('shareClass')))
+def _refuseDisagreeing(listings, bare) -> None:
+    """The rows of one ISIN are one share class (D218): where two give the
+    class a different value, the later is refused, naming both."""
+    places = {}
+    for n, listing in enumerate(listings):
+        if listing.get('isin'):
+            places.setdefault(listing['isin'], []).append(n)
+    for isin, at in places.items():
+        first = listings[at[0]]
+        for n in at[1:]:
+            for field in CLASS_FIELDS:
+                if field == 'isin' or _sameValue(first[field], listings[n][field]):
+                    continue
+                raise ValidationError(field if bare else 'listing{}{}'.format(n, field),
+                                      '{} has {} {} on listing {} and {} on listing {}: one ISIN is one '
+                                      'share class, so its rows give the same {}.'.format(
+                                          isin, _lower(LABELS[field]), show(field, first[field]), at[0] + 1,
+                                          show(field, listings[n][field]), n + 1, _lower(LABELS[field])))
+
+
+def _listingKey(listing, sma=None) -> tuple:
+    """What makes a listing the one it is, among its product's (D207, D218):
+    an SMA's its mandate code, currency and hedging version; a fund's its
+    share class - the ISIN, or every value of a class with none - and the
+    exchange and issue currency it is bought on."""
+    if sma is None:
+        sma = bool(_text(listing.get('code')))
+    if sma:
+        return ('sma', _text(listing.get('code')).lower(), _text(listing.get('issueCurrency')).upper(),
+                _text(listing.get('hedging')), _text(listing.get('ticker')).lower())
+    isin = _text(listing.get('isin')).upper()
+    if isin:
+        cls = ('isin', isin)
+    else:
+        cls = tuple(_keyValue(f, listing.get(f)) for f in CLASS_FIELDS)
+    return (cls, _text(listing.get('exchange')).lower(), _text(listing.get('issueCurrency')).upper())
+
+
+def _keyValue(field, value):
+    if field in LISTING_FIGURES:
+        return None if value in (None, '') else round(float(value), 9)
+    return _text(value).lower()
+
+
+def _sameIdentity(a, b) -> bool:
+    """Whether two listings are named the same way: the same ISIN or ticker,
+    code, exchange, issue currency, hedging, income and class."""
+    # (all() here is the catalogue, not the builtin)
+    return not any(_text(a.get(f)).lower() != _text(b.get(f)).lower() for f in LISTING_KEY)
 
 
 def _sameListing(a, b) -> bool:
@@ -717,14 +988,27 @@ def _hedging(value, record, sma, equity, key, where) -> str:
         + (' ISG Hedged is a separate account\'s.' if not sma and hedging.lower() == 'isg hedged' else ''))
 
 
+def _incomeWord(text) -> bool:
+    """Whether *text* says Accumulating or Distributing, long or short."""
+    return INCOME_SHORT.get(_text(text), _text(text)) in INCOMES
+
+
+def _income(text, key, where='') -> str:
+    """A class's income as stored: one of the two words, its short form read
+    as the word, or '' for none."""
+    income = INCOME_SHORT.get(text, text)
+    if income and income not in INCOMES:
+        same = [v for v in INCOMES if v.lower() == income.lower()]
+        if same:
+            return same[0]
+        raise ValidationError(key, 'The income{} {!r} is not one of {}, or blank for '
+                                   'none.'.format(where, income, ', '.join(INCOMES)))
+    return income
+
+
 def _shareClass(text, key, where='') -> str:
-    """A share class as stored: one of the two words, its short form read as
-    the word, or '' for none."""
-    shareClass = SHARE_CLASS_SHORT.get(text, text)
-    if shareClass and shareClass not in SHARE_CLASSES:
-        raise ValidationError(key, 'The share class{} {!r} is not one of {}, or blank for '
-                                   'none.'.format(where, shareClass, ', '.join(SHARE_CLASSES)))
-    return shareClass
+    """The income, by the name the field had before the levels (D218)."""
+    return _income(text, key, where)
 
 
 def _ticker(value, key, strict=True, where='') -> str:
@@ -735,6 +1019,68 @@ def _ticker(value, key, strict=True, where='') -> str:
     if strict and len(ticker) > TICKER_MAX:
         raise ValidationError(key, 'Keep the ticker{} to {} characters.'.format(where, TICKER_MAX))
     return ticker
+
+
+def _isinShaped(value) -> bool:
+    """Whether *value* has an ISIN's shape: two letters, nine letters or
+    digits, a check digit."""
+    return bool(ISIN_RE.match(_text(value).upper()))
+
+
+def _isin(value, key, strict=True, where='') -> str:
+    """An ISIN as stored (D218): upper case, '' for none, and on a save or
+    an import one with an ISIN's shape."""
+    isin = _text(value).upper()
+    if isin in (NO_TICKER, '-', '–'):
+        isin = ''
+    if strict and isin and not ISIN_RE.match(isin):
+        raise ValidationError(key, 'The ISIN{} {!r} is not one: two letters, nine letters or digits and '
+                                   'a check digit, such as IE00B4L5Y983.'.format(where, isin))
+    return isin
+
+
+def _currencyCode(value, key, strict=True, where='') -> str:
+    """A class currency as stored (D218): a three-letter code in upper
+    case, or '' for none."""
+    code = _text(value).upper()
+    if strict and code and not re.match(r'^[A-Z]{3}$', code):
+        raise ValidationError(key, 'The class currency{} {!r} is not a currency code: three letters, such '
+                                   'as USD or GBP.'.format(where, code))
+    return code
+
+
+def _domicile(value, key, strict=True, where='') -> str:
+    """A domicile as stored (D218): a two-letter country code in upper case,
+    checked on a save or an import, or '' for none."""
+    code = _text(value).upper()
+    if strict and code and code not in COUNTRY_CODES:
+        raise ValidationError(key, 'The domicile{} {!r} is not a country code: two letters, such as IE, LU, '
+                                   'GB or US.'.format(where, code))
+    return code
+
+
+def _replication(value, key, where='') -> str:
+    """How a class tracks its index, as stored: one of the three words, or ''."""
+    word = _text(value)
+    if not word:
+        return ''
+    same = [v for v in REPLICATIONS if v.lower() == word.lower()]
+    if same:
+        return same[0]
+    raise ValidationError(key, 'The replication{} {!r} is not one of {} or {}, or blank.'.format(
+        where, word, ', '.join(REPLICATIONS[:-1]), REPLICATIONS[-1]))
+
+
+def _ukReporting(value, key, where='') -> str:
+    """Whether a class has UK reporting status, as stored: Yes, No or ''."""
+    if isinstance(value, bool):
+        return 'Yes' if value else 'No'
+    word = _text(value)
+    if not word:
+        return ''
+    if word.lower() in _UK_WORDS:
+        return _UK_WORDS[word.lower()]
+    raise ValidationError(key, 'The UK reporting{} {!r} is Yes, No or blank.'.format(where, word))
 
 
 def _legacyCurrencies(value) -> dict:
@@ -763,7 +1109,7 @@ def legacyListings(record) -> list:
     each code a listing of the values its currency had, run in that
     currency, with the figures and the benchmark it carried of its own, in
     the currencies' order and in each Hedged, ISG Hedged, then Unhedged."""
-    main = {f: record.get(f) for f in LISTING_FIELDS}
+    main = {f: record.get(f) for f in _OLD_LISTING_FIELDS}
     main['ticker'] = _ticker(main['ticker'], 'ticker', strict=False)
     main['code'], main['hedging'] = '', ''
     for word in ('issueCurrency', 'exposureCurrency', 'assetClass', 'benchmark'):
@@ -817,28 +1163,116 @@ def legacyListings(record) -> list:
             values = inCcy(currency)
             if any(_sameListing(l, values) for l in listings):
                 continue
-            if not values['issueCurrency'] and any(_listingKey(l) == _listingKey(values)
-                                                   for l in listings):
+            if not values['issueCurrency'] and any(_sameIdentity(l, values) for l in listings):
                 values['issueCurrency'] = currency
             listings.append(values)
     return listings
 
 
 def _listingsOf(record) -> list:
-    """The listings of a record, stored before listings (D207) or since."""
-    if not record:
-        return []
-    if isinstance(record.get('listings'), list) and record['listings']:
-        return [_facts(l) for l in record['listings']]
-    if record.get('currencies') or record.get('mandates'):
-        return legacyListings(record)
-    return [{f: record.get(f) for f in LISTING_FIELDS}]
+    """The listings of a record, stored before listings (D207), before the
+    three levels (D218), or since - as they read now."""
+    return modernise(record)['listings'] if record else []
 
 
 def _facts(listing) -> dict:
     """A listing as the catalogue keeps it (D214): its facts, without the
     rankings by base currency a listing stored before carried."""
     return {k: v for k, v in listing.items() if k != RANKS}
+
+
+def modernise(record, notes=None) -> dict:
+    """*record* - a product as stored, served or recorded at any time - as
+    the three levels read it (D218), its listings each carrying the class's
+    values and its own. One stored or recorded before: a ticker shaped like
+    an ISIN is the ISIN; Accumulating or Distributing where the class letter
+    goes is the income; the asset class moves up from the first listing to
+    the product; a class is in the currency its listing is issued in, and a
+    hedged class's exposure is that currency; a UCITS or ICAV vehicle is an
+    ETF or a Mutual Fund with the word kept as each class's regulation; and
+    Separate Account reads SMA. *notes*, when given, is a list each value
+    that moved is said in. A record in the shape already is returned as it
+    is, so this is safe to read through twice."""
+    if not record:
+        return record
+    out = dict(record)
+    if isinstance(record.get('listings'), list) and record['listings']:
+        listings = [_facts(l) for l in record['listings']]
+    elif record.get('currencies') or record.get('mandates'):
+        listings = legacyListings(record)
+    elif 'income' in record:
+        listings = [{f: record.get(f) for f in LISTING_FIELDS}]
+    else:
+        listings = [{f: record.get(f) for f in _OLD_LISTING_FIELDS}]
+    vehicle = _text(out.get('vehicle'))
+    regulation = ''
+    if vehicle.upper() in REGULATED_VEHICLES:
+        regulation = vehicle.upper()
+        out['vehicle'] = _fundVehicle(out.get('name'))
+        _say(notes, 'vehicle {} → {}, regulation {}'.format(vehicle, out['vehicle'], regulation))
+    elif vehicle.lower() in _VEHICLE_WORDS and _VEHICLE_WORDS[vehicle.lower()] != vehicle:
+        out['vehicle'] = _VEHICLE_WORDS[vehicle.lower()]
+        _say(notes, 'vehicle {} → {}'.format(vehicle, out['vehicle']))
+    if not _text(out.get('provider')):
+        out['provider'] = ''
+    sma = isSma(out)
+    modern, old = [], []
+    for listing in listings:
+        if 'income' in listing:
+            modern.append(dict(listing))
+            continue
+        old.append(listing)
+        modern.append(_modernListing(listing, sma, notes))
+    if not _text(out.get('assetClass')):
+        out['assetClass'] = next((_text(l.get('assetClass')) for l in old if _text(l.get('assetClass'))), '')
+    for listing in old:
+        if _text(listing.get('assetClass')) and _text(listing.get('assetClass')) != out['assetClass']:
+            _say(notes, 'asset class {} of listing {} → the product\'s, {}'.format(
+                listing['assetClass'], _ident(listing), out['assetClass']))
+    if regulation:
+        for listing in modern:
+            if not listing.get('regulation') and not sma:
+                listing['regulation'] = regulation
+    out['listings'] = modern
+    for field in LISTING_FIELDS:
+        out[field] = modern[0].get(field)
+    return out
+
+
+def _modernListing(listing, sma, notes=None) -> dict:
+    """A listing stored or recorded before the three levels (D218), as they
+    read it."""
+    new = {f: '' for f in LISTING_FIELDS}
+    new['code'] = _text(listing.get('code'))
+    ticker = _ticker(listing.get('ticker'), 'ticker', strict=False)
+    if not sma and _isinShaped(ticker):
+        new['isin'], ticker = ticker.upper(), ''
+        _say(notes, 'ticker {} → the ISIN'.format(new['isin']))
+    new['ticker'] = ticker
+    was = _text(listing.get('shareClass'))
+    if _incomeWord(was):
+        new['income'] = INCOME_SHORT.get(was, was)
+    elif was and not sma:
+        new['shareClass'] = was
+    new['income'] = new['income'] or None
+    new['hedging'] = _text(listing.get('hedging'))
+    new['issueCurrency'] = _text(listing.get('issueCurrency'))
+    new['classCurrency'] = '' if sma else new['issueCurrency'].upper()
+    new['exposureCurrency'] = _text(listing.get('exposureCurrency'))
+    if (not sma and new['hedging'] == HEDGED and new['classCurrency']
+            and new['exposureCurrency'].upper() != new['classCurrency']):
+        _say(notes, 'exposure currency {} of {} → {}, the currency it is hedged to'.format(
+            new['exposureCurrency'] or '—', _ident(new), new['classCurrency']))
+        new['exposureCurrency'] = new['classCurrency']
+    for figure in LISTING_FIGURES:
+        new[figure] = listing.get(figure)
+    new['benchmark'] = _text(listing.get('benchmark'))
+    return new
+
+
+def _say(notes, words) -> None:
+    if notes is not None:
+        notes.append(words)
 
 
 def isSma(product) -> bool:
@@ -851,26 +1285,30 @@ def _an(word) -> str:
     word = _text(word)
     if not word:
         return 'of no vehicle'
-    return ('an ' if word[0].lower() in 'aeiou' else 'a ') + word
+    # SMA and ETF are said letter by letter: an es, an ee
+    spoken = 'aeiou' if word != word.upper() else 'aefhilmnorsx'
+    return ('an ' if word[0].lower() in spoken else 'a ') + word
 
 
 def _ident(listing) -> str:
-    """What a listing is called by: its mandate code, else its ticker."""
+    """What a listing is called by: its mandate code, else its ticker, else
+    its ISIN."""
     return (_text(listing.get('code')) or _ticker(listing.get('ticker'), 'ticker', strict=False)
-            or NO_TICKER)
+            or _text(listing.get('isin')).upper() or NO_TICKER)
 
 
 def listingLabel(listing, listings=None) -> str:
     """A listing as a person names it (D207): its mandate code, else its
-    ticker, and where the product has another listing of that name, what
-    tells them apart - its issue currency, then its hedging, then its share
-    class: GEF-USD · GBP, M34 · EUR."""
+    ticker, else its ISIN, and where the product has another listing of
+    that name, what tells them apart - its issue currency, then its
+    hedging, then its income, its class, its exchange: GEF-USD · GBP, M34 ·
+    EUR, IE00B4L5Y983 · LSE."""
     ident = _ident(listing)
     peers = [l for l in (listings or [listing]) if _ident(l) == ident]
     if len(peers) <= 1:
         return ident
     bits = [ident]
-    for field in ('issueCurrency', 'hedging', 'shareClass'):
+    for field in ('issueCurrency', 'hedging', 'income', 'shareClass', 'exchange'):
         if len({_text(p.get(field)) for p in peers}) > 1 and _text(listing.get(field)):
             bits.append(_text(listing.get(field)))
             peers = [p for p in peers if _text(p.get(field)) == _text(listing.get(field))]
@@ -882,11 +1320,18 @@ def listingLabel(listing, listings=None) -> str:
 def showListing(listing, ident=False) -> str:
     """One listing as a history line or a preview shows it."""
     bits = [_ident(listing)] if ident else []
-    bits += [_text(listing.get(f)) for f in ('issueCurrency', 'hedging', 'shareClass')
+    if ident and listing.get('isin') and _ident(listing) != _text(listing.get('isin')).upper():
+        bits.append(_text(listing['isin']).upper())
+    bits += [_text(listing.get(f)) for f in ('exchange', 'issueCurrency', 'hedging', 'income')
              if _text(listing.get(f))]
-    for field, word in (('exposureCurrency', 'exposure'), ('assetClass', 'class')):
+    if _text(listing.get('shareClass')):
+        bits.append('class {}'.format(listing['shareClass']))
+    for field, word in (('exposureCurrency', 'exposure'), ('domicile', 'domicile'),
+                        ('regulation', 'regulation'), ('replication', 'replication')):
         if _text(listing.get(field)):
             bits.append('{} {}'.format(word, listing[field]))
+    if _text(listing.get('ukReporting')):
+        bits.append('UK reporting {}'.format(listing['ukReporting']))
     for field, word in (('productCost', 'cost'), ('distributionYield', 'yield'),
                         ('minimumInvestment', 'min')):
         if listing.get(field) is not None:
@@ -931,18 +1376,30 @@ def holdListing(item, listing) -> dict:
 
 
 def findListing(product, held):
-    """The listing of *product* a proposal recorded holding - by its ticker,
-    issue currency, hedging and share class as the register kept them - or
-    None. Its mandate code is matched where the record names one, since one
-    held without may have been given its code since."""
+    """The listing of *product* a proposal recorded holding - by its ISIN or
+    ticker, issue currency, hedging and income as the register kept them,
+    its exchange and class where it recorded them - or None. A line
+    recorded before the levels (D218) named the ISIN as its ticker and the
+    income as its share class, and is matched as it reads now. Its mandate
+    code is matched where the record names one, since one held without may
+    have been given its code since."""
     ticker = '' if held.get('ticker') in (None, NO_TICKER) else _text(held.get('ticker'))
-    for listing in (product or {}).get('listings') or []:
-        if (_text(listing.get('ticker')) == ticker
-                and _text(listing.get('issueCurrency')).upper() == _text(held.get('issueCurrency')).upper()
-                and _text(listing.get('hedging')) == _text(held.get('hedging'))
-                and _text(listing.get('shareClass')) == _text(held.get('shareClass'))
-                and (not held.get('code') or _text(listing.get('code')).lower()
-                     == _text(held.get('code')).lower())):
+    isin = _text(held.get('isin')).upper() or (ticker.upper() if _isinShaped(ticker) else '')
+    if isin and _isinShaped(ticker):
+        ticker = ''
+    if 'income' in held:
+        income, letter = _text(held.get('income')), _text(held.get('shareClass'))
+    else:
+        was = _text(held.get('shareClass'))
+        income, letter = (INCOME_SHORT.get(was, was) if _incomeWord(was) else ''), ''
+    for listing in modernise(product).get('listings') or []:
+        if ((isin and _text(listing.get('isin')).upper() == isin) or (not isin and _text(listing.get('ticker')) == ticker)) \
+                and _text(listing.get('issueCurrency')).upper() == _text(held.get('issueCurrency')).upper() \
+                and _text(listing.get('hedging')) == _text(held.get('hedging')) \
+                and (not income or _text(listing.get('income')) == income) \
+                and (not letter or _text(listing.get('shareClass')) == letter) \
+                and (not held.get('exchange') or _text(listing.get('exchange')).lower() == _text(held.get('exchange')).lower()) \
+                and (not held.get('code') or _text(listing.get('code')).lower() == _text(held.get('code')).lower()):
             return listing
     return None
 
@@ -984,6 +1441,7 @@ def changes(before, after) -> list:
     record stored before listings reads as it is listed."""
     if before is None:
         return []
+    before, after = modernise(before), modernise(after)
     out = []
     for key in PRODUCT_FIELDS[1:]:
         was, now = before.get(key), after.get(key)
@@ -1067,13 +1525,17 @@ _cache = None            # (stamp, catalogue)
 _seedProblem = None      # why the first load could not be made, if it could not
 
 
-def _record(row) -> dict:
+def _record(row, notes=None) -> dict:
     """A stored row as the record ``clean`` returns: its listings as stored
-    (D207), or, for a row stored before them, as its values by base currency
-    and its SMA mandates read."""
+    (D207, D218) - or, for a row stored before them, as its values by base
+    currency and its SMA mandates read - and, for one stored before the
+    three levels, as they read it (``modernise``, which says each value
+    that moved in *notes*)."""
     keys = row.keys()
     base = {
-        'productId': row['productId'], 'name': row['name'], 'ticker': row['ticker'] or '',
+        'productId': row['productId'], 'name': row['name'],
+        'provider': (row['provider'] if 'provider' in keys else '') or '',
+        'ticker': row['ticker'] or '',
         'assetClass': row['assetClass'], 'category': row['category'] or '',
         'style': row['style'], 'vehicle': row['vehicle'], 'shareClass': row['shareClass'] or None,
         'source': row['source'], 'liquidity': row['liquidity'],
@@ -1092,7 +1554,7 @@ def _record(row) -> dict:
         listings = legacyListings(dict(
             base, currencies=row['currencies'] if 'currencies' in keys else '',
             mandates=row['mandates'] if 'mandates' in keys else ''))
-    return _mirrored(dict(base, listings=listings))
+    return _mirrored(modernise(dict(base, listings=listings), notes))
 
 
 def _listingText(record) -> str:
@@ -1154,6 +1616,8 @@ def _read(conn):
         'revision': int(_meta(conn, 'catalogueRevision', '0') or 0),
         'lastEditedAt': last['at'] if last else '', 'lastEditedBy': last['actor'] if last else '',
         'seededAt': _meta(conn, 'productsSeededAt'), 'seededFrom': _meta(conn, 'productsSeededFrom'),
+        # what the move to three levels changed (D218), product by product
+        'levelsReport': json.loads(_meta(conn, 'levelsReport', '') or '[]'),
     }
 
 
@@ -1173,7 +1637,10 @@ def _catalogue() -> dict:
         conn = sleeveRepo.readOnly(path)
         if conn is not None:
             try:
-                found = _read(conn)
+                # a file not yet moved to this schema is read the full way,
+                # which moves it first
+                if int(_meta(conn, 'schemaVersion', '0') or 0) >= sleeveRepo.SCHEMA_VERSION:
+                    found = _read(conn)
             except Exception:                  # noqa: BLE001 - read again the full way
                 found = None
             finally:
@@ -1251,23 +1718,30 @@ def describeSource() -> dict:
         # the date the console's header gives the catalogue
         'modified': cat['lastEditedAt'],
         'seededAt': cat['seededAt'], 'seededFrom': cat['seededFrom'],
+        'levelsReport': cat.get('levelsReport') or [],
     }
 
 
 def vocabulary() -> dict:
-    """The values the console offers for each of the six words - every one a
-    live product already uses, in A-Z order, on any of its listings (D207) -
-    with the share classes, the hedging a fund's and a Public Equity SMA's
-    listing may say, and the issue currencies and benchmarks in use."""
+    """The values the console offers for each word a product or a share
+    class is described by - every one a live product already uses, in A-Z
+    order, on any of its listings (D207) - with the fixed lists: the
+    vehicles, the incomes, the replications, UK reporting, and the hedging
+    a fund's and a Public Equity SMA's listing may say."""
     cat = _catalogue()
     out = {}
-    for key in WORDS + ['issueCurrency', 'benchmark']:
+    for key in ('assetClass', 'style', 'source', 'liquidity', 'provider', 'exposureCurrency',
+                'issueCurrency', 'benchmark', 'classCurrency', 'domicile', 'regulation', 'exchange',
+                'quotationUnit', 'shareClass'):
         seen = {p[key] for p in cat['live'].values() if p.get(key)}
         if key in LISTING_FIELDS:
             seen.update(l[key] for p in cat['live'].values() for l in p.get('listings') or []
                         if l.get(key))
         out[key] = sorted(seen, key=lambda v: v.lower())
-    out['shareClass'] = list(SHARE_CLASSES)
+    out['vehicle'] = list(VEHICLES)
+    out['income'] = list(INCOMES)
+    out['replication'] = list(REPLICATIONS)
+    out['ukReporting'] = list(UK_REPORTING)
     out['hedging'] = {'fund': list(FUND_HEDGING), 'sma': list(MANDATE_VERSIONS)}
     return out
 
@@ -1381,12 +1855,13 @@ def seed(conn, feeGroups) -> None:
 
 def _insert(conn, record, position, user, stamp) -> None:
     conn.execute(
-        'INSERT INTO products (productId, position, name, ticker, assetClass, category, style, '
+        'INSERT INTO products (productId, position, name, provider, ticker, assetClass, category, style, '
         'vehicle, shareClass, source, liquidity, exposureCurrency, issueCurrency, productCost, '
         'feeGroup, distributionYield, minimumInvestment, listings, benchmark, revision, '
-        'createdBy, createdAt, updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
+        'createdBy, createdAt, updatedBy, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '
         '?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)',
-        (record['productId'], position, record['name'], record['ticker'], record['assetClass'],
+        (record['productId'], position, record['name'], record.get('provider') or '', record['ticker'],
+         record['assetClass'],
          record.get('category') or '', record['style'], record['vehicle'], record['shareClass'] or '', record['source'],
          record['liquidity'], record['exposureCurrency'], record.get('issueCurrency') or '',
          record['productCost'], record['feeGroup'], record['distributionYield'],
@@ -1396,12 +1871,13 @@ def _insert(conn, record, position, user, stamp) -> None:
 
 def _update(conn, record, revision, user, stamp) -> None:
     conn.execute(
-        'UPDATE products SET name = ?, ticker = ?, assetClass = ?, category = ?, style = ?, '
+        'UPDATE products SET name = ?, provider = ?, ticker = ?, assetClass = ?, category = ?, style = ?, '
         'vehicle = ?, shareClass = ?, source = ?, liquidity = ?, exposureCurrency = ?, '
         'issueCurrency = ?, productCost = ?, feeGroup = ?, distributionYield = ?, minimumInvestment = ?, '
         "listings = ?, currencies = '', mandates = '', benchmark = ?, revision = ?, updatedBy = ?, "
         'updatedAt = ? WHERE productId = ?',
-        (record['name'], record['ticker'], record['assetClass'], record.get('category') or '',
+        (record['name'], record.get('provider') or '', record['ticker'], record['assetClass'],
+         record.get('category') or '',
          record['style'],
          record['vehicle'], record['shareClass'] or '', record['source'], record['liquidity'],
          record['exposureCurrency'], record.get('issueCurrency') or '', record['productCost'],
@@ -1495,12 +1971,12 @@ def _entryOn(conn, productId) -> dict:
 
 
 def _identifiers(record):
-    """[(kind, value)] - the tickers and mandate codes *record*'s listings are
-    bought under that are its own (D207): a ticker every SMA reads is no one
-    product's, and a blank is nothing."""
+    """[(kind, value)] - the ISINs, tickers and mandate codes *record*'s
+    listings are bought under that are its own (D207, D218): a ticker every
+    SMA reads is no one product's, and a blank is nothing."""
     out, seen = [], set()
     for listing in record.get('listings') or []:
-        for kind in ('ticker', 'code'):
+        for kind in ('isin', 'ticker', 'code'):
             value = _ticker(listing.get(kind), kind, strict=False) if kind == 'ticker' \
                 else _text(listing.get(kind))
             if not value or (kind == 'ticker' and value.lower() in SHARED_TICKERS):
@@ -1509,6 +1985,13 @@ def _identifiers(record):
                 seen.add((kind, value.lower()))
                 out.append((kind, value))
     return out
+
+
+def _kindWords(kind):
+    """('ISIN', 'An ISIN'), ('ticker', 'A ticker'), ('mandate code', 'A mandate code')."""
+    if kind == 'isin':
+        return 'ISIN', 'An ISIN'
+    return LABELS[kind].lower(), 'A ' + LABELS[kind].lower()
 
 
 def _identifiersHeld(conn, exceptIds=()) -> dict:
@@ -1521,7 +2004,7 @@ def _identifiersHeld(conn, exceptIds=()) -> dict:
         if r['productId'] in exceptIds:
             continue
         for kind, value in _identifiers(_record(r)):
-            if kind == 'ticker' and r['withdrawnAt']:
+            if kind in ('ticker', 'isin') and r['withdrawnAt']:
                 continue
             out.setdefault((kind, value.lower()), (value, r['productId'], r['name']))
     return out
@@ -1532,13 +2015,13 @@ def _refuseTaken(conn, record, held=None) -> None:
     naming the listing's box and the product that holds it."""
     held = _identifiersHeld(conn, {record['productId']}) if held is None else held
     for n, listing in enumerate(record.get('listings') or []):
-        for kind in ('code', 'ticker'):
+        for kind in ('code', 'isin', 'ticker'):
             value = _text(listing.get(kind))
             taken = held.get((kind, value.lower())) if value else None
             if taken is not None:
-                raise ValidationError('listing{}{}'.format(n, kind), 'The {} {} belongs to {} ({}). A {} '
-                                      'is one product\'s.'.format(LABELS[kind].lower(), taken[0], taken[2],
-                                                                  taken[1], LABELS[kind].lower()))
+                raise ValidationError('listing{}{}'.format(n, kind), 'The {} {} belongs to {} ({}). {} '
+                                      'is one product\'s.'.format(_kindWords(kind)[0], taken[0], taken[2],
+                                                                  taken[1], _kindWords(kind)[1]))
 
 
 def create(fields, user='', note='') -> dict:
@@ -1745,7 +2228,7 @@ def revert(productId, revision, user='', note='', base=None) -> dict:
             # a version from before the SMA mandates (D197) keeps the coded
             # listings in force (D207)
             body['listings'] = current['listings']
-        record = clean(body, _groupsOn(conn), strict=False)
+        record = clean(modernise(body), _groupsOn(conn), strict=False)
         if not changes(current, record):
             raise ValidationError('revision', 'Those are the values in force already.')
         _refuseTaken(conn, record)
@@ -1805,24 +2288,38 @@ def _fileName(name) -> str:
     return name
 
 
+#: the columns a file may leave out that then leave the catalogue's values
+#: as they are (D204, D207, D218): (field, column)
+_KEPT_COLUMNS = [(f, _COLUMN_OF[f]) for f in ('isin', 'shareClass', 'income', 'hedging', 'classCurrency',
+                                              'domicile', 'regulation', 'replication', 'ukReporting',
+                                              'benchmark', 'exchange', 'ticker', 'quotationUnit')]
+
+
 def _keepStored(incoming, stored, found):
     """*incoming*, a product as a file gives it, with what the catalogue
-    holds of it kept where the file has no column for it (D204, D207):
-    (record, whether its listings were kept whole). A file without a
-    Benchmark column leaves each listing's benchmark and one without a
-    Hedging column the hedging - each listing matched to the one it is in
-    the catalogue. The file's order is the listings' order (D214). One without a
-    MandateCode column leaves an SMA whose listings carry codes listed as it
-    is, since the file cannot say which row is which code; it takes what the
-    product is from the file. A ValidationError says the listings kept are
-    wrong for the product as the file gives it."""
+    holds of it kept where the file has no column for it (D204, D207,
+    D218): (record, whether its listings were kept whole). A file without a
+    Benchmark column leaves each listing's benchmark, one without a Domicile
+    column the domicile, and so for every column of the share class and the
+    listing - each listing matched to the one it is in the catalogue by the
+    columns the file does have; a file that gives the income under
+    ShareClass, as before the levels, gives the income and keeps the class
+    letters. The file's order is
+    the listings' order (D214). One without a MandateCode column leaves an
+    SMA whose listings carry codes listed as it is, since the file cannot
+    say which row is which code; it takes what the product is from the
+    file. One without a Provider column keeps the provider. A
+    ValidationError says the listings kept are wrong for the product as the
+    file gives it."""
     if 'MandateCode' not in found and isSma(incoming) and any(l.get('code') for l in stored['listings']):
         return clean(dict(incoming, listings=stored['listings']), strict=False), True
-    missing = [f for f, column in (('benchmark', 'Benchmark'), ('hedging', 'Hedging')) if column not in found]
-    if not missing:
+    present = set(found)
+    missing = [f for f, column in _KEPT_COLUMNS if column not in present]
+    keepProvider = 'Provider' not in present and stored.get('provider') and not incoming.get('provider')
+    if not missing and not keepProvider:
         return incoming, False
     was, now = stored['listings'], [dict(l) for l in incoming['listings']]
-    fields = [f for f in LISTING_KEY if f not in missing]
+    fields = [f for f in LISTING_KEY if _COLUMN_OF[f] in present]
     for listing in now:
         match = next((l for l in was if not any(_text(l.get(f)).lower() != _text(listing.get(f)).lower()
                                                 for f in fields)), None)
@@ -1831,8 +2328,13 @@ def _keepStored(incoming, stored, found):
         if match is None:
             continue
         for f in missing:
-            listing[f] = match.get(f) or ''
-    return clean(dict(incoming, listings=now), strict=False), False
+            if match.get(f) in (None, '') or (f == 'isin' and listing.get('isin')):
+                continue
+            listing[f] = match[f]
+    product = dict(incoming, listings=now)
+    if keepProvider:
+        product['provider'] = stored['provider']
+    return clean(product, strict=False), False
 
 
 def _compare(conn, byId, order, fileName='', found=()) -> dict:
@@ -1898,11 +2400,15 @@ def importPreview(name, content) -> dict:
     conn = sleeveRepo.connection()
     try:
         groups = _groupsOn(conn)
-        found = set()
-        byId, order = _load(name, groups, strict=True, data=data, categories=known, found=found)
+        found, moved = set(), {}
+        byId, order = _load(name, groups, strict=True, data=data, categories=known, found=found,
+                            moved=moved)
         out = _compare(conn, byId, order, name, found)
         out.update(file=name, rows=len(order), legacy=BASE_COLUMN in found,
                    ranksIgnored='Rank' in found,
+                   # what an older layout was read as (D218)
+                   isinsFromTickers=moved.get('isinsFromTickers', 0),
+                   vehiclesMoved=moved.get('vehicles', []),
                    revision=int(_meta(conn, 'catalogueRevision', '0') or 0))
         return out
     finally:

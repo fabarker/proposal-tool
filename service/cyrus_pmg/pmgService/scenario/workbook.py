@@ -95,13 +95,17 @@ _CHART_SHEET = 'chartData'
 # the products and Exposure ccy has left the table - its doughnut stays, drawn
 # from the model rather than from a column (D134).
 IMPL_COLUMNS = [
-    'Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)',
-    'Style', 'Vehicle', 'Share Class', 'Issue Currency', 'Hedging', 'Source', 'Liquidity',
-    'Product Cost', 'Mgmt fee', 'Wtd fee (bp)',
+    'Categories & Asset Classes', 'Products', 'Notional', 'Allocation (%)', 'ISIN',
+    'Style', 'Vehicle', 'Income', 'Share Class', 'Issue Currency', 'Hedging', 'UK Reporting',
+    'Source', 'Liquidity', 'Product Cost', 'Mgmt fee', 'Wtd fee (bp)',
 ]
-# The listing a line holds, beside its share class: the currency it is dealt
-# in and its hedging (D208). The sheet's alone - the deck is as it was.
-LISTING_COLUMNS = ('Issue Currency', 'Hedging')
+# The share class and the listing a line holds (D208, D218): its ISIN, and
+# beside the income (Accumulating or Distributing, the column called Share
+# Class before the levels) the class letter, the currency it is dealt in,
+# its hedging and whether the class has UK reporting status. The sheet's
+# alone: the deck keeps the income where its share class was, and nothing
+# else of them.
+LISTING_COLUMNS = ('ISIN', 'Share Class', 'Issue Currency', 'Hedging', 'UK Reporting')
 # The two the sheet loses when the proposal excludes fees (D52). A proposal
 # that does not show fees must not ship a sheet with empty columns and a
 # header saying which schedule priced them: the columns go, and so do the fee
@@ -115,8 +119,8 @@ COST_COLUMN = 'Wtd cost (bp)'
 # (D78) while staying on the screen, in the catalogue and in the register.
 _WIDTHS = {
     'Categories & Asset Classes': 34, 'Products': 32, 'Allocation (%)': 12,
-    'Style': 9, 'Vehicle': 12, 'Share Class': 12, 'Issue Currency': 10, 'Hedging': 11,
-    'Source': 10, 'Liquidity': 11,
+    'ISIN': 15, 'Style': 9, 'Vehicle': 12, 'Income': 12, 'Share Class': 11, 'Issue Currency': 10,
+    'Hedging': 11, 'UK Reporting': 10, 'Source': 10, 'Liquidity': 11,
     'Product Cost': 12, 'Mgmt fee': 10,
     'Wtd fee (bp)': 12, 'Notional': 14, COST_COLUMN: 13,
 }

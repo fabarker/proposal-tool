@@ -35,11 +35,16 @@ authored file; this script validates it and writes products.xlsx beside it,
 so both shapes of extract exist for the reader to be tried against.
 
 products-listings.csv is the same products in the layout a product file
-takes since listings (D207) and the catalogue holding facts only (D214):
-nineteen columns, a row for each listing, a product's rows in its listings'
-order, no Rank columns - what the catalogue's Download the product file
-writes. This script validates it too and writes products-listings.xlsx
-beside it, for an admin who starts a product file in Excel.
+takes since the three levels (D218): twenty-nine columns, the product's,
+then the share class's, then the listing's, then an SMA's mandate code; a
+row for each listing, a product's rows together in its classes' and
+listings' order - what the catalogue's Download the product file writes.
+Two products carry the plan's worked examples: GS Global Credit Portfolio,
+a Mutual Fund in four share classes dealt in five currencies, and GS Access
+Treasury 0-1 ETF, two share classes listed four times. This script
+validates it too - a share class's values the same on every row of its
+ISIN - and writes products-listings.xlsx beside it, for an admin who starts
+a product file in Excel.
 """
 
 import csv
@@ -58,10 +63,13 @@ COST, GROUP, YIELD, MINIMUM = (COLUMNS.index(c) for c in
 
 LISTINGS_CSV = os.path.join(HERE, 'products-listings.csv')
 LISTINGS_XLSX = os.path.join(HERE, 'products-listings.xlsx')
-LISTINGS_COLUMNS = ['ProductId', 'Name', 'Ticker', 'AssetClass', 'Category', 'Style', 'Vehicle',
-                    'ShareClass', 'Source', 'Liquidity', 'ExposureCurrency', 'IssueCurrency',
-                    'ProductCost', 'FeeGroup', 'DistributionYield', 'MinimumInvestment',
-                    'Benchmark', 'MandateCode', 'Hedging']
+PRODUCT_COLUMNS = ['ProductId', 'Name', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
+                   'Source', 'Liquidity', 'FeeGroup']
+CLASS_COLUMNS = ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
+                 'Domicile', 'Regulation', 'Replication', 'UKReporting', 'ProductCost',
+                 'DistributionYield', 'MinimumInvestment', 'Benchmark']
+LISTINGS_COLUMNS = PRODUCT_COLUMNS + CLASS_COLUMNS + ['Exchange', 'Ticker', 'IssueCurrency',
+                                                      'QuotationUnit', 'MandateCode']
 
 
 def readCsv(path=CSV_PATH, columns=COLUMNS):
@@ -84,6 +92,9 @@ def validate(rows, columns=COLUMNS, listings=False):
         dup = sorted({i for i in seen if seen.count(i) > 1})
         if dup:
             sys.exit('listings not together: {}'.format(', '.join(dup)))
+        agree(rows, columns, PRODUCT_COLUMNS, 0, 'product')
+        agree([row for row in rows if row[columns.index('ISIN')].strip()], columns, CLASS_COLUMNS,
+              columns.index('ISIN'), 'share class')
     else:
         dup = sorted({i for i in ids if ids.count(i) > 1})
         if dup:
@@ -104,6 +115,19 @@ def validate(rows, columns=COLUMNS, listings=False):
                         sys.exit('{}: {} is negative'.format(row[0], label))
                 except ValueError:
                     sys.exit('{}: {} {!r} is not a number'.format(row[0], label, row[i]))
+
+
+def agree(rows, columns, which, key, level):
+    """The values of one level the same on every row that shares its key:
+    a product's on each of its rows, a share class's on each row of its
+    ISIN."""
+    first = {}
+    for n, row in enumerate(rows):
+        values = [row[columns.index(c)] for c in which]
+        was = first.setdefault(row[key], (n, values))
+        for c, a, b in zip(which, was[1], values):
+            if a != b:
+                sys.exit('{} {}: {} is {!r} on one row and {!r} on another'.format(level, row[key], c, a, b))
 
 
 def writeXlsx(rows, path=XLSX_PATH, columns=COLUMNS):

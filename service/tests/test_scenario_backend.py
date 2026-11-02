@@ -1325,14 +1325,18 @@ def test_excluding_fees_takes_the_columns_off_the_sheet():
     piece: nothing else about the sheet's shape depends on the toggle."""
     assert list(FEE_COLUMNS) == ['Mgmt fee', 'Wtd fee (bp)']
     assert implColumns(True) == IMPL_COLUMNS
+    # the deck has none of the share class's or the listing's columns but
+    # the income (D208, D218)
+    LISTING = ('ISIN', 'Share Class', 'Issue Currency', 'Hedging', 'UK Reporting')
     # the workbook keeps the product cost and weights it alone; the deck
     # carries no cost column at all (D152)
     assert implColumns(False) == [c for c in IMPL_COLUMNS if c not in FEE_COLUMNS] + [COST_COLUMN]
     # and no listing columns, which are the workbook's alone (D208)
     assert implColumns(False, deck=True) == [c for c in IMPL_COLUMNS
                                              if c not in FEE_COLUMNS and c != 'Product Cost'
-                                             and c not in ('Issue Currency', 'Hedging')]
-    assert implColumns(True, deck=True) == [c for c in IMPL_COLUMNS if c not in ('Issue Currency', 'Hedging')]
+                                             and c not in LISTING]
+    assert implColumns(True, deck=True) == [c for c in IMPL_COLUMNS if c not in LISTING]
+    assert 'Income' in implColumns(True, deck=True), 'the deck keeps the income where the share class was (D218)'
     # the columns that survive keep their order and their neighbours: the
     # notional beside the products, the product cost then its weighting last
     assert implColumns(False)[:4] == ['Categories & Asset Classes', 'Products',
@@ -1542,18 +1546,25 @@ def test_js_implementation_table_rows_are_all_the_same_width():
     assert 'Share class' in priced['columns']
 
     # the screen and the sheet keep their own lists on purpose (D74, D78):
-    # Ticker and the minimum are the screen's alone, and so, since the sheet
-    # dropped it (D134), is the exposure currency
+    # the minimum is the screen's alone, and so, since the sheet dropped it
+    # (D134), is the exposure currency. The ISIN took the ticker's place on
+    # the screen and is on the sheet too, which never had the ticker (D218)
     assert priced['columns'] != IMPL_COLUMNS
-    assert 'Ticker' in priced['columns'] and 'Ticker' not in IMPL_COLUMNS
+    assert 'Ticker' not in priced['columns'] and 'Ticker' not in IMPL_COLUMNS
+    assert 'ISIN' in priced['columns'] and 'ISIN' in IMPL_COLUMNS
     assert 'Min Investment' in priced['columns']
     assert 'Minimum Investment' not in IMPL_COLUMNS
     assert 'Exp ccy' in priced['columns']
     assert 'Exposure ccy' not in IMPL_COLUMNS and 'Exp ccy' not in IMPL_COLUMNS
     # the listing a line holds is two columns on the sheet and a line under
-    # the ticker on the screen (D208)
+    # the ISIN on the screen (D208)
     assert 'Issue Currency' in IMPL_COLUMNS and 'Issue Currency' not in priced['columns']
-    assert len(priced['columns']) == len(IMPL_COLUMNS) + 1
+    # the share class is three columns on both: its income, its letter and
+    # its UK reporting status (D218)
+    at = priced['columns'].index('Income')
+    assert priced['columns'][at:at + 3] == ['Income', 'Share class', 'UK rep.']
+    assert priced['columns'].index('ISIN') == priced['columns'].index('Notional') + 1
+    assert {'Income', 'Share Class', 'UK Reporting'} <= set(IMPL_COLUMNS)
 
 def test_js_price_build_up_mirror_agrees_with_python():
     """D84. The card that shows HOW a marginal blend was reached must reach
@@ -2743,7 +2754,7 @@ def test_the_fee_group_column_is_gone_but_still_prices_the_row():
 def test_the_cost_column_is_named_product_cost():
     """Item 2. Header text only - the field behind it is unchanged."""
     assert 'Product Cost' in IMPL_COLUMNS and 'Cost' not in IMPL_COLUMNS
-    assert IMPL_COLUMNS.index('Product Cost') == 11          # after the listing's two (D208)
+    assert IMPL_COLUMNS.index('Product Cost') == 14          # after the class's and the listing's (D208, D218)
     result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
@@ -2792,7 +2803,8 @@ def test_the_share_class_rides_from_the_catalogue_to_the_sheet():
     vehicle."""
     from openpyxl import load_workbook
     from cyrus_pmg.pmgService.scenario import products
-    assert IMPL_COLUMNS.index('Share Class') == IMPL_COLUMNS.index('Vehicle') + 1
+    assert IMPL_COLUMNS.index('Income') == IMPL_COLUMNS.index('Vehicle') + 1
+    assert IMPL_COLUMNS.index('Share Class') == IMPL_COLUMNS.index('Income') + 1
     result = PORT.resolve_portfolio(BASIS, PortfolioKey('USD', 'Moderate', 'Full', False))
     chosen = _sleeveMap(result['categories'], sleeves.VARIANTS[0])
     model = buildImplementationRows(result, chosen, rules.AUTO_SLEEVE_CATEGORIES,
@@ -2801,16 +2813,16 @@ def test_the_share_class_rides_from_the_catalogue_to_the_sheet():
     items = [i for g in model['groups'] for i in g['items']]
     assert items
     for item in items:
-        assert item['shareClass'] in products.SHARE_CLASSES, item['name']
-        assert item['shareClass'] == products.get(item['productId'])['shareClass']
-    assert {i['shareClass'] for i in items} == {'Distributing', 'Accumulating'}, \
-        'both classes are in play'
+        assert item['income'] in products.INCOMES, item['name']
+        assert item['income'] == products.get(item['productId'])['income']
+    assert {i['income'] for i in items} == {'Distributing', 'Accumulating'}, \
+        'both incomes are in play'
 
     sheet = load_workbook(io.BytesIO(_builtWorkbook()))['Implementation']
     header = next(r for r in range(1, 12)
                   if sheet.cell(row=r, column=1).value == 'Categories & Asset Classes')
     at = [sheet.cell(row=header, column=c).value
-          for c in range(1, sheet.max_column + 1)].index('Share Class') + 1
+          for c in range(1, sheet.max_column + 1)].index('Income') + 1
     printed = [sheet.cell(row=r, column=at).value for r in range(header + 1, sheet.max_row + 1)
                if str(sheet.cell(row=r, column=1).value or '').startswith('  ')]
     assert printed and set(printed) <= {'Distributing', 'Accumulating'}, printed
@@ -2839,14 +2851,16 @@ def test_a_share_class_the_catalogue_does_not_define_is_refused(tmp_path):
         return byId['p-1']
 
     every = products.COLUMNS + products.OPTIONAL
-    assert read(every)['shareClass'] == 'Distributing'
-    assert read(every, ShareClass='Acc')['shareClass'] == 'Accumulating'     # the short form
-    assert read(every, ShareClass='Dis')['shareClass'] == 'Distributing'
+    # the income, under the name the column had before the levels (D218)
+    assert read(every)['income'] == 'Distributing'
+    assert read(every, ShareClass='Acc')['income'] == 'Accumulating'     # the short form
+    assert read(every, ShareClass='Dis')['income'] == 'Distributing'
     with pytest.raises(products.BadCatalogue) as caught:
         read(every, ShareClass='Distribution')
     assert 'share class' in str(caught.value)
-    assert read(every, ShareClass='')['shareClass'] is None          # blank on a row: none
-    assert read(products.COLUMNS)['shareClass'] is None              # the column absent
+    assert read(every, ShareClass='')['income'] is None          # blank on a row: none
+    assert read(products.COLUMNS)['income'] is None              # the column absent
+    assert read(every, Income='Dis')['income'] == 'Distributing' and read(every, Income='Dis')['shareClass'] == ''
     assert len(products.all()) == 73, 'reading a file changes nothing in the catalogue'
 
 

@@ -6221,7 +6221,7 @@ function effectiveFee() {
    The screen's list is not the sheet's and is not meant to be: the sheet
    spells three headers out (D74) and drops Ticker and Minimum Investment
    (D78). Each states its own. */
-var IMPL_TEXT_COLUMNS = ['Ticker', 'Style', 'Vehicle', 'Share class',
+var IMPL_TEXT_COLUMNS = ['ISIN', 'Style', 'Vehicle', 'Income', 'Share class', 'UK rep.',
                          'Source', 'Liquidity', 'Exp ccy'];
 
 /* Every column of the screen's table, in order - the thing both spans below
@@ -6490,7 +6490,11 @@ function implItem(product, level) {
     productId: product.productId,
     name: product.name, ticker: product.ticker, assetClass: product.assetClass,
     style: product.style, vehicle: product.vehicle,
-    shareClass: product.shareClass || null, source: product.source,
+    /* the share class it holds (D218): its ISIN, income, letter and UK
+       reporting status */
+    isin: product.isin || '', income: product.income || '',
+    shareClass: product.shareClass || null, ukReporting: product.ukReporting || '',
+    source: product.source,
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
     issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
     listing: product.listing || '',
@@ -6550,11 +6554,19 @@ function standsInText(item) {
   }).join(' ');
 }
 
-/* the listing a line holds, under its ticker: the currency it is dealt in
-   and its hedging (D208) */
+/* what a line holds, under its ISIN: the listing's ticker, the currency it
+   is dealt in and its hedging (D208, D218) */
 function listingSub(item) {
-  var bits = [item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
+  var ticker = item.ticker && item.ticker !== '\u2014' ? item.ticker : '';
+  var bits = [item.isin ? ticker : '', item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
   return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
+}
+/* the ISIN column: the class's ISIN, else the listing's ticker as before */
+function heldIdent(item) {
+  return item.isin || item.ticker || '\u2014';
+}
+function textOrDash(value) {
+  return value ? App.esc(value) : '<span class="mut">&mdash;</span>';
 }
 
 function rows() {
@@ -8410,7 +8422,7 @@ function cslAddHtml() {
   var q = cslPanel.query.trim().toLowerCase();
   var free = lib.products.filter(function (p) { return held.indexOf(p.productId) === -1; });
   var shown = free.filter(function (p) {
-    return !q || [p.name, p.ticker, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
+    return !q || [p.name, p.isin, p.ticker, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
   });
   return '<div class="csl-add-h"><h3>Products in ' + App.esc(cslPanel.under) + '</h3>'
     + '<span class="mut">' + lib.products.length + ' held by its sleeves under ' + App.esc(App.variant() || '')
@@ -8420,7 +8432,7 @@ function cslAddHtml() {
     + (shown.length
         ? '<ul class="csl-list">' + shown.map(function (p) {
             return '<li><span class="csl-pn"><b>' + App.esc(p.name) + '</b><small>'
-              + App.esc([p.assetClass, p.style, p.vehicle].filter(Boolean).join(' · ')) + ' · cost '
+              + App.esc([p.isin, p.assetClass, p.style, p.vehicle, p.income].filter(Boolean).join(' · ')) + ' · cost '
               + App.num(p.productCost, 2, '%') + (p.minimumInvestment ? ' · minimum ' + money(p.minimumInvestment) : '')
               + '</small></span><button type="button" class="btn btn-ghost" data-csladd="' + App.esc(p.productId) + '"'
               + ' aria-label="Add ' + App.esc(p.name) + '">Add</button></li>';
@@ -9460,11 +9472,12 @@ function renderView() {
               + money(item.initialNotional) + '</span>'
               + (item.initialBelowMinimum
                   ? '<small class="vs-min">min ' + App.esc(money(item.minimumInvestment)) + '</small>' : '')) : '')
-        + '<td class="txt tick">' + App.esc(item.ticker) + listingSub(item) + '</td>'
+        + '<td class="txt tick">' + App.esc(heldIdent(item)) + listingSub(item) + '</td>'
         + '<td class="txt">' + pillFor(item.style) + '</td>'
         + '<td class="txt">' + pillFor(item.vehicle) + '</td>'
-        + '<td class="txt">' + (item.shareClass
-            ? App.esc(item.shareClass) : '<span class="mut">&mdash;</span>') + '</td>'
+        + '<td class="txt">' + textOrDash(item.income) + '</td>'
+        + '<td class="txt">' + textOrDash(item.shareClass) + '</td>'
+        + '<td class="txt">' + textOrDash(item.ukReporting) + '</td>'
         + '<td class="txt">' + pillFor(item.source) + '</td>'
         + '<td class="txt">' + App.esc(item.liquidity) + '</td>'
         + '<td class="txt tick">' + App.esc(item.exposureCurrency) + '</td>'
@@ -10301,7 +10314,7 @@ function cpBlankHtml() {
   if (editable()) {
     html += '<div class="cp-ways">'
       + way('add', '+ Add products', 'Search ' + esc(App.variant()) + '’s products and tick the ones you want; each lands in its category, ready for a weight.')
-      + way('paste', 'Paste from Excel', 'Product names, tickers or ids and their weights of the portfolio, checked line by line.')
+      + way('paste', 'Paste from Excel', 'Product names, ISINs, tickers or ids and their weights of the portfolio, checked line by line.')
       + way('sleeve', 'Insert a sleeve', 'A library sleeve’s products at a weight of the portfolio you choose. After that they are ordinary rows.')
       + '</div>';
   } else {
@@ -10563,11 +10576,18 @@ var ADD_FILTERS = [['assetClass', 'Asset class'], ['vehicle', 'Vehicle'], ['styl
                    ['source', 'Source'], ['liquidity', 'Liquidity'], ['category', 'Category']];
 function lineFor(product) { return product.category || suggestedLine(product); }
 
+/* what a product is held as (D218): its first class's ISIN, else the
+   ticker, and its income */
+function heldWords(p) {
+  var ticker = p.ticker && p.ticker !== '—' ? p.ticker : '';
+  return [p.isin || ticker, p.income].filter(Boolean);
+}
+
 function addDlg(d) {
   var l = lib(), held = products().map(function (p) { return p.productId; });
   var q = (d.q || '').trim().toLowerCase();
   var list = l.products.filter(function (p) {
-    if (q && [p.name, p.ticker, p.productId, p.assetClass, p.vehicle].join(' ').toLowerCase().indexOf(q) === -1) return false;
+    if (q && [p.name, p.isin, p.ticker, p.productId, p.assetClass, p.vehicle].join(' ').toLowerCase().indexOf(q) === -1) return false;
     return ADD_FILTERS.every(function (f) {
       var want = d.f[f[0]];
       return !want || (f[0] === 'category' ? lineFor(p) : p[f[0]]) === want;
@@ -10597,7 +10617,7 @@ function addDlg(d) {
   return '<div class="rc-head"><h2 id="cpDlgTitle">Add products</h2><p class="rc-meta"><span>'
     + esc(App.variant()) + '’s products'
     + '</span><span><b>' + l.products.length + '</b> products</span><span>' + held.length + ' in the portfolio</span></p></div>'
-    + '<div class="cp-pick-h"><input type="search" id="cpAddQ" data-first placeholder="Search names, tickers, asset classes…" value="'
+    + '<div class="cp-pick-h"><input type="search" id="cpAddQ" data-first placeholder="Search names, ISINs, tickers, asset classes…" value="'
     + esc(d.q || '') + '" aria-label="Search the products">'
     + ADD_FILTERS.map(function (f) {
         return '<select data-cpfilter="' + f[0] + '" aria-label="' + f[1] + '"><option value="">' + f[1] + ': any</option>' + options(f[0]) + '</select>';
@@ -10610,7 +10630,7 @@ function addDlg(d) {
         return '<tr' + (isHeld ? ' class="held"' : '') + '><td>' + (isHeld ? ''
             : '<input type="checkbox" data-cptick="' + esc(p.productId) + '"' + (on ? ' checked' : '')
               + (!on && n >= room ? ' disabled' : '') + ' aria-label="Add ' + esc(p.name) + '">') + '</td>'
-          + '<td><b>' + esc(p.name) + '</b><small>' + esc(p.ticker && p.ticker !== '—' ? p.ticker + ' · ' : '')
+          + '<td><b>' + esc(p.name) + '</b><small>' + esc(heldWords(p).map(function (w) { return w + ' · '; }).join(''))
           + esc(p.style) + ' · ' + esc(p.source) + '</small>' + (isHeld ? '<span class="cp-held">In the portfolio</span>' : '')
           + '</td>'
           + '<td>' + esc(lineFor(p)) + (p.category ? '' : '<span class="cp-sug">suggested</span>') + '</td>'
@@ -10643,7 +10663,8 @@ function parsePaste(text) {
     var key = name.toLowerCase();
     var p = l.products.filter(function (x) {
       return x.name.toLowerCase() === key || x.productId.toLowerCase() === key
-        || (x.ticker && x.ticker !== '—' && x.ticker.toLowerCase() === key);
+        || (x.ticker && x.ticker !== '—' && x.ticker.toLowerCase() === key)
+        || (x.isin && x.isin.toLowerCase() === key);
     })[0];
     if (!p) {
       errors.push('Line ' + (i + 1) + ': no product a custom portfolio here may hold is called “' + name + '”.');
@@ -10666,7 +10687,7 @@ function pasteDlg(d) {
   var r = parsePaste(d.text), good = r.rows.filter(function (x) { return x.p; });
   var any = products().length > 0, ok = good.length && !r.errors.length;
   return '<div class="rc-head"><h2 id="cpDlgTitle">Paste from Excel</h2><p class="rc-meta"><span>Two columns: product and weight of the portfolio</span></p></div>'
-    + '<p class="cp-sub">Copy the block in Excel and paste it here. Products are matched by name, ticker or id; headings and % signs are fine. '
+    + '<p class="cp-sub">Copy the block in Excel and paste it here. Products are matched by name, ISIN, ticker or id; headings and % signs are fine. '
     + 'A block that does not read cleanly is not taken in.</p>'
     + '<textarea class="cp-paste" id="cpPaste" data-first aria-label="The pasted block">' + esc(d.text) + '</textarea>'
     + (r.rows.length ? '<table class="cp-prev"><thead><tr><th>Line</th><th>Product</th><th>Category</th><th class="n">Weight</th><th></th></tr></thead><tbody>'
@@ -11160,7 +11181,9 @@ var RULE_LABELS = { currency: 'Currency', riskLevel: 'Risk level', allocationTyp
 var cat = {
   query: '', filters: {},            /* facet field -> [values] */
   sort: { key: 'productCost', dir: 'asc' }, /* null = the delivery's own order */
-  hidden: [],                        /* column keys taken away by the picker */
+  /* column keys taken away by the picker: the fields a fund's class and
+     listing added (D218) start away */
+  hidden: ['provider', 'shareClass', 'domicile', 'regulation', 'ukReporting', 'exchange', 'ticker'],
   density: 'dense',                  /* 'dense' | 'comfortable' */
   group: true,                       /* banded by sleeve category (D100); the default since D114 */
   folded: [],                        /* the categories whose bands are shut */
@@ -11246,15 +11269,21 @@ var actTimer = null;
    hold it. Both joins are many-valued. */
 var CAT_FACETS = [
   { key: 'category', label: 'Category' },
-  { key: 'vehicle', label: 'Vehicle' },
-  { key: 'shareClass', label: 'Share class', order: ['Distributing', 'Accumulating'] },
+  { key: 'vehicle', label: 'Vehicle', order: ['ETF', 'Mutual Fund', 'SMA'] },
+  /* any of a product's classes or listings (D207, D218), each with the
+     products that do not say one */
+  { key: 'income', label: 'Income', order: ['Distributing', 'Accumulating', 'Not stated'] },
+  { key: 'shareClass', label: 'Share class', order: ['Not stated'], last: true },
+  { key: 'provider', label: 'Provider', order: ['Not stated'], last: true },
+  { key: 'domicile', label: 'Domicile', order: ['Not stated'], last: true },
+  { key: 'regulation', label: 'Regulation', order: ['Not stated'], last: true },
+  { key: 'ukReporting', label: 'UK reporting', order: ['Yes', 'No', 'Not stated'] },
   { key: 'liquidity', label: 'Liquidity', order: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Drawdown'] },
+  { key: 'classes', label: 'Share classes', order: ['One class', 'Several classes'] },
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
-  /* any of a product's listings (D207) */
   { key: 'issueCurrency', label: 'Issue currency' },
   { key: 'hedging', label: 'Hedging', order: ['Hedged', 'ISG Hedged', 'Unhedged', 'Not stated'] },
-  { key: 'listings', label: 'Listings', order: ['One listing', 'Several listings'] },
   { key: 'book', label: 'Implementation type' },
   /* whether it names a benchmark (D204): the products still to be given one */
   { key: 'benchmarked', label: 'Benchmark', order: ['Has a benchmark', 'No benchmark'] },
@@ -11269,16 +11298,25 @@ var CAT_FACETS = [
    proposal - so no management, all-in or fee-group figure appears here. */
 var CAT_COLUMNS = [
   { key: 'name', label: 'Product', fixed: true },
-  { key: 'ticker', label: 'Ticker' },
+  /* the held class's ISIN, else its listing's ticker, or an SMA's mandate
+     code (D218) */
+  { key: 'ident', label: 'ISIN' },
+  { key: 'provider', label: 'Provider' },
   { key: 'assetClass', label: 'Class' },
   { key: 'vehicle', label: 'Veh' },
-  { key: 'shareClass', label: 'Share' },
+  /* the class's and the listing's in view (D207, D218) */
+  { key: 'income', label: 'Income' },
+  { key: 'shareClass', label: 'Share class' },
   { key: 'style', label: 'Style' },
   { key: 'source', label: 'Src' },
   { key: 'exposureCurrency', label: 'Ccy' },
   { key: 'issueCurrency', label: 'Issue' },
-  /* the listing in view's hedging (D207) */
   { key: 'hedging', label: 'Hedging' },
+  { key: 'domicile', label: 'Dom.' },
+  { key: 'regulation', label: 'Reg.' },
+  { key: 'ukReporting', label: 'UK rep.' },
+  { key: 'exchange', label: 'Exchange' },
+  { key: 'ticker', label: 'Ticker' },
   { key: 'benchmark', label: 'Benchmark' },
   { key: 'liquidity', label: 'Liq' },
   { key: 'productCost', label: 'Cost', num: true },
@@ -11289,6 +11327,8 @@ var CAT_COLUMNS = [
   { key: 'lastEditedAt', label: 'Edited' }
 ];
 var CAT_NUMERIC = { productCost: 1, distributionYield: 1, net: 1, minimumInvestment: 1, used: 1 };
+/* the columns a catalogue opened without a link of its own leaves away */
+var CAT_HIDDEN = cat.hidden.slice();
 var UNPLACED = 'Not yet placed';
 
 function canAdmin() { return !!App.opt('capabilities.canAdmin', false); }
@@ -11321,8 +11361,9 @@ function productById(id) {
   }
   return productIndex[id] || null;
 }
+/* the first class's ISIN, else the ticker, as a proposal holds it (D218) */
 function productMeta(p) {
-  return [p.ticker, p.assetClass, p.vehicle, p.source].filter(Boolean).join(' · ');
+  return [p.isin || p.ticker, p.assetClass, p.vehicle, p.source].filter(Boolean).join(' · ');
 }
 function money2(n) { return (Math.round(n * 100) / 100).toFixed(2); }
 function shortDate(iso) {
@@ -11351,8 +11392,13 @@ function esc(s) { return App.esc(s == null ? '' : String(s)); }
    product's values at that listing, the ones its cells show. */
 /* the band of a product with no category of its own and no sleeve (D178) */
 var NO_CATEGORY = 'No category';
-var CAT_LISTING_FIELDS = ['ticker', 'code', 'issueCurrency', 'hedging', 'shareClass', 'exposureCurrency',
-                          'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark'];
+/* what a listing carries (D207, D218): its share class's values, then its own */
+var CAT_CLASS_FIELDS = ['isin', 'shareClass', 'income', 'hedging', 'classCurrency', 'exposureCurrency', 'domicile',
+                        'regulation', 'replication', 'ukReporting', 'productCost', 'distributionYield',
+                        'minimumInvestment', 'benchmark'];
+var CAT_LISTING_FIELDS = CAT_CLASS_FIELDS.concat(['exchange', 'ticker', 'issueCurrency', 'quotationUnit', 'code']);
+/* the words a facet gives a class or a listing that says none */
+var CAT_NOT_STATED = { hedging: 1, income: 1, shareClass: 1, domicile: 1, regulation: 1, ukReporting: 1 };
 function catJoin(sleeves) {
   /* productId -> { used, categories, books } from the sleeves that hold it */
   var map = {};
@@ -11369,12 +11415,34 @@ function catJoin(sleeves) {
 /* a product's listings (D207), or the one its top level carries, in their
    order: the first is the one a proposal holds (D214) */
 function catListings(p) { return p.listings && p.listings.length ? p.listings : [p]; }
+function catIsSma(p) { return ['sma', 'separate account'].indexOf(String(p.vehicle || '').toLowerCase()) !== -1; }
+/* what a line names a listing by (D218): an SMA's code, else its class's
+   ISIN, else its ticker */
+function catIdent(l) {
+  var t = l.ticker && l.ticker !== '—' ? l.ticker : '';
+  return l.code || l.isin || t || '—';
+}
+/* a product's listings by share class (D218), in the order the classes
+   first come: [{ first, listings }]. A class is an ISIN, or for one with
+   none, every value it has, as the server says; an SMA's codes are a
+   class each. */
+function catClasses(p) {
+  var out = [], index = {}, sma = catIsSma(p);
+  catListings(p).forEach(function (l, i) {
+    var key = sma ? 'row' + i : l.isin ? 'isin:' + String(l.isin).toUpperCase()
+      : CAT_CLASS_FIELDS.map(function (f) { return catText(l[f]).toLowerCase(); }).join('|');
+    if (!index[key]) { index[key] = { first: l, listings: [] }; out.push(index[key]); }
+    index[key].listings.push(l);
+  });
+  return out;
+}
 /* the product's values at *listing*: what it is, with the listing's own */
 function catAt(p, listing) {
   var v = {};
   for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k)) v[k] = p[k];
   CAT_LISTING_FIELDS.forEach(function (f) { if (listing[f] !== undefined) v[f] = listing[f]; });
   if (!v.ticker) v.ticker = '—';
+  v.ident = catIdent(listing);
   return v;
 }
 /* a listing's value as a cell compares it */
@@ -11393,9 +11461,12 @@ function catRowAt(row, listing, mandateSize) {
     && typeof held.minimumInvestment === 'number' && held.minimumInvestment > mandateSize;
   row.varies = {};
   if (all.length > 1) {
-    CAT_LISTING_FIELDS.forEach(function (f) {
+    CAT_LISTING_FIELDS.concat(['ident']).forEach(function (f) {
       var seen = [];
-      all.forEach(function (l) { var t = catText(f === 'ticker' && l[f] === '—' ? '' : l[f]); if (seen.indexOf(t) === -1) seen.push(t); });
+      all.forEach(function (l) {
+        var t = f === 'ident' ? catIdent(l) : catText(f === 'ticker' && l[f] === '—' ? '' : l[f]);
+        if (seen.indexOf(t) === -1) seen.push(t);
+      });
       if (seen.length > 1) row.varies[f] = seen;
     });
   }
@@ -11407,7 +11478,7 @@ function catEnrich(products, sleeves, mandateSize) {
   return (products || []).map(function (p) {
     var j = join[p.productId] || { used: 0, categories: [], books: [] };
     var all = catListings(p);
-    var row = { p: p, count: all.length, matched: false,
+    var row = { p: p, count: all.length, classes: catClasses(p).length, matched: false,
                 used: j.used, categories: j.categories, books: j.books };
     return catRowAt(row, all[0], mandateSize);
   });
@@ -11422,27 +11493,29 @@ function catValuesOf(row, field) {
     return [catListings(row.p).every(function (l) { return !!l.benchmark; }) ? 'Has a benchmark' : 'No benchmark'];
   }
   if (field === 'edited') return [catEditedBucket(row.p.lastEditedAt, Date.now())];
-  if (field === 'listings') return [row.count > 1 ? 'Several listings' : 'One listing'];
-  /* a listing's word: any of the product's listings (D207) */
+  if (field === 'classes') return [row.classes > 1 ? 'Several classes' : 'One class'];
+  if (field === 'provider') return [row.p.provider || 'Not stated'];
+  /* a class's or a listing's word: any of the product's (D207, D218) */
   if (CAT_LISTING_FIELDS.indexOf(field) !== -1) {
     var out = [];
     catListings(row.p).forEach(function (l) {
-      var w = l[field] || (field === 'hedging' ? 'Not stated' : field === 'issueCurrency' ? 'Not given' : '');
+      var w = l[field] || (CAT_NOT_STATED[field] ? 'Not stated' : field === 'issueCurrency' ? 'Not given' : '');
       if (out.indexOf(w) === -1) out.push(w);
     });
     return out;
   }
   return [row.p[field] || ''];
 }
-/* whether a listing's ticker or code holds *q* */
+/* whether a listing's ISIN, ticker or code holds *q* (D218) */
 function catListingHas(l, q) {
-  return [l.ticker, l.code].join(' ').toLowerCase().indexOf(q) !== -1;
+  return [l.isin, l.ticker, l.code].join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catMatches(p, q) {
   if (!q) return true;
-  /* any listing's ticker, mandate code, asset class or benchmark (D204, D207) */
-  var words = [p.name, p.category, p.vehicle, p.source];
-  catListings(p).forEach(function (l) { words.push(l.ticker || '', l.code || '', l.assetClass || '', l.benchmark || ''); });
+  /* any class's ISIN, any listing's ticker, mandate code or exchange, and
+     their benchmarks (D204, D207, D218) */
+  var words = [p.name, p.category, p.vehicle, p.source, p.provider || '', p.assetClass || ''];
+  catListings(p).forEach(function (l) { words.push(l.isin || '', l.ticker || '', l.code || '', l.exchange || '', l.benchmark || ''); });
   return words.join(' ').toLowerCase().indexOf(q) !== -1;
 }
 /* *row* at the listing a search names, where it names one of the product's
@@ -11490,8 +11563,10 @@ function catFacets(rows, facets, state, orders) {
     var order = (orders && orders[f.key]) || f.order || null;
     var values = Object.keys(counts).sort(function (a, b) {
       if (order) {
-        var ia = order.indexOf(a), ib = order.indexOf(b);
-        if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+        /* the values named first - or, for a facet whose named value is
+           Not stated, last */
+        var ia = order.indexOf(a), ib = order.indexOf(b), none = f.last ? -1 : 1e9;
+        if (ia !== -1 || ib !== -1) return (ia === -1 ? none : ia) - (ib === -1 ? none : ib);
       }
       return a < b ? -1 : a > b ? 1 : 0;
     });
@@ -11573,39 +11648,64 @@ function catGroups(rows, order, chosen) {
    runs them through node. They say what the server's own check
    (products.clean) would, so Save is offered only for a product that can be
    saved; the server is still the authority, and a refusal it gives lands on
-   the same box. The draft is what the product is - its fields - and its
-   listings, a list of rows of text in their order, the first the one a
-   proposal holds (D214); a listing's boxes are keyed listing0ticker,
-   listing1hedging... as the server names them. */
+   the same box. The draft is what the product is - its fields - its share
+   classes and its listings (D218), each a list of rows of text in their
+   order, a listing pointing at its class: the first listing of the first
+   class is the one a proposal holds (D214). A class's boxes are keyed
+   class0isin, class1income..., a listing's listing0ticker... */
 var PRD_FIELDS = [
   { key: 'productId', label: 'Product ID', kind: 'id', wide: true },
   { key: 'name', label: 'Name', kind: 'text', wide: true },
+  /* who runs it (D218) */
+  { key: 'provider', label: 'Provider', kind: 'word', optional: true },
   { key: 'category', label: 'Category', kind: 'category', optional: true },
-  { key: 'vehicle', label: 'Vehicle', kind: 'word' },
+  /* the product's, whatever class is held (D218) */
+  { key: 'assetClass', label: 'Asset class', kind: 'word' },
   { key: 'style', label: 'Style', kind: 'word' },
+  { key: 'vehicle', label: 'Vehicle', kind: 'vehicle' },
   { key: 'source', label: 'Source', kind: 'word' },
   { key: 'liquidity', label: 'Liquidity', kind: 'word' },
   { key: 'feeGroup', label: 'Fee group', kind: 'group' }
 ];
-/* a listing's boxes (D207): how it is bought, and what it is, costs and
-   takes. *sma* boxes are a separate account's only, *fund* a fund's only. */
-var PRD_LISTING_FIELDS = [
-  { key: 'ticker', label: 'Ticker', short: 'Ticker', kind: 'text', optional: true },
-  { key: 'code', label: 'Mandate code', short: 'Code', kind: 'text', optional: true, sma: true },
-  { key: 'issueCurrency', label: 'Issue currency', short: 'Issue', kind: 'ccy', optional: true },
+/* a share class's boxes (D218): what it is, costs and takes, the same on
+   every listing of it. *fund* boxes are a fund's only - a separate account
+   has none of them - and *mf* a Mutual Fund's only. */
+var PRD_CLASS_FIELDS = [
+  { key: 'isin', label: 'ISIN', short: 'ISIN', kind: 'isin', optional: true, fund: true },
+  { key: 'shareClass', label: 'Share class', short: 'Class', kind: 'letter', optional: true, fund: true, mf: true },
+  { key: 'income', label: 'Income', short: 'Income', kind: 'income', optional: true },
   { key: 'hedging', label: 'Hedging', short: 'Hedging', kind: 'hedging', optional: true },
-  { key: 'shareClass', label: 'Share class', short: 'Class', kind: 'share', optional: true, fund: true },
-  { key: 'exposureCurrency', label: 'Exposure currency', short: 'Exposure', kind: 'word' },
-  { key: 'assetClass', label: 'Asset class', short: 'Asset class', kind: 'word' },
-  { key: 'productCost', label: 'Product cost', short: 'Cost %', kind: 'pct', unit: '%' },
-  { key: 'distributionYield', label: 'Distribution yield', short: 'Yield %', kind: 'pct', unit: '%', optional: true },
-  { key: 'minimumInvestment', label: 'Minimum investment', short: 'Minimum', kind: 'amount', optional: true },
+  { key: 'classCurrency', label: 'Class currency', short: 'Ccy', kind: 'code3', optional: true, fund: true },
+  { key: 'exposureCurrency', label: 'Exposure currency', short: 'Exp.', kind: 'word' },
+  { key: 'domicile', label: 'Domicile', short: 'Dom.', kind: 'country', optional: true, fund: true },
+  { key: 'regulation', label: 'Regulation', short: 'Reg.', kind: 'word', optional: true, fund: true },
+  { key: 'replication', label: 'Replication', short: 'Replication', kind: 'replication', optional: true, fund: true },
+  { key: 'ukReporting', label: 'UK reporting', short: 'UK rep.', kind: 'uk', optional: true, fund: true },
+  { key: 'productCost', label: 'Product cost', short: 'Cost', kind: 'pct', unit: '%' },
+  { key: 'distributionYield', label: 'Distribution yield', short: 'Yield', kind: 'pct', unit: '%', optional: true },
+  { key: 'minimumInvestment', label: 'Minimum investment', short: 'Min', kind: 'amount', optional: true },
   { key: 'benchmark', label: 'Benchmark', short: 'Benchmark', kind: 'bench', optional: true }
 ];
+/* a listing's own boxes (D218): where and in what its class is bought, and
+   an SMA's mandate code */
+var PRD_PLACE_FIELDS = [
+  { key: 'exchange', label: 'Exchange', short: 'Exchange', kind: 'text', optional: true, fund: true },
+  { key: 'ticker', label: 'Ticker', short: 'Ticker', kind: 'text', optional: true },
+  { key: 'issueCurrency', label: 'Issue currency', short: 'Issue', kind: 'ccy', optional: true },
+  { key: 'quotationUnit', label: 'Quotation unit', short: 'Unit', kind: 'text', optional: true, fund: true },
+  { key: 'code', label: 'Mandate code', short: 'Code', kind: 'text', optional: true, sma: true }
+];
+/* every field a listing carries, in the order the server names them */
+var PRD_LISTING_FIELDS = PRD_CLASS_FIELDS.concat(PRD_PLACE_FIELDS);
+var PRD_FIGURES = { productCost: 1, distributionYield: 1, minimumInvestment: 1 };
 var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
-var PRD_SHARE_CLASSES = ['Distributing', 'Accumulating'];
-var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240,
+var PRD_VEHICLES = ['ETF', 'Mutual Fund', 'SMA'];
+var PRD_INCOMES = ['Distributing', 'Accumulating'];
+var PRD_INCOME_SHORT = { Distributing: 'Dist', Accumulating: 'Acc' };
+var PRD_REPLICATIONS = ['Physical', 'Sampled', 'Synthetic'];
+var PRD_UK = ['Yes', 'No'];
+var PRD_MAX = { productId: 80, name: 120, ticker: 24, word: 60, note: 240, shareClass: 20, exchange: 40, unit: 12,
                 productCost: 10, distributionYield: 50, code: 40, benchmark: 200 };
 /* a separate account (D197): its vehicle says so. A Public Equity SMA's
    listing comes in three hedging versions; a fund's may be Hedged or
@@ -11614,47 +11714,143 @@ var PRD_SMA_VEHICLES = ['separate account', 'sma'];
 var PRD_EQUITY = 'Public Equity';
 var PRD_VERSIONS = ['Hedged', 'ISG Hedged', 'Unhedged'];
 var PRD_FUND_HEDGING = ['Hedged', 'Unhedged'];
-var PRD_LISTING_KEY = /^listing(\d+)([a-zA-Z]+)$/;
+/* a box's key: class0isin, listing2ticker - the form's, and as the server
+   names a listing's, listing2ticker */
+var PRD_BOX_KEY = /^(class|listing)(\d+)([a-zA-Z]*)$/;
+var PRD_ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
 function prdIsSma(d) { return PRD_SMA_VEHICLES.indexOf(prdText(d && d.vehicle).toLowerCase()) !== -1; }
 function prdIsEquity(d) { return prdText(d && d.category) === PRD_EQUITY; }
-/* the hedging a listing of *d* may say */
+/* the vehicle a typed word is (D218): ETF, Mutual Fund or SMA, Separate
+   Account read as SMA and UCITS or ICAV as a fund - or '' for none of them */
+function prdVehicle(word) {
+  var w = prdText(word).toLowerCase();
+  if (w === 'etf') return 'ETF';
+  if (w === 'mutual fund' || w === 'mutualfund') return 'Mutual Fund';
+  if (PRD_SMA_VEHICLES.indexOf(w) !== -1) return 'SMA';
+  return '';
+}
+function prdIsMutualFund(d) { return prdVehicle(d && d.vehicle) === 'Mutual Fund'; }
+/* the hedging a class of *d* may say */
 function prdHedgings(d) { return prdIsSma(d) ? (prdIsEquity(d) ? PRD_VERSIONS : []) : PRD_FUND_HEDGING; }
 /* the listings of a product as served, or the one its top level carries */
 function prdListingsOf(p) {
   if (!p) return [];
   return p.listings && p.listings.length ? p.listings : [p];
 }
-/* a listing as the form holds it: every box the text in it */
-function prdListingRow(l) {
+/* what makes a share class the one it is (D218): its ISIN, or for a class
+   with none, every value it has. Mirrors the server's class rule. */
+function prdClassKey(l) {
+  var isin = prdText(l && l.isin).toUpperCase();
+  if (isin) return 'isin:' + isin;
+  return 'v:' + PRD_CLASS_FIELDS.map(function (f) {
+    var v = l ? l[f.key] : '';
+    if (PRD_FIGURES[f.key]) {
+      var n = typeof v === 'number' ? v : prdNumber(v, f.kind === 'pct');
+      return n === null || isNaN(n) ? '' : String(Math.round(n * 1e9) / 1e9);
+    }
+    return prdText(v).toLowerCase();
+  }).join('|');
+}
+/* a product's listings as its share classes (D218), in the order they first
+   come: [{ key, first, at: [the listings' places] }]. An SMA's mandate
+   codes are a class each. */
+function prdClassesOf(listings, sma) {
+  var out = [], index = {};
+  (listings || []).forEach(function (l, i) {
+    var key = sma ? 'row' + i : prdClassKey(l);
+    var c = index[key];
+    if (!c) { c = index[key] = { key: key, first: l, at: [] }; out.push(c); }
+    c.at.push(i);
+  });
+  return out;
+}
+/* a row of boxes as the form holds it: every box the text in it */
+function prdRowOf(fields, l) {
   var row = {};
-  PRD_LISTING_FIELDS.forEach(function (f) {
+  fields.forEach(function (f) {
     var v = l ? l[f.key] : '';
     if (f.key === 'ticker' && v === '—') v = '';
     row[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
   return row;
 }
-/* the boxes of the draft's listings, as the form's fields: for the
-   problems, the error boxes and the first problem's focus */
-function prdListingFields(d) {
-  var out = [], rows = (d && d.listings) || [];
-  rows.forEach(function (l, i) {
-    PRD_LISTING_FIELDS.forEach(function (f) {
+var prdUids = 0;
+/* a share class in the form, with a name of its own its listings point at */
+function prdClassRow(l) { var row = prdRowOf(PRD_CLASS_FIELDS, l); row.uid = 'c' + (prdUids += 1); return row; }
+/* a listing in the form, pointing at its class */
+function prdPlaceRow(l, uid) { var row = prdRowOf(PRD_PLACE_FIELDS, l); row.cls = uid; return row; }
+function prdClassIndex(d, uid) {
+  for (var i = 0; i < d.classes.length; i += 1) if (d.classes[i].uid === uid) return i;
+  return -1;
+}
+/* the listings in their classes' order, each class's in its own (D218):
+   the order the server stores them in, so a listing's place in the form is
+   its place in the product */
+function prdNormalise(d) {
+  var at = d.listings.map(function (l, i) { return { l: l, i: i, c: prdClassIndex(d, l.cls) }; })
+    .filter(function (x) { return x.c !== -1; });
+  at.sort(function (a, b) { return (a.c - b.c) || (a.i - b.i); });
+  d.listings = at.map(function (x) { return x.l; });
+  return d;
+}
+/* an SMA's mandate codes are a class each: a class with several listings
+   is split into as many, so a row's boxes are its own */
+function prdSplitClasses(d) {
+  var classes = [];
+  d.classes.forEach(function (c) {
+    var mine = d.listings.filter(function (l) { return l.cls === c.uid; });
+    if (!mine.length) { classes.push(c); return; }
+    mine.forEach(function (l, k) {
+      if (k === 0) { classes.push(c); return; }
+      var copy = {}; for (var key in c) if (Object.prototype.hasOwnProperty.call(c, key)) copy[key] = c[key];
+      copy.uid = 'c' + (prdUids += 1);
+      l.cls = copy.uid;
+      classes.push(copy);
+    });
+  });
+  d.classes = classes;
+  return prdNormalise(d);
+}
+/* the boxes of the draft, as the form's fields: for the problems, the
+   error boxes and the first problem's focus */
+function prdBoxFields(d) {
+  var out = PRD_FIELDS.slice();
+  ((d && d.classes) || []).forEach(function (c, i) {
+    out.push({ key: 'class' + i, label: 'Class ' + (i + 1) });
+    PRD_CLASS_FIELDS.forEach(function (f) {
+      out.push({ key: 'class' + i + f.key, label: f.label + ' of class ' + (i + 1), kind: f.kind, at: i, base: f.key });
+    });
+  });
+  ((d && d.listings) || []).forEach(function (l, i) {
+    out.push({ key: 'listing' + i + 'cls', label: 'Share class of listing ' + (i + 1) });
+    PRD_PLACE_FIELDS.forEach(function (f) {
       out.push({ key: 'listing' + i + f.key, label: f.label + ' of listing ' + (i + 1), kind: f.kind, at: i, base: f.key });
     });
   });
   return out;
 }
-/* one box's text, in the draft: a product's field, or a listing's */
+/* one box's text, in the draft: a product's field, a class's or a listing's */
 function prdSetDraft(key, value) {
-  var at = PRD_LISTING_KEY.exec(key);
-  if (at && prd.draft.listings && prd.draft.listings[+at[1]]) prd.draft.listings[+at[1]][at[2]] = value;
-  else prd.draft[key] = value;
+  var at = PRD_BOX_KEY.exec(key);
+  var rows = at ? prd.draft[at[1] === 'class' ? 'classes' : 'listings'] : null;
+  if (at && rows && rows[+at[2]]) rows[+at[2]][at[3]] = value;
+  else if (!at) prd.draft[key] = value;
 }
 function prdGetDraft(d, key) {
-  var at = PRD_LISTING_KEY.exec(key);
-  if (at) return d.listings && d.listings[+at[1]] ? d.listings[+at[1]][at[2]] : '';
-  return d[key];
+  var at = PRD_BOX_KEY.exec(key);
+  if (!at) return d[key];
+  var row = (d[at[1] === 'class' ? 'classes' : 'listings'] || [])[+at[2]];
+  return row ? (row[at[3]] === undefined ? '' : row[at[3]]) : undefined;
+}
+/* the box a refusal of the server's lands on: a listing's class field is
+   its class's box (D218) */
+function prdBoxOf(d, field) {
+  var at = PRD_BOX_KEY.exec(field || '');
+  if (!at || at[1] !== 'listing') return field;
+  var l = d.listings[+at[2]];
+  if (!l) return field;
+  var isClass = PRD_CLASS_FIELDS.some(function (f) { return f.key === at[3]; });
+  return isClass ? 'class' + prdClassIndex(d, l.cls) + at[3] : field;
 }
 
 function prdText(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
@@ -11672,14 +11868,26 @@ function prdSlug(name) {
   return String(name || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/g, '');
 }
-/* a product as the form holds it: its fields, then its listings */
+/* a product as the form holds it (D218): its fields, its share classes in
+   their order, and its listings, each pointing at its class */
 function prdDraftFrom(p) {
   var d = {};
   PRD_FIELDS.forEach(function (f) {
     var v = p ? p[f.key] : '';
     d[f.key] = (v === null || v === undefined) ? '' : String(v);
   });
-  d.listings = p ? prdListingsOf(p).map(prdListingRow) : [prdListingRow(null)];
+  d.classes = []; d.listings = [];
+  if (!p) {
+    var c = prdClassRow(null);
+    d.classes.push(c); d.listings.push(prdPlaceRow(null, c.uid));
+    return d;
+  }
+  var all = prdListingsOf(p);
+  prdClassesOf(all, prdIsSma(p)).forEach(function (g) {
+    var row = prdClassRow(g.first);
+    d.classes.push(row);
+    g.at.forEach(function (i) { d.listings.push(prdPlaceRow(all[i], row.uid)); });
+  });
   return d;
 }
 function prdExample(key) {
@@ -11698,13 +11906,21 @@ function prdFigureText(text, base, label, required) {
   return '';
 }
 function prdFigureProblem(d, key, label, required) { return prdFigureText(d[key], key, label, required); }
-/* what makes a listing the one it is, among its product's (D207) */
+/* what makes a listing the one it is, among its product's (D207, D218): an
+   SMA's its code, currency, hedging version and ticker; a fund's its share
+   class and the exchange and currency it is bought on. Mirrors _listingKey. */
 function prdListingKey(l) {
-  return [prdText(l.ticker === '—' ? '' : l.ticker).toLowerCase(), prdText(l.code).toLowerCase(),
-          prdText(l.issueCurrency).toUpperCase(), prdText(l.hedging), prdText(l.shareClass)].join('|');
+  var t = prdText(l.ticker); if (t === '—') t = '';
+  if (prdText(l.code)) {
+    return ['sma', prdText(l.code).toLowerCase(), prdText(l.issueCurrency).toUpperCase(), prdText(l.hedging), t.toLowerCase()].join('|');
+  }
+  return [prdClassKey(l), prdText(l.exchange).toLowerCase(), prdText(l.issueCurrency).toUpperCase()].join('|');
 }
+/* the list in words: 'A, B or C' */
+function prdOr(words) { return words.length < 2 ? words.join('') : words.slice(0, -1).join(', ') + ' or ' + words[words.length - 1]; }
 /* {field: message} for a draft. ctx: { isNew, feeGroups: [], categories: [],
-   takenIds: {id: name}, withdrawnIds: {id: name}, held: {'ticker:x': name} } */
+   takenIds: {id: name}, withdrawnIds: {id: name},
+   held: {'ticker:x': name, 'code:x': name, 'isin:x': name} } */
 function prdProblems(d, ctx) {
   var out = {};
   var id = String(d.productId || '').trim();
@@ -11724,9 +11940,14 @@ function prdProblems(d, ctx) {
   PRD_FIELDS.forEach(function (f) {
     if (f.kind !== 'word') return;
     var w = prdText(d[f.key]);
-    if (!w) out[f.key] = f.label + ' is needed.';
+    if (!w && !f.optional) out[f.key] = f.label + ' is needed.';
     else if (w.length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.toLowerCase() + ' to ' + PRD_MAX.word + ' characters.';
   });
+  var vehicle = prdText(d.vehicle);
+  if (!vehicle) out.vehicle = 'Vehicle is needed: ETF, Mutual Fund or SMA.';
+  else if (!prdVehicle(vehicle) && ['UCITS', 'ICAV'].indexOf(vehicle.toUpperCase()) === -1) {
+    out.vehicle = 'The vehicle ' + vehicle + ' is not one of ETF, Mutual Fund or SMA.';
+  }
   if (d.category && ctx.categories && ctx.categories.indexOf(d.category) === -1) {
     out.category = 'The category ' + d.category + ' is not one the sleeves are built for.';
   }
@@ -11734,67 +11955,127 @@ function prdProblems(d, ctx) {
   else if ((ctx.feeGroups || []).indexOf(d.feeGroup) === -1) {
     out.feeGroup = 'The fee group ' + d.feeGroup + ' is not on the fee card.';
   }
+  prdClassProblems(d, ctx, out);
   prdListingProblems(d, ctx, out);
   return out;
 }
-/* the listings' problems (D207), into *out*: the server's checks in
-   miniature - whole listings, a code only on an SMA's, the hedging its kind
-   may say, no two the same, and a ticker or a code another product holds */
+/* the share classes' problems (D218), into *out*: the server's checks in
+   miniature - an ISIN's shape, one class an ISIN and one product's, a
+   letter only on a Mutual Fund's, the hedging its kind may say, a hedged
+   class's exposure its class currency, the codes and the lists, and none
+   of a fund's boxes on an SMA */
+function prdClassProblems(d, ctx, out) {
+  var classes = d.classes || [], sma = prdIsSma(d), mf = prdIsMutualFund(d), equity = prdIsEquity(d);
+  var allowed = prdHedgings(d), held = (ctx && ctx.held) || {}, isins = {}, kinds = {};
+  var many = classes.length > 1;
+  if (!classes.length) { out.listings = 'A product has at least one share class: its cost and the rest.'; return; }
+  classes.forEach(function (c, i) {
+    var box = 'class' + i, n = i + 1, of = many ? (sma ? ' of mandate code ' : ' of class ') + n : '';
+    var isin = prdText(c.isin).toUpperCase();
+    if (isin && !sma) {
+      if (!PRD_ISIN.test(isin)) out[box + 'isin'] = 'The ISIN' + of + ' is not one: two letters, nine letters or digits, then a check digit, such as IE00B4L5Y983.';
+      else if (isins[isin] !== undefined) out[box + 'isin'] = 'Classes ' + (isins[isin] + 1) + ' and ' + n + ' have the same ISIN: one ISIN is one share class.';
+      else if (held['isin:' + isin.toLowerCase()]) out[box + 'isin'] = 'The ISIN ' + isin + ' belongs to ' + held['isin:' + isin.toLowerCase()] + '. An ISIN is one product’s.';
+      if (isins[isin] === undefined) isins[isin] = i;
+    }
+    var letter = prdText(c.shareClass);
+    if (letter.length > PRD_MAX.shareClass) out[box + 'shareClass'] = 'Keep the share class' + of + ' to ' + PRD_MAX.shareClass + ' characters: the letter or letters the fund names it by, such as A or I.';
+    else if (letter && !mf && !sma) out[box + 'shareClass'] = 'Only a Mutual Fund has a share class letter: take it off, or make the vehicle Mutual Fund.';
+    if (prdText(c.income) && PRD_INCOMES.indexOf(prdText(c.income)) === -1) out[box + 'income'] = 'The income is ' + prdOr(PRD_INCOMES) + ', or blank.';
+    var hedging = prdText(c.hedging);
+    if (hedging && sma && !equity) out[box + 'hedging'] = 'Only a Public Equity SMA comes in hedging versions: leave it blank.';
+    else if (hedging && allowed.indexOf(hedging) === -1) out[box + 'hedging'] = 'The hedging is ' + prdOr(allowed) + ', or blank.';
+    var ccy = prdText(c.classCurrency).toUpperCase();
+    if (ccy && !/^[A-Z]{3}$/.test(ccy)) out[box + 'classCurrency'] = 'The class currency' + of + ' is a currency code of three letters, such as USD.';
+    var exposure = prdText(c.exposureCurrency), hedgedTo = !sma && hedging === 'Hedged' && /^[A-Z]{3}$/.test(ccy) ? ccy : '';
+    if (!exposure && !hedgedTo) out[box + 'exposureCurrency'] = 'Exposure currency' + of + ' is needed.';
+    else if (exposure.length > PRD_MAX.word) out[box + 'exposureCurrency'] = 'Keep the exposure currency' + of + ' to ' + PRD_MAX.word + ' characters.';
+    else if (hedgedTo && exposure && exposure.toUpperCase() !== hedgedTo) {
+      out[box + 'exposureCurrency'] = 'A class hedged to ' + hedgedTo + ' gives ' + hedgedTo + ' exposure, not ' + exposure
+        + ': leave it blank to fill it in, or make the class unhedged.';
+    }
+    var dom = prdText(c.domicile);
+    if (dom && !/^[A-Za-z]{2}$/.test(dom)) out[box + 'domicile'] = 'The domicile' + of + ' is a two-letter country code, such as IE, LU, GB or US.';
+    if (prdText(c.regulation).length > PRD_MAX.word) out[box + 'regulation'] = 'Keep the regulation' + of + ' to ' + PRD_MAX.word + ' characters.';
+    if (prdText(c.replication) && PRD_REPLICATIONS.indexOf(prdText(c.replication)) === -1) out[box + 'replication'] = 'The replication is ' + prdOr(PRD_REPLICATIONS) + ', or blank.';
+    if (prdText(c.ukReporting) && PRD_UK.indexOf(prdText(c.ukReporting)) === -1) out[box + 'ukReporting'] = 'UK reporting is Yes or No, or blank.';
+    [['productCost', 'Product cost', true], ['distributionYield', 'Distribution yield', false],
+     ['minimumInvestment', 'Minimum investment', false]].forEach(function (f) {
+      var p = prdFigureText(c[f[0]], f[0], f[1] + of, f[2]);
+      if (p) out[box + f[0]] = p;
+    });
+    if (prdText(c.benchmark).length > PRD_MAX.benchmark) out[box + 'benchmark'] = 'Keep the benchmark' + of + ' to ' + PRD_MAX.benchmark + ' characters.';
+    if (sma) {
+      PRD_CLASS_FIELDS.forEach(function (f) {
+        if (f.fund && prdText(c[f.key]) && !out[box + f.key]) out[box + f.key] = 'A separate account has no ' + f.label.toLowerCase() + ': take it off.';
+      });
+    }
+    if (!(d.listings || []).some(function (l) { return l.cls === c.uid; })) {
+      out[box] = 'Class ' + n + ' has no listing: add one, or take the class off.';
+    } else if (!sma && !isin) {
+      /* two classes without an ISIN that say the same are one (D218) */
+      var key = prdClassKey(c);
+      if (kinds[key] !== undefined) out[box] = 'Classes ' + (kinds[key] + 1) + ' and ' + n + ' are the same share class: give one an ISIN, or a value of its own.';
+      else kinds[key] = i;
+    }
+  });
+}
+/* the listings' problems (D207, D218), into *out*: a code only on an SMA's,
+   the lengths, none of a fund's boxes on an SMA, no two the same, and a
+   ticker or a code another product holds */
 function prdListingProblems(d, ctx, out) {
-  var rows = d.listings || [];
-  if (!rows.length) { out.listings = 'A product has at least one listing: its ticker, its cost and the rest.'; return; }
-  var sma = prdIsSma(d), equity = prdIsEquity(d), allowed = prdHedgings(d), seen = {};
-  var held = (ctx && ctx.held) || {};
+  var rows = d.listings || [], sma = prdIsSma(d), seen = {};
+  var held = (ctx && ctx.held) || {}, flat = prdPayload(d).listings;
+  if (!rows.length) { if (!out.listings) out.listings = 'A product has at least one listing: where and in what it is bought.'; return; }
   rows.forEach(function (l, i) {
-    var box = 'listing' + i, n = i + 1;
-    var ticker = prdText(l.ticker), code = prdText(l.code), hedging = prdText(l.hedging);
-    if (ticker.length > PRD_MAX.ticker) out[box + 'ticker'] = 'Keep the ticker of listing ' + n + ' to ' + PRD_MAX.ticker + ' characters.';
+    var box = 'listing' + i, n = i + 1, of = rows.length > 1 ? ' of listing ' + n : '';
+    var ticker = prdText(l.ticker), code = prdText(l.code);
+    if (ticker.length > PRD_MAX.ticker) out[box + 'ticker'] = 'Keep the ticker' + of + ' to ' + PRD_MAX.ticker + ' characters.';
     else if (ticker && held['ticker:' + ticker.toLowerCase()] && ticker.toLowerCase() !== 'sma') {
       out[box + 'ticker'] = 'The ticker ' + ticker + ' belongs to ' + held['ticker:' + ticker.toLowerCase()] + '. A ticker is one product’s.';
     }
-    if (code && !sma) out[box + 'code'] = 'Only a separate account (an SMA) has a mandate code: take it off, or make the vehicle Separate Account.';
-    else if (code.length > PRD_MAX.code) out[box + 'code'] = 'Keep the mandate code of listing ' + n + ' to ' + PRD_MAX.code + ' characters.';
+    if (code && !sma) out[box + 'code'] = 'Only a separate account (an SMA) has a mandate code: take it off, or make the vehicle SMA.';
+    else if (code.length > PRD_MAX.code) out[box + 'code'] = 'Keep the mandate code' + of + ' to ' + PRD_MAX.code + ' characters.';
     else if (code && held['code:' + code.toLowerCase()]) {
       out[box + 'code'] = 'The mandate code ' + code + ' belongs to ' + held['code:' + code.toLowerCase()] + '. A code is one product’s.';
     }
-    if (prdText(l.issueCurrency).length > PRD_MAX.word) out[box + 'issueCurrency'] = 'Keep the issue currency of listing ' + n + ' to ' + PRD_MAX.word + ' characters.';
-    if (hedging && sma && !equity) out[box + 'hedging'] = 'Only a Public Equity SMA comes in hedging versions: leave it blank.';
-    else if (hedging && allowed.indexOf(hedging) === -1) out[box + 'hedging'] = 'The hedging is ' + allowed.join(', ').replace(/, ([^,]*)$/, ' or $1') + ', or blank.';
-    if (l.shareClass && PRD_SHARE_CLASSES.indexOf(l.shareClass) === -1) {
-      out[box + 'shareClass'] = 'The share class must be ' + PRD_SHARE_CLASSES.join(' or ') + ', or none.';
+    if (prdText(l.exchange).length > PRD_MAX.exchange) out[box + 'exchange'] = 'Keep the exchange' + of + ' to ' + PRD_MAX.exchange + ' characters, as you name it: LSE, Xetra.';
+    if (prdText(l.issueCurrency).length > PRD_MAX.word) out[box + 'issueCurrency'] = 'Keep the issue currency' + of + ' to ' + PRD_MAX.word + ' characters.';
+    if (prdText(l.quotationUnit).length > PRD_MAX.unit) out[box + 'quotationUnit'] = 'Keep the quotation unit' + of + ' to ' + PRD_MAX.unit + ' characters: GBX for pence, or blank for the main unit.';
+    if (sma) {
+      PRD_PLACE_FIELDS.forEach(function (f) {
+        if (f.fund && prdText(l[f.key]) && !out[box + f.key]) out[box + f.key] = 'A separate account has no ' + f.label.toLowerCase() + ': take it off.';
+      });
     }
-    ['exposureCurrency', 'assetClass'].forEach(function (k) {
-      var w = prdText(l[k]), label = k === 'assetClass' ? 'Asset class' : 'Exposure currency';
-      if (!w) out[box + k] = label + ' of listing ' + n + ' is needed.';
-      else if (w.length > PRD_MAX.word) out[box + k] = 'Keep the ' + label.toLowerCase() + ' of listing ' + n + ' to ' + PRD_MAX.word + ' characters.';
-    });
-    [['productCost', 'Product cost', true], ['distributionYield', 'Distribution yield', false],
-     ['minimumInvestment', 'Minimum investment', false]].forEach(function (f) {
-      var p = prdFigureText(l[f[0]], f[0], f[1] + (rows.length > 1 ? ' of listing ' + n : ''), f[2]);
-      if (p) out[box + f[0]] = p;
-    });
-    if (prdText(l.benchmark).length > PRD_MAX.benchmark) out[box + 'benchmark'] = 'Keep the benchmark of listing ' + n + ' to ' + PRD_MAX.benchmark + ' characters.';
-    var key = prdListingKey(l);
-    if (seen[key] !== undefined && !out[box + (code ? 'code' : 'ticker')]) {
-      out[box + (code ? 'code' : 'ticker')] = 'Listings ' + (seen[key] + 1) + ' and ' + n + ' are the same listing. Give one its own issue currency, hedging or share class.';
+    if (!flat[i]) return;
+    var key = prdListingKey(flat[i]), at = sma ? (code ? 'code' : 'ticker') : 'issueCurrency';
+    if (seen[key] !== undefined && !out[box + at]) {
+      out[box + at] = 'Listings ' + (seen[key] + 1) + ' and ' + n + ' are the same listing. ' + (sma
+        ? 'Give one its own issue currency or hedging.'
+        : 'A share class is listed once on an exchange in a currency, so give one its own exchange or issue currency.');
     }
     if (seen[key] === undefined) seen[key] = i;
   });
 }
 /* the draft as the server reads it: words as words, figures as numbers,
-   the listings in their order */
+   and its listings in their order (D218) - each class's in its class's
+   place, with its class's values */
 function prdPayload(d) {
   var out = {};
   PRD_FIELDS.forEach(function (f) {
     out[f.key] = f.key === 'productId' ? String(d[f.key] || '').trim() : prdText(d[f.key]);
   });
-  var rows = d.listings || [];
-  out.listings = rows.map(function (l) {
-    return { ticker: prdText(l.ticker), code: prdText(l.code), issueCurrency: prdText(l.issueCurrency),
-             hedging: prdText(l.hedging), shareClass: prdText(l.shareClass),
-             exposureCurrency: prdText(l.exposureCurrency), assetClass: prdText(l.assetClass),
-             productCost: prdNumber(l.productCost, true), distributionYield: prdNumber(l.distributionYield, true),
-             minimumInvestment: prdNumber(l.minimumInvestment, false), benchmark: prdText(l.benchmark) };
+  out.listings = [];
+  (d.classes || []).forEach(function (c) {
+    (d.listings || []).forEach(function (l) {
+      if (l.cls !== c.uid) return;
+      var row = {};
+      PRD_CLASS_FIELDS.forEach(function (f) {
+        row[f.key] = PRD_FIGURES[f.key] ? prdNumber(c[f.key], f.kind === 'pct') : prdText(c[f.key]);
+      });
+      PRD_PLACE_FIELDS.forEach(function (f) { row[f.key] = prdText(l[f.key]); });
+      out.listings.push(row);
+    });
   });
   return out;
 }
@@ -11805,20 +12086,21 @@ function prdShow(key, v) {
   if (key === 'productCost' || key === 'distributionYield') return String(parseFloat(Number(v).toPrecision(12)));
   return String(v);
 }
-/* what a listing is called by: its code, else its ticker */
+/* what a listing is called by: its code, else its ticker, else its ISIN */
 function prdIdent(l) {
   var t = prdText(l.ticker); if (t === '—') t = '';
-  return prdText(l.code) || t || '—';
+  return prdText(l.code) || t || prdText(l.isin).toUpperCase() || '—';
 }
-/* a listing as a person names it (D207): its code or ticker, and where the
-   product has another of that name what tells them apart - its issue
-   currency, then its hedging, then its share class. Mirrors listingLabel. */
+/* a listing as a person names it (D207): its code, ticker or ISIN, and where
+   the product has another of that name what tells them apart - its issue
+   currency, then its hedging, its income, its class, its exchange. Mirrors
+   listingLabel. */
 function prdListingLabel(l, all) {
   var ident = prdIdent(l);
   var peers = (all || [l]).filter(function (x) { return prdIdent(x) === ident; });
   if (peers.length <= 1) return ident;
   var bits = [ident];
-  ['issueCurrency', 'hedging', 'shareClass'].some(function (f) {
+  ['issueCurrency', 'hedging', 'income', 'shareClass', 'exchange'].some(function (f) {
     var values = {};
     peers.forEach(function (p) { values[prdText(p[f])] = true; });
     if (Object.keys(values).length > 1 && prdText(l[f])) {
@@ -11832,9 +12114,11 @@ function prdListingLabel(l, all) {
 }
 /* one listing as a history line shows it. Mirrors showListing. */
 function prdShowListing(l) {
-  var bits = ['issueCurrency', 'hedging', 'shareClass'].map(function (f) { return prdText(l[f]); }).filter(Boolean);
-  if (prdText(l.exposureCurrency)) bits.push('exposure ' + prdText(l.exposureCurrency));
-  if (prdText(l.assetClass)) bits.push('class ' + prdText(l.assetClass));
+  var bits = ['exchange', 'issueCurrency', 'hedging', 'income'].map(function (f) { return prdText(l[f]); }).filter(Boolean);
+  if (prdText(l.shareClass)) bits.push('class ' + prdText(l.shareClass));
+  [['exposureCurrency', 'exposure'], ['domicile', 'domicile'], ['regulation', 'regulation'], ['replication', 'replication']]
+    .forEach(function (f) { if (prdText(l[f[0]])) bits.push(f[1] + ' ' + prdText(l[f[0]])); });
+  if (prdText(l.ukReporting)) bits.push('UK reporting ' + prdText(l.ukReporting));
   [['productCost', 'cost'], ['distributionYield', 'yield'], ['minimumInvestment', 'min']].forEach(function (f) {
     var v = l[f[0]];
     if (typeof v === 'number' && !isNaN(v)) bits.push(f[1] + ' ' + prdShow(f[0], v));
@@ -11857,7 +12141,7 @@ function prdOrderMoved(was, is, pairs) {
   return placed.join() !== sorted.join() || (is.length > 0 && (!held || held[1] !== is[0]));
 }
 function prdSameValue(field, a, b) {
-  if (field === 'productCost' || field === 'distributionYield' || field === 'minimumInvestment') {
+  if (PRD_FIGURES[field]) {
     var x = (a === null || a === undefined || a === '' || (typeof a === 'number' && isNaN(a))) ? null : Number(a);
     var y = (b === null || b === undefined || b === '' || (typeof b === 'number' && isNaN(b))) ? null : Number(b);
     if (x === null || y === null) return x === y;
@@ -11865,6 +12149,7 @@ function prdSameValue(field, a, b) {
   }
   var p = prdText(a), q = prdText(b);
   if (field === 'ticker') { if (p === '—') p = ''; if (q === '—') q = ''; }
+  if (field === 'isin') { p = p.toUpperCase(); q = q.toUpperCase(); }
   return p === q;
 }
 /* what saving the draft would move: [{key, label, before, after}] - the
@@ -11913,6 +12198,33 @@ function prdChanges(before, d) {
     out.push({ key: 'order', label: 'Listing order', before: prdOrderWords(was), after: prdOrderWords(is) });
   }
   return out;
+}
+/* the short name of share class *c*, the *i*th (D218): its letter, its
+   income and whether it is hedged, then its ISIN - or its place, for a
+   class with none: 'I Acc · LU0000000011', 'Dist hedged · class 2' */
+function prdClassName(c, i) {
+  var words = [prdText(c.shareClass), PRD_INCOME_SHORT[prdText(c.income)] || '',
+               prdText(c.hedging) === 'Hedged' ? 'hedged' : ''].filter(Boolean).join(' ');
+  var isin = prdText(c.isin).toUpperCase();
+  return (words ? words + ' · ' : '') + (isin || 'class ' + (i + 1));
+}
+/* the order of a product's listings that moves class *from* to *to*, its
+   listings with it, or - *within* a class - moves its listing at *from* to
+   *to* among that class's: the places now, in the order wanted; null for
+   no move (D218) */
+function prdClassOrder(listings, sma, from, to, within) {
+  var groups = prdClassesOf(listings, sma);
+  if (within === undefined || within === null) {
+    if (from === to || from < 0 || to < 0 || from >= groups.length || to >= groups.length) return null;
+    groups.splice(to, 0, groups.splice(from, 1)[0]);
+  } else {
+    var g = groups[within];
+    if (!g || from === to || from < 0 || to < 0 || from >= g.at.length || to >= g.at.length) return null;
+    g.at.splice(to, 0, g.at.splice(from, 1)[0]);
+  }
+  var order = [];
+  groups.forEach(function (g2) { order = order.concat(g2.at); });
+  return order;
 }
 /* the word in use a typed one is most likely a slip for: the same but for
    its capitals, or one or two letters off - or null */
@@ -12554,7 +12866,8 @@ function catHash() {
   });
   if (!cat.sort) q.set('sort', 'none');
   else if (!(cat.sort.key === 'productCost' && cat.sort.dir === 'asc')) q.set('sort', cat.sort.key + ':' + cat.sort.dir);
-  if (cat.hidden.length) q.set('hide', cat.hidden.join(','));
+  /* the columns away, where they are not the ones away to start with: '-' for none */
+  if (cat.hidden.slice().sort().join() !== CAT_HIDDEN.slice().sort().join()) q.set('hide', cat.hidden.join(',') || '-');
   if (cat.density !== 'dense') q.set('d', cat.density);
   if (!cat.group) q.set('group', 'flat');
   else if (cat.folded.length) q.set('fold', cat.folded.join('|'));
@@ -12579,7 +12892,7 @@ function catFromHash(hash) {
   else if (sort && sort.indexOf(':') !== -1 && known(sort.split(':')[0])) {
     cat.sort = { key: sort.split(':')[0], dir: sort.split(':')[1] === 'desc' ? 'desc' : 'asc' };
   }
-  cat.hidden = (q.get('hide') || '').split(',').filter(known);
+  cat.hidden = q.has('hide') ? (q.get('hide') || '').split(',').filter(known) : CAT_HIDDEN.slice();
   cat.density = q.get('d') === 'comfortable' ? 'comfortable' : 'dense';
   cat.group = q.get('group') !== 'flat';          /* banded unless the link says flat (D114) */
   cat.folded = cat.group ? (q.get('fold') || '').split('|').filter(Boolean) : [];
@@ -14330,9 +14643,9 @@ function svAddHits(products, f) {
     if (f.style && p.style !== f.style) return false;
     if (f.source && p.source !== f.source) return false;
     if (!q) return true;
-    /* and any of its listings' tickers and codes (D207) */
+    /* and any of its listings' ISINs, tickers and codes (D207, D218) */
     return [p.name, p.assetClass, p.vehicle, p.productId, p.ticker]
-      .concat((p.listings || []).map(function (l) { return (l.ticker || '') + ' ' + (l.code || ''); }))
+      .concat((p.listings || []).map(function (l) { return (l.isin || '') + ' ' + (l.ticker || '') + ' ' + (l.code || ''); }))
       .join(' ').toLowerCase().indexOf(q) !== -1;
   });
   var key = f.sort || 'cost', dir = f.dir === 'desc' ? -1 : 1;
@@ -15769,7 +16082,8 @@ function ncDlgRowsHtml(d) {
         return '<tr class="' + (isHad ? 'had' : on ? 'on' : '') + '"' + (isHad ? '' : ' data-ncdrow="' + esc(p.productId) + '"') + '>'
           + '<td class="tick">' + (isHad ? '<span class="nc-had">Added</span>'
               : '<input type="checkbox" data-ncdtick="' + esc(p.productId) + '"' + (on ? ' checked' : '') + ' aria-label="Choose ' + esc(p.name) + '">') + '</td>'
-          + '<td><b>' + esc(p.name) + '</b>' + (p.ticker && !/^[\s\u2014\u2013-]*$/.test(p.ticker) ? '<small>' + esc(p.ticker) + '</small>' : '') + '</td>'
+          + '<td><b>' + esc(p.name) + '</b>' + (p.isin ? '<small>' + esc(p.isin) + '</small>'
+              : p.ticker && !/^[\s\u2014\u2013-]*$/.test(p.ticker) ? '<small>' + esc(p.ticker) + '</small>' : '') + '</td>'
           + '<td>' + esc(p.assetClass || '') + '</td><td>' + esc(p.vehicle || '') + '</td><td>' + esc(p.style || '') + '</td>'
           + '<td class="nc-hn">' + esc(p.source || '') + '</td><td class="nc-hn">' + esc(p.liquidity || '') + '</td><td class="nc-hn">' + esc(p.exposureCurrency || '') + '</td>'
           + '<td class="num">' + svPct(p.productCost) + '</td><td class="num">' + esc(catMoney(p.minimumInvestment)) + '</td></tr>';
@@ -17438,14 +17752,22 @@ function regImplementedHtml(record) {
     }
     g.items.forEach(function (it) {
       rows += '<tr><td class="sub">' + esc(it.name || it.productId) + '</td><td></td>'
-        + '<td class="mut">' + esc([it.ticker, it.vehicle].filter(Boolean).join(' · ') || '—') + '</td>'
+        + '<td class="mut">' + esc(regHeldText(it) || '—') + '</td>'
         + '<td class="num">' + money2(it.printedPct) + '%</td>'
         + '<td class="num">' + money(it.notional) + '</td></tr>';
     });
   });
   return '<table class="cat-tbl dense reg-pic"><thead><tr><th>Category / product</th><th>Sleeve</th>'
-    + '<th>Ticker · vehicle</th><th class="num">Weight</th><th class="num">Notional</th></tr></thead>'
+    + '<th>Held · vehicle</th><th class="num">Weight</th><th class="num">Notional</th></tr></thead>'
     + '<tbody>' + rows + '</tbody></table>';
+}
+/* what a recorded line held (D218): its ISIN, else its ticker, the ticker
+   beside an ISIN, its income and class, its vehicle - "IE00B4L5Y983 · IWDA ·
+   Acc · ETF". A mandate code is the account opening's, never shown here. */
+function regHeldText(it) {
+  var ticker = it.ticker && it.ticker !== '\u2014' ? it.ticker : '';
+  return [it.isin || ticker, it.isin ? ticker : '', PRD_INCOME_SHORT[it.income] || it.income || '',
+          it.shareClass ? 'class ' + it.shareClass : '', it.vehicle].filter(Boolean).join(' \u00b7 ');
 }
 /* A custom sleeve, from the register, into the New sleeve form: its products,
    weighted as a share of the sleeve, its name and note. The admin chooses
@@ -17733,7 +18055,7 @@ function downloadCatalogue() {
 function catToolbarHtml() {
   return '<div class="cat-tools">'
     + '<label class="cat-search"><span aria-hidden="true">⌕</span>'
-    + '<input type="search" id="catSearch" placeholder="Search name, ticker, class…" value="' + esc(cat.query) + '"'
+    + '<input type="search" id="catSearch" placeholder="Search name, ISIN, ticker, class…" value="' + esc(cat.query) + '"'
     + ' aria-label="Search the catalogue"><kbd aria-hidden="true">/</kbd></label>'
     + '<div class="repo-seg cat-density" role="tablist" aria-label="Density">'
     + '<button type="button" role="tab" data-catdensity="dense" aria-selected="' + (cat.density === 'dense') + '">Dense</button>'
@@ -17852,7 +18174,7 @@ function catCellHtml(row, c, sorted) {
   };
   var open = cat.open.indexOf(p.productId) !== -1;
   switch (c.key) {
-    case 'ticker': return td('tk', esc(v.ticker)
+    case 'ident': return td('tk', esc(v.ident)
       + (row.count > 1 ? '<span class="cat-cnt" title="' + row.count + ' listings">+' + (row.count - 1) + '</span>' : '')
       + (row.matched ? '<span class="cat-tag mt" title="The listing the search names">matched</span>' : ''));
     case 'name': return td('nm', (row.count > 1
@@ -17870,27 +18192,34 @@ function catCellHtml(row, c, sorted) {
     case 'minimumInvestment': return td('num' + (typeof v.minimumInvestment === 'number' ? '' : ' mute'), esc(catMoney(v.minimumInvestment)));
     case 'used': return td('num used' + (row.used ? '' : ' zero'), String(row.used));
     case 'lastEditedAt': return td('mute ed', esc(shortDate(p.lastEditedAt)));
-    case 'issueCurrency': return td('mute', esc(v.issueCurrency || '—'));
-    case 'hedging': return td('mute', esc(v.hedging || '—'));
+    case 'ticker': return td('tk mute', esc(v.ticker || '—'));
+    case 'provider': return td('mute', esc(p.provider || '—'));
+    case 'income': return td('mute', esc(PRD_INCOME_SHORT[v.income] || v.income || '—'));
     case 'benchmark': return v.benchmark ? '<td class="bm' + (vm ? ' vm' : '') + (sorted ? ' srt' : '') + '" title="' + esc(v.benchmark) + '">' + esc(v.benchmark) + '</td>'
       : td('mute', '—');
-    default: return td('mute', esc(v[c.key]));
+    default: return td('mute', esc(v[c.key] === null || v[c.key] === undefined || v[c.key] === '' ? '—' : v[c.key]));
   }
 }
-/* the listings of an opened line, a row each (D207), in their order, the
-   first said to be the one held (D214); a click opens the card as the
-   line's does */
+/* the listings of an opened line, a row each (D207), by share class in the
+   classes' order (D218) - 'class 1 · held', 'class 1', 'class 2' - each
+   with its own class's values; a click opens the card as the line's does */
 function catSubRowsHtml(row, cols, band) {
-  var p = row.p, all = catListings(p);
-  return all.map(function (l, at) {
-    var tag = 'listing ' + (at + 1) + (at === 0 ? ' · held' : '');
+  var p = row.p, sma = catIsSma(p), out = [];
+  catClasses(p).forEach(function (g, ci) {
+    g.listings.forEach(function (l, k) { out.push({ l: l, ci: ci, first: k === 0 }); });
+  });
+  return out.map(function (x, at) {
+    var l = x.l;
+    var tag = (sma ? 'code ' : 'class ') + (x.ci + 1) + (at === 0 ? ' · held' : !sma && x.first && l.hedging === 'Hedged' ? ' · hedged' : '');
     var net = (typeof l.distributionYield === 'number' && typeof l.productCost === 'number') ? l.distributionYield - l.productCost : null;
-    return '<tr class="cat-sub' + (l === row.listing ? ' held' : '') + '" data-catrow="' + esc(p.productId) + '"'
+    return '<tr class="cat-sub' + (l === row.listing ? ' held' : '') + (x.first && x.ci ? ' cls1' : '') + '" data-catrow="' + esc(p.productId) + '"'
       + (band === null ? '' : ' data-catband="' + esc(band) + '"') + '><td class="pinc"></td>'
       + cols.map(function (c) {
-          var k = c.key, txt = function (x) { return '<td class="mute">' + esc(x || '—') + '</td>'; };
+          var k = c.key, txt = function (y) { return '<td class="mute">' + esc(y || '—') + '</td>'; };
           if (k === 'name') return '<td class="nm sub' + (at === 0 ? ' r1' : '') + '">' + esc(tag) + '</td>';
-          if (k === 'ticker') return '<td class="tk">' + (l.code ? '<b>' + esc(l.code) + '</b>' : esc(l.ticker || '—')) + '</td>';
+          if (k === 'ident') return '<td class="tk">' + (l.code ? '<b>' + esc(l.code) + '</b>' : esc(catIdent(l))) + '</td>';
+          if (k === 'ticker') return '<td class="tk">' + esc(l.ticker && l.ticker !== '—' ? l.ticker : '—') + '</td>';
+          if (k === 'income') return txt(PRD_INCOME_SHORT[l.income] || l.income);
           if (k === 'productCost' || k === 'distributionYield') return '<td class="num">' + catFigure(l[k], 2) + '</td>';
           if (k === 'minimumInvestment') return '<td class="num">' + esc(catMoney(l.minimumInvestment)) + '</td>';
           if (k === 'net') return '<td class="num mute">' + (net === null ? '—' : (net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) + '</td>';
@@ -17976,21 +18305,27 @@ function catCompareHtml() {
     return '<tr><td>' + label + '</td>' + pinned.map(function (row) { return cell(row, key, fn(row)); }).join('') + '</tr>';
   };
   return '<div class="cat-cmpwrap"><table class="cat-cmp"><thead><tr><th><small class="cat-cmp-view">'
-    + 'The listings held</small></th>'
+    + 'The classes and listings held</small></th>'
     + pinned.map(function (row) {
-        return '<th><span class="t">' + esc(row.v.ticker !== '—' ? row.v.ticker : row.p.name) + '</span><small>' + esc(row.p.name) + '</small>'
+        return '<th><span class="t">' + esc(row.v.ident !== '—' ? row.v.ident : row.p.name) + '</span><small>' + esc(row.p.name) + '</small>'
           + '<button type="button" class="cat-unpin" data-catunpin="' + esc(row.p.productId) + '" aria-label="Unpin ' + esc(row.p.name) + '">×</button></th>';
       }).join('')
     + '</tr></thead><tbody>'
     + section('Terms')
-    + line('Asset class', function (r) { return esc(r.v.assetClass); })
+    + line('Provider', function (r) { return esc(r.p.provider || '—'); })
+    + line('Asset class', function (r) { return esc(r.p.assetClass); })
     + line('Category', function (r) { return esc(r.p.category || '—'); })
     + line('Vehicle · style', function (r) { return esc(r.p.vehicle) + ' · ' + esc(r.p.style); })
     + line('Source', function (r) { return esc(r.p.source); })
+    + line('Income', function (r) { return esc(r.v.income || '—'); })
+    + line('Share class', function (r) { return esc(r.v.shareClass || '—'); })
     + line('Exposure', function (r) { return esc(r.v.exposureCurrency); })
     + line('Issue currency', function (r) { return esc(r.v.issueCurrency || '—'); })
     + line('Hedging', function (r) { return esc(r.v.hedging || '—'); })
-    + line('Listings', function (r) { return String(r.count); })
+    + line('Domicile', function (r) { return esc(r.v.domicile || '—'); })
+    + line('Regulation', function (r) { return esc(r.v.regulation || '—'); })
+    + line('UK reporting', function (r) { return esc(r.v.ukReporting || '—'); })
+    + line('Share classes · listings', function (r) { return r.classes + ' · ' + r.count; })
     + line('Liquidity', function (r) { return '<span class="liq' + liqClass(r.p.liquidity) + '">' + esc(r.p.liquidity) + '</span>'; })
     + line('Minimum investment', function (r) { return esc(catMoney(r.v.minimumInvestment)); })
     + section('Cost · % p.a.')
@@ -18002,7 +18337,7 @@ function catCompareHtml() {
     + line('Offered in', function (r) { return r.books.length ? r.books.length + ' implementation type' + (r.books.length === 1 ? '' : 's') : '—'; })
     + line('Used in sleeves', function (r) { return String(r.used); })
     + '</tbody></table>'
-    + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row, for the listing each product shows in the view. Product fees only: management fees belong to a proposal, not to the catalogue.</p>'
+    + '<p class="cat-cmp-key">Lowest cost and highest yield marked per row, for the class and listing each product shows in the view. Product fees only: management fees belong to a proposal, not to the catalogue.</p>'
     + '</div>';
 }
 
@@ -18059,13 +18394,14 @@ function prdCtx(isNew) {
   var taken = {}, gone = {}, held = {}, self = prd.draft ? String(prd.draft.productId || '').trim() : '';
   prdLive().forEach(function (p) { taken[p.productId] = p.name; });
   prdWithdrawn().forEach(function (p) { gone[p.productId] = p.name; });
-  /* the tickers of the other live products and the codes of every other
-     product, which a listing here cannot take (D207) */
+  /* the ISINs and tickers of the other live products and the codes of every
+     other product, which a listing here cannot take (D207, D218) */
   prdLive().concat(prdWithdrawn()).forEach(function (p) {
     if (p.productId === self) return;
     prdListingsOf(p).forEach(function (l) {
-      var t = prdText(l.ticker);
+      var t = prdText(l.ticker), isin = prdText(l.isin).toLowerCase();
       if (t && t !== '\u2014' && !p.withdrawn) held['ticker:' + t.toLowerCase()] = held['ticker:' + t.toLowerCase()] || p.name;
+      if (isin && !p.withdrawn) held['isin:' + isin] = held['isin:' + isin] || p.name;
       if (prdText(l.code)) held['code:' + prdText(l.code).toLowerCase()] = held['code:' + prdText(l.code).toLowerCase()] || p.name;
     });
   });
@@ -18077,8 +18413,10 @@ function prdDirty() {
   if (!prd.mode || !prd.draft) return false;
   if (prd.mode === 'new') {
     return PRD_FIELDS.some(function (f) { return prdText(prd.draft[f.key]) !== ''; })
-      || (prd.draft.listings || []).length > 1
-      || (prd.draft.listings || []).some(function (l) { return Object.keys(l).some(function (k) { return prdText(l[k]) !== ''; }); })
+      || prd.draft.classes.length > 1 || prd.draft.listings.length > 1
+      || prd.draft.classes.concat(prd.draft.listings).some(function (row) {
+        return Object.keys(row).some(function (k) { return k !== 'uid' && k !== 'cls' && prdText(row[k]) !== ''; });
+      })
       || !!prd.note.trim();
   }
   return prdChanges(prd.original, prd.draft).length > 0 || !!prd.note.trim();
@@ -18123,8 +18461,11 @@ function prdUseCopy(id) {
   var keep = { productId: prd.idTyped ? prd.draft.productId : '', name: prd.draft.name };
   prd.draft = prdDraftFrom(p || null);
   prd.draft.productId = keep.productId; prd.draft.name = keep.name;
-  /* its listings' tickers and codes are the copied product's own (D207) */
-  if (p) prd.draft.listings.forEach(function (l) { l.ticker = ''; l.code = ''; });
+  /* its ISINs, tickers and codes are the copied product's own (D207, D218) */
+  if (p) {
+    prd.draft.listings.forEach(function (l) { l.ticker = ''; l.code = ''; });
+    prd.draft.classes.forEach(function (c) { c.isin = ''; });
+  }
   if (!prd.idTyped) prd.draft.productId = prdSlug(keep.name);
   prd.original = null;
 }
@@ -18161,9 +18502,10 @@ async function prdPost(method, path, body, after) {
     if (!r) return false;
     if (!r.ok) {
       prd.stale = r.status === 409;
-      if (r.body.field && prd.draft && prdGetDraft(prd.draft, r.body.field) !== undefined) {
-        prd.serverError = { field: r.body.field, message: r.body.error };
-        prd.shown[r.body.field] = true;
+      var field = prd.draft && r.body.field ? prdBoxOf(prd.draft, r.body.field) : '';
+      if (field && prdGetDraft(prd.draft, field) !== undefined) {
+        prd.serverError = { field: field, message: r.body.error };
+        prd.shown[field] = true;
       } else {
         prd.error = r.body.error || ('Could not save (' + r.status + ')');
       }
@@ -18180,7 +18522,7 @@ async function prdPost(method, path, body, after) {
 
 async function prdSave() {
   var probs = prdProblemsNow();
-  PRD_FIELDS.concat(prdListingFields(prd.draft)).forEach(function (f) { prd.shown[f.key] = true; });
+  prdBoxFields(prd.draft).forEach(function (f) { prd.shown[f.key] = true; });
   if (Object.keys(probs).length) { render(); prdFocusFirstProblem(probs); return; }
   var payload = prdPayload(prd.draft);
   if (prd.mode === 'new') {
@@ -18202,9 +18544,14 @@ async function prdSave() {
   }
 }
 function prdFocusFirstProblem(probs) {
-  var first = PRD_FIELDS.concat(prdListingFields(prd.draft)).filter(function (f) { return probs[f.key]; })[0];
+  var first = prdBoxFields(prd.draft).filter(function (f) { return probs[f.key] && document.getElementById('prdF-' + f.key); })[0];
   if (first) prdFocus('#prdF-' + first.key);
-  else if (probs.listings) prdFocus('[data-prd="lstadd"]');
+  else {
+    /* a class's own problem, or the listings': the class's first box */
+    var cls = Object.keys(probs).map(function (k) { return /^class(\d+)$/.exec(k); }).filter(Boolean)[0];
+    if (cls) prdFocus('[data-prdcls="' + cls[1] + '"] input, [data-prdcls="' + cls[1] + '"] select');
+    else if (probs.listings) prdFocus('[data-prd="clsadd"]');
+  }
 }
 async function prdWithdraw(id) {
   var p = prdEntry(id); if (!p) return;
@@ -18278,16 +18625,17 @@ var PRD_ACTION_WORDS = {
   restored: 'restored', reverted: 'an earlier version put back'
 };
 
-/* The card (D207): one shell, with the Fund template or - for any vehicle
-   that makes the product a separate account - the SMA one, whose listings
-   are its mandate codes. A product of one listing reads as a product always
-   did; one of several shows its listings in their order, in a wider panel,
-   where they are dragged into another (D214). The figures at the top are
-   the first listing's, the one a proposal holds, or the one a search
-   matched. */
+/* The card (D218): laid out as a fund's factsheet - the product's facts in
+   a strip, a table of its share classes and a table of their listings under
+   it, two flat tables - or, for any vehicle that makes it a separate
+   account, the same strip over a table of its mandate codes. A row of
+   either table is dragged by its grip, or moved by its arrows, and the
+   order is saved as it moves (D214): a proposal holds the first listing of
+   the first class. A listing a search matched is marked. */
 function prdViewHtml(row) {
-  var p = row.p, v = row.v || p, uses = usedIn(p.productId), sma = prdIsSma(p);
-  var all = prdListingsOf(p), many = all.length > 1;
+  var p = row.p, uses = usedIn(p.productId), sma = prdIsSma(p);
+  var all = prdListingsOf(p), bench = prdSharedBenchmark(all);
+  var kind = sma ? 'SMA card' : prdVehicle(p.vehicle) === 'ETF' ? 'ETF card' : 'Mutual Fund card';
   var list = uses.map(function (u) {
     return '<div class="r"><b>' + esc(u.name) + ' · ' + money2(u.weight * 100) + '%</b>'
       + '<small>' + esc(u.variant) + ' · ' + esc(u.category) + '</small>'
@@ -18302,32 +18650,32 @@ function prdViewHtml(row) {
       + '<button type="button" class="btn" data-catpin="' + esc(p.productId) + '">' + (cat.pins.indexOf(p.productId) !== -1 ? 'Unpin' : 'Pin to compare') + '</button>'
       + '<button type="button" class="btn btn-ghost prd-wd" data-prd="askwithdraw"' + (prd.saving ? ' disabled' : '') + '>Withdraw</button>';
   }
-  var one = all[0];
-  return '<div class="cat-detail' + (many ? ' lst' : '') + '" role="region" aria-label="' + esc(p.name) + '">'
+  var fact = function (label, html) { return '<div><small>' + label + '</small><b>' + html + '</b></div>'; };
+  var none = '<span class="prd-none">None yet</span>';
+  return '<div class="cat-detail lst" role="region" aria-label="' + esc(p.name) + '">'
     + '<button type="button" class="dlg-close" data-catdetailclose aria-label="Close">×</button>'
     + '<span class="eyeb">' + (p.withdrawn ? 'Withdrawn product' : 'Product')
-    + ' <span class="prd-kind ' + (sma ? 's' : 'f') + '">' + (sma ? 'SMA card' : 'Fund card') + '</span></span>'
+    + ' <span class="prd-kind ' + (sma ? 's' : 'f') + '">' + kind + '</span></span>'
     + '<h4>' + esc(p.name) + '</h4>'
-    + '<span class="tk">' + esc(v.ticker) + ' · ' + esc(v.assetClass) + ' · ' + esc(p.productId) + '</span>'
+    + '<span class="tk">' + esc(p.productId) + '</span>'
     + '<span class="cat-stamp' + (p.withdrawn ? ' gone' : '') + '">' + esc(prdStamp(p)) + '</span>'
     + (prd.flash ? '<p class="prd-flash" role="status">' + esc(prd.flash) + '</p>' : '')
-    + '<div class="cat-mg">'
-    + '<div class="m"><small>Product cost</small><b>' + catFigure(v.productCost, 2) + '</b></div>'
-    + '<div class="m"><small>Yield</small><b>' + catFigure(v.distributionYield, 2) + '</b></div>'
-    + '<div class="m"><small>Net</small><b>' + (row.net === null ? '—' : (row.net >= 0 ? '+' : '−') + Math.abs(row.net).toFixed(2)) + '</b></div>'
+    + '<div class="prd-kf">'
+    + fact('Provider', p.provider ? esc(p.provider) : none)
+    + fact('Category', esc(p.category || '—'))
+    + fact('Asset class', esc(p.assetClass || '—'))
+    + fact('Vehicle', esc(p.vehicle) + ' · ' + esc(p.style))
+    + fact('Fee group', esc(p.feeGroup))
+    + fact('Source', esc(p.source))
+    + fact('Liquidity', '<span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span>')
+    + (bench === null ? '' : fact('Benchmark', bench ? esc(bench) : none))
+    + (sma ? fact('On proposals', esc(p.ticker) + ' <small class="prd-none">the code never shows there</small>') : '')
     + '</div>'
-    + (many ? '<p class="prd-inview">The figures of ' + esc(prdListingLabel(row.listing || one, all))
-        + ((row.listing || one) === one ? ', the first listing, which a proposal holds' : ', the listing the search names') + '.</p>' : '')
+    + (sma ? prdMandatesHtml(p, row, bench === null) : prdClassesHtml(p, row, bench === null) + prdPlacesHtml(p, row))
+    + prdHeldHtml(p)
     + '<dl class="cat-dl">'
-    + '<dt>Category</dt><dd>' + esc(p.category || '—') + '</dd>'
-    + '<dt>Vehicle</dt><dd>' + esc(p.vehicle) + ' · ' + esc(p.style) + '</dd><dt>Source</dt><dd>' + esc(p.source) + '</dd>'
-    + '<dt>Liquidity</dt><dd><span class="liq' + liqClass(p.liquidity) + '">' + esc(p.liquidity) + '</span></dd>'
-    + '<dt>Fee group</dt><dd>' + esc(p.feeGroup) + '</dd>'
-    + (sma ? '<dt>On proposals</dt><dd>' + esc(p.ticker) + ' <small class="prd-none">the ticker a proposal prints; the code never shows there</small></dd>' : '')
-    + (many ? '' : prdOneListingHtml(p, one, row))
     + '<dt>Offered in</dt><dd>' + (row.books.length ? esc(row.books.join(', ')) : '—') + '</dd>'
     + '<dt>Added</dt><dd>' + esc(shortDate(p.createdAt)) + (p.createdBy ? ' · ' + esc(prdWho(p.createdBy)) : '') + '</dd></dl>'
-    + (many ? prdListingsHtml(p, row) : '')
     + '<div class="cat-usedin"><div class="h">Used in · ' + uses.length + ' sleeve' + (uses.length === 1 ? '' : 's') + '</div>' + list + '</div>'
     + prdHistoryHtml(p)
     + (asking ? '<div class="prd-ask" role="alertdialog" aria-label="Withdraw ' + esc(p.name) + '">'
@@ -18345,65 +18693,147 @@ function prdViewHtml(row) {
     + '<div class="acts">' + acts + '</div>'
     + '</div>';
 }
-/* a product of one listing: its listing's values, as its card always read */
-function prdOneListingHtml(p, l, row) {
-  var sma = prdIsSma(p);
-  return (sma ? '<dt>Mandate code</dt><dd>' + (l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">None yet</span>') + '</dd>' : '')
-    + '<dt>Benchmark</dt><dd>' + (l.benchmark ? esc(l.benchmark) : '<span class="prd-none">None yet</span>') + '</dd>'
-    + (sma ? '' : '<dt>Share class</dt><dd>' + esc(l.shareClass || '—') + '</dd>')
-    + '<dt>Exposure</dt><dd>' + esc(l.exposureCurrency) + '</dd>'
-    + '<dt>Issue currency</dt><dd>' + esc(l.issueCurrency || '—') + '</dd>'
-    + (!sma || prdIsEquity(p) ? '<dt>Hedging</dt><dd>' + esc(l.hedging || '—') + '</dd>' : '')
-    + '<dt>Minimum</dt><dd>' + esc(catMoney(l.minimumInvestment)) + (row.tooBig ? ' <span class="flag">above mandate</span>' : '') + '</dd>';
+/* the benchmark every listing names, '' for none, or null where they differ:
+   then it is a column of the table, not a fact of the strip (D218) */
+function prdSharedBenchmark(all) {
+  var b = prdText(all[0] && all[0].benchmark);
+  return all.every(function (l) { return prdText(l.benchmark) === b; }) ? b : null;
 }
-/* the card's listings (D207): a row each in their order, an SMA's its
-   mandate codes. The first is the one a proposal holds, whatever its base
-   currency (D214); a row is dragged by its grip, or moved by its arrows,
-   and the order is saved as it is dropped. A withdrawn product's are read
-   only. */
-function prdListingsHtml(p, row) {
-  var all = prdListingsOf(p), sma = prdIsSma(p), equity = prdIsEquity(p);
-  var movable = !p.withdrawn, busy = prd.saving ? ' disabled' : '';
+/* the grip and the arrows of a card's row, or its place where it cannot
+   move: *grip* the grip's data, *act* and *data* the arrows', *name* what
+   they say */
+function prdCardMoveHtml(p, grip, act, data, at, count, name) {
+  var busy = prd.saving ? ' disabled' : '';
+  if (p.withdrawn || count < 2) return '<td class="mv"><span class="prd-ord">' + (at + 1) + '</span></td>';
+  return '<td class="mv"><span class="repo-mv"><span class="repo-grip" draggable="' + (prd.saving ? 'false' : 'true') + '" ' + grip + ' title="Drag to move" aria-hidden="true">⋮⋮</span>'
+    + '<button type="button" class="repo-mb" data-prd="' + act + '" ' + data + ' data-by="-1"' + (at ? busy : ' disabled') + ' aria-label="Move ' + esc(name) + ' up">↑</button>'
+    + '<button type="button" class="repo-mb" data-prd="' + act + '" ' + data + ' data-by="1"' + (at < count - 1 ? busy : ' disabled') + ' aria-label="Move ' + esc(name) + ' down">↓</button></span></td>';
+}
+/* a table of the card: its heading, its columns and its rows */
+function prdCardTableHtml(title, note, cols, rows) {
+  return '<div class="prd-lst-v"><div class="h">' + title + ' <small>' + note + '</small></div>'
+    + '<div class="prd-lst-tw"><table class="prd-lst-t"><thead><tr>'
+    + '<th scope="col" class="mv"><span class="sr-only">Order</span></th>'
+    + cols.map(function (c) { return '<th scope="col"' + (c[2] ? ' class="' + c[2] + '"' : '') + '>' + c[0] + '</th>'; }).join('')
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+function prdBenchCell(l) {
+  return l.benchmark ? '<span class="prd-bm" title="' + esc(l.benchmark) + '">' + esc(l.benchmark) + '</span>' : '<span class="prd-none">none</span>';
+}
+/* the card's share classes (D218): a row each in their order, the first
+   held. The class letter is a Mutual Fund's, Replication an ETF's - or
+   either where a class says one - and Benchmark a column only where the
+   classes name different ones. */
+function prdClassesHtml(p, row, benchCol) {
+  var all = prdListingsOf(p), classes = prdClassesOf(all, false);
+  var some = function (k) { return classes.some(function (g) { return !!prdText(g.first[k]); }); };
+  var etf = prdVehicle(p.vehicle) === 'ETF', mf = prdVehicle(p.vehicle) === 'Mutual Fund';
+  var hit = row.matched ? row.listing : null;
   var cols = [
-    [sma ? 'Code' : 'Ticker', function (l) {
-      return sma ? (l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">none yet</span>')
-        : '<span class="prd-cd">' + esc(l.ticker || '—') + '</span>';
-    }],
+    (mf || some('shareClass')) ? ['Class', function (l) { return esc(l.shareClass || '—'); }, 'cd'] : null,
+    ['ISIN', function (l) { return l.isin ? '<span class="prd-cd">' + esc(l.isin) + '</span>' : '<span class="prd-none">—</span>'; }],
+    ['Income', function (l) { return esc(PRD_INCOME_SHORT[l.income] || l.income || '—'); }],
+    ['Hedging', function (l) { return esc(l.hedging || '—'); }],
+    ['Ccy', function (l) { return esc(l.classCurrency || '—'); }],
+    ['Exp.', function (l) { return esc(l.exposureCurrency || '—'); }],
+    ['Dom.', function (l) { return esc(l.domicile || '—'); }],
+    ['Reg.', function (l) { return esc(l.regulation || '—'); }],
+    (etf || some('replication')) ? ['Replication', function (l) { return esc(l.replication || '—'); }] : null,
+    ['UK rep.', function (l) { return esc(l.ukReporting || '—'); }],
+    ['Cost', function (l) { return catFigure(l.productCost, 2); }, 'num'],
+    ['Yield', function (l) { return catFigure(l.distributionYield, 2); }, 'num'],
+    ['Min', function (l, ci) {
+      return esc(catMoney(l.minimumInvestment)) + (ci === 0 && row.tooBig ? ' <span class="flag">above mandate</span>' : '');
+    }, 'num'],
+    benchCol ? ['Benchmark', prdBenchCell] : null
+  ].filter(Boolean);
+  var rows = classes.map(function (g, ci) {
+    var name = prdClassName(g.first, ci), mine = g.at.map(function (i) { return all[i]; });
+    return '<tr data-prdkrow="' + ci + '" class="' + (ci === 0 ? 'held' : '') + (hit && mine.indexOf(hit) !== -1 ? ' inview' : '') + '">'
+      + prdCardMoveHtml(p, 'data-prdkgrip="' + ci + '"', 'clsmove', 'data-i="' + ci + '"', ci, classes.length, name)
+      + cols.map(function (c, k) {
+          return '<td' + (c[2] ? ' class="' + c[2] + '"' : '') + '>' + c[1](g.first, ci) + (k === 0 && ci === 0 ? '<span class="prd-main">held</span>' : '') + '</td>';
+        }).join('')
+      + '</tr>';
+  }).join('');
+  return prdCardTableHtml('Share classes · ' + classes.length, classes.length > 1 ? 'in order: the first is held' : 'the one a proposal holds',
+                          cols, rows);
+}
+/* the card's listings (D218): a row each, by class in the classes' order
+   and in their own within it, the first of the first class held. Where no
+   listing names an exchange, a ticker or a unit, they are the currencies
+   each class is dealt in with the fund: Dealing. A listing moves within
+   its class. */
+function prdPlacesHtml(p, row) {
+  var all = prdListingsOf(p), classes = prdClassesOf(all, false);
+  var listed = all.some(function (l) { return prdText(l.exchange) || (prdText(l.ticker) && l.ticker !== '—') || prdText(l.quotationUnit); });
+  var hit = row.matched ? row.listing : null;
+  var cols = listed
+    ? [['Share class', null], ['Exchange', function (l) { return esc(l.exchange || '—'); }],
+       ['Ticker', function (l) { return '<span class="prd-cd">' + esc(l.ticker && l.ticker !== '—' ? l.ticker : '—') + '</span>'; }],
+       ['Issue', function (l) { return esc(l.issueCurrency || '—'); }], ['Unit', function (l) { return esc(l.quotationUnit || '—'); }]]
+    : [['Share class', null], ['Dealt in', function (l) { return esc(l.issueCurrency || '—'); }]];
+  var rows = '';
+  classes.forEach(function (g, ci) {
+    var name = prdClassName(g.first, ci);
+    g.at.forEach(function (i, k) {
+      var l = all[i], held = ci === 0 && k === 0, label = prdListingLabel(l, all);
+      rows += '<tr data-prdcrow="' + ci + ':' + k + '" class="' + (held ? 'held' : '') + (l === hit ? ' inview' : '') + (k === 0 && ci ? ' cls1' : '') + '">'
+        + prdCardMoveHtml(p, 'data-prdcgrip="' + ci + ':' + k + '"', 'cardmove', 'data-c="' + ci + '" data-i="' + k + '"',
+                          k, g.at.length, label)
+        + cols.map(function (c, n) {
+            if (n === 0) return '<td class="prd-cn">' + esc(name) + '</td>';
+            return '<td>' + c[1](l) + (n === 1 && held ? '<span class="prd-main">held</span>' : '') + '</td>';
+          }).join('')
+        + '</tr>';
+    });
+  });
+  return prdCardTableHtml((listed ? 'Listings · ' : 'Dealing · ') + all.length,
+    listed ? 'an exchange, a ticker and an issue currency each; the first of the first class is held'
+           : 'each class is dealt with the fund in a currency; the first of the first class is held',
+    cols, rows);
+}
+/* an SMA's mandate codes (D197, D218): one table, a row each in their
+   order, the first held. Hedging is a Public Equity SMA's, and Benchmark a
+   column only where the codes name different ones. */
+function prdMandatesHtml(p, row, benchCol) {
+  var all = prdListingsOf(p), equity = prdIsEquity(p);
+  var some = function (k) { return all.some(function (l) { return !!prdText(l[k]); }); };
+  var hit = row.matched ? row.listing : null;
+  var cols = [
+    ['Code', function (l) { return l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">none yet</span>'; }],
     ['Issue', function (l) { return esc(l.issueCurrency || '—'); }],
-    (!sma || equity) ? ['Hedging', function (l) { return esc(l.hedging || '—'); }] : null,
-    sma ? null : ['Class', function (l) { return esc(l.shareClass ? l.shareClass.slice(0, 4) + '.' : '—'); }],
+    (equity || some('hedging')) ? ['Hedging', function (l) { return esc(l.hedging || '—'); }] : null,
+    some('income') ? ['Income', function (l) { return esc(PRD_INCOME_SHORT[l.income] || l.income || '—'); }] : null,
     ['Exposure', function (l) { return esc(l.exposureCurrency || '—'); }],
     ['Cost', function (l) { return catFigure(l.productCost, 2); }, 'num'],
     ['Yield', function (l) { return catFigure(l.distributionYield, 2); }, 'num'],
-    ['Min', function (l) { return esc(catMoney(l.minimumInvestment)); }, 'num'],
-    ['Benchmark', function (l) { return l.benchmark ? '<span class="prd-bm" title="' + esc(l.benchmark) + '">' + esc(l.benchmark) + '</span>' : '<span class="prd-none">none</span>'; }]
+    ['Min', function (l, i) { return esc(catMoney(l.minimumInvestment)) + (i === 0 && row.tooBig ? ' <span class="flag">above mandate</span>' : ''); }, 'num'],
+    benchCol ? ['Benchmark', prdBenchCell] : null
   ].filter(Boolean);
-  return '<div class="prd-lst-v"><div class="h">' + (sma ? 'Mandate codes' : 'Listings') + ' · ' + all.length
-    + ' <small>in order: a proposal holds the first</small></div>'
-    + '<div class="prd-lst-tw"><table class="prd-lst-t"><thead><tr>'
-    + '<th scope="col" class="mv"><span class="sr-only">Order</span></th>'
-    + cols.map(function (c) { return '<th scope="col"' + (c[2] ? ' class="num"' : '') + '>' + c[0] + '</th>'; }).join('')
-    + '</tr></thead><tbody>'
-    + all.map(function (l, i) {
-        var name = prdListingLabel(l, all);
-        return '<tr data-prdcrow="' + i + '" class="' + (i === 0 ? 'held' : '') + (l === row.listing ? ' inview' : '') + '">'
-          + '<td class="mv">' + (movable
-              ? '<span class="repo-mv"><span class="repo-grip" draggable="' + (prd.saving ? 'false' : 'true') + '" data-prdcgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
-                + '<button type="button" class="repo-mb" data-prd="cardmove" data-i="' + i + '" data-by="-1"' + (i ? busy : ' disabled') + ' aria-label="Move ' + esc(name) + ' up">↑</button>'
-                + '<button type="button" class="repo-mb" data-prd="cardmove" data-i="' + i + '" data-by="1"' + (i < all.length - 1 ? busy : ' disabled') + ' aria-label="Move ' + esc(name) + ' down">↓</button></span>'
-              : '<span class="prd-ord">' + (i + 1) + '</span>') + '</td>'
-          + cols.map(function (c, k) {
-              return '<td' + (c[2] ? ' class="num"' : '') + '>' + c[1](l) + (k === 0 && i === 0 ? '<span class="prd-main">held</span>' : '') + '</td>';
-            }).join('')
-          + '</tr>';
-      }).join('')
-    + '</tbody></table></div>'
-    + '<p class="prd-held">A proposal holds <b>' + esc(prdListingLabel(all[0], all)) + '</b>, the first, whatever its base currency or its amount.'
-    + (movable ? ' Drag a row by its grip, or move it with its arrows, to put another first: the order is saved as it moves.' : '') + '</p>'
-    + '</div>';
+  var rows = all.map(function (l, i) {
+    var name = prdListingLabel(l, all);
+    return '<tr data-prdkrow="' + i + '" class="' + (i === 0 ? 'held' : '') + (l === hit ? ' inview' : '') + '">'
+      + prdCardMoveHtml(p, 'data-prdkgrip="' + i + '"', 'clsmove', 'data-i="' + i + '"', i, all.length, name)
+      + cols.map(function (c, k) {
+          return '<td' + (c[2] ? ' class="' + c[2] + '"' : '') + '>' + c[1](l, i) + (k === 0 && i === 0 ? '<span class="prd-main">held</span>' : '') + '</td>';
+        }).join('')
+      + '</tr>';
+  }).join('');
+  return prdCardTableHtml('Mandate codes · ' + all.length, (all.length > 1 ? 'in order: the first is held' : 'the one a proposal holds')
+    + (equity ? '; a Public Equity SMA comes in hedging versions' : ''), cols, rows);
+}
+/* what a proposal holds, under the tables (D214, D218) */
+function prdHeldHtml(p) {
+  var all = prdListingsOf(p), sma = prdIsSma(p);
+  var several = all.length > 1, movable = several && !p.withdrawn;
+  return '<p class="prd-held">A proposal holds <b>' + esc(prdListingLabel(all[0], all)) + '</b>'
+    + (several ? (sma ? ', the first mandate code' : ', the first listing of the first class') + ', whatever its base currency or its amount.' : '.')
+    + (movable ? ' Drag a row by its grip, or move it with its arrows, to put another first: the order is saved as it moves.' : '') + '</p>';
 }
 /* the card's listings put in a new order (D214), saved as a new version;
-   *order* their places now, in the order wanted */
+   *order* their places now, in the order wanted, *focusAt* the control to
+   go back to */
 async function prdReorder(id, order, focusAt) {
   var p = prdEntry(id); if (!p || prd.saving || !order) return;
   await prdPost('POST', '/scenario/repository/products/order', { productId: id, order: order, base: p.revision },
@@ -18413,15 +18843,7 @@ async function prdReorder(id, order, focusAt) {
       prdHistoryForget();
       if (prd.historyOpen) loadProductHistory(id);
     });
-  if (focusAt != null) prdFocus('[data-prdcrow="' + focusAt + '"] [data-prd="cardmove"]:not([disabled])');
-}
-/* the order that moves the listing at *from* to *to* */
-function prdOrderMoving(count, from, to) {
-  var order = [];
-  for (var i = 0; i < count; i += 1) order.push(i);
-  if (from === to || from < 0 || to < 0 || from >= count || to >= count) return null;
-  order.splice(to, 0, order.splice(from, 1)[0]);
-  return order;
+  if (focusAt) prdFocus(focusAt);
 }
 
 /* ---- rendering: the form ---- */
@@ -18452,6 +18874,15 @@ function prdFieldHtml(f, d, probs) {
       + '<option value=""' + (d[f.key] ? '' : ' selected') + '>Choose…</option>'
       + groups.map(function (g) { return '<option value="' + esc(g) + '"' + (d[f.key] === g ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('')
       + '</select>';
+  } else if (f.kind === 'vehicle') {
+    /* ETF, Mutual Fund or SMA (D218): the vehicle picks the card */
+    var vehicles = PRD_VEHICLES.slice();
+    if (d[f.key] && vehicles.indexOf(d[f.key]) === -1) vehicles.push(d[f.key]);
+    input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
+      + '<option value=""' + (d[f.key] ? '' : ' selected') + '>Choose…</option>'
+      + vehicles.map(function (v) { return '<option value="' + esc(v) + '"' + (d[f.key] === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('')
+      + '</select>';
+    hint = '<small class="prd-hint">An SMA is listed under its mandate codes; only a Mutual Fund’s classes have letters.</small>';
   } else {
     /* the words in use, offered as you type */
     var words = f.kind === 'word' ? ((repo.data.productVocabulary || {})[f.key] || []) : null;
@@ -18461,103 +18892,183 @@ function prdFieldHtml(f, d, probs) {
       + (f.key === 'productId' ? ' placeholder="Suggested from the name"' : '') + '>'
       + (words ? '<datalist id="prdL-' + f.key + '">' + words.map(function (w) { return '<option value="' + esc(w) + '">'; }).join('') + '</datalist>' : '');
     if (f.kind === 'word') hint = '<small class="prd-hint" id="prdH-' + f.key + '">' + prdNewWordHint(f.key) + '</small>';
-    if (f.key === 'vehicle') hint += '<small class="prd-hint">Separate Account (or SMA) makes it an SMA: its listings are its mandate codes.</small>';
   }
   return '<div class="prd-f' + (f.wide ? ' wide' : '') + '">' + label + input + hint
     + '<p class="prd-err" id="prdE-' + f.key + '" role="status">' + esc(err) + '</p></div>';
 }
-/* the words the listings' boxes offer as you type (D207): one list each */
-function prdListingLists() {
+/* the words the class and listing boxes offer as you type (D207, D218):
+   one list each */
+function prdBoxLists() {
   var vocab = (repo.data && repo.data.productVocabulary) || {};
   var issue = PRD_CURRENCIES.concat((vocab.issueCurrency || []).filter(function (c) { return PRD_CURRENCIES.indexOf(c) === -1; }));
-  return [['assetClass', vocab.assetClass || []], ['exposureCurrency', vocab.exposureCurrency || []],
-          ['benchmark', vocab.benchmark || []], ['issueCurrency', issue]].map(function (l) {
+  return [['exposureCurrency', vocab.exposureCurrency || []], ['benchmark', vocab.benchmark || []], ['issueCurrency', issue],
+          ['classCurrency', PRD_CURRENCIES.concat((vocab.classCurrency || []).filter(function (c) { return PRD_CURRENCIES.indexOf(c) === -1; }))],
+          ['domicile', vocab.domicile || []], ['regulation', vocab.regulation || []], ['exchange', vocab.exchange || []],
+          ['quotationUnit', vocab.quotationUnit || []]].map(function (l) {
     return '<datalist id="prdL-' + l[0] + '">' + l[1].map(function (w) { return '<option value="' + esc(w) + '">'; }).join('') + '</datalist>';
   }).join('');
 }
-/* one box of a listing (D207): its label, the box, its problem */
-function prdListingBoxHtml(d, i, f, probs, cls) {
-  var key = 'listing' + i + f.key, l = d.listings[i];
+var PRD_PICKS = { income: PRD_INCOMES, replication: PRD_REPLICATIONS, uk: PRD_UK };
+var PRD_LISTED = { exposureCurrency: 1, benchmark: 1, issueCurrency: 1, classCurrency: 1, domicile: 1, regulation: 1,
+                   exchange: 1, quotationUnit: 1 };
+/* one box of a class or a listing (D218): its label, the box, its problem.
+   *bare* boxes sit in a row under the columns' heads, so name themselves. */
+function prdBoxHtml(d, key, f, value, probs, cls, bare) {
   var server = prd.serverError && prd.serverError.field === key ? prd.serverError.message : '';
   var err = server || (prd.shown[key] ? probs[key] || '' : '');
   var invalid = err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '';
+  var named = bare ? ' aria-label="' + esc(bare) + '"' : '';
   var input;
-  if (f.kind === 'hedging' || f.kind === 'share') {
-    var options = f.kind === 'share' ? PRD_SHARE_CLASSES.slice() : prdHedgings(d).slice();
-    if (l[f.key] && options.indexOf(l[f.key]) === -1) options.push(l[f.key]);
-    input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + invalid + '>'
-      + '<option value=""' + (l[f.key] ? '' : ' selected') + '>' + (f.kind === 'share' ? 'None' : 'Not stated') + '</option>'
-      + options.map(function (o) { return '<option value="' + esc(o) + '"' + (l[f.key] === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('')
+  if (f.kind === 'hedging' || PRD_PICKS[f.kind]) {
+    var options = (f.kind === 'hedging' ? prdHedgings(d) : PRD_PICKS[f.kind]).slice();
+    if (value && options.indexOf(value) === -1) options.push(value);
+    input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + invalid + named + '>'
+      + '<option value=""' + (value ? '' : ' selected') + '>Not stated</option>'
+      + options.map(function (o) { return '<option value="' + esc(o) + '"' + (value === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('')
       + '</select>';
   } else {
-    var list = { assetClass: 1, exposureCurrency: 1, benchmark: 1, issueCurrency: 1 }[f.key] ? ' list="prdL-' + f.key + '"' : '';
     input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
-      + ' value="' + esc(l[f.key]) + '"' + invalid + list
-      + (f.kind === 'pct' || f.kind === 'amount' ? ' inputmode="decimal"' : '')
-      + (f.optional && f.kind !== 'text' ? ' placeholder="None"' : f.key === 'ticker' ? ' placeholder="None"' : '') + '>';
+      + ' value="' + esc(value) + '"' + invalid + named + (PRD_LISTED[f.key] ? ' list="prdL-' + f.key + '"' : '')
+      + (PRD_FIGURES[f.key] ? ' inputmode="decimal"' : '')
+      + (f.optional ? ' placeholder="' + (f.key === 'classCurrency' ? 'USD' : f.key === 'domicile' ? 'IE' : f.key === 'isin' ? 'IE00B4L5Y983' : 'None') + '"' : '') + '>';
   }
-  return '<div class="prd-f' + (cls ? ' ' + cls : '') + '"><label for="prdF-' + key + '">' + esc(f.label)
-    + (f.unit ? ' <small>' + f.unit + '</small>' : '') + '</label>' + input
-    + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
+  return '<div class="prd-f' + (cls ? ' ' + cls : '') + '">'
+    + (bare ? '' : '<label for="prdF-' + key + '">' + esc(f.label) + (f.unit ? ' <small>' + f.unit + '</small>' : '') + '</label>')
+    + input + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
 }
-/* which listing a proposal holds, as the draft stands: its first (D214) */
+/* which listing a proposal holds, as the draft stands: the first of the
+   first class (D214, D218) */
 function prdHeldText(d) {
   var rows = (prdPayload(d).listings || []);
   if (rows.length < 2) return '';
-  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + ', the first, whatever its base currency or its amount.';
+  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + (prdIsSma(d) ? ', the first mandate code' : ', the first listing of the first class')
+    + ', whatever its base currency or its amount.';
 }
-/* The form's listings (D207), a block each in their order, the first the
-   one a proposal holds (D214): moved by its grip or its arrows, taken off
-   by its ×. An SMA's are its mandate codes; a box only one kind has shows
-   for that kind, or while it still holds something. */
-function prdListingsFormHtml(d, probs) {
-  var rows = d.listings || [], sma = prdIsSma(d), equity = prdIsEquity(d), many = rows.length > 1;
-  var by = {}, named = prdPayload(d).listings;
-  PRD_LISTING_FIELDS.forEach(function (f) { by[f.key] = f; });
-  return '<div class="prd-lst" id="prdListings">'
-    + '<div class="prd-ccy-h"><b>' + (sma ? 'Mandate codes' : 'Listings') + ' · ' + rows.length + '</b>'
-    + '<small>' + (sma
-        ? 'Each code an SMA is opened under, with the currency the account is run in' + (equity ? ' and its hedging version' : '') + '. One code may be run in several currencies: a row each.'
-        : 'Each way of buying it: a share class and the currency it is dealt in. One ticker may be quoted in several currencies: a row each.')
-    + ' A proposal holds the first, whatever its base currency: drag another to the top to hold it instead.</small></div>'
-    + prdListingLists()
-    + rows.map(function (l, i) {
-        var label = prdListingLabel(named[i], named);
-        return '<div class="prd-lst-row" data-prdlrow="' + i + '" role="group" aria-label="Listing ' + (i + 1) + '">'
-          + '<div class="prd-lst-h"><span class="repo-mv"><span class="repo-grip" draggable="' + (many ? 'true' : 'false') + '" data-prdgrip="' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
-          + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="-1"' + (i ? '' : ' disabled') + ' aria-label="Move listing ' + (i + 1) + ' up">↑</button>'
-          + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="1"' + (i < rows.length - 1 ? '' : ' disabled') + ' aria-label="Move listing ' + (i + 1) + ' down">↓</button></span>'
-          + '<b>Listing ' + (i + 1) + '</b>' + (i === 0 && many ? '<span class="prd-main">held</span>' : '')
-          + '<span class="prd-lst-n">' + esc(label === '—' ? '' : label) + '</span>'
-          + (many ? '<button type="button" class="cat-link x" data-prd="lstremove" data-i="' + i + '" aria-label="Take off listing ' + (i + 1) + '" title="Take it off">×</button>' : '')
-          + '</div>'
+/* a row's head in the form: its grip and arrows, its name, its × */
+function prdRowHeadHtml(kind, i, count, title, name, held, removable) {
+  return '<div class="prd-lst-h"><span class="repo-mv"><span class="repo-grip" draggable="' + (count > 1 ? 'true' : 'false') + '" data-prdgrip="' + kind + ':' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+    + '<button type="button" class="repo-mb" data-prd="' + kind + 'move" data-i="' + i + '" data-by="-1"' + (i ? '' : ' disabled') + ' aria-label="Move ' + esc(title) + ' up">↑</button>'
+    + '<button type="button" class="repo-mb" data-prd="' + kind + 'move" data-i="' + i + '" data-by="1"' + (i < count - 1 ? '' : ' disabled') + ' aria-label="Move ' + esc(title) + ' down">↓</button></span>'
+    + '<b>' + esc(title) + '</b>' + (held ? '<span class="prd-main">held</span>' : '')
+    + '<span class="prd-lst-n">' + esc(name) + '</span>'
+    + (removable ? '<button type="button" class="cat-link x" data-prd="' + kind + 'remove" data-i="' + i + '" aria-label="Take off ' + esc(title) + '" title="Take it off">×</button>' : '')
+    + '</div>';
+}
+/* The form's share classes (D218), a block each in their order, the first
+   held: a class's boxes once, whatever it is listed on. A box only one kind
+   has shows for that kind, or while it still holds something. */
+function prdClassesFormHtml(d, probs) {
+  var classes = d.classes, mf = prdIsMutualFund(d), etf = prdVehicle(d.vehicle) === 'ETF', many = classes.length > 1;
+  var by = {};
+  PRD_CLASS_FIELDS.forEach(function (f) { by[f.key] = f; });
+  return '<div class="prd-lst" id="prdClasses">'
+    + '<div class="prd-ccy-h"><b>Share classes · ' + classes.length + '</b>'
+    + '<small>A class is one ISIN: what it is, costs and takes, the same wherever it is listed. A proposal holds the first listing of the first class: drag another class to the top to hold it instead.</small></div>'
+    + classes.map(function (c, i) {
+        var box = function (k, cls) { return prdBoxHtml(d, 'class' + i + k, by[k], c[k], probs, cls); };
+        var err = prd.shown['class' + i] ? probs['class' + i] || '' : '';
+        return '<div class="prd-lst-row" data-prdcls="' + i + '" role="group" aria-label="Class ' + (i + 1) + '">'
+          + prdRowHeadHtml('cls', i, classes.length, 'Class ' + (i + 1), prdClassName(c, i), i === 0 && many, many)
           + '<div class="prd-lst-g">'
-          + (sma || l.code ? prdListingBoxHtml(d, i, by.code, probs) : '')
-          + prdListingBoxHtml(d, i, by.ticker, probs)
-          + prdListingBoxHtml(d, i, by.issueCurrency, probs)
-          + (!sma || equity || l.hedging ? prdListingBoxHtml(d, i, by.hedging, probs) : '')
-          + (!sma || l.shareClass ? prdListingBoxHtml(d, i, by.shareClass, probs) : '')
-          + prdListingBoxHtml(d, i, by.exposureCurrency, probs)
-          + prdListingBoxHtml(d, i, by.assetClass, probs, 'w2')
-          + prdListingBoxHtml(d, i, by.productCost, probs)
-          + prdListingBoxHtml(d, i, by.distributionYield, probs)
-          + prdListingBoxHtml(d, i, by.minimumInvestment, probs, 'w2')
-          + prdListingBoxHtml(d, i, by.benchmark, probs, 'wide')
+          + box('isin', 'w2')
+          + (mf || c.shareClass ? box('shareClass') : '')
+          + box('income')
+          + box('hedging')
+          + box('classCurrency')
+          + box('exposureCurrency')
+          + box('domicile')
+          + box('regulation')
+          + (etf || c.replication ? box('replication') : '')
+          + box('ukReporting')
+          + box('productCost')
+          + box('distributionYield')
+          + box('minimumInvestment', 'w2')
+          + box('benchmark', 'wide')
           + '</div>'
-
+          + '<p class="prd-err" id="prdE-class' + i + '" role="status">' + esc(err) + '</p>'
           + '</div>';
       }).join('')
-    + '<p class="prd-err" id="prdE-listings" role="status">' + esc(probs.listings || '') + '</p>'
+    + '<button type="button" class="btn" data-prd="clsadd">+ Add a class</button>'
+    + '</div>';
+}
+/* The form's listings (D218): a row each under the columns' heads, by class
+   in the classes' order, each naming its class; a listing moves within its
+   class. A class's only listing cannot be taken off: take the class off. */
+function prdPlacesFormHtml(d, probs) {
+  var rows = d.listings, by = {};
+  PRD_PLACE_FIELDS.forEach(function (f) { by[f.key] = f; });
+  var count = {}; rows.forEach(function (l) { count[l.cls] = (count[l.cls] || 0) + 1; });
+  return '<div class="prd-lst" id="prdListings">'
+    + '<div class="prd-ccy-h"><b>Listings · ' + rows.length + '</b>'
+    + '<small>Where and in what each class is bought: an exchange, a ticker and an issue currency, or for a class dealt with the fund, a row per currency it is dealt in and no exchange.</small></div>'
+    + '<div class="prd-pl" role="table" aria-label="Listings">'
+    + '<div class="prd-pl-r prd-pl-hd" role="row"><span role="columnheader"><span class="sr-only">Order</span></span>'
+    + '<span role="columnheader">Share class</span><span role="columnheader">Exchange</span><span role="columnheader">Ticker</span>'
+    + '<span role="columnheader">Issue</span><span role="columnheader">Unit</span><span></span></div>'
+    + rows.map(function (l, i) {
+        var ci = prdClassIndex(d, l.cls), first = i === 0 || rows[i - 1].cls !== l.cls, last = i === rows.length - 1 || rows[i + 1].cls !== l.cls;
+        var key = 'listing' + i + 'cls', n = i + 1;
+        return '<div class="prd-pl-r' + (i === 0 && rows.length > 1 ? ' held' : '') + (first && i ? ' cls1' : '') + '" data-prdlrow="' + i + '" role="row">'
+          + '<span class="repo-mv"><span class="repo-grip" draggable="' + (count[l.cls] > 1 ? 'true' : 'false') + '" data-prdgrip="lst:' + i + '" title="Drag to move" aria-hidden="true">⋮⋮</span>'
+          + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="-1"' + (first ? ' disabled' : '') + ' aria-label="Move listing ' + n + ' up">↑</button>'
+          + '<button type="button" class="repo-mb" data-prd="lstmove" data-i="' + i + '" data-by="1"' + (last ? ' disabled' : '') + ' aria-label="Move listing ' + n + ' down">↓</button></span>'
+          + '<div class="prd-f"><select id="prdF-' + key + '" data-prdf="' + key + '" aria-label="Share class of listing ' + n + '">'
+          + d.classes.map(function (c, k) { return '<option value="' + esc(c.uid) + '"' + (k === ci ? ' selected' : '') + '>' + esc((k + 1) + ' · ' + prdClassName(c, k)) + '</option>'; }).join('')
+          + '</select></div>'
+          + prdBoxHtml(d, 'listing' + i + 'exchange', by.exchange, l.exchange, probs, '', 'Exchange of listing ' + n)
+          + prdBoxHtml(d, 'listing' + i + 'ticker', by.ticker, l.ticker, probs, '', 'Ticker of listing ' + n)
+          + prdBoxHtml(d, 'listing' + i + 'issueCurrency', by.issueCurrency, l.issueCurrency, probs, '', 'Issue currency of listing ' + n)
+          + prdBoxHtml(d, 'listing' + i + 'quotationUnit', by.quotationUnit, l.quotationUnit, probs, '', 'Quotation unit of listing ' + n)
+          + (count[l.cls] > 1 ? '<button type="button" class="cat-link x" data-prd="lstremove" data-i="' + i + '" aria-label="Take off listing ' + n + '" title="Take it off">×</button>' : '<span></span>')
+          + (l.code ? prdBoxHtml(d, 'listing' + i + 'code', by.code, l.code, probs, 'prd-pl-x') : '')
+          + '</div>';
+      }).join('')
+    + '</div>'
     + '<p class="prd-hint prd-held-f" id="prdHeld">' + esc(prdHeldText(d)) + '</p>'
-    + '<button type="button" class="btn" data-prd="lstadd">+ ' + (sma ? 'Add a mandate code' : 'Add a listing') + '</button>'
+    + '<button type="button" class="btn" data-prd="lstadd">+ Add a listing</button>'
+    + '</div>';
+}
+/* An SMA's mandate codes (D197, D218): a block each in their order, the
+   first held - its code, its currency, its hedging version where a Public
+   Equity SMA has them, and its figures. A box a fund has shows here only
+   while it holds something, so the refusal can be read and the box cleared. */
+function prdMandatesFormHtml(d, probs) {
+  var rows = d.listings, equity = prdIsEquity(d), many = rows.length > 1, named = prdPayload(d).listings;
+  var cby = {}, lby = {};
+  PRD_CLASS_FIELDS.forEach(function (f) { cby[f.key] = f; });
+  PRD_PLACE_FIELDS.forEach(function (f) { lby[f.key] = f; });
+  return '<div class="prd-lst" id="prdListings">'
+    + '<div class="prd-ccy-h"><b>Mandate codes · ' + rows.length + '</b>'
+    + '<small>Each code an SMA is opened under, with the currency the account is run in' + (equity ? ' and its hedging version' : '')
+    + '. One code may be run in several currencies: a row each. A proposal holds the first, whatever its base currency: drag another to the top to hold it instead.</small></div>'
+    + rows.map(function (l, i) {
+        var ci = prdClassIndex(d, l.cls), c = d.classes[ci] || {};
+        var cbox = function (k, cls) { return prdBoxHtml(d, 'class' + ci + k, cby[k], c[k], probs, cls); };
+        var lbox = function (k, cls) { return prdBoxHtml(d, 'listing' + i + k, lby[k], l[k], probs, cls); };
+        var label = named[i] ? prdListingLabel(named[i], named) : '';
+        return '<div class="prd-lst-row" data-prdcls="' + ci + '" role="group" aria-label="Mandate code ' + (i + 1) + '">'
+          + prdRowHeadHtml('cls', ci, rows.length, 'Mandate code ' + (i + 1), label === '—' ? '' : label, i === 0 && many, many)
+          + '<div class="prd-lst-g">'
+          + lbox('code', 'w2') + lbox('ticker') + lbox('issueCurrency')
+          + (equity || c.hedging ? cbox('hedging') : '')
+          + (c.income ? cbox('income') : '')
+          + cbox('exposureCurrency')
+          + cbox('productCost') + cbox('distributionYield') + cbox('minimumInvestment', 'w2')
+          + PRD_CLASS_FIELDS.filter(function (f) { return f.fund && c[f.key]; }).map(function (f) { return cbox(f.key); }).join('')
+          + PRD_PLACE_FIELDS.filter(function (f) { return f.fund && l[f.key]; }).map(function (f) { return lbox(f.key); }).join('')
+          + cbox('benchmark', 'wide')
+          + '</div></div>';
+      }).join('')
+    + '<p class="prd-hint prd-held-f" id="prdHeld">' + esc(prdHeldText(d)) + '</p>'
+    + '<button type="button" class="btn" data-prd="clsadd">+ Add a mandate code</button>'
     + '</div>';
 }
 /* a word nobody uses yet is said to be new, so a typo reads as one */
 function prdNewWordHint(key) {
   var v = prdText(prd.draft && prdGetDraft(prd.draft, key));
   if (!v) return '';
-  var at = PRD_LISTING_KEY.exec(key);
-  var words = ((repo.data && repo.data.productVocabulary) || {})[at ? at[2] : key] || [];
+  var at = PRD_BOX_KEY.exec(key);
+  var words = ((repo.data && repo.data.productVocabulary) || {})[at ? at[3] : key] || [];
   if (words.indexOf(v) !== -1) return '';
   var same = words.filter(function (w) { return w.toLowerCase() === v.toLowerCase(); })[0];
   if (same) return 'The catalogue spells it ' + esc(same) + '.';
@@ -18567,11 +19078,11 @@ function prdNewWordHint(key) {
 function prdReachHtml() {
   if (prd.mode !== 'edit') return '';
   var reach = prdReach(prd.draft.productId);
-  var was = prdListingsOf(prd.original);
+  var was = prdListingsOf(prd.original), now = prdPayload(prd.draft).listings;
   /* a listing's minimum raised, or a new listing with one (D207) */
-  var minUp = prd.draft.listings.some(function (l, i) {
-    var now = prdNumber(l.minimumInvestment, false), then = was[i] ? was[i].minimumInvestment : null;
-    return now !== null && !isNaN(now) && (then === null || then === undefined || now > then);
+  var minUp = now.some(function (l, i) {
+    var then = was[i] ? was[i].minimumInvestment : null;
+    return l.minimumInvestment !== null && !isNaN(l.minimumInvestment) && (then === null || then === undefined || l.minimumInvestment > then);
   });
   return '<div class="prd-reach" id="prdReach">'
     + (reach.sleeves
@@ -18579,7 +19090,7 @@ function prdReachHtml() {
           + (reach.types === 1 ? '' : 's') + '. Proposals being built with ' + (reach.sleeves === 1 ? 'it' : 'them') + ' are re-priced at once.</p>'
         : '<p>Not in any sleeve, so no proposal uses it yet.</p>')
     + (minUp && reach.sleeves
-        ? '<p class="warn">A position below the minimum of the first listing, the one a proposal holds, stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
+        ? '<p class="warn">A position below the minimum of the listing a proposal holds stops the download, so a higher minimum can block proposals that hold this product.</p>' : '')
     + '</div>';
 }
 function prdFormHtml() {
@@ -18588,6 +19099,7 @@ function prdFormHtml() {
   var moved = isNew ? [] : prdChanges(prd.original, d);
   var title = isNew ? (prdText(d.name) || 'New product') : prdText(d.name) || prd.original.name;
   var sma = prdIsSma(d);
+  var kind = sma ? 'SMA form' : prdVehicle(d.vehicle) === 'ETF' ? 'ETF form' : prdVehicle(d.vehicle) === 'Mutual Fund' ? 'Mutual Fund form' : 'Fund form';
   var start = '';
   if (isNew) {
     var options = prdLive().slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
@@ -18598,17 +19110,19 @@ function prdFormHtml() {
       + (prd.start === 'copy'
           ? '<select id="prdCopyOf" aria-label="The product to copy"><option value="">Choose a product to copy…</option>'
             + options.map(function (p) { return '<option value="' + esc(p.productId) + '"' + (prd.copyOf === p.productId ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('')
-            + '</select><small class="prd-hint">Everything but the ID, the name and its listings’ tickers and codes is filled in from it: those are the copied product’s own.</small>'
+            + '</select><small class="prd-hint">Everything but the ID, the name and its ISINs, tickers and codes is filled in from it: those are the copied product’s own.</small>'
           : '')
       + '</div>';
   }
   return '<div class="cat-detail prd-edit lst" role="region" aria-label="' + esc(isNew ? 'New product' : 'Edit ' + title) + '">'
     + '<span class="eyeb">' + (isNew ? 'New product' : 'Editing · version ' + prd.base)
-    + ' <span class="prd-kind ' + (sma ? 's' : 'f') + '" id="prdKind">' + (sma ? 'SMA form' : 'Fund form') + '</span></span>'
+    + ' <span class="prd-kind ' + (sma ? 's' : 'f') + '" id="prdKind">' + kind + '</span></span>'
     + '<h4 id="prdTitle">' + esc(title) + '</h4>'
     + start
     + '<div class="prd-grid">' + PRD_FIELDS.map(function (f) { return prdFieldHtml(f, d, probs); }).join('') + '</div>'
-    + prdListingsFormHtml(d, probs)
+    + prdBoxLists()
+    + (sma ? prdMandatesFormHtml(d, probs) : prdClassesFormHtml(d, probs) + prdPlacesFormHtml(d, probs))
+    + '<p class="prd-err" id="prdE-listings" role="status">' + esc(probs.listings || '') + '</p>'
     + prdReachHtml()
     + '<div class="prd-f wide"><label for="prdNote">Note <small>optional</small></label>'
     + '<input id="prdNote" class="prd-note" type="text" maxlength="' + PRD_MAX.note + '" autocomplete="off" value="' + esc(prd.note) + '"'
@@ -18634,7 +19148,7 @@ function prdUpdate() {
   if (!prd.draft) return;
   var probs = prdProblemsNow(), isNew = prd.mode === 'new';
   var moved = isNew ? [] : prdChanges(prd.original, prd.draft), dirty = prdDirty();
-  PRD_FIELDS.concat(prdListingFields(prd.draft)).forEach(function (f) {
+  prdBoxFields(prd.draft).forEach(function (f) {
     var server = prd.serverError && prd.serverError.field === f.key ? prd.serverError.message : '';
     var err = server || (prd.shown[f.key] ? probs[f.key] || '' : '');
     var box = document.getElementById('prdE-' + f.key); if (box) box.textContent = err;
@@ -18648,11 +19162,19 @@ function prdUpdate() {
   var listBox = document.getElementById('prdE-listings');
   if (listBox) listBox.textContent = probs.listings || '';
   var heldNow = document.getElementById('prdHeld'); if (heldNow) heldNow.textContent = prdHeldText(prd.draft);
-  /* each listing's name in its head, as its boxes say it */
-  var named = prdPayload(prd.draft).listings;
-  document.querySelectorAll('#repoDialog [data-prdlrow] .prd-lst-n').forEach(function (el) {
-    var i = +el.closest('[data-prdlrow]').dataset.prdlrow;
-    if (named[i]) { var lb = prdListingLabel(named[i], named); el.textContent = lb === '—' ? '' : lb; }
+  /* each class's name in its head and in its listings' lists, as its boxes
+     say it; an SMA's mandate code by its label */
+  var sma = prdIsSma(prd.draft), named = prdPayload(prd.draft).listings;
+  document.querySelectorAll('#repoDialog [data-prdcls] .prd-lst-n').forEach(function (el, n) {
+    var i = +el.closest('[data-prdcls]').dataset.prdcls, c = prd.draft.classes[i];
+    if (!c) return;
+    if (sma) { var lb = named[n] ? prdListingLabel(named[n], named) : ''; el.textContent = lb === '—' ? '' : lb; }
+    else el.textContent = prdClassName(c, i);
+  });
+  document.querySelectorAll('#repoDialog select[data-prdf$="cls"]').forEach(function (sel) {
+    Array.prototype.forEach.call(sel.options, function (o, k) {
+      var c = prd.draft.classes[k]; if (c) o.textContent = (k + 1) + ' · ' + prdClassName(c, k);
+    });
   });
   var save = document.getElementById('prdSave');
   if (save) save.disabled = !!((isNew ? Object.keys(probs).length : (Object.keys(probs).length || !moved.length)) || prd.saving || prd.stale);
@@ -18661,29 +19183,38 @@ function prdUpdate() {
   var title = document.getElementById('prdTitle');
   if (title) title.textContent = prdText(prd.draft.name) || (isNew ? 'New product' : prd.original.name);
 }
-/* the listings moved: each box's shown mark and the server's refusal go
-   with their listing - *to(i)* its new place, or -1 for one taken off */
-function prdRemapListings(to) {
-  var shown = {};
+/* a change to the draft's classes or listings, made by *change*: each
+   box's shown mark goes with its class or its listing to wherever it now
+   stands, or with it when it is taken off; the server's refusal goes */
+function prdKeep(change) {
+  var d = prd.draft, marks = [], shown = {};
   Object.keys(prd.shown).forEach(function (k) {
-    var m = PRD_LISTING_KEY.exec(k);
+    var m = PRD_BOX_KEY.exec(k);
     if (!m) { shown[k] = prd.shown[k]; return; }
-    var j = to(+m[1]);
-    if (j !== -1) shown['listing' + j + m[2]] = prd.shown[k];
+    var row = (m[1] === 'class' ? d.classes : d.listings)[+m[2]];
+    if (row) marks.push({ row: row, kind: m[1], field: m[3] });
+  });
+  change();
+  d = prd.draft;
+  marks.forEach(function (m) {
+    var i = (m.kind === 'class' ? d.classes : d.listings).indexOf(m.row);
+    if (i !== -1) shown[m.kind + i + m.field] = true;
   });
   prd.shown = shown; prd.serverError = null; prd.leaving = false;
 }
+/* class *from* moved to *to*, its listings with it (D218) */
+function prdMoveClass(from, to) {
+  var rows = prd.draft.classes;
+  if (from === to || from < 0 || to < 0 || from >= rows.length || to >= rows.length) return false;
+  prdKeep(function () { rows.splice(to, 0, rows.splice(from, 1)[0]); prdNormalise(prd.draft); });
+  return true;
+}
+/* listing *from* moved to *to*, within its class (D218) */
 function prdMoveListing(from, to) {
   var rows = prd.draft.listings;
   if (from === to || from < 0 || to < 0 || from >= rows.length || to >= rows.length) return false;
-  var moving = rows.splice(from, 1)[0];
-  rows.splice(to, 0, moving);
-  prdRemapListings(function (i) {
-    if (i === from) return to;
-    if (from < to && i > from && i <= to) return i - 1;
-    if (to < from && i >= to && i < from) return i + 1;
-    return i;
-  });
+  if (rows[from].cls !== rows[to].cls) return false;
+  prdKeep(function () { rows.splice(to, 0, rows.splice(from, 1)[0]); });
   return true;
 }
 
@@ -18764,6 +19295,12 @@ function impProductsPreviewHtml(p) {
        p.unchanged + ' unchanged', p.missing.length + ' not in the file'].join(' · ') + '</p>'
     + (p.legacy ? '<p class="imp-note">This file is in the layout before listings, a row per base currency: the All row is read as the first listing, the one a proposal holds, and each currency’s row as a listing after it.</p>' : '')
     + (p.ranksIgnored ? '<p class="imp-note">The file’s Rank columns are not read: a proposal holds each product’s first listing, its first row in the file.</p>' : '')
+    /* a file in the layout before the three levels (D218) */
+    + (p.isinsFromTickers ? '<p class="imp-note">The file has no ISIN column: ' + p.isinsFromTickers + ' Ticker value' + (p.isinsFromTickers === 1 ? ' is' : 's are')
+        + ' shaped like an ISIN, so read as the ISIN of the share class.</p>' : '')
+    + impListHtml('UCITS or ICAV vehicles read as a fund, the word kept as its regulation', p.vehiclesMoved || [], function (m) {
+        return '<li><b>' + esc(m.name) + '</b> <small>' + esc(m.was) + ' → ' + esc(m.now) + ', regulation ' + esc(m.regulation) + '</small></li>';
+      })
     + impListHtml('keep their mandate codes - the file has no MandateCode column', p.kept || [], function (k) {
         return '<li><b>' + esc(k.name) + '</b> <small>' + k.listings + ' listing' + (k.listings === 1 ? '' : 's') + ' kept as they are</small></li>';
       })
@@ -18811,9 +19348,10 @@ function impDialogHtml() {
         ? 'Choose a fee card file: a CSV with one row per rate - schedule, feeGroup, tier, tierMin, tierMax, source, point, rate. '
           + 'Nothing changes until you have seen what it would move and applied it.'
         : 'Choose a product file: a CSV, or an Excel workbook with the products on its first sheet or one called products. '
-          + 'A product has a row for each listing, under the same ProductId, in their order - a proposal holds the first: the '
-          + 'columns the product file has always had, with MandateCode and Hedging, as the downloaded file has them. Rank columns '
-          + 'are not read. A file a row per base currency, the layout before listings, is read too. '
+          + 'A product has a row for each listing, under the same ProductId, a share class’s rows together, in their order - a '
+          + 'proposal holds the first: the columns the downloaded file has, the product’s, then the share class’s, then the '
+          + 'listing’s. Rows of one ISIN give its class the same values. A file in an earlier layout is read too: a row per '
+          + 'listing without the class columns, or a row per base currency. '
           + 'Nothing changes until you have seen what it would do and applied it.') + '</p>'
       + '<input type="file" id="impFile" accept="' + (fees ? '.csv' : '.csv,.xlsx') + '"' + (imp.busy ? ' disabled' : '') + '>'
       + (imp.busy ? '<p class="repo-loading">Reading ' + esc(imp.name) + '…</p>' : '');
@@ -18850,35 +19388,78 @@ function prdClick(el) {
   }
   if (act === 'startblank') { prd.start = 'blank'; prdUseCopy(''); render(); return true; }
   if (act === 'startcopy') { prd.start = 'copy'; render(); prdFocus('#prdCopyOf'); return true; }
-  if (act === 'lstadd') {
-    /* a new listing (D207), at the end, its values the first one's but
-       what makes it another: its ticker or code, issue currency and hedging */
-    var row = prdListingRow(null), main = prd.draft.listings[0] || {};
-    ['shareClass', 'exposureCurrency', 'assetClass', 'productCost', 'distributionYield', 'minimumInvestment', 'benchmark']
-      .forEach(function (k) { row[k] = main[k] || ''; });
-    prd.draft.listings.push(row);
-    prd.leaving = false;
-    render(); prdFocus('#prdF-listing' + (prd.draft.listings.length - 1) + (prdIsSma(prd.draft) ? 'code' : 'ticker')); return true;
-  }
-  if (act === 'lstremove') {
-    var at = parseInt(el.dataset.i, 10);
-    prd.draft.listings.splice(at, 1);
-    prdRemapListings(function (i) { return i === at ? -1 : i > at ? i - 1 : i; });
-    render(); prdFocus('[data-prd="lstadd"]');
-    return true;
-  }
-  if (act === 'lstmove') {
-    var from = parseInt(el.dataset.i, 10), to = from + parseInt(el.dataset.by, 10);
-    if (prdMoveListing(from, to)) {
-      render();
-      prdFocus('[data-prd="lstmove"][data-i="' + to + '"][data-by="' + el.dataset.by + '"]:not([disabled]),[data-prd="lstmove"][data-i="' + to + '"]');
-    }
+  if (act === 'clsmove' && !prd.draft) {
+    /* the card's classes, or an SMA's codes, one place up or down, saved
+       as they move (D214, D218) */
+    var pc = prdEntry(id), ci = parseInt(el.dataset.i, 10), cto = ci + parseInt(el.dataset.by, 10);
+    if (pc) prdReorder(id, prdClassOrder(prdListingsOf(pc), prdIsSma(pc), ci, cto),
+                       '[data-prdkrow="' + cto + '"] [data-prd="clsmove"]:not([disabled])');
     return true;
   }
   if (act === 'cardmove') {
-    /* the card's listings, one place up or down, saved as it moves (D214) */
-    var at2 = parseInt(el.dataset.i, 10), p2 = prdEntry(id);
-    if (p2) prdReorder(id, prdOrderMoving(prdListingsOf(p2).length, at2, at2 + parseInt(el.dataset.by, 10)), at2 + parseInt(el.dataset.by, 10));
+    /* the card's listings, one place up or down within their class */
+    var pl = prdEntry(id), within = parseInt(el.dataset.c, 10), li = parseInt(el.dataset.i, 10), lto = li + parseInt(el.dataset.by, 10);
+    if (pl) prdReorder(id, prdClassOrder(prdListingsOf(pl), false, li, lto, within),
+                       '[data-prdcrow="' + within + ':' + lto + '"] [data-prd="cardmove"]:not([disabled])');
+    return true;
+  }
+  if (act === 'clsadd' && prd.draft) {
+    /* a new class (D218) at the end, its values the last one's but what
+       makes it another - its ISIN, or an SMA's hedging version - with a
+       listing of its own in the same currency, no exchange or ticker */
+    var d = prd.draft, last = d.classes[d.classes.length - 1] || {}, sma = prdIsSma(d);
+    var lastListing = d.listings.filter(function (l) { return l.cls === last.uid; })[0] || {};
+    var cls = prdClassRow(last);
+    cls.isin = ''; if (sma) cls.hedging = '';
+    var place = prdPlaceRow(null, cls.uid);
+    if (!sma) place.issueCurrency = lastListing.issueCurrency || '';
+    prdKeep(function () { d.classes.push(cls); d.listings.push(place); prdNormalise(d); });
+    render();
+    prdFocus(sma ? '#prdF-listing' + (d.listings.length - 1) + 'code' : '#prdF-class' + (d.classes.length - 1) + 'isin');
+    return true;
+  }
+  if (act === 'clsremove' && prd.draft) {
+    var gone = prd.draft.classes[parseInt(el.dataset.i, 10)];
+    if (gone && prd.draft.classes.length > 1) {
+      prdKeep(function () {
+        prd.draft.classes = prd.draft.classes.filter(function (c) { return c !== gone; });
+        prd.draft.listings = prd.draft.listings.filter(function (l) { return l.cls !== gone.uid; });
+      });
+    }
+    render(); prdFocus('[data-prd="clsadd"]');
+    return true;
+  }
+  if (act === 'clsmove' && prd.draft) {
+    var from = parseInt(el.dataset.i, 10), to = from + parseInt(el.dataset.by, 10);
+    if (prdMoveClass(from, to)) {
+      render();
+      prdFocus('[data-prd="clsmove"][data-i="' + to + '"][data-by="' + el.dataset.by + '"]:not([disabled]),[data-prd="clsmove"][data-i="' + to + '"]');
+    }
+    return true;
+  }
+  if (act === 'lstadd' && prd.draft) {
+    /* a new listing (D218), for the last class, in its currency: its class
+       is chosen in its first box */
+    var d2 = prd.draft, under = d2.classes[d2.classes.length - 1];
+    var was = d2.listings.filter(function (l) { return l.cls === under.uid; }).pop() || {};
+    var row = prdPlaceRow(null, under.uid);
+    row.issueCurrency = was.issueCurrency || '';
+    prdKeep(function () { d2.listings.push(row); prdNormalise(d2); });
+    render(); prdFocus('#prdF-listing' + d2.listings.indexOf(row) + 'cls');
+    return true;
+  }
+  if (act === 'lstremove' && prd.draft) {
+    var at = parseInt(el.dataset.i, 10), off = prd.draft.listings[at];
+    if (off) prdKeep(function () { prd.draft.listings.splice(at, 1); });
+    render(); prdFocus('[data-prd="lstadd"]');
+    return true;
+  }
+  if (act === 'lstmove' && prd.draft) {
+    var lf = parseInt(el.dataset.i, 10), lt = lf + parseInt(el.dataset.by, 10);
+    if (prdMoveListing(lf, lt)) {
+      render();
+      prdFocus('[data-prd="lstmove"][data-i="' + lt + '"][data-by="' + el.dataset.by + '"]:not([disabled]),[data-prd="lstmove"][data-i="' + lt + '"]');
+    }
     return true;
   }
   if (act === 'askwithdraw') { prd.confirm = 'withdraw'; prd.note = ''; render(); prdFocus('#prdNote'); return true; }
@@ -20625,62 +21206,92 @@ document.addEventListener('dragend', function () {
   document.querySelectorAll('[data-aorrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
 });
 
-/* a product's listing dragged by its grip, in the form (D207): the first
-   place is the main listing */
+/* a product's class or listing dragged by its grip, in the form
+   (D207, D218): a class goes with its listings, a listing stays in its
+   class; the first listing of the first class is the one a proposal holds */
+var PRD_DRAG_ROWS = { cls: '[data-prdcls]', lst: '[data-prdlrow]' };
+function prdDragRow(e) {
+  if (!prd.drag) return null;
+  var row = e.target.closest && e.target.closest(PRD_DRAG_ROWS[prd.drag.kind]);
+  if (!row) return null;
+  if (prd.drag.kind === 'lst') {
+    var l = prd.draft.listings[+row.dataset.prdlrow], from = prd.draft.listings[prd.drag.from];
+    if (!l || !from || l.cls !== from.cls) return null;
+  }
+  return row;
+}
 document.addEventListener('dragstart', function (e) {
   var grip = e.target.closest && e.target.closest('[data-prdgrip]');
   if (!grip || !repo.open || !prd.draft || grip.getAttribute('draggable') !== 'true') return;
-  prd.drag = parseInt(grip.dataset.prdgrip, 10);
-  var row = grip.closest('[data-prdlrow]');
+  var bits = grip.dataset.prdgrip.split(':');
+  prd.drag = { kind: bits[0], from: parseInt(bits[1], 10) };
+  var row = grip.closest(PRD_DRAG_ROWS[prd.drag.kind]);
   if (row) row.classList.add('dragging');
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', String(prd.drag)); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (err) { /* old engines */ }
+    try { e.dataTransfer.setData('text/plain', grip.dataset.prdgrip); if (row) e.dataTransfer.setDragImage(row, 20, 16); } catch (err) { /* old engines */ }
   }
 });
 function prdDropMark(row, after) {
-  document.querySelectorAll('[data-prdlrow].drop-before, [data-prdlrow].drop-after').forEach(function (r) {
-    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  document.querySelectorAll('[data-prdcls].drop-before, [data-prdcls].drop-after, [data-prdlrow].drop-before, [data-prdlrow].drop-after')
+    .forEach(function (r) { r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
   if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
 }
 document.addEventListener('dragover', function (e) {
-  if (prd.drag == null || !repo.open) return;
-  var row = e.target.closest && e.target.closest('[data-prdlrow]');
+  if (!prd.drag || !repo.open) return;
+  var row = prdDragRow(e);
   if (!row) return;
   e.preventDefault();
   var box = row.getBoundingClientRect();
   prdDropMark(row, e.clientY > box.top + box.height / 2);
 });
 document.addEventListener('drop', function (e) {
-  if (prd.drag == null || !repo.open) return;
-  var row = e.target.closest && e.target.closest('[data-prdlrow]');
+  if (!prd.drag || !repo.open) return;
+  var row = prdDragRow(e);
   if (!row) return;
   e.preventDefault();
-  var box = row.getBoundingClientRect(), over = parseInt(row.dataset.prdlrow, 10);
-  var from = prd.drag, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
+  var kind = prd.drag.kind, box = row.getBoundingClientRect();
+  var over = parseInt(kind === 'cls' ? row.dataset.prdcls : row.dataset.prdlrow, 10);
+  var from = prd.drag.from, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
   if (from < to) to -= 1;
   prd.drag = null; prdDropMark(null);
-  if (prdMoveListing(from, to)) { render(); prdFocus('[data-prd="lstmove"][data-i="' + to + '"]'); }
+  if (kind === 'cls' ? prdMoveClass(from, to) : prdMoveListing(from, to)) {
+    render(); prdFocus('[data-prd="' + kind + 'move"][data-i="' + to + '"]');
+  }
 });
 document.addEventListener('dragend', function () {
-  if (prd.drag == null) return;
+  if (!prd.drag) return;
   prd.drag = null; prdDropMark(null);
-  document.querySelectorAll('[data-prdlrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+  document.querySelectorAll('[data-prdcls].dragging, [data-prdlrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
 });
 
-/* a listing dragged by its grip on the product's card (D214): dropped, the
-   new order is saved, its first the one a proposal holds */
+/* a class or a listing dragged by its grip on the product's card
+   (D214, D218): dropped, the new order is saved - a class with its
+   listings, a listing within its class - its first the one a proposal
+   holds */
 var prdCardDrag = null;
+function prdCardDragRow(e) {
+  if (!prdCardDrag) return null;
+  var row = e.target.closest && e.target.closest(prdCardDrag.kind === 'cls' ? '[data-prdkrow]' : '[data-prdcrow]');
+  if (!row) return null;
+  if (prdCardDrag.kind === 'lst' && +row.dataset.prdcrow.split(':')[0] !== prdCardDrag.c) return null;
+  return row;
+}
 function prdCardDropMark(row, after) {
-  document.querySelectorAll('[data-prdcrow].drop-before, [data-prdcrow].drop-after').forEach(function (r) {
-    r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
+  document.querySelectorAll('[data-prdcrow].drop-before, [data-prdcrow].drop-after, [data-prdkrow].drop-before, [data-prdkrow].drop-after')
+    .forEach(function (r) { r.classList.remove('drop-before'); r.classList.remove('drop-after'); });
   if (row) row.classList.add(after ? 'drop-after' : 'drop-before');
 }
 document.addEventListener('dragstart', function (e) {
-  var grip = e.target.closest && e.target.closest('[data-prdcgrip]');
+  var grip = e.target.closest && e.target.closest('[data-prdcgrip], [data-prdkgrip]');
   if (!grip || !repo.open || !cat.detail || prd.saving || grip.getAttribute('draggable') !== 'true') return;
-  prdCardDrag = { id: cat.detail, from: parseInt(grip.dataset.prdcgrip, 10) };
-  var row = grip.closest('[data-prdcrow]');
+  if (grip.dataset.prdkgrip !== undefined) {
+    prdCardDrag = { id: cat.detail, kind: 'cls', from: parseInt(grip.dataset.prdkgrip, 10) };
+  } else {
+    var at = grip.dataset.prdcgrip.split(':');
+    prdCardDrag = { id: cat.detail, kind: 'lst', c: parseInt(at[0], 10), from: parseInt(at[1], 10) };
+  }
+  var row = grip.closest('[data-prdcrow], [data-prdkrow]');
   if (row) row.classList.add('dragging');
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
@@ -20689,7 +21300,7 @@ document.addEventListener('dragstart', function (e) {
 });
 document.addEventListener('dragover', function (e) {
   if (!prdCardDrag || !repo.open) return;
-  var row = e.target.closest && e.target.closest('[data-prdcrow]');
+  var row = prdCardDragRow(e);
   if (!row) return;
   e.preventDefault();
   var box = row.getBoundingClientRect();
@@ -20697,20 +21308,22 @@ document.addEventListener('dragover', function (e) {
 });
 document.addEventListener('drop', function (e) {
   if (!prdCardDrag || !repo.open) return;
-  var row = e.target.closest && e.target.closest('[data-prdcrow]');
+  var row = prdCardDragRow(e);
   if (!row) return;
   e.preventDefault();
-  var box = row.getBoundingClientRect(), over = parseInt(row.dataset.prdcrow, 10);
-  var from = prdCardDrag.from, to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0), id = prdCardDrag.id;
-  if (from < to) to -= 1;
+  var drag = prdCardDrag, box = row.getBoundingClientRect();
+  var over = drag.kind === 'cls' ? parseInt(row.dataset.prdkrow, 10) : parseInt(row.dataset.prdcrow.split(':')[1], 10);
+  var to = over + (e.clientY > box.top + box.height / 2 ? 1 : 0);
+  if (drag.from < to) to -= 1;
   prdCardDrag = null; prdCardDropMark(null);
-  var p = prdEntry(id);
-  if (p) prdReorder(id, prdOrderMoving(prdListingsOf(p).length, from, to), null);
+  var p = prdEntry(drag.id);
+  if (p) prdReorder(drag.id, prdClassOrder(prdListingsOf(p), drag.kind === 'cls' && prdIsSma(p), drag.from, to,
+                                         drag.kind === 'cls' ? null : drag.c), null);
 });
 document.addEventListener('dragend', function () {
   if (!prdCardDrag) return;
   prdCardDrag = null; prdCardDropMark(null);
-  document.querySelectorAll('[data-prdcrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
+  document.querySelectorAll('[data-prdcrow].dragging, [data-prdkrow].dragging').forEach(function (r) { r.classList.remove('dragging'); });
 });
 
 /* ---- the Account Opening tab: mandate codes (D205, D215) -----------------
@@ -23676,8 +24289,9 @@ document.addEventListener('input', function (e) {
   }
   if (el.id === 'prdNote') { prd.note = el.value; return; }
   if (el.dataset && el.dataset.prdf !== undefined && prd.draft) {
+    /* a list's choice is its change's (below) */
+    if (el.tagName === 'SELECT') return;
     var key = el.dataset.prdf;
-    var wasSma = prdIsSma(prd.draft);
     prdSetDraft(key, el.value);
     if (prd.serverError && prd.serverError.field === key) prd.serverError = null;
     prd.leaving = false;
@@ -23685,17 +24299,6 @@ document.addEventListener('input', function (e) {
     if (key === 'name' && prd.mode === 'new' && !prd.idTyped) {
       prd.draft.productId = prdSlug(el.value);
       var idBox = document.getElementById('prdF-productId'); if (idBox) idBox.value = prd.draft.productId;
-    }
-    if (key === 'vehicle' && prdIsSma(prd.draft) !== wasSma) {
-      /* the SMA template comes and goes with the vehicle (D207): a redraw,
-         with the caret put back where it was */
-      var caret = el.selectionStart;
-      render();
-      window.setTimeout(function () {
-        var again = document.getElementById('prdF-vehicle');
-        if (again) { again.focus(); try { again.setSelectionRange(caret, caret); } catch (err) { /* a select */ } }
-      }, 0);
-      return;
     }
     prdUpdate(); return;
   }
@@ -23753,11 +24356,26 @@ document.addEventListener('change', function (e) {
   }
   if (el.id === 'prdCopyOf' && prd.mode === 'new') { prdUseCopy(el.value); render(); prdFocus('#prdF-name'); return; }
   if (el.dataset && el.dataset.prdf !== undefined && prd.draft && el.tagName === 'SELECT') {
-    prdSetDraft(el.dataset.prdf, el.value);
-    prd.shown[el.dataset.prdf] = true;
-    if (prd.serverError && prd.serverError.field === el.dataset.prdf) prd.serverError = null;
+    var picked = el.dataset.prdf;
+    prdSetDraft(picked, el.value);
+    prd.shown[picked] = true;
+    if (prd.serverError && prd.serverError.field === picked) prd.serverError = null;
+    prd.leaving = false;
+    /* the card's template comes with the vehicle (D207, D218): an SMA's
+       rows are a mandate code each, a Mutual Fund's classes have letters */
+    if (picked === 'vehicle') {
+      if (prdIsSma(prd.draft)) prdKeep(function () { prdSplitClasses(prd.draft); });
+      render(); prdFocus('#prdF-vehicle'); return;
+    }
+    /* a listing given to another class stands with that class's (D218) */
+    var moved = /^listing(\d+)cls$/.exec(picked);
+    if (moved) {
+      var l = prd.draft.listings[+moved[1]];
+      prdKeep(function () { prdNormalise(prd.draft); });
+      render(); prdFocus('#prdF-listing' + prd.draft.listings.indexOf(l) + 'cls'); return;
+    }
     /* an SMA's hedging boxes come and go with its category (D207) */
-    if (el.dataset.prdf === 'category' && prdIsSma(prd.draft)) { render(); return; }
+    if (picked === 'category' && prdIsSma(prd.draft)) { render(); return; }
     prdUpdate(); return;
   }
   if (el.id === 'feeAddLike') { fct.addLike = el.value; return; }
@@ -23793,6 +24411,9 @@ document.addEventListener('focusout', function (e) {
   var el = e.target;
   if (el && el.dataset && el.dataset.prdf !== undefined) {
     prd.shown[el.dataset.prdf] = true;
+    /* and its class's own problem: the same class twice, say (D218) */
+    var cls = /^(class\d+)/.exec(el.dataset.prdf);
+    if (cls) prd.shown[cls[1]] = true;
     prdUpdate();
   }
 });

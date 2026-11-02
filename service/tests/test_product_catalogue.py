@@ -41,7 +41,7 @@ def _unplaced():
 def _new(**over):
     fields = {'productId': 'probe-etf', 'name': 'Probe Global Equity ETF', 'ticker': 'PRB',
               'assetClass': 'Global Equity', 'style': 'Passive', 'vehicle': 'ETF',
-              'shareClass': 'Accumulating', 'source': 'External', 'liquidity': 'Daily',
+              'income': 'Accumulating', 'source': 'External', 'liquidity': 'Daily',
               'exposureCurrency': 'USD', 'productCost': '0.12', 'feeGroup': 'Passive',
               'distributionYield': '', 'minimumInvestment': ''}
     fields.update(over)
@@ -136,7 +136,11 @@ def test_a_product_is_added_with_its_stamps_and_a_first_version(store):
     ({'productCost': '45'}, 'productCost', 'looks wrong'),
     ({'feeGroup': 'Made Up'}, 'feeGroup', 'not on the fee card'),
     ({'feeGroup': ''}, 'feeGroup', 'Choose a fee group'),
-    ({'shareClass': 'Distribution'}, 'shareClass', 'not one of'),
+    ({'income': 'Distribution'}, 'income', 'not one of'),
+    ({'shareClass': 'A'}, 'shareClass', 'Only a Mutual Fund'),
+    ({'vehicle': 'Trust'}, 'vehicle', 'not one of ETF, Mutual Fund or SMA'),
+    ({'domicile': 'LUX'}, 'domicile', 'not a country code'),
+    ({'isin': 'IE00B4L5Y98'}, 'isin', 'not one'),
     ({'style': ''}, 'style', 'Style is needed'),
     ({'minimumInvestment': '5m'}, 'minimumInvestment', 'not a number'),
     ({'productId': ''}, 'productId', 'Give the product an ID'),
@@ -154,9 +158,9 @@ def test_an_id_is_never_reused_and_typed_values_are_read_as_people_type_them(sto
         products.create(_new(productId=taken['productId']), user='alice')
     assert caught.value.field == 'productId' and taken['name'] in caught.value.message
     made = products.create(_new(productCost='0.25%', minimumInvestment='5,000,000',
-                                shareClass='Dis', name='Probe   Fund'), user='alice')
+                                income='Dis', name='Probe   Fund'), user='alice')
     assert made['productCost'] == 0.25 and made['minimumInvestment'] == 5000000.0
-    assert made['shareClass'] == 'Distributing' and made['name'] == 'Probe Fund'
+    assert made['income'] == 'Distributing' and made['shareClass'] == '' and made['name'] == 'Probe Fund'
     products.withdraw('probe-etf', user='alice')
     with pytest.raises(ValidationError) as caught:
         products.create(_new(), user='alice')
@@ -247,8 +251,13 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
     keptHeld = next(r for r in body if r[0] in held)[0]
     changed = next(r for r in body if r[0] not in (dropped, keptHeld))
     changed[at['ProductCost']] = '0.99'
-    newRow = ['probe-etf', 'Probe Global Equity ETF', 'PRB', 'Global Equity', 'Public Equity',
-              'Passive', 'ETF', 'Accumulating', 'External', 'Daily', 'USD', '', '0.12', 'Passive', '', '']
+    newRow = [''] * len(head)
+    for column, value in (('ProductId', 'probe-etf'), ('Name', 'Probe Global Equity ETF'), ('Ticker', 'PRB'),
+                          ('AssetClass', 'Global Equity'), ('Category', 'Public Equity'), ('Style', 'Passive'),
+                          ('Vehicle', 'ETF'), ('Income', 'Accumulating'), ('Source', 'External'),
+                          ('Liquidity', 'Daily'), ('ExposureCurrency', 'USD'), ('ProductCost', '0.12'),
+                          ('FeeGroup', 'Passive')):
+        newRow[at[column]] = value
     out = [head] + [r for r in body if r[0] not in (dropped, keptHeld)] + [newRow]
     path = _fileWith(tmp_path, out, name='delivery.csv')
     untouched = products.entry(body[-1][0])
@@ -330,7 +339,7 @@ def test_a_product_has_a_category_of_its_own_from_the_file_under_any_of_its_head
     rows = products.exportRows()
     head = rows[0]
     at = head.index('Category')
-    assert head[at - 1] == 'AssetClass', 'the export writes it after the asset class'
+    assert head[at - 1] == 'Provider' and head[at + 1] == 'AssetClass', 'the export writes it with the product'
     pid = rows[1][0]
     assert products.entry(pid)['category'] == rows[1][at] == 'Investment Grade Fixed Income'
     assert 'category' not in products.get(pid), 'a sleeve product takes its sleeve\'s'
@@ -389,7 +398,7 @@ def test_a_catalogue_from_before_the_category_gains_the_column_blank(store):
     conn.commit()
     conn.close()
     products.reload()
-    assert sleeveRepo.describe()['schemaVersion'] == 17
+    assert sleeveRepo.describe()['schemaVersion'] == sleeveRepo.SCHEMA_VERSION
     after = products.entries()
     assert [p['category'] for p in after] == [''] * len(before)
     strip = lambda ps: [{k: v for k, v in p.items() if k not in ('category', 'ownCategory')} for p in ps]

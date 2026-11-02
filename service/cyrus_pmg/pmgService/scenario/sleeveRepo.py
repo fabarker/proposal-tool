@@ -172,8 +172,10 @@ WEIGHT_TOLERANCE = 1e-6
 #: version, each with figures of its own (D197); 16 a product has a benchmark,
 #: of its own in a base currency where it differs, and so may each SMA
 #: mandate (D204); 17 a product has listings, each ranked by base currency,
-#: in place of its values by currency and its SMA mandates (D207).
-SCHEMA_VERSION = 17
+#: in place of its values by currency and its SMA mandates (D207); 18 a
+#: fund's listings carry its share classes - each listing the class's
+#: values and its own - and a product its provider (D218).
+SCHEMA_VERSION = 18
 
 #: how a sleeve offered under several types stores them (D179), and the word
 #: a file may use for every type
@@ -283,6 +285,7 @@ CREATE TABLE IF NOT EXISTS products (
     productId         TEXT PRIMARY KEY,
     position          INTEGER NOT NULL,
     name              TEXT NOT NULL,
+    provider          TEXT NOT NULL DEFAULT '',
     ticker            TEXT NOT NULL DEFAULT '',
     assetClass        TEXT NOT NULL DEFAULT '',
     category          TEXT NOT NULL DEFAULT '',
@@ -819,6 +822,17 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if productColumns and 'listings' not in productColumns:
         _listProducts(conn)
 
+    # 17 -> 18 (D218): the three levels. Each product is rebuilt with its
+    # listings carrying the share class's values and the listing's own, as a
+    # revision by the upgrade: a ticker shaped like an ISIN is the ISIN, the
+    # Acc/Dist share class is the income, the asset class moves up to the
+    # product, a hedged class's exposure is the currency it is hedged to,
+    # and a UCITS or ICAV vehicle is a fund's with the word kept as the
+    # regulation. The provider column is the mark of the move, and what
+    # moved is kept, product by product, for the console to show.
+    if productColumns and 'provider' not in productColumns:
+        _levelProducts(conn)
+
     # 3 -> 4 (D148): the policies and their history. New tables only, which
     # _SCHEMA creates on every connection; the version is all there is to move.
     version = conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()
@@ -842,6 +856,44 @@ def _listProducts(conn: sqlite3.Connection) -> None:
             conn.execute('UPDATE products SET listings = ? WHERE productId = ?',
                          (json.dumps(record['listings']), row['productId']))
             moved += 1
+        if moved and conn.execute("SELECT 1 FROM meta WHERE key = 'catalogueRevision'").fetchone():
+            conn.execute("UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) "
+                         "WHERE key = 'catalogueRevision'")
+
+
+def _levelProducts(conn: sqlite3.Connection) -> None:
+    """The move to three levels (D218), in one transaction: the provider
+    column, and every product rewritten as the levels read it, one revision
+    each, with what moved noted on the revision and kept in the report."""
+    from . import products
+    with conn:
+        conn.execute("ALTER TABLE products ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
+        if not _tableExists(conn, 'productHistory'):
+            return
+        stamp, report, moved = _now(), [], 0
+        for row in conn.execute('SELECT * FROM products ORDER BY position').fetchall():
+            notes = []
+            record = products._record(row, notes=notes)
+            revision = row['revision'] + 1
+            conn.execute(
+                'UPDATE products SET listings = ?, provider = ?, ticker = ?, assetClass = ?, vehicle = ?, '
+                'shareClass = ?, exposureCurrency = ?, issueCurrency = ?, productCost = ?, '
+                'distributionYield = ?, minimumInvestment = ?, benchmark = ?, revision = ?, updatedBy = ?, '
+                'updatedAt = ? WHERE productId = ?',
+                (json.dumps(record['listings']), record.get('provider') or '', record['ticker'],
+                 record['assetClass'], record['vehicle'], record['shareClass'] or '',
+                 record['exposureCurrency'], record.get('issueCurrency') or '', record['productCost'],
+                 record['distributionYield'], record['minimumInvestment'], record.get('benchmark') or '',
+                 revision, 'upgrade', stamp, row['productId']))
+            note = ('Rebuilt in three levels: ' + '; '.join(notes)) if notes else \
+                'Rebuilt in three levels: the share class and its listings'
+            products._history(conn, row['productId'], revision, 'upgraded', record, 'upgrade', stamp,
+                              note=note)
+            moved += 1
+            if notes:
+                report.append({'productId': row['productId'], 'name': row['name'], 'notes': notes})
+        conn.execute("INSERT OR REPLACE INTO meta VALUES ('levelsReport', ?)", (json.dumps(report),))
+        conn.execute("INSERT OR REPLACE INTO meta VALUES ('levelsMovedAt', ?)", (stamp,))
         if moved and conn.execute("SELECT 1 FROM meta WHERE key = 'catalogueRevision'").fetchone():
             conn.execute("UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) "
                          "WHERE key = 'catalogueRevision'")

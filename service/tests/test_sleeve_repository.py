@@ -105,10 +105,13 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     and its listings, each ranked by base currency (D207)."""
     rows = products.all()
     assert len(rows) == 73
-    expected = {'productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
+    expected = {'productId', 'name', 'provider', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
                 'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
                 'distributionYield', 'minimumInvestment', 'ownCategory', 'benchmark', 'code', 'hedging',
-                'listings'}
+                'listings',
+                # the share class's and the listing's own fields (D218)
+                'isin', 'income', 'classCurrency', 'domicile', 'regulation', 'replication', 'ukReporting',
+                'exchange', 'quotationUnit'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p
@@ -119,9 +122,9 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     # the two figures the catalogue compares on (D63): a number, or None
     # where the delivery leaves the cell blank - an ETF has no minimum
     assert isinstance(sma['distributionYield'], float) and sma['minimumInvestment'] == 5_000_000.0
-    # and the share class, a word from a closed pair or None (D81)
-    assert {p['shareClass'] for p in rows} <= set(products.SHARE_CLASSES) | {None}
-    assert sma['shareClass'] == 'Distributing'
+    # and the income, a word from a closed pair or None (D81; the share class before D218)
+    assert {p['income'] for p in rows} <= set(products.INCOMES) | {None}
+    assert sma['income'] == 'Distributing' and sma['shareClass'] == ''
     assert products.get('gs-access-ig-corporate-etf')['minimumInvestment'] is None
     assert products.get('nope') is None and not products.has('nope')
     assert products.describeSource()['products'] == 73
@@ -674,8 +677,8 @@ process.stdout.write(JSON.stringify({
     a, b, c = got['enriched']
     # product fees only (D114): net is the yield less the product's own cost,
     # and a row carries no management or all-in figure at all
-    assert a['keys'] == ['books', 'categories', 'count', 'listing', 'matched', 'net', 'p',
-                         'tooBig', 'used', 'v', 'varies'], 'each line read at its first listing (D207, D214)'
+    assert a['keys'] == ['books', 'categories', 'classes', 'count', 'listing', 'matched', 'net', 'p',
+                         'tooBig', 'used', 'v', 'varies'], 'each line read at its first listing (D207, D214, D218)'
     assert a['net'] == 4.48
     assert (b['net'], b['tooBig']) == (4.57, True), 'a $5m minimum is above a $2m mandate'
     assert (c['net'], c['used'], c['cats'], c['books']) == (None, 0, [], []), 'no yield means no net; unplaced means empty joins'

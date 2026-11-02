@@ -2972,7 +2972,7 @@ body.rail-collapsed .rail-admin-btn{width:30px;height:30px}
 .cat-detail{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--surface);border-left:1px solid var(--line-strong);
   box-shadow:-12px 0 30px rgba(12,24,44,.14);padding:16px 18px;display:flex;flex-direction:column;gap:12px;font-size:12.5px;
   overflow:auto;z-index:4}
-.cat-detail .dlg-close{top:8px;right:10px}
+.cat-detail .dlg-close,.dialog.repo .cat-detail .dlg-close{position:absolute;top:8px;right:10px;margin:0}
 .cat-detail .eyeb{font-family:var(--f-num);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
 .cat-detail h4{margin:0;font-size:16px;font-weight:600;line-height:1.25;color:var(--ink);padding-right:28px}
 .cat-detail .tk{font-family:var(--f-num);font-size:12px;color:var(--ink-2);word-break:break-all}
@@ -4049,9 +4049,43 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .cat-tbl tr.cat-sub td.nm.r1{color:#176A33;font-weight:700}
 .cat-tbl tr.cat-sub.held td{background-color:#EEF6F0}
 .cat-cmp-view{font-family:var(--f-num);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
-/* the card and the form of a product's listings: wider, for the table */
-.cat-detail.lst:not(.prd-edit){width:min(720px,calc(100% - 24px))}
-.cat-detail.prd-edit{width:min(620px,calc(100% - 24px))}
+/* the card and the form of a product's classes and listings: wider, for
+   their tables (D218) */
+.cat-detail.lst:not(.prd-edit){width:min(860px,calc(100% - 24px))}
+.cat-detail.prd-edit{width:min(780px,calc(100% - 24px))}
+/* the factsheet card (D218): the product's facts in a strip over its tables */
+.prd-kf{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.prd-kf>div{padding:6px 9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0;margin-bottom:-1px}
+.prd-kf>div:nth-child(4n){border-right:0}
+.prd-kf small{display:block;font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.prd-kf b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.prd-kf b .prd-none,.prd-kf b small{font-weight:400}
+.prd-kf b small{display:inline;font-family:var(--f-body);font-size:11px;letter-spacing:0;text-transform:none}
+.prd-lst-t td.prd-cn{font-family:var(--f-num);color:var(--ink-2)}
+.prd-lst-t tr.cls1 td{border-top-color:var(--line-strong)}
+/* the form's listings (D218): a row each under the columns' heads */
+.prd-pl{display:grid;gap:1px}
+.prd-pl-r{display:grid;grid-template-columns:58px minmax(0,2.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,.8fr) minmax(0,.7fr) 18px;
+  gap:0 8px;align-items:start;padding:3px 4px 0;border-radius:5px}
+.prd-pl-hd{font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding-bottom:2px}
+.prd-pl-r.held{background:#EEF6F0}
+.prd-pl-r.cls1{border-top:1px solid var(--line-strong);border-radius:0;margin-top:3px}
+.prd-pl-r.dragging{opacity:.5}
+.prd-pl-r.drop-before{box-shadow:0 -2px 0 var(--accent)}
+.prd-pl-r.drop-after{box-shadow:0 2px 0 var(--accent)}
+.prd-pl-r>.repo-mv{padding-top:5px}
+.prd-pl-r>.x{font-size:16px;line-height:1;color:var(--ink-3);padding:6px 0 0;text-decoration:none}
+.prd-pl-r>.x:hover{color:#9B1C1C}
+.prd-pl-r .prd-pl-x{grid-column:2 / -2}
+.prd-pl-r .prd-f input,.prd-pl-r .prd-f select{font-size:13px;padding:4px 6px}
+@media (max-width:640px){
+  .prd-kf{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .prd-kf>div:nth-child(4n){border-right:1px solid var(--line)}
+  .prd-kf>div:nth-child(2n){border-right:0}
+  .prd-pl-hd{display:none}
+  .prd-pl-r{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .prd-pl-r>.repo-mv,.prd-pl-r>.x{grid-column:auto}
+}
 .prd-kind{display:inline-block;margin-left:6px;font-size:9.5px;letter-spacing:.08em;border-radius:8px;padding:1px 7px;vertical-align:1px}
 .prd-kind.f{color:#1E4FA3;background:#E6EEFA}
 .prd-kind.s{color:#6B3FA0;background:#F1EAFA}

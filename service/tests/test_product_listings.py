@@ -167,7 +167,7 @@ def test_rank_columns_are_not_read(store, tmp_path):
 
 @pytest.mark.parametrize('rows, words', [
     ([{'Ticker': 'A1'}, {'Ticker': 'A1'}], 'same listing'),
-    ([{'Ticker': 'A1'}, {'Ticker': 'A2', 'Style': 'Passive2'}], 'only a listing'),
+    ([{'Ticker': 'A1'}, {'Ticker': 'A2', 'Style': 'Passive2'}], 'may differ between them'),
     ([{'Ticker': 'A1', 'Hedging': 'ISG Hedged'}], 'separate account'),
     ([{'Ticker': 'A1', 'MandateCode': 'M1'}], 'Only a separate account'),
 ])
@@ -432,6 +432,12 @@ def test_the_register_records_the_listing_a_line_held(store):
     fields = proposalRegister._ITEM_FIELDS
     for field in ('issueCurrency', 'hedging', 'code', 'listing', 'steppedFrom'):
         assert field in fields
+    # and the share class and listing it held (D218)
+    for field in ('isin', 'income', 'shareClass', 'ukReporting', 'domicile', 'regulation',
+                  'exchange', 'ticker', 'quotationUnit'):
+        assert field in fields
+    # never a cost
+    assert not {'productCost', 'distributionYield', 'minimumInvestment'} & set(fields)
 
 
 def test_the_mandate_file_and_its_routes_are_gone(store):
@@ -478,7 +484,7 @@ def test_a_store_from_before_listings_is_listed_as_it_read(store):
     # the move: the column, each product with more than its main values listed
     conn = sleeveRepo.connection()
     try:
-        assert int(conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]) == 17
+        assert int(conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone()[0]) == sleeveRepo.SCHEMA_VERSION
         stored = conn.execute('SELECT listings, currencies, ticker FROM products WHERE productId = ?', (pid,)).fetchone()
         assert json.loads(stored['listings'])[1]['ticker'] == 'GBX'
         # what it was listed from is left where it was, for the code before listings
@@ -505,8 +511,8 @@ def test_a_store_from_before_listings_is_listed_as_it_read(store):
 
 def test_the_vocabulary_offers_every_listings_words(store):
     pid, _, _ = _held()
-    _list(pid, {}, {'ticker': 'GBX', 'issueCurrency': 'GBP', 'assetClass': 'A Brand New Class',
-                    'benchmark': 'A New Index'})
+    _list(pid, {}, {'ticker': 'GBX', 'issueCurrency': 'GBP', 'benchmark': 'A New Index'},
+          assetClass='A Brand New Class')
     vocab = products.vocabulary()
     assert 'A Brand New Class' in vocab['assetClass'] and 'A New Index' in vocab['benchmark']
     assert 'GBP' in vocab['issueCurrency']
@@ -516,10 +522,12 @@ def test_the_vocabulary_offers_every_listings_words(store):
 # --------------------------------------------------- the catalogue line ---
 
 def test_the_catalogue_line_reads_the_first_listing():
-    """D214: a line is its product at its first listing, the one a proposal
-    holds - with a count, the cells its listings differ in, a search that
-    names another listing, and a flag when the first listing is above the
-    open mandate. There is no View as and no ranking."""
+    """D214, D218: a line is its product at the first listing of its first
+    share class, the one a proposal holds - named by its ISIN, else its
+    ticker - with a count, the cells its listings differ in, a search that
+    names another listing by its ticker or its ISIN, its classes counted,
+    and a flag when the held listing is above the open mandate. There is no
+    View as and no ranking."""
     import os
     import shutil
     import subprocess
@@ -532,35 +540,46 @@ def test_the_catalogue_line_reads_the_first_listing():
     helpers = source[source.index('/* catalogue-helpers-begin'):source.index('/* catalogue-helpers-end */')]
     edited = source[source.index('var CAT_EDITED'):source.index('/* product-editor-helpers-end */')]
     script = helpers + edited + '''
-var L = function (t, i, h, min) { return { ticker: t, code: '', issueCurrency: i, hedging: h, shareClass: 'Accumulating',
-  exposureCurrency: i, assetClass: 'Equity', productCost: 0.5, distributionYield: null, minimumInvestment: min,
-  benchmark: '' }; };
-var gef = { productId: 'gef', name: 'GEF', ticker: 'GEF-USD', vehicle: 'UCITS', liquidity: 'Daily', category: 'Equity',
-  listings: [L('GEF-USD', 'USD', 'Unhedged', 3000000), L('GEF-USD', 'GBP', 'Unhedged', 1000),
-             L('GEF-GBPH', 'GBP', 'Hedged', 1000000), L('GEF-EURH', 'EUR', 'Hedged', 3000000)] };
+var L = function (isin, t, i, h, min) { return { isin: isin, ticker: t, code: '', issueCurrency: i, hedging: h, income: 'Accumulating',
+  shareClass: '', classCurrency: h === 'Hedged' ? i : 'USD', exposureCurrency: h === 'Hedged' ? i : 'USD', domicile: 'IE',
+  productCost: 0.5, distributionYield: null, minimumInvestment: min, benchmark: '', exchange: 'LSE', quotationUnit: '' }; };
+var gef = { productId: 'gef', name: 'GEF', ticker: 'GEF-USD', vehicle: 'ETF', liquidity: 'Daily', category: 'Equity', provider: 'GSAM',
+  listings: [L('IE0000000021', 'GEF-USD', 'USD', 'Unhedged', 3000000), L('IE0000000021', 'GEF-GBP', 'GBP', 'Unhedged', 3000000),
+             L('IE0000000039', 'GEF-GBPH', 'GBP', 'Hedged', 1000000), L('', 'GEF-EURH', 'EUR', 'Hedged', 3000000)] };
 var one = { productId: 'one', name: 'One', ticker: 'ONE', vehicle: 'ETF', liquidity: 'Daily', category: 'Equity',
-  listings: [L('ONE', 'USD', '', 5000)] };
+  listings: [L('', 'ONE', 'USD', '', 5000)] };
+one.listings[0].domicile = '';
 var out = {};
 out.rows = catEnrich([gef, one], [], 2000000).map(function (r) {
-  return { t: r.v.ticker, tooBig: r.tooBig, count: r.count, varies: Object.keys(r.varies).sort(),
+  return { t: r.v.ident, tooBig: r.tooBig, count: r.count, classes: r.classes, varies: Object.keys(r.varies).sort(),
            keys: Object.keys(r).sort() };
 });
 var row = catEnrich([gef, one], [], 2000000)[0];
 var hit = catMatched(row, 'gef-gbph', 2000000);
-out.matched = [hit.v.ticker, hit.matched, hit.tooBig, catMatched(row, 'gef-usd', null).matched];
-out.values = [catValuesOf(row, 'hedging'), catValuesOf(row, 'issueCurrency'), catValuesOf(row, 'listings')];
+out.matched = [hit.v.ident, hit.v.ticker, hit.matched, hit.tooBig, catMatched(row, 'gef-usd', null).matched,
+               catMatched(row, 'ie0000000039', null).v.ticker];
+out.values = [catValuesOf(row, 'hedging'), catValuesOf(row, 'issueCurrency'), catValuesOf(row, 'classes'),
+              catValuesOf(row, 'income'), catValuesOf(row, 'provider'), catValuesOf(row, 'shareClass'),
+              catValuesOf(catEnrich([one], [], null)[0], 'domicile'), catValuesOf(catEnrich([one], [], null)[0], 'provider')];
 out.search = catFilter(catEnrich([gef, one], [], null), { query: 'gef-eurh', filters: {} }).map(function (r) { return r.p.productId; });
+out.isin = catFilter(catEnrich([gef, one], [], null), { query: 'ie0000000039', filters: {} }).map(function (r) { return r.p.productId; });
+out.groups = catClasses(gef).map(function (g) { return g.listings.map(function (l) { return l.ticker; }); });
 process.stdout.write(JSON.stringify(out));
 '''
     got = json.loads(subprocess.run([node, '-e', script], capture_output=True, text=True, check=True).stdout)
     gefRow, oneRow = got['rows']
-    assert (gefRow['t'], oneRow['t']) == ('GEF-USD', 'ONE')
+    assert (gefRow['t'], oneRow['t']) == ('IE0000000021', 'ONE'), 'the held class\'s ISIN, else its ticker'
     assert gefRow['tooBig'], 'the first listing needs more than the mandate, whatever the others take'
     assert not oneRow['tooBig'] and oneRow['count'] == 1 and oneRow['varies'] == []
-    assert gefRow['varies'] == ['exposureCurrency', 'hedging', 'issueCurrency', 'minimumInvestment', 'ticker']
-    assert gefRow['keys'] == ['books', 'categories', 'count', 'listing', 'matched', 'net', 'p', 'tooBig', 'used',
-                              'v', 'varies']
-    assert got['matched'] == ['GEF-GBPH', True, True, False], 'a matched listing shows; the flag is still the first\'s'
-    assert got['values'] == [['Unhedged', 'Hedged'], ['USD', 'GBP', 'EUR'], ['Several listings']]
-    assert got['search'] == ['gef']
+    assert (gefRow['count'], gefRow['classes'], oneRow['classes']) == (4, 3, 1)
+    assert gefRow['varies'] == ['classCurrency', 'exposureCurrency', 'hedging', 'ident', 'isin', 'issueCurrency',
+                                'minimumInvestment', 'ticker']
+    assert gefRow['keys'] == ['books', 'categories', 'classes', 'count', 'listing', 'matched', 'net', 'p', 'tooBig',
+                              'used', 'v', 'varies']
+    assert got['matched'] == ['IE0000000039', 'GEF-GBPH', True, True, False, 'GEF-GBPH'], \
+        'a matched listing shows, by its ticker or its ISIN; the flag is still the first\'s'
+    assert got['values'] == [['Unhedged', 'Hedged'], ['USD', 'GBP', 'EUR'], ['Several classes'], ['Accumulating'],
+                             ['GSAM'], ['Not stated'], ['Not stated'], ['Not stated']]
+    assert got['search'] == ['gef'] and got['isin'] == ['gef']
+    assert got['groups'] == [['GEF-USD', 'GEF-GBP'], ['GEF-GBPH'], ['GEF-EURH']], 'one ISIN is one class'
     assert "key: 'unranked'" not in source and 'data-catview' not in source, 'no Unranked in filter, no View as'

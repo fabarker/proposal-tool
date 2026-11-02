@@ -49,6 +49,7 @@ import threading
 
 from . import entities as _entities
 from . import fees, rules, sleeveRepo, sleeves
+from . import products as _products
 from .types import PortfolioKey, ValidationError
 from .workbook import stampedProposalId
 
@@ -158,7 +159,13 @@ _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
                 # and mandate code, its name, and - while lines stepped down
                 # below a minimum - the one it stepped down from; None on
                 # anything delivered before
-                'issueCurrency', 'hedging', 'code', 'listing', 'steppedFrom')
+                'issueCurrency', 'hedging', 'code', 'listing', 'steppedFrom',
+                # the share class and listing it held (D218): the provider,
+                # the class's ISIN and facts, and the listing's exchange and
+                # quotation unit beside its ticker; None on anything
+                # delivered before, which is read as it reads now below
+                'provider', 'isin', 'income', 'classCurrency', 'domicile', 'regulation',
+                'replication', 'ukReporting', 'benchmark', 'exchange', 'quotationUnit')
 
 _lock = threading.Lock()
 
@@ -574,6 +581,25 @@ def _sleevesFor(conn, proposalId) -> list:
     return out
 
 
+def _heldAsNow(item) -> dict:
+    """A recorded line as the levels read it (D218). One delivered before
+    them named its Accumulating or Distributing as its share class, and its
+    ISIN as its ticker: they are read as its income and its ISIN. The record
+    itself is never changed."""
+    if 'income' in item:
+        return item
+    out = dict(item)
+    was = (out.get('shareClass') or '').strip()
+    income = _products.INCOME_SHORT.get(was, was)
+    out['income'] = income if income in _products.INCOMES else None
+    if out['income']:
+        out['shareClass'] = None
+    ticker = (out.get('ticker') or '').strip()
+    if ticker and _products.ISIN_RE.match(ticker.upper()):
+        out['isin'], out['ticker'] = ticker.upper(), _products.NO_TICKER
+    return out
+
+
 def getProposal(proposalId: str, conn=None):
     """One proposal with both pictures and its sleeve pins - and no blob."""
     own = conn is None
@@ -587,6 +613,8 @@ def getProposal(proposalId: str, conn=None):
         entry = _rowToEntry(row)
         entry['allocation'] = json.loads(row['allocation'])
         entry['implemented'] = json.loads(row['implemented'])
+        for group in entry['implemented']:
+            group['items'] = [_heldAsNow(item) for item in group.get('items') or []]
         entry['sleeves'] = _sleevesFor(conn, proposalId)
         return entry
     finally:
