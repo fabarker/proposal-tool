@@ -110,7 +110,9 @@ def test_catalogue_serves_the_delivered_table_in_the_product_shape():
                 'listings',
                 # the share class's and the listing's own fields (D218)
                 'isin', 'income', 'classCurrency', 'domicile', 'ucits', 'replication', 'ukReporting',
-                'exchange', 'cusip', 'sedol'}
+                'exchange', 'cusip', 'sedol',
+                # an SMA mandate's own name (D222)
+                'mandateName', 'isg'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p

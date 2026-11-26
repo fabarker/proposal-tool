@@ -374,7 +374,7 @@ process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: pay
     assert got['before']['names'] == ['I Acc · class 1', 'I Acc hedged · class 2']
     assert [(c['label'], c['before'], c['after']) for c in got['moved']] == [
         ('Product cost of BGF0022', '0.5', '0.55'),
-        ('Listing BGF0044', '—', 'EUR · Hedged · Accumulating · SEDOL BGF0044 · class I · exposure USD · cost 0.45 '
+        ('Listing BGF0044', '—', 'EUR · 100% hedged · Accumulating · SEDOL BGF0044 · class I · exposure USD · cost 0.45 '
                                  '· min 1,000 · benchmark MSCI World')]
     listings = got['payload']['listings']
     assert not any('ranks' in l for l in listings) and not any('assetClass' in l for l in listings)
@@ -382,7 +382,7 @@ process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: pay
     assert not any('ticker' in l or 'regulation' in l for l in listings)
     assert listings[2]['productCost'] == 0.55 and listings[1]['shareClass'] == 'I' and listings[1]['issueCurrency'] == 'GBP'
     assert got['payload']['assetClass'] == 'Equity' and got['payload']['provider'] == 'GSAM', 'the product\'s own'
-    assert got['fields'] == 10 + 3 * 15 + 4 * 6, 'the product, a class\'s boxes and a listing\'s, no unit (D219), a CUSIP and a SEDOL for the ticker (D220)'
+    assert got['fields'] == 10 + 3 * 15 + 4 * 8, 'the product, a class\'s boxes and a listing\'s, no unit (D219), a CUSIP and a SEDOL for the ticker (D220), a mandate name (D222), the ISG tick (D224)'
     assert [(c['label'], c['before'], c['after']) for c in got['reordered']] == [
         ('Listing order', 'BGF0011 · USD, then BGF0011 · GBP, then BGF0022',
          'BGF0022, then BGF0011 · USD, then BGF0011 · GBP')]
@@ -405,7 +405,18 @@ function sma(change) { var d = prdDraftFrom(p); d.vehicle = 'SMA'; d.category = 
 out.same = draft(function (d) { d.listings[1].issueCurrency = 'USD'; });
 out.otherExchange = draft(function (d) { d.listings[1].issueCurrency = 'USD'; d.listings[1].exchange = 'LSE'; });
 out.code = draft(function (d) { d.listings[0].code = 'M1'; });
+out.mandateName = draft(function (d) { d.listings[0].mandateName = 'A Variant'; });
+out.smaNamed = sma(function (d) { d.classes.forEach(function (c) { c.shareClass = ''; c.classCurrency = ''; c.domicile = ''; c.ucits = ''; c.ukReporting = ''; c.isin = ''; });
+  d.listings.forEach(function (l, i) { l.code = 'M' + i; l.mandateName = 'Probe (' + i + ')'; }); d.listings[2].mandateName = 'x'.repeat(121); });
 out.isg = draft(function (d) { d.classes[0].hedging = 'ISG Hedged'; });
+out.over = draft(function (d) { d.classes[0].hedging = '150'; });
+out.word = draft(function (d) { d.classes[0].hedging = 'half'; });
+out.negative = draft(function (d) { d.classes[0].hedging = '-5%%'; });
+out.half = draft(function (d) { d.classes[0].hedging = '50'; });
+out.pctSign = draft(function (d) { d.classes[0].hedging = '75%%'; });
+out.fundIsg = draft(function (d) { d.listings[0].isg = 'Yes'; });
+out.fullyOff = draft(function (d) { d.classes[1].hedging = '100'; d.classes[1].classCurrency = 'GBP'; d.classes[1].exposureCurrency = 'USD'; });
+out.partlyOff = draft(function (d) { d.classes[1].hedging = '60'; d.classes[1].classCurrency = 'GBP'; d.classes[1].exposureCurrency = 'USD'; });
 out.held = draft(function (d) { d.listings[2].sedol = 'BTKN001'; });
 out.badSedol = draft(function (d) { d.listings[2].sedol = 'BAE1'; d.listings[1].cusip = '12345'; });
 out.heldIsin = draft(function (d) { d.classes[0].isin = 'IE00B4L5Y983'; });
@@ -429,7 +440,17 @@ process.stdout.write(JSON.stringify(out));
     assert 'same listing' in got['same']['listing1issueCurrency']
     assert 'listing1issueCurrency' not in got['otherExchange'], 'another exchange is another listing'
     assert 'Only a separate account' in got['code']['listing0code']
-    assert 'Hedged or Unhedged' in got['isg']['class0hedging']
+    assert 'Only a separate account' in got['mandateName']['listing0mandateName'], 'a mandate name is an SMA\'s (D222)'
+    assert 'to 120 characters' in got['smaNamed']['listing2mandateName']
+    assert 'listing0mandateName' not in got['smaNamed'] and 'listing1mandateName' not in got['smaNamed']
+    assert 'ISG Hedged is a separate account' in got['isg']['class0hedging']
+    # the hedging is a percentage from 0 to 100 (D224)
+    for case in ('over', 'word', 'negative'):
+        assert 'a percentage from 0 to 100' in got[case]['class0hedging'], case
+    assert 'class0hedging' not in got['half'] and 'class0hedging' not in got['pctSign']
+    assert 'Only a separate account' in got['fundIsg']['listing0isg'], 'ISG is an SMA mandate\'s'
+    assert '100% hedged to GBP' in got['fullyOff']['class1exposureCurrency']
+    assert 'class1exposureCurrency' not in got['partlyOff'], 'a class hedged in part has the exposure it says'
     assert 'Another Fund' in got['held']['listing2sedol']
     assert 'is not one' in got['badSedol']['listing2sedol'] and 'is not one' in got['badSedol']['listing1cusip']
     assert 'An ETF' in got['heldIsin']['class0isin']
@@ -441,7 +462,7 @@ process.stdout.write(JSON.stringify(out));
     assert got['smaIsg'] == {}
     assert 'no class currency' in got['smaLeft']['class2classCurrency'], 'a fund\'s value left on an SMA is shown to clear'
     assert 'no domicile' in got['smaFund']['class0domicile'] and 'no exchange' in got['smaFund']['listing1exchange']
-    assert 'Only a Public Equity SMA' in got['bondHedged']['class0hedging']
+    assert 'class0hedging' not in got['bondHedged'], 'any SMA may say how much it is hedged (D224)'
 
 
 def test_the_card_and_the_form_follow_the_vehicle_and_the_listings_move():

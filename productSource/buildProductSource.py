@@ -35,14 +35,16 @@ authored file; this script validates it and writes products.xlsx beside it,
 so both shapes of extract exist for the reader to be tried against.
 
 products-listings.csv is the same products in the layout a product file
-takes since the three levels (D218, D219, D220): twenty-nine columns, the
-product's (its name headed Strategy), then the share class's (UCITSCompliant
-Yes or No), then the listing's (its exchange, CUSIP, SEDOL and issue
-currency - no ticker), then an SMA's mandate code; a row for each listing,
+takes since the three levels (D218, D219, D220, D222, D224): thirty-one
+columns, the product's (its name headed Strategy), then the share class's
+(UCITSCompliant Yes or No; Hedging the proportion hedged, a percentage,
+with an SMA mandate's ISG tick beside it), then the listing's (its exchange, CUSIP, SEDOL and issue
+currency - no ticker), then an SMA's mandate code and the mandate's name; a row for each listing,
 a product's rows together in its classes' and listings' order - what the catalogue's Download the product file writes.
 Two products carry the plan's worked examples: GS Global Credit Portfolio,
 a Mutual Fund in four share classes dealt in five currencies, and GS Access
-Treasury 0-1 ETF, two share classes listed four times. This script
+Treasury 0-1 ETF, two share classes listed four times; and one SMA, GS US
+Focused Value SMA, in three mandates, each with a name of its own. This script
 validates it too - a share class's values the same on every row of its
 ISIN - and writes products-listings.xlsx beside it, for an admin who starts
 a product file in Excel.
@@ -69,8 +71,10 @@ PRODUCT_COLUMNS = ['ProductId', 'Strategy', 'Provider', 'Category', 'AssetClass'
 CLASS_COLUMNS = ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
                  'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'ProductCost',
                  'DistributionYield', 'MinimumInvestment', 'Benchmark']
-LISTINGS_COLUMNS = PRODUCT_COLUMNS + CLASS_COLUMNS + ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency',
-                                                     'MandateCode']
+_AFTER_HEDGING = CLASS_COLUMNS.index('Hedging') + 1
+#: ISG, an SMA mandate's tick, beside the hedging it qualifies (D224)
+LISTINGS_COLUMNS = (PRODUCT_COLUMNS + CLASS_COLUMNS[:_AFTER_HEDGING] + ['ISG'] + CLASS_COLUMNS[_AFTER_HEDGING:]
+                    + ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode', 'MandateName'])
 
 
 def readCsv(path=CSV_PATH, columns=COLUMNS):
@@ -133,18 +137,24 @@ def agree(rows, columns, which, key, level):
 
 def writeXlsx(rows, path=XLSX_PATH, columns=COLUMNS):
     """The rows as a workbook, one sheet named Products, the figures as
-    numbers and every other cell as text."""
+    numbers and every other cell as text; the hedging (D224) a number shown
+    as a percentage, as Excel keeps one: 50% is 0.5."""
     from openpyxl import Workbook
     book = Workbook()
     sheet = book.active
     sheet.title = 'Products'
     sheet.append(columns)
     numbers = [columns.index(c) for c in ('ProductCost', 'DistributionYield', 'MinimumInvestment')]
+    hedging = columns.index('Hedging') if 'Hedging' in columns else None
     for row in rows:
         out = list(row)
         for i in numbers:
             out[i] = float(out[i]) if out[i].strip() else None
+        if hedging is not None:
+            out[hedging] = float(out[hedging].rstrip('%')) / 100 if out[hedging].strip() else None
         sheet.append(out)
+        if hedging is not None and out[hedging] is not None:
+            sheet.cell(row=sheet.max_row, column=hedging + 1).number_format = '0%'
     book.save(path)
 
 

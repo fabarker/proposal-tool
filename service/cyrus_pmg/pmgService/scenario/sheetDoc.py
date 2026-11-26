@@ -1618,7 +1618,8 @@ def buildImplementationDoc(model: dict, columns, widths,
                      'Income': item.get('income') or None,
                      'Share Class': item.get('shareClass') or None,
                      'Issue Currency': item.get('issueCurrency') or None,
-                     'Hedging': item.get('hedging') or None,
+                     # the proportion hedged (D224): 50%, 100% · ISG
+                     'Hedging': _hedgingText(item) or None,
                      'UK Reporting': item.get('ukReporting') or None,
                      'Source': item['source'], 'Liquidity': item['liquidity']}
             for name, value in words.items():
@@ -2061,3 +2062,18 @@ def paginate(doc: SheetDoc, budgetPt: float, headerRows=(1,),
     if current:
         pages.append(Page(header, current))
     return pages
+
+
+def _hedgingText(item) -> str:
+    """A line's hedging as the sheet prints it (D224): the proportion hedged
+    and ISG's tick, 50% \u00b7 ISG. A line holds it as the page recorded it -
+    those words - or as the catalogue's listing has it, a number and a tick."""
+    hedging = item.get('hedging')
+    if isinstance(hedging, bool) or hedging is None:
+        hedging = ''
+    if isinstance(hedging, (int, float)):
+        hedging = '{:g}%'.format(hedging)
+    words = str(hedging).strip()
+    if item.get('isg') == 'Yes' and 'ISG' not in words:
+        words = (words + ' \u00b7 ISG') if words else 'ISG'
+    return words

@@ -71,9 +71,11 @@ process is seen by the next read in every process.
 A separate account - an SMA, a product whose vehicle says so - is listed
 under its mandate codes (D197, D207): each listing of an SMA names the code
 the account is opened under, the currency it is run in as its issue
-currency and, for a Public Equity SMA, the hedging version it comes in
-(Hedged, ISG Hedged, Unhedged). A fund's listing may be Hedged or Unhedged,
-or say nothing. The proposal's hedging policy plays no part in which one is
+currency and how much of it is hedged. HEDGING is a percentage (D224): the
+proportion hedged, 100 fully, 0 not at all, 50 half, or blank for not said,
+on a fund's share class or an SMA's mandate; an SMA's mandate may also be
+ticked ISG, ISG's hedged version. The words it was before read as the
+percentage: Hedged 100, Unhedged 0, ISG Hedged 50 and ticked ISG. The proposal's hedging policy plays no part in which one is
 held. The code shows nowhere in a proposal's files;
 the account opening request reads it. The word "mandate" on its own is the
 client's mandate everywhere else in the tool.
@@ -148,7 +150,10 @@ _HEADINGS = {
     'IssueCurrency': ('issuecurrency', 'issueccy', 'issuercurrency', 'issuerccy', 'quotecurrency',
                       'quoteccy', 'dealingcurrency', 'tradingcurrency'),
     'MandateCode': ('mandatecode', 'mandate'),
-    'Hedging': ('hedging', 'hedgingversion', 'currencyhedging'),
+    'MandateName': ('mandatename', 'variantname'),
+    'Hedging': ('hedging', 'hedgingversion', 'currencyhedging', 'hedgeratio', 'hedgedpercent',
+                'hedgingpercent', 'hedgingpercentage', 'hedgeproportion', 'hedgelevel'),
+    'ISG': ('isg', 'isghedged', 'isgversion'),
     'Income': ('income', 'incometreatment', 'dividendtreatment'),
     'UKReporting': ('ukreporting', 'ukreportingstatus', 'ukreportingfund'),
     'Exchange': ('exchange', 'listingexchange'),
@@ -190,7 +195,10 @@ _FIELDS = [
     ('isin', 'ISIN', 'ISIN'),
     ('shareClass', 'ShareClass', 'Share class'),
     ('income', 'Income', 'Income'),
+    # the proportion hedged, a percentage (D224)
     ('hedging', 'Hedging', 'Hedging'),
+    # an SMA mandate that is ISG's hedged version (D224): Yes or blank
+    ('isg', 'ISG', 'ISG'),
     ('classCurrency', 'ClassCurrency', 'Class currency'),
     ('exposureCurrency', 'ExposureCurrency', 'Exposure currency'),
     ('domicile', 'Domicile', 'Domicile'),
@@ -211,6 +219,9 @@ _FIELDS = [
     ('issueCurrency', 'IssueCurrency', 'Issue currency'),
     # an SMA listing's code (D197, D207)
     ('code', 'MandateCode', 'Mandate code'),
+    # and the name of the mandate: an SMA's mandates are its strategy's
+    # variants, each with a name of its own, or blank for the strategy's (D222)
+    ('mandateName', 'MandateName', 'Mandate name'),
 ]
 KEYS = [k for k, _, _ in _FIELDS]
 #: the file's columns in the order an export writes them
@@ -228,15 +239,17 @@ PLACE_FIELDS = ('exchange', 'cusip', 'sedol', 'issueCurrency')
 #: Every field a listing carries (D207, D218): its class's values and its
 #: own, and an SMA's mandate code. A listing holds all of them whole:
 #: nothing in one is read from another.
-LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code',)
+LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code', 'mandateName', 'isg')
 #: the ones of those that are figures
 LISTING_FIGURES = ('productCost', 'distributionYield', 'minimumInvestment')
+#: and the ones that are numbers: the figures and the hedging (D224)
+LISTING_NUMBERS = LISTING_FIGURES + ('hedging',)
 #: what the product is, whichever listing is held: the same on every one of
 #: its rows in a file
 PRODUCT_FIELDS = [k for k in KEYS if k not in LISTING_FIELDS]
 #: what a listing is told apart by, where a file names it: the fields an
 #: import matches a file's row to the catalogue's listing on
-LISTING_KEY = ('isin', 'code', 'exchange', 'cusip', 'sedol', 'issueCurrency', 'hedging', 'shareClass',
+LISTING_KEY = ('isin', 'code', 'exchange', 'cusip', 'sedol', 'issueCurrency', 'hedging', 'isg', 'shareClass',
                'income')
 #: the class's and the listing's fields a separate account has none of
 SMA_REFUSED = ('isin', 'shareClass', 'classCurrency', 'domicile', 'ucits', 'replication',
@@ -282,17 +295,24 @@ REGULATED_VEHICLES = ('UCITS', 'ICAV')
 #: which reads Separate Account on Poros and SMA in the sample file here,
 #: compared without regard to case.
 SMA_VEHICLES = ('separate account', 'sma')
-#: the one sleeve category whose SMAs come in hedging versions
+#: the sleeve category a proposal's Public Equity SMAs are in
 EQUITY_CATEGORY = 'Public Equity'
 #: a product whose own category is this is a hedge fund (D198)
 HEDGE_FUND_CATEGORY = 'Hedge Funds'
-#: the hedging versions a Public Equity SMA's listing comes in, in order; an
-#: SMA in any other category has none, stored as ''
+#: the hedging versions a Public Equity SMA's listing came in before the
+#: hedging was a percentage (D197, D224), in their order
 MANDATE_VERSIONS = ('Hedged', 'ISG Hedged', 'Unhedged')
-#: what a fund's share class may say of its hedging (D207, D218): a hedged
-#: class is hedged to its class currency, which is then its exposure
-FUND_HEDGING = ('Hedged', 'Unhedged')
-HEDGED = 'Hedged'
+#: The hedging is the proportion hedged, a percentage from 0 to 100 (D224):
+#: a fully hedged class is hedged to its class currency, which is then its
+#: exposure. The words it was before read as the percentage; ISG Hedged is
+#: also ticked ISG.
+FULLY_HEDGED = 100.0
+_HEDGE_WORDS = {'hedged': 100.0, 'fully hedged': 100.0, 'unhedged': 0.0, 'not hedged': 0.0,
+                'isg hedged': 50.0}
+ISG_WORD = 'isg hedged'
+ISG = 'Yes'
+_ISG_WORDS = {'yes': ISG, 'y': ISG, 'true': ISG, '1': ISG, 'x': ISG, 'isg': ISG, 'isg hedged': ISG,
+              'no': '', 'n': '', 'false': '', '0': ''}
 #: how an ETF's class tracks its index, or blank for not said
 REPLICATIONS = ('Physical', 'Sampled', 'Synthetic')
 #: whether a class has UK reporting status, or blank for not said
@@ -394,12 +414,27 @@ def _readRows(path: str, data: bytes = None, sheet: str = 'products'):
                          data_only=True)
     named = [s for s in book.sheetnames if s.strip().lower() == sheet]
     sheet = book[named[0]] if named else book.active
-    rows = sheet.iter_rows(values_only=True)
+    rows = (tuple(_cellValue(c) for c in row) for row in sheet.iter_rows())
     head = next(rows, None) or []
     yield [str(h).strip() if h is not None else '' for h in head]
     for row in rows:
         if row and row[0] is not None and str(row[0]).strip():
             yield ['' if v is None else v for v in row]
+
+
+def _cellValue(cell):
+    """A spreadsheet cell's value; one shown as a percentage, which Excel
+    holds as the fraction - 50% as 0.5 - is read as it is shown (D224)."""
+    value = getattr(cell, 'value', None)
+    if isinstance(value, (int, float)) and not isinstance(value, bool) \
+            and _percentFormat(getattr(cell, 'number_format', '') or ''):
+        return '{:g}%'.format(round(value * 100, 9))
+    return value
+
+
+def _percentFormat(fmt) -> bool:
+    """Whether a number format shows a percentage: a % outside quotes."""
+    return '%' in re.sub(r'"[^"]*"|\\.', '', fmt)
 
 
 def _norm(column) -> str:
@@ -541,7 +576,7 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories, classC
     product is must read the same on every row; only a share class's and a
     listing's values may differ, and the rows of one ISIN must agree on the
     class's. A file with no ClassCurrency column gives each class the issue
-    currency of its first row, and a hedged class's exposure follows it. A
+    currency of its first row, and a fully hedged class's exposure follows it. A
     file in the layout before listings (*legacy*, D182) gives a row per base
     currency instead: its All row - else the row of the first currency - is
     the first listing, and each currency's row a listing after it, two rows
@@ -592,7 +627,7 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories, classC
 
 def _fillClassCurrency(listings) -> None:
     """A file with no ClassCurrency column (D218): each class is given the
-    issue currency of its first row, and a hedged class's exposure follows
+    issue currency of its first row, and a fully hedged class's exposure follows
     it, since hedged means hedged to the class currency."""
     firstOf = {}
     for listing in listings:
@@ -602,7 +637,7 @@ def _fillClassCurrency(listings) -> None:
         if listing.get('classCurrency'):
             continue
         listing['classCurrency'] = (first.get('classCurrency') or _text(first.get('issueCurrency'))).upper()
-        if listing['classCurrency'] and _text(listing.get('hedging')) == HEDGED:
+        if listing['classCurrency'] and fullyHedged(listing):
             listing['exposureCurrency'] = listing['classCurrency']
 
 
@@ -826,9 +861,9 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
     checked as a product's values always were, and the list against
     *record*: only an SMA's listing has a mandate code, and an SMA has none
     of the class's or the listing's other fields; only a Mutual Fund's
-    class has a letter; a fund's hedging may be Hedged or Unhedged, a
-    Public Equity SMA's any of its three versions, another SMA's none; a
-    hedged class's exposure is its class currency; the rows of one ISIN
+    class has a letter; the hedging is a percentage from 0 to 100 (D224),
+    and only an SMA's mandate may be ticked ISG; a fully hedged class's
+    exposure is its class currency; the rows of one ISIN
     agree on the class's values; and no two listings are the same one.
     *ucits* is what a UCITS or ICAV vehicle gave a class that says
     nothing of it. Ranks given with a listing are not kept (D214). A refusal
@@ -838,7 +873,6 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
         raise ValidationError('listings', 'A product has at least one listing: its share class, its '
                                           'cost and the rest.')
     sma = isSma(record)
-    equity = record.get('category') == EQUITY_CATEGORY
     vehicle = record.get('vehicle') or ''
     name = record.get('name') or record.get('productId') or 'the product'
     out, seen = [], {}
@@ -858,6 +892,15 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
             raise ValidationError(box('code'), 'Keep the mandate code{} to {} characters.'.format(
                 where, CODE_MAX))
         listing['code'] = code
+        mandateName = _text(given.get('mandateName'))
+        if mandateName and not sma:
+            raise ValidationError(box('mandateName'), 'Only a separate account (an SMA) has mandates with '
+                                  'names of their own: {} is {}. Take the mandate name off{}, or make the '
+                                  'vehicle SMA.'.format(name, _an(record.get('vehicle')), where))
+        if strict and len(mandateName) > NAME_MAX:
+            raise ValidationError(box('mandateName'), 'Keep the mandate name{} to {} characters.'.format(
+                where, NAME_MAX))
+        listing['mandateName'] = mandateName
         letter, income = _text(given.get('shareClass')), _text(given.get('income'))
         if letter and _incomeWord(letter) and (not income or _incomeWord(income)
                                                and INCOME_SHORT.get(income, income) == INCOME_SHORT.get(letter, letter)):
@@ -873,19 +916,20 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
                                   'Fund.'.format(name, _an(vehicle), where))
         listing['shareClass'] = letter
         listing['income'] = _income(income, box('income'), where) or None
-        listing['hedging'] = _hedging(given.get('hedging'), record, sma, equity, box('hedging'), where)
+        listing['hedging'], listing['isg'] = _hedging(given.get('hedging'), given.get('isg'), record, sma,
+                                                      box('hedging'), box('isg'), where)
         listing['classCurrency'] = _currencyCode(given.get('classCurrency'), box('classCurrency'), strict, where)
         exposure = _word(given.get('exposureCurrency'), box('exposureCurrency'),
                          LABELS['exposureCurrency'] + where, strict, required=False)
-        if not sma and listing['hedging'] == HEDGED and listing['classCurrency']:
+        if not sma and listing['hedging'] == FULLY_HEDGED and listing['classCurrency']:
             # hedged to the class currency means that currency's exposure
             if not exposure:
                 exposure = listing['classCurrency']
             elif exposure.upper() != listing['classCurrency']:
                 if strict:
-                    raise ValidationError(box('exposureCurrency'), 'A class hedged to {} gives {} exposure, '
-                                          'not {}: leave the exposure currency{} blank to fill it in, or '
-                                          'make the class unhedged.'.format(listing['classCurrency'],
+                    raise ValidationError(box('exposureCurrency'), 'A class 100% hedged to {} gives {} '
+                                          'exposure, not {}: leave the exposure currency{} blank to fill it '
+                                          'in, or give the class a lower hedging.'.format(listing['classCurrency'],
                                                                             listing['classCurrency'],
                                                                             exposure, where))
                 exposure = listing['classCurrency']
@@ -929,8 +973,8 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
             first = seen[key]
             if sma:
                 raise ValidationError(box('code'), 'Listings {} and {} of {} are the '
-                                      'same listing: {}. Give one its own issue currency or '
-                                      'hedging.'.format(first + 1, n + 1, name, showListing(listing, ident=True)))
+                                      'same listing: {}. Give one its own issue currency, '
+                                      'hedging or ISG tick.'.format(first + 1, n + 1, name, showListing(listing, ident=True)))
             raise ValidationError(box('exchange'), 'Listings {} and {} of {} are the same listing: {}. A '
                                   'share class is listed once on an exchange in a currency, so give one '
                                   'its own exchange or issue currency{}.'.format(
@@ -964,14 +1008,14 @@ def _refuseDisagreeing(listings, bare) -> None:
 
 def _listingKey(listing, sma=None) -> tuple:
     """What makes a listing the one it is, among its product's (D207, D218):
-    an SMA's its mandate code, currency and hedging version; a fund's its
+    an SMA's its mandate code, currency, hedging and ISG tick; a fund's its
     share class - the ISIN, or every value of a class with none - and the
     exchange and issue currency it is bought on."""
     if sma is None:
         sma = bool(_text(listing.get('code')))
     if sma:
         return ('sma', _text(listing.get('code')).lower(), _text(listing.get('issueCurrency')).upper(),
-                _text(listing.get('hedging')))
+                readHedging(listing.get('hedging'), listing.get('isg')))
     isin = _text(listing.get('isin')).upper()
     if isin:
         cls = ('isin', isin)
@@ -981,7 +1025,9 @@ def _listingKey(listing, sma=None) -> tuple:
 
 
 def _keyValue(field, value):
-    if field in LISTING_FIGURES:
+    if field == 'hedging':
+        return readHedging(value)[0]
+    if field in LISTING_NUMBERS:
         return None if value in (None, '') else round(float(value), 9)
     return _text(value).lower()
 
@@ -998,27 +1044,103 @@ def _sameListing(a, b) -> bool:
     return not any(not _same(a.get(f), b.get(f)) for f in LISTING_FIELDS)
 
 
-def _hedging(value, record, sma, equity, key, where) -> str:
-    """A listing's hedging as stored (D207): a fund's Hedged, Unhedged or
-    blank; a Public Equity SMA's one of its versions or blank (D197);
-    another SMA's blank, since only Public Equity comes hedged."""
-    hedging = _text(value)
-    if not hedging:
+def _hedging(value, isg, record, sma, key, isgKey, where):
+    """A listing's hedging as stored (D224): (the proportion hedged, a
+    percentage from 0 to 100 or None for not said; ISG's tick, 'Yes' or '').
+    The percentage may be typed with its sign, or as the word it was before
+    - Hedged 100, Unhedged 0, ISG Hedged 50 and ticked ISG; only an SMA's
+    mandate may be ISG's."""
+    name = record.get('name') or 'it'
+    tick = _isgTick(isg, isgKey, where)
+    level = None
+    if isinstance(value, bool):
+        raise ValidationError(key, _hedgingAsked(where))
+    if isinstance(value, (int, float)):
+        level = float(value)
+    else:
+        text = _text(value)
+        word = text.lower()
+        if word in _HEDGE_WORDS:
+            level = _HEDGE_WORDS[word]
+            if word == ISG_WORD:
+                if not sma:
+                    raise ValidationError(key, 'ISG Hedged is a separate account\'s: {} is {}. Give the '
+                                               'hedging{} as a percentage.'.format(
+                                                   name, _an(record.get('vehicle')), where))
+                tick = ISG
+        elif text:
+            number = text[:-1].strip() if text.endswith('%') else text
+            try:
+                level = float(number)
+            except ValueError:
+                raise ValidationError(key, _hedgingAsked(where, text))
+    if level is not None and (math.isnan(level) or not 0 <= level <= FULLY_HEDGED):
+        raise ValidationError(key, _hedgingAsked(where, _text(value)))
+    if tick and not sma:
+        raise ValidationError(isgKey, 'Only a separate account\'s mandate is ISG\'s: {} is {}. Take '
+                                      'the ISG tick off{}.'.format(name, _an(record.get('vehicle')), where))
+    return level, tick
+
+
+def _hedgingAsked(where, given='') -> str:
+    return 'The hedging{}{} is the proportion hedged, a percentage from 0 to 100: 100 for fully hedged, ' \
+           '0 for unhedged, 50 for half, or blank.'.format(where, ' {!r}'.format(given) if given else '')
+
+
+def _isgTick(value, key, where) -> str:
+    """ISG's tick on an SMA's mandate (D224): 'Yes' or ''."""
+    if isinstance(value, bool):
+        return ISG if value else ''
+    word = _text(value).lower()
+    if not word:
         return ''
-    if sma and not equity:
-        raise ValidationError(key, 'Only a {} SMA comes in hedging versions: {} is {}, so leave the '
-                                   'hedging{} blank.'.format(EQUITY_CATEGORY, record.get('name') or 'it',
-                                                             record.get('category') or 'in no category',
-                                                             where))
-    allowed = MANDATE_VERSIONS if sma else FUND_HEDGING
-    if hedging in allowed:
-        return hedging
-    same = [v for v in allowed if v.lower() == hedging.lower()]
-    if same:
-        raise ValidationError(key, 'The hedging {!r} is spelled {}.'.format(hedging, same[0]))
-    raise ValidationError(key, 'The hedging{} is {}, or blank.'.format(
-        where, ' or '.join(allowed) if len(allowed) == 2 else ', '.join(allowed[:-1]) + ' or ' + allowed[-1])
-        + (' ISG Hedged is a separate account\'s.' if not sma and hedging.lower() == 'isg hedged' else ''))
+    if word in _ISG_WORDS:
+        return _ISG_WORDS[word]
+    raise ValidationError(key, 'The ISG tick{} {!r} is Yes or blank.'.format(where, _text(value)))
+
+
+def readHedging(value, isg=None):
+    """Any hedging as it was stored, recorded or shown, at any time (D224):
+    (the percentage or None, ISG's tick 'Yes' or '') - a number, a word it
+    was before, or the words hedgingText gives, '50% · ISG'."""
+    tick = ISG if isg is True or _ISG_WORDS.get(_text(isg).lower()) else ''
+    if isinstance(value, bool) or value is None:
+        return None, tick
+    if isinstance(value, (int, float)):
+        return float(value), tick
+    level = None
+    for bit in _text(value).split('\u00b7'):
+        word = bit.strip().lower()
+        if word in _HEDGE_WORDS:
+            level = _HEDGE_WORDS[word]
+            tick = ISG if word == ISG_WORD else tick
+        elif word == 'isg':
+            tick = ISG
+        elif word:
+            try:
+                level = float(word.rstrip('%').strip())
+            except ValueError:
+                pass
+    return level, tick
+
+
+def hedgingText(listing, said=False) -> str:
+    """A listing's hedging as a person reads it (D224): 100%, 50% · ISG, or
+    '' for not said; *said*, in a line of words: 100% hedged · ISG."""
+    level, tick = readHedging((listing or {}).get('hedging'), (listing or {}).get('isg'))
+    bits = (['{:g}%{}'.format(level, ' hedged' if said else '')] if level is not None else []) \
+        + (['ISG'] if tick else [])
+    return ' \u00b7 '.join(bits)
+
+
+def _said(listing, field) -> str:
+    """A listing's field in a line of words: the hedging as hedgingText says it."""
+    return hedgingText(listing, said=True) if field == 'hedging' else _text(listing.get(field))
+
+
+def fullyHedged(listing) -> bool:
+    """Whether a listing's class is hedged whole to its class currency."""
+    return readHedging((listing or {}).get('hedging'))[0] == FULLY_HEDGED
 
 
 def _incomeWord(text) -> bool:
@@ -1232,7 +1354,8 @@ def modernise(record, notes=None) -> dict:
     an ISIN is the ISIN; Accumulating or Distributing where the class letter
     goes is the income; the asset class moves up from the first listing to
     the product; a class is in the currency its listing is issued in, and a
-    hedged class's exposure is that currency; a UCITS or ICAV vehicle is an
+    hedged class's exposure is that currency; a hedging stored as a word is
+    the percentage it reads as (D224), ISG Hedged ticked ISG; a UCITS or ICAV vehicle is an
     ETF or a Mutual Fund, a UCITS one's classes UCITS compliant; and
     Separate Account reads SMA. One stored before the CUSIP and the SEDOL
     (D220): a class's regulation reads as its UCITS compliance, and a
@@ -1281,6 +1404,19 @@ def modernise(record, notes=None) -> dict:
         for listing in modern:
             if not listing.get('ucits') and not sma:
                 listing['ucits'] = ucits
+    for listing in modern:
+        # a field a listing was stored without, as one saved before it
+        # existed (a mandate's name, D222): blank, or no figure
+        for field in LISTING_FIELDS:
+            listing.setdefault(field, None if field in LISTING_NUMBERS else '')
+        # the hedging stored as a word, before it was a percentage (D224)
+        if not isinstance(listing['hedging'], (int, float)) or isinstance(listing['hedging'], bool):
+            was = _text(listing['hedging'])
+            listing['hedging'], listing['isg'] = readHedging(listing['hedging'], listing['isg'])
+            if was:
+                _say(notes, 'hedging {} of {} → {}'.format(was, _ident(listing), hedgingText(listing)))
+        elif not isinstance(listing['hedging'], float):
+            listing['hedging'] = float(listing['hedging'])
     out['listings'] = modern
     for field in LISTING_FIELDS:
         out[field] = modern[0].get(field)
@@ -1292,6 +1428,7 @@ def _modernListing(listing, sma, notes=None) -> dict:
     read it."""
     new = {f: '' for f in LISTING_FIELDS}
     new['code'] = _text(listing.get('code'))
+    new['mandateName'] = _text(listing.get('mandateName'))
     ticker = _ticker(listing.get('ticker'))
     if not sma and _isinShaped(ticker):
         new['isin'] = ticker.upper()
@@ -1304,11 +1441,11 @@ def _modernListing(listing, sma, notes=None) -> dict:
     elif was and not sma:
         new['shareClass'] = was
     new['income'] = new['income'] or None
-    new['hedging'] = _text(listing.get('hedging'))
+    new['hedging'] = listing.get('hedging')
     new['issueCurrency'] = _text(listing.get('issueCurrency'))
     new['classCurrency'] = '' if sma else new['issueCurrency'].upper()
     new['exposureCurrency'] = _text(listing.get('exposureCurrency'))
-    if (not sma and new['hedging'] == HEDGED and new['classCurrency']
+    if (not sma and fullyHedged(new) and new['classCurrency']
             and new['exposureCurrency'].upper() != new['classCurrency']):
         _say(notes, 'exposure currency {} of {} → {}, the currency it is hedged to'.format(
             new['exposureCurrency'] or '—', _ident(new), new['classCurrency']))
@@ -1382,9 +1519,9 @@ def listingLabel(listing, listings=None) -> str:
         return ident
     bits = [ident]
     for field in ('issueCurrency', 'hedging', 'income', 'shareClass', 'exchange', 'sedol', 'cusip'):
-        if len({_text(p.get(field)) for p in peers}) > 1 and _text(listing.get(field)):
-            bits.append(_text(listing.get(field)))
-            peers = [p for p in peers if _text(p.get(field)) == _text(listing.get(field))]
+        if len({_said(p, field) for p in peers}) > 1 and _said(listing, field):
+            bits.append(_said(listing, field))
+            peers = [p for p in peers if _said(p, field) == _said(listing, field)]
             if len(peers) == 1:
                 break
     return ' · '.join(bits)
@@ -1395,8 +1532,8 @@ def showListing(listing, ident=False) -> str:
     bits = [_ident(listing)] if ident else []
     if ident and listing.get('isin') and _ident(listing) != _text(listing.get('isin')).upper():
         bits.append(_text(listing['isin']).upper())
-    bits += [_text(listing.get(f)) for f in ('exchange', 'issueCurrency', 'hedging', 'income')
-             if _text(listing.get(f))]
+    bits += [_said(listing, f) for f in ('exchange', 'issueCurrency', 'hedging', 'income')
+             if _said(listing, f)]
     for field, word in (('sedol', 'SEDOL'), ('cusip', 'CUSIP')):
         if _text(listing.get(field)) and not (ident and _ident(listing) == _text(listing[field]).upper()):
             bits.append('{} {}'.format(word, listing[field]))
@@ -1473,7 +1610,8 @@ def findListing(product, held):
         if (not isin or _text(listing.get('isin')).upper() == isin) \
                 and not any(_text(listing.get(f)).upper() != v for f, v in ids.items()) \
                 and _text(listing.get('issueCurrency')).upper() == _text(held.get('issueCurrency')).upper() \
-                and _text(listing.get('hedging')) == _text(held.get('hedging')) \
+                and readHedging(listing.get('hedging'), listing.get('isg')) \
+                == readHedging(held.get('hedging'), held.get('isg')) \
                 and (not income or _text(listing.get('income')) == income) \
                 and (not letter or _text(listing.get('shareClass')) == letter) \
                 and (not held.get('exchange') or _text(listing.get('exchange')).lower() == _text(held.get('exchange')).lower()) \
@@ -1499,6 +1637,8 @@ def show(key, value) -> str:
         return '{:,.0f}'.format(value)
     if key in _PERCENT:
         return '{:g}'.format(value)
+    if key == 'hedging':
+        return hedgingText({'hedging': value}) or '—'
     return str(value)
 
 
@@ -1623,7 +1763,7 @@ def _record(row, notes=None) -> dict:
         'distributionYield': None if row['distributionYield'] is None else float(row['distributionYield']),
         'minimumInvestment': None if row['minimumInvestment'] is None else float(row['minimumInvestment']),
         'benchmark': (row['benchmark'] if 'benchmark' in keys else '') or '',
-        'code': '', 'hedging': '',
+        'code': '', 'hedging': None, 'isg': '',
     }
     text = row['listings'] if 'listings' in keys else ''
     if text:
@@ -1804,8 +1944,7 @@ def vocabulary() -> dict:
     class is described by - every one a live product already uses, in A-Z
     order, on any of its listings (D207) - with the fixed lists: the
     vehicles, the incomes, the replications, UK reporting, UCITS
-    compliance (D220), and the hedging
-    a fund's and a Public Equity SMA's listing may say."""
+    compliance (D220). The hedging is a percentage (D224), so has none."""
     cat = _catalogue()
     out = {}
     for key in ('assetClass', 'style', 'source', 'liquidity', 'provider', 'exposureCurrency',
@@ -1821,7 +1960,6 @@ def vocabulary() -> dict:
     out['replication'] = list(REPLICATIONS)
     out['ukReporting'] = list(UK_REPORTING)
     out['ucits'] = list(UCITS)
-    out['hedging'] = {'fund': list(FUND_HEDGING), 'sma': list(MANDATE_VERSIONS)}
     return out
 
 
@@ -2371,7 +2509,7 @@ def _fileName(name) -> str:
 #: as they are (D204, D207, D218): (field, column)
 _KEPT_COLUMNS = [(f, _COLUMN_OF[f]) for f in ('isin', 'shareClass', 'income', 'hedging', 'classCurrency',
                                               'domicile', 'ucits', 'replication', 'ukReporting',
-                                              'benchmark', 'exchange', 'cusip', 'sedol')]
+                                              'benchmark', 'exchange', 'cusip', 'sedol', 'mandateName', 'isg')]
 
 
 def _keepStored(incoming, stored, found):
@@ -2393,7 +2531,9 @@ def _keepStored(incoming, stored, found):
     if 'MandateCode' not in found and isSma(incoming) and any(l.get('code') for l in stored['listings']):
         return clean(dict(incoming, listings=stored['listings']), strict=False), True
     present = set(found)
-    missing = [f for f, column in _KEPT_COLUMNS if column not in present]
+    # a file's Hedging column says ISG Hedged where it has no ISG column
+    missing = [f for f, column in _KEPT_COLUMNS if column not in present
+               and not (f == 'isg' and 'Hedging' in present)]
     keepProvider = 'Provider' not in present and stored.get('provider') and not incoming.get('provider')
     if not missing and not keepProvider:
         return incoming, False
@@ -2591,7 +2731,8 @@ def exportRows() -> list:
     out = [list(EXPORT_COLUMNS)]
     for p in entries():
         for listing in p['listings']:
-            out.append([_cell(listing[key] if key in LISTING_FIELDS else p.get(key)) for key in KEYS])
+            out.append([_cell(hedgingText({'hedging': listing[key]}) if key == 'hedging'
+                              else listing[key] if key in LISTING_FIELDS else p.get(key)) for key in KEYS])
     return out
 
 

@@ -6486,6 +6486,15 @@ function complete() {
 /* one line of the table, as the library serves its product: at the
    listing it holds, its first (D214) */
 function implItem(product, level) {
+  /* a listing's hedging as a line records it (D224): the proportion hedged
+     and ISG's tick, 50% \u00b7 ISG - or '' for not said */
+  function hedgingWords(p) {
+    var h = p.hedging, bits = [];
+    if (typeof h === 'number' && isFinite(h)) bits.push(String(Math.round(h * 1e6) / 1e6) + '%');
+    else if (typeof h === 'string' && h) bits.push(h);
+    if (p.isg === 'Yes') bits.push('ISG');
+    return bits.join(' \u00b7 ');
+  }
   return {
     productId: product.productId,
     name: product.name, assetClass: product.assetClass,
@@ -6497,7 +6506,8 @@ function implItem(product, level) {
     shareClass: product.shareClass || null, ukReporting: product.ukReporting || '',
     source: product.source,
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
-    issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
+    /* the proportion hedged and ISG's tick, 50% \u00b7 ISG (D224) */
+    issueCurrency: product.issueCurrency || '', hedging: hedgingWords(product),
     listing: product.listing || '',
     ownCategory: product.ownCategory || '',
     cost: product.productCost, feeGroup: product.feeGroup,
@@ -6556,10 +6566,11 @@ function standsInText(item) {
 }
 
 /* what a line holds, under its ISIN: the listing's SEDOL, the currency it
-   is dealt in and its hedging (D208, D218, D220) */
+   is dealt in and the proportion hedged (D208, D218, D220, D224) */
 function listingSub(item) {
   var place = item.sedol || item.cusip || '';
-  var bits = [item.isin ? place : '', item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
+  var hedged = item.hedging ? String(item.hedging).replace(/%/, '% hedged') : '';
+  var bits = [item.isin ? place : '', item.issueCurrency, hedged].filter(function (b) { return !!b; });
   return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
 }
 /* the ISIN column: the class's ISIN, else the listing's SEDOL or CUSIP
@@ -11283,7 +11294,8 @@ var CAT_FACETS = [
   { key: 'style', label: 'Style' },
   { key: 'exposureCurrency', label: 'Exposure' },
   { key: 'issueCurrency', label: 'Issue currency' },
-  { key: 'hedging', label: 'Hedging', order: ['Hedged', 'ISG Hedged', 'Unhedged', 'Not stated'] },
+  /* the proportion hedged (D224), the most hedged first */
+  { key: 'hedging', label: 'Hedging', byLevel: true },
   { key: 'book', label: 'Implementation type' },
   /* whether it names a benchmark (D204): the products still to be given one */
   { key: 'benchmarked', label: 'Benchmark', order: ['Has a benchmark', 'No benchmark'] },
@@ -11399,7 +11411,7 @@ var NO_CATEGORY = 'No category';
 var CAT_CLASS_FIELDS = ['isin', 'shareClass', 'income', 'hedging', 'classCurrency', 'exposureCurrency', 'domicile',
                         'ucits', 'replication', 'ukReporting', 'productCost', 'distributionYield',
                         'minimumInvestment', 'benchmark'];
-var CAT_LISTING_FIELDS = CAT_CLASS_FIELDS.concat(['exchange', 'cusip', 'sedol', 'issueCurrency', 'code']);
+var CAT_LISTING_FIELDS = CAT_CLASS_FIELDS.concat(['exchange', 'cusip', 'sedol', 'issueCurrency', 'code', 'isg']);
 /* the words a facet gives a class or a listing that says none */
 var CAT_NOT_STATED = { hedging: 1, income: 1, shareClass: 1, domicile: 1, ucits: 1, ukReporting: 1 };
 function catJoin(sleeves) {
@@ -11418,6 +11430,14 @@ function catJoin(sleeves) {
 /* a product's listings (D207), or the one its top level carries, in their
    order: the first is the one a proposal holds (D214) */
 function catListings(p) { return p.listings && p.listings.length ? p.listings : [p]; }
+/* a listing's hedging as it reads (D224): the proportion hedged, 100%,
+   50% \u00b7 ISG - or '' for not said */
+function catHedging(l) {
+  var h = l && l.hedging, bits = [];
+  if (typeof h === 'number' && isFinite(h)) bits.push(String(Math.round(h * 1e6) / 1e6) + '%');
+  if (l && l.isg === 'Yes') bits.push('ISG');
+  return bits.join(' \u00b7 ');
+}
 function catIsSma(p) { return ['sma', 'separate account'].indexOf(String(p.vehicle || '').toLowerCase()) !== -1; }
 /* what a line names a listing by (D218, D220): an SMA's code, else its
    class's ISIN, else its SEDOL, else its CUSIP */
@@ -11465,7 +11485,7 @@ function catRowAt(row, listing, mandateSize) {
     CAT_LISTING_FIELDS.concat(['ident']).forEach(function (f) {
       var seen = [];
       all.forEach(function (l) {
-        var t = f === 'ident' ? catIdent(l) : catText(l[f]);
+        var t = f === 'ident' ? catIdent(l) : f === 'hedging' ? catText(catHedging(l)) : catText(l[f]);
         if (seen.indexOf(t) === -1) seen.push(t);
       });
       if (seen.length > 1) row.varies[f] = seen;
@@ -11500,7 +11520,8 @@ function catValuesOf(row, field) {
   if (CAT_LISTING_FIELDS.indexOf(field) !== -1) {
     var out = [];
     catListings(row.p).forEach(function (l) {
-      var w = l[field] || (CAT_NOT_STATED[field] ? 'Not stated' : field === 'issueCurrency' ? 'Not given' : '');
+      var w = (field === 'hedging' ? catHedging(l) : l[field])
+        || (CAT_NOT_STATED[field] ? 'Not stated' : field === 'issueCurrency' ? 'Not given' : '');
       if (out.indexOf(w) === -1) out.push(w);
     });
     return out;
@@ -11509,14 +11530,14 @@ function catValuesOf(row, field) {
 }
 /* whether a listing's ISIN, SEDOL, CUSIP or code holds *q* (D218, D220) */
 function catListingHas(l, q) {
-  return [l.isin, l.sedol, l.cusip, l.code].join(' ').toLowerCase().indexOf(q) !== -1;
+  return [l.isin, l.sedol, l.cusip, l.code, l.mandateName].join(' ').toLowerCase().indexOf(q) !== -1;
 }
 function catMatches(p, q) {
   if (!q) return true;
   /* any class's ISIN, any listing's SEDOL, CUSIP, mandate code or
      exchange, and their benchmarks (D204, D207, D218, D220) */
   var words = [p.name, p.category, p.vehicle, p.source, p.provider || '', p.assetClass || ''];
-  catListings(p).forEach(function (l) { words.push(l.isin || '', l.sedol || '', l.cusip || '', l.code || '', l.exchange || '', l.benchmark || ''); });
+  catListings(p).forEach(function (l) { words.push(l.isin || '', l.sedol || '', l.cusip || '', l.code || '', l.mandateName || '', l.exchange || '', l.benchmark || ''); });
   return words.join(' ').toLowerCase().indexOf(q) !== -1;
 }
 /* *row* at the listing a search names, where it names one of the product's
@@ -11563,6 +11584,13 @@ function catFacets(rows, facets, state, orders) {
     });
     var order = (orders && orders[f.key]) || f.order || null;
     var values = Object.keys(counts).sort(function (a, b) {
+      /* a percentage, the highest first, Not stated last (D224) */
+      if (f.byLevel) {
+        var la = parseFloat(a), lb = parseFloat(b);
+        if (isNaN(la) || isNaN(lb)) return isNaN(la) - isNaN(lb);
+        if (la !== lb) return lb - la;
+        return a < b ? -1 : a > b ? 1 : 0;
+      }
       if (order) {
         /* the values named first - or, for a facet whose named value is
            Not stated, last */
@@ -11580,6 +11608,7 @@ function catSortValue(row, key) {
   if (key === 'used' || key === 'net') return row[key];
   var v = row.v || row.p;
   if (key === 'productCost' || key === 'distributionYield' || key === 'minimumInvestment') return v[key];
+  if (key === 'hedging') return typeof v.hedging === 'number' ? v.hedging : null;
   return String(v[key] || '').toLowerCase();
 }
 function catSort(rows, sort) {
@@ -11676,7 +11705,8 @@ var PRD_CLASS_FIELDS = [
   { key: 'isin', label: 'ISIN', short: 'ISIN', kind: 'isin', optional: true, fund: true },
   { key: 'shareClass', label: 'Share class', short: 'Class', kind: 'letter', optional: true, fund: true, mf: true },
   { key: 'income', label: 'Income', short: 'Income', kind: 'income', optional: true },
-  { key: 'hedging', label: 'Hedging', short: 'Hedging', kind: 'hedging', optional: true },
+  /* the proportion hedged, a percentage from 0 to 100 (D224) */
+  { key: 'hedging', label: 'Hedging', short: 'Hedging', kind: 'hedge', unit: '%', optional: true },
   { key: 'classCurrency', label: 'Class currency', short: 'Ccy', kind: 'code3', optional: true, fund: true },
   { key: 'exposureCurrency', label: 'Exposure currency', short: 'Exp.', kind: 'word' },
   { key: 'domicile', label: 'Domicile', short: 'Dom.', kind: 'country', optional: true, fund: true },
@@ -11696,7 +11726,12 @@ var PRD_PLACE_FIELDS = [
   { key: 'cusip', label: 'CUSIP', short: 'CUSIP', kind: 'cusip', optional: true, fund: true },
   { key: 'sedol', label: 'SEDOL', short: 'SEDOL', kind: 'sedol', optional: true, fund: true },
   { key: 'issueCurrency', label: 'Issue currency', short: 'Issue', kind: 'ccy', optional: true },
-  { key: 'code', label: 'Mandate code', short: 'Code', kind: 'text', optional: true, sma: true }
+  { key: 'code', label: 'Mandate code', short: 'Code', kind: 'text', optional: true, sma: true },
+  /* an SMA's mandates are its strategy's variants, each with a name of its
+     own, or blank for the strategy's (D222) */
+  { key: 'mandateName', label: 'Mandate name', short: 'Name', kind: 'text', optional: true, sma: true },
+  /* a mandate that is ISG's hedged version (D224): ticked, Yes, or not */
+  { key: 'isg', label: 'ISG', short: 'ISG', kind: 'tick', optional: true, sma: true }
 ];
 /* every field a listing carries, in the order the server names them */
 var PRD_LISTING_FIELDS = PRD_CLASS_FIELDS.concat(PRD_PLACE_FIELDS);
@@ -11709,14 +11744,13 @@ var PRD_INCOME_SHORT = { Distributing: 'Dist', Accumulating: 'Acc' };
 var PRD_REPLICATIONS = ['Physical', 'Sampled', 'Synthetic'];
 var PRD_UK = ['Yes', 'No'];
 var PRD_MAX = { productId: 80, name: 120, word: 60, note: 240, shareClass: 20, exchange: 40,
-                productCost: 10, distributionYield: 50, code: 40, benchmark: 200 };
-/* a separate account (D197): its vehicle says so. A Public Equity SMA's
-   listing comes in three hedging versions; a fund's may be Hedged or
-   Unhedged; another SMA's has none (D207). */
+                productCost: 10, distributionYield: 50, code: 40, mandateName: 120, benchmark: 200 };
+/* a separate account (D197): its vehicle says so. A class's or a
+   mandate's hedging is the proportion hedged, 0 to 100% (D224), and only
+   an SMA's mandate may be ticked ISG. */
 var PRD_SMA_VEHICLES = ['separate account', 'sma'];
 var PRD_EQUITY = 'Public Equity';
-var PRD_VERSIONS = ['Hedged', 'ISG Hedged', 'Unhedged'];
-var PRD_FUND_HEDGING = ['Hedged', 'Unhedged'];
+var PRD_FULLY_HEDGED = 100;
 /* a box's key: class0isin, listing2sedol - the form's, and as the server
    names a listing's, listing2sedol */
 var PRD_BOX_KEY = /^(class|listing)(\d+)([a-zA-Z]*)$/;
@@ -11736,8 +11770,25 @@ function prdVehicle(word) {
   return '';
 }
 function prdIsMutualFund(d) { return prdVehicle(d && d.vehicle) === 'Mutual Fund'; }
-/* the hedging a class of *d* may say */
-function prdHedgings(d) { return prdIsSma(d) ? (prdIsEquity(d) ? PRD_VERSIONS : []) : PRD_FUND_HEDGING; }
+/* a hedging as typed or served (D224): its percentage, null for none, NaN
+   for one that is not a number - the words it was before read as the
+   server reads them: Hedged 100, Unhedged 0, ISG Hedged 50 */
+var PRD_HEDGE_WORDS = { 'hedged': 100, 'fully hedged': 100, 'unhedged': 0, 'not hedged': 0, 'isg hedged': 50 };
+function prdHedgeLevel(v) {
+  if (typeof v === 'number') return v;
+  var w = prdText(v).toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PRD_HEDGE_WORDS, w) ? PRD_HEDGE_WORDS[w] : prdNumber(v, true);
+}
+/* a listing's hedging in words, as the server's hedgingText says it:
+   100%, 50% \u00b7 ISG; *said*, in a line: 50% hedged */
+function prdHedgingText(l, said) {
+  var h = prdHedgeLevel(l && l.hedging), bits = [];
+  if (h !== null && !isNaN(h)) bits.push(String(Math.round(h * 1e6) / 1e6) + '%' + (said ? ' hedged' : ''));
+  if (l && prdText(l.isg) === 'Yes') bits.push('ISG');
+  return bits.join(' \u00b7 ');
+}
+/* a listing's field in a line of words: the hedging as it is said */
+function prdSaid(l, f) { return f === 'hedging' ? prdHedgingText(l, true) : prdText(l[f]); }
 /* the listings of a product as served, or the one its top level carries */
 function prdListingsOf(p) {
   if (!p) return [];
@@ -11916,7 +11967,7 @@ function prdFigureProblem(d, key, label, required) { return prdFigureText(d[key]
    and the exchange and currency it is bought on. Mirrors _listingKey. */
 function prdListingKey(l) {
   if (prdText(l.code)) {
-    return ['sma', prdText(l.code).toLowerCase(), prdText(l.issueCurrency).toUpperCase(), prdText(l.hedging)].join('|');
+    return ['sma', prdText(l.code).toLowerCase(), prdText(l.issueCurrency).toUpperCase(), prdHedgingText(l)].join('|');
   }
   return [prdClassKey(l), prdText(l.exchange).toLowerCase(), prdText(l.issueCurrency).toUpperCase()].join('|');
 }
@@ -11968,12 +12019,12 @@ function prdProblems(d, ctx) {
 }
 /* the share classes' problems (D218), into *out*: the server's checks in
    miniature - an ISIN's shape, one class an ISIN and one product's, a
-   letter only on a Mutual Fund's, the hedging its kind may say, a hedged
-   class's exposure its class currency, the codes and the lists, and none
+   letter only on a Mutual Fund's, the hedging a percentage (D224), a fully
+   hedged class's exposure its class currency, the codes and the lists, and none
    of a fund's boxes on an SMA */
 function prdClassProblems(d, ctx, out) {
-  var classes = d.classes || [], sma = prdIsSma(d), mf = prdIsMutualFund(d), equity = prdIsEquity(d);
-  var allowed = prdHedgings(d), held = (ctx && ctx.held) || {}, isins = {}, kinds = {};
+  var classes = d.classes || [], sma = prdIsSma(d), mf = prdIsMutualFund(d);
+  var held = (ctx && ctx.held) || {}, isins = {}, kinds = {};
   var many = classes.length > 1;
   if (!classes.length) { out.listings = 'A product has at least one share class: its cost and the rest.'; return; }
   classes.forEach(function (c, i) {
@@ -11989,17 +12040,21 @@ function prdClassProblems(d, ctx, out) {
     if (letter.length > PRD_MAX.shareClass) out[box + 'shareClass'] = 'Keep the share class' + of + ' to ' + PRD_MAX.shareClass + ' characters: the letter or letters the fund names it by, such as A or I.';
     else if (letter && !mf && !sma) out[box + 'shareClass'] = 'Only a Mutual Fund has a share class letter: take it off, or make the vehicle Mutual Fund.';
     if (prdText(c.income) && PRD_INCOMES.indexOf(prdText(c.income)) === -1) out[box + 'income'] = 'The income is ' + prdOr(PRD_INCOMES) + ', or blank.';
-    var hedging = prdText(c.hedging);
-    if (hedging && sma && !equity) out[box + 'hedging'] = 'Only a Public Equity SMA comes in hedging versions: leave it blank.';
-    else if (hedging && allowed.indexOf(hedging) === -1) out[box + 'hedging'] = 'The hedging is ' + prdOr(allowed) + ', or blank.';
+    /* the proportion hedged, 0 to 100% (D224) */
+    var hedging = prdHedgeLevel(c.hedging);
+    if (!sma && prdText(c.hedging).toLowerCase() === 'isg hedged') {
+      out[box + 'hedging'] = 'ISG Hedged is a separate account\u2019s: give the hedging' + of + ' as a percentage.';
+    } else if (hedging !== null && (isNaN(hedging) || hedging < 0 || hedging > PRD_FULLY_HEDGED)) {
+      out[box + 'hedging'] = 'The hedging' + of + ' is the proportion hedged, a percentage from 0 to 100: 100 for fully hedged, 0 for unhedged, 50 for half, or blank.';
+    }
     var ccy = prdText(c.classCurrency).toUpperCase();
     if (ccy && !/^[A-Z]{3}$/.test(ccy)) out[box + 'classCurrency'] = 'The class currency' + of + ' is a currency code of three letters, such as USD.';
-    var exposure = prdText(c.exposureCurrency), hedgedTo = !sma && hedging === 'Hedged' && /^[A-Z]{3}$/.test(ccy) ? ccy : '';
+    var exposure = prdText(c.exposureCurrency), hedgedTo = !sma && hedging === PRD_FULLY_HEDGED && /^[A-Z]{3}$/.test(ccy) ? ccy : '';
     if (!exposure && !hedgedTo) out[box + 'exposureCurrency'] = 'Exposure currency' + of + ' is needed.';
     else if (exposure.length > PRD_MAX.word) out[box + 'exposureCurrency'] = 'Keep the exposure currency' + of + ' to ' + PRD_MAX.word + ' characters.';
     else if (hedgedTo && exposure && exposure.toUpperCase() !== hedgedTo) {
-      out[box + 'exposureCurrency'] = 'A class hedged to ' + hedgedTo + ' gives ' + hedgedTo + ' exposure, not ' + exposure
-        + ': leave it blank to fill it in, or make the class unhedged.';
+      out[box + 'exposureCurrency'] = 'A class 100% hedged to ' + hedgedTo + ' gives ' + hedgedTo + ' exposure, not ' + exposure
+        + ': leave it blank to fill it in, or give the class a lower hedging.';
     }
     var dom = prdText(c.domicile);
     if (dom && !/^[A-Za-z]{2}$/.test(dom)) out[box + 'domicile'] = 'The domicile' + of + ' is a two-letter country code, such as IE, LU, GB or US.';
@@ -12049,6 +12104,10 @@ function prdListingProblems(d, ctx, out) {
     else if (code && held['code:' + code.toLowerCase()]) {
       out[box + 'code'] = 'The mandate code ' + code + ' belongs to ' + held['code:' + code.toLowerCase()] + '. A code is one product’s.';
     }
+    var mname = prdText(l.mandateName);
+    if (mname && !sma) out[box + 'mandateName'] = 'Only a separate account (an SMA) has mandates with names of their own: take the mandate name off, or make the vehicle SMA.';
+    else if (mname.length > PRD_MAX.mandateName) out[box + 'mandateName'] = 'Keep the mandate name' + of + ' to ' + PRD_MAX.mandateName + ' characters.';
+    if (prdText(l.isg) && !sma) out[box + 'isg'] = 'Only a separate account\u2019s mandate is ISG\u2019s: take the ISG tick off, or make the vehicle SMA.';
     if (prdText(l.exchange).length > PRD_MAX.exchange) out[box + 'exchange'] = 'Keep the exchange' + of + ' to ' + PRD_MAX.exchange + ' characters, as you name it: LSE, Xetra.';
     if (prdText(l.issueCurrency).length > PRD_MAX.word) out[box + 'issueCurrency'] = 'Keep the issue currency' + of + ' to ' + PRD_MAX.word + ' characters.';
     if (sma) {
@@ -12060,7 +12119,7 @@ function prdListingProblems(d, ctx, out) {
     var key = prdListingKey(flat[i]), at = sma ? 'code' : 'issueCurrency';
     if (seen[key] !== undefined && !out[box + at]) {
       out[box + at] = 'Listings ' + (seen[key] + 1) + ' and ' + n + ' are the same listing. ' + (sma
-        ? 'Give one its own issue currency or hedging.'
+        ? 'Give one its own issue currency, hedging or ISG tick.'
         : 'A share class is listed once on an exchange in a currency, so give one its own exchange or issue currency.');
     }
     if (seen[key] === undefined) seen[key] = i;
@@ -12093,6 +12152,7 @@ function prdShow(key, v) {
   if (v === null || v === undefined || v === '' || v === '—') return '—';
   if (key === 'minimumInvestment') return Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
   if (key === 'productCost' || key === 'distributionYield') return String(parseFloat(Number(v).toPrecision(12)));
+  if (key === 'hedging') return prdHedgingText({ hedging: v }) || '—';
   return String(v);
 }
 /* what a listing is called by (D220): its code, else its ISIN, else its
@@ -12112,10 +12172,10 @@ function prdListingLabel(l, all) {
   var bits = [ident];
   ['issueCurrency', 'hedging', 'income', 'shareClass', 'exchange', 'sedol', 'cusip'].some(function (f) {
     var values = {};
-    peers.forEach(function (p) { values[prdText(p[f])] = true; });
-    if (Object.keys(values).length > 1 && prdText(l[f])) {
-      bits.push(prdText(l[f]));
-      peers = peers.filter(function (p) { return prdText(p[f]) === prdText(l[f]); });
+    peers.forEach(function (p) { values[prdSaid(p, f)] = true; });
+    if (Object.keys(values).length > 1 && prdSaid(l, f)) {
+      bits.push(prdSaid(l, f));
+      peers = peers.filter(function (p) { return prdSaid(p, f) === prdSaid(l, f); });
       return peers.length === 1;
     }
     return false;
@@ -12124,7 +12184,7 @@ function prdListingLabel(l, all) {
 }
 /* one listing as a history line shows it. Mirrors showListing. */
 function prdShowListing(l) {
-  var bits = ['exchange', 'issueCurrency', 'hedging', 'income'].map(function (f) { return prdText(l[f]); }).filter(Boolean);
+  var bits = ['exchange', 'issueCurrency', 'hedging', 'income'].map(function (f) { return prdSaid(l, f); }).filter(Boolean);
   if (prdText(l.sedol)) bits.push('SEDOL ' + prdText(l.sedol));
   if (prdText(l.cusip)) bits.push('CUSIP ' + prdText(l.cusip));
   if (prdText(l.shareClass)) bits.push('class ' + prdText(l.shareClass));
@@ -12212,11 +12272,12 @@ function prdChanges(before, d) {
   return out;
 }
 /* the short name of share class *c*, the *i*th (D218): its letter, its
-   income and whether it is hedged, then its ISIN - or its place, for a
+   income and how much it is hedged, then its ISIN - or its place, for a
    class with none: 'I Acc · LU0000000011', 'Dist hedged · class 2' */
 function prdClassName(c, i) {
+  var h = prdHedgeLevel(c.hedging);
   var words = [prdText(c.shareClass), PRD_INCOME_SHORT[prdText(c.income)] || '',
-               prdText(c.hedging) === 'Hedged' ? 'hedged' : ''].filter(Boolean).join(' ');
+               h === PRD_FULLY_HEDGED ? 'hedged' : h > 0 ? h + '% hedged' : ''].filter(Boolean).join(' ');
   var isin = prdText(c.isin).toUpperCase();
   return (words ? words + ' · ' : '') + (isin || 'class ' + (i + 1));
 }
@@ -14657,7 +14718,7 @@ function svAddHits(products, f) {
     if (!q) return true;
     /* and any of its listings' ISINs, SEDOLs, CUSIPs and codes (D207, D218, D220) */
     return [p.name, p.assetClass, p.vehicle, p.productId, p.isin, p.sedol, p.cusip]
-      .concat((p.listings || []).map(function (l) { return [l.isin, l.sedol, l.cusip, l.code].join(' '); }))
+      .concat((p.listings || []).map(function (l) { return [l.isin, l.sedol, l.cusip, l.code, l.mandateName].join(' '); }))
       .join(' ').toLowerCase().indexOf(q) !== -1;
   });
   var key = f.sort || 'cost', dir = f.dir === 'desc' ? -1 : 1;
@@ -18037,6 +18098,7 @@ function catCsvCell(row, c) {
       return (typeof p[c.key] === 'number') ? p[c.key].toFixed(2) : '';
     case 'minimumInvestment':
       return (typeof p.minimumInvestment === 'number') ? String(p.minimumInvestment) : '';
+    case 'hedging': return catHedging(p);
     default: return p[c.key] == null ? '' : String(p[c.key]);
   }
 }
@@ -18228,6 +18290,7 @@ function catCellHtml(row, c, sorted) {
     case 'cusip': case 'sedol': return td('tk mute', esc(v[c.key] || '—'));
     case 'provider': return td('mute', esc(p.provider || '—'));
     case 'income': return td('mute', esc(PRD_INCOME_SHORT[v.income] || v.income || '—'));
+    case 'hedging': return td('mute', esc(catHedging(v) || '—'));
     case 'benchmark': return v.benchmark ? '<td class="bm' + (vm ? ' vm' : '') + (sorted ? ' srt' : '') + '" title="' + esc(v.benchmark) + '">' + esc(v.benchmark) + '</td>'
       : td('mute', '—');
     default: return td('mute', esc(v[c.key] === null || v[c.key] === undefined || v[c.key] === '' ? '—' : v[c.key]));
@@ -18243,7 +18306,7 @@ function catSubRowsHtml(row, cols, band) {
   });
   return out.map(function (x, at) {
     var l = x.l;
-    var tag = (sma ? 'code ' : 'class ') + (x.ci + 1) + (at === 0 ? ' · held' : !sma && x.first && l.hedging === 'Hedged' ? ' · hedged' : '');
+    var tag = (sma ? 'code ' : 'class ') + (x.ci + 1) + (at === 0 ? ' · held' : !sma && x.first && catHedging(l) ? ' · ' + catHedging(l) + ' hedged' : '');
     var net = (typeof l.distributionYield === 'number' && typeof l.productCost === 'number') ? l.distributionYield - l.productCost : null;
     return '<tr class="cat-sub' + (l === row.listing ? ' held' : '') + (x.first && x.ci ? ' cls1' : '') + '" data-catrow="' + esc(p.productId) + '"'
       + (band === null ? '' : ' data-catband="' + esc(band) + '"') + '><td class="pinc"></td>'
@@ -18354,7 +18417,7 @@ function catCompareHtml() {
     + line('Share class', function (r) { return esc(r.v.shareClass || '—'); })
     + line('Exposure', function (r) { return esc(r.v.exposureCurrency); })
     + line('Issue currency', function (r) { return esc(r.v.issueCurrency || '—'); })
-    + line('Hedging', function (r) { return esc(r.v.hedging || '—'); })
+    + line('Hedging', function (r) { return esc(catHedging(r.v) || '—'); })
     + line('Domicile', function (r) { return esc(r.v.domicile || '—'); })
     + line('UCITS compliant', function (r) { return esc(r.v.ucits || '—'); })
     + line('UK reporting', function (r) { return esc(r.v.ukReporting || '—'); })
@@ -18499,7 +18562,7 @@ function prdUseCopy(id) {
   /* its ISINs, CUSIPs, SEDOLs and codes are the copied product's own (D207,
      D218, D220) */
   if (p) {
-    prd.draft.listings.forEach(function (l) { l.cusip = ''; l.sedol = ''; l.code = ''; });
+    prd.draft.listings.forEach(function (l) { l.cusip = ''; l.sedol = ''; l.code = ''; l.mandateName = ''; });
     prd.draft.classes.forEach(function (c) { c.isin = ''; });
   }
   if (!prd.idTyped) prd.draft.productId = prdSlug(keep.name);
@@ -18768,7 +18831,7 @@ function prdClassesHtml(p, row, benchCol) {
     (mf || some('shareClass')) ? ['Class', function (l) { return esc(l.shareClass || '—'); }, 'cd'] : null,
     ['ISIN', function (l) { return l.isin ? '<span class="prd-cd">' + esc(l.isin) + '</span>' : '<span class="prd-none">—</span>'; }],
     ['Income', function (l) { return esc(PRD_INCOME_SHORT[l.income] || l.income || '—'); }],
-    ['Hedging', function (l) { return esc(l.hedging || '—'); }],
+    ['Hedging', function (l) { return esc(catHedging(l) || '—'); }],
     ['Ccy', function (l) { return esc(l.classCurrency || '—'); }],
     ['Exp.', function (l) { return esc(l.exposureCurrency || '—'); }],
     ['Dom.', function (l) { return esc(l.domicile || '—'); }],
@@ -18829,17 +18892,23 @@ function prdPlacesHtml(p, row) {
            : 'each class is dealt with the fund in a currency; the first of the first class is held',
     cols, rows);
 }
-/* an SMA's mandate codes (D197, D218): one table, a row each in their
-   order, the first held. Hedging is a Public Equity SMA's, and Benchmark a
-   column only where the codes name different ones. */
+/* an SMA's mandates (D197, D218, D222): one table, a row each in their
+   order, the first held. Hedging, the proportion hedged and ISG's tick
+   (D224), is a column where a mandate gives it, and Benchmark only where
+   the codes name different ones. */
 function prdMandatesHtml(p, row, benchCol) {
-  var all = prdListingsOf(p), equity = prdIsEquity(p);
+  var all = prdListingsOf(p);
   var some = function (k) { return all.some(function (l) { return !!prdText(l[k]); }); };
   var hit = row.matched ? row.listing : null;
   var cols = [
     ['Code', function (l) { return l.code ? '<b class="prd-cd">' + esc(l.code) + '</b>' : '<span class="prd-none">none yet</span>'; }],
+    /* each mandate's own name, or the strategy's where it has none (D222) */
+    ['Name', function (l) {
+      return l.mandateName ? '<span class="prd-mn">' + esc(l.mandateName) + '</span>'
+        : '<span class="prd-none" title="No name of its own: it goes by the strategy\u2019s">' + esc(p.name) + '</span>';
+    }],
     ['Issue', function (l) { return esc(l.issueCurrency || '—'); }],
-    (equity || some('hedging')) ? ['Hedging', function (l) { return esc(l.hedging || '—'); }] : null,
+    all.some(function (l) { return !!catHedging(l); }) ? ['Hedging', function (l) { return esc(catHedging(l) || '—'); }] : null,
     some('income') ? ['Income', function (l) { return esc(PRD_INCOME_SHORT[l.income] || l.income || '—'); }] : null,
     ['Exposure', function (l) { return esc(l.exposureCurrency || '—'); }],
     ['Cost', function (l) { return catFigure(l.productCost, 2); }, 'num'],
@@ -18856,15 +18925,15 @@ function prdMandatesHtml(p, row, benchCol) {
         }).join('')
       + '</tr>';
   }).join('');
-  return prdCardTableHtml('Mandate codes · ' + all.length, (all.length > 1 ? 'in order: the first is held' : 'the one a proposal holds')
-    + (equity ? '; a Public Equity SMA comes in hedging versions' : ''), cols, rows);
+  return prdCardTableHtml('Mandates · ' + all.length, (all.length > 1 ? 'in order: the first is held' : 'the one a proposal holds'),
+    cols, rows);
 }
 /* what a proposal holds, under the tables (D214, D218) */
 function prdHeldHtml(p) {
   var all = prdListingsOf(p), sma = prdIsSma(p);
   var several = all.length > 1, movable = several && !p.withdrawn;
   return '<p class="prd-held">A proposal holds <b>' + esc(prdListingLabel(all[0], all)) + '</b>'
-    + (several ? (sma ? ', the first mandate code' : ', the first listing of the first class') + ', whatever its base currency or its amount.' : '.')
+    + (several ? (sma ? ', the first mandate' : ', the first listing of the first class') + ', whatever its base currency or its amount.' : '.')
     + (movable ? ' Drag a row by its grip, or move it with its arrows, to put another first: the order is saved as it moves.' : '') + '</p>';
 }
 /* the card's listings put in a new order (D214), saved as a new version;
@@ -18953,8 +19022,16 @@ function prdBoxHtml(d, key, f, value, probs, cls, bare) {
   var invalid = err ? ' aria-invalid="true" aria-describedby="prdE-' + key + '"' : '';
   var named = bare ? ' aria-label="' + esc(bare) + '"' : '';
   var input;
-  if (f.kind === 'hedging' || PRD_PICKS[f.kind]) {
-    var options = (f.kind === 'hedging' ? prdHedgings(d) : PRD_PICKS[f.kind]).slice();
+  if (f.kind === 'tick') {
+    /* a tick (D224): Yes when ticked */
+    return '<div class="prd-f prd-tick' + (cls ? ' ' + cls : '') + '">'
+      + (bare ? '' : '<label for="prdF-' + key + '">' + esc(f.label) + '</label>')
+      + '<input id="prdF-' + key + '" type="checkbox" data-prdf="' + key + '"' + (prdText(value) === 'Yes' ? ' checked' : '')
+      + invalid + (bare ? named : ' title="ISG\u2019s hedged version"') + '>'
+      + '<p class="prd-err" id="prdE-' + key + '" role="status">' + esc(err) + '</p></div>';
+  }
+  if (PRD_PICKS[f.kind]) {
+    var options = PRD_PICKS[f.kind].slice();
     if (value && options.indexOf(value) === -1) options.push(value);
     input = '<select id="prdF-' + key + '" data-prdf="' + key + '"' + invalid + named + '>'
       + '<option value=""' + (value ? '' : ' selected') + '>Not stated</option>'
@@ -18963,7 +19040,7 @@ function prdBoxHtml(d, key, f, value, probs, cls, bare) {
   } else {
     input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
       + ' value="' + esc(value) + '"' + invalid + named + (PRD_LISTED[f.key] ? ' list="prdL-' + f.key + '"' : '')
-      + (PRD_FIGURES[f.key] ? ' inputmode="decimal"' : '')
+      + (PRD_FIGURES[f.key] || f.kind === 'hedge' ? ' inputmode="decimal"' : '')
       + (f.optional ? ' placeholder="' + (f.key === 'classCurrency' ? 'USD' : f.key === 'domicile' ? 'IE' : f.key === 'isin' ? 'IE00B4L5Y983' : 'None') + '"' : '') + '>';
   }
   return '<div class="prd-f' + (cls ? ' ' + cls : '') + '">'
@@ -18975,7 +19052,7 @@ function prdBoxHtml(d, key, f, value, probs, cls, bare) {
 function prdHeldText(d) {
   var rows = (prdPayload(d).listings || []);
   if (rows.length < 2) return '';
-  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + (prdIsSma(d) ? ', the first mandate code' : ', the first listing of the first class')
+  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + (prdIsSma(d) ? ', the first mandate' : ', the first listing of the first class')
     + ', whatever its base currency or its amount.';
 }
 /* a row's head in the form: its grip and arrows, its name, its × */
@@ -19055,6 +19132,8 @@ function prdPlacesFormHtml(d, probs) {
           + prdBoxHtml(d, 'listing' + i + 'issueCurrency', by.issueCurrency, l.issueCurrency, probs, '', 'Issue currency of listing ' + n)
           + (count[l.cls] > 1 ? '<button type="button" class="cat-link x" data-prd="lstremove" data-i="' + i + '" aria-label="Take off listing ' + n + '" title="Take it off">×</button>' : '<span></span>')
           + (l.code ? prdBoxHtml(d, 'listing' + i + 'code', by.code, l.code, probs, 'prd-pl-x') : '')
+          + (l.mandateName ? prdBoxHtml(d, 'listing' + i + 'mandateName', by.mandateName, l.mandateName, probs, 'prd-pl-x') : '')
+          + (l.isg ? prdBoxHtml(d, 'listing' + i + 'isg', by.isg, l.isg, probs, 'prd-pl-x') : '')
           + '</div>';
       }).join('')
     + '</div>'
@@ -19063,28 +19142,28 @@ function prdPlacesFormHtml(d, probs) {
     + '</div>';
 }
 /* An SMA's mandate codes (D197, D218): a block each in their order, the
-   first held - its code, its currency, its hedging version where a Public
-   Equity SMA has them, and its figures. A box a fund has shows here only
+   first held - its code, its currency, the proportion hedged and ISG's
+   tick (D224), and its figures. A box a fund has shows here only
    while it holds something, so the refusal can be read and the box cleared. */
 function prdMandatesFormHtml(d, probs) {
-  var rows = d.listings, equity = prdIsEquity(d), many = rows.length > 1, named = prdPayload(d).listings;
+  var rows = d.listings, many = rows.length > 1, named = prdPayload(d).listings;
   var cby = {}, lby = {};
   PRD_CLASS_FIELDS.forEach(function (f) { cby[f.key] = f; });
   PRD_PLACE_FIELDS.forEach(function (f) { lby[f.key] = f; });
   return '<div class="prd-lst" id="prdListings">'
-    + '<div class="prd-ccy-h"><b>Mandate codes · ' + rows.length + '</b>'
-    + '<small>Each code an SMA is opened under, with the currency the account is run in' + (equity ? ' and its hedging version' : '')
-    + '. One code may be run in several currencies: a row each. A proposal holds the first, whatever its base currency: drag another to the top to hold it instead.</small></div>'
+    + '<div class="prd-ccy-h"><b>Mandates · ' + rows.length + '</b>'
+    + '<small>Each mandate is a variant of the strategy: the code it is opened under, its name, the currency the account is run in, how much of it is hedged (100% fully, 0% not at all), whether it is ISG\u2019s'
+    + ' and its figures. A mandate with no name of its own goes by the strategy\u2019s. One code may be run in several currencies: a row each. A proposal holds the first, whatever its base currency: drag another to the top to hold it instead.</small></div>'
     + rows.map(function (l, i) {
         var ci = prdClassIndex(d, l.cls), c = d.classes[ci] || {};
         var cbox = function (k, cls) { return prdBoxHtml(d, 'class' + ci + k, cby[k], c[k], probs, cls); };
         var lbox = function (k, cls) { return prdBoxHtml(d, 'listing' + i + k, lby[k], l[k], probs, cls); };
         var label = named[i] ? prdListingLabel(named[i], named) : '';
-        return '<div class="prd-lst-row" data-prdcls="' + ci + '" role="group" aria-label="Mandate code ' + (i + 1) + '">'
-          + prdRowHeadHtml('cls', ci, rows.length, 'Mandate code ' + (i + 1), label === '—' ? '' : label, i === 0 && many, many)
+        return '<div class="prd-lst-row" data-prdcls="' + ci + '" role="group" aria-label="Mandate ' + (i + 1) + '">'
+          + prdRowHeadHtml('cls', ci, rows.length, 'Mandate ' + (i + 1), label === '—' ? '' : label, i === 0 && many, many)
           + '<div class="prd-lst-g">'
-          + lbox('code', 'w2') + lbox('issueCurrency')
-          + (equity || c.hedging ? cbox('hedging') : '')
+          + lbox('code', 'w2') + lbox('mandateName', 'wide') + lbox('issueCurrency')
+          + cbox('hedging') + lbox('isg')
           + (c.income ? cbox('income') : '')
           + cbox('exposureCurrency')
           + cbox('productCost') + cbox('distributionYield') + cbox('minimumInvestment', 'w2')
@@ -19094,7 +19173,7 @@ function prdMandatesFormHtml(d, probs) {
           + '</div></div>';
       }).join('')
     + '<p class="prd-hint prd-held-f" id="prdHeld">' + esc(prdHeldText(d)) + '</p>'
-    + '<button type="button" class="btn" data-prd="clsadd">+ Add a mandate code</button>'
+    + '<button type="button" class="btn" data-prd="clsadd">+ Add a mandate</button>'
     + '</div>';
 }
 /* a word nobody uses yet is said to be new, so a typo reads as one */
@@ -19443,7 +19522,7 @@ function prdClick(el) {
   }
   if (act === 'clsadd' && prd.draft) {
     /* a new class (D218) at the end, its values the last one's but what
-       makes it another - its ISIN, or an SMA's hedging version - with a
+       makes it another - its ISIN, or an SMA's hedging and ISG tick - with a
        listing of its own in the same currency, no exchange or ticker */
     var d = prd.draft, last = d.classes[d.classes.length - 1] || {}, sma = prdIsSma(d);
     var lastListing = d.listings.filter(function (l) { return l.cls === last.uid; })[0] || {};
@@ -24330,7 +24409,9 @@ document.addEventListener('input', function (e) {
     /* a list's choice is its change's (below) */
     if (el.tagName === 'SELECT') return;
     var key = el.dataset.prdf;
-    prdSetDraft(key, el.value);
+    /* a tick is Yes when ticked (D224) */
+    prdSetDraft(key, el.type === 'checkbox' ? (el.checked ? 'Yes' : '') : el.value);
+    if (el.type === 'checkbox') prd.shown[key] = true;
     if (prd.serverError && prd.serverError.field === key) prd.serverError = null;
     prd.leaving = false;
     if (key === 'productId') prd.idTyped = el.value.trim() !== '';
@@ -24412,8 +24493,6 @@ document.addEventListener('change', function (e) {
       prdKeep(function () { prdNormalise(prd.draft); });
       render(); prdFocus('#prdF-listing' + prd.draft.listings.indexOf(l) + 'cls'); return;
     }
-    /* an SMA's hedging boxes come and go with its category (D207) */
-    if (picked === 'category' && prdIsSma(prd.draft)) { render(); return; }
     prdUpdate(); return;
   }
   if (el.id === 'feeAddLike') { fct.addLike = el.value; return; }

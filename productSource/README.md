@@ -24,11 +24,11 @@ Point the first load elsewhere with `SCENARIO_PRODUCTS_SOURCE` (CSV or XLSX).
 
     ProductId  Strategy  Provider  Category  AssetClass  Style  Vehicle  Source
     Liquidity  FeeGroup
-    ISIN  ShareClass  Income  Hedging  ClassCurrency  ExposureCurrency
+    ISIN  ShareClass  Income  Hedging  ISG  ClassCurrency  ExposureCurrency
     Domicile  UCITSCompliant  Replication  UKReporting  ProductCost
     DistributionYield  MinimumInvestment  Benchmark
     Exchange  CUSIP  SEDOL  IssueCurrency
-    MandateCode
+    MandateCode  MandateName
 
 A product file has three levels (D218), one row per listing:
 
@@ -38,8 +38,12 @@ A product file has three levels (D218), one row per listing:
   `SMA`, and picks the product's card.
 - **The share class** - `ISIN` to `Benchmark` - is the same on every row of
   its ISIN. `ShareClass` is the class letter (I, A, P...), on a Mutual Fund
-  only; `Income` is Distributing or Accumulating. `ExposureCurrency` is the
-  exposure after hedging: a class hedged to GBP gives GBP. `Domicile` is a
+  only; `Income` is Distributing or Accumulating. `Hedging` is the
+  proportion hedged, a percentage from 0 to 100 (D224): `100%` fully
+  hedged, `0%` unhedged, `50%` half, blank for not said; it may be typed
+  with or without the sign, and a cell Excel formats as a percentage is
+  read as it shows. `ExposureCurrency` is the exposure after hedging: a
+  class 100% hedged to GBP gives GBP. `Domicile` is a
   two-letter country code, and `UCITSCompliant` and `UKReporting` are each
   Yes, No or blank. Cost, yield and minimum belong to the
   class. A class with no ISIN yet is the set of a product's rows that agree
@@ -52,8 +56,11 @@ A product file has three levels (D218), one row per listing:
   not exchange-listed has
   one listing per currency it is dealt in, with no exchange. Within a class
   two rows the same in exchange and issue currency are refused.
-- **A separately managed account** keeps a row per `MandateCode`, each with
-  its own issue currency, hedging, cost, yield and minimum; it has no ISIN,
+- **A separately managed account** keeps a row per mandate: each mandate is
+  a variant of the strategy, with its `MandateCode`, its own `MandateName`
+  (blank for the strategy's name, D222), issue currency, hedging, cost,
+  yield and minimum, and `ISG` - `Yes` for a mandate that is ISG's hedged
+  version, else blank (D224), on an SMA only; the card lists them under Mandates. It has no ISIN,
   class letter, domicile, UCITS compliance, replication, UK reporting,
   exchange, CUSIP or SEDOL.
 
@@ -68,10 +75,15 @@ Mutual Fund in four share classes - I Acc, I Dist, I Acc hedged to GBP, A
 Acc - with the first dealt in EUR and USD: five rows. **GS Access Treasury
 0-1 ETF** is two classes - unhedged USD, hedged GBP - listed on the LSE in
 dollars and in sterling, on Xetra in euros, and the hedged one on the LSE
-in sterling: four rows, each with a SEDOL. The ISINs and SEDOLs are
+in sterling: four rows, each with a SEDOL. **GS US Focused Value SMA** is
+a Public Equity SMA in three mandates - 0% hedged in dollars, 100% hedged
+and 50% hedged ticked ISG in sterling - each named. The ISINs, SEDOLs, codes and names are
 illustrative.
 
-**Older files are still read.** The nineteen- and twenty-eight-column
+**Older files are still read.** A `Hedging` column of words (D224) reads
+as the percentage: `Hedged` 100%, `Unhedged` 0%, and `ISG Hedged` 50%
+ticked ISG; a file without an `ISG` column keeps each mandate's tick unless
+it gives the hedging. The thirty-column layout without `ISG`, the twenty-nine-column layout without `MandateName` (each mandate keeps the name it has), the nineteen- and twenty-eight-column
 listings layouts, the layout before listings (`products.csv`, or one with a
 `BaseCurrency` column), a file with Rank columns and one with a
 QuotationUnit column (D219: the column is not read) all import. A `Name`

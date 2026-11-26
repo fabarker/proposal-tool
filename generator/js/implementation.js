@@ -662,6 +662,15 @@ function complete() {
 /* one line of the table, as the library serves its product: at the
    listing it holds, its first (D214) */
 function implItem(product, level) {
+  /* a listing's hedging as a line records it (D224): the proportion hedged
+     and ISG's tick, 50% \u00b7 ISG - or '' for not said */
+  function hedgingWords(p) {
+    var h = p.hedging, bits = [];
+    if (typeof h === 'number' && isFinite(h)) bits.push(String(Math.round(h * 1e6) / 1e6) + '%');
+    else if (typeof h === 'string' && h) bits.push(h);
+    if (p.isg === 'Yes') bits.push('ISG');
+    return bits.join(' \u00b7 ');
+  }
   return {
     productId: product.productId,
     name: product.name, assetClass: product.assetClass,
@@ -673,7 +682,8 @@ function implItem(product, level) {
     shareClass: product.shareClass || null, ukReporting: product.ukReporting || '',
     source: product.source,
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
-    issueCurrency: product.issueCurrency || '', hedging: product.hedging || '',
+    /* the proportion hedged and ISG's tick, 50% \u00b7 ISG (D224) */
+    issueCurrency: product.issueCurrency || '', hedging: hedgingWords(product),
     listing: product.listing || '',
     ownCategory: product.ownCategory || '',
     cost: product.productCost, feeGroup: product.feeGroup,
@@ -732,10 +742,11 @@ function standsInText(item) {
 }
 
 /* what a line holds, under its ISIN: the listing's SEDOL, the currency it
-   is dealt in and its hedging (D208, D218, D220) */
+   is dealt in and the proportion hedged (D208, D218, D220, D224) */
 function listingSub(item) {
   var place = item.sedol || item.cusip || '';
-  var bits = [item.isin ? place : '', item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
+  var hedged = item.hedging ? String(item.hedging).replace(/%/, '% hedged') : '';
+  var bits = [item.isin ? place : '', item.issueCurrency, hedged].filter(function (b) { return !!b; });
   return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
 }
 /* the ISIN column: the class's ISIN, else the listing's SEDOL or CUSIP

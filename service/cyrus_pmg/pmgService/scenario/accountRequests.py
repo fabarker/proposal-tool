@@ -328,8 +328,8 @@ def smaDetails(entry: dict) -> dict:
             continue
         product = products.entry(item['productId'])
         listing = _heldListing(product, item)
-        where = ' · '.join(w for w in ((listing or {}).get('issueCurrency'), (listing or {}).get('hedging'))
-                           if w) or 'the listing it holds'
+        where = ' · '.join(w for w in ((listing or {}).get('issueCurrency'),
+                                       products.hedgingText(listing, said=True)) if w) or 'the listing it holds'
         problem = ''
         if product is None:
             problem = '{} is not in the Catalogue.'.format(item['name'])

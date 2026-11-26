@@ -1934,6 +1934,8 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .prd-lst-t tr.dragging td{opacity:.45}
 .prd-lst-t tr.inview td:first-child{box-shadow:inset 3px 0 0 var(--accent);padding-left:6px}
 .prd-bm{display:inline-block;max-width:180px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+/* a mandate's own name (D222): wraps rather than widening the card */
+.prd-mn{display:inline-block;min-width:120px;max-width:220px;white-space:normal}
 .prd-held{margin:0;font-size:11.5px;color:var(--ink-2);line-height:1.5}
 .prd-held b{font-family:var(--f-num);font-weight:700;color:var(--ink)}
 .prd-lst{margin:6px 0 4px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:8px}
@@ -2104,6 +2106,7 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
    form fields set in a row, so they say their own size, at the dialog's
    specificity */
 .dialog .prd-f input[type=text],.dialog .prd-f select{font-family:var(--f-body);font-size:13.5px;padding:5px 8px}
+.dialog .prd-tick input[type=checkbox]{width:18px;height:18px;margin:6px 0 0;accent-color:var(--accent,#2b5f8a)}
 .dialog .prd-f select{padding-right:26px}
 .dialog .prd-start select{font-size:13px;padding:5px 26px 5px 8px}
 .dialog input[type=text].prd-note{font-family:var(--f-body);font-size:13px;padding:5px 8px}

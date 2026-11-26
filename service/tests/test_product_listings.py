@@ -136,7 +136,7 @@ def test_a_file_gives_a_product_a_row_per_listing_in_its_order(store, tmp_path):
     byId, order = products.readFile(_file(tmp_path, rows))
     record = byId[pid]
     assert [(l['sedol'], l['issueCurrency'], l['hedging']) for l in record['listings']] == [
-        ('BGF0011', 'USD', 'Unhedged'), ('BGF0011', 'GBP', 'Unhedged'), ('BGF0022', 'GBP', 'Hedged')]
+        ('BGF0011', 'USD', 0.0), ('BGF0011', 'GBP', 0.0), ('BGF0022', 'GBP', 100.0)]
     assert not any('ranks' in l for l in record['listings']), 'a listing is facts only (D214)'
     # the product carries its first listing's values at the top
     assert (record['sedol'], record['issueCurrency']) == ('BGF0011', 'USD')
@@ -229,7 +229,7 @@ def test_an_export_loads_back_with_nothing_to_do(store, tmp_path):
     assert rows[0] == products.EXPORT_COLUMNS
     assert not [c for c in rows[0] if c.startswith('Rank')]
     mine = [r for r in rows if r[0] == pid]
-    assert len(mine) == 2 and mine[1][rows[0].index('Hedging')] == 'Hedged'
+    assert len(mine) == 2 and mine[1][rows[0].index('Hedging')] == '100%'
     path = _file(tmp_path, rows)
     preview = products.importPreview(path, _upload(path))
     assert not preview['added'] and not preview['changed'] and not preview['restored']
@@ -274,18 +274,34 @@ def test_a_file_without_mandate_codes_leaves_an_smas_coded_listings_whole(store,
 
 # -------------------------------------------------------------- the checks ---
 
-def test_a_listing_says_its_hedging_as_its_kind_may(store):
+def test_a_listing_says_its_hedging_as_a_percentage(store):
+    """D224: the hedging is the proportion hedged, 0 to 100, on any fund's
+    class or any SMA's mandate; the words it was read as their percentage;
+    only an SMA's mandate is ticked ISG."""
     pid, _, _ = _held()
-    assert _list(pid, {'hedging': 'Hedged'})['listings'][0]['hedging'] == 'Hedged'
-    with pytest.raises(ValidationError, match='Hedged or Unhedged') as refused:
+    for given, level in (('Hedged', 100.0), ('50%', 50.0), (' 75 ', 75.0), (0, 0.0), (33.3, 33.3),
+                         ('Unhedged', 0.0), ('', None)):
+        assert _list(pid, {'hedging': given})['listings'][0]['hedging'] == level, given
+    for given in ('120', '-5%', 'half', True):
+        with pytest.raises(ValidationError, match='a percentage from 0 to 100') as refused:
+            _list(pid, {'hedging': given})
+        assert refused.value.field == 'listing0hedging'
+    with pytest.raises(ValidationError, match='ISG Hedged is a separate account') as refused:
         _list(pid, {'hedging': 'ISG Hedged'})
-    assert refused.value.field == 'listing0hedging'
+    with pytest.raises(ValidationError, match='Only a separate account.s mandate is ISG') as refused:
+        _list(pid, {'hedging': '50', 'isg': 'Yes'})
+    assert refused.value.field == 'listing0isg'
     equity = next(p for p in products.all() if products.isSma(p) and p['ownCategory'] == products.EQUITY_CATEGORY)
     out = _list(equity['productId'], {'code': 'EQ-1', 'hedging': 'ISG Hedged'})
-    assert out['listings'][0]['hedging'] == 'ISG Hedged'
+    assert (out['listings'][0]['hedging'], out['listings'][0]['isg']) == (50.0, 'Yes')
+    out = _list(equity['productId'], {'code': 'EQ-1', 'hedging': '80%', 'isg': 'x'},
+                {'code': 'EQ-1', 'hedging': '80%', 'isg': ''})
+    assert [(l['hedging'], l['isg']) for l in out['listings']] == [(80.0, 'Yes'), (80.0, '')], \
+        'the ISG tick tells two mandates apart'
+    assert products.hedgingText(out['listings'][0]) == '80% \u00b7 ISG'
+    # any SMA may give its hedging now, not only a Public Equity one
     bond = next(p for p in products.all() if products.isSma(p) and p['ownCategory'] != products.EQUITY_CATEGORY)
-    with pytest.raises(ValidationError, match='Only a Public Equity SMA'):
-        _list(bond['productId'], {'hedging': 'Hedged'})
+    assert _list(bond['productId'], {'hedging': '100'})['listings'][0]['hedging'] == 100.0
 
 
 def test_a_mandate_code_is_an_smas_and_one_products_withdrawn_or_not(store):
@@ -331,7 +347,7 @@ def test_the_listings_are_put_in_a_new_order_and_the_first_is_held(store):
     entry = products.entry(pid)
     out = products.reorder(pid, [1, 2, 0], user='alice', base=entry['revision'])
     assert [l['sedol'] for l in out['listings']][:2] == ['BGBX001', 'BXVX001']
-    assert (out['sedol'], out['issueCurrency'], out['hedging'], out['productCost']) == ('BGBX001', 'GBP', 'Hedged', 0.31)
+    assert (out['sedol'], out['issueCurrency'], out['hedging'], out['productCost']) == ('BGBX001', 'GBP', 100.0, 0.31)
     assert out['revision'] == entry['revision'] + 1
     assert products.asHeld(products.get(pid))['sedol'] == 'BGBX001'
     words = products.history(pid)[0]['changeWords']
@@ -354,7 +370,7 @@ def test_the_history_names_listings_and_their_order(store):
     before = products.entry(pid)['listings'][0]['sedol'] or '—'
     _list(pid, {}, {'sedol': 'BGBX001', 'issueCurrency': 'GBP', 'hedging': 'Hedged'})
     words = products.history(pid)[0]['changeWords']
-    assert any(w.startswith('Listing BGBX001 — → GBP · Hedged') for w in words), words
+    assert any(w.startswith('Listing BGBX001 — → GBP · 100% hedged') for w in words), words
     assert not [w for w in words if w.startswith('Listing order')], 'one added at the end moves nothing'
     _list(pid, {'productCost': 0.61}, {'sedol': 'BGBX001', 'issueCurrency': 'GBP', 'hedging': 'Hedged'})
     words = products.history(pid)[0]['changeWords']
@@ -389,7 +405,7 @@ def test_the_library_a_proposal_is_served_holds_the_first_listing(store):
     assert served('GBP')['sedol'] == served('CHF')['sedol'] == 'BMXN001'
     products.reorder(pid, [1, 0], user='alice', base=products.entry(pid)['revision'])
     gbp, usd = served('GBP'), served('USD')
-    assert (gbp['sedol'], gbp['hedging'], gbp['issueCurrency']) == ('BGBX001', 'Hedged', 'GBP')
+    assert (gbp['sedol'], gbp['hedging'], gbp['issueCurrency']) == ('BGBX001', 100.0, 'GBP')
     assert usd['sedol'] == 'BGBX001', 'the first listing, in any currency'
 
 
@@ -408,7 +424,7 @@ def test_below_the_first_listings_minimum_a_line_does_not_step_down(store):
     products.reorder(pid, [1, 0], user='alice', base=products.entry(pid)['revision'])
     _, _, gbp = _model(port, 'GBP', category, name)
     line = _line(gbp, pid)
-    assert (line['sedol'], line['hedging'], line['productCost']) == ('BSML001', 'Hedged', 0.9)
+    assert (line['sedol'], line['hedging'], line['productCost']) == ('BSML001', 100.0, 0.9)
     assert not line['belowMinimum']
 
 
@@ -419,7 +435,7 @@ def test_the_model_has_nothing_not_offered_and_the_sheet_shows_the_listing(store
     _, _, chf = _model(port, 'CHF', category, name)
     assert 'unavailable' not in chf
     line = _line(chf, pid)
-    assert (line['issueCurrency'], line['hedging']) == ('GBP', 'Hedged')
+    assert (line['issueCurrency'], line['hedging']) == ('GBP', 100.0)
     # the workbook's sheet names them beside the share class; the deck does not
     assert IMPL_COLUMNS.index('Issue Currency') == IMPL_COLUMNS.index('Share Class') + 1
     assert IMPL_COLUMNS.index('Hedging') == IMPL_COLUMNS.index('Issue Currency') + 1
@@ -497,7 +513,8 @@ def test_a_store_from_before_listings_is_listed_as_it_read(store):
         conn.close()
     products.reload()
     equity = products.entry(sma['productId'])
-    assert [(l['code'], l['hedging']) for l in equity['listings']] == [('EQ-H', 'Hedged'), ('EQ-U', 'Unhedged')]
+    assert [(l['code'], l['hedging']) for l in equity['listings']] == [('EQ-H', 100.0), ('EQ-U', 0.0)], \
+        'the words it was stored as read as the percentage (D224)'
     assert equity['listings'][0]['productCost'] == 0.7 and equity['listings'][0]['benchmark'] == 'MSCI H'
     assert equity['listings'][1]['productCost'] == sma['productCost'], 'a figure the mandate left blank is the product\'s'
     # an older version reads as it is listed, so the history shows no move
@@ -519,7 +536,7 @@ def test_the_vocabulary_offers_every_listings_words(store):
     vocab = products.vocabulary()
     assert 'A Brand New Class' in vocab['assetClass'] and 'A New Index' in vocab['benchmark']
     assert 'GBP' in vocab['issueCurrency']
-    assert vocab['hedging'] == {'fund': ['Hedged', 'Unhedged'], 'sma': ['Hedged', 'ISG Hedged', 'Unhedged']}
+    assert 'hedging' not in vocab, 'the hedging is a percentage (D224)'
 
 
 # --------------------------------------------------- the catalogue line ---
@@ -544,11 +561,11 @@ def test_the_catalogue_line_reads_the_first_listing():
     edited = source[source.index('var CAT_EDITED'):source.index('/* product-editor-helpers-end */')]
     script = helpers + edited + '''
 var L = function (isin, t, i, h, min) { return { isin: isin, sedol: t, cusip: '', code: '', issueCurrency: i, hedging: h, income: 'Accumulating',
-  shareClass: '', classCurrency: h === 'Hedged' ? i : 'USD', exposureCurrency: h === 'Hedged' ? i : 'USD', domicile: 'IE',
+  shareClass: '', classCurrency: h === 100 ? i : 'USD', exposureCurrency: h === 100 ? i : 'USD', domicile: 'IE',
   productCost: 0.5, distributionYield: null, minimumInvestment: min, benchmark: '', exchange: 'LSE' }; };
 var gef = { productId: 'gef', name: 'GEF', vehicle: 'ETF', liquidity: 'Daily', category: 'Equity', provider: 'GSAM',
-  listings: [L('IE0000000021', 'BGF0011', 'USD', 'Unhedged', 3000000), L('IE0000000021', 'BGF0033', 'GBP', 'Unhedged', 3000000),
-             L('IE0000000039', 'BGF0022', 'GBP', 'Hedged', 1000000), L('', 'BGF0044', 'EUR', 'Hedged', 3000000)] };
+  listings: [L('IE0000000021', 'BGF0011', 'USD', 0, 3000000), L('IE0000000021', 'BGF0033', 'GBP', 0, 3000000),
+             L('IE0000000039', 'BGF0022', 'GBP', 100, 1000000), L('', 'BGF0044', 'EUR', 100, 3000000)] };
 var one = { productId: 'one', name: 'One', vehicle: 'ETF', liquidity: 'Daily', category: 'Equity',
   listings: [L('', 'BXN0001', 'USD', '', 5000)] };
 one.listings[0].domicile = '';
@@ -581,7 +598,7 @@ process.stdout.write(JSON.stringify(out));
                               'used', 'v', 'varies']
     assert got['matched'] == ['IE0000000039', 'BGF0022', True, True, False, 'BGF0022'], \
         'a matched listing shows, by its SEDOL or its ISIN; the flag is still the first\'s'
-    assert got['values'] == [['Unhedged', 'Hedged'], ['USD', 'GBP', 'EUR'], ['Several classes'], ['Accumulating'],
+    assert got['values'] == [['0%', '100%'], ['USD', 'GBP', 'EUR'], ['Several classes'], ['Accumulating'],
                              ['GSAM'], ['Not stated'], ['Not stated'], ['Not stated']]
     assert got['search'] == ['gef'] and got['isin'] == ['gef']
     assert got['groups'] == [['BGF0011', 'BGF0033'], ['BGF0022'], ['BGF0044']], 'one ISIN is one class'

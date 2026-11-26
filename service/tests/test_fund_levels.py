@@ -121,11 +121,12 @@ def test_the_file_has_the_levels_columns_and_an_export_loads_back(store, tmp_pat
     columns = products.EXPORT_COLUMNS
     assert columns[:10] == ['ProductId', 'Strategy', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
                             'Source', 'Liquidity', 'FeeGroup'], 'the product'
-    assert columns[10:24] == ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
+    assert columns[10:25] == ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ISG', 'ClassCurrency', 'ExposureCurrency',
                               'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'ProductCost',
-                              'DistributionYield', 'MinimumInvestment', 'Benchmark'], 'the share class'
-    assert columns[24:] == ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode']
-    assert len(columns) == 29, 'no quotation unit (D219), no ticker (D220)'
+                              'DistributionYield', 'MinimumInvestment', 'Benchmark'], \
+        'the share class, and beside its hedging an SMA mandate\'s ISG tick (D224)'
+    assert columns[25:] == ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode', 'MandateName']
+    assert len(columns) == 31, 'no quotation unit (D219), no ticker (D220), a mandate name (D222), ISG (D224)'
     rows = products.exportRows()
     assert len(rows) == 74
     path = _file(tmp_path, rows)
@@ -165,7 +166,7 @@ def test_a_fund_in_a_file_is_its_classes_and_their_listings_in_order(store, tmp_
         ('IE0000000021', 'Xetra', 'BPRBX03', 'EUR'), ('IE0000000039', 'LSE', 'BPRBH04', 'GBP')]
     assert not any('quotationUnit' in l for l in listed), 'no quotation unit (D219)'
     assert [l['productCost'] for l in listed] == [0.12, 0.12, 0.12, 0.15], 'each row carries its class'
-    assert listed[3]['hedging'] == 'Hedged' and listed[3]['classCurrency'] == listed[3]['exposureCurrency'] == 'GBP'
+    assert listed[3]['hedging'] == 100.0 and listed[3]['classCurrency'] == listed[3]['exposureCurrency'] == 'GBP'
     assert byId[pid]['assetClass'] and 'assetClass' not in listed[0], 'the asset class is the product\'s'
     preview = products.importPreview(path, _upload(path))
     products.importFile(path, _upload(path), user='alice', base=preview['revision'])
@@ -672,7 +673,7 @@ def test_a_line_holds_its_first_class_and_the_sheet_names_it(store):
     got = {c: row[head.index(c)] for c in ('ISIN', 'Income', 'Share Class', 'Issue Currency', 'Hedging',
                                            'UK Reporting')}
     assert got == {'ISIN': 'LU0000000011', 'Income': 'Accumulating', 'Share Class': 'I',
-                   'Issue Currency': 'GBP', 'Hedging': 'Hedged', 'UK Reporting': 'Yes'}
+                   'Issue Currency': 'GBP', 'Hedging': '100%', 'UK Reporting': 'Yes'}
     # an SMA's line has no ISIN, nor a code: the code is the account opening's
     sma = next(i for g in model['groups'] for i in g['items'] if products.isSma(i))
     smaRow = next(r for r in rows if r and r[head.index('Products')] == sma['name'])
@@ -732,3 +733,158 @@ def test_the_screen_shows_the_isin_with_the_sedol_beneath(store):
         assert field in item
     row = source[source.index("'<td class=\"txt tick\">' + App.esc(heldIdent(item))"):]
     assert row.index('item.income') < row.index('item.shareClass') < row.index('item.ukReporting')
+
+
+# ---------------------------------------------- an SMA's mandates by name ---
+
+def test_an_smas_mandates_each_have_a_name_of_their_own(store):
+    """An SMA's mandates are its strategy's variants (D222): each may carry a
+    name, blank for the strategy's; a fund's listing may not, and a name is
+    held to the strategy's length."""
+    sma = next(p['productId'] for p in products.all() if products.isSma(p)
+               and p['ownCategory'] == products.EQUITY_CATEGORY)
+    out = _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'mandateName': ' GS Value (USD) '},
+                {'code': 'QV2', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'mandateName': 'GS Value (GBP Hedged)'},
+                {'code': 'QV3', 'issueCurrency': 'EUR', 'hedging': 'Hedged', 'mandateName': ''})
+    assert [l['mandateName'] for l in out['listings']] == ['GS Value (USD)', 'GS Value (GBP Hedged)', '']
+    assert products.get(sma)['mandateName'] == 'GS Value (USD)', 'the held mandate\'s, at the top level'
+    renamed = _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'mandateName': 'GS Value'},
+                    {'code': 'QV2', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'mandateName': 'GS Value (GBP Hedged)'},
+                    {'code': 'QV3', 'issueCurrency': 'EUR', 'hedging': 'Hedged', 'mandateName': ''})
+    lines = [(c['label'], c['before'], c['after']) for c in products.history(sma)[0]['changes']]
+    assert ('Mandate name of QV1', 'GS Value (USD)', 'GS Value') in lines
+    assert renamed['listings'][0]['mandateName'] == 'GS Value'
+    with pytest.raises(ValidationError, match='to 120 characters') as refused:
+        _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'mandateName': 'x' * 121})
+    assert refused.value.field == 'listing0mandateName'
+    with pytest.raises(ValidationError, match='Only a separate account') as refused:
+        _list(_fund('ETF'), {'mandateName': 'Not a mandate'})
+    assert refused.value.field == 'listing0mandateName'
+
+
+def test_a_file_names_mandates_and_one_without_the_column_keeps_them(store, tmp_path):
+    sma = next(p['productId'] for p in products.all() if products.isSma(p)
+               and p['ownCategory'] != products.EQUITY_CATEGORY)
+    rows = _rowsFor(sma, [{'MandateCode': 'CF1', 'IssueCurrency': 'USD', 'ExposureCurrency': 'USD',
+                           'MandateName': 'PMG Core Fixed Income (USD)'},
+                          {'MandateCode': 'CF2', 'IssueCurrency': 'EUR', 'ExposureCurrency': 'EUR',
+                           'MandateName': 'PMG Core Fixed Income (EUR)'}])
+    path = _file(tmp_path, rows)
+    preview = products.importPreview(path, _upload(path))
+    products.importFile(path, _upload(path), user='alice', base=preview['revision'])
+    assert [l['mandateName'] for l in products.entry(sma)['listings']] == [
+        'PMG Core Fixed Income (USD)', 'PMG Core Fixed Income (EUR)']
+    # the export writes them, and loads back with nothing to do
+    again = _file(tmp_path, products.exportRows(), 'again.csv')
+    preview = products.importPreview(again, _upload(again))
+    assert not preview['changed']
+    # a file without the column leaves each mandate's name as it is
+    head = rows[0]
+    keep = [n for n, c in enumerate(head) if c != 'MandateName']
+    path = _file(tmp_path, [[r[n] for n in keep] for r in products.exportRows()], 'older.csv')
+    preview = products.importPreview(path, _upload(path))
+    assert not preview['changed'], 'the names kept, so nothing moves'
+
+
+def test_the_sample_files_sma_comes_in_three_named_mandates(store):
+    here = os.path.join(os.path.dirname(__file__), '..', '..', 'productSource')
+    byId, _ = products.readFile(os.path.join(here, 'products-listings.csv'))
+    sma = byId['gs-us-focused-value-sma']
+    assert [(l['code'], l['hedging'], l['isg'], l['mandateName']) for l in sma['listings']] == [
+        ('QV1', 0.0, '', 'GS US Focused Value'),
+        ('QV2', 100.0, '', 'GS US Focused Value (GBP Hedged)'),
+        ('QV3', 50.0, 'Yes', 'GS US Focused Value (GBP ISG Hedged)')]
+
+
+def test_a_product_stored_before_mandate_names_reads_exports_and_saves(store, tmp_path):
+    """A listing stored before D222 has no mandateName at all: it reads as
+    blank everywhere - the catalogue, the export, a save - with no upgrade."""
+    import json as _json
+    sma = next(p['productId'] for p in products.all() if products.isSma(p))
+    conn = sleeveRepo.connection()
+    try:
+        row = conn.execute('SELECT listings FROM products WHERE productId = ?', (sma,)).fetchone()
+        old = [{k: v for k, v in l.items() if k != 'mandateName'} for l in _json.loads(row['listings'])]
+        conn.execute('UPDATE products SET listings = ? WHERE productId = ?', (_json.dumps(old), sma))
+        conn.commit()
+    finally:
+        conn.close()
+    products.reload()
+    assert products.get(sma)['mandateName'] == ''
+    assert all(l['mandateName'] == '' for l in products.entry(sma)['listings'])
+    rows = products.exportRows()
+    at = rows[0].index('MandateName')
+    assert all(r[at] == '' for r in rows[1:] if r[0] == sma)
+    assert products.all() and products.history(sma)
+    _list(sma, {'mandateName': 'Now named'})
+    assert products.entry(sma)['listings'][0]['mandateName'] == 'Now named'
+
+
+# -------------------------------------------------- hedging, a percentage ---
+
+def test_a_hedging_stored_as_a_word_reads_as_its_percentage(store):
+    """D224: a listing stored while the hedging was a word - Hedged,
+    Unhedged, ISG Hedged - reads as the percentage, ISG Hedged ticked ISG,
+    everywhere: the catalogue, the export, a save, and a proposal's line
+    recorded holding it still finds it."""
+    import json as _json
+    sma = next(p['productId'] for p in products.all() if products.isSma(p))
+    _list(sma, {'code': 'W1', 'issueCurrency': 'USD'}, {'code': 'W2', 'issueCurrency': 'GBP'},
+          {'code': 'W3', 'issueCurrency': 'GBP'})
+    conn = sleeveRepo.connection()
+    try:
+        row = conn.execute('SELECT listings FROM products WHERE productId = ?', (sma,)).fetchone()
+        old = _json.loads(row['listings'])
+        for listing, word in zip(old, ('Unhedged', 'Hedged', 'ISG Hedged')):
+            listing['hedging'] = word
+            listing.pop('isg', None)
+        conn.execute('UPDATE products SET listings = ? WHERE productId = ?', (_json.dumps(old), sma))
+        conn.commit()
+    finally:
+        conn.close()
+    products.reload()
+    listed = products.entry(sma)['listings']
+    assert [(l['code'], l['hedging'], l['isg']) for l in listed] == [
+        ('W1', 0.0, ''), ('W2', 100.0, ''), ('W3', 50.0, 'Yes')]
+    rows = products.exportRows()
+    at, isg = rows[0].index('Hedging'), rows[0].index('ISG')
+    assert [(r[at], r[isg]) for r in rows[1:] if r[0] == sma] == [('0%', ''), ('100%', ''), ('50%', 'Yes')]
+    # a line recorded holding the listing by its word finds it
+    held = products.findListing(products.get(sma), {'code': 'W3', 'issueCurrency': 'GBP', 'hedging': 'ISG Hedged'})
+    assert held is not None and held['code'] == 'W3'
+    held = products.findListing(products.get(sma), {'code': 'W3', 'issueCurrency': 'GBP', 'hedging': '50% · ISG'})
+    assert held is not None and held['code'] == 'W3', 'and by the words a line records now'
+    assert products.findListing(products.get(sma), {'code': 'W3', 'issueCurrency': 'GBP', 'hedging': '50%'}) is None
+    _list(sma, {'code': 'W1', 'issueCurrency': 'USD', 'hedging': '25'})
+    assert products.entry(sma)['listings'][0]['hedging'] == 25.0
+
+
+def test_a_spreadsheet_percentage_cell_reads_as_it_shows(store, tmp_path):
+    """D224: Excel keeps 50% as 0.5; a cell formatted as a percentage is read
+    as it shows, a plain number as the percentage it is."""
+    from openpyxl import Workbook
+    pid = _held()
+    rows = _rowsFor(pid, [{'SEDOL': 'BPCT001', 'IssueCurrency': 'USD', 'Hedging': ''},
+                          {'SEDOL': 'BPCT002', 'IssueCurrency': 'GBP', 'Hedging': ''},
+                          {'SEDOL': 'BPCT003', 'IssueCurrency': 'EUR', 'Hedging': ''}])
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'Products'
+    at = rows[0].index('Hedging')
+    for n, row in enumerate(rows):
+        sheet.append(row)
+    mine = [n + 1 for n, row in enumerate(rows) if row[0] == pid]
+    sheet.cell(row=mine[0], column=at + 1, value=0.5).number_format = '0%'
+    sheet.cell(row=mine[1], column=at + 1, value=75)
+    sheet.cell(row=mine[2], column=at + 1, value=1).number_format = '0.0%'
+    path = str(tmp_path / 'products.xlsx')
+    book.save(path)
+    byId, _ = products.readFile(path)
+    assert [l['hedging'] for l in byId[pid]['listings']] == [50.0, 75.0, 100.0]
+    # the sample workbook's percentage cells read as the CSV's words do
+    here = os.path.join(os.path.dirname(__file__), '..', '..', 'productSource')
+    fromCsv, _ = products.readFile(os.path.join(here, 'products-listings.csv'))
+    fromXlsx, _ = products.readFile(os.path.join(here, 'products-listings.xlsx'))
+    assert [(l['hedging'], l['isg']) for l in fromXlsx['gs-us-focused-value-sma']['listings']] == \
+        [(l['hedging'], l['isg']) for l in fromCsv['gs-us-focused-value-sma']['listings']] == \
+        [(0.0, ''), (100.0, ''), (50.0, 'Yes')]
