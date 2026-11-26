@@ -1,10 +1,14 @@
 {
-  "from": "d57ddf1",
-  "to": "ffded6b",
+  "from": "ffded6b",
+  "to": "4e12497",
   "write": [
+    "package/accountRequests.py",
+    "package/products.py",
+    "package/sheetDoc.py",
+    "page/static/css/proposalTool.css",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
   "routerBlock": false,
-  "bytes": 46059
+  "bytes": 57258
 }
