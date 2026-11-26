@@ -459,3 +459,24 @@ def test_the_card_and_the_form_follow_the_vehicle_and_the_listings_move():
     assert 'data-prdgrip' in source and 'prdMoveClass(from, to) : prdMoveListing(from, to)' in source
     assert 'prdSplitClasses(prd.draft)' in source, 'an SMA chosen splits its classes'
     assert "'importmandates'" not in source and 'mandates.csv' not in source
+
+
+def test_the_catalogue_file_leads_with_the_product_id_the_table_does_not_show():
+    source = _source()
+    columns = _between(source, 'var CAT_COLUMNS = [', '];')
+    assert "'productId'" not in columns
+    export = _between(source, 'function catCsvCell', 'function catCsvName')
+    out = _node(export + r"""
+var CAT_NUMERIC = { productCost: true };
+var cat = { group: false };
+var rows = [{ p: { productId: 'gs-one', name: 'GS One', productCost: 0.2 } },
+            { p: { productId: 'gs-two', name: 'GS "Two"', productCost: null } }];
+function catColumns() { return [{ key: 'name', label: 'Strategy' }, { key: 'productCost', label: 'Cost' }]; }
+function catVisible() { return rows; }
+function catBands() { return [{ key: 'Equity', rows: rows }]; }
+var flat = catCsv();
+cat.group = true;
+console.log(JSON.stringify({ flat: flat.split('\r\n'), grouped: catCsv().split('\r\n') }));
+""")
+    assert out['flat'][:3] == ['"Product ID","Strategy","Cost"', '"gs-one","GS One",0.20', '"gs-two","GS ""Two""",""']
+    assert out['grouped'][:2] == ['"Category","Product ID","Strategy","Cost"', '"Equity","gs-one","GS One",0.20']

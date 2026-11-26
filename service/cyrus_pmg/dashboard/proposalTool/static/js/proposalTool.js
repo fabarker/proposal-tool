@@ -18023,7 +18023,11 @@ function liqClass(v) {
 
    Excel decides a field's type from the text, so a ticker like SEP1 must not
    arrive as a date: every text field is quoted. The figures are the products'
-   own; nothing in the file depends on a proposal's fees (D114). */
+   own; nothing in the file depends on a proposal's fees (D114).
+
+   The file leads with each product's Product ID, which the table does not
+   show, so a row can be matched back to the catalogue and to the product
+   file (D223). */
 function catCsvCell(row, c) {
   var p = row.v || row.p;
   switch (c.key) {
@@ -18042,10 +18046,11 @@ function catCsv() {
   var quote = function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; };
   var lines = [];
   var grouped = cat.group;
-  var head = (grouped ? ['Category'] : []).concat(cols.map(function (c) { return c.label; }));
+  var head = (grouped ? ['Category'] : []).concat(['Product ID'], cols.map(function (c) { return c.label; }));
   lines.push(head.map(quote).join(','));
   var put = function (row, band) {
     lines.push((grouped ? [quote(band)] : [])
+      .concat([quote(row.p.productId == null ? '' : row.p.productId)])
       .concat(cols.map(function (c) {
         var v = catCsvCell(row, c);
         /* a figure goes bare so a spreadsheet adds it up; text is quoted so it
