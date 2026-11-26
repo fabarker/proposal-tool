@@ -1,6 +1,6 @@
 {
   "from": "1767114",
-  "to": "54eb8a5",
+  "to": "d57ddf1",
   "write": [
     "package/products.py",
     "package/proposalRegister.py",
@@ -11,6 +11,6 @@
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
-  "routerBlock": false,
-  "bytes": 94482
+  "routerBlock": true,
+  "bytes": 134203
 }
