@@ -880,7 +880,7 @@ def _levelProducts(conn: sqlite3.Connection) -> None:
                 'shareClass = ?, exposureCurrency = ?, issueCurrency = ?, productCost = ?, '
                 'distributionYield = ?, minimumInvestment = ?, benchmark = ?, revision = ?, updatedBy = ?, '
                 'updatedAt = ? WHERE productId = ?',
-                (json.dumps(record['listings']), record.get('provider') or '', record['ticker'],
+                (json.dumps(record['listings']), record.get('provider') or '', '',
                  record['assetClass'], record['vehicle'], record['shareClass'] or '',
                  record['exposureCurrency'], record.get('issueCurrency') or '', record['productCost'],
                  record['distributionYield'], record['minimumInvestment'], record.get('benchmark') or '',
@@ -2390,6 +2390,87 @@ def exportRuleRows() -> list:
         return out
     finally:
         conn.close()
+
+
+#: the library workbook's long table: the interchange columns first, so the
+#: sheet reads back with readSeedRows, then what the table view shows
+LIBRARY_COLUMNS = SEED_COLUMNS_EDITIONS + [ALTERNATIVE_COLUMN, 'Product', 'Vehicle', 'ProductCost',
+                                           'Position', 'Rules', 'Status', 'SleeveId',
+                                           'CreatedAt', 'CreatedBy']
+
+
+def _statusText(entry) -> str:
+    """The table view's Status column, in words."""
+    n = len(entry['problems'])
+    problems = '{} problem{}'.format(n, '' if n == 1 else 's')
+    if entry['disabled']:
+        return 'Disabled' + (' · ' + problems if n else '')
+    return 'Withheld · ' + problems if n else 'Ready'
+
+
+def libraryRows(ids=None) -> list:
+    """The live library as a long table, one row per sleeve and product
+    (LIBRARY_COLUMNS), in library order. *ids* keeps only those sleeves -
+    the ones a filtered table shows; None is every one."""
+    keep = None if ids is None else set(ids)
+    out = []
+    for e in listAll():
+        if keep is not None and e['id'] not in keep:
+            continue
+        variant = ALL_TYPES if len(e['variants']) > 1 and set(e['variants']) == set(VARIANTS) \
+            else TYPE_SEP.join(e['variants'])
+        rules = sleeveRules.describe(e['rules'])
+        status = _statusText(e)
+        for p in e['products']:
+            product = p['product'] or {}
+            cost = product.get('productCost')
+            out.append([variant, e['category'], e['name'], e['label'], p['productId'], p['weight'],
+                        p['alternative'] or '', product.get('name') or '', product.get('vehicle') or '',
+                        cost if isinstance(cost, (int, float)) else None,
+                        p['position'] + 1, rules, status, e['id'], e['createdAt'], e['createdBy']])
+    return out
+
+
+def libraryWorkbook(ids=None) -> bytes:
+    """``libraryRows`` as an .xlsx: a Sleeves sheet, the long table, and a
+    Rules sheet with the editions' rules in the interchange shape (RULE_COLUMNS
+    and Entity) - the two sheets the seed loader reads."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    def heading(sheet, widths):
+        for c in sheet[1]:
+            c.font = Font(bold=True, color='FFFFFF')
+            c.fill = PatternFill('solid', fgColor='0B2545')
+        for i, width in enumerate(widths):
+            sheet.column_dimensions[sheet.cell(row=1, column=i + 1).column_letter].width = width
+        sheet.freeze_panes = 'A2'
+        sheet.auto_filter.ref = sheet.dimensions
+
+    rows = libraryRows(ids)
+    book = Workbook()
+    sheet = book.active
+    sheet.title = SEED_SHEET
+    sheet.append(LIBRARY_COLUMNS)
+    for row in rows:
+        sheet.append(row)
+    for r in range(2, len(rows) + 2):
+        sheet.cell(row=r, column=6).number_format = '0.00%'      # Weight, a fraction
+        sheet.cell(row=r, column=10).number_format = '0.00"%"'   # ProductCost, already percent
+    heading(sheet, (30, 30, 30, 16, 34, 9, 24, 40, 10, 12, 9, 40, 22, 9, 20, 14))
+
+    names = {(r[0], r[1], r[2], r[3]) for r in rows}
+    rules = book.create_sheet(RULES_SHEET)
+    rules.append(RULE_COLUMNS + [ENTITY_COLUMN])
+    for row in exportRuleRows():
+        if tuple(row[:4]) in names:
+            rules.append(list(row))
+    heading(rules, (30, 30, 30, 16, 14, 20, 20, 20))
+
+    buf = io.BytesIO()
+    book.save(buf)
+    return buf.getvalue()
 
 
 def _importInto(conn, rows, replace, user, strict, action='imported', ruleRows=None):

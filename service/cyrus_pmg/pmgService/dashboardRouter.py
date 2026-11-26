@@ -616,6 +616,24 @@ def exportRepositoryArchive(caller=Depends(requireAdmin)):
     return _csv(sleeveRepo.ARCHIVE_COLUMNS, sleeveRepo.archiveRows(), 'sleeve-archive.csv')
 
 
+@router.get('/scenario/repository/sleeves.xlsx')
+def exportRepositorySleeves(ids: str = '', caller=Depends(requireAdmin)):
+    """The live library as a long table, one row per sleeve and product, with
+    the editions' rules on a second sheet. *ids*, comma separated, keeps only
+    those sleeves - the ones the table view shows under its filters; none
+    given is the whole library."""
+    import datetime
+    keep = None
+    if ids.strip():
+        try:
+            keep = [int(i) for i in ids.split(',') if i.strip()]
+        except ValueError:
+            return JSONResponse(status_code=400, content={'error': 'ids is a list of sleeve ids.'})
+    name = 'sleeve-library-{}.xlsx'.format(datetime.date.today().isoformat())
+    return Response(content=sleeveRepo.libraryWorkbook(keep), media_type=_XLSX,
+                    headers={'Content-Disposition': 'attachment; filename="{}"'.format(name)})
+
+
 @router.get('/scenario/repository/activity.csv')
 def exportRepositoryActivity(actions: str = '', variant: str = '', category: str = '',
                              actor: str = '', since: str = '', until: str = '', q: str = '',

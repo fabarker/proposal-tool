@@ -99,26 +99,25 @@ def _request(kerberos=None):
 
 def test_catalogue_serves_the_delivered_table_in_the_product_shape():
     """One row per product, every field a sleeve product has always carried,
-    the fee left out and the group in its place; an empty ticker is the dash
-    the table has always shown. Beside them, the currency it is issued in
+    the fee left out and the group in its place; no ticker (D220). Beside them, the currency it is issued in
     (D184), its benchmark (D204), its main listing's mandate code and hedging
     and its listings, each ranked by base currency (D207)."""
     rows = products.all()
     assert len(rows) == 73
-    expected = {'productId', 'name', 'provider', 'ticker', 'assetClass', 'style', 'vehicle', 'shareClass',
+    expected = {'productId', 'name', 'provider', 'assetClass', 'style', 'vehicle', 'shareClass',
                 'source', 'liquidity', 'exposureCurrency', 'issueCurrency', 'productCost', 'feeGroup',
                 'distributionYield', 'minimumInvestment', 'ownCategory', 'benchmark', 'code', 'hedging',
                 'listings',
                 # the share class's and the listing's own fields (D218)
-                'isin', 'income', 'classCurrency', 'domicile', 'regulation', 'replication', 'ukReporting',
-                'exchange', 'quotationUnit'}
+                'isin', 'income', 'classCurrency', 'domicile', 'ucits', 'replication', 'ukReporting',
+                'exchange', 'cusip', 'sedol'}
     for p in rows:
         assert set(p) == expected, p['productId']
         assert 'managementFee' not in p
         assert p['feeGroup'] in fees.feeGroups()
         assert p['productCost'] >= 0
     sma = products.get('gsam-core-municipal-sma')
-    assert sma['ticker'] == '—'
+    assert sma['sedol'] == '' and sma['isin'] == ''
     # the two figures the catalogue compares on (D63): a number, or None
     # where the delivery leaves the cell blank - an ETF has no minimum
     assert isinstance(sma['distributionYield'], float) and sma['minimumInvestment'] == 5_000_000.0
@@ -151,7 +150,7 @@ def test_an_extract_without_the_optional_figures_still_loads(tmp_path):
     ('ProductCost', 'not a number'),
     # a repeated id is another listing of that product (D207): the product
     # it is must read the same on both rows
-    ('ProductId', 'gives name'),
+    ('ProductId', 'gives strategy'),
     ('DistributionYield', 'not a number'),
     ('MinimumInvestment', 'negative'),
 ])
@@ -458,6 +457,8 @@ def test_every_repository_route_requires_the_admin_role():
         ('/scenario/repository/applicability', ('POST',)),
         ('/scenario/repository/activity', ('GET',)),
         ('/scenario/repository/archive.csv', ('GET',)),
+        # the library as a long table, for the table view's Export to Excel
+        ('/scenario/repository/sleeves.xlsx', ('GET',)),
         ('/scenario/repository/activity.csv', ('GET',)),
         ('/scenario/repository/proposals', ('GET',)),
         ('/scenario/repository/proposals.csv', ('GET',)),
@@ -1751,3 +1752,59 @@ def test_every_button_in_the_console_is_one_its_click_handler_answers():
             deaf.append((source.count('\n', 0, m.start()) + 1, sorted(carried)))
     assert 'pbm' in named
     assert not deaf
+
+
+# ---- Export to Excel: the library as a long table ---------------------------
+
+def _workbook(content):
+    import io
+    from openpyxl import load_workbook
+    return load_workbook(io.BytesIO(content), data_only=True)
+
+
+def test_the_library_exports_as_a_long_table_a_row_per_product():
+    live = sleeveRepo.listAll()
+    book = _workbook(sleeveRepo.libraryWorkbook())
+    assert book.sheetnames == [sleeveRepo.SEED_SHEET, sleeveRepo.RULES_SHEET]
+    rows = list(book[sleeveRepo.SEED_SHEET].iter_rows(values_only=True))
+    assert list(rows[0]) == sleeveRepo.LIBRARY_COLUMNS
+    assert len(rows) - 1 == sum(len(e['products']) for e in live)
+    first = live[0]
+    mine = [r for r in rows[1:] if r[13] == first['id']]
+    assert [r[4] for r in mine] == [p['productId'] for p in first['products']]
+    assert abs(sum(r[5] for r in mine) - 1.0) < 1e-6
+    assert all(r[2] == first['name'] and r[1] == first['category'] for r in mine)
+
+
+def test_the_export_keeps_only_the_sleeves_asked_for_and_their_rules():
+    live = sleeveRepo.listAll()
+    chosen = [live[0]['id'], live[-1]['id']]
+    rows = sleeveRepo.libraryRows(chosen)
+    assert {r[13] for r in rows} == set(chosen)
+    assert sleeveRepo.libraryRows([]) == []
+    book = _workbook(sleeveRepo.libraryWorkbook(chosen))
+    names = {(r[0], r[1], r[2], r[3]) for r in rows}
+    for r in list(book[sleeveRepo.RULES_SHEET].iter_rows(values_only=True))[1:]:
+        assert tuple('' if v is None else v for v in r[:4]) in names
+
+
+def test_the_exported_sheet_reads_back_as_the_interchange_shape(tmp_path):
+    path = tmp_path / 'library.xlsx'
+    path.write_bytes(sleeveRepo.libraryWorkbook())
+    read = list(sleeveRepo.readSeedRows(str(path)))
+    expected = [tuple(r) for r in sleeveRepo.exportRows()]
+    assert [r[:5] for r in read] == [r[:5] for r in expected]
+    assert all(abs(a[5] - b[5]) < 1e-9 and a[6] == b[6] for a, b in zip(read, expected))
+
+
+def test_the_endpoint_serves_the_workbook_and_refuses_bad_ids(monkeypatch):
+    monkeypatch.setenv('PMG_ALLOWED_KERBEROS', 'alice')
+    monkeypatch.setenv('PMG_ADMIN_KERBEROS', 'alice')
+    some = sleeveRepo.listAll()[0]['id']
+    found = dashboardRouter.exportRepositorySleeves(ids=str(some), caller=_caller('alice'))
+    assert found.media_type.startswith('application/vnd.openxmlformats')
+    assert 'sleeve-library-' in found.headers['content-disposition']
+    rows = list(_workbook(found.body)[sleeveRepo.SEED_SHEET].iter_rows(values_only=True))[1:]
+    assert rows and {r[13] for r in rows} == {some}
+    bad = dashboardRouter.exportRepositorySleeves(ids='1,x', caller=_caller('alice'))
+    assert bad.status_code == 400

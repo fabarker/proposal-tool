@@ -1123,7 +1123,7 @@ def test_a_missing_extract_does_not_break_the_import(tmp_path, monkeypatch):
                           text=True, env=environment)
     assert done.returncode == 0, done.stderr[-600:]
     routes, asked = done.stdout.split()
-    assert int(routes) == 95, 'the whole block registered without the extract'
+    assert int(routes) == 96, 'the whole block registered without the extract'
     assert asked == 'raised', 'and the data is still required when it is wanted'
 
 
@@ -2835,7 +2835,7 @@ def test_a_share_class_the_catalogue_does_not_define_is_refused(tmp_path):
     import csv
     from cyrus_pmg.pmgService.scenario import products
 
-    cell = {'ProductId': 'p-1', 'Name': 'Probe', 'Ticker': 'PRB', 'AssetClass': 'Equity',
+    cell = {'ProductId': 'p-1', 'Strategy': 'Probe', 'Ticker': 'PRB', 'AssetClass': 'Equity',
             'Style': 'Active', 'Vehicle': 'ETF', 'Source': 'Internal', 'Liquidity': 'Daily',
             'ExposureCurrency': 'USD', 'ProductCost': '0.2', 'FeeGroup': 'Passive',
             'ShareClass': 'Distributing', 'DistributionYield': '1.0', 'MinimumInvestment': ''}

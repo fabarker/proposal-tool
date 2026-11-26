@@ -47,7 +47,7 @@ def _fees():
 
 CTX = {'isNew': True, 'feeGroups': ['Passive', 'Core Active'],
        'takenIds': {'gs-taken': 'GS Taken Fund'}, 'withdrawnIds': {'gs-gone': 'GS Gone Fund'}}
-GOOD = {'productId': 'probe-etf', 'name': 'Probe ETF', 'ticker': 'PRB', 'assetClass': 'Equity',
+GOOD = {'productId': 'probe-etf', 'name': 'Probe ETF', 'assetClass': 'Equity',
         'style': 'Passive', 'vehicle': 'ETF', 'income': 'Accumulating', 'shareClass': '', 'source': 'Internal',
         'liquidity': 'Daily', 'exposureCurrency': 'USD', 'productCost': 0.12,
         'feeGroup': 'Passive', 'distributionYield': None, 'minimumInvestment': None}
@@ -55,7 +55,7 @@ GOOD = {'productId': 'probe-etf', 'name': 'Probe ETF', 'ticker': 'PRB', 'assetCl
 #: listing's
 PRODUCT = ('productId', 'name', 'provider', 'category', 'assetClass', 'vehicle', 'style', 'source', 'liquidity',
            'feeGroup')
-PLACE = ('exchange', 'ticker', 'issueCurrency', 'quotationUnit', 'code')
+PLACE = ('exchange', 'cusip', 'sedol', 'issueCurrency', 'code')
 
 
 def test_the_product_form_refuses_what_the_server_refuses_naming_the_same_field():
@@ -86,7 +86,11 @@ def test_the_product_form_refuses_what_the_server_refuses_naming_the_same_field(
         'replication': {'replication': 'Full'},
         'uk': {'ukReporting': 'Maybe'},
         'exchange': {'exchange': 'x' * 41},
-        'unit': {'quotationUnit': 'pence sterling'},
+        'ucitsWord': {'ucits': 'UCITS'},
+        'ucitsYes': {'ucits': 'Yes'},
+        'sedol': {'sedol': 'B0YBKJ'},
+        'sedolOk': {'sedol': 'b0ybkj7', 'cusip': '037833100'},
+        'cusip': {'cusip': '0378331'},
         'taken': {'productId': 'gs-taken'},
         'gone': {'productId': 'gs-gone'},
         'noId': {'productId': ''},
@@ -125,7 +129,9 @@ process.stdout.write(JSON.stringify(out));
     assert 'three letters' in got['ccy']['class0classCurrency']
     assert 'gives GBP exposure, not USD' in got['hedgedElsewhere']['class0exposureCurrency']
     assert list(got['replication']) == ['class0replication'] and list(got['uk']) == ['class0ukReporting']
-    assert list(got['exchange']) == ['listing0exchange'] and list(got['unit']) == ['listing0quotationUnit']
+    assert list(got['exchange']) == ['listing0exchange']
+    assert list(got['ucitsWord']) == ['class0ucits'] and got['ucitsYes'] == {} and got['sedolOk'] == {}
+    assert list(got['sedol']) == ['listing0sedol'] and list(got['cusip']) == ['listing0cusip']
     assert 'GS Taken Fund' in got['taken']['productId']
     assert 'never reused' in got['gone']['productId']
     assert 'Give the product an ID' in got['noId']['productId']
@@ -134,7 +140,7 @@ process.stdout.write(JSON.stringify(out));
 
 def test_the_product_draft_reads_back_as_the_server_reads_it_and_says_what_moved():
     got = _node(_products() + '''
-var p = { productId: 'x', name: 'Probe', ticker: '—', assetClass: 'Equity', style: 'Active',
+var p = { productId: 'x', name: 'Probe', assetClass: 'Equity', style: 'Active',
           vehicle: 'SMA', shareClass: null, source: 'Internal', liquidity: 'Daily',
           exposureCurrency: 'USD', productCost: 0.2, feeGroup: 'Passive',
           distributionYield: null, minimumInvestment: 5000000 };
@@ -154,7 +160,7 @@ process.stdout.write(JSON.stringify({
 }));
 ''')
     cls, one = got['draft']['classes'][0], got['draft']['listings'][0]
-    assert one['ticker'] == '' and cls['shareClass'] == '' and cls['minimumInvestment'] == '5000000'
+    assert one['sedol'] == '' and 'ticker' not in one and cls['shareClass'] == '' and cls['minimumInvestment'] == '5000000'
     assert one['cls'] == cls['uid'], 'a listing points at its class'
     assert len(got['draft']['listings']) == 1 and len(got['draft']['classes']) == 1, \
         'a product served without listings is its one'
@@ -316,18 +322,18 @@ def test_an_open_form_or_card_is_not_lost_to_a_stray_move():
     assert 'e.stopImmediatePropagation()' in source
 
 
-LISTED = {'productId': 'gef', 'name': 'Global Equity Fund', 'ticker': 'GEF-USD', 'assetClass': 'Equity',
+LISTED = {'productId': 'gef', 'name': 'Global Equity Fund', 'assetClass': 'Equity',
           'style': 'Active', 'vehicle': 'Mutual Fund', 'income': 'Accumulating', 'source': 'Internal',
           'liquidity': 'Daily', 'exposureCurrency': 'USD', 'productCost': 0.45, 'feeGroup': 'Passive',
           'distributionYield': None, 'minimumInvestment': 1000, 'category': '', 'provider': 'GSAM',
           'listings': [
-              {'ticker': 'GEF-USD', 'code': '', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'isin': '',
+              {'sedol': 'BGF0011', 'code': '', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'isin': '',
                'income': 'Accumulating', 'shareClass': 'I', 'exposureCurrency': 'USD', 'productCost': 0.45,
                'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World'},
-              {'ticker': 'GEF-USD', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Unhedged', 'isin': '',
+              {'sedol': 'BGF0011', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Unhedged', 'isin': '',
                'income': 'Accumulating', 'shareClass': 'I', 'exposureCurrency': 'USD', 'productCost': 0.45,
                'distributionYield': None, 'minimumInvestment': 1000, 'benchmark': 'MSCI World'},
-              {'ticker': 'GEF-GBPH', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'isin': '',
+              {'sedol': 'BGF0022', 'code': '', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'isin': '',
                'classCurrency': 'GBP', 'income': 'Accumulating', 'shareClass': 'I', 'exposureCurrency': 'GBP',
                'productCost': 0.5, 'distributionYield': None, 'minimumInvestment': 1000000,
                'benchmark': 'MSCI World (GBP hedged)'}]}
@@ -349,56 +355,59 @@ var before = { classes: d.classes.length, rows: d.listings.length, same: prdChan
 d.classes[1].productCost = '0.55';
 var eur = prdClassRow(p.listings[0]); eur.hedging = 'Hedged';
 d.classes.push(eur);
-d.listings.push(Object.assign(prdPlaceRow(null, eur.uid), { ticker: 'GEF-EURH', issueCurrency: 'EUR' }));
+d.listings.push(Object.assign(prdPlaceRow(null, eur.uid), { sedol: 'BGF0044', issueCurrency: 'EUR' }));
 var moved = prdChanges(p, d), payload = prdPayload(d);
 var d2 = prdDraftFrom(p);
 d2.classes.unshift(d2.classes.splice(1, 1)[0]); prdNormalise(d2);
 var d3 = prdDraftFrom(p);
 d3.listings.push(prdPlaceRow({ issueCurrency: 'CHF' }, d3.classes[0].uid)); prdNormalise(d3);
 process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: payload,
-  fields: prdBoxFields(d).length, reordered: prdChanges(p, d2), firstNow: prdPayload(d2).listings[0].ticker,
+  fields: prdBoxFields(d).length, reordered: prdChanges(p, d2), firstNow: prdPayload(d2).listings[0].sedol,
   added: d3.listings.map(function (l) { return l.issueCurrency; }),
-  boxes: [prdBoxOf(d, 'listing2productCost'), prdBoxOf(d, 'listing2ticker'), prdBoxOf(d, 'listing1isin'), prdBoxOf(d, 'vehicle')],
+  boxes: [prdBoxOf(d, 'listing2productCost'), prdBoxOf(d, 'listing2sedol'), prdBoxOf(d, 'listing1isin'), prdBoxOf(d, 'vehicle')],
   orders: [prdClassOrder(p.listings, false, 1, 0), prdClassOrder(p.listings, false, 1, 0, 0),
            prdClassOrder(p.listings, false, 0, 0), prdClassOrder(p.listings, true, 2, 0)] }));
 ''' % (json.dumps(LISTED), json.dumps(dict(CTX, isNew=False))))
     assert (got['before']['classes'], got['before']['rows']) == (2, 3), 'two listings agree on every class value'
     assert got['before']['of'] == [0, 0, 1] and got['before']['same'] == []
-    assert got['before']['labels'] == ['GEF-USD · USD', 'GEF-USD · GBP', 'GEF-GBPH']
+    assert got['before']['labels'] == ['BGF0011 · USD', 'BGF0011 · GBP', 'BGF0022']
     assert got['before']['names'] == ['I Acc · class 1', 'I Acc hedged · class 2']
     assert [(c['label'], c['before'], c['after']) for c in got['moved']] == [
-        ('Product cost of GEF-GBPH', '0.5', '0.55'),
-        ('Listing GEF-EURH', '—', 'EUR · Hedged · Accumulating · class I · exposure USD · cost 0.45 · min 1,000 '
-                                  '· benchmark MSCI World')]
+        ('Product cost of BGF0022', '0.5', '0.55'),
+        ('Listing BGF0044', '—', 'EUR · Hedged · Accumulating · SEDOL BGF0044 · class I · exposure USD · cost 0.45 '
+                                 '· min 1,000 · benchmark MSCI World')]
     listings = got['payload']['listings']
     assert not any('ranks' in l for l in listings) and not any('assetClass' in l for l in listings)
-    assert [l['ticker'] for l in listings] == ['GEF-USD', 'GEF-USD', 'GEF-GBPH', 'GEF-EURH']
+    assert [l['sedol'] for l in listings] == ['BGF0011', 'BGF0011', 'BGF0022', 'BGF0044']
+    assert not any('ticker' in l or 'regulation' in l for l in listings)
     assert listings[2]['productCost'] == 0.55 and listings[1]['shareClass'] == 'I' and listings[1]['issueCurrency'] == 'GBP'
     assert got['payload']['assetClass'] == 'Equity' and got['payload']['provider'] == 'GSAM', 'the product\'s own'
-    assert got['fields'] == 10 + 3 * 15 + 4 * 6, 'the product, a class\'s fourteen boxes and a listing\'s five'
+    assert got['fields'] == 10 + 3 * 15 + 4 * 6, 'the product, a class\'s boxes and a listing\'s, no unit (D219), a CUSIP and a SEDOL for the ticker (D220)'
     assert [(c['label'], c['before'], c['after']) for c in got['reordered']] == [
-        ('Listing order', 'GEF-USD · USD, then GEF-USD · GBP, then GEF-GBPH',
-         'GEF-GBPH, then GEF-USD · USD, then GEF-USD · GBP')]
-    assert got['firstNow'] == 'GEF-GBPH', 'a class moves with its listings'
+        ('Listing order', 'BGF0011 · USD, then BGF0011 · GBP, then BGF0022',
+         'BGF0022, then BGF0011 · USD, then BGF0011 · GBP')]
+    assert got['firstNow'] == 'BGF0022', 'a class moves with its listings'
     assert got['added'] == ['USD', 'GBP', 'CHF', 'GBP'], 'a listing stands with its class\'s'
-    assert got['boxes'] == ['class1productCost', 'listing2ticker', 'class0isin', 'vehicle']
+    assert got['boxes'] == ['class1productCost', 'listing2sedol', 'class0isin', 'vehicle']
     assert got['orders'] == [[2, 0, 1], [1, 0, 2], None, [2, 0, 1]], 'a card\'s class, a listing in its class, an SMA\'s code'
 
 
 def test_the_form_checks_classes_and_listings_as_the_server_does():
     """The same listing twice, a code on a fund, hedging a fund cannot say, a
-    ticker or an ISIN another product holds, one ISIN on two classes, two
+    SEDOL or an ISIN another product holds, one ISIN on two classes, two
     classes the same, a class with no listing, and a fund's box on an SMA
     are each refused on their box (D207, D218)."""
     got = _node(_products() + '''
 var p = %s, ctx = %s, out = {};
 function draft(change) { var d = prdDraftFrom(p); change(d); return prdProblems(d, ctx); }
-function sma(change) { var d = prdDraftFrom(p); d.vehicle = 'SMA'; d.category = 'Public Equity'; prdSplitClasses(d); change(d); return prdProblems(d, ctx); }
+function sma(change) { var d = prdDraftFrom(p); d.vehicle = 'SMA'; d.category = 'Public Equity'; prdSplitClasses(d);
+  d.listings.forEach(function (l) { l.sedol = ''; }); change(d); return prdProblems(d, ctx); }
 out.same = draft(function (d) { d.listings[1].issueCurrency = 'USD'; });
 out.otherExchange = draft(function (d) { d.listings[1].issueCurrency = 'USD'; d.listings[1].exchange = 'LSE'; });
 out.code = draft(function (d) { d.listings[0].code = 'M1'; });
 out.isg = draft(function (d) { d.classes[0].hedging = 'ISG Hedged'; });
-out.held = draft(function (d) { d.listings[2].ticker = 'TAKEN'; });
+out.held = draft(function (d) { d.listings[2].sedol = 'BTKN001'; });
+out.badSedol = draft(function (d) { d.listings[2].sedol = 'BAE1'; d.listings[1].cusip = '12345'; });
 out.heldIsin = draft(function (d) { d.classes[0].isin = 'IE00B4L5Y983'; });
 out.twoIsins = draft(function (d) { d.classes[0].isin = 'LU0000000011'; d.classes[1].isin = 'LU0000000011'; });
 out.twins = draft(function (d) { d.classes[1].hedging = 'Unhedged'; d.classes[1].classCurrency = ''; d.classes[1].exposureCurrency = 'USD';
@@ -412,16 +421,17 @@ out.smaIsg = sma(function (d) { d.classes[0].hedging = 'ISG Hedged'; d.listings[
 out.smaLeft = sma(function (d) { d.classes.forEach(function (c) { c.shareClass = ''; }); });
 out.smaFund = sma(function (d) { d.classes[0].domicile = 'IE'; d.listings[1].exchange = 'LSE';
   d.classes.forEach(function (c) { c.shareClass = ''; }); });
-out.bondHedged = (function () { var d = prdDraftFrom(p); d.vehicle = 'SMA'; d.category = 'Investment Grade Fixed Income'; prdSplitClasses(d);
+out.bondHedged = (function () { var d = prdDraftFrom(p); d.vehicle = 'SMA'; d.category = 'Investment Grade Fixed Income'; prdSplitClasses(d); d.listings.forEach(function (l) { l.sedol = ''; });
   d.classes.forEach(function (c) { c.shareClass = ''; }); return prdProblems(d, ctx); })();
 process.stdout.write(JSON.stringify(out));
 ''' % (json.dumps(LISTED), json.dumps(dict(CTX, isNew=False, categories=['Public Equity', 'Investment Grade Fixed Income'],
-                                             held={'ticker:taken': 'Another Fund', 'isin:ie00b4l5y983': 'An ETF'}))))
+                                             held={'sedol:btkn001': 'Another Fund', 'isin:ie00b4l5y983': 'An ETF'}))))
     assert 'same listing' in got['same']['listing1issueCurrency']
     assert 'listing1issueCurrency' not in got['otherExchange'], 'another exchange is another listing'
     assert 'Only a separate account' in got['code']['listing0code']
     assert 'Hedged or Unhedged' in got['isg']['class0hedging']
-    assert 'Another Fund' in got['held']['listing2ticker']
+    assert 'Another Fund' in got['held']['listing2sedol']
+    assert 'is not one' in got['badSedol']['listing2sedol'] and 'is not one' in got['badSedol']['listing1cusip']
     assert 'An ETF' in got['heldIsin']['class0isin']
     assert 'Classes 1 and 2 have the same ISIN' in got['twoIsins']['class1isin']
     assert 'Classes 1 and 2 are the same share class' in got['twins']['class1']

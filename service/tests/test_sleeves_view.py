@@ -255,7 +255,7 @@ LIB = [
 ]
 CATALOGUE = [
     {'productId': 'a', 'name': 'Alpha ETF', 'assetClass': 'US Large Cap', 'vehicle': 'ETF', 'style': 'Passive', 'source': 'Internal',
-     'productCost': 0.10, 'minimumInvestment': None, 'ticker': 'ALF'},
+     'productCost': 0.10, 'minimumInvestment': None, 'sedol': 'BLFX001'},
     {'productId': 'b', 'name': 'Beta Fund', 'assetClass': 'Intl', 'vehicle': 'Mutual Fund', 'style': 'Active', 'source': 'External',
      'productCost': 0.50, 'minimumInvestment': 1000},
     {'productId': 'c', 'name': 'Gamma SMA', 'assetClass': 'US Large Cap', 'vehicle': 'SMA', 'style': 'Active', 'source': 'Internal',
@@ -302,7 +302,7 @@ process.stdout.write(JSON.stringify({
   hitsAllCostDesc: ids(svAddHits(cat, { sort: 'cost', dir: 'desc' })),
   hitsName: ids(svAddHits(cat, { sort: 'name' })),
   hitsMin: ids(svAddHits(cat, { sort: 'min' })),
-  hitsQuery: [ids(svAddHits(cat, { query: 'large cap' })), ids(svAddHits(cat, { query: 'alf' })), ids(svAddHits(cat, { query: 'tilt', vehicle: 'Mutual Fund' }))],
+  hitsQuery: [ids(svAddHits(cat, { query: 'large cap' })), ids(svAddHits(cat, { query: 'blfx' })), ids(svAddHits(cat, { query: 'tilt', vehicle: 'Mutual Fund' }))],
   hitsFilters: [ids(svAddHits(cat, { vehicle: 'SMA' })), ids(svAddHits(cat, { style: 'Active', source: 'Internal' }))],
   added: svAddRows(copied, ['b', 'c', 'd', 'c']).map(r => [r.productId, isFinite(r.weightPct) ? r.weightPct : null]),
 }));

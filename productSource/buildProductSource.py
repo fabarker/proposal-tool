@@ -35,10 +35,11 @@ authored file; this script validates it and writes products.xlsx beside it,
 so both shapes of extract exist for the reader to be tried against.
 
 products-listings.csv is the same products in the layout a product file
-takes since the three levels (D218): twenty-nine columns, the product's,
-then the share class's, then the listing's, then an SMA's mandate code; a
-row for each listing, a product's rows together in its classes' and
-listings' order - what the catalogue's Download the product file writes.
+takes since the three levels (D218, D219, D220): twenty-nine columns, the
+product's (its name headed Strategy), then the share class's (UCITSCompliant
+Yes or No), then the listing's (its exchange, CUSIP, SEDOL and issue
+currency - no ticker), then an SMA's mandate code; a row for each listing,
+a product's rows together in its classes' and listings' order - what the catalogue's Download the product file writes.
 Two products carry the plan's worked examples: GS Global Credit Portfolio,
 a Mutual Fund in four share classes dealt in five currencies, and GS Access
 Treasury 0-1 ETF, two share classes listed four times. This script
@@ -63,13 +64,13 @@ COST, GROUP, YIELD, MINIMUM = (COLUMNS.index(c) for c in
 
 LISTINGS_CSV = os.path.join(HERE, 'products-listings.csv')
 LISTINGS_XLSX = os.path.join(HERE, 'products-listings.xlsx')
-PRODUCT_COLUMNS = ['ProductId', 'Name', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
+PRODUCT_COLUMNS = ['ProductId', 'Strategy', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
                    'Source', 'Liquidity', 'FeeGroup']
 CLASS_COLUMNS = ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
-                 'Domicile', 'Regulation', 'Replication', 'UKReporting', 'ProductCost',
+                 'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'ProductCost',
                  'DistributionYield', 'MinimumInvestment', 'Benchmark']
-LISTINGS_COLUMNS = PRODUCT_COLUMNS + CLASS_COLUMNS + ['Exchange', 'Ticker', 'IssueCurrency',
-                                                      'QuotationUnit', 'MandateCode']
+LISTINGS_COLUMNS = PRODUCT_COLUMNS + CLASS_COLUMNS + ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency',
+                                                     'MandateCode']
 
 
 def readCsv(path=CSV_PATH, columns=COLUMNS):
@@ -101,7 +102,7 @@ def validate(rows, columns=COLUMNS, listings=False):
             sys.exit('duplicate ProductId: {}'.format(', '.join(dup)))
     for row in rows:
         if not row[1].strip():
-            sys.exit('{}: empty Name'.format(row[0]))
+            sys.exit('{}: empty {}'.format(row[0], columns[1]))
         try:
             float(row[cost])
         except ValueError:

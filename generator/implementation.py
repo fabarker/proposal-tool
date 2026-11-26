@@ -616,7 +616,7 @@ body.has-rail.step-impl .shell{max-width:none}
 .bdg.b-slack.sm{font-size:9.5px;letter-spacing:.07em;padding:0 5px;line-height:15px;
   margin-left:6px;vertical-align:1px}
 .stands-in{display:block;font-size:11px;color:var(--ink-3);line-height:1.3;margin-top:1px}
-/* the listing a line holds, under its ticker: its currency and hedging (D208) */
+/* the listing a line holds, under its ISIN: its SEDOL, currency and hedging (D208, D220) */
 .tbl.impl .lst-sub{display:block;font-family:var(--f-body);font-size:10.5px;color:var(--ink-3);
   letter-spacing:.02em;line-height:1.25;white-space:nowrap}
 /* and the minimum it breaches, under its own notional */

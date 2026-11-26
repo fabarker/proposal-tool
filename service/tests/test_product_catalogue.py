@@ -39,7 +39,7 @@ def _unplaced():
 
 
 def _new(**over):
-    fields = {'productId': 'probe-etf', 'name': 'Probe Global Equity ETF', 'ticker': 'PRB',
+    fields = {'productId': 'probe-etf', 'name': 'Probe Global Equity ETF', 'sedol': 'BPRB001',
               'assetClass': 'Global Equity', 'style': 'Passive', 'vehicle': 'ETF',
               'income': 'Accumulating', 'source': 'External', 'liquidity': 'Daily',
               'exposureCurrency': 'USD', 'productCost': '0.12', 'feeGroup': 'Passive',
@@ -72,7 +72,6 @@ def test_the_first_open_loads_the_file_once_and_serves_what_the_file_served(stor
     assert [p['productId'] for p in served] == order
     for p in served:
         record = dict(byId[p['productId']])
-        record['ticker'] = record['ticker'] or products.NO_TICKER
         # the console's, not served (D178): served as the product's own (D199)
         record['ownCategory'] = record.pop('category')
         assert p == record
@@ -130,7 +129,7 @@ def test_a_product_is_added_with_its_stamps_and_a_first_version(store):
 
 
 @pytest.mark.parametrize('over, field, words', [
-    ({'name': '  '}, 'name', 'Give the product a name'),
+    ({'name': '  '}, 'name', 'Give the product its strategy'),
     ({'productCost': 'free'}, 'productCost', 'not a number'),
     ({'productCost': '-0.1'}, 'productCost', 'cannot be negative'),
     ({'productCost': '45'}, 'productCost', 'looks wrong'),
@@ -252,7 +251,7 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
     changed = next(r for r in body if r[0] not in (dropped, keptHeld))
     changed[at['ProductCost']] = '0.99'
     newRow = [''] * len(head)
-    for column, value in (('ProductId', 'probe-etf'), ('Name', 'Probe Global Equity ETF'), ('Ticker', 'PRB'),
+    for column, value in (('ProductId', 'probe-etf'), ('Strategy', 'Probe Global Equity ETF'), ('SEDOL', 'BPRB001'),
                           ('AssetClass', 'Global Equity'), ('Category', 'Public Equity'), ('Style', 'Passive'),
                           ('Vehicle', 'ETF'), ('Income', 'Accumulating'), ('Source', 'External'),
                           ('Liquidity', 'Daily'), ('ExposureCurrency', 'USD'), ('ProductCost', '0.12'),
@@ -322,7 +321,7 @@ def test_an_export_reads_back_as_the_catalogue_and_a_workbook_imports_too(store,
     for r in rows[1:]:
         sheet.append([float(v) if v and c in ('ProductCost', 'DistributionYield', 'MinimumInvestment')
                       else v for v, c in zip(r, rows[0])])
-    sheet.cell(row=3, column=rows[0].index('Name') + 1).value = 'Renamed In A Workbook'
+    sheet.cell(row=3, column=rows[0].index('Strategy') + 1).value = 'Renamed In A Workbook'
     xlsx = tmp_path / 'products.xlsx'
     book.save(str(xlsx))
     preview = products.importPreview('products.xlsx', _upload(str(xlsx)))

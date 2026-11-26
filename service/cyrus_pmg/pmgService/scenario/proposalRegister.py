@@ -20,7 +20,7 @@ Three properties the design holds to:
 * Append-only. There is no update and no delete. A row is written once, in
   the same transaction as its file, and never touched again. If a proposal
   must ever be withdrawn that is a new row saying so, not a deletion.
-* Self-contained. Product names, tickers and vehicles are written into the
+* Self-contained. Product names, identifiers and vehicles are written into the
   implemented picture at export time, and every sleeve is pinned to the
   revision it was at (D65). A snapshot resolved against next year's library
   is a re-run, not a record.
@@ -146,7 +146,7 @@ _LIST_COLUMNS = ('proposalId, scenarioId, sequence, exportedAt, exportedBy, crea
 
 #: what the implemented picture keeps of a product: identity and description,
 #: never a fee or a cost
-_ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
+_ITEM_FIELDS = ('productId', 'name', 'assetClass', 'style', 'vehicle',
                 'shareClass', 'source', 'liquidity', 'exposureCurrency',
                 'printedPct', 'notional',
                 # the initial allocation's figures, for a private-markets book
@@ -161,11 +161,12 @@ _ITEM_FIELDS = ('productId', 'name', 'ticker', 'assetClass', 'style', 'vehicle',
                 # anything delivered before
                 'issueCurrency', 'hedging', 'code', 'listing', 'steppedFrom',
                 # the share class and listing it held (D218): the provider,
-                # the class's ISIN and facts, and the listing's exchange and
-                # quotation unit beside its ticker; None on anything
-                # delivered before, which is read as it reads now below
-                'provider', 'isin', 'income', 'classCurrency', 'domicile', 'regulation',
-                'replication', 'ukReporting', 'benchmark', 'exchange', 'quotationUnit')
+                # the class's ISIN and facts, and the listing's exchange,
+                # CUSIP and SEDOL, with UCITS compliance for the regulation
+                # and no ticker (D220); None on anything delivered before,
+                # which is read as it reads now below
+                'provider', 'isin', 'income', 'classCurrency', 'domicile', 'ucits',
+                'replication', 'ukReporting', 'benchmark', 'exchange', 'cusip', 'sedol')
 
 _lock = threading.Lock()
 

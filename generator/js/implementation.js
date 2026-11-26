@@ -664,11 +664,12 @@ function complete() {
 function implItem(product, level) {
   return {
     productId: product.productId,
-    name: product.name, ticker: product.ticker, assetClass: product.assetClass,
+    name: product.name, assetClass: product.assetClass,
     style: product.style, vehicle: product.vehicle,
     /* the share class it holds (D218): its ISIN, income, letter and UK
-       reporting status */
+       reporting status; and the listing's SEDOL and CUSIP (D220) */
     isin: product.isin || '', income: product.income || '',
+    sedol: product.sedol || '', cusip: product.cusip || '',
     shareClass: product.shareClass || null, ukReporting: product.ukReporting || '',
     source: product.source,
     liquidity: product.liquidity, exposureCurrency: product.exposureCurrency,
@@ -730,16 +731,17 @@ function standsInText(item) {
   }).join(' ');
 }
 
-/* what a line holds, under its ISIN: the listing's ticker, the currency it
-   is dealt in and its hedging (D208, D218) */
+/* what a line holds, under its ISIN: the listing's SEDOL, the currency it
+   is dealt in and its hedging (D208, D218, D220) */
 function listingSub(item) {
-  var ticker = item.ticker && item.ticker !== '\u2014' ? item.ticker : '';
-  var bits = [item.isin ? ticker : '', item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
+  var place = item.sedol || item.cusip || '';
+  var bits = [item.isin ? place : '', item.issueCurrency, item.hedging].filter(function (b) { return !!b; });
   return bits.length ? '<small class="lst-sub">' + App.esc(bits.join(' \u00b7 ')) + '</small>' : '';
 }
-/* the ISIN column: the class's ISIN, else the listing's ticker as before */
+/* the ISIN column: the class's ISIN, else the listing's SEDOL or CUSIP
+   (D220) */
 function heldIdent(item) {
-  return item.isin || item.ticker || '\u2014';
+  return item.isin || item.sedol || item.cusip || '\u2014';
 }
 function textOrDash(value) {
   return value ? App.esc(value) : '<span class="mut">&mdash;</span>';
@@ -2598,7 +2600,7 @@ function cslAddHtml() {
   var q = cslPanel.query.trim().toLowerCase();
   var free = lib.products.filter(function (p) { return held.indexOf(p.productId) === -1; });
   var shown = free.filter(function (p) {
-    return !q || [p.name, p.isin, p.ticker, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
+    return !q || [p.name, p.isin, p.sedol, p.cusip, p.assetClass, p.vehicle, p.style].join(' ').toLowerCase().indexOf(q) !== -1;
   });
   return '<div class="csl-add-h"><h3>Products in ' + App.esc(cslPanel.under) + '</h3>'
     + '<span class="mut">' + lib.products.length + ' held by its sleeves under ' + App.esc(App.variant() || '')
