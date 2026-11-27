@@ -73,6 +73,10 @@ thirty-three columns of the desk's product data sheet (D225):
   Currency`) where a sheet gives it there (D226). It has no ISIN,
   class letter, domicile, UCITS compliance, replication, UK reporting,
   exchange or its country, RIC, CUSIP or SEDOL.
+  Its mandates may each give their own `AssetClass` - a strategy's EUR,
+  USD and GBP mandates EUR, USD and GBP Fixed Income (D230); a fund's rows
+  all give the product's. A proposal holds an SMA's first mandate in its
+  base currency, else its first (D230).
 
 A product's rows sit together, its classes in order and each class's
 listings in order. A proposal holds the **first listing of the first

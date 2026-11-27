@@ -168,7 +168,8 @@ def test_a_fund_in_a_file_is_its_classes_and_their_listings_in_order(store, tmp_
     assert not any('quotationUnit' in l for l in listed), 'no quotation unit (D219)'
     assert [l['productCost'] for l in listed] == [0.12, 0.12, 0.12, 0.15], 'each row carries its class'
     assert listed[3]['hedging'] == 100.0 and listed[3]['classCurrency'] == listed[3]['exposureCurrency'] == 'GBP'
-    assert byId[pid]['assetClass'] and 'assetClass' not in listed[0], 'the asset class is the product\'s'
+    assert byId[pid]['assetClass'] and all(l['assetClass'] == byId[pid]['assetClass'] for l in listed), \
+        'a fund\'s listings have the product\'s asset class (D230)'
     preview = products.importPreview(path, _upload(path))
     products.importFile(path, _upload(path), user='alice', base=preview['revision'])
     held = products.asHeld(products.get(pid))
@@ -573,7 +574,7 @@ def test_a_store_from_before_the_levels_is_moved_on_its_first_open(store):
             'IE0000000021', '', 'Accumulating', '')
         assert 'ticker' not in listed[0] and listed[0]['ucits'] == 'Yes'
         assert (listed[1]['classCurrency'], listed[1]['exposureCurrency']) == ('GBP', 'GBP'), 'hedged to GBP'
-        assert 'assetClass' not in listed[0] and stored['provider'] == '' and stored['vehicle'] != 'UCITS'
+        assert stored['provider'] == '' and stored['vehicle'] != 'UCITS'
         assert int(conn.execute("SELECT value FROM meta WHERE key = 'catalogueRevision'").fetchone()[0]) == revision + 1
     finally:
         conn.close()
@@ -1040,6 +1041,76 @@ def test_a_cell_that_says_nothing_is_blank(store, tmp_path):
         products.readFile(_file(tmp_path, rows, 'missing.csv'))
     rows = _rowsFor(pid, [dict(ETF[0], Domicile='NA')])
     assert products.readFile(_file(tmp_path, rows, 'na.csv'))[0][pid]['listings'][0]['domicile'] == 'Namibia'
+
+
+def test_an_smas_mandates_may_each_have_an_asset_class(store, tmp_path):
+    """A strategy's EUR, USD and GBP mandates are EUR, USD and GBP Fixed
+    Income (D230): an SMA's rows may differ in asset class, the product's
+    being its first mandate's; a fund's rows may not; a mandate given none
+    has the strategy's."""
+    sma = next(p['productId'] for p in products.all() if products.isSma(p)
+               and p['ownCategory'] != products.EQUITY_CATEGORY)
+    rows = _rowsFor(sma, [{'MandateCode': 'CFI-EUR', 'IssueCurrency': 'EUR', 'AssetClass': 'EUR Fixed Income',
+                           'ExposureCurrency': 'EUR'},
+                          {'MandateCode': 'CFI-USD', 'IssueCurrency': 'USD', 'AssetClass': 'USD Fixed Income',
+                           'ExposureCurrency': 'USD'},
+                          {'MandateCode': 'CFI-GBP', 'IssueCurrency': 'GBP', 'AssetClass': 'GBP Fixed Income',
+                           'ExposureCurrency': 'GBP'}])
+    path = _file(tmp_path, rows)
+    byId, _ = products.readFile(path)
+    assert [l['assetClass'] for l in byId[sma]['listings']] == ['EUR Fixed Income', 'USD Fixed Income',
+                                                                 'GBP Fixed Income']
+    assert byId[sma]['assetClass'] == 'EUR Fixed Income', 'the product carries its first mandate\'s'
+    preview = products.importPreview(path, _upload(path))
+    products.importFile(path, _upload(path), user='alice', base=preview['revision'])
+    stored = products.entry(sma)
+    assert [l['assetClass'] for l in stored['listings']][1:] == ['USD Fixed Income', 'GBP Fixed Income']
+    # a mandate given none has the strategy's
+    out = _list(sma, {'code': 'CFI-EUR', 'issueCurrency': 'EUR', 'assetClass': ''},
+                {'code': 'CFI-USD', 'issueCurrency': 'USD', 'assetClass': 'USD Fixed Income'},
+                assetClass='Fixed Income')
+    assert [l['assetClass'] for l in out['listings']] == ['Fixed Income', 'USD Fixed Income']
+    # a fund's rows share the product's
+    pid = _fund('ETF')
+    rows = _rowsFor(pid, [dict(ETF[0], AssetClass='Equity'), dict(ETF[1], AssetClass='Bonds')])
+    with pytest.raises(products.BadCatalogue, match='asset class'):
+        products.readFile(_file(tmp_path, rows, 'fund.csv'))
+    out = _list(pid, {'assetClass': 'Bonds'})
+    assert out['listings'][0]['assetClass'] == out['assetClass'], 'a fund\'s listing has the product\'s'
+
+
+def test_a_proposal_holds_an_smas_mandate_in_its_base_currency(store):
+    """A proposal in EUR holds the SMA's first EUR mandate, one in CHF -
+    which it has none in - its first mandate; a fund its first listing,
+    whatever the currency (D230). The page chooses as the server does."""
+    sma = next(p['productId'] for p in products.all() if products.isSma(p)
+               and p['ownCategory'] != products.EQUITY_CATEGORY)
+    _list(sma, {'code': 'CFI-USD', 'issueCurrency': 'USD', 'assetClass': 'USD Fixed Income'},
+          {'code': 'CFI-EUR', 'issueCurrency': 'EUR', 'assetClass': 'EUR Fixed Income', 'productCost': 0.31},
+          {'code': 'CFI-EUR2', 'issueCurrency': 'EUR', 'hedging': '50'})
+    product = products.get(sma)
+    held = products.asHeld(product, 'EUR')
+    assert (held['code'], held['assetClass'], held['productCost']) == ('CFI-EUR', 'EUR Fixed Income', 0.31)
+    assert products.asHeld(product, 'CHF')['code'] == 'CFI-USD', 'none in CHF: the first'
+    assert products.asHeld(product)['code'] == 'CFI-USD'
+    pid = _fund('ETF')
+    _list(pid, {'issueCurrency': 'USD', 'exchange': 'LSE'}, {'issueCurrency': 'EUR', 'exchange': 'Xetra'})
+    assert products.asHeld(products.get(pid), 'EUR')['issueCurrency'] == 'USD', 'a fund: its first listing'
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'generator', 'js', 'implementation.js')
+    with open(path, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('var HELD_FIELDS = ')
+    page = source[start:source.index('\nfunction implItem(', start)]
+    probe = (page + "\nvar BASE = 'EUR', App = { basis: function () { return { currency: BASE }; } };\n"
+             + 'var sma = ' + json.dumps(products.get(sma)) + ', fund = ' + json.dumps(products.get(pid)) + ';\n'
+             + "var out = [heldProduct(sma).code]; BASE = 'CHF'; out.push(heldProduct(sma).code);\n"
+             + "BASE = 'EUR'; out.push(heldProduct(sma).assetClass); out.push(heldProduct(fund).issueCurrency);\n"
+             + 'console.log(JSON.stringify(out));')
+    got = json.loads(subprocess.run([node, '-e', probe], capture_output=True, text=True, check=True).stdout)
+    assert got == ['CFI-EUR', 'CFI-USD', 'EUR Fixed Income', 'USD']
 
 
 def test_a_funds_share_class_may_be_hedged_by_isg(store, tmp_path):

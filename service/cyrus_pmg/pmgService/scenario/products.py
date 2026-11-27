@@ -22,8 +22,12 @@ and any proposal may hold any product. The catalogue holds facts only
 rankings by base currency it once kept (D207, D208) are gone. Its listings
 are kept in an order the console sets by dragging them, and until the rules
 for choosing between them are settled a proposal holds the FIRST one,
-whatever its currency and its amount (``asHeld``); the product carries the
-first one's values at its top level. An ISIN or a CUSIP may repeat across
+whatever its currency and its amount (``asHeld``) - but for an SMA, the
+first mandate run in the proposal's base currency, where it has one (D230);
+the product carries the first one's values at its top level. An SMA's
+mandates may each have their own asset class - a strategy's EUR, USD and GBP
+mandates EUR, USD and GBP Fixed Income (D230); a fund's listings share the
+product's. An ISIN or a CUSIP may repeat across
 a product's listings - one class quoted in several currencies - but belongs
 to that product alone, and so do a SEDOL and a mandate code. The file gives a
 product one row per listing under the same ProductId, in their order, with
@@ -269,7 +273,7 @@ PLACE_FIELDS = ('exchange', 'exchangeCountry', 'ric', 'cusip', 'sedol', 'issueCu
 #: tick among them, as the hedging is (D226) - its own, and its mandate
 #: code. A listing holds all of them whole: nothing in one is read from
 #: another.
-LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code',)
+LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code', 'assetClass')
 #: the ones of those that are figures
 LISTING_FIGURES = ('productCost', 'distributionYield', 'minimumInvestment')
 #: and the ones that are numbers: the figures and the hedging (D224)
@@ -277,6 +281,9 @@ LISTING_NUMBERS = LISTING_FIGURES + ('hedging',)
 #: what the product is, whichever listing is held: the same on every one of
 #: its rows in a file
 PRODUCT_FIELDS = [k for k in KEYS if k not in LISTING_FIELDS]
+#: and with the asset class, which a fund's listings share but an SMA's
+#: mandates may each have their own of (D230)
+FUND_PRODUCT_FIELDS = PRODUCT_FIELDS + ['assetClass']
 #: what a listing is told apart by, where a file names it: the fields an
 #: import matches a file's row to the catalogue's listing on
 LISTING_KEY = ('isin', 'code', 'exchange', 'ric', 'cusip', 'sedol', 'issueCurrency', 'hedging', 'isg', 'shareClass',
@@ -854,7 +861,7 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
             if pid in rowsOf:
                 # a currency's row says what the product is only where it differs
                 first = rowsOf[pid][0][2]
-                for key in PRODUCT_FIELDS:
+                for key in FUND_PRODUCT_FIELDS:
                     if key != 'productId' and not _text(fields.get(key)):
                         fields[key] = first.get(key)
         try:
@@ -899,7 +906,7 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories, classC
         rows = sorted(rows, key=lambda r: -1 if r[1] == ALL else CURRENCIES.index(r[1]))
     mainRow, _, main = rows[0]
     for n, currency, record in rows[1:]:
-        for key in PRODUCT_FIELDS:
+        for key in (PRODUCT_FIELDS if isSma(main) else FUND_PRODUCT_FIELDS):
             if key == 'productId' or _same(record[key], main[key]):
                 continue
             raise BadCatalogue(
@@ -907,7 +914,8 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories, classC
                 'listings, and only a share class\'s values (its name, ISIN, class, income, hedging, '
                 'currencies, domicile, UCITS compliance, replication, UK reporting, cost, yield, '
                 'minimum and benchmark) and a listing\'s (its exchange and its country, RIC, CUSIP, '
-                'SEDOL, issue currency and mandate code) may differ between them.'.format(
+                'SEDOL, issue currency and mandate code) may differ between them, and an SMA\'s mandates\' '
+                'asset class.'.format(
                     fileName, n, pid, LABELS[key].lower(), show(key, record[key]), mainRow,
                     show(key, main[key])))
     listings, rowOf = [], []
@@ -1066,7 +1074,13 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
     # who runs it (D218): optional, a word
     record['provider'] = _word(fields.get('provider'), 'provider', LABELS['provider'], strict,
                                required=False)
-    record['assetClass'] = _word(fields.get('assetClass'), 'assetClass', LABELS['assetClass'], strict)
+    # the strategy's asset class, or its first listing's where it gives none
+    # at the top level: a listing carries one now (D230)
+    assetClass = fields.get('assetClass')
+    given = fields.get('listings')
+    if not _text(assetClass) and isinstance(given, list) and given and isinstance(given[0], dict):
+        assetClass = given[0].get('assetClass')
+    record['assetClass'] = _word(assetClass, 'assetClass', LABELS['assetClass'], strict)
     for key in ('style', 'source', 'liquidity'):
         record[key] = _word(fields.get(key), key, LABELS[key], strict)
     record['vehicle'], ucits = _vehicle(fields.get('vehicle'), name, strict)
@@ -1204,6 +1218,11 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
             raise ValidationError(box('code'), 'Keep the mandate code{} to {} characters.'.format(
                 where, CODE_MAX))
         listing['code'] = code
+        # a mandate's asset class, else the strategy's; a fund's listings
+        # all have the product's (D230)
+        own = _word(given.get('assetClass'), box('assetClass'), LABELS['assetClass'] + where, strict,
+                    required=False)
+        listing['assetClass'] = (own if sma and own else '') or _text(record.get('assetClass'))
         # the class's name, or the mandate's (D222, D225); a listing saved
         # before keeps its mandate name under it
         className = _text(given.get('className', given.get('mandateName')))
@@ -1785,6 +1804,10 @@ def modernise(record, notes=None) -> dict:
             if not listing.get('ucits') and not sma:
                 listing['ucits'] = ucits
     for listing in modern:
+        # a listing stored before it had an asset class of its own: the
+        # product's (D230)
+        if not _text(listing.get('assetClass')):
+            listing['assetClass'] = _text(out.get('assetClass'))
         # a mandate's name, stored as such before a share class had one (D222, D225)
         if 'mandateName' in listing:
             was = listing.pop('mandateName')
@@ -1957,19 +1980,30 @@ def _held(listing, listings) -> dict:
     return out
 
 
-def asHeld(product):
-    """*product* as a proposal holds it (D214): with the values of its first
-    listing, whatever the proposal's currency or the line's amount, until
-    the rules for choosing between listings are settled. A sleeve's product
-    carries the one held instead below its minimum (D192), read the same way."""
+def heldListing(product, currency=None) -> dict:
+    """The listing of *product* a proposal in *currency* holds (D214, D230):
+    an SMA's first mandate run in that currency, where it has one; else,
+    and for a fund, its first listing, whatever the line's amount, until the
+    rules for choosing between listings are settled."""
+    listings = _listingsOf(product)
+    if currency and isSma(product):
+        ccy = _text(currency).upper()
+        return next((l for l in listings if _text(l.get('issueCurrency')).upper() == ccy), listings[0])
+    return listings[0]
+
+
+def asHeld(product, currency=None):
+    """*product* as a proposal in *currency* holds it: with the values of
+    the listing it holds (``heldListing``). A sleeve's product carries the
+    one held instead below its minimum (D192), read the same way."""
     if not product:
         return product
     out = {k: v for k, v in product.items() if k not in ('ranked', 'ticker', 'regulation')}
     listings = _listingsOf(product)
     out['listings'] = listings
-    out.update(_held(listings[0], listings))
+    out.update(_held(heldListing(product, currency), listings))
     if isinstance(product.get('alternative'), dict):
-        out['alternative'] = asHeld(product['alternative'])
+        out['alternative'] = asHeld(product['alternative'], currency)
     return out
 
 
@@ -2055,7 +2089,8 @@ def changes(before, after) -> list:
         return []
     before, after = modernise(before), modernise(after)
     out = []
-    for key in PRODUCT_FIELDS[1:]:
+    sma = isSma(after)
+    for key in (PRODUCT_FIELDS if sma else FUND_PRODUCT_FIELDS)[1:]:
         was, now = before.get(key), after.get(key)
         if _sameValue(was, now):
             continue
@@ -2070,6 +2105,8 @@ def changes(before, after) -> list:
     for a, b in pairs:
         label = listingLabel(b, now)
         for field in LISTING_FIELDS:
+            if field == 'assetClass' and not sma:
+                continue
             x, y = a.get(field), b.get(field)
             if _sameValue(x, y):
                 continue

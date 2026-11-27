@@ -379,12 +379,13 @@ process.stdout.write(JSON.stringify({ before: before, moved: moved, payload: pay
         ('Listing BGF0044', '—', 'EUR · 100% hedged · Accumulating · SEDOL BGF0044 · class I · exposure USD · cost 0.45 '
                                  '· min 1,000 · benchmark MSCI World')]
     listings = got['payload']['listings']
-    assert not any('ranks' in l for l in listings) and not any('assetClass' in l for l in listings)
+    assert not any('ranks' in l for l in listings)
+    assert all(l['assetClass'] == got['payload']['assetClass'] for l in listings), 'a fund\'s listings: the product\'s (D230)'
     assert [l['sedol'] for l in listings] == ['BGF0011', 'BGF0011', 'BGF0022', 'BGF0044']
     assert not any('ticker' in l or 'regulation' in l for l in listings)
     assert listings[2]['productCost'] == 0.55 and listings[1]['shareClass'] == 'I' and listings[1]['issueCurrency'] == 'GBP'
     assert got['payload']['assetClass'] == 'Equity' and got['payload']['provider'] == 'GSAM', 'the product\'s own'
-    assert got['fields'] == 10 + 3 * 17 + 4 * 8, 'the product, a class\'s boxes and a listing\'s, no unit (D219), a CUSIP and a SEDOL for the ticker (D220), the ISG tick (D224, a class\'s since D226), a name, an exchange country and a RIC (D225)'
+    assert got['fields'] == 10 + 3 * 18 + 4 * 8, 'the product, a class\'s boxes and a listing\'s, no unit (D219), a CUSIP and a SEDOL for the ticker (D220), the ISG tick (D224, a class\'s since D226), a name, an exchange country and a RIC (D225), a mandate\'s asset class (D230)'
     assert [(c['label'], c['before'], c['after']) for c in got['reordered']] == [
         ('Listing order', 'BGF0011 · USD, then BGF0011 · GBP, then BGF0022',
          'BGF0022, then BGF0011 · USD, then BGF0011 · GBP')]

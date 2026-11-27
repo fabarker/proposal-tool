@@ -659,9 +659,35 @@ function complete() {
 }
 
 /* ---- rows: every printed figure from the printed weight (spec 8.4) ------ */
+/* what a listing carries, as the server names them: a line holds a
+   product at one of its listings */
+var HELD_FIELDS = ['className', 'isin', 'shareClass', 'income', 'hedging', 'isg', 'classCurrency', 'exposureCurrency',
+                   'domicile', 'ucits', 'replication', 'ukReporting', 'productCost', 'distributionYield',
+                   'minimumInvestment', 'benchmark', 'exchange', 'exchangeCountry', 'ric', 'cusip', 'sedol',
+                   'issueCurrency', 'code', 'assetClass'];
+/* *product* at the listing a proposal holds (D214, D230): an SMA's first
+   mandate run in the portfolio's base currency, where it has one; else,
+   and for a fund, its first listing, the one the product carries at its
+   top level. Mirrors the server's heldListing. */
+function heldProduct(product) {
+  var all = product && product.listings;
+  var sma = ['sma', 'separate account'].indexOf(String(product && product.vehicle || '').toLowerCase()) !== -1;
+  if (!sma || !all || all.length < 2) return product;
+  var ccy = String(App.basis().currency || '').toUpperCase(), pick = null;
+  for (var i = 0; i < all.length && !pick; i += 1) {
+    if (String(all[i].issueCurrency || '').toUpperCase() === ccy) pick = all[i];
+  }
+  if (!pick || pick === all[0]) return product;
+  var out = {};
+  for (var k in product) if (Object.prototype.hasOwnProperty.call(product, k)) out[k] = product[k];
+  HELD_FIELDS.forEach(function (f) { out[f] = pick[f]; });
+  out.listing = '';
+  return out;
+}
 /* one line of the table, as the library serves its product: at the
-   listing it holds, its first (D214) */
+   listing it holds (heldProduct) */
 function implItem(product, level) {
+  product = heldProduct(product);
   /* a listing's hedging as a line records it (D224): the proportion hedged
      and ISG's tick, 50% \u00b7 ISG - or '' for not said */
   function hedgingWords(p) {

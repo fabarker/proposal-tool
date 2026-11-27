@@ -312,7 +312,7 @@ var CAT_CLASS_FIELDS = ['className', 'isin', 'shareClass', 'income', 'hedging', 
                         'ucits', 'replication', 'ukReporting', 'productCost', 'distributionYield',
                         'minimumInvestment', 'benchmark'];
 var CAT_LISTING_FIELDS = CAT_CLASS_FIELDS.concat(['exchange', 'exchangeCountry', 'ric', 'cusip', 'sedol', 'issueCurrency',
-                                                  'code']);
+                                                  'code', 'assetClass']);
 /* the words a facet gives a class or a listing that says none */
 var CAT_NOT_STATED = { hedging: 1, income: 1, shareClass: 1, domicile: 1, ucits: 1, ukReporting: 1 };
 function catJoin(sleeves) {
@@ -607,6 +607,9 @@ var PRD_CLASS_FIELDS = [
   /* the class's name as the fund names it, or an SMA mandate's: blank for
      the strategy's (D222, D225) */
   { key: 'className', label: 'Name', short: 'Name', kind: 'text', optional: true },
+  /* an SMA mandate's own asset class, blank for the strategy's (D230); a
+     fund's classes have the product's */
+  { key: 'assetClass', label: 'Asset class', short: 'Asset class', kind: 'text', optional: true, smaOnly: true },
   { key: 'isin', label: 'ISIN', short: 'ISIN', kind: 'isin', optional: true, fund: true },
   { key: 'shareClass', label: 'Share class', short: 'Class', kind: 'letter', optional: true, fund: true, mf: true },
   { key: 'income', label: 'Income', short: 'Income', kind: 'income', optional: true },
@@ -711,7 +714,8 @@ function prdListingsOf(p) {
 function prdClassKey(l) {
   var isin = prdText(l && l.isin).toUpperCase();
   if (isin) return 'isin:' + isin;
-  return 'v:' + PRD_CLASS_FIELDS.map(function (f) {
+  /* the asset class, a mandate's own, is no class value (D230) */
+  return 'v:' + PRD_CLASS_FIELDS.filter(function (f) { return f.key !== 'assetClass'; }).map(function (f) {
     var v = l ? l[f.key] : '';
     if (PRD_FIGURES[f.key]) {
       var n = typeof v === 'number' ? v : prdNumber(v, f.kind === 'pct');
@@ -850,9 +854,12 @@ function prdDraftFrom(p) {
     d.classes.push(c); d.listings.push(prdPlaceRow(null, c.uid));
     return d;
   }
-  var all = prdListingsOf(p);
-  prdClassesOf(all, prdIsSma(p)).forEach(function (g) {
+  var all = prdListingsOf(p), sma = prdIsSma(p);
+  prdClassesOf(all, sma).forEach(function (g) {
     var row = prdClassRow(g.first);
+    /* a mandate's asset class is shown only where it is its own: the
+       strategy's box gives the rest (D230) */
+    if (!sma || prdText(row.assetClass) === prdText(p.assetClass)) row.assetClass = '';
     d.classes.push(row);
     g.at.forEach(function (i) { d.listings.push(prdPlaceRow(all[i], row.uid)); });
   });
@@ -951,6 +958,7 @@ function prdClassProblems(d, ctx, out) {
       if (isins[isin] === undefined) isins[isin] = i;
     }
     if (prdText(c.className).length > PRD_MAX.className) out[box + 'className'] = 'Keep the name' + of + ' to ' + PRD_MAX.className + ' characters.';
+    if (prdText(c.assetClass).length > PRD_MAX.word) out[box + 'assetClass'] = 'Keep the asset class' + of + ' to ' + PRD_MAX.word + ' characters.';
     var letter = prdText(c.shareClass);
     if (letter.length > PRD_MAX.shareClass) out[box + 'shareClass'] = 'Keep the share class' + of + ' to ' + PRD_MAX.shareClass + ' characters: the letter or letters the fund names it by, such as A or I.';
     else if (letter && !mf && !sma) out[box + 'shareClass'] = 'Only a Mutual Fund has a share class letter: take it off, or make the vehicle Mutual Fund.';
@@ -1056,6 +1064,9 @@ function prdPayload(d) {
         row[f.key] = PRD_FIGURES[f.key] ? prdNumber(c[f.key], f.kind === 'pct') : prdText(c[f.key]);
       });
       PRD_PLACE_FIELDS.forEach(function (f) { row[f.key] = prdText(l[f.key]); });
+      /* a mandate's own asset class, else the strategy's; a fund's
+         listings the product's, as the server reads them (D230) */
+      if (!row.assetClass || !prdIsSma(d)) row.assetClass = out.assetClass;
       out.listings.push(row);
     });
   });
@@ -1172,6 +1183,12 @@ function prdChanges(before, d) {
     var label = prdListingLabel(pair[1], is);
     PRD_LISTING_FIELDS.forEach(function (f) {
       var a = pair[0][f.key], b = pair[1][f.key];
+      /* a fund's asset class is the product's, said once above; a mandate
+         stored without one has the strategy's (D230) */
+      if (f.key === 'assetClass') {
+        if (!prdIsSma(d)) return;
+        a = a || (before && before.assetClass); b = b || now.assetClass;
+      }
       if (prdSameValue(f.key, a, b)) return;
       out.push({ key: one ? f.key : 'listing:' + label + ':' + f.key, label: one ? f.label : f.label + ' of ' + label,
                  before: prdShow(f.key, a), after: prdShow(f.key, b) });
@@ -7837,6 +7854,9 @@ function prdMandatesHtml(p, row, benchCol) {
         : '<span class="prd-none" title="No name of its own: it goes by the strategy\u2019s">' + esc(p.name) + '</span>';
     }],
     ['Issue', function (l) { return esc(l.issueCurrency || '—'); }],
+    /* a mandate's own asset class, where the mandates differ (D230) */
+    all.some(function (l) { return prdText(l.assetClass) !== prdText(all[0].assetClass); })
+      ? ['Asset class', function (l) { return esc(l.assetClass || p.assetClass || '—'); }] : null,
     all.some(function (l) { return !!catHedging(l); }) ? ['Hedging', function (l) { return esc(catHedging(l) || '—'); }] : null,
     some('income') ? ['Income', function (l) { return esc(PRD_INCOME_SHORT[l.income] || l.income || '—'); }] : null,
     ['Exposure', function (l) { return esc(l.exposureCurrency || '—'); }],
@@ -7854,7 +7874,7 @@ function prdMandatesHtml(p, row, benchCol) {
         }).join('')
       + '</tr>';
   }).join('');
-  return prdCardTableHtml('Mandates · ' + all.length, (all.length > 1 ? 'in order: the first is held' : 'the one a proposal holds'),
+  return prdCardTableHtml('Mandates · ' + all.length, (all.length > 1 ? 'in order: a proposal holds the first run in its base currency, else the first' : 'the one a proposal holds'),
     cols, rows);
 }
 /* what a proposal holds, under the tables (D214, D218) */
@@ -7862,7 +7882,7 @@ function prdHeldHtml(p) {
   var all = prdListingsOf(p), sma = prdIsSma(p);
   var several = all.length > 1, movable = several && !p.withdrawn;
   return '<p class="prd-held">A proposal holds <b>' + esc(prdListingLabel(all[0], all)) + '</b>'
-    + (several ? (sma ? ', the first mandate' : ', the first listing of the first class') + ', whatever its base currency or its amount.' : '.')
+    + (several ? (sma ? ', the first mandate, or in a proposal in another base currency the first mandate run in it' : ', the first listing of the first class, whatever its base currency or its amount') + '.' : '.')
     + (movable ? ' Drag a row by its grip, or move it with its arrows, to put another first: the order is saved as it moves.' : '') + '</p>';
 }
 /* the card's listings put in a new order (D214), saved as a new version;
@@ -7970,7 +7990,7 @@ function prdBoxHtml(d, key, f, value, probs, cls, bare) {
     input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
       + ' value="' + esc(value) + '"' + invalid + named + (PRD_LISTED[f.key] ? ' list="prdL-' + f.key + '"' : '')
       + (PRD_FIGURES[f.key] || f.kind === 'hedge' ? ' inputmode="decimal"' : '')
-      + (f.optional ? ' placeholder="' + (f.key === 'classCurrency' ? 'USD' : f.key === 'domicile' ? 'Ireland' : f.key === 'isin' ? 'IE00B4L5Y983' : 'None') + '"' : '') + '>';
+      + (f.optional ? ' placeholder="' + (f.key === 'classCurrency' ? 'USD' : f.key === 'domicile' ? 'Ireland' : f.key === 'assetClass' ? (prdText(d.assetClass) || 'The strategy\u2019s') : f.key === 'isin' ? 'IE00B4L5Y983' : 'None') + '"' : '') + '>';
   }
   return '<div class="prd-f' + (cls ? ' ' + cls : '') + '">'
     + (bare ? '' : '<label for="prdF-' + key + '">' + esc(f.label) + (f.unit ? ' <small>' + f.unit + '</small>' : '') + '</label>')
@@ -7981,8 +8001,9 @@ function prdBoxHtml(d, key, f, value, probs, cls, bare) {
 function prdHeldText(d) {
   var rows = (prdPayload(d).listings || []);
   if (rows.length < 2) return '';
-  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + (prdIsSma(d) ? ', the first mandate' : ', the first listing of the first class')
-    + ', whatever its base currency or its amount.';
+  return 'A proposal holds ' + prdListingLabel(rows[0], rows) + (prdIsSma(d)
+    ? ', the first mandate, or in a proposal in another base currency the first mandate run in it.'
+    : ', the first listing of the first class, whatever its base currency or its amount.');
 }
 /* a row's head in the form: its grip and arrows, its name, its × */
 function prdRowHeadHtml(kind, i, count, title, name, held, removable) {
@@ -8091,7 +8112,7 @@ function prdMandatesFormHtml(d, probs) {
   return '<div class="prd-lst" id="prdListings">'
     + '<div class="prd-ccy-h"><b>Mandates · ' + rows.length + '</b>'
     + '<small>Each mandate is a variant of the strategy: the code it is opened under, its name, the currency the account is run in, how much of it is hedged (100% fully, 0% not at all), whether it is ISG\u2019s'
-    + ' and its figures. A mandate with no name of its own goes by the strategy\u2019s. One code may be run in several currencies: a row each. A proposal holds the first, whatever its base currency: drag another to the top to hold it instead.</small></div>'
+    + ' and its figures. A mandate with no name of its own goes by the strategy\u2019s. One code may be run in several currencies: a row each. A mandate may have its own asset class: blank for the strategy\u2019s. A proposal holds the first mandate run in its base currency, else the first: drag another up to hold it instead.</small></div>'
     + rows.map(function (l, i) {
         var ci = prdClassIndex(d, l.cls), c = d.classes[ci] || {};
         var cbox = function (k, cls) { return prdBoxHtml(d, 'class' + ci + k, cby[k], c[k], probs, cls); };
@@ -8100,7 +8121,7 @@ function prdMandatesFormHtml(d, probs) {
         return '<div class="prd-lst-row" data-prdcls="' + ci + '" role="group" aria-label="Mandate ' + (i + 1) + '">'
           + prdRowHeadHtml('cls', ci, rows.length, 'Mandate ' + (i + 1), label === '—' ? '' : label, i === 0 && many, many)
           + '<div class="prd-lst-g">'
-          + lbox('code', 'w2') + cbox('className', 'wide') + lbox('issueCurrency')
+          + lbox('code', 'w2') + cbox('className', 'wide') + lbox('issueCurrency') + cbox('assetClass', 'w2')
           + cbox('hedging') + cbox('isg')
           + (c.income ? cbox('income') : '')
           + cbox('exposureCurrency')

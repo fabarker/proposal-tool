@@ -172,6 +172,15 @@ def _js(name):
     return js[start:js.index('\n}\n', start)] + '\n}\n'
 
 
+def _heldJs():
+    """The page's choice of the listing a line holds (D230), with what a
+    listing carries."""
+    with open(os.path.join(HERE, '..', '..', 'generator', 'js', 'implementation.js'), encoding='utf-8') as fh:
+        js = fh.read()
+    start = js.index('var HELD_FIELDS = ')
+    return js[start:js.index(';\n', start) + 2] + _js('heldProduct')
+
+
 def test_the_page_makes_the_same_swap_as_the_files():
     node = shutil.which('node')
     if not node:
@@ -195,8 +204,8 @@ def test_the_page_makes_the_same_swap_as_the_files():
         return [[(i['productId'], round(i['printedPct'], 2), [s['productId'] for s in i.get('standsIn') or []])
                  for i in g['items']] for g in groups]
 
-    script = ('var ROUND_TO = 100, MANDATE = 0;\n' + _js('implItem') + _js('holdAlternatives') + '''
-var App = { mandateSize: function () { return MANDATE; } };
+    script = ('var ROUND_TO = 100, MANDATE = 0;\n' + _heldJs() + _js('implItem') + _js('holdAlternatives') + '''
+var App = { mandateSize: function () { return MANDATE; }, basis: function () { return { currency: 'USD' }; } };
 function managementFee() { return null; }
 var fund = %s, sma = %s, other = %s;
 function page(mandate) {

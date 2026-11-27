@@ -313,8 +313,9 @@ def buildImplementationRows(baseResult: dict, sleevesMap: dict,
         items = []
         if sleeve:
             for product in sleeve['products']:
-                # the listing it holds: its first (D214)
-                item = _products.asHeld(product)
+                # the listing it holds: its first, or an SMA's first
+                # mandate in the portfolio's currency (D214, D230)
+                item = _products.asHeld(product, baseKey.currency if baseKey else None)
                 item['exactPct'] = catWeight * float(product['weight'])
                 items.append(item)
                 lineItems.append(item)
