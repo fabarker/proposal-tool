@@ -1,12 +1,11 @@
 {
-  "from": "099c03b",
-  "to": "bc50522",
+  "from": "bc50522",
+  "to": "63f3c86",
   "write": [
-    "package/products.py",
-    "package/workbook.py",
+    "page/static/css/proposalTool.css",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
   "routerBlock": false,
-  "bytes": 50047
+  "bytes": 46467
 }
