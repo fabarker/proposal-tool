@@ -35,15 +35,18 @@ authored file; this script validates it and writes products.xlsx beside it,
 so both shapes of extract exist for the reader to be tried against.
 
 products-listings.csv is the same products in the layout a product file
-takes since the three levels (D218, D219, D220, D222, D224): thirty-one
+takes since the three levels (D218, D219, D220, D222, D224, D225): thirty-three
 columns, the product's (its name headed Strategy), then the share class's
-(UCITSCompliant Yes or No; Hedging the proportion hedged, a percentage,
-with an SMA mandate's ISG tick beside it), then the listing's (its exchange, CUSIP, SEDOL and issue
-currency - no ticker), then an SMA's mandate code and the mandate's name; a row for each listing,
+(its Name - an SMA mandate's name; UCITSCompliant Yes or No; Hedging the
+proportion hedged, a percentage, with an SMA mandate's ISG tick beside it;
+the cost and yield headed TotalExpenseRatio and Yield), then the listing's
+(its exchange and the exchange's country, RIC, CUSIP, SEDOL and issue
+currency), then its mandate code; a row for each listing,
 a product's rows together in its classes' and listings' order - what the catalogue's Download the product file writes.
 Two products carry the plan's worked examples: GS Global Credit Portfolio,
 a Mutual Fund in four share classes dealt in five currencies, and GS Access
-Treasury 0-1 ETF, two share classes listed four times; and one SMA, GS US
+Treasury 0-1 ETF, two share classes, each with its name, listed four
+times, each listing with its RIC; and one SMA, GS US
 Focused Value SMA, in three mandates, each with a name of its own. This script
 validates it too - a share class's values the same on every row of its
 ISIN - and writes products-listings.xlsx beside it, for an admin who starts
@@ -68,13 +71,20 @@ LISTINGS_CSV = os.path.join(HERE, 'products-listings.csv')
 LISTINGS_XLSX = os.path.join(HERE, 'products-listings.xlsx')
 PRODUCT_COLUMNS = ['ProductId', 'Strategy', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
                    'Source', 'Liquidity', 'FeeGroup']
-CLASS_COLUMNS = ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
-                 'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'ProductCost',
-                 'DistributionYield', 'MinimumInvestment', 'Benchmark']
+CLASS_COLUMNS = ['Name', 'ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency', 'ExposureCurrency',
+                 'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'TotalExpenseRatio',
+                 'Yield', 'MinimumInvestment', 'Benchmark']
 _AFTER_HEDGING = CLASS_COLUMNS.index('Hedging') + 1
 #: ISG, an SMA mandate's tick, beside the hedging it qualifies (D224)
 LISTINGS_COLUMNS = (PRODUCT_COLUMNS + CLASS_COLUMNS[:_AFTER_HEDGING] + ['ISG'] + CLASS_COLUMNS[_AFTER_HEDGING:]
-                    + ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode', 'MandateName'])
+                    + ['Exchange', 'ExchangeCountry', 'RIC', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode'])
+#: the cost, the yield and the minimum, as each layout heads them (D225)
+FIGURES = {'ProductCost': ('ProductCost', 'DistributionYield', 'MinimumInvestment'),
+           'TotalExpenseRatio': ('TotalExpenseRatio', 'Yield', 'MinimumInvestment')}
+
+
+def _figures(columns):
+    return FIGURES['ProductCost' if 'ProductCost' in columns else 'TotalExpenseRatio']
 
 
 def readCsv(path=CSV_PATH, columns=COLUMNS):
@@ -89,8 +99,9 @@ def readCsv(path=CSV_PATH, columns=COLUMNS):
 def validate(rows, columns=COLUMNS, listings=False):
     """The checks a row must pass. In the listings layout a product's id
     repeats, a row for each listing, but its rows must be together."""
+    costName, yieldName, _ = _figures(columns)
     cost, group, yield_, minimum = (columns.index(c) for c in
-                                    ('ProductCost', 'FeeGroup', 'DistributionYield', 'MinimumInvestment'))
+                                    (costName, 'FeeGroup', yieldName, 'MinimumInvestment'))
     ids = [row[0] for row in rows]
     if listings:
         seen = [i for n, i in enumerate(ids) if n == 0 or ids[n - 1] != i]
@@ -110,10 +121,10 @@ def validate(rows, columns=COLUMNS, listings=False):
         try:
             float(row[cost])
         except ValueError:
-            sys.exit('{}: ProductCost {!r} is not a number'.format(row[0], row[cost]))
+            sys.exit('{}: {} {!r} is not a number'.format(row[0], costName, row[cost]))
         if not row[group].strip():
             sys.exit('{}: empty FeeGroup'.format(row[0]))
-        for i, label in ((yield_, 'DistributionYield'), (minimum, 'MinimumInvestment')):
+        for i, label in ((yield_, yieldName), (minimum, 'MinimumInvestment')):
             if row[i].strip():
                 try:
                     if float(row[i]) < 0:
@@ -144,7 +155,7 @@ def writeXlsx(rows, path=XLSX_PATH, columns=COLUMNS):
     sheet = book.active
     sheet.title = 'Products'
     sheet.append(columns)
-    numbers = [columns.index(c) for c in ('ProductCost', 'DistributionYield', 'MinimumInvestment')]
+    numbers = [columns.index(c) for c in _figures(columns)]
     hedging = columns.index('Hedging') if 'Hedging' in columns else None
     for row in rows:
         out = list(row)

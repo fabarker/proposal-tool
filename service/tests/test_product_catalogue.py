@@ -249,12 +249,12 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
     dropped = next(r for r in body if r[0] not in held)[0]
     keptHeld = next(r for r in body if r[0] in held)[0]
     changed = next(r for r in body if r[0] not in (dropped, keptHeld))
-    changed[at['ProductCost']] = '0.99'
+    changed[at['TotalExpenseRatio']] = '0.99'
     newRow = [''] * len(head)
     for column, value in (('ProductId', 'probe-etf'), ('Strategy', 'Probe Global Equity ETF'), ('SEDOL', 'BPRB001'),
                           ('AssetClass', 'Global Equity'), ('Category', 'Public Equity'), ('Style', 'Passive'),
                           ('Vehicle', 'ETF'), ('Income', 'Accumulating'), ('Source', 'External'),
-                          ('Liquidity', 'Daily'), ('ExposureCurrency', 'USD'), ('ProductCost', '0.12'),
+                          ('Liquidity', 'Daily'), ('ExposureCurrency', 'USD'), ('TotalExpenseRatio', '0.12'),
                           ('FeeGroup', 'Passive')):
         newRow[at[column]] = value
     out = [head] + [r for r in body if r[0] not in (dropped, keptHeld)] + [newRow]
@@ -264,7 +264,7 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
     preview = products.importPreview('delivery.csv', _upload(path))
     assert [a['productId'] for a in preview['added']] == ['probe-etf']
     assert [c['productId'] for c in preview['changed']] == [changed[0]]
-    assert preview['changed'][0]['changeWords'][0].startswith('Product cost ')
+    assert preview['changed'][0]['changeWords'][0].startswith('Total expense ratio ')
     missing = {m['productId']: m for m in preview['missing']}
     assert set(missing) == {dropped, keptHeld}
     assert missing[dropped]['canWithdraw'] and not missing[keptHeld]['canWithdraw']
@@ -293,7 +293,7 @@ def test_a_file_is_previewed_then_imported_and_what_it_leaves_alone_is_untouched
 def test_a_file_with_one_bad_row_is_refused_whole(store, tmp_path):
     rows = products.exportRows()
     rows[5][rows[0].index('FeeGroup')] = 'Made Up'
-    rows[2][rows[0].index('ProductCost')] = '0.77'
+    rows[2][rows[0].index('TotalExpenseRatio')] = '0.77'
     path = _fileWith(tmp_path, rows, name='bad.csv')
     before = products.describeSource()['revision']
     with pytest.raises(products.BadCatalogue) as caught:
@@ -319,7 +319,7 @@ def test_an_export_reads_back_as_the_catalogue_and_a_workbook_imports_too(store,
     sheet = book.create_sheet('products')
     sheet.append(rows[0])
     for r in rows[1:]:
-        sheet.append([float(v) if v and c in ('ProductCost', 'DistributionYield', 'MinimumInvestment')
+        sheet.append([float(v) if v and c in ('TotalExpenseRatio', 'Yield', 'MinimumInvestment')
                       else v for v, c in zip(r, rows[0])])
     sheet.cell(row=3, column=rows[0].index('Strategy') + 1).value = 'Renamed In A Workbook'
     xlsx = tmp_path / 'products.xlsx'

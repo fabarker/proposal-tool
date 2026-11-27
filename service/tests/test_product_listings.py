@@ -169,7 +169,7 @@ def test_rank_columns_are_not_read(store, tmp_path):
     ([{'SEDOL': 'BXK0011'}, {'SEDOL': 'BXK0011'}], 'same listing'),
     ([{'SEDOL': 'BXK0011'}, {'SEDOL': 'BXK0022', 'Style': 'Passive2'}], 'may differ between them'),
     ([{'SEDOL': 'BXK0011', 'Hedging': 'ISG Hedged'}], 'separate account'),
-    ([{'SEDOL': 'BXK0011', 'MandateCode': 'M1'}], 'Only a separate account'),
+    ([{'SEDOL': 'BXK0011', 'RIC': 'BXK 11'}], 'RIC'),
 ])
 def test_rows_that_cannot_be_one_product_are_refused_naming_the_row(store, tmp_path, rows, words):
     pid, _, _ = _held()
@@ -277,7 +277,7 @@ def test_a_file_without_mandate_codes_leaves_an_smas_coded_listings_whole(store,
 def test_a_listing_says_its_hedging_as_a_percentage(store):
     """D224: the hedging is the proportion hedged, 0 to 100, on any fund's
     class or any SMA's mandate; the words it was read as their percentage;
-    only an SMA's mandate is ticked ISG."""
+    either may be ticked ISG (D226), and ISG Hedged is an SMA's word."""
     pid, _, _ = _held()
     for given, level in (('Hedged', 100.0), ('50%', 50.0), (' 75 ', 75.0), (0, 0.0), (33.3, 33.3),
                          ('Unhedged', 0.0), ('', None)):
@@ -288,9 +288,8 @@ def test_a_listing_says_its_hedging_as_a_percentage(store):
         assert refused.value.field == 'listing0hedging'
     with pytest.raises(ValidationError, match='ISG Hedged is a separate account') as refused:
         _list(pid, {'hedging': 'ISG Hedged'})
-    with pytest.raises(ValidationError, match='Only a separate account.s mandate is ISG') as refused:
-        _list(pid, {'hedging': '50', 'isg': 'Yes'})
-    assert refused.value.field == 'listing0isg'
+    out = _list(pid, {'hedging': '100', 'isg': 'Yes'})
+    assert (out['listings'][0]['hedging'], out['listings'][0]['isg']) == (100.0, 'Yes')
     equity = next(p for p in products.all() if products.isSma(p) and p['ownCategory'] == products.EQUITY_CATEGORY)
     out = _list(equity['productId'], {'code': 'EQ-1', 'hedging': 'ISG Hedged'})
     assert (out['listings'][0]['hedging'], out['listings'][0]['isg']) == (50.0, 'Yes')
@@ -306,9 +305,8 @@ def test_a_listing_says_its_hedging_as_a_percentage(store):
 
 def test_a_mandate_code_is_an_smas_and_one_products_withdrawn_or_not(store):
     pid, _, _ = _held()
-    with pytest.raises(ValidationError, match='Only a separate account') as refused:
-        _list(pid, {'code': 'X1'})
-    assert refused.value.field == 'listing0code'
+    # a fund's listing may carry a mandate code too (D225)
+    assert _list(pid, {'code': 'X1'})['listings'][0]['code'] == 'X1'
     smas = [p['productId'] for p in products.all() if products.isSma(p)
             and p['ownCategory'] != products.EQUITY_CATEGORY]
     _list(smas[0], {'code': 'M34', 'issueCurrency': 'USD'}, {'code': 'M34', 'issueCurrency': 'EUR'},
@@ -374,7 +372,7 @@ def test_the_history_names_listings_and_their_order(store):
     assert not [w for w in words if w.startswith('Listing order')], 'one added at the end moves nothing'
     _list(pid, {'productCost': 0.61}, {'sedol': 'BGBX001', 'issueCurrency': 'GBP', 'hedging': 'Hedged'})
     words = products.history(pid)[0]['changeWords']
-    assert any(w.startswith('Product cost of {} '.format(before)) for w in words), words
+    assert any(w.startswith('Total expense ratio of {} '.format(before)) for w in words), words
     # one put first is the one held: the order is said
     main = _main(pid)
     _list(pid, {'sedol': 'BGBX001', 'issueCurrency': 'GBP', 'hedging': 'Hedged'}, main)

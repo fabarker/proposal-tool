@@ -2837,8 +2837,8 @@ def test_a_share_class_the_catalogue_does_not_define_is_refused(tmp_path):
 
     cell = {'ProductId': 'p-1', 'Strategy': 'Probe', 'Ticker': 'PRB', 'AssetClass': 'Equity',
             'Style': 'Active', 'Vehicle': 'ETF', 'Source': 'Internal', 'Liquidity': 'Daily',
-            'ExposureCurrency': 'USD', 'ProductCost': '0.2', 'FeeGroup': 'Passive',
-            'ShareClass': 'Distributing', 'DistributionYield': '1.0', 'MinimumInvestment': ''}
+            'ExposureCurrency': 'USD', 'TotalExpenseRatio': '0.2', 'FeeGroup': 'Passive',
+            'ShareClass': 'Distributing', 'Yield': '1.0', 'MinimumInvestment': ''}
     path = tmp_path / 'products.csv'
 
     def read(columns, **over):

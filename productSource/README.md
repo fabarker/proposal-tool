@@ -24,45 +24,54 @@ Point the first load elsewhere with `SCENARIO_PRODUCTS_SOURCE` (CSV or XLSX).
 
     ProductId  Strategy  Provider  Category  AssetClass  Style  Vehicle  Source
     Liquidity  FeeGroup
-    ISIN  ShareClass  Income  Hedging  ISG  ClassCurrency  ExposureCurrency
-    Domicile  UCITSCompliant  Replication  UKReporting  ProductCost
-    DistributionYield  MinimumInvestment  Benchmark
-    Exchange  CUSIP  SEDOL  IssueCurrency
-    MandateCode  MandateName
+    Name  ISIN  ShareClass  Income  Hedging  ISG  ClassCurrency
+    ExposureCurrency  Domicile  UCITSCompliant  Replication  UKReporting
+    TotalExpenseRatio  Yield  MinimumInvestment  Benchmark
+    Exchange  ExchangeCountry  RIC  CUSIP  SEDOL  IssueCurrency  MandateCode
 
-A product file has three levels (D218), one row per listing:
+A product file has three levels (D218), one row per listing, in the
+thirty-three columns of the desk's product data sheet (D225):
 
 - **The product** - the first ten columns - is the same on every one of its
-  rows. A `ProductId` is a fund in one vehicle, and `Strategy` its name (a
-  `Name` column is read as it, D220). `Vehicle` is `ETF`, `Mutual Fund` or
+  rows. A `ProductId` is a fund in one vehicle, and `Strategy` its name. `Vehicle` is `ETF`, `Mutual Fund` or
   `SMA`, and picks the product's card.
-- **The share class** - `ISIN` to `Benchmark` - is the same on every row of
-  its ISIN. `ShareClass` is the class letter (I, A, P...), on a Mutual Fund
+- **The share class** - `Name` to `Benchmark` - is the same on every row of
+  its ISIN. `Name` is the class's name as the fund names it, blank for the
+  strategy's (D225). `ShareClass` is the class letter (I, A, P...), on a Mutual Fund
   only; `Income` is Distributing or Accumulating. `Hedging` is the
   proportion hedged, a percentage from 0 to 100 (D224): `100%` fully
   hedged, `0%` unhedged, `50%` half, blank for not said; it may be typed
   with or without the sign, and a cell Excel formats as a percentage is
-  read as it shows. `ExposureCurrency` is the exposure after hedging: a
+  read as it shows. `ISG` is `Yes` for a class ISG hedges, else blank
+  (D226): a foreign currency bond fund's class hedged 100% by ISG is
+  `100%` and `Yes`. `ClassCurrency` is the class's currency, the one it is
+  priced in; a sheet may head it `Pricing Currency` (D226).
+  `ExposureCurrency` is the exposure after hedging: a
   class 100% hedged to GBP gives GBP. `Domicile` is a
   two-letter country code, and `UCITSCompliant` and `UKReporting` are each
-  Yes, No or blank. Cost, yield and minimum belong to the
-  class. A class with no ISIN yet is the set of a product's rows that agree
+  Yes, No or blank. `TotalExpenseRatio` (the cost), `Yield` and the
+  minimum belong to the class. A class with no ISIN yet is the set of a product's rows that agree
   on all of these.
-- **The listing** - `Exchange` (free text), `CUSIP` and `SEDOL` (what the
-  listing trades under there) and `IssueCurrency` - is where and in what
-  the class is bought. There is no ticker (D220). A CUSIP is eight letters
-  or digits and a check digit, a SEDOL six letters or digits and a check
-  digit; an ISIN, a CUSIP or a SEDOL belongs to one product. A class that is
+- **The listing** - `Exchange` (free text) and `ExchangeCountry` (a
+  two-letter country code), `RIC`, `CUSIP` and `SEDOL` (what the listing
+  trades under there), `IssueCurrency` and `MandateCode` - is where and in
+  what the class is bought, and the code an account holding it is opened
+  under (D225). There is no ticker (D220). The CUSIP is the desk's own,
+  letters and digits of any length (D225); a SEDOL is six letters or digits
+  and a check digit; a RIC is one word, such as `CSPX.L`. An ISIN, a RIC,
+  a CUSIP, a SEDOL or a mandate code belongs to one product. A class that is
   not exchange-listed has
   one listing per currency it is dealt in, with no exchange. Within a class
   two rows the same in exchange and issue currency are refused.
 - **A separately managed account** keeps a row per mandate: each mandate is
-  a variant of the strategy, with its `MandateCode`, its own `MandateName`
-  (blank for the strategy's name, D222), issue currency, hedging, cost,
-  yield and minimum, and `ISG` - `Yes` for a mandate that is ISG's hedged
-  version, else blank (D224), on an SMA only; the card lists them under Mandates. It has no ISIN,
+  a variant of the strategy, with its `MandateCode`, its own `Name`
+  (blank for the strategy's name, D222, D225), issue currency, hedging, cost,
+  yield and minimum, and `ISG` - `Yes` for a mandate ISG hedges, else
+  blank (D224); the card lists them under Mandates. The currency a mandate
+  is run in is its `IssueCurrency`, or its `ClassCurrency` (`Pricing
+  Currency`) where a sheet gives it there (D226). It has no ISIN,
   class letter, domicile, UCITS compliance, replication, UK reporting,
-  exchange, CUSIP or SEDOL.
+  exchange or its country, RIC, CUSIP or SEDOL.
 
 A product's rows sit together, its classes in order and each class's
 listings in order. A proposal holds the **first listing of the first
@@ -75,19 +84,25 @@ Mutual Fund in four share classes - I Acc, I Dist, I Acc hedged to GBP, A
 Acc - with the first dealt in EUR and USD: five rows. **GS Access Treasury
 0-1 ETF** is two classes - unhedged USD, hedged GBP - listed on the LSE in
 dollars and in sterling, on Xetra in euros, and the hedged one on the LSE
-in sterling: four rows, each with a SEDOL. **GS US Focused Value SMA** is
+in sterling: four rows, each with a SEDOL, a RIC and its exchange's
+country, and each class named. **GS US Focused Value SMA** is
 a Public Equity SMA in three mandates - 0% hedged in dollars, 100% hedged
 and 50% hedged ticked ISG in sterling - each named. The ISINs, SEDOLs, codes and names are
 illustrative.
 
-**Older files are still read.** A `Hedging` column of words (D224) reads
+**Older files are still read.** The headings before the data sheet
+(D225) - `ProductCost`, `DistributionYield` and `MandateName` - are read as
+`TotalExpenseRatio`, `Yield` and `Name`; a file without the new columns
+keeps what the catalogue holds of them, and one without `MandateCode`
+keeps each listing's code. A `Hedging` column of words (D224) reads
 as the percentage: `Hedged` 100%, `Unhedged` 0%, and `ISG Hedged` 50%
-ticked ISG; a file without an `ISG` column keeps each mandate's tick unless
+ticked ISG on an SMA's mandate (a fund's class gives the percentage and
+ticks ISG, D226); a file without an `ISG` column keeps each tick unless
 it gives the hedging. The thirty-column layout without `ISG`, the twenty-nine-column layout without `MandateName` (each mandate keeps the name it has), the nineteen- and twenty-eight-column
 listings layouts, the layout before listings (`products.csv`, or one with a
 `BaseCurrency` column), a file with Rank columns and one with a
 QuotationUnit column (D219: the column is not read) all import. A `Name`
-column is the Strategy. A `Ticker` shaped like an ISIN is read as the ISIN
+column in a file with no `Strategy` column is the Strategy, as before D220. A `Ticker` shaped like an ISIN is read as the ISIN
 where the file has no ISIN column; any other ticker is not kept (D220). A
 `Regulation` column is read as `UCITSCompliant`: UCITS is Yes, AIF No,
 anything else not stated. A `ShareClass` of Distributing or Accumulating

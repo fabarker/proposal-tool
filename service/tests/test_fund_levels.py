@@ -102,16 +102,16 @@ def _rowsFor(pid, listings):
 ETF = [
     {'ISIN': 'IE0000000021', 'Income': 'Distributing', 'Hedging': 'Unhedged', 'ClassCurrency': 'USD',
      'ExposureCurrency': 'USD', 'Domicile': 'IE', 'UCITSCompliant': 'Yes', 'Replication': 'Physical',
-     'UKReporting': 'Yes', 'ProductCost': '0.12', 'Exchange': 'LSE', 'SEDOL': 'BPRBL01', 'IssueCurrency': 'USD'},
+     'UKReporting': 'Yes', 'TotalExpenseRatio': '0.12', 'Exchange': 'LSE', 'SEDOL': 'BPRBL01', 'IssueCurrency': 'USD'},
     {'ISIN': 'IE0000000021', 'Income': 'Distributing', 'Hedging': 'Unhedged', 'ClassCurrency': 'USD',
      'ExposureCurrency': 'USD', 'Domicile': 'IE', 'UCITSCompliant': 'Yes', 'Replication': 'Physical',
-     'UKReporting': 'Yes', 'ProductCost': '0.12', 'Exchange': 'LSE', 'SEDOL': 'BPRBP02', 'IssueCurrency': 'GBP'},
+     'UKReporting': 'Yes', 'TotalExpenseRatio': '0.12', 'Exchange': 'LSE', 'SEDOL': 'BPRBP02', 'IssueCurrency': 'GBP'},
     {'ISIN': 'IE0000000021', 'Income': 'Distributing', 'Hedging': 'Unhedged', 'ClassCurrency': 'USD',
      'ExposureCurrency': 'USD', 'Domicile': 'IE', 'UCITSCompliant': 'Yes', 'Replication': 'Physical',
-     'UKReporting': 'Yes', 'ProductCost': '0.12', 'Exchange': 'Xetra', 'SEDOL': 'BPRBX03', 'IssueCurrency': 'EUR'},
+     'UKReporting': 'Yes', 'TotalExpenseRatio': '0.12', 'Exchange': 'Xetra', 'SEDOL': 'BPRBX03', 'IssueCurrency': 'EUR'},
     {'ISIN': 'IE0000000039', 'Income': 'Distributing', 'Hedging': 'Hedged', 'ClassCurrency': 'GBP',
      'ExposureCurrency': 'GBP', 'Domicile': 'IE', 'UCITSCompliant': 'Yes', 'Replication': 'Physical',
-     'UKReporting': 'Yes', 'ProductCost': '0.15', 'Exchange': 'LSE', 'SEDOL': 'BPRBH04', 'IssueCurrency': 'GBP'},
+     'UKReporting': 'Yes', 'TotalExpenseRatio': '0.15', 'Exchange': 'LSE', 'SEDOL': 'BPRBH04', 'IssueCurrency': 'GBP'},
 ]
 
 
@@ -121,12 +121,13 @@ def test_the_file_has_the_levels_columns_and_an_export_loads_back(store, tmp_pat
     columns = products.EXPORT_COLUMNS
     assert columns[:10] == ['ProductId', 'Strategy', 'Provider', 'Category', 'AssetClass', 'Style', 'Vehicle',
                             'Source', 'Liquidity', 'FeeGroup'], 'the product'
-    assert columns[10:25] == ['ISIN', 'ShareClass', 'Income', 'Hedging', 'ISG', 'ClassCurrency', 'ExposureCurrency',
-                              'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'ProductCost',
-                              'DistributionYield', 'MinimumInvestment', 'Benchmark'], \
-        'the share class, and beside its hedging an SMA mandate\'s ISG tick (D224)'
-    assert columns[25:] == ['Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode', 'MandateName']
-    assert len(columns) == 31, 'no quotation unit (D219), no ticker (D220), a mandate name (D222), ISG (D224)'
+    assert columns[10:26] == ['Name', 'ISIN', 'ShareClass', 'Income', 'Hedging', 'ISG', 'ClassCurrency',
+                              'ExposureCurrency', 'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting',
+                              'TotalExpenseRatio', 'Yield', 'MinimumInvestment', 'Benchmark'], \
+        'the share class and its name (D225), and beside its hedging an SMA mandate\'s ISG tick (D224)'
+    assert columns[26:] == ['Exchange', 'ExchangeCountry', 'RIC', 'CUSIP', 'SEDOL', 'IssueCurrency', 'MandateCode']
+    assert len(columns) == 33, 'no quotation unit (D219), no ticker (D220), ISG (D224), a name, a RIC and ' \
+                               'the exchange\'s country (D225)'
     rows = products.exportRows()
     assert len(rows) == 74
     path = _file(tmp_path, rows)
@@ -180,11 +181,11 @@ def test_a_fund_in_a_file_is_its_classes_and_their_listings_in_order(store, tmp_
 
 def test_the_rows_of_one_isin_must_agree_on_the_class(store, tmp_path):
     pid = _fund('ETF')
-    rows = [dict(ETF[0]), dict(ETF[1], ProductCost='0.15')]
+    rows = [dict(ETF[0]), dict(ETF[1], TotalExpenseRatio='0.15')]
     with pytest.raises(products.BadCatalogue) as caught:
         products.readFile(_file(tmp_path, _rowsFor(pid, rows)))
     said = str(caught.value)
-    assert 'IE0000000021 has product cost 0.12 on row' in said and 'one ISIN is one share class' in said
+    assert 'IE0000000021 has total expense ratio 0.12 on row' in said and 'one ISIN is one share class' in said
     assert 'listing' not in said, said
     # and the form says the same on the listing's box
     with pytest.raises(ValidationError, match='one ISIN is one share class') as refused:
@@ -285,7 +286,10 @@ def test_a_hedged_class_gives_its_class_currencys_exposure(store, tmp_path):
     ({'ucits': 'UCITS V'}, 'ucits', 'UCITS compliant .* is Yes, No or blank'),
     ({'sedol': 'BAEIOU1'}, 'sedol', 'SEDOL .* is not one'),
     ({'sedol': 'B0YBKJ'}, 'sedol', 'SEDOL .* is not one'),
-    ({'cusip': '03783310'}, 'cusip', 'CUSIP .* is not one'),
+    ({'cusip': '0378-3310'}, 'cusip', 'CUSIP .* is not one'),
+    ({'cusip': 'A' * 65}, 'cusip', 'Keep the CUSIP'),
+    ({'ric': 'CSPX L'}, 'ric', 'RIC .* is not one'),
+    ({'exchangeCountry': 'UK'}, 'exchangeCountry', 'exchange country .* is not a country code'),
     ({'income': 'Growth'}, 'income', 'not one of Distributing, Accumulating'),
     ({'exchange': 'X' * 41}, 'exchange', 'Keep the exchange'),
 ])
@@ -398,6 +402,8 @@ def _oldLayout(rows):
     out = [old]
     for r in rows[1:]:
         cell = dict(zip(head, r))
+        # the cost and the yield under their headings before D225
+        cell.update(ProductCost=cell['TotalExpenseRatio'], DistributionYield=cell['Yield'])
         line = [cell.get(c, '') for c in old]
         line[1] = cell['Strategy']
         line[2] = cell['ISIN'] or cell['SEDOL']
@@ -739,40 +745,40 @@ def test_the_screen_shows_the_isin_with_the_sedol_beneath(store):
 
 def test_an_smas_mandates_each_have_a_name_of_their_own(store):
     """An SMA's mandates are its strategy's variants (D222): each may carry a
-    name, blank for the strategy's; a fund's listing may not, and a name is
+    name, blank for the strategy's - as a fund's share class may (D225) -
     held to the strategy's length."""
     sma = next(p['productId'] for p in products.all() if products.isSma(p)
                and p['ownCategory'] == products.EQUITY_CATEGORY)
-    out = _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'mandateName': ' GS Value (USD) '},
-                {'code': 'QV2', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'mandateName': 'GS Value (GBP Hedged)'},
-                {'code': 'QV3', 'issueCurrency': 'EUR', 'hedging': 'Hedged', 'mandateName': ''})
-    assert [l['mandateName'] for l in out['listings']] == ['GS Value (USD)', 'GS Value (GBP Hedged)', '']
-    assert products.get(sma)['mandateName'] == 'GS Value (USD)', 'the held mandate\'s, at the top level'
-    renamed = _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'mandateName': 'GS Value'},
-                    {'code': 'QV2', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'mandateName': 'GS Value (GBP Hedged)'},
-                    {'code': 'QV3', 'issueCurrency': 'EUR', 'hedging': 'Hedged', 'mandateName': ''})
+    out = _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'className': ' GS Value (USD) '},
+                {'code': 'QV2', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'className': 'GS Value (GBP Hedged)'},
+                {'code': 'QV3', 'issueCurrency': 'EUR', 'hedging': 'Hedged', 'className': ''})
+    assert [l['className'] for l in out['listings']] == ['GS Value (USD)', 'GS Value (GBP Hedged)', '']
+    assert products.get(sma)['className'] == 'GS Value (USD)', 'the held mandate\'s, at the top level'
+    renamed = _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'className': 'GS Value'},
+                    {'code': 'QV2', 'issueCurrency': 'GBP', 'hedging': 'Hedged', 'className': 'GS Value (GBP Hedged)'},
+                    {'code': 'QV3', 'issueCurrency': 'EUR', 'hedging': 'Hedged', 'className': ''})
     lines = [(c['label'], c['before'], c['after']) for c in products.history(sma)[0]['changes']]
-    assert ('Mandate name of QV1', 'GS Value (USD)', 'GS Value') in lines
-    assert renamed['listings'][0]['mandateName'] == 'GS Value'
+    assert ('Name of QV1', 'GS Value (USD)', 'GS Value') in lines
+    assert renamed['listings'][0]['className'] == 'GS Value'
     with pytest.raises(ValidationError, match='to 120 characters') as refused:
-        _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'mandateName': 'x' * 121})
-    assert refused.value.field == 'listing0mandateName'
-    with pytest.raises(ValidationError, match='Only a separate account') as refused:
-        _list(_fund('ETF'), {'mandateName': 'Not a mandate'})
-    assert refused.value.field == 'listing0mandateName'
+        _list(sma, {'code': 'QV1', 'issueCurrency': 'USD', 'hedging': 'Unhedged', 'className': 'x' * 121})
+    assert refused.value.field == 'listing0className'
+    fund = _fund('ETF')
+    assert _list(fund, {'className': 'A Class (Acc)'})['listings'][0]['className'] == 'A Class (Acc)', \
+        'a fund\'s share class has a name too (D225)'
 
 
 def test_a_file_names_mandates_and_one_without_the_column_keeps_them(store, tmp_path):
     sma = next(p['productId'] for p in products.all() if products.isSma(p)
                and p['ownCategory'] != products.EQUITY_CATEGORY)
     rows = _rowsFor(sma, [{'MandateCode': 'CF1', 'IssueCurrency': 'USD', 'ExposureCurrency': 'USD',
-                           'MandateName': 'PMG Core Fixed Income (USD)'},
+                           'Name': 'PMG Core Fixed Income (USD)'},
                           {'MandateCode': 'CF2', 'IssueCurrency': 'EUR', 'ExposureCurrency': 'EUR',
-                           'MandateName': 'PMG Core Fixed Income (EUR)'}])
+                           'Name': 'PMG Core Fixed Income (EUR)'}])
     path = _file(tmp_path, rows)
     preview = products.importPreview(path, _upload(path))
     products.importFile(path, _upload(path), user='alice', base=preview['revision'])
-    assert [l['mandateName'] for l in products.entry(sma)['listings']] == [
+    assert [l['className'] for l in products.entry(sma)['listings']] == [
         'PMG Core Fixed Income (USD)', 'PMG Core Fixed Income (EUR)']
     # the export writes them, and loads back with nothing to do
     again = _file(tmp_path, products.exportRows(), 'again.csv')
@@ -780,7 +786,7 @@ def test_a_file_names_mandates_and_one_without_the_column_keeps_them(store, tmp_
     assert not preview['changed']
     # a file without the column leaves each mandate's name as it is
     head = rows[0]
-    keep = [n for n, c in enumerate(head) if c != 'MandateName']
+    keep = [n for n, c in enumerate(head) if c != 'Name']
     path = _file(tmp_path, [[r[n] for n in keep] for r in products.exportRows()], 'older.csv')
     preview = products.importPreview(path, _upload(path))
     assert not preview['changed'], 'the names kept, so nothing moves'
@@ -790,34 +796,34 @@ def test_the_sample_files_sma_comes_in_three_named_mandates(store):
     here = os.path.join(os.path.dirname(__file__), '..', '..', 'productSource')
     byId, _ = products.readFile(os.path.join(here, 'products-listings.csv'))
     sma = byId['gs-us-focused-value-sma']
-    assert [(l['code'], l['hedging'], l['isg'], l['mandateName']) for l in sma['listings']] == [
+    assert [(l['code'], l['hedging'], l['isg'], l['className']) for l in sma['listings']] == [
         ('QV1', 0.0, '', 'GS US Focused Value'),
         ('QV2', 100.0, '', 'GS US Focused Value (GBP Hedged)'),
         ('QV3', 50.0, 'Yes', 'GS US Focused Value (GBP ISG Hedged)')]
 
 
 def test_a_product_stored_before_mandate_names_reads_exports_and_saves(store, tmp_path):
-    """A listing stored before D222 has no mandateName at all: it reads as
-    blank everywhere - the catalogue, the export, a save - with no upgrade."""
+    """A listing stored before D222 has no name at all: it reads as blank
+    everywhere - the catalogue, the export, a save - with no upgrade."""
     import json as _json
     sma = next(p['productId'] for p in products.all() if products.isSma(p))
     conn = sleeveRepo.connection()
     try:
         row = conn.execute('SELECT listings FROM products WHERE productId = ?', (sma,)).fetchone()
-        old = [{k: v for k, v in l.items() if k != 'mandateName'} for l in _json.loads(row['listings'])]
+        old = [{k: v for k, v in l.items() if k != 'className'} for l in _json.loads(row['listings'])]
         conn.execute('UPDATE products SET listings = ? WHERE productId = ?', (_json.dumps(old), sma))
         conn.commit()
     finally:
         conn.close()
     products.reload()
-    assert products.get(sma)['mandateName'] == ''
-    assert all(l['mandateName'] == '' for l in products.entry(sma)['listings'])
+    assert products.get(sma)['className'] == ''
+    assert all(l['className'] == '' for l in products.entry(sma)['listings'])
     rows = products.exportRows()
-    at = rows[0].index('MandateName')
+    at = rows[0].index('Name')
     assert all(r[at] == '' for r in rows[1:] if r[0] == sma)
     assert products.all() and products.history(sma)
-    _list(sma, {'mandateName': 'Now named'})
-    assert products.entry(sma)['listings'][0]['mandateName'] == 'Now named'
+    _list(sma, {'className': 'Now named'})
+    assert products.entry(sma)['listings'][0]['className'] == 'Now named'
 
 
 # -------------------------------------------------- hedging, a percentage ---
@@ -888,3 +894,153 @@ def test_a_spreadsheet_percentage_cell_reads_as_it_shows(store, tmp_path):
     assert [(l['hedging'], l['isg']) for l in fromXlsx['gs-us-focused-value-sma']['listings']] == \
         [(l['hedging'], l['isg']) for l in fromCsv['gs-us-focused-value-sma']['listings']] == \
         [(0.0, ''), (100.0, ''), (50.0, 'Yes')]
+
+
+# ---------------------------------------- the desk's data sheet (D225) ---
+
+def test_a_fund_listing_has_a_name_a_ric_an_exchange_country_and_a_mandate_code(store, tmp_path):
+    """The desk's product data sheet (D225): a share class's name, a listing's
+    RIC and its exchange's country, and a fund's listing's own mandate code -
+    saved, served, exported under their columns and loaded back with nothing
+    to do; the CUSIP is the desk's own, any letters and digits."""
+    pid = _fund('ETF')
+    out = _list(pid, {'isin': 'IE0000000021', 'className': 'Probe UCITS ETF USD (Acc)', 'exchange': 'LSE',
+                      'exchangeCountry': 'gb', 'ric': 'PRB.L', 'cusip': 'gs4471a', 'code': 'E01',
+                      'issueCurrency': 'USD'},
+                {'isin': 'IE0000000021', 'className': 'Probe UCITS ETF USD (Acc)', 'exchange': 'Xetra',
+                 'exchangeCountry': 'DE', 'ric': 'PRB.DE', 'code': 'E01', 'issueCurrency': 'EUR'})
+    one, two = out['listings']
+    assert (one['className'], one['exchangeCountry'], one['ric'], one['cusip'], one['code']) == \
+        ('Probe UCITS ETF USD (Acc)', 'GB', 'PRB.L', 'GS4471A', 'E01')
+    assert two['code'] == 'E01', 'one code on two listings of one fund'
+    rows = products.exportRows()
+    head = rows[0]
+    mine = [dict(zip(head, r)) for r in rows[1:] if r[0] == pid]
+    assert [(r['Name'], r['ExchangeCountry'], r['RIC'], r['MandateCode']) for r in mine] == [
+        ('Probe UCITS ETF USD (Acc)', 'GB', 'PRB.L', 'E01'), ('Probe UCITS ETF USD (Acc)', 'DE', 'PRB.DE', 'E01')]
+    path = _file(tmp_path, rows)
+    preview = products.importPreview(path, _upload(path))
+    assert not preview['changed'] and not preview['added']
+    # a RIC is one product's, as a SEDOL is
+    with pytest.raises(ValidationError, match='belongs to') as refused:
+        _list(_fund('Mutual Fund'), {'ric': 'prb.l'})
+    assert refused.value.field == 'listing0ric'
+    # the rows of one ISIN give one name
+    with pytest.raises(ValidationError, match='same name'):
+        _list(pid, {'isin': 'IE0000000021', 'className': 'A', 'exchange': 'LSE'},
+              {'isin': 'IE0000000021', 'className': 'B', 'exchange': 'Xetra'})
+
+
+def test_the_headings_a_file_had_before_the_data_sheet_are_still_read(store, tmp_path):
+    """ProductCost, DistributionYield and MandateName are read as the Total
+    Expense Ratio, the Yield and the Name (D225); a file with a Name column
+    and no Strategy is one from before D220, its Name the strategy's."""
+    sma = next(p['productId'] for p in products.all() if products.isSma(p))
+    rows = _rowsFor(sma, [{'MandateCode': 'OLD1', 'IssueCurrency': 'USD', 'ExposureCurrency': 'USD',
+                           'Name': 'Old Named', 'TotalExpenseRatio': '0.44', 'Yield': '2.5'}])
+    head = rows[0]
+    rows[0] = [{'TotalExpenseRatio': 'ProductCost', 'Yield': 'DistributionYield', 'Name': 'MandateName'}.get(c, c)
+               for c in head]
+    byId, _ = products.readFile(_file(tmp_path, rows))
+    one = byId[sma]['listings'][0]
+    assert (one['productCost'], one['distributionYield'], one['className']) == (0.44, 2.5, 'Old Named')
+    # Name and no Strategy: the strategy's name, as before D220
+    at = head.index('Strategy')
+    older = [[c for n, c in enumerate(r) if n != head.index('Name')] for r in rows]
+    older[0][at] = 'Name'
+    byId, _ = products.readFile(_file(tmp_path, older, 'older.csv'))
+    assert byId[sma]['name'] == products.entry(sma)['name'] and byId[sma]['listings'][0]['className'] == ''
+
+
+def test_the_headings_of_the_desks_product_table_are_read(store, tmp_path):
+    """The desk's product table heads its columns as people write them (D225):
+    Cusip, UCITs, Exchange Country and UKReportingStatus under their
+    spellings, and Pricing Currency as the class currency (D226) - on an
+    SMA's row, the currency its mandate is run in, its issue currency."""
+    sma = next(p['productId'] for p in products.all() if products.isSma(p))
+    rows = _rowsFor(sma, [{'MandateCode': 'DSK1', 'ClassCurrency': 'CHF', 'IssueCurrency': '',
+                           'ExposureCurrency': 'CHF'}])
+    head = rows[0]
+    rows = [[c for n, c in enumerate(r) if head[n] != 'IssueCurrency'] for r in rows]
+    rows[0] = [{'ClassCurrency': 'Pricing Currency', 'CUSIP': 'Cusip', 'UCITSCompliant': 'UCITs',
+                'ExchangeCountry': 'Exchange Country', 'UKReporting': 'UKReportingStatus'}.get(c, c)
+               for c in rows[0]]
+    byId, _ = products.readFile(_file(tmp_path, rows))
+    one = byId[sma]['listings'][0]
+    assert (one['issueCurrency'], one['classCurrency']) == ('CHF', '')
+    # an SMA's row that gives both currencies gives one
+    rows = _rowsFor(sma, [{'MandateCode': 'DSK1', 'ClassCurrency': 'CHF', 'IssueCurrency': 'USD',
+                           'ExposureCurrency': 'CHF'}])
+    with pytest.raises(products.BadCatalogue, match='run in one currency'):
+        products.readFile(_file(tmp_path, rows, 'both.csv'))
+
+
+def test_a_funds_share_class_may_be_hedged_by_isg(store, tmp_path):
+    """ISG hedges a fund's class as it does an SMA's mandate (D226): a
+    foreign currency bond fund's class hedged 100% by ISG is 100% and
+    ticked, the tick the class's, so the rows of one ISIN give the same."""
+    pid = _fund('Mutual Fund')
+    out = _list(pid, {'isin': 'IE0000000021', 'hedging': '100', 'isg': 'Yes', 'classCurrency': 'GBP',
+                      'exposureCurrency': 'GBP', 'issueCurrency': 'GBP'},
+                {'isin': 'IE0000000021', 'hedging': '100', 'isg': 'Yes', 'classCurrency': 'GBP',
+                 'exposureCurrency': 'GBP', 'issueCurrency': 'USD'})
+    assert [(l['hedging'], l['isg']) for l in out['listings']] == [(100.0, 'Yes'), (100.0, 'Yes')]
+    assert products.hedgingText(out['listings'][0]) == '100% \u00b7 ISG'
+    with pytest.raises(ValidationError, match='same ISG') as refused:
+        _list(pid, {'isin': 'IE0000000021', 'hedging': '100', 'isg': 'Yes', 'classCurrency': 'GBP',
+                    'issueCurrency': 'GBP', 'exposureCurrency': 'GBP'},
+              {'isin': 'IE0000000021', 'hedging': '100', 'isg': '', 'classCurrency': 'GBP',
+               'issueCurrency': 'USD', 'exposureCurrency': 'GBP'})
+    assert refused.value.field == 'listing1isg'
+    rows = products.exportRows()
+    mine = [dict(zip(rows[0], r)) for r in rows[1:] if r[0] == pid]
+    assert [r['ISG'] for r in mine] == ['Yes', 'Yes']
+    path = _file(tmp_path, rows)
+    assert not products.importPreview(path, _upload(path))['changed']
+
+
+def test_a_mandate_name_stored_before_the_data_sheet_is_its_name(store, tmp_path):
+    """A listing stored between D222 and D225 kept its mandate's name as
+    mandateName: it reads as the Name, and a file that changes the Name
+    changes it - the column is read, not kept from the catalogue."""
+    import json as _json
+    sma = next(p['productId'] for p in products.all() if products.isSma(p))
+    conn = sleeveRepo.connection()
+    try:
+        row = conn.execute('SELECT listings FROM products WHERE productId = ?', (sma,)).fetchone()
+        old = []
+        for l in _json.loads(row['listings']):
+            l = {k: v for k, v in l.items() if k not in ('className', 'ric', 'exchangeCountry')}
+            l['mandateName'] = 'Stored Variant'
+            old.append(l)
+        conn.execute('UPDATE products SET listings = ? WHERE productId = ?', (_json.dumps(old), sma))
+        conn.commit()
+    finally:
+        conn.close()
+    products.reload()
+    assert all(l['className'] == 'Stored Variant' and 'mandateName' not in l
+               for l in products.entry(sma)['listings'])
+    rows = products.exportRows()
+    at = rows[0].index('Name')
+    for r in rows[1:]:
+        if r[0] == sma:
+            r[at] = 'Renamed Variant'
+    path = _file(tmp_path, rows)
+    preview = products.importPreview(path, _upload(path))
+    products.importFile(path, _upload(path), user='alice', base=preview['revision'])
+    assert all(l['className'] == 'Renamed Variant' for l in products.entry(sma)['listings'])
+
+
+def test_a_file_without_the_mandate_code_column_keeps_a_funds_codes(store, tmp_path):
+    """A fund's listing's code (D225) is kept by a file with no MandateCode
+    column, as its benchmark is by one with no Benchmark column."""
+    pid = _fund('ETF')
+    _list(pid, {'isin': 'IE0000000021', 'exchange': 'LSE', 'issueCurrency': 'USD', 'code': 'E77'})
+    rows = products.exportRows()
+    drop = rows[0].index('MandateCode')
+    path = _file(tmp_path, [[c for n, c in enumerate(r) if n != drop] for r in rows])
+    preview = products.importPreview(path, _upload(path))
+    assert not preview['changed'], 'the code kept, so nothing moves'
+    with pytest.raises(ValidationError, match='nothing to import'):
+        products.importFile(path, _upload(path), user='alice', base=preview['revision'])
+    assert products.entry(pid)['listings'][0]['code'] == 'E77'

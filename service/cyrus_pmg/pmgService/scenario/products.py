@@ -73,9 +73,11 @@ under its mandate codes (D197, D207): each listing of an SMA names the code
 the account is opened under, the currency it is run in as its issue
 currency and how much of it is hedged. HEDGING is a percentage (D224): the
 proportion hedged, 100 fully, 0 not at all, 50 half, or blank for not said,
-on a fund's share class or an SMA's mandate; an SMA's mandate may also be
-ticked ISG, ISG's hedged version. The words it was before read as the
-percentage: Hedged 100, Unhedged 0, ISG Hedged 50 and ticked ISG. The proposal's hedging policy plays no part in which one is
+on a fund's share class or an SMA's mandate; either may also be ticked
+ISG, hedged by ISG (D226) - a foreign currency bond fund's class hedged
+100% by ISG is 100% and ticked. The words it was before read as the
+percentage: Hedged 100, Unhedged 0, and on an SMA's mandate ISG Hedged 50
+and ticked ISG. The proposal's hedging policy plays no part in which one is
 held. The code shows nowhere in a proposal's files;
 the account opening request reads it. The word "mandate" on its own is the
 client's mandate everywhere else in the tool.
@@ -95,6 +97,16 @@ before the levels reads as they read it (``modernise``): a ticker shaped
 like an ISIN is the ISIN, Accumulating or Distributing where the class letter
 goes is the income, the asset class moves up to the product, and a hedged
 class's exposure is the currency it is hedged to.
+
+The file's columns follow the desk's product data sheet (D225): a share
+class has a NAME of its own, as an SMA's mandate does, under the one Name
+column; a listing has its RIC and the country of its exchange; a fund's
+listing may carry a mandate code too; the CUSIP is the desk's own, any run
+of letters and digits; and the cost and the yield are headed Total Expense
+Ratio and Yield. The headings the file had before - ProductCost,
+DistributionYield, MandateName - are still read, and a file with a Name
+column but no Strategy is one from before the strategy had its heading,
+its Name the strategy's.
 
 Each listing names its BENCHMARK (D204), which the account opening request
 reads for an SMA. A file without a Benchmark column leaves the benchmarks
@@ -123,15 +135,15 @@ _DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         '..', '..', '..', '..', 'productSource', 'products.csv')
 
 COLUMNS = ['ProductId', 'Strategy', 'AssetClass', 'Style', 'Vehicle', 'Source', 'Liquidity',
-           'ExposureCurrency', 'ProductCost', 'FeeGroup']
+           'ExposureCurrency', 'TotalExpenseRatio', 'FeeGroup']
 # Columns a delivery may leave out entirely, or leave blank on a row: each is
 # served as blank when it is absent, so an older extract still loads (D63,
 # D81, D218). DistributionYield and MinimumInvestment are figures the
 # catalogue view compares on and must parse as numbers.
-OPTIONAL = ['Category', 'Provider', 'ISIN', 'ShareClass', 'Income', 'Hedging', 'ClassCurrency',
-            'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'DistributionYield',
-            'MinimumInvestment', 'Benchmark', 'Exchange', 'CUSIP', 'SEDOL', 'IssueCurrency',
-            'MandateCode']
+OPTIONAL = ['Category', 'Provider', 'Name', 'ISIN', 'ShareClass', 'Income', 'Hedging', 'ISG',
+            'ClassCurrency', 'Domicile', 'UCITSCompliant', 'Replication', 'UKReporting', 'Yield',
+            'MinimumInvestment', 'Benchmark', 'Exchange', 'ExchangeCountry', 'RIC', 'CUSIP', 'SEDOL',
+            'IssueCurrency', 'MandateCode']
 #: Columns a file kept before that are read only to say what they become
 #: (D220): a Ticker shaped like an ISIN is the ISIN, any other is not kept;
 #: a Regulation of UCITS is UCITS compliant, of AIF not.
@@ -142,22 +154,30 @@ CATEGORY_HEADERS = ('Category', 'Catagory', 'Group')
 #: Other headings a file may give a column, lower-cased and stripped of all
 #: but letters and digits (D184, D207, D218).
 _HEADINGS = {
-    # the product's name is its strategy's (D220); Name is still read
-    'Strategy': ('strategy', 'strategyname', 'name', 'productname'),
+    # the product's name is its strategy's (D220); a Name column is the
+    # class's or the mandate's (D225), but the strategy's in a file with no
+    # Strategy column, as before
+    'Strategy': ('strategy', 'strategyname', 'productname'),
+    'Name': ('name', 'classname', 'shareclassname', 'mandatename', 'variantname', 'listingname'),
+    # the cost and the yield as the desk heads them (D225), and as before
+    'TotalExpenseRatio': ('totalexpenseratio', 'ter', 'expenseratio', 'productcost'),
+    'Yield': ('yield', 'distributionyield'),
+    'RIC': ('ric', 'reuterscode', 'reutersinstrumentcode'),
+    'ExchangeCountry': ('exchangecountry', 'exchangecountrycode', 'listingcountry', 'countryofexchange'),
     'UCITSCompliant': ('ucitscompliant', 'ucits', 'isucits'),
-    'CUSIP': ('cusip',),
+    'CUSIP': ('cusip', 'internalcusip'),
     'SEDOL': ('sedol',),
     'IssueCurrency': ('issuecurrency', 'issueccy', 'issuercurrency', 'issuerccy', 'quotecurrency',
                       'quoteccy', 'dealingcurrency', 'tradingcurrency'),
     'MandateCode': ('mandatecode', 'mandate'),
-    'MandateName': ('mandatename', 'variantname'),
     'Hedging': ('hedging', 'hedgingversion', 'currencyhedging', 'hedgeratio', 'hedgedpercent',
                 'hedgingpercent', 'hedgingpercentage', 'hedgeproportion', 'hedgelevel'),
     'ISG': ('isg', 'isghedged', 'isgversion'),
     'Income': ('income', 'incometreatment', 'dividendtreatment'),
     'UKReporting': ('ukreporting', 'ukreportingstatus', 'ukreportingfund'),
     'Exchange': ('exchange', 'listingexchange'),
-    'ClassCurrency': ('classcurrency', 'classccy', 'shareclasscurrency'),
+    # the desk's Pricing Currency is the class's (D226)
+    'ClassCurrency': ('classcurrency', 'classccy', 'shareclasscurrency', 'pricingcurrency', 'pricingccy'),
     'Domicile': ('domicile', 'domicilecountry'),
     'Replication': ('replication', 'replicationmethod'),
     'Provider': ('provider', 'fundprovider'),
@@ -191,7 +211,9 @@ _FIELDS = [
     ('source', 'Source', 'Source'),
     ('liquidity', 'Liquidity', 'Liquidity'),
     ('feeGroup', 'FeeGroup', 'Fee group'),
-    # the share class (D218)
+    # the share class (D218): its name, as the fund names it - or an SMA
+    # mandate's, its strategy's variant (D222) - blank for the strategy's (D225)
+    ('className', 'Name', 'Name'),
     ('isin', 'ISIN', 'ISIN'),
     ('shareClass', 'ShareClass', 'Share class'),
     ('income', 'Income', 'Income'),
@@ -206,22 +228,25 @@ _FIELDS = [
     ('ucits', 'UCITSCompliant', 'UCITS compliant'),
     ('replication', 'Replication', 'Replication'),
     ('ukReporting', 'UKReporting', 'UK reporting'),
-    ('productCost', 'ProductCost', 'Product cost'),
-    ('distributionYield', 'DistributionYield', 'Distribution yield'),
+    # the cost and the yield, as the desk heads them (D225)
+    ('productCost', 'TotalExpenseRatio', 'Total expense ratio'),
+    ('distributionYield', 'Yield', 'Yield'),
     ('minimumInvestment', 'MinimumInvestment', 'Minimum investment'),
     # what it is measured against (D204): optional, blank for not given
     ('benchmark', 'Benchmark', 'Benchmark'),
     # the listing (D218): where and in what the class is bought
     ('exchange', 'Exchange', 'Exchange'),
-    # the listing's own identifiers (D220): the CUSIP and the SEDOL
+    # the country the exchange is in, a country code, and the listing's RIC (D225)
+    ('exchangeCountry', 'ExchangeCountry', 'Exchange country'),
+    ('ric', 'RIC', 'RIC'),
+    # the listing's own identifiers (D220): the CUSIP - the desk's own, any
+    # letters and digits (D225) - and the SEDOL
     ('cusip', 'CUSIP', 'CUSIP'),
     ('sedol', 'SEDOL', 'SEDOL'),
     ('issueCurrency', 'IssueCurrency', 'Issue currency'),
-    # an SMA listing's code (D197, D207)
+    # the code an account is opened under: an SMA's mandate's (D197, D207),
+    # and a fund's listing's too (D225)
     ('code', 'MandateCode', 'Mandate code'),
-    # and the name of the mandate: an SMA's mandates are its strategy's
-    # variants, each with a name of its own, or blank for the strategy's (D222)
-    ('mandateName', 'MandateName', 'Mandate name'),
 ]
 KEYS = [k for k, _, _ in _FIELDS]
 #: the file's columns in the order an export writes them
@@ -230,16 +255,17 @@ LABELS = {k: label for k, _, label in _FIELDS}
 
 #: What belongs to the SHARE CLASS (D218), the same on every listing of one
 #: ISIN: what the class is, its figures and its benchmark.
-CLASS_FIELDS = ('isin', 'shareClass', 'income', 'hedging', 'classCurrency', 'exposureCurrency',
+CLASS_FIELDS = ('className', 'isin', 'shareClass', 'income', 'hedging', 'isg', 'classCurrency', 'exposureCurrency',
                 'domicile', 'ucits', 'replication', 'ukReporting', 'productCost',
                 'distributionYield', 'minimumInvestment', 'benchmark')
 #: what belongs to the LISTING alone: where it is bought, what identifies
-#: it there, and in what currency (D220)
-PLACE_FIELDS = ('exchange', 'cusip', 'sedol', 'issueCurrency')
-#: Every field a listing carries (D207, D218): its class's values and its
-#: own, and an SMA's mandate code. A listing holds all of them whole:
-#: nothing in one is read from another.
-LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code', 'mandateName', 'isg')
+#: it there, and in what currency (D220, D225)
+PLACE_FIELDS = ('exchange', 'exchangeCountry', 'ric', 'cusip', 'sedol', 'issueCurrency')
+#: Every field a listing carries (D207, D218): its class's values - ISG's
+#: tick among them, as the hedging is (D226) - its own, and its mandate
+#: code. A listing holds all of them whole: nothing in one is read from
+#: another.
+LISTING_FIELDS = CLASS_FIELDS + PLACE_FIELDS + ('code',)
 #: the ones of those that are figures
 LISTING_FIGURES = ('productCost', 'distributionYield', 'minimumInvestment')
 #: and the ones that are numbers: the figures and the hedging (D224)
@@ -249,11 +275,11 @@ LISTING_NUMBERS = LISTING_FIGURES + ('hedging',)
 PRODUCT_FIELDS = [k for k in KEYS if k not in LISTING_FIELDS]
 #: what a listing is told apart by, where a file names it: the fields an
 #: import matches a file's row to the catalogue's listing on
-LISTING_KEY = ('isin', 'code', 'exchange', 'cusip', 'sedol', 'issueCurrency', 'hedging', 'isg', 'shareClass',
+LISTING_KEY = ('isin', 'code', 'exchange', 'ric', 'cusip', 'sedol', 'issueCurrency', 'hedging', 'isg', 'shareClass',
                'income')
 #: the class's and the listing's fields a separate account has none of
 SMA_REFUSED = ('isin', 'shareClass', 'classCurrency', 'domicile', 'ucits', 'replication',
-               'ukReporting', 'exchange', 'cusip', 'sedol')
+               'ukReporting', 'exchange', 'exchangeCountry', 'ric', 'cusip', 'sedol')
 #: the fields a listing carried before the three levels (D207), read once
 #: to list a product stored or recorded then
 _OLD_LISTING_FIELDS = ('ticker', 'code', 'issueCurrency', 'hedging', 'shareClass', 'exposureCurrency',
@@ -333,9 +359,14 @@ _LEGACY_WORDS = ('exposureCurrency', 'issueCurrency', 'shareClass', 'assetClass'
 
 ID_MAX = 80
 NAME_MAX = 120
-#: the shapes of a CUSIP (eight letters or digits and a check digit) and of
-#: a SEDOL (six letters, no vowels, or digits and a check digit) (D220)
-CUSIP_RE = re.compile(r'^[0-9A-Z*@#]{8}[0-9]$')
+#: the shapes of a CUSIP - the desk's own, letters and digits of any length
+#: (D225) - and of a SEDOL (six letters, no vowels, or digits and a check
+#: digit) (D220)
+CUSIP_RE = re.compile(r'^[0-9A-Z]+$')
+CUSIP_MAX = 64
+#: a RIC, as Refinitiv names a listing: CSPX.L, SXR8.DE - no spaces
+RIC_RE = re.compile(r'^\S+$')
+RIC_MAX = 40
 SEDOL_RE = re.compile(r'^[0-9BCDFGHJKLMNPQRSTVWXYZ]{6}[0-9]$')
 WORD_MAX = 60
 #: a share class letter, as the fund names it: A, I, R, IX…
@@ -476,6 +507,10 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
                 index[c] = at
         if any(key in ('rank' + c.lower(), c.lower() + 'rank') for c in CURRENCIES):
             ranked = True
+    if 'Strategy' not in index and 'Name' in index:
+        # a file from before the strategy had its heading (D220): its Name
+        # is the product's, as it was then, not a class's (D225)
+        index['Strategy'] = index.pop('Name')
     missing = [c for c in COLUMNS if c not in index]
     if missing:
         raise BadCatalogue('{}: missing column(s) {}'.format(name, ', '.join(missing)))
@@ -590,10 +625,10 @@ def _assemble(fileName, pid, rows, legacy, feeGroups, strict, categories, classC
                 continue
             raise BadCatalogue(
                 '{}: row {} ({}): it gives {} {} where row {} gives {} - a product\'s rows are its '
-                'listings, and only a share class\'s values (its ISIN, class, income, hedging, '
+                'listings, and only a share class\'s values (its name, ISIN, class, income, hedging, '
                 'currencies, domicile, UCITS compliance, replication, UK reporting, cost, yield, '
-                'minimum and benchmark) and a listing\'s (its exchange, CUSIP, SEDOL, issue currency '
-                'and mandate code) may differ between them.'.format(
+                'minimum and benchmark) and a listing\'s (its exchange and its country, RIC, CUSIP, '
+                'SEDOL, issue currency and mandate code) may differ between them.'.format(
                     fileName, n, pid, LABELS[key].lower(), show(key, record[key]), mainRow,
                     show(key, main[key])))
     listings, rowOf = [], []
@@ -859,10 +894,11 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
     """The listings as stored (D207, D218): [{the share class's values, the
     listing's own, and an SMA's code}], in the order given, each whole and
     checked as a product's values always were, and the list against
-    *record*: only an SMA's listing has a mandate code, and an SMA has none
-    of the class's or the listing's other fields; only a Mutual Fund's
+    *record*: an SMA has none of the class's or the listing's other fields,
+    but its name, and any listing may have a mandate code (D225); only a Mutual Fund's
     class has a letter; the hedging is a percentage from 0 to 100 (D224),
-    and only an SMA's mandate may be ticked ISG; a fully hedged class's
+    and a class or a mandate may be ticked ISG (D226); an SMA's
+    ClassCurrency is the currency its mandate is run in; a fully hedged class's
     exposure is its class currency; the rows of one ISIN
     agree on the class's values; and no two listings are the same one.
     *ucits* is what a UCITS or ICAV vehicle gave a class that says
@@ -879,28 +915,23 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
     for n, given in enumerate(value):
         def box(field, n=n):
             return field if bare else 'listing{}{}'.format(n, field)
-        named = (_text(given.get('code')) or _text(given.get('isin')).upper()
-                 or _text(given.get('sedol')).upper() or _text(given.get('cusip')).upper())
+        named = ((_text(given.get('code')) if sma else '') or _text(given.get('isin')).upper()
+                 or _text(given.get('sedol')).upper() or _text(given.get('cusip')).upper()
+                 or _text(given.get('ric')) or _text(given.get('code')))
         where = '' if bare else ' of listing {}{}'.format(n + 1, ' ({})'.format(named) if named else '')
         listing = {'isin': _isin(given.get('isin'), box('isin'), strict, where)}
         code = _text(given.get('code'))
-        if code and not sma:
-            raise ValidationError(box('code'), 'Only a separate account (an SMA) has a mandate code: '
-                                  '{} is {}. Take the code off{}, or make the vehicle SMA.'.format(
-                                      name, _an(record.get('vehicle')), where))
         if strict and len(code) > CODE_MAX:
             raise ValidationError(box('code'), 'Keep the mandate code{} to {} characters.'.format(
                 where, CODE_MAX))
         listing['code'] = code
-        mandateName = _text(given.get('mandateName'))
-        if mandateName and not sma:
-            raise ValidationError(box('mandateName'), 'Only a separate account (an SMA) has mandates with '
-                                  'names of their own: {} is {}. Take the mandate name off{}, or make the '
-                                  'vehicle SMA.'.format(name, _an(record.get('vehicle')), where))
-        if strict and len(mandateName) > NAME_MAX:
-            raise ValidationError(box('mandateName'), 'Keep the mandate name{} to {} characters.'.format(
+        # the class's name, or the mandate's (D222, D225); a listing saved
+        # before keeps its mandate name under it
+        className = _text(given.get('className', given.get('mandateName')))
+        if strict and len(className) > NAME_MAX:
+            raise ValidationError(box('className'), 'Keep the name{} to {} characters.'.format(
                 where, NAME_MAX))
-        listing['mandateName'] = mandateName
+        listing['className'] = className
         letter, income = _text(given.get('shareClass')), _text(given.get('income'))
         if letter and _incomeWord(letter) and (not income or _incomeWord(income)
                                                and INCOME_SHORT.get(income, income) == INCOME_SHORT.get(letter, letter)):
@@ -958,10 +989,23 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
             raise ValidationError(box('exchange'), 'Keep the exchange{} to {} characters, as you name '
                                   'it: LSE, Xetra.'.format(where, EXCHANGE_MAX))
         listing['exchange'] = exchange
+        listing['exchangeCountry'] = _country(given.get('exchangeCountry'), box('exchangeCountry'),
+                                              'exchange country', strict, where)
+        listing['ric'] = _ric(given.get('ric'), box('ric'), strict, where)
         listing['cusip'] = _identifier(given.get('cusip'), box('cusip'), 'cusip', strict, where)
         listing['sedol'] = _identifier(given.get('sedol'), box('sedol'), 'sedol', strict, where)
         listing['issueCurrency'] = _word(given.get('issueCurrency'), box('issueCurrency'),
                                          LABELS['issueCurrency'] + where, strict, required=False)
+        if sma and listing['classCurrency']:
+            # an SMA's mandate has no class: the currency a sheet gives it as
+            # its class's is the one it is run in, its issue currency (D226)
+            ccy = listing['classCurrency']
+            if listing['issueCurrency'] and listing['issueCurrency'].upper() != ccy:
+                raise ValidationError(box('classCurrency'), 'A separate account is run in one currency, '
+                                      'its issue currency: {} gives {} {} and {} as its class currency. Give '
+                                      'one, or the same in both.'.format(name, listing['issueCurrency'],
+                                                                         'as its issue currency' + where, ccy))
+            listing['issueCurrency'], listing['classCurrency'] = listing['issueCurrency'] or ccy, ''
         if sma:
             wrong = next((f for f in SMA_REFUSED if listing[f]), None)
             if wrong is not None:
@@ -1006,13 +1050,12 @@ def _refuseDisagreeing(listings, bare) -> None:
                                           show(field, listings[n][field]), n + 1, _lower(LABELS[field])))
 
 
-def _listingKey(listing, sma=None) -> tuple:
+def _listingKey(listing, sma) -> tuple:
     """What makes a listing the one it is, among its product's (D207, D218):
     an SMA's its mandate code, currency, hedging and ISG tick; a fund's its
     share class - the ISIN, or every value of a class with none - and the
-    exchange and issue currency it is bought on."""
-    if sma is None:
-        sma = bool(_text(listing.get('code')))
+    exchange and issue currency it is bought on. A fund's listing may carry
+    a mandate code too (D225), so *sma* is the product's vehicle's say."""
     if sma:
         return ('sma', _text(listing.get('code')).lower(), _text(listing.get('issueCurrency')).upper(),
                 readHedging(listing.get('hedging'), listing.get('isg')))
@@ -1048,8 +1091,8 @@ def _hedging(value, isg, record, sma, key, isgKey, where):
     """A listing's hedging as stored (D224): (the proportion hedged, a
     percentage from 0 to 100 or None for not said; ISG's tick, 'Yes' or '').
     The percentage may be typed with its sign, or as the word it was before
-    - Hedged 100, Unhedged 0, ISG Hedged 50 and ticked ISG; only an SMA's
-    mandate may be ISG's."""
+    - Hedged 100, Unhedged 0, and an SMA's ISG Hedged 50 and ticked ISG;
+    a fund's class may be ticked too (D226)."""
     name = record.get('name') or 'it'
     tick = _isgTick(isg, isgKey, where)
     level = None
@@ -1063,10 +1106,12 @@ def _hedging(value, isg, record, sma, key, isgKey, where):
         if word in _HEDGE_WORDS:
             level = _HEDGE_WORDS[word]
             if word == ISG_WORD:
+                # an SMA's word for half hedged by ISG; a fund's class says
+                # how much ISG hedges it (D226)
                 if not sma:
-                    raise ValidationError(key, 'ISG Hedged is a separate account\'s: {} is {}. Give the '
-                                               'hedging{} as a percentage.'.format(
-                                                   name, _an(record.get('vehicle')), where))
+                    raise ValidationError(key, 'ISG Hedged is a separate account\'s word for 50% hedged by '
+                                               'ISG: {} is {}. Give the hedging{} as a percentage and tick '
+                                               'ISG.'.format(name, _an(record.get('vehicle')), where))
                 tick = ISG
         elif text:
             number = text[:-1].strip() if text.endswith('%') else text
@@ -1076,9 +1121,6 @@ def _hedging(value, isg, record, sma, key, isgKey, where):
                 raise ValidationError(key, _hedgingAsked(where, text))
     if level is not None and (math.isnan(level) or not 0 <= level <= FULLY_HEDGED):
         raise ValidationError(key, _hedgingAsked(where, _text(value)))
-    if tick and not sma:
-        raise ValidationError(isgKey, 'Only a separate account\'s mandate is ISG\'s: {} is {}. Take '
-                                      'the ISG tick off{}.'.format(name, _an(record.get('vehicle')), where))
     return level, tick
 
 
@@ -1088,7 +1130,7 @@ def _hedgingAsked(where, given='') -> str:
 
 
 def _isgTick(value, key, where) -> str:
-    """ISG's tick on an SMA's mandate (D224): 'Yes' or ''."""
+    """ISG's tick on a class or an SMA's mandate (D224, D226): 'Yes' or ''."""
     if isinstance(value, bool):
         return ISG if value else ''
     word = _text(value).lower()
@@ -1174,15 +1216,30 @@ def _ticker(value) -> str:
 
 def _identifier(value, key, kind, strict=True, where='') -> str:
     """A listing's CUSIP or SEDOL as stored (D220): upper case, '' for
-    none, and on a save or an import one of its shape."""
+    none, and on a save or an import one of its shape - the CUSIP the
+    desk's own, letters and digits of any length (D225)."""
     code = _text(value).upper()
     if code in (NO_TICKER, '-', '–'):
         code = ''
+    if strict and code and kind == 'cusip' and len(code) > CUSIP_MAX:
+        raise ValidationError(key, 'Keep the CUSIP{} to {} characters.'.format(where, CUSIP_MAX))
     if strict and code and not (CUSIP_RE if kind == 'cusip' else SEDOL_RE).match(code):
         raise ValidationError(key, 'The {}{} {!r} is not one: {}.'.format(
-            LABELS[kind], where, code, 'eight letters or digits and a check digit, such as 037833100'
+            LABELS[kind], where, code, 'letters and digits only, such as 037833100 or GS4471A'
             if kind == 'cusip' else 'six letters or digits and a check digit, such as B0YBKJ7'))
     return code
+
+
+def _ric(value, key, strict=True, where='') -> str:
+    """A listing's RIC as stored (D225): as typed, '' for none, and on a
+    save or an import one word: CSPX.L, SXR8.DE."""
+    ric = _text(value)
+    if ric in (NO_TICKER, '-', '–'):
+        ric = ''
+    if strict and ric and (len(ric) > RIC_MAX or not RIC_RE.match(ric)):
+        raise ValidationError(key, 'The RIC{} {!r} is not one: a code with no spaces, up to {} characters, '
+                                   'such as CSPX.L.'.format(where, ric, RIC_MAX))
+    return ric
 
 
 def _isinShaped(value) -> bool:
@@ -1216,10 +1273,19 @@ def _currencyCode(value, key, strict=True, where='') -> str:
 def _domicile(value, key, strict=True, where='') -> str:
     """A domicile as stored (D218): a two-letter country code in upper case,
     checked on a save or an import, or '' for none."""
+    return _country(value, key, 'domicile', strict, where)
+
+
+def _country(value, key, words, strict=True, where='') -> str:
+    """A domicile, or the country an exchange is in (D225), as stored: a
+    two-letter country code in upper case, checked on a save or an import,
+    or '' for none."""
     code = _text(value).upper()
+    if code in (NO_TICKER, '-', '–'):
+        code = ''
     if strict and code and code not in COUNTRY_CODES:
-        raise ValidationError(key, 'The domicile{} {!r} is not a country code: two letters, such as IE, LU, '
-                                   'GB or US.'.format(where, code))
+        raise ValidationError(key, 'The {}{} {!r} is not a country code: two letters, such as IE, LU, '
+                                   'GB or US.'.format(words, where, code))
     return code
 
 
@@ -1405,8 +1471,12 @@ def modernise(record, notes=None) -> dict:
             if not listing.get('ucits') and not sma:
                 listing['ucits'] = ucits
     for listing in modern:
+        # a mandate's name, stored as such before a share class had one (D222, D225)
+        if 'mandateName' in listing:
+            was = listing.pop('mandateName')
+            listing.setdefault('className', _text(was))
         # a field a listing was stored without, as one saved before it
-        # existed (a mandate's name, D222): blank, or no figure
+        # existed (a mandate's name, a RIC): blank, or no figure
         for field in LISTING_FIELDS:
             listing.setdefault(field, None if field in LISTING_NUMBERS else '')
         # the hedging stored as a word, before it was a percentage (D224)
@@ -1428,7 +1498,7 @@ def _modernListing(listing, sma, notes=None) -> dict:
     read it."""
     new = {f: '' for f in LISTING_FIELDS}
     new['code'] = _text(listing.get('code'))
-    new['mandateName'] = _text(listing.get('mandateName'))
+    new['className'] = _text(listing.get('className', listing.get('mandateName')))
     ticker = _ticker(listing.get('ticker'))
     if not sma and _isinShaped(ticker):
         new['isin'] = ticker.upper()
@@ -1501,10 +1571,12 @@ def _an(word) -> str:
 
 
 def _ident(listing) -> str:
-    """What a listing is called by: its mandate code, else its ISIN, else
-    its SEDOL, else its CUSIP (D220)."""
-    return (_text(listing.get('code')) or _text(listing.get('isin')).upper()
-            or _text(listing.get('sedol')).upper() or _text(listing.get('cusip')).upper() or NO_TICKER)
+    """What a listing is called by: its ISIN, else its SEDOL, else its
+    CUSIP, else its RIC (D220, D225), else its mandate code - an SMA's
+    mandate's only name."""
+    return (_text(listing.get('isin')).upper() or _text(listing.get('sedol')).upper()
+            or _text(listing.get('cusip')).upper() or _text(listing.get('ric'))
+            or _text(listing.get('code')) or NO_TICKER)
 
 
 def listingLabel(listing, listings=None) -> str:
@@ -1518,7 +1590,8 @@ def listingLabel(listing, listings=None) -> str:
     if len(peers) <= 1:
         return ident
     bits = [ident]
-    for field in ('issueCurrency', 'hedging', 'income', 'shareClass', 'exchange', 'sedol', 'cusip'):
+    for field in ('issueCurrency', 'hedging', 'income', 'shareClass', 'exchange', 'sedol', 'cusip', 'ric',
+                  'code'):
         if len({_said(p, field) for p in peers}) > 1 and _said(listing, field):
             bits.append(_said(listing, field))
             peers = [p for p in peers if _said(p, field) == _said(listing, field)]
@@ -1530,13 +1603,15 @@ def listingLabel(listing, listings=None) -> str:
 def showListing(listing, ident=False) -> str:
     """One listing as a history line or a preview shows it."""
     bits = [_ident(listing)] if ident else []
-    if ident and listing.get('isin') and _ident(listing) != _text(listing.get('isin')).upper():
-        bits.append(_text(listing['isin']).upper())
+    if _text(listing.get('className')):
+        bits.append(_text(listing['className']))
     bits += [_said(listing, f) for f in ('exchange', 'issueCurrency', 'hedging', 'income')
              if _said(listing, f)]
-    for field, word in (('sedol', 'SEDOL'), ('cusip', 'CUSIP')):
-        if _text(listing.get(field)) and not (ident and _ident(listing) == _text(listing[field]).upper()):
+    for field, word in (('sedol', 'SEDOL'), ('cusip', 'CUSIP'), ('ric', 'RIC'), ('code', 'code')):
+        if _text(listing.get(field)) and not (ident and _ident(listing).upper() == _text(listing[field]).upper()):
             bits.append('{} {}'.format(word, listing[field]))
+    if _text(listing.get('exchangeCountry')):
+        bits.append('exchange in {}'.format(listing['exchangeCountry']))
     if _text(listing.get('shareClass')):
         bits.append('class {}'.format(listing['shareClass']))
     for field, word in (('exposureCurrency', 'exposure'), ('domicile', 'domicile'),
@@ -1672,7 +1747,7 @@ def changes(before, after) -> list:
     if one:
         pairs, gone, came = [(was[0], now[0])], [], []
     else:
-        pairs, gone, came = _pairListings(was, now)
+        pairs, gone, came = _pairListings(was, now, isSma(after))
     for a, b in pairs:
         label = listingLabel(b, now)
         for field in LISTING_FIELDS:
@@ -1706,13 +1781,13 @@ def _orderMoved(was, now, pairs) -> bool:
     return placed != sorted(placed) or (bool(now) and held is not now[0])
 
 
-def _pairListings(was, now):
+def _pairListings(was, now, sma):
     """The listings two records share, matched by what makes each the one it
     is: (pairs, gone, came). One whose identifiers, code, issue currency, hedging
     or share class moved is paired with the one that came at its turn."""
     pairs, left, gone = [], list(range(len(now))), []
     for a in was:
-        hit = next((j for j in left if _listingKey(now[j]) == _listingKey(a)), None)
+        hit = next((j for j in left if _listingKey(now[j], sma) == _listingKey(a, sma)), None)
         if hit is None:
             gone.append(a)
             continue
@@ -2194,7 +2269,7 @@ def _identifiers(record):
     a blank is nothing."""
     out, seen = [], set()
     for listing in record.get('listings') or []:
-        for kind in ('isin', 'cusip', 'sedol', 'code'):
+        for kind in ('isin', 'cusip', 'sedol', 'ric', 'code'):
             value = _text(listing.get(kind))
             if not value:
                 continue
@@ -2208,7 +2283,7 @@ def _kindWords(kind):
     """('ISIN', 'An ISIN'), ('SEDOL', 'A SEDOL'), ('mandate code', 'A mandate code')."""
     if kind == 'isin':
         return 'ISIN', 'An ISIN'
-    if kind in ('cusip', 'sedol'):
+    if kind in ('cusip', 'sedol', 'ric'):
         return LABELS[kind], 'A ' + LABELS[kind]
     return LABELS[kind].lower(), 'A ' + LABELS[kind].lower()
 
@@ -2234,7 +2309,7 @@ def _refuseTaken(conn, record, held=None) -> None:
     refuses the save, naming the listing's box and the product that holds it."""
     held = _identifiersHeld(conn, {record['productId']}) if held is None else held
     for n, listing in enumerate(record.get('listings') or []):
-        for kind in ('code', 'isin', 'cusip', 'sedol'):
+        for kind in ('code', 'isin', 'cusip', 'sedol', 'ric'):
             value = _text(listing.get(kind))
             taken = held.get((kind, value.lower())) if value else None
             if taken is not None:
@@ -2509,7 +2584,8 @@ def _fileName(name) -> str:
 #: as they are (D204, D207, D218): (field, column)
 _KEPT_COLUMNS = [(f, _COLUMN_OF[f]) for f in ('isin', 'shareClass', 'income', 'hedging', 'classCurrency',
                                               'domicile', 'ucits', 'replication', 'ukReporting',
-                                              'benchmark', 'exchange', 'cusip', 'sedol', 'mandateName', 'isg')]
+                                              'benchmark', 'exchange', 'exchangeCountry', 'ric', 'cusip',
+                                              'sedol', 'className', 'isg', 'code')]
 
 
 def _keepStored(incoming, stored, found):
