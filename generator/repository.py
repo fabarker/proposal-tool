@@ -1888,7 +1888,7 @@ thead .ne-hd[aria-pressed="mixed"]{box-shadow:inset 0 -3px 0 #1F5FBF}
 .prd-lst-t tr.cls1 td{border-top-color:var(--line-strong)}
 /* the form's listings (D218): a row each under the columns' heads */
 .prd-pl{display:grid;gap:1px}
-.prd-pl-r{display:grid;grid-template-columns:58px minmax(0,1.8fr) minmax(0,1fr) minmax(0,.6fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,.7fr) minmax(0,.9fr) 18px;
+.prd-pl-r{display:grid;grid-template-columns:58px minmax(0,1.8fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,.7fr) minmax(0,.9fr) 18px;
   gap:0 8px;align-items:start;padding:3px 4px 0;border-radius:5px}
 .prd-pl-hd{font-family:var(--f-num);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding-bottom:2px}
 .prd-pl-r.held{background:#EEF6F0}

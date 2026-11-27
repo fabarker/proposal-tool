@@ -344,7 +344,25 @@ REPLICATIONS = ('Physical', 'Sampled', 'Synthetic')
 #: whether a class has UK reporting status, or blank for not said
 UK_REPORTING = ('Yes', 'No')
 _UK_WORDS = {'yes': 'Yes', 'y': 'Yes', 'true': 'Yes', '1': 'Yes', 'no': 'No', 'n': 'No', 'false': 'No',
-             '0': 'No'}
+             '0': 'No',
+             # as a desk's sheet may say them (D228)
+             'reporting': 'Yes', 'reporting fund': 'Yes', 'non-reporting': 'No', 'non reporting': 'No',
+             'nonreporting': 'No', 'not reporting': 'No', 'ucits': 'Yes', 'non-ucits': 'No', 'non ucits': 'No'}
+#: the words a desk's sheet may give an income (D228), lower-cased
+_INCOME_WORDS = dict([(w, 'Distributing') for w in ('dis', 'dist', 'distributing', 'distribution', 'distributes',
+                                                    'inc', 'income')]
+                     + [(w, 'Accumulating') for w in ('acc', 'accumulating', 'accumulation', 'accumulates',
+                                                      'cap', 'capitalisation', 'capitalization', 'capitalising',
+                                                      'capitalizing')])
+#: the words a desk's sheet may give a replication (D228), plain
+_REPLICATION_WORDS = dict(
+    [(w, 'Physical') for w in ('full', 'full replication', 'fully replicated', 'physical full',
+                               'physical full replication', 'replicated', 'physical replication')]
+    + [(w, 'Sampled') for w in ('sampling', 'optimised', 'optimized', 'optimised sampling', 'optimized sampling',
+                                'physical sampled', 'physical sampling', 'physical optimised', 'physical optimized',
+                                'representative sampling', 'stratified sampling')]
+    + [(w, 'Synthetic') for w in ('swap', 'swap based', 'synthetic swap', 'unfunded swap', 'funded swap',
+                                  'derivative', 'derivatives')])
 #: whether a class is UCITS compliant (D220): the same Yes, No or blank
 UCITS = UK_REPORTING
 #: what a class's regulation said before (D218) and the UCITS compliance it
@@ -380,8 +398,7 @@ PERCENT_MAX = {'productCost': 10.0, 'distributionYield': 50.0}
 #: the shape of an ISIN: two letters, nine letters or digits, a check digit
 ISIN_RE = re.compile(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$')
 #: every country by its two-letter code (ISO 3166-1 alpha-2) and the name a
-#: domicile is stored and shown under (D227); an exchange's country is
-#: stored as its code (D225)
+#: domicile (D227) and an exchange's country (D228) are stored and shown under
 COUNTRIES = dict(line.split(' ', 1) for line in """
 AD Andorra
 AE United Arab Emirates
@@ -1246,7 +1263,7 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
                                   'it: LSE, Xetra.'.format(where, EXCHANGE_MAX))
         listing['exchange'] = exchange
         listing['exchangeCountry'] = _country(given.get('exchangeCountry'), box('exchangeCountry'),
-                                              'exchange country', strict, where)
+                                              'exchange country', strict, where, 'United Kingdom, Germany')
         listing['ric'] = _ric(given.get('ric'), box('ric'), strict, where)
         listing['cusip'] = _identifier(given.get('cusip'), box('cusip'), 'cusip', strict, where)
         listing['sedol'] = _identifier(given.get('sedol'), box('sedol'), 'sedol', strict, where)
@@ -1443,7 +1460,7 @@ def fullyHedged(listing) -> bool:
 
 def _incomeWord(text) -> bool:
     """Whether *text* says Accumulating or Distributing, long or short."""
-    return INCOME_SHORT.get(_text(text), _text(text)) in INCOMES
+    return _text(text).lower() in _INCOME_WORDS
 
 
 def _income(text, key, where='') -> str:
@@ -1451,9 +1468,8 @@ def _income(text, key, where='') -> str:
     as the word, or '' for none."""
     income = INCOME_SHORT.get(text, text)
     if income and income not in INCOMES:
-        same = [v for v in INCOMES if v.lower() == income.lower()]
-        if same:
-            return same[0]
+        if _text(income).lower() in _INCOME_WORDS:
+            return _INCOME_WORDS[_text(income).lower()]
         raise ValidationError(key, 'The income{} {!r} is not one of {}, or blank for '
                                    'none.'.format(where, income, ', '.join(INCOMES)))
     return income
@@ -1527,9 +1543,15 @@ def _currencyCode(value, key, strict=True, where='') -> str:
 
 
 def _domicile(value, key, strict=True, where='') -> str:
-    """A domicile as stored (D227): the country's name - Luxembourg - given
-    as its name in any case, another name for it (UK, USA) or its
-    two-letter code; checked on a save or an import, or '' for none."""
+    """A domicile as stored (D227): the country's name."""
+    return _country(value, key, 'domicile', strict, where, 'Ireland, Luxembourg')
+
+
+def _country(value, key, words, strict=True, where='', such='Ireland, Luxembourg') -> str:
+    """A domicile (D227), or the country an exchange is in (D228), as
+    stored: the country's name - Luxembourg - given as its name in any case,
+    another name for it (UK, USA) or its two-letter code; checked on a save
+    or an import, or '' for none."""
     text = _text(value)
     if text in (NO_TICKER, '-', '–'):
         return ''
@@ -1537,8 +1559,8 @@ def _domicile(value, key, strict=True, where='') -> str:
     if name or not text:
         return name
     if strict:
-        raise ValidationError(key, 'The domicile{} {!r} is not a country: give its name, such as Ireland, '
-                                   'Luxembourg or United Kingdom, or its two-letter code.'.format(where, text))
+        raise ValidationError(key, 'The {}{} {!r} is not a country: give its name, such as {} or United '
+                                   'States, or its two-letter code.'.format(words, where, text, such))
     return text
 
 
@@ -1572,19 +1594,6 @@ def countryName(text) -> str:
     return COUNTRIES[code] if code else ''
 
 
-def _country(value, key, words, strict=True, where='') -> str:
-    """A domicile, or the country an exchange is in (D225), as stored: a
-    two-letter country code in upper case, checked on a save or an import,
-    or '' for none."""
-    code = _text(value).upper()
-    if code in (NO_TICKER, '-', '–'):
-        code = ''
-    if strict and code and code not in COUNTRY_CODES:
-        raise ValidationError(key, 'The {}{} {!r} is not a country code: two letters, such as IE, LU, '
-                                   'GB or US.'.format(words, where, code))
-    return code
-
-
 def _replication(value, key, where='') -> str:
     """How a class tracks its index, as stored: one of the three words, or ''."""
     word = _text(value)
@@ -1593,6 +1602,9 @@ def _replication(value, key, where='') -> str:
     same = [v for v in REPLICATIONS if v.lower() == word.lower()]
     if same:
         return same[0]
+    plain = ' '.join(re.sub(r'[^a-z]+', ' ', word.lower()).split())
+    if plain in _REPLICATION_WORDS:
+        return _REPLICATION_WORDS[plain]
     raise ValidationError(key, 'The replication{} {!r} is not one of {} or {}, or blank.'.format(
         where, word, ', '.join(REPLICATIONS[:-1]), REPLICATIONS[-1]))
 
@@ -1783,9 +1795,11 @@ def modernise(record, notes=None) -> dict:
                 _say(notes, 'hedging {} of {} → {}'.format(was, _ident(listing), hedgingText(listing)))
         elif not isinstance(listing['hedging'], float):
             listing['hedging'] = float(listing['hedging'])
-        # a domicile stored as its code, before it was the country's name (D227)
-        if len(_text(listing['domicile'])) == 2 and countryName(listing['domicile']):
-            listing['domicile'] = countryName(listing['domicile'])
+        # a domicile or an exchange's country stored as its code, before it
+        # was the country's name (D227, D228)
+        for field in ('domicile', 'exchangeCountry'):
+            if len(_text(listing[field])) == 2 and countryName(listing[field]):
+                listing[field] = countryName(listing[field])
     out['listings'] = modern
     for field in LISTING_FIELDS:
         out[field] = modern[0].get(field)

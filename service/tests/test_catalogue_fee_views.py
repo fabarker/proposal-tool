@@ -408,7 +408,8 @@ out.same = draft(function (d) { d.listings[1].issueCurrency = 'USD'; });
 out.otherExchange = draft(function (d) { d.listings[1].issueCurrency = 'USD'; d.listings[1].exchange = 'LSE'; });
 out.code = draft(function (d) { d.listings[0].code = 'M1'; });
 out.className = draft(function (d) { d.classes[0].className = 'A Class (Acc)'; });
-out.ric = draft(function (d) { d.listings[0].ric = 'CSPX L'; d.listings[1].exchangeCountry = 'GBR'; });
+out.ric = draft(function (d) { d.listings[0].ric = 'CSPX L'; d.listings[1].exchangeCountry = 'United ' + 'Kingdom '.repeat(9); });
+out.countryNamed = draft(function (d) { d.listings[1].exchangeCountry = 'United Kingdom'; });
 out.smaNamed = sma(function (d) { d.classes.forEach(function (c, i) { c.shareClass = ''; c.classCurrency = ''; c.domicile = ''; c.ucits = ''; c.ukReporting = ''; c.isin = ''; c.className = 'Probe (' + i + ')'; });
   d.listings.forEach(function (l, i) { l.code = 'M' + i; }); d.classes[2].className = 'x'.repeat(121); });
 out.isg = draft(function (d) { d.classes[0].hedging = 'ISG Hedged'; });
@@ -444,7 +445,8 @@ process.stdout.write(JSON.stringify(out));
     assert 'listing1issueCurrency' not in got['otherExchange'], 'another exchange is another listing'
     assert 'listing0code' not in got['code'], 'a fund\'s listing may carry a mandate code (D225)'
     assert 'class0className' not in got['className'], 'a share class has a name too (D225)'
-    assert 'is not one' in got['ric']['listing0ric'] and 'two-letter country code' in got['ric']['listing1exchangeCountry']
+    assert 'is not one' in got['ric']['listing0ric'] and 'is a country' in got['ric']['listing1exchangeCountry']
+    assert 'listing1exchangeCountry' not in got['countryNamed'], 'an exchange\'s country is its name (D228)'
     assert 'to 120 characters' in got['smaNamed']['class2className']
     assert 'class0className' not in got['smaNamed'] and 'class1className' not in got['smaNamed']
     assert 'ISG Hedged is a separate account' in got['isg']['class0hedging']

@@ -635,7 +635,8 @@ var PRD_CLASS_FIELDS = [
    CUSIP, its SEDOL - in what currency, and its mandate code */
 var PRD_PLACE_FIELDS = [
   { key: 'exchange', label: 'Exchange', short: 'Exchange', kind: 'text', optional: true, fund: true },
-  { key: 'exchangeCountry', label: 'Exchange country', short: 'Country', kind: 'country', optional: true, fund: true },
+  /* the country's name, as a domicile's is (D228) */
+  { key: 'exchangeCountry', label: 'Exchange country', short: 'Country', kind: 'text', optional: true, fund: true },
   { key: 'ric', label: 'RIC', short: 'RIC', kind: 'text', optional: true, fund: true },
   { key: 'cusip', label: 'CUSIP', short: 'CUSIP', kind: 'cusip', optional: true, fund: true },
   { key: 'sedol', label: 'SEDOL', short: 'SEDOL', kind: 'sedol', optional: true, fund: true },
@@ -1016,7 +1017,7 @@ function prdListingProblems(d, ctx, out) {
       else if (held[k[0] + ':' + v.toLowerCase()]) out[box + k[0]] = 'The ' + k[1] + ' ' + v + ' belongs to ' + held[k[0] + ':' + v.toLowerCase()] + '. A ' + k[1] + ' is one product’s.';
     });
     var country = prdText(l.exchangeCountry);
-    if (country && !sma && !/^[A-Za-z]{2}$/.test(country)) out[box + 'exchangeCountry'] = 'The exchange country' + of + ' is a two-letter country code, such as GB, DE or US.';
+    if (country.length > PRD_MAX.domicile && !sma) out[box + 'exchangeCountry'] = 'The exchange country' + of + ' is a country: give its name, such as United Kingdom or Germany.';
     if (code.length > PRD_MAX.code) out[box + 'code'] = 'Keep the mandate code' + of + ' to ' + PRD_MAX.code + ' characters.';
     else if (code && held['code:' + code.toLowerCase()]) {
       out[box + 'code'] = 'The mandate code ' + code + ' belongs to ' + held['code:' + code.toLowerCase()] + '. A code is one product’s.';

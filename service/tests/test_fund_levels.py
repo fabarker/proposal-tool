@@ -281,7 +281,7 @@ def test_a_hedged_class_gives_its_class_currencys_exposure(store, tmp_path):
     ({'domicile': 'XX'}, 'domicile', 'is not a country'),
     ({'isin': 'IE00B4L5Y98'}, 'isin', 'not one: two letters'),
     ({'classCurrency': 'GBPX'}, 'classCurrency', 'not a currency code'),
-    ({'replication': 'Swap'}, 'replication', 'not one of Physical, Sampled or Synthetic'),
+    ({'replication': 'Mostly'}, 'replication', 'not one of Physical, Sampled or Synthetic'),
     ({'ukReporting': 'Maybe'}, 'ukReporting', 'Yes, No or blank'),
     ({'ucits': 'UCITS V'}, 'ucits', 'UCITS compliant .* is Yes, No or blank'),
     ({'sedol': 'BAEIOU1'}, 'sedol', 'SEDOL .* is not one'),
@@ -289,7 +289,7 @@ def test_a_hedged_class_gives_its_class_currencys_exposure(store, tmp_path):
     ({'cusip': '0378-3310'}, 'cusip', 'CUSIP .* is not one'),
     ({'cusip': 'A' * 65}, 'cusip', 'Keep the CUSIP'),
     ({'ric': 'CSPX L'}, 'ric', 'RIC .* is not one'),
-    ({'exchangeCountry': 'UK'}, 'exchangeCountry', 'exchange country .* is not a country code'),
+    ({'exchangeCountry': 'GBR'}, 'exchangeCountry', 'exchange country .* is not a country'),
     ({'income': 'Growth'}, 'income', 'not one of Distributing, Accumulating'),
     ({'exchange': 'X' * 41}, 'exchange', 'Keep the exchange'),
 ])
@@ -912,13 +912,14 @@ def test_a_fund_listing_has_a_name_a_ric_an_exchange_country_and_a_mandate_code(
                  'exchangeCountry': 'DE', 'ric': 'PRB.DE', 'code': 'E01', 'issueCurrency': 'EUR'})
     one, two = out['listings']
     assert (one['className'], one['exchangeCountry'], one['ric'], one['cusip'], one['code']) == \
-        ('Probe UCITS ETF USD (Acc)', 'GB', 'PRB.L', 'GS4471A', 'E01')
+        ('Probe UCITS ETF USD (Acc)', 'United Kingdom', 'PRB.L', 'GS4471A', 'E01')
     assert two['code'] == 'E01', 'one code on two listings of one fund'
     rows = products.exportRows()
     head = rows[0]
     mine = [dict(zip(head, r)) for r in rows[1:] if r[0] == pid]
     assert [(r['Name'], r['ExchangeCountry'], r['RIC'], r['MandateCode']) for r in mine] == [
-        ('Probe UCITS ETF USD (Acc)', 'GB', 'PRB.L', 'E01'), ('Probe UCITS ETF USD (Acc)', 'DE', 'PRB.DE', 'E01')]
+        ('Probe UCITS ETF USD (Acc)', 'United Kingdom', 'PRB.L', 'E01'),
+        ('Probe UCITS ETF USD (Acc)', 'Germany', 'PRB.DE', 'E01')]
     path = _file(tmp_path, rows)
     preview = products.importPreview(path, _upload(path))
     assert not preview['changed'] and not preview['added']
@@ -977,7 +978,8 @@ def test_the_headings_of_the_desks_product_table_are_read(store, tmp_path):
 
 
 def test_a_domicile_is_the_countrys_name(store, tmp_path):
-    """A domicile is stored and shown as the country's name (D227): a sheet
+    """A domicile, and an exchange's country (D228), is stored and shown as
+    the country's name (D227): a sheet
     may give it in capitals, by another name or by its code; a name that is
     no country is refused; one stored as its code reads as the name."""
     pid = _fund('Mutual Fund')
@@ -995,13 +997,32 @@ def test_a_domicile_is_the_countrys_name(store, tmp_path):
     conn = sleeveRepo.connection()
     try:
         row = conn.execute('SELECT listings FROM products WHERE productId = ?', (pid,)).fetchone()
-        old = [dict(l, domicile='IE') for l in _json.loads(row['listings'])]
+        old = [dict(l, domicile='IE', exchangeCountry='GB') for l in _json.loads(row['listings'])]
         conn.execute('UPDATE products SET listings = ? WHERE productId = ?', (_json.dumps(old), pid))
         conn.commit()
     finally:
         conn.close()
     products.reload()
     assert products.entry(pid)['listings'][0]['domicile'] == 'Ireland'
+    assert products.entry(pid)['listings'][0]['exchangeCountry'] == 'United Kingdom'
+    out = _list(pid, {'domicile': 'Ireland', 'exchange': 'LSE', 'exchangeCountry': 'UNITED KINGDOM'})
+    assert out['listings'][0]['exchangeCountry'] == 'United Kingdom'
+
+
+def test_a_sheet_may_give_the_words_a_desk_uses(store):
+    """A desk's sheet says Distribution, Capitalisation, Full replication,
+    Swap or Reporting (D228): each reads as the word the tool keeps."""
+    pid = _fund('ETF')
+    for field, given, kept in (('income', 'Distribution', 'Distributing'), ('income', 'Accumulation', 'Accumulating'),
+                               ('income', 'Capitalisation', 'Accumulating'), ('income', 'Inc', 'Distributing'),
+                               ('replication', 'Full Replication', 'Physical'),
+                               ('replication', 'Physical (Optimised)', 'Sampled'),
+                               ('replication', 'Swap-based', 'Synthetic'), ('ukReporting', 'Reporting', 'Yes'),
+                               ('ukReporting', 'Non-reporting', 'No'), ('ucits', 'UCITS', 'Yes')):
+        out = _list(pid, {field: given, 'productCost': 0.1 + len(given + field) / 10000.0})
+        assert out['listings'][0][field] == kept, (field, given)
+    with pytest.raises(ValidationError, match='replication'):
+        _list(pid, {'replication': 'Mostly'})
 
 
 def test_a_funds_share_class_may_be_hedged_by_isg(store, tmp_path):

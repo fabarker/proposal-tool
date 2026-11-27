@@ -53,8 +53,8 @@ thirty-three columns of the desk's product data sheet (D225):
   Yes, No or blank. `TotalExpenseRatio` (the cost), `Yield` and the
   minimum belong to the class. A class with no ISIN yet is the set of a product's rows that agree
   on all of these.
-- **The listing** - `Exchange` (free text) and `ExchangeCountry` (a
-  two-letter country code), `RIC`, `CUSIP` and `SEDOL` (what the listing
+- **The listing** - `Exchange` (free text) and `ExchangeCountry` (the
+  country's name, read from a name or a code as `Domicile` is, D228), `RIC`, `CUSIP` and `SEDOL` (what the listing
   trades under there), `IssueCurrency` and `MandateCode` - is where and in
   what the class is bought, and the code an account holding it is opened
   under (D225). There is no ticker (D220). The CUSIP is the desk's own,

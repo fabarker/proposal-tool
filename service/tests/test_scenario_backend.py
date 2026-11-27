@@ -2856,7 +2856,7 @@ def test_a_share_class_the_catalogue_does_not_define_is_refused(tmp_path):
     assert read(every, ShareClass='Acc')['income'] == 'Accumulating'     # the short form
     assert read(every, ShareClass='Dis')['income'] == 'Distributing'
     with pytest.raises(products.BadCatalogue) as caught:
-        read(every, ShareClass='Distribution')
+        read(every, ShareClass='Quarterly')
     assert 'share class' in str(caught.value)
     assert read(every, ShareClass='')['income'] is None          # blank on a row: none
     assert read(products.COLUMNS)['income'] is None              # the column absent

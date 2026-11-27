@@ -135,7 +135,7 @@ def test_a_product_is_added_with_its_stamps_and_a_first_version(store):
     ({'productCost': '45'}, 'productCost', 'looks wrong'),
     ({'feeGroup': 'Made Up'}, 'feeGroup', 'not on the fee card'),
     ({'feeGroup': ''}, 'feeGroup', 'Choose a fee group'),
-    ({'income': 'Distribution'}, 'income', 'not one of'),
+    ({'income': 'Quarterly'}, 'income', 'not one of'),
     ({'shareClass': 'A'}, 'shareClass', 'Only a Mutual Fund'),
     ({'vehicle': 'Trust'}, 'vehicle', 'not one of ETF, Mutual Fund or SMA'),
     ({'domicile': 'LUX'}, 'domicile', 'is not a country'),
