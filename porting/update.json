@@ -1,11 +1,11 @@
 {
-  "from": "bc50522",
-  "to": "63f3c86",
+  "from": "63f3c86",
+  "to": "d3c4f12",
   "write": [
-    "page/static/css/proposalTool.css",
+    "package/products.py",
     "page/static/js/proposalTool.js"
   ],
   "delete": [],
   "routerBlock": false,
-  "bytes": 46467
+  "bytes": 48115
 }
