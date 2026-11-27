@@ -91,6 +91,10 @@ a Public Equity SMA in three mandates - 0% hedged in dollars, 100% hedged
 and 50% hedged ticked ISG in sterling - each named. The ISINs, SEDOLs, codes and names are
 illustrative.
 
+**A cell that says nothing is blank** (D229): `NULL`, `N/A`, `#N/A`,
+`None`, `nan`, `nil` or a lone dash, in any column; a needed column
+given one is refused as missing.
+
 **Older files are still read.** The headings before the data sheet
 (D225) - `ProductCost`, `DistributionYield` and `MandateName` - are read as
 `TotalExpenseRatio`, `Yield` and `Name`; a file without the new columns

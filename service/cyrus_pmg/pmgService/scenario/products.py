@@ -195,6 +195,10 @@ INCOME_SHORT = {'Dis': 'Distributing', 'Dist': 'Distributing', 'Acc': 'Accumulat
 SHARE_CLASS_SHORT = INCOME_SHORT
 
 NO_TICKER = '—'
+#: what a cell of a product file says for nothing, as a database export or a
+#: sheet writes it (D229): read as blank in every column. NA is not among
+#: them, as it is Namibia's code.
+BLANK_CELLS = frozenset(('-', '–', '—', 'null', 'n/a', '#n/a', 'none', 'nan', 'nil'))
 
 #: Every field a product carries, in the order the file and the console give
 #: them - the product, then the share class, then the listing, then an SMA's
@@ -812,6 +816,8 @@ def _load(path: str, feeGroups=None, strict=False, data: bytes = None, categorie
                 continue
             at = index[column]
             fields[key] = row[at] if at < len(row) else ''
+            if isinstance(fields[key], str) and fields[key].strip().lower() in BLANK_CELLS:
+                fields[key] = ''
         old = {c: (row[index[c]] if index[c] < len(row) else '') for c in OLD_COLUMNS if c in index}
         pid = _text(fields['productId'], keepSpaces=True)
         ticker = _text(old.get('Ticker'))

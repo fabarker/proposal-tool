@@ -1025,6 +1025,23 @@ def test_a_sheet_may_give_the_words_a_desk_uses(store):
         _list(pid, {'replication': 'Mostly'})
 
 
+def test_a_cell_that_says_nothing_is_blank(store, tmp_path):
+    """NULL, N/A, #N/A, None, nan, nil and a dash, as an export or a sheet
+    writes nothing, are blank in every column of a file (D229) - an optional
+    one is left empty, a needed one is refused as missing; NA is Namibia."""
+    pid = _fund('ETF')
+    rows = _rowsFor(pid, [dict(ETF[0], SEDOL='NULL', RIC='n/a', CUSIP='#N/A', Benchmark='None', Exchange='-',
+                               Yield='nan', Replication='NULL', ExchangeCountry='null')])
+    one = products.readFile(_file(tmp_path, rows))[0][pid]['listings'][0]
+    assert (one['sedol'], one['ric'], one['cusip'], one['benchmark'], one['exchange'], one['distributionYield'],
+            one['replication'], one['exchangeCountry']) == ('', '', '', '', '', None, '', '')
+    rows = _rowsFor(pid, [dict(ETF[0], ExposureCurrency='NULL')])
+    with pytest.raises(products.BadCatalogue, match='Exposure currency'):
+        products.readFile(_file(tmp_path, rows, 'missing.csv'))
+    rows = _rowsFor(pid, [dict(ETF[0], Domicile='NA')])
+    assert products.readFile(_file(tmp_path, rows, 'na.csv'))[0][pid]['listings'][0]['domicile'] == 'Namibia'
+
+
 def test_a_funds_share_class_may_be_hedged_by_isg(store, tmp_path):
     """ISG hedges a fund's class as it does an SMA's mandate (D226): a
     foreign currency bond fund's class hedged 100% by ISG is 100% and
