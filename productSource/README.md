@@ -33,8 +33,11 @@ A product file has three levels (D218), one row per listing, in the
 thirty-three columns of the desk's product data sheet (D225):
 
 - **The product** - the first ten columns - is the same on every one of its
-  rows. A `ProductId` is a fund in one vehicle, and `Strategy` its name. `Vehicle` is `ETF`, `Mutual Fund` or
-  `SMA`, and picks the product's card.
+  rows. A `ProductId` is a fund in one vehicle, and `Strategy` its name. `Vehicle` is `ETF`, `Mutual Fund`,
+  `Index Fund` (a fund tracking an index, not traded on an exchange), `LP`
+  (Limited Partnership), `Ltd` (Limited, Limited Company) or `SMA`, and picks
+  the product's card. An ETF's classes have no letter; an ETF's and an Index
+  Fund's have a replication.
 - **The share class** - `Name` to `Benchmark` - is the same on every row of
   its ISIN. `Name` is the class's name as the fund names it, blank for the
   strategy's (D225). `ShareClass` is the class letter (I, A, P...), on a Mutual Fund

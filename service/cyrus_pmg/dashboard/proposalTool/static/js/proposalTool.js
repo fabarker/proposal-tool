@@ -5860,6 +5860,7 @@ function money(v) {
 function pillFor(v) {
   var map = { Active: 'p-act', Passive: 'p-pas', SMA: 'p-sma', ETF: 'p-etf',
               'Mutual Fund': 'p-mf', UCITS: 'p-ucits', ICAV: 'p-icav',
+              'Index Fund': 'p-ucits', LP: 'p-icav', Ltd: 'p-icav',
               Internal: 'p-int', External: 'p-ext' };
   return '<span class="pill ' + (map[v] || 'p-pas') + '">' + App.esc(v) + '</span>';
 }
@@ -11307,7 +11308,7 @@ var actTimer = null;
    hold it. Both joins are many-valued. */
 var CAT_FACETS = [
   { key: 'category', label: 'Category' },
-  { key: 'vehicle', label: 'Vehicle', order: ['ETF', 'Mutual Fund', 'SMA'] },
+  { key: 'vehicle', label: 'Vehicle', order: ['ETF', 'Mutual Fund', 'Index Fund', 'LP', 'Ltd', 'SMA'] },
   /* any of a product's classes or listings (D207, D218), each with the
      products that do not say one */
   { key: 'income', label: 'Income', order: ['Distributing', 'Accumulating', 'Not stated'] },
@@ -11737,7 +11738,7 @@ var PRD_FIELDS = [
 ];
 /* a share class's boxes (D218): what it is, costs and takes, the same on
    every listing of it. *fund* boxes are a fund's only - a separate account
-   has none of them - and *mf* a Mutual Fund's only. */
+   has none of them - and *mf* one with letters only (D232). */
 var PRD_CLASS_FIELDS = [
   /* the class's name as the fund names it, or an SMA mandate's: blank for
      the strategy's (D222, D225) */
@@ -11786,7 +11787,13 @@ var PRD_LISTING_FIELDS = PRD_CLASS_FIELDS.concat(PRD_PLACE_FIELDS);
 var PRD_FIGURES = { productCost: 1, distributionYield: 1, minimumInvestment: 1 };
 var PRD_CURRENCIES = ['USD', 'GBP', 'CHF', 'EUR'];
 var PRD_WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurrency'];
-var PRD_VEHICLES = ['ETF', 'Mutual Fund', 'SMA'];
+/* the vehicles (D218, D232): an Index Fund tracks an index without trading
+   on an exchange, an LP is a limited partnership, a Ltd a limited company */
+var PRD_VEHICLES = ['ETF', 'Mutual Fund', 'Index Fund', 'LP', 'Ltd', 'SMA'];
+var PRD_VEHICLES_SAID = 'ETF, Mutual Fund, Index Fund, LP, Ltd or SMA';
+/* whose classes may have a letter, and whose a replication (D232) */
+var PRD_LETTER_VEHICLES = ['Mutual Fund', 'Index Fund', 'LP', 'Ltd'];
+var PRD_TRACKER_VEHICLES = ['ETF', 'Index Fund'];
 var PRD_INCOMES = ['Distributing', 'Accumulating'];
 var PRD_INCOME_SHORT = { Distributing: 'Dist', Accumulating: 'Acc' };
 var PRD_REPLICATIONS = ['Physical', 'Sampled', 'Synthetic'];
@@ -11810,16 +11817,20 @@ var PRD_CUSIP = /^[0-9A-Z]+$/;
 var PRD_SEDOL = /^[0-9BCDFGHJKLMNPQRSTVWXYZ]{6}[0-9]$/;
 function prdIsSma(d) { return PRD_SMA_VEHICLES.indexOf(prdText(d && d.vehicle).toLowerCase()) !== -1; }
 function prdIsEquity(d) { return prdText(d && d.category) === PRD_EQUITY; }
-/* the vehicle a typed word is (D218): ETF, Mutual Fund or SMA, Separate
-   Account read as SMA and UCITS or ICAV as a fund - or '' for none of them */
+/* the vehicle a typed word is (D218, D232): one of PRD_VEHICLES, however
+   spelt, Separate Account read as SMA - or '' for none of them; UCITS or
+   ICAV the server reads as a fund */
+var PRD_VEHICLE_WORDS = { etf: 'ETF', 'mutual fund': 'Mutual Fund', mutualfund: 'Mutual Fund',
+  'index fund': 'Index Fund', indexfund: 'Index Fund', lp: 'LP', 'l.p.': 'LP', 'limited partnership': 'LP',
+  ltd: 'Ltd', 'ltd.': 'Ltd', limited: 'Ltd', 'limited company': 'Ltd', sma: 'SMA', 'separate account': 'SMA' };
 function prdVehicle(word) {
   var w = prdText(word).toLowerCase();
-  if (w === 'etf') return 'ETF';
-  if (w === 'mutual fund' || w === 'mutualfund') return 'Mutual Fund';
-  if (PRD_SMA_VEHICLES.indexOf(w) !== -1) return 'SMA';
-  return '';
+  return Object.prototype.hasOwnProperty.call(PRD_VEHICLE_WORDS, w) ? PRD_VEHICLE_WORDS[w] : '';
 }
-function prdIsMutualFund(d) { return prdVehicle(d && d.vehicle) === 'Mutual Fund'; }
+/* whether a product's classes may have a letter (D232): a Mutual Fund's,
+   an Index Fund's, an LP's or a Ltd's */
+function prdHasLetters(d) { return PRD_LETTER_VEHICLES.indexOf(prdVehicle(d && d.vehicle)) !== -1; }
+function prdIsTracker(d) { return PRD_TRACKER_VEHICLES.indexOf(prdVehicle(d && d.vehicle)) !== -1; }
 /* a hedging as typed or served (D224): its percentage, null for none, NaN
    for one that is not a number - the words it was before read as the
    server reads them: Hedged 100, Unhedged 0, ISG Hedged 50 */
@@ -12058,9 +12069,9 @@ function prdProblems(d, ctx) {
     else if (w.length > PRD_MAX.word) out[f.key] = 'Keep the ' + f.label.toLowerCase() + ' to ' + PRD_MAX.word + ' characters.';
   });
   var vehicle = prdText(d.vehicle);
-  if (!vehicle) out.vehicle = 'Vehicle is needed: ETF, Mutual Fund or SMA.';
+  if (!vehicle) out.vehicle = 'Vehicle is needed: ' + PRD_VEHICLES_SAID + '.';
   else if (!prdVehicle(vehicle) && ['UCITS', 'ICAV'].indexOf(vehicle.toUpperCase()) === -1) {
-    out.vehicle = 'The vehicle ' + vehicle + ' is not one of ETF, Mutual Fund or SMA.';
+    out.vehicle = 'The vehicle ' + vehicle + ' is not one of ' + PRD_VEHICLES_SAID + '.';
   }
   if (d.category && ctx.categories && ctx.categories.indexOf(d.category) === -1) {
     out.category = 'The category ' + d.category + ' is not one the sleeves are built for.';
@@ -12075,11 +12086,11 @@ function prdProblems(d, ctx) {
 }
 /* the share classes' problems (D218), into *out*: the server's checks in
    miniature - an ISIN's shape, one class an ISIN and one product's, a
-   letter only on a Mutual Fund's, the hedging a percentage (D224), a fully
+   letter only on a fund's but an ETF's (D232), the hedging a percentage (D224), a fully
    hedged class's exposure its class currency, the codes and the lists, and none
    of a fund's boxes on an SMA */
 function prdClassProblems(d, ctx, out) {
-  var classes = d.classes || [], sma = prdIsSma(d), mf = prdIsMutualFund(d);
+  var classes = d.classes || [], sma = prdIsSma(d), mf = prdHasLetters(d);
   var held = (ctx && ctx.held) || {}, isins = {}, kinds = {};
   var many = classes.length > 1;
   if (!classes.length) { out.listings = 'A product has at least one share class: its cost and the rest.'; return; }
@@ -12096,7 +12107,7 @@ function prdClassProblems(d, ctx, out) {
     if (prdText(c.assetClass).length > PRD_MAX.word) out[box + 'assetClass'] = 'Keep the asset class' + of + ' to ' + PRD_MAX.word + ' characters.';
     var letter = prdText(c.shareClass);
     if (letter.length > PRD_MAX.shareClass) out[box + 'shareClass'] = 'Keep the share class' + of + ' to ' + PRD_MAX.shareClass + ' characters: the letter or letters the fund names it by, such as A or I.';
-    else if (letter && !mf && !sma) out[box + 'shareClass'] = 'Only a Mutual Fund has a share class letter: take it off, or make the vehicle Mutual Fund.';
+    else if (letter && !mf && !sma) out[box + 'shareClass'] = 'An ETF’s classes have no share class letter: take it off, or make the vehicle Mutual Fund, Index Fund, LP or Ltd.';
     if (prdText(c.income) && PRD_INCOMES.indexOf(prdText(c.income)) === -1) out[box + 'income'] = 'The income is ' + prdOr(PRD_INCOMES) + ', or blank.';
     /* the proportion hedged, 0 to 100% (D224) */
     var hedging = prdHedgeLevel(c.hedging);
@@ -18809,7 +18820,7 @@ var PRD_ACTION_WORDS = {
 function prdViewHtml(row) {
   var p = row.p, uses = usedIn(p.productId), sma = prdIsSma(p);
   var all = prdListingsOf(p), bench = prdSharedBenchmark(all);
-  var kind = sma ? 'SMA card' : prdVehicle(p.vehicle) === 'ETF' ? 'ETF card' : 'Mutual Fund card';
+  var kind = sma ? 'SMA card' : (prdVehicle(p.vehicle) || 'Mutual Fund') + ' card';
   var list = uses.map(function (u) {
     return '<div class="r"><b>' + esc(u.name) + ' · ' + money2(u.weight * 100) + '%</b>'
       + '<small>' + esc(u.variant) + ' · ' + esc(u.category) + '</small>'
@@ -18894,13 +18905,14 @@ function prdBenchCell(l) {
   return l.benchmark ? '<span class="prd-bm" title="' + esc(l.benchmark) + '">' + esc(l.benchmark) + '</span>' : '<span class="prd-none">none</span>';
 }
 /* the card's share classes (D218): a row each in their order, the first
-   held. The class letter is a Mutual Fund's, Replication an ETF's - or
+   held. The class letter is a Mutual Fund's, Index Fund's, LP's or Ltd's,
+   Replication an ETF's or an Index Fund's (D232) - or
    either where a class says one - and Benchmark a column only where the
    classes name different ones. */
 function prdClassesHtml(p, row, benchCol) {
   var all = prdListingsOf(p), classes = prdClassesOf(all, false);
   var some = function (k) { return classes.some(function (g) { return !!prdText(g.first[k]); }); };
-  var etf = prdVehicle(p.vehicle) === 'ETF', mf = prdVehicle(p.vehicle) === 'Mutual Fund';
+  var etf = prdIsTracker(p), mf = prdHasLetters(p);
   var hit = row.matched ? row.listing : null;
   var cols = [
     some('className') ? ['Name', function (l) { return l.className ? '<span class="prd-mn">' + esc(l.className) + '</span>' : '<span class="prd-none">—</span>'; }] : null,
@@ -19066,14 +19078,14 @@ function prdFieldHtml(f, d, probs) {
       + groups.map(function (g) { return '<option value="' + esc(g) + '"' + (d[f.key] === g ? ' selected' : '') + '>' + esc(g) + '</option>'; }).join('')
       + '</select>';
   } else if (f.kind === 'vehicle') {
-    /* ETF, Mutual Fund or SMA (D218): the vehicle picks the card */
+    /* one of PRD_VEHICLES (D218, D232): the vehicle picks the card */
     var vehicles = PRD_VEHICLES.slice();
     if (d[f.key] && vehicles.indexOf(d[f.key]) === -1) vehicles.push(d[f.key]);
     input = '<select id="' + id + '" data-prdf="' + f.key + '"' + invalid + '>'
       + '<option value=""' + (d[f.key] ? '' : ' selected') + '>Choose…</option>'
       + vehicles.map(function (v) { return '<option value="' + esc(v) + '"' + (d[f.key] === v ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('')
       + '</select>';
-    hint = '<small class="prd-hint">An SMA is listed under its mandate codes; only a Mutual Fund’s classes have letters.</small>';
+    hint = '<small class="prd-hint">An SMA is listed under its mandate codes; an ETF’s classes have no letters. An Index Fund tracks an index without trading on an exchange.</small>';
   } else {
     /* the words in use, offered as you type */
     var words = f.kind === 'word' ? ((repo.data.productVocabulary || {})[f.key] || []) : null;
@@ -19156,7 +19168,7 @@ function prdRowHeadHtml(kind, i, count, title, name, held, removable) {
    held: a class's boxes once, whatever it is listed on. A box only one kind
    has shows for that kind, or while it still holds something. */
 function prdClassesFormHtml(d, probs) {
-  var classes = d.classes, mf = prdIsMutualFund(d), etf = prdVehicle(d.vehicle) === 'ETF', many = classes.length > 1;
+  var classes = d.classes, mf = prdHasLetters(d), etf = prdIsTracker(d), many = classes.length > 1;
   var by = {};
   PRD_CLASS_FIELDS.forEach(function (f) { by[f.key] = f; });
   return '<div class="prd-lst" id="prdClasses">'
@@ -19308,7 +19320,7 @@ function prdFormHtml() {
   var moved = isNew ? [] : prdChanges(prd.original, d);
   var title = isNew ? (prdText(d.name) || 'New product') : prdText(d.name) || prd.original.name;
   var sma = prdIsSma(d);
-  var kind = sma ? 'SMA form' : prdVehicle(d.vehicle) === 'ETF' ? 'ETF form' : prdVehicle(d.vehicle) === 'Mutual Fund' ? 'Mutual Fund form' : 'Fund form';
+  var kind = sma ? 'SMA form' : prdVehicle(d.vehicle) ? prdVehicle(d.vehicle) + ' form' : 'Fund form';
   var start = '';
   if (isNew) {
     var options = prdLive().slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });

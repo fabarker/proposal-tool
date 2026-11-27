@@ -240,9 +240,9 @@ def test_a_mutual_fund_class_is_dealt_in_each_currency_with_no_exchange(store, t
         ('LU0000000037', 'I', 'GBP', 'GBP'), ('LU0000000045', 'A', 'EUR', 'MUL')]
     assert out['listings'][2]['exposureCurrency'] == 'GBP', 'a hedged class left blank is its class currency'
     assert products.listingLabel(out['listings'][1], out['listings']) == 'LU0000000011 · USD'
-    # a class letter is a Mutual Fund's alone
+    # a class letter is a fund's but an ETF's (D232)
     etf = _fund('ETF')
-    with pytest.raises(ValidationError, match='Only a Mutual Fund has a share class letter') as refused:
+    with pytest.raises(ValidationError, match="An ETF's and an SMA's classes have no share class letter") as refused:
         _list(etf, {'shareClass': 'A'})
     assert refused.value.field == 'listing0shareClass'
     with pytest.raises(ValidationError, match='Keep the share class'):
@@ -324,7 +324,7 @@ def test_the_vehicles_are_three_and_older_words_are_read(store, tmp_path):
     pid = _fund('ETF')
     assert _list(pid, {}, vehicle='separate account', category='Public Equity')['vehicle'] == 'SMA'
     assert _list(pid, {}, vehicle='mutual fund')['vehicle'] == 'Mutual Fund'
-    with pytest.raises(ValidationError, match='not one of ETF, Mutual Fund or SMA') as refused:
+    with pytest.raises(ValidationError, match='not one of ETF, Mutual Fund, Index Fund, LP, Ltd or SMA') as refused:
         _list(pid, {}, vehicle='Trust')
     assert refused.value.field == 'vehicle'
     # UCITS and ICAV are a fund: an ETF where the name says so, a UCITS
@@ -345,11 +345,47 @@ def test_the_vehicles_are_three_and_older_words_are_read(store, tmp_path):
                                          'now': 'ETF', 'ucits': 'Yes'}]
     assert any('Vehicle' in w or 'UCITS' in w for c in preview['changed'] for w in c['changeWords'])
     vocab = products.vocabulary()
-    assert vocab['vehicle'] == ['ETF', 'Mutual Fund', 'SMA'] and vocab['income'] == ['Distributing', 'Accumulating']
+    assert vocab['vehicle'] == ['ETF', 'Mutual Fund', 'Index Fund', 'LP', 'Ltd', 'SMA'] and vocab['income'] == ['Distributing', 'Accumulating']
     assert vocab['replication'] == ['Physical', 'Sampled', 'Synthetic'] and vocab['ukReporting'] == ['Yes', 'No']
     assert vocab['ucits'] == ['Yes', 'No'] and 'regulation' not in vocab
     assert 'Ireland' in products.vocabulary()['domicile'] or _list(pid, {'domicile': 'IE'}) and \
         'Ireland' in products.vocabulary()['domicile']
+
+
+
+def test_an_index_fund_an_lp_and_a_ltd_are_vehicles(store, tmp_path):
+    """A fund that tracks an index without trading on an exchange is an Index
+    Fund, and a limited partnership or company an LP or a Ltd (D232), however
+    a file spells them: each a fund, its classes with a letter if it has one,
+    an Index Fund's with a replication. The page reads them as the server does."""
+    pid, cost = _fund('ETF'), 0.1
+    for word, vehicle in (('Index Fund', 'Index Fund'), ('index fund', 'Index Fund'), ('LP', 'LP'),
+                          ('Limited Partnership', 'LP'), ('L.P.', 'LP'), ('Ltd', 'Ltd'), ('limited', 'Ltd'),
+                          ('Limited Company', 'Ltd')):
+        cost = round(cost + 0.01, 2)
+        out = _list(pid, {'shareClass': 'A', 'productCost': cost}, vehicle=word)
+        assert (out['vehicle'], out['listings'][0]['shareClass']) == (vehicle, 'A'), word
+        assert not products.isSma(out)
+    out = _list(pid, {'replication': 'Physical'}, vehicle='Index Fund')
+    assert out['listings'][0]['replication'] == 'Physical'
+    rows = _rowsFor(pid, [dict(ETF[0], Vehicle='LP')])
+    byId, _ = products.readFile(_file(tmp_path, rows))
+    assert byId[pid]['vehicle'] == 'LP'
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'generator', 'js', 'repository.js')
+    with open(path, encoding='utf-8') as fh:
+        source = fh.read()
+    start = source.index('/* the vehicles (D218, D232)')
+    page = source[start:source.index('/* a hedging as typed or served', start)]
+    probe = ("function prdText(v) { return v == null ? '' : String(v).trim(); }\n" + page
+             + "\nconsole.log(JSON.stringify([prdVehicle('limited partnership'), prdVehicle('L.P.'), "
+             + "prdVehicle('index fund'), prdVehicle('Ltd'), prdVehicle('Trust'), "
+             + "prdHasLetters({vehicle: 'LP'}), prdHasLetters({vehicle: 'ETF'}), "
+             + "prdIsTracker({vehicle: 'Index Fund'}), prdIsTracker({vehicle: 'Ltd'})]));")
+    got = json.loads(subprocess.run([node, '-e', probe], capture_output=True, text=True, check=True).stdout)
+    assert got == ['LP', 'LP', 'Index Fund', 'Ltd', '', True, False, True, False]
 
 
 def test_an_sma_keeps_its_rows_and_refuses_the_levels_fields(store):

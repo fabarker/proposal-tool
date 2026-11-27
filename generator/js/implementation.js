@@ -36,6 +36,7 @@ function money(v) {
 function pillFor(v) {
   var map = { Active: 'p-act', Passive: 'p-pas', SMA: 'p-sma', ETF: 'p-etf',
               'Mutual Fund': 'p-mf', UCITS: 'p-ucits', ICAV: 'p-icav',
+              'Index Fund': 'p-ucits', LP: 'p-icav', Ltd: 'p-icav',
               Internal: 'p-int', External: 'p-ext' };
   return '<span class="pill ' + (map[v] || 'p-pas') + '">' + App.esc(v) + '</span>';
 }

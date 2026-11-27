@@ -319,11 +319,22 @@ WORDS = ['assetClass', 'style', 'vehicle', 'source', 'liquidity', 'exposureCurre
 #: the figures, all percentages but the minimum, which is currency units
 _PERCENT = ('productCost', 'distributionYield')
 
-#: The three vehicles (D218): a product is one of these, and the vehicle
-#: picks its card. A file may write SMA as Separate Account, as Poros does.
-VEHICLES = ('ETF', 'Mutual Fund', 'SMA')
+#: The vehicles (D218, D232): a product is one of these, and the vehicle
+#: picks its card - an SMA's, else a fund's. An Index Fund is a fund that
+#: tracks an index without trading on an exchange; an LP a limited
+#: partnership, a Ltd a limited company. A file may write SMA as Separate
+#: Account, as Poros does, and the others in full.
+VEHICLES = ('ETF', 'Mutual Fund', 'Index Fund', 'LP', 'Ltd', 'SMA')
 _VEHICLE_WORDS = {'etf': 'ETF', 'mutual fund': 'Mutual Fund', 'mutualfund': 'Mutual Fund',
+                  'index fund': 'Index Fund', 'indexfund': 'Index Fund',
+                  'lp': 'LP', 'l.p.': 'LP', 'limited partnership': 'LP',
+                  'ltd': 'Ltd', 'ltd.': 'Ltd', 'limited': 'Ltd', 'limited company': 'Ltd',
                   'sma': 'SMA', 'separate account': 'SMA'}
+#: the vehicles whose share classes may have a letter (D232): all but an
+#: ETF's and an SMA's
+LETTER_VEHICLES = ('Mutual Fund', 'Index Fund', 'LP', 'Ltd')
+#: the vehicles a list of them is written as in a refusal
+_VEHICLES_SAID = 'ETF, Mutual Fund, Index Fund, LP, Ltd or SMA'
 #: The vehicles a file wrote before the levels (UCITS, ICAV): read as a fund
 #: - an ETF where the name says ETF, else a Mutual Fund - a UCITS one's
 #: classes UCITS compliant (D220); an ICAV may be either, so says nothing.
@@ -1114,20 +1125,20 @@ def clean(fields, feeGroups=None, strict=True, categories=None) -> dict:
 
 
 def _vehicle(value, name, strict):
-    """A product's vehicle as stored (D218): ETF, Mutual Fund or SMA, however
+    """A product's vehicle as stored (D218, D232): one of VEHICLES, however
     a file spells it (Separate Account is an SMA), with what a UCITS or ICAV
     vehicle says of its classes' UCITS compliance (D220) - (vehicle, ucits)."""
     word = _text(value)
     if not word:
         if strict:
-            raise ValidationError('vehicle', 'Vehicle is needed: ETF, Mutual Fund or SMA.')
+            raise ValidationError('vehicle', 'Vehicle is needed: {}.'.format(_VEHICLES_SAID))
         return '', ''
     if word.lower() in _VEHICLE_WORDS:
         return _VEHICLE_WORDS[word.lower()], ''
     if word.upper() in REGULATED_VEHICLES:
         return _fundVehicle(name), _ucitsOf(word)
-    raise ValidationError('vehicle', 'The vehicle {!r} is not one of ETF, Mutual Fund or SMA. Separate '
-                                     'Account is read as SMA, and UCITS or ICAV as a fund.'.format(word))
+    raise ValidationError('vehicle', 'The vehicle {!r} is not one of {}. Separate Account is read as '
+                                     'SMA, and UCITS or ICAV as a fund.'.format(word, _VEHICLES_SAID))
 
 
 def _ucitsOf(regulation) -> str:
@@ -1239,10 +1250,10 @@ def _listings(value, record, strict=True, bare=False, ucits='') -> list:
         if strict and len(letter) > SHARE_CLASS_MAX:
             raise ValidationError(box('shareClass'), 'Keep the share class{} to {} characters: the letter '
                                   'or letters the fund names it by, such as A or I.'.format(where, SHARE_CLASS_MAX))
-        if letter and vehicle != 'Mutual Fund':
-            raise ValidationError(box('shareClass'), 'Only a Mutual Fund has a share class letter: {} is '
-                                  '{}. Take the share class{} off, or make the vehicle Mutual '
-                                  'Fund.'.format(name, _an(vehicle), where))
+        if letter and vehicle not in LETTER_VEHICLES:
+            raise ValidationError(box('shareClass'), 'An ETF\'s and an SMA\'s classes have no share class '
+                                  'letter: {} is {}. Take the share class{} off, or make the vehicle '
+                                  'Mutual Fund, Index Fund, LP or Ltd.'.format(name, _an(vehicle), where))
         listing['shareClass'] = letter
         listing['income'] = _income(income, box('income'), where) or None
         listing['hedging'], listing['isg'] = _hedging(given.get('hedging'), given.get('isg'), record, sma,

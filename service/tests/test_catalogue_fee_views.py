@@ -121,9 +121,9 @@ process.stdout.write(JSON.stringify(out));
     assert 'not on the fee card' in got['group']['feeGroup']
     assert 'Choose a fee group' in got['noGroup']['feeGroup']
     assert list(got['income']) == ['class0income']
-    assert 'Only a Mutual Fund' in got['letter']['class0shareClass']
+    assert 'have no share class letter' in got['letter']['class0shareClass']
     assert got['word'] == {'style': 'Style is needed.'}
-    assert 'ETF, Mutual Fund or SMA' in got['vehicle']['vehicle']
+    assert 'ETF, Mutual Fund, Index Fund, LP, Ltd or SMA' in got['vehicle']['vehicle']
     assert 'not a number' in got['minimum']['class0minimumInvestment']
     assert 'is not one' in got['isin']['class0isin']
     assert 'is a country' in got['domicile']['class0domicile']
@@ -464,7 +464,7 @@ process.stdout.write(JSON.stringify(out));
     assert 'Classes 1 and 2 have the same ISIN' in got['twoIsins']['class1isin']
     assert 'Classes 1 and 2 are the same share class' in got['twins']['class1']
     assert 'Class 2 has no listing' in got['bare']['class1']
-    assert 'Only a Mutual Fund' in got['etfLetter']['class0shareClass']
+    assert 'have no share class letter' in got['etfLetter']['class0shareClass']
     assert got['split'] == [3, [0, 1, 2]], 'an SMA\'s codes are a class each'
     assert got['smaIsg'] == {}
     assert 'no class currency' in got['smaLeft']['class2classCurrency'], 'a fund\'s value left on an SMA is shown to clear'
@@ -480,7 +480,9 @@ def test_the_card_and_the_form_follow_the_vehicle_and_the_listings_move():
     source = _source()
     assert 'data-prdcgrip' in source and 'data-prdkgrip' in source and "'cardmove'" in source and "'clsmove'" in source
     assert "'/scenario/repository/products/order'" in source and 'Rank USD' not in source
-    for kind in ("'ETF card'", "'Mutual Fund card'", "'SMA card'", "'SMA form'", "'ETF form'", "'Mutual Fund form'"):
+    # the card and the form are titled by the vehicle (D232): 'LP card', 'Index Fund form'
+    for kind in ("'SMA card'", "(prdVehicle(p.vehicle) || 'Mutual Fund') + ' card'", "'SMA form'",
+                 "prdVehicle(d.vehicle) + ' form'"):
         assert kind in source, kind
     assert "act === 'lstremove' && prd.draft" in source and "act === 'lstadd' && prd.draft" in source
     assert "act === 'clsadd' && prd.draft" in source and "act === 'clsremove' && prd.draft" in source
