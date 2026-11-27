@@ -7235,8 +7235,9 @@ function catCellHtml(row, c, sorted) {
   }
 }
 /* the listings of an opened line, a row each (D207), by share class in the
-   classes' order (D218) - 'class 1 · held', 'class 1', 'class 2' - each
-   with its own class's values; a click opens the card as the line's does */
+   classes' order (D218), each named by its class's name - an SMA
+   mandate's - or, with none, 'class 1 · held', 'class 1', 'class 2' (D231);
+   each with its own class's values; a click opens the card as the line's does */
 function catSubRowsHtml(row, cols, band) {
   var p = row.p, sma = catIsSma(p), out = [];
   catClasses(p).forEach(function (g, ci) {
@@ -7244,13 +7245,14 @@ function catSubRowsHtml(row, cols, band) {
   });
   return out.map(function (x, at) {
     var l = x.l;
-    var tag = (sma ? 'code ' : 'class ') + (x.ci + 1) + (at === 0 ? ' · held' : !sma && x.first && catHedging(l) ? ' · ' + catHedging(l) + ' hedged' : '');
+    var where = (sma ? 'code ' : 'class ') + (x.ci + 1) + (at === 0 ? ' · held' : !sma && x.first && catHedging(l) ? ' · ' + catHedging(l) + ' hedged' : '');
+    var named = String(l.className || '').trim(), tag = named || where;
     var net = (typeof l.distributionYield === 'number' && typeof l.productCost === 'number') ? l.distributionYield - l.productCost : null;
     return '<tr class="cat-sub' + (l === row.listing ? ' held' : '') + (x.first && x.ci ? ' cls1' : '') + '" data-catrow="' + esc(p.productId) + '"'
       + (band === null ? '' : ' data-catband="' + esc(band) + '"') + '><td class="pinc"></td>'
       + cols.map(function (c) {
           var k = c.key, txt = function (y) { return '<td class="mute">' + esc(y || '—') + '</td>'; };
-          if (k === 'name') return '<td class="nm sub' + (at === 0 ? ' r1' : '') + '">' + esc(tag) + '</td>';
+          if (k === 'name') return '<td class="nm sub' + (at === 0 ? ' r1' : '') + '"' + (named ? ' title="' + esc(named + ' \u00b7 ' + where) + '"' : '') + '>' + esc(tag) + '</td>';
           if (k === 'ident') return '<td class="tk">' + (sma && l.code ? '<b>' + esc(l.code) + '</b>' : esc(catIdent(l))) + '</td>';
           if (k === 'cusip' || k === 'sedol' || k === 'ric' || k === 'code') return '<td class="tk">' + esc(l[k] || '—') + '</td>';
           if (k === 'income') return txt(PRD_INCOME_SHORT[l.income] || l.income);
