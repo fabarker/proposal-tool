@@ -79,7 +79,8 @@ def test_the_product_form_refuses_what_the_server_refuses_naming_the_same_field(
         'commas': {'minimumInvestment': '5,000,000'},
         'isin': {'isin': 'IE00B4L5Y98'},
         'isinOk': {'isin': 'ie00b4l5y983'},
-        'domicile': {'domicile': 'Ireland'},
+        'domicile': {'domicile': 'Republic of ' + 'Ireland ' * 8},
+        'domicileNamed': {'domicile': 'Luxembourg'},
         'ccy': {'classCurrency': 'Sterling'},
         'hedgedElsewhere': {'hedging': 'Hedged', 'classCurrency': 'GBP', 'exposureCurrency': 'USD'},
         'hedgedFilled': {'hedging': 'Hedged', 'classCurrency': 'GBP', 'exposureCurrency': ''},
@@ -125,7 +126,8 @@ process.stdout.write(JSON.stringify(out));
     assert 'ETF, Mutual Fund or SMA' in got['vehicle']['vehicle']
     assert 'not a number' in got['minimum']['class0minimumInvestment']
     assert 'is not one' in got['isin']['class0isin']
-    assert 'two-letter country code' in got['domicile']['class0domicile']
+    assert 'is a country' in got['domicile']['class0domicile']
+    assert 'class0domicile' not in got['domicileNamed'], 'a domicile is the country\'s name (D227)'
     assert 'three letters' in got['ccy']['class0classCurrency']
     assert 'gives GBP exposure, not USD' in got['hedgedElsewhere']['class0exposureCurrency']
     assert list(got['replication']) == ['class0replication'] and list(got['uk']) == ['class0ukReporting']

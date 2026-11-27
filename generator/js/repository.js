@@ -617,7 +617,9 @@ var PRD_CLASS_FIELDS = [
   { key: 'isg', label: 'ISG', short: 'ISG', kind: 'tick', optional: true },
   { key: 'classCurrency', label: 'Class currency', short: 'Ccy', kind: 'code3', optional: true, fund: true },
   { key: 'exposureCurrency', label: 'Exposure currency', short: 'Exp.', kind: 'word' },
-  { key: 'domicile', label: 'Domicile', short: 'Dom.', kind: 'country', optional: true, fund: true },
+  /* the country's name, Luxembourg; the server reads a code or another name
+     for it as the name (D227) */
+  { key: 'domicile', label: 'Domicile', short: 'Dom.', kind: 'text', optional: true, fund: true },
   /* whether the class is a UCITS (D220): Yes, No or blank */
   { key: 'ucits', label: 'UCITS compliant', short: 'UCITS', kind: 'uk', optional: true, fund: true },
   { key: 'replication', label: 'Replication', short: 'Replication', kind: 'replication', optional: true, fund: true },
@@ -652,7 +654,7 @@ var PRD_REPLICATIONS = ['Physical', 'Sampled', 'Synthetic'];
 var PRD_UK = ['Yes', 'No'];
 var PRD_MAX = { productId: 80, name: 120, word: 60, note: 240, shareClass: 20, exchange: 40,
                 productCost: 10, distributionYield: 50, code: 40, className: 120, benchmark: 200,
-                ric: 40, cusip: 64 };
+                ric: 40, cusip: 64, domicile: 60 };
 /* a separate account (D197): its vehicle says so. A class's or a
    mandate's hedging is the proportion hedged, 0 to 100% (D224), and
    either may be ticked ISG (D226). */
@@ -969,7 +971,7 @@ function prdClassProblems(d, ctx, out) {
         + ': leave it blank to fill it in, or give the class a lower hedging.';
     }
     var dom = prdText(c.domicile);
-    if (dom && !/^[A-Za-z]{2}$/.test(dom)) out[box + 'domicile'] = 'The domicile' + of + ' is a two-letter country code, such as IE, LU, GB or US.';
+    if (dom.length > PRD_MAX.domicile) out[box + 'domicile'] = 'The domicile' + of + ' is a country: give its name, such as Ireland or Luxembourg.';
     if (prdText(c.ucits) && PRD_UK.indexOf(prdText(c.ucits)) === -1) out[box + 'ucits'] = 'UCITS compliant is Yes or No, or blank.';
     if (prdText(c.replication) && PRD_REPLICATIONS.indexOf(prdText(c.replication)) === -1) out[box + 'replication'] = 'The replication is ' + prdOr(PRD_REPLICATIONS) + ', or blank.';
     if (prdText(c.ukReporting) && PRD_UK.indexOf(prdText(c.ukReporting)) === -1) out[box + 'ukReporting'] = 'UK reporting is Yes or No, or blank.';
@@ -7967,7 +7969,7 @@ function prdBoxHtml(d, key, f, value, probs, cls, bare) {
     input = '<input id="prdF-' + key + '" type="text" data-prdf="' + key + '" autocomplete="off" spellcheck="false"'
       + ' value="' + esc(value) + '"' + invalid + named + (PRD_LISTED[f.key] ? ' list="prdL-' + f.key + '"' : '')
       + (PRD_FIGURES[f.key] || f.kind === 'hedge' ? ' inputmode="decimal"' : '')
-      + (f.optional ? ' placeholder="' + (f.key === 'classCurrency' ? 'USD' : f.key === 'domicile' ? 'IE' : f.key === 'isin' ? 'IE00B4L5Y983' : 'None') + '"' : '') + '>';
+      + (f.optional ? ' placeholder="' + (f.key === 'classCurrency' ? 'USD' : f.key === 'domicile' ? 'Ireland' : f.key === 'isin' ? 'IE00B4L5Y983' : 'None') + '"' : '') + '>';
   }
   return '<div class="prd-f' + (cls ? ' ' + cls : '') + '">'
     + (bare ? '' : '<label for="prdF-' + key + '">' + esc(f.label) + (f.unit ? ' <small>' + f.unit + '</small>' : '') + '</label>')

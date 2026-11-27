@@ -47,8 +47,9 @@ thirty-three columns of the desk's product data sheet (D225):
   `100%` and `Yes`. `ClassCurrency` is the class's currency, the one it is
   priced in; a sheet may head it `Pricing Currency` (D226).
   `ExposureCurrency` is the exposure after hedging: a
-  class 100% hedged to GBP gives GBP. `Domicile` is a
-  two-letter country code, and `UCITSCompliant` and `UKReporting` are each
+  class 100% hedged to GBP gives GBP. `Domicile` is the country's name,
+  stored as `Luxembourg` whether the sheet says `LUXEMBOURG`, `Luxembourg`
+  or `LU` (D227); a name that is no country is refused. `UCITSCompliant` and `UKReporting` are each
   Yes, No or blank. `TotalExpenseRatio` (the cost), `Yield` and the
   minimum belong to the class. A class with no ISIN yet is the set of a product's rows that agree
   on all of these.

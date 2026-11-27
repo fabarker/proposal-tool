@@ -138,7 +138,7 @@ def test_a_product_is_added_with_its_stamps_and_a_first_version(store):
     ({'income': 'Distribution'}, 'income', 'not one of'),
     ({'shareClass': 'A'}, 'shareClass', 'Only a Mutual Fund'),
     ({'vehicle': 'Trust'}, 'vehicle', 'not one of ETF, Mutual Fund or SMA'),
-    ({'domicile': 'LUX'}, 'domicile', 'not a country code'),
+    ({'domicile': 'LUX'}, 'domicile', 'is not a country'),
     ({'isin': 'IE00B4L5Y98'}, 'isin', 'not one'),
     ({'style': ''}, 'style', 'Style is needed'),
     ({'minimumInvestment': '5m'}, 'minimumInvestment', 'not a number'),

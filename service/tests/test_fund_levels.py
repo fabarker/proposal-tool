@@ -277,8 +277,8 @@ def test_a_hedged_class_gives_its_class_currencys_exposure(store, tmp_path):
 
 
 @pytest.mark.parametrize('over, field, words', [
-    ({'domicile': 'LUX'}, 'domicile', 'not a country code'),
-    ({'domicile': 'XX'}, 'domicile', 'not a country code'),
+    ({'domicile': 'LUX'}, 'domicile', 'is not a country'),
+    ({'domicile': 'XX'}, 'domicile', 'is not a country'),
     ({'isin': 'IE00B4L5Y98'}, 'isin', 'not one: two letters'),
     ({'classCurrency': 'GBPX'}, 'classCurrency', 'not a currency code'),
     ({'replication': 'Swap'}, 'replication', 'not one of Physical, Sampled or Synthetic'),
@@ -307,7 +307,7 @@ def test_values_are_read_as_people_type_them(store):
                       'sedol': 'b0ybkj7', 'cusip': '037833100'})
     one = out['listings'][0]
     assert (one['isin'], one['domicile'], one['replication'], one['ukReporting'], one['income'],
-            one['classCurrency']) == ('IE0000000021', 'IE', 'Physical', 'Yes', 'Distributing', 'USD')
+            one['classCurrency']) == ('IE0000000021', 'Ireland', 'Physical', 'Yes', 'Distributing', 'USD')
     assert (one['ucits'], one['sedol'], one['cusip']) == ('Yes', 'B0YBKJ7', '037833100')
     assert _list(pid, {'ucits': False})['ucits'] == 'No'
     assert out['isin'] == 'IE0000000021', 'the first listing\'s values are at the top'
@@ -347,7 +347,8 @@ def test_the_vehicles_are_three_and_older_words_are_read(store, tmp_path):
     assert vocab['vehicle'] == ['ETF', 'Mutual Fund', 'SMA'] and vocab['income'] == ['Distributing', 'Accumulating']
     assert vocab['replication'] == ['Physical', 'Sampled', 'Synthetic'] and vocab['ukReporting'] == ['Yes', 'No']
     assert vocab['ucits'] == ['Yes', 'No'] and 'regulation' not in vocab
-    assert 'IE' in products.vocabulary()['domicile'] or _list(pid, {'domicile': 'IE'}) and 'IE' in products.vocabulary()['domicile']
+    assert 'Ireland' in products.vocabulary()['domicile'] or _list(pid, {'domicile': 'IE'}) and \
+        'Ireland' in products.vocabulary()['domicile']
 
 
 def test_an_sma_keeps_its_rows_and_refuses_the_levels_fields(store):
@@ -438,7 +439,7 @@ def test_the_file_before_the_levels_still_imports_and_keeps_what_it_cannot_say(s
     products.importFile(path, _upload(path), user='alice', base=preview['revision'])
     after = products.entry(pid)
     assert after['productCost'] == 0.99
-    assert (after['listings'][0]['shareClass'], after['listings'][0]['domicile'], after['listings'][0]['ukReporting']) == ('I', 'LU', 'Yes')
+    assert (after['listings'][0]['shareClass'], after['listings'][0]['domicile'], after['listings'][0]['ukReporting']) == ('I', 'Luxembourg', 'Yes')
     assert after['listings'][1]['issueCurrency'] == 'USD' and after['listings'][1]['shareClass'] == 'I'
 
 
@@ -694,7 +695,7 @@ def test_the_register_keeps_the_class_and_reads_a_line_from_before_as_now(store)
     kept = next(i for g in picture for i in g['items'] if i['productId'] == pid)
     assert (kept['isin'], kept['income'], kept['shareClass'], kept['ukReporting'], kept['domicile'],
             kept['ucits'], kept['classCurrency'], kept['sedol']) == (
-        'LU0000000011', 'Accumulating', 'I', 'Yes', 'LU', 'Yes', 'GBP', 'B0YBKJ7')
+        'LU0000000011', 'Accumulating', 'I', 'Yes', 'Luxembourg', 'Yes', 'GBP', 'B0YBKJ7')
     assert 'ticker' not in kept and 'regulation' not in kept
     assert 'productCost' not in kept and 'minimumInvestment' not in kept
     assert proposalRegister._heldAsNow(kept) == kept, 'a line from the levels on reads as kept'
@@ -973,6 +974,34 @@ def test_the_headings_of_the_desks_product_table_are_read(store, tmp_path):
                            'ExposureCurrency': 'CHF'}])
     with pytest.raises(products.BadCatalogue, match='run in one currency'):
         products.readFile(_file(tmp_path, rows, 'both.csv'))
+
+
+def test_a_domicile_is_the_countrys_name(store, tmp_path):
+    """A domicile is stored and shown as the country's name (D227): a sheet
+    may give it in capitals, by another name or by its code; a name that is
+    no country is refused; one stored as its code reads as the name."""
+    pid = _fund('Mutual Fund')
+    for given, name in (('LUXEMBOURG', 'Luxembourg'), ('lu', 'Luxembourg'), ('Republic of Ireland', 'Ireland'),
+                        ('UK', 'United Kingdom'), ('the netherlands', 'Netherlands'), ('Cote d\'Ivoire', 'Côte d\'Ivoire'),
+                        ('Cayman Islands', 'Cayman Islands'), ('-', '')):
+        # each save moves the cost too, so two givings of one country both save
+        given = {'domicile': given, 'productCost': 0.1 + len(given) / 1000.0 + len(name) / 100000.0}
+        assert _list(pid, given)['listings'][0]['domicile'] == name, given
+    with pytest.raises(ValidationError, match='is not a country') as refused:
+        _list(pid, {'domicile': 'Luxemborg'})
+    assert refused.value.field == 'listing0domicile'
+    import json as _json
+    _list(pid, {'domicile': 'Ireland'})
+    conn = sleeveRepo.connection()
+    try:
+        row = conn.execute('SELECT listings FROM products WHERE productId = ?', (pid,)).fetchone()
+        old = [dict(l, domicile='IE') for l in _json.loads(row['listings'])]
+        conn.execute('UPDATE products SET listings = ? WHERE productId = ?', (_json.dumps(old), pid))
+        conn.commit()
+    finally:
+        conn.close()
+    products.reload()
+    assert products.entry(pid)['listings'][0]['domicile'] == 'Ireland'
 
 
 def test_a_funds_share_class_may_be_hedged_by_isg(store, tmp_path):

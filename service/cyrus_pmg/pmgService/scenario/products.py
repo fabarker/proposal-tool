@@ -379,17 +379,273 @@ NOTE_MAX = 240
 PERCENT_MAX = {'productCost': 10.0, 'distributionYield': 50.0}
 #: the shape of an ISIN: two letters, nine letters or digits, a check digit
 ISIN_RE = re.compile(r'^[A-Z]{2}[A-Z0-9]{9}[0-9]$')
-#: the country codes a domicile may be (ISO 3166-1 alpha-2)
-COUNTRY_CODES = frozenset("""
-AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV
-BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES
-ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE
-IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY
-MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU
-NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM
-SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE
-VG VI VN VU WF WS YE YT ZA ZM ZW
-""".split())
+#: every country by its two-letter code (ISO 3166-1 alpha-2) and the name a
+#: domicile is stored and shown under (D227); an exchange's country is
+#: stored as its code (D225)
+COUNTRIES = dict(line.split(' ', 1) for line in """
+AD Andorra
+AE United Arab Emirates
+AF Afghanistan
+AG Antigua and Barbuda
+AI Anguilla
+AL Albania
+AM Armenia
+AO Angola
+AQ Antarctica
+AR Argentina
+AS American Samoa
+AT Austria
+AU Australia
+AW Aruba
+AX Åland Islands
+AZ Azerbaijan
+BA Bosnia and Herzegovina
+BB Barbados
+BD Bangladesh
+BE Belgium
+BF Burkina Faso
+BG Bulgaria
+BH Bahrain
+BI Burundi
+BJ Benin
+BL Saint Barthélemy
+BM Bermuda
+BN Brunei
+BO Bolivia
+BQ Caribbean Netherlands
+BR Brazil
+BS Bahamas
+BT Bhutan
+BV Bouvet Island
+BW Botswana
+BY Belarus
+BZ Belize
+CA Canada
+CC Cocos (Keeling) Islands
+CD Democratic Republic of the Congo
+CF Central African Republic
+CG Republic of the Congo
+CH Switzerland
+CI Côte d'Ivoire
+CK Cook Islands
+CL Chile
+CM Cameroon
+CN China
+CO Colombia
+CR Costa Rica
+CU Cuba
+CV Cabo Verde
+CW Curaçao
+CX Christmas Island
+CY Cyprus
+CZ Czechia
+DE Germany
+DJ Djibouti
+DK Denmark
+DM Dominica
+DO Dominican Republic
+DZ Algeria
+EC Ecuador
+EE Estonia
+EG Egypt
+EH Western Sahara
+ER Eritrea
+ES Spain
+ET Ethiopia
+FI Finland
+FJ Fiji
+FK Falkland Islands
+FM Micronesia
+FO Faroe Islands
+FR France
+GA Gabon
+GB United Kingdom
+GD Grenada
+GE Georgia
+GF French Guiana
+GG Guernsey
+GH Ghana
+GI Gibraltar
+GL Greenland
+GM Gambia
+GN Guinea
+GP Guadeloupe
+GQ Equatorial Guinea
+GR Greece
+GS South Georgia and the South Sandwich Islands
+GT Guatemala
+GU Guam
+GW Guinea-Bissau
+GY Guyana
+HK Hong Kong
+HM Heard Island and McDonald Islands
+HN Honduras
+HR Croatia
+HT Haiti
+HU Hungary
+ID Indonesia
+IE Ireland
+IL Israel
+IM Isle of Man
+IN India
+IO British Indian Ocean Territory
+IQ Iraq
+IR Iran
+IS Iceland
+IT Italy
+JE Jersey
+JM Jamaica
+JO Jordan
+JP Japan
+KE Kenya
+KG Kyrgyzstan
+KH Cambodia
+KI Kiribati
+KM Comoros
+KN Saint Kitts and Nevis
+KP North Korea
+KR South Korea
+KW Kuwait
+KY Cayman Islands
+KZ Kazakhstan
+LA Laos
+LB Lebanon
+LC Saint Lucia
+LI Liechtenstein
+LK Sri Lanka
+LR Liberia
+LS Lesotho
+LT Lithuania
+LU Luxembourg
+LV Latvia
+LY Libya
+MA Morocco
+MC Monaco
+MD Moldova
+ME Montenegro
+MF Saint Martin
+MG Madagascar
+MH Marshall Islands
+MK North Macedonia
+ML Mali
+MM Myanmar
+MN Mongolia
+MO Macao
+MP Northern Mariana Islands
+MQ Martinique
+MR Mauritania
+MS Montserrat
+MT Malta
+MU Mauritius
+MV Maldives
+MW Malawi
+MX Mexico
+MY Malaysia
+MZ Mozambique
+NA Namibia
+NC New Caledonia
+NE Niger
+NF Norfolk Island
+NG Nigeria
+NI Nicaragua
+NL Netherlands
+NO Norway
+NP Nepal
+NR Nauru
+NU Niue
+NZ New Zealand
+OM Oman
+PA Panama
+PE Peru
+PF French Polynesia
+PG Papua New Guinea
+PH Philippines
+PK Pakistan
+PL Poland
+PM Saint Pierre and Miquelon
+PN Pitcairn Islands
+PR Puerto Rico
+PS Palestine
+PT Portugal
+PW Palau
+PY Paraguay
+QA Qatar
+RE Réunion
+RO Romania
+RS Serbia
+RU Russia
+RW Rwanda
+SA Saudi Arabia
+SB Solomon Islands
+SC Seychelles
+SD Sudan
+SE Sweden
+SG Singapore
+SH Saint Helena
+SI Slovenia
+SJ Svalbard and Jan Mayen
+SK Slovakia
+SL Sierra Leone
+SM San Marino
+SN Senegal
+SO Somalia
+SR Suriname
+SS South Sudan
+ST São Tomé and Príncipe
+SV El Salvador
+SX Sint Maarten
+SY Syria
+SZ Eswatini
+TC Turks and Caicos Islands
+TD Chad
+TF French Southern Territories
+TG Togo
+TH Thailand
+TJ Tajikistan
+TK Tokelau
+TL Timor-Leste
+TM Turkmenistan
+TN Tunisia
+TO Tonga
+TR Türkiye
+TT Trinidad and Tobago
+TV Tuvalu
+TW Taiwan
+TZ Tanzania
+UA Ukraine
+UG Uganda
+UM United States Minor Outlying Islands
+US United States
+UY Uruguay
+UZ Uzbekistan
+VA Vatican City
+VC Saint Vincent and the Grenadines
+VE Venezuela
+VG British Virgin Islands
+VI US Virgin Islands
+VN Vietnam
+VU Vanuatu
+WF Wallis and Futuna
+WS Samoa
+YE Yemen
+YT Mayotte
+ZA South Africa
+ZM Zambia
+ZW Zimbabwe
+""".strip().split('\n'))
+COUNTRY_CODES = frozenset(COUNTRIES)
+#: other names a sheet may give a domicile, lower-cased without accents
+_COUNTRY_ALIASES = {
+    'uk': 'GB', 'great britain': 'GB', 'britain': 'GB', 'united kingdom of great britain and northern ireland': 'GB',
+    'usa': 'US', 'u.s.': 'US', 'u.s.a.': 'US', 'united states of america': 'US', 'america': 'US',
+    'republic of ireland': 'IE', 'eire': 'IE', 'grand duchy of luxembourg': 'LU',
+    'the netherlands': 'NL', 'holland': 'NL', 'czech republic': 'CZ', 'turkey': 'TR', 'korea': 'KR',
+    'republic of korea': 'KR', 'swaziland': 'SZ', 'ivory coast': 'CI', 'macau': 'MO', 'vatican': 'VA',
+    'holy see': 'VA', 'russian federation': 'RU', 'viet nam': 'VN', 'cape verde': 'CV', 'burma': 'MM',
+    'the bahamas': 'BS', 'the gambia': 'GM', 'east timor': 'TL', 'hong kong sar': 'HK', 'macao sar': 'MO',
+    'uae': 'AE', 'cayman': 'KY', 'bvi': 'VG', 'isle of jersey': 'JE', 'bailiwick of jersey': 'JE',
+    'bailiwick of guernsey': 'GG', 'principality of liechtenstein': 'LI', 'channel islands': None,
+}
 
 #: what a revision's action can say
 ACTIONS = ['seeded', 'created', 'updated', 'imported', 'withdrawn', 'restored', 'reverted', 'upgraded']
@@ -1271,9 +1527,49 @@ def _currencyCode(value, key, strict=True, where='') -> str:
 
 
 def _domicile(value, key, strict=True, where='') -> str:
-    """A domicile as stored (D218): a two-letter country code in upper case,
-    checked on a save or an import, or '' for none."""
-    return _country(value, key, 'domicile', strict, where)
+    """A domicile as stored (D227): the country's name - Luxembourg - given
+    as its name in any case, another name for it (UK, USA) or its
+    two-letter code; checked on a save or an import, or '' for none."""
+    text = _text(value)
+    if text in (NO_TICKER, '-', '–'):
+        return ''
+    name = countryName(text)
+    if name or not text:
+        return name
+    if strict:
+        raise ValidationError(key, 'The domicile{} {!r} is not a country: give its name, such as Ireland, '
+                                   'Luxembourg or United Kingdom, or its two-letter code.'.format(where, text))
+    return text
+
+
+def _plain(text) -> str:
+    """*text* lower-cased, its accents off and its spacing one space."""
+    import unicodedata
+    flat = unicodedata.normalize('NFKD', _text(text)).encode('ascii', 'ignore').decode('ascii')
+    return ' '.join(flat.lower().replace('’', "'").split())
+
+
+#: every country's name and other name, plain, to its code
+_COUNTRY_BY_NAME = None
+
+
+def countryName(text) -> str:
+    """The name a country is stored under (D227) - from its name in any
+    case, another name for it or its two-letter code - or '' for none."""
+    global _COUNTRY_BY_NAME
+    text = _text(text)
+    if not text:
+        return ''
+    if len(text) == 2 and text.upper() in COUNTRIES:
+        return COUNTRIES[text.upper()]
+    if _COUNTRY_BY_NAME is None:
+        named = {_plain(name): code for code, name in COUNTRIES.items()}
+        named.update((alias, code) for alias, code in _COUNTRY_ALIASES.items() if code)
+        _COUNTRY_BY_NAME = named
+    code = _COUNTRY_BY_NAME.get(_plain(text))
+    if code is None and _plain(text).startswith('the '):
+        code = _COUNTRY_BY_NAME.get(_plain(text)[4:])
+    return COUNTRIES[code] if code else ''
 
 
 def _country(value, key, words, strict=True, where='') -> str:
@@ -1487,6 +1783,9 @@ def modernise(record, notes=None) -> dict:
                 _say(notes, 'hedging {} of {} → {}'.format(was, _ident(listing), hedgingText(listing)))
         elif not isinstance(listing['hedging'], float):
             listing['hedging'] = float(listing['hedging'])
+        # a domicile stored as its code, before it was the country's name (D227)
+        if len(_text(listing['domicile'])) == 2 and countryName(listing['domicile']):
+            listing['domicile'] = countryName(listing['domicile'])
     out['listings'] = modern
     for field in LISTING_FIELDS:
         out[field] = modern[0].get(field)
